@@ -14,8 +14,11 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 - **Git-optional.** Git versioning can be enabled per project in
   `cartopian.toml`. The protocol works without it.
 - **Multi-project workspaces.** Each managed project is a child
-  directory with its own config, state, and optional git repo. Projects
+  directory under `projects/` with its own config and state. Projects
   are fully isolated from each other.
+- **Single projects repo.** All project PM data lives under `projects/`,
+  which is its own git repo — one repo for all projects. No per-project
+  PM repos, no naming collisions with code repos.
 - **AI-native prompts.** The PM produces assignee-directed prompts with
   full context. The operator confirms assignment explicitly.
 - **Protocol, not methodology.** Best practices are adopted because they
@@ -36,22 +39,23 @@ cartopian/                           ← this repo (public, generic)
 │   ├── REVIEW.md
 │   └── DECISION.md
 │
-├── <project-a>/                     ← gitignored, own git repo
-│   ├── cartopian.toml               ← project config
-│   ├── STATE.md
-│   ├── CONVENTIONS.md               ← extends protocol
-│   ├── phases/
-│   ├── tasks/
-│   │   ├── open/
-│   │   ├── in-progress/
-│   │   ├── in-review/
-│   │   └── done/
-│   ├── specs/
-│   ├── decisions/
-│   └── reviews/
-│
-└── <project-b>/                     ← gitignored, own git repo
-    └── ...
+└── projects/                        ← gitignored, its own git repo
+    ├── <project-a>/
+    │   ├── cartopian.toml           ← project config
+    │   ├── STATE.md
+    │   ├── CONVENTIONS.md           ← extends protocol
+    │   ├── phases/
+    │   ├── tasks/
+    │   │   ├── open/
+    │   │   ├── in-progress/
+    │   │   ├── in-review/
+    │   │   └── done/
+    │   ├── specs/
+    │   ├── decisions/
+    │   └── reviews/
+    │
+    └── <project-b>/
+        └── ...
 ```
 
 ## Configuration

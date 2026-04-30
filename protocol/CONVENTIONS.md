@@ -125,6 +125,18 @@ Both fields carry `TASK-NN-NNN` identifiers only.
 
 ---
 
+## Test gate discipline
+
+- Every task declares `Test gate: required` or `Test gate: n/a`.
+- `required` tasks name concrete test targets that must fail before
+  implementation starts.
+- `n/a` is only for non-executable work; it must say why.
+- Reviews of `required` tasks must record test evidence: a pointer
+  showing the named red test existed before implementation, and a
+  pointer showing the same test is green on the closing commit.
+
+---
+
 ## Sizing
 
 - `STATE.md` has a hard ceiling of 5KB.
@@ -147,7 +159,11 @@ Both fields carry `TASK-NN-NNN` identifiers only.
 
 ## Git (optional)
 
-If `git_versioning = true` in the project's `cartopian.toml`:
+The `projects/` directory is its own git repo, tracking all project PM
+data in a single history. This avoids creating a separate PM repo per
+project and eliminates naming collisions with code repos.
+
+If `git_versioning = true` in the workspace-level `cartopian.toml`:
 
 - Auto-commit and auto-push at session close. Invisible to operator.
 - Commit messages describe the change at the unit-of-work grain.
