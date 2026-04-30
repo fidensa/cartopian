@@ -1,0 +1,10 @@
+# Project directories — each is its own git repo (if git enabled)
+fidensa/
+brainchild/
+ai-skills/
+
+# Workspace-level config (user-specific)
+cartopian.toml
+
+# OS
+.DS_Store
