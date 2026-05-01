@@ -1,5 +1,7 @@
 # Projects directory — its own git repo, decoupled from this protocol repo
-projects/
+# Ignore all projects except the sample project (ships with protocol)
+projects/*
+!projects/sample-project/
 
 # Workspace-level config (user-specific)
 cartopian.toml
