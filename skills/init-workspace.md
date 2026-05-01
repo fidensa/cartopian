@@ -60,7 +60,28 @@ reviewer = "<value>"
 
 Use commented-out lines for optional settings the user did not enable.
 
-### Step 4 — Project config (optional)
+### Step 4 — Initialize projects directory
+
+If `git_versioning` is `true` and the `projects/` directory does not
+already contain a `.git` directory:
+
+1. Run `git init projects/`.
+2. Write the following to `projects/.git/info/exclude`:
+
+   ```
+   /sample-project/
+   ```
+
+   This keeps `sample-project/` out of the nested projects repo. The
+   parent Cartopian repo tracks `projects/sample-project/` via its own
+   `.gitignore` exceptions. The `info/exclude` mechanism is local to the
+   nested repo only — unlike a `projects/.gitignore`, it won't interfere
+   with the parent repo's file discovery.
+
+If `projects/.git` already exists, verify that `/sample-project/`
+appears in `projects/.git/info/exclude`. If missing, append it.
+
+### Step 5 — Project config (optional)
 
 Ask the operator: "Do you want to configure a specific project now?"
 
@@ -90,12 +111,13 @@ path = "<relative path to repo>"
 default_branch = "main"
 ```
 
-### Step 5 — Validate and summarize
+### Step 6 — Validate and summarize
 
 1. Confirm the generated file(s) are valid TOML.
 2. Print a summary of what was configured:
    - Workspace defaults
    - Role assignments (noting which are defaults vs. explicit)
+   - Projects directory git status (initialized, exclude entry present)
    - Project config (if generated)
 3. Suggest next steps:
    - If no project exists yet: "Run `skills/init-project.md` to scaffold
