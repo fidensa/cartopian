@@ -19,8 +19,9 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 - **Single projects repo.** All project PM data lives under `projects/`,
   which is its own git repo — one repo for all projects. No per-project
   PM repos, no naming collisions with code repos.
-- **AI-native prompts.** The PM produces assignee-directed prompts with
-  full context. The operator confirms assignment explicitly.
+- **AI-native prompts.** The PM produces temporary assignee-directed
+  prompts with full context. The operator confirms assignment
+  explicitly.
 - **Protocol, not methodology.** Best practices are adopted because they
   work, not because a methodology prescribes them.
 
@@ -65,6 +66,7 @@ cartopian/                           ← this repo (public, generic)
     │   ├── ENGINEERING.md
     │   ├── IMPLEMENTATION_PLAN.md
     │   ├── phases/
+    │   ├── prompts/                 ← temporary assignee handoffs
     │   ├── tasks/
     │   │   ├── open/
     │   │   ├── in-progress/
@@ -91,7 +93,7 @@ Cartopian defines four basic roles configured in `cartopian.toml`:
 - **PM** — Drives planning. Produces assignments and proposes assignees.
 - **Operator** — Decision-maker. Confirms assignments, gives them to
   assignees, reports progress.
-- **Coder** — Implements tasks from prompts.
+- **Coder** — Implements tasks from assignee prompts.
 - **Reviewer** — Reviews artifacts and produces findings.
 
 The same agent can fill multiple roles. Roles are extensible — define

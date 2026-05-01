@@ -38,6 +38,8 @@ protocol specification, default templates, and a sample project.
 - **Specs are mutable.** Update in place. No version suffixes, no supersedes chains.
 - **Decisions are immutable.** A new decision supersedes the old one; old files
   are never edited.
+- **Prompts are temporary.** Create assignee prompts in `prompts/` and delete
+  them when the task reaches `done/` or the prompt is superseded.
 - **`STATE.md` ceiling:** 5KB hard limit per project.
 
 ## Formatting & Linting
@@ -62,12 +64,14 @@ protocol specification, default templates, and a sample project.
 
 ## PM Workflow
 
-- The PM produces assignee-directed prompts (`PROMPT-NN-NNN.md`).
+- The PM produces assignee-directed prompts
+  (`prompts/PROMPT-NN-NNN.md`).
 - Operator must explicitly confirm assignment before a task moves to
-  `in-progress/`.
+  `in-progress/`. If completion feedback arrives before assignment was
+  recorded, fast-forward task state to match the evidence.
 - Session open: read `STATE.md` → current phase → active tasks → go.
-- Session close: move changed tasks, record decisions, refresh state, name
-  the next action.
+- Session close: move changed tasks, delete prompts for completed tasks,
+  record decisions, refresh state, name the next action.
 
 ## Roles
 

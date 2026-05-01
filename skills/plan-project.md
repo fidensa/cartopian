@@ -216,7 +216,9 @@ Generate or update `STATE.md` reflecting:
 - **Active work**: none yet (nothing assigned)
 - **Open work**: all generated tasks with brief descriptions
 - **What to do next**: suggest the first task to assign, or instruct
-  the operator to review the plan and begin assignment
+  the operator to review the plan and begin assignment. Do not create a
+  prompt during planning unless assignment is happening immediately;
+  prompts belong in `prompts/` and are temporary handoff artifacts.
 
 ### 5.2 Final summary
 
@@ -226,7 +228,8 @@ Print a summary of everything that was produced:
 - Number of phases generated
 - Number of tasks and specs generated
 - Review status (reviewed or skipped, with any noted findings)
-- Suggested first action
+- Suggested first action, including whether to create
+  `prompts/PROMPT-NN-NNN.md` for the first assignment
 
 ---
 

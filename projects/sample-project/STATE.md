@@ -15,5 +15,5 @@ None assigned yet.
 
 ## What to do next
 
-Assign TASK-01-001 to the coder. PM has produced PROMPT-01-001 with
-full context. Operator should confirm assignment.
+Create `prompts/PROMPT-01-001.md`, propose the coder as assignee for
+TASK-01-001, and wait for operator assignment/start confirmation.

@@ -40,6 +40,7 @@ projects/<project-id>/
 ├── CONVENTIONS.md
 ├── ENGINEERING.md
 ├── phases/
+├── prompts/
 ├── tasks/
 │   ├── open/
 │   ├── in-progress/
@@ -53,7 +54,8 @@ projects/<project-id>/
 
 Create all directories, including empty ones. The task status
 subdirectories (`open/`, `in-progress/`, `in-review/`, `done/`) must all
-exist even though they start empty.
+exist even though they start empty. The `prompts/` directory starts
+empty and holds temporary assignee handoff prompts.
 
 ### Step 3 — Generate project config
 

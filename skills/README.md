@@ -31,9 +31,9 @@ Skills interact with four configurable roles defined in `cartopian.toml`:
 
 | Role | Description | Default |
 |---|---|---|
-| **PM** | Drives planning. Produces implementation plans, phases, tasks, specs. Produces assignment prompts and proposes assignees. | AI agent |
+| **PM** | Drives planning. Produces implementation plans, phases, tasks, specs. Produces temporary assignment prompts and proposes assignees. | AI agent |
 | **Operator** | Human decision-maker. Approves plans, confirms assignments, reports progress. | Human |
-| **Coder** | Implements tasks. Receives prompts, writes code, produces deliverables. | AI agent |
+| **Coder** | Implements tasks. Receives assignee prompts, writes code, produces deliverables. | AI agent |
 | **Reviewer** | Reviews artifacts at each stage. Produces findings that feed back to the PM. | AI agent (optional) |
 
 The same agent can fill multiple roles. Roles are extensible — define
