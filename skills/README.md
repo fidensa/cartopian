@@ -37,5 +37,7 @@ Skills interact with four configurable roles defined in `cartopian.toml`:
 | **Reviewer** | Reviews artifacts at each stage. Produces findings that feed back to the PM. | AI agent (optional) |
 
 The same agent can fill multiple roles. Roles are extensible — define
-custom roles in `cartopian.toml` as needed. See `protocol/CONVENTIONS.md`
+custom roles in `cartopian.toml` as needed. An empty value (`""`)
+indicates an unset or unassigned role. A value of `"none"` indicates the
+role is not used at all. See `protocol/CONVENTIONS.md`
 for the full protocol specification.

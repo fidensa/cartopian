@@ -24,8 +24,8 @@ up-to-date `STATE.md`.
 ## Stage 0 — Role Check
 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Determine which roles are filled, especially whether a **reviewer**
-   is configured.
+2. Determine which roles are filled (ignoring those with an empty `""`
+   or `"none"` value), especially whether a **reviewer** is configured.
 3. If no reviewer is configured, ask the operator:
 
    > "No reviewer is configured. Do you want to designate a reviewer for

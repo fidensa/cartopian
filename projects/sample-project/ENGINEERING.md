@@ -14,6 +14,10 @@
 - ESLint with `@typescript-eslint/recommended`.
 - Prettier for formatting.
 - Strict TypeScript (`strict: true`).
+- All API responses use JSON:API envelope format.
+- Schema files use `.schema.json` extension and live in `schemas/`
+  within the target repo.
+- Error codes follow the format `WIDGET-ENNN` (three-digit counter).
 
 ## Architecture constraints
 

@@ -27,7 +27,9 @@ Ask the operator for:
 3. **Target repos** — paths to code repositories this project governs
    (if any). Each repo needs a name, relative path, and default branch.
 4. **Role overrides** — any roles that differ from workspace defaults
-   for this project.
+   for this project. Remind the operator that an empty value `""`
+   indicates an unset or unassigned role, and `"none"` indicates the
+   role is not used at all.
 
 ### Step 2 — Create directory structure
 
@@ -68,6 +70,7 @@ id = "<project-id>"
 
 [roles]
 # Include only overrides. Workspace defaults apply for omitted roles.
+# An empty value ("") means unassigned; "none" means unused.
 
 [repos.<repo-name>]
 path = "<relative path>"

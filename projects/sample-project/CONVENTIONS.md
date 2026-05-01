@@ -5,7 +5,6 @@ This document extends the protocol-level conventions defined in
 
 ## Project-specific conventions
 
-- All API responses use JSON:API envelope format.
-- Schema files use `.schema.json` extension and live in `schemas/`
-  within the target repo.
-- Error codes follow the format `WIDGET-ENNN` (three-digit counter).
+# It is not typical to require this file at the project level,
+# however it is included here to illustrate customization of 
+# policies and governance at the heart of the system is possible.

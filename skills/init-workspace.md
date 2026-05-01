@@ -35,11 +35,11 @@ Ask the operator about workspace-wide defaults:
    - **PM**: AI agent, specific tool name, or human? (default: `ai`)
    - **Operator**: Human or AI? (default: `human`)
    - **Coder**: AI agent, specific tool name, or human? (default: `ai`)
-   - **Reviewer**: AI agent, specific tool name, or none? (default: empty)
+   - **Reviewer**: AI agent, specific tool name, or none? (default: `none`)
    - Are any custom roles needed? (e.g., researcher, designer)
-3. **Manual assignment** — Should the PM require explicit operator
-   confirmation before assigning tasks? (`true` or `false`, default
-   `false`)
+   - Do any of the existing roles need to be renamed or removed?
+3. **Ad-hoc role assignment** — Should the Operator make role assignments for each
+   task? (`true` or `false`, default `false`)
 
 ### Step 3 — Generate workspace config
 
@@ -59,6 +59,9 @@ reviewer = "<value>"
 ```
 
 Use commented-out lines for optional settings the user did not enable.
+An empty value (`""`) indicates an unset or unassigned role. A value of
+`"none"` indicates the role is not used at all.
+Reminder: Roles can be overridden at the project level.
 
 ### Step 4 — Initialize projects directory
 
@@ -103,11 +106,11 @@ id = "<project-id>"
 [roles]
 # Only include overrides — workspace defaults apply for omitted roles.
 # pm = "ai"
-# coder = "codex"
+# coder = "none"         # e.g. no coder role is used for this project
 # reviewer = "claude"
 
 [repos.<repo-name>]
-path = "<relative path to repo>"
+path = "<relative path to local repo>"
 default_branch = "main"
 ```
 

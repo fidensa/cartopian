@@ -97,7 +97,9 @@ Cartopian defines four basic roles configured in `cartopian.toml`:
 - **Reviewer** — Reviews artifacts and produces findings.
 
 The same agent can fill multiple roles. Roles are extensible — define
-custom roles in `cartopian.toml` as needed.
+custom roles in `cartopian.toml` as needed. An empty value (`""`)
+indicates an unset or unassigned role. A value of `"none"` indicates the
+role is not used at all.
 
 ## Protocol
 
