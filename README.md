@@ -24,6 +24,15 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 - **Protocol, not methodology.** Best practices are adopted because they
   work, not because a methodology prescribes them.
 
+## Getting started
+
+Cartopian ships with guided skills that AI agents can follow to set up
+and plan projects. See `skills/README.md` for the full index.
+
+- **`skills/init-workspace.md`** — Generate workspace and project config files.
+- **`skills/init-project.md`** — Scaffold a new project with the correct structure.
+- **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
+
 ## Workspace structure
 
 ```
@@ -37,7 +46,15 @@ cartopian/                           ← this repo (public, generic)
 │   ├── TASK.md
 │   ├── SPEC.md
 │   ├── REVIEW.md
-│   └── DECISION.md
+│   ├── DECISION.md
+│   ├── REQUIREMENTS.md
+│   ├── ENGINEERING.md
+│   └── IMPLEMENTATION_PLAN.md
+├── skills/                          ← agent-executable guided workflows
+│   ├── README.md
+│   ├── init-workspace.md
+│   ├── init-project.md
+│   └── plan-project.md
 │
 └── projects/                        ← gitignored, its own git repo
     ├── <project-a>/
@@ -63,6 +80,19 @@ cartopian/                           ← this repo (public, generic)
 **Workspace-level** `cartopian.toml` at the workspace root sets defaults.
 **Project-level** `cartopian.toml` in each project directory overrides
 defaults and configures project-specific settings.
+
+## Roles
+
+Cartopian defines four basic roles configured in `cartopian.toml`:
+
+- **PM** — Drives planning. Produces assignments and proposes assignees.
+- **Operator** — Decision-maker. Confirms assignments, gives them to
+  assignees, reports progress.
+- **Coder** — Implements tasks from prompts.
+- **Reviewer** — Reviews artifacts and produces findings.
+
+The same agent can fill multiple roles. Roles are extensible — define
+custom roles in `cartopian.toml` as needed.
 
 ## Protocol
 

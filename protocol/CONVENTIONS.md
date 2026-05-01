@@ -137,6 +137,48 @@ Both fields carry `TASK-NN-NNN` identifiers only.
 
 ---
 
+## Project scope
+
+A Cartopian project directory is a governance container, not a codebase.
+
+**What it is:**
+
+- Tracks phase progress against `Implementation Plan.md`.
+- Holds specs, tasks, reviews, and decisions that guide the work.
+- Keeps one short, always-current state file (`STATE.md`) so every
+  session starts on the same page.
+- Records decisions once, in one place (`decisions/`).
+
+**What it is not:**
+
+- Not the product codebase. Source code lives in the target repos.
+- Not a workspace shell for the product repos.
+- Not a chat log or journal.
+
+---
+
+## Task lifecycle
+
+The canonical workflow is `Plan → Spec → Test → Code`.
+
+1. Read the relevant `Implementation Plan.md` section and the current
+   phase file.
+2. Draft a task in `tasks/open/`.
+3. If the task needs a new external interface, draft a spec in `specs/`.
+4. Record the task's test gate.
+5. PM produces an assignee-directed prompt (`PROMPT-NN-NNN.md`) and
+   proposes an assignee. Operator confirms assignment.
+6. Task moves to `tasks/in-progress/`.
+7. Assignee creates or confirms red tests before implementation (when
+   test gate is `required`).
+8. Task moves to `tasks/in-review/` when implementation is complete.
+9. Reviewer reviews. Verdict determines task movement:
+   - **`approve`** → `done/`.
+   - **`request-changes`** → back to `in-progress/`.
+   - **`reject`** → back to `open/`.
+
+---
+
 ## Sizing
 
 - `STATE.md` has a hard ceiling of 5KB.

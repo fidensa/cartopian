@@ -21,6 +21,8 @@ protocol specification, default templates, and a sample project.
 
 - **protocol/** — Baseline protocol specification (`CONVENTIONS.md`)
 - **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW, DECISION)
+- **skills/** — Agent-executable guided workflows (init-workspace, init-project,
+  plan-project). Read the skill file and follow its steps.
 - **projects/** — Gitignored; its own git repo. Each child directory is an
   independent project with its own config, state, phases, tasks, and decisions.
   Only `projects/sample-project/` ships with the protocol repo.
@@ -66,3 +68,10 @@ protocol specification, default templates, and a sample project.
 - Session open: read `STATE.md` → current phase → active tasks → go.
 - Session close: move changed tasks, record decisions, refresh state, name
   the next action.
+
+## Roles
+
+Four basic roles: PM, Operator, Coder, Reviewer. Configured in
+`cartopian.toml` at workspace and project levels. Same agent can fill
+multiple roles. Operator is currently expected to be human. See
+`skills/README.md` for how roles interact with the guided workflows.

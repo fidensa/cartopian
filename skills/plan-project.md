@@ -1,0 +1,248 @@
+# Skill: Plan Project
+
+Walk the full Cartopian lifecycle: requirements → implementation plan →
+phases → tasks, with optional review checkpoints at every stage.
+
+This is the core skill. It unlocks the system's value by guiding the
+agent and operator through the "happy path" that Cartopian was designed
+around.
+
+**Output:** A fully planned project with `REQUIREMENTS.md`,
+`Implementation Plan.md`, phase files, task files, spec files, and an
+up-to-date `STATE.md`.
+
+---
+
+## Prerequisites
+
+- The project directory exists with the correct structure (run
+  `skills/init-project.md` first if needed).
+- A project-level `cartopian.toml` exists with `[project]` configured.
+
+---
+
+## Stage 0 — Role Check
+
+1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
+2. Determine which roles are filled, especially whether a **reviewer**
+   is configured.
+3. If no reviewer is configured, ask the operator:
+
+   > "No reviewer is configured. Do you want to designate a reviewer for
+   > this planning session? If not, we'll proceed without review
+   > checkpoints."
+
+4. If the operator provides a reviewer, note it for use at review
+   checkpoints. If not, proceed without review checkpoints and note this
+   in STATE.md.
+
+---
+
+## Stage 1 — Requirements Gathering
+
+### 1.1 Check for existing requirements
+
+Check if a `REQUIREMENTS.md` exists in the project directory.
+
+- If it exists and is populated, ask the operator: "Requirements already
+  exist. Do you want to revise them, or proceed to planning?"
+- If it does not exist (or is empty), proceed to gathering.
+
+### 1.2 Engage the operator
+
+Do **not** present a blank form. Be conversational. Draw out requirements
+through dialogue:
+
+1. Start with the thesis: "What is this project? What problem does it
+   solve? Be precise — tell me what it is and what it is not."
+2. Move to users: "Who is this for? Who is it explicitly not for?"
+3. Explore the product model: "How does it work at a high level? Walk me
+   through what a user experiences."
+4. If this is a technical project, explore architecture principles:
+   "What structural rules should govern the build?"
+5. Work through functional requirements: "What must the system do? Let's
+   enumerate specific capabilities." Push for numbered, specific items.
+6. Cover non-functional requirements: "What qualities must it have?
+   Performance, security, reliability — what matters?"
+7. Surface open questions: "What decisions are you deferring for now?"
+
+**Adapt the structure to fit the project.** Not every project needs
+every section. A documentation project doesn't need architecture
+principles. A CLI tool might not need non-functional requirements
+beyond "it runs fast." Use judgment.
+
+**Challenge vague statements.** If the operator says "it should be
+fast," ask "how fast? What's the latency target?" Push for specificity
+because vague requirements produce vague plans.
+
+### 1.3 Produce REQUIREMENTS.md
+
+Write `REQUIREMENTS.md` in the project directory. Use the structure that
+emerged from the conversation, not a rigid template.
+
+### 1.4 Review checkpoint
+
+If a reviewer is configured:
+
+1. Present `REQUIREMENTS.md` to the reviewer.
+2. The reviewer produces findings using the `REVIEW` template format
+   (severity: blocker, major, minor, nit; verdict: approve,
+   request-changes, reject).
+3. If `request-changes`: feed findings back, revise, re-present.
+4. If `approve`: proceed to Stage 2.
+5. If the operator says "skip review" at any point: proceed without
+   review and note this in STATE.md.
+
+---
+
+## Stage 2 — Implementation Plan Generation
+
+### 2.1 Read inputs
+
+1. Read the locked `REQUIREMENTS.md`.
+2. If an `ENGINEERING.md` exists, read it as constraints.
+3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for
+   structural guidance.
+
+### 2.2 Generate Implementation Plan.md
+
+Write `Implementation Plan.md` in the project directory with:
+
+- **Purpose**: what this plan accomplishes and which source documents it
+  derives from.
+- **Architecture rules**: rules derived from requirements and
+  engineering standards. These are consequences of locked inputs, not
+  new decisions.
+- **Repo topology**: which repos are involved and what each owns. For
+  single-repo projects, a brief note.
+- **Phase sequence**: each phase with:
+  - Goal
+  - Plan ref table (`PNN-KIND-NNN` format) listing build and research
+    items
+  - Exit criteria
+- **Requirement coverage matrix**: every requirement from
+  `REQUIREMENTS.md` mapped to plan ref(s) and phase(s). Every
+  requirement must appear. Deferred requirements note the reason.
+- **Open questions by phase**: questions that arose during planning.
+- **Exit criteria summary**: per-phase exit criteria in one place.
+
+### 2.3 Review checkpoint
+
+If a reviewer is configured:
+
+1. Present `Implementation Plan.md` to the reviewer.
+2. Iterate on findings as in Stage 1.
+3. Proceed to Stage 3 on approval.
+
+---
+
+## Stage 3 — Phase Generation
+
+### 3.1 Read inputs
+
+Read the locked `Implementation Plan.md`.
+
+### 3.2 Generate phase files
+
+For each phase in the plan, create `phases/PHASE-NN-slug.md` with:
+
+- **Phase goal**: one or two sentences.
+- **Plan refs covered**: list from the plan's phase table.
+- **Build items**: tasks that produce code or artifacts.
+- **Research items**: tasks that produce knowledge or decisions.
+- **Exit criteria**: copied from the plan.
+- **Dependencies on prior phases**: what must be done before this phase
+  can start.
+
+Use the phase number and slug from the plan. The two-digit phase number
+(`NN`) must match the plan section number.
+
+### 3.3 Review checkpoint
+
+If a reviewer is configured, present phase files for review against the
+plan. Iterate on findings.
+
+---
+
+## Stage 4 — Task and Spec Generation
+
+### 4.1 Determine scope
+
+Generate tasks for the **current active phase** (or Phase 00 / Phase 01
+if starting fresh). Do not generate tasks for all phases at once —
+later phases may change as earlier work completes.
+
+### 4.2 Generate task files
+
+For each build and research item in the active phase, create
+`tasks/open/TASK-NN-NNN-slug.md` following the template in
+`templates/TASK.md`:
+
+- **Phase**: `PHASE-NN-slug`
+- **Plan ref**: `PNN-KIND-NNN`
+- **Target repo**: from config or plan
+- **Assignee**: based on roles config
+- **Spec**: reference if a spec is needed, `none` otherwise
+- **Dependencies / Blocked by**: from phase dependencies and
+  cross-task relationships
+- **Test gate**: `required` or `n/a` with reason
+- **Goal**: what "done" looks like
+- **Acceptance criteria**: checkable, boolean-verifiable items
+
+### 4.3 Generate spec files
+
+For tasks that need specs (new interfaces, schemas, contracts), create
+`specs/SPEC-NN-NNN-slug.md` following the template in
+`templates/SPEC.md`.
+
+Not every task needs a spec. Use judgment: configuration tasks,
+documentation tasks, and simple implementation tasks typically do not
+need specs.
+
+### 4.4 Review checkpoint
+
+If a reviewer is configured, review tasks and specs for completeness,
+traceability, and scope. Iterate on findings.
+
+---
+
+## Stage 5 — State Initialization
+
+### 5.1 Update STATE.md
+
+Generate or update `STATE.md` reflecting:
+
+- **Current phase**: the first active phase
+- **Active work**: none yet (nothing assigned)
+- **Open work**: all generated tasks with brief descriptions
+- **What to do next**: suggest the first task to assign, or instruct
+  the operator to review the plan and begin assignment
+
+### 5.2 Final summary
+
+Print a summary of everything that was produced:
+
+- Number of requirements captured
+- Number of phases generated
+- Number of tasks and specs generated
+- Review status (reviewed or skipped, with any noted findings)
+- Suggested first action
+
+---
+
+## Review Flow Reference
+
+At every review checkpoint, this skill instructs the agent to:
+
+1. Present the artifact(s) to the reviewer.
+2. Collect the review using the `REVIEW` template format:
+   - Findings with severity (blocker, major, minor, nit)
+   - Verdict (approve, request-changes, reject)
+3. If `request-changes`: feed findings back to the PM agent, revise the
+   artifact, re-present for review.
+4. If `approve`: proceed to the next stage.
+5. If the operator says "skip review" at any checkpoint: proceed without
+   review and note this in STATE.md.
+
+This creates a quality gate at every level of the hierarchy while keeping
+the operator in control of the pace.
