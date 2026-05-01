@@ -13,7 +13,8 @@ protocol specification, default templates, and a sample project.
 - **Language:** Markdown (protocol documents, templates)
 - **Configuration:** TOML (`cartopian.toml` at workspace and project levels)
 - **Versioning:** Git-optional — controlled per project via `cartopian.toml`
-- **No runtime dependencies.** This is a specification repo, not a software project.
+- **Runtime:** None. This is a protocol specification repo, not a software project.
+- **Dependency manifests:** None at the repo root.
 
 ## Project Structure
 
@@ -22,7 +23,11 @@ protocol specification, default templates, and a sample project.
 - **protocol/** — Baseline protocol specification (`CONVENTIONS.md`)
 - **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW, DECISION)
 - **skills/** — Agent-executable guided workflows (init-workspace, init-project,
-  plan-project). Read the skill file and follow its steps.
+  plan-project), with workflow details in each skill file.
+- **Skill invocation names:** Natural-language skill names are derived from
+  `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens
+  with spaces, e.g. `init-project.md` maps to `init project`. The mapping is
+  dynamic, not a maintained static list.
 - **projects/** — Gitignored; its own git repo. Each child directory is an
   independent project with its own config, state, phases, tasks, and decisions.
   Only `projects/sample-project/` ships with the protocol repo.
@@ -31,22 +36,25 @@ protocol specification, default templates, and a sample project.
 
 - **Naming is load-bearing.** Every artifact follows strict naming patterns
   defined in `protocol/CONVENTIONS.md`. Phase-scoped prefixes (`NN-NNN`)
-  create a trace chain from `IMPLEMENTATION_PLAN.md` → Phase → Task → Spec/Prompt/Review.
-- **Status is a directory.** Task status is `open/`, `in-progress/`,
-  `in-review/`, or `done/`. Moving the file is the status update. Never add a
-  `status:` field to a task file.
-- **Specs are mutable.** Update in place. No version suffixes, no supersedes chains.
-- **Decisions are immutable.** A new decision supersedes the old one; old files
-  are never edited.
-- **Prompts are temporary.** Create assignee prompts in `prompts/` and delete
-  them when the task reaches `done/` or the prompt is superseded.
+  create a trace chain from `IMPLEMENTATION_PLAN.md` to Phase to Task to
+  Spec/Prompt/Review.
+- **Status is a directory.** Task status is represented solely by `open/`,
+  `in-progress/`, `in-review/`, or `done/`; task files have no `status:` field.
+- **Specs are mutable.** Specs are single-file contracts without version
+  suffixes or supersession chains.
+- **Decisions are immutable.** Superseding decisions are new files; old decision
+  files remain unchanged.
+- **Prompts are temporary.** Prompt files are assignee handoff artifacts in
+  `prompts/`, not durable archives.
 - **`STATE.md` ceiling:** 5KB hard limit per project.
+- **Lifecycle authority:** Task movement, review verdicts, session state, and
+  Git behavior are governed by `protocol/CONVENTIONS.md`.
 
 ## Formatting & Linting
 
 - No automated linting or formatting tools. Conventions are enforced by
   protocol discipline at review time.
-- Refer to `protocol/CONVENTIONS.md` for all structural rules.
+- Structural rules live in `protocol/CONVENTIONS.md`.
 
 ## Testing
 
@@ -59,23 +67,12 @@ protocol specification, default templates, and a sample project.
 - Git operations are optional (`git_versioning` in `cartopian.toml`).
 - When enabled, commits describe the change at the unit-of-work grain.
 - Auto-commit and auto-push happen at session close — invisible to operator.
-- **Never run `git add`, `git commit`, or `git push` in this repo.** The
-  human developer handles all git operations for the protocol repo.
+- Git staging, commits, and pushes for the protocol repo are human-owned; agents
+  do not run `git add`, `git commit`, or `git push` here.
 
-## PM Workflow
+## Roles & Assignment
 
-- The PM produces assignee-directed prompts
-  (`prompts/PROMPT-NN-NNN.md`).
-- Operator must explicitly confirm assignment before a task moves to
-  `in-progress/`. If completion feedback arrives before assignment was
-  recorded, fast-forward task state to match the evidence.
-- Session open: read `STATE.md` → current phase → active tasks → go.
-- Session close: move changed tasks, delete prompts for completed tasks,
-  record decisions, refresh state, name the next action.
-
-## Roles
-
-Four basic roles: PM, Operator, Coder, Reviewer. Configured in
-`cartopian.toml` at workspace and project levels. Same agent can fill
-multiple roles. Operator is currently expected to be human. See
-`skills/README.md` for how roles interact with the guided workflows.
+- Four basic roles: PM, Operator, Coder, Reviewer.
+- Role defaults live in `cartopian.toml`; project-level configs may override them.
+- The same agent can fill multiple roles. Operator is currently configured as human.
+- Guided workflows live in `skills/`.

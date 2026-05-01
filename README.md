@@ -29,10 +29,35 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 
 Cartopian ships with guided skills that AI agents can follow to set up
 and plan projects. See `skills/README.md` for the full index.
+Cartopian skills can be run using the natural language equivelant of 
+their filenames (e.g., "init project", "init workspace", "plan project").
 
 - **`skills/init-workspace.md`** — Generate workspace and project config files.
 - **`skills/init-project.md`** — Scaffold a new project with the correct structure.
 - **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
+
+## Configuration
+
+**Workspace-level** `cartopian.toml` at the workspace root sets defaults.
+**Project-level** `cartopian.toml` in each project directory overrides
+defaults and configures project-specific settings.
+
+Run Cartopian's `init-workspace` skill to quickly set these up.
+
+## Roles
+
+Cartopian defines four basic roles configured in `cartopian.toml`:
+
+- **PM** — Drives planning. Produces assignments and proposes assignees.
+- **Operator** — Decision-maker. Confirms assignments, gives them to
+  assignees, reports progress.
+- **Coder** — Implements tasks from assignee prompts.
+- **Reviewer** — Reviews artifacts and produces findings.
+
+The same agent can fill multiple roles. Roles are extensible — define
+custom roles in `cartopian.toml` as needed. An empty value (`""`)
+indicates an unset or unassigned role. A value of `"none"` indicates the
+role is not used at all.
 
 ## Workspace structure
 
@@ -79,27 +104,6 @@ cartopian/                           ← this repo (public, generic)
     └── <project-b>/
         └── ...
 ```
-
-## Configuration
-
-**Workspace-level** `cartopian.toml` at the workspace root sets defaults.
-**Project-level** `cartopian.toml` in each project directory overrides
-defaults and configures project-specific settings.
-
-## Roles
-
-Cartopian defines four basic roles configured in `cartopian.toml`:
-
-- **PM** — Drives planning. Produces assignments and proposes assignees.
-- **Operator** — Decision-maker. Confirms assignments, gives them to
-  assignees, reports progress.
-- **Coder** — Implements tasks from assignee prompts.
-- **Reviewer** — Reviews artifacts and produces findings.
-
-The same agent can fill multiple roles. Roles are extensible — define
-custom roles in `cartopian.toml` as needed. An empty value (`""`)
-indicates an unset or unassigned role. A value of `"none"` indicates the
-role is not used at all.
 
 ## Protocol
 
