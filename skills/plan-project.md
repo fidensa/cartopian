@@ -50,48 +50,37 @@ Check if a `REQUIREMENTS.md` exists in the project directory.
 
 ### 1.2 Engage the operator
 
-Do **not** present a blank form. Be conversational. Draw out requirements
-through dialogue:
+Do **not** present a blank form. Be conversational. Draw out requirements through dialogue:
 
-1. Start with the thesis: "What is this project? What problem does it
-   solve? Be precise — tell me what it is and what it is not."
+1. Start with the thesis: "What is this project? What problem does it solve? Be precise — tell me what it is and what it is not."
 2. Move to users: "Who is this for? Who is it explicitly not for?"
-3. Explore the product model: "How does it work at a high level? Walk me
-   through what a user experiences."
-4. If this is a technical project, explore architecture principles:
-   "What structural rules should govern the build?"
-5. Work through functional requirements: "What must the system do? Let's
-   enumerate specific capabilities." Push for numbered, specific items.
-6. Cover non-functional requirements: "What qualities must it have?
-   Performance, security, reliability — what matters?"
+3. Explore the product model: "How does it work at a high level? Walk me through what a user experiences."
+4. If this is a technical project, explore architecture principles: "What structural rules should govern the build?"
+5. Work through functional requirements: "What must the system do? Let's enumerate specific capabilities." Push for numbered, specific items.
+6. Cover non-functional requirements: "What qualities must it have? Performance, security, reliability — what matters?"
 7. Surface open questions: "What decisions are you deferring for now?"
 
-**Adapt the structure to fit the project.** Not every project needs
-every section. A documentation project doesn't need architecture
-principles. A CLI tool might not need non-functional requirements
-beyond "it runs fast." Use judgment.
+**Adapt the structure to fit the project.** Not every project needs every section. A documentation project doesn't need architecture principles. A CLI tool might not need non-functional requirements beyond "it runs fast." Use judgment.
 
-**Challenge vague statements.** If the operator says "it should be
-fast," ask "how fast? What's the latency target?" Push for specificity
-because vague requirements produce vague plans.
+**Challenge vague statements.** If the operator says "it should be fast," ask "how fast? What's the latency target?" Push for specificity, because vague requirements produce vague plans.
 
 ### 1.3 Produce REQUIREMENTS.md
 
-Write `REQUIREMENTS.md` in the project directory. Use the structure that
-emerged from the conversation, not a rigid template.
+Write `REQUIREMENTS.md` in the project directory. Use the structure that emerged from the conversation, not a rigid template.
 
-### 1.4 Review checkpoint
+### 1.4 Generate ENGINEERING.md
+
+Based on the requirements and any architectural principles or technical needs discussed, generate or update `ENGINEERING.md` in the project directory. This document should capture the chosen tech stack, technical standards, and any constraints deduced from the requirements.
+
+### 1.5 Review checkpoint
 
 If a reviewer is configured:
 
-1. Present `REQUIREMENTS.md` to the reviewer.
-2. The reviewer produces findings using the `REVIEW` template format
-   (severity: blocker, major, minor, nit; verdict: approve,
-   request-changes, reject).
+1. Present `REQUIREMENTS.md` and `ENGINEERING.md` to the reviewer.
+2. The reviewer produces findings using the `REVIEW` template format (severity: blocker, major, minor, nit; verdict: approve, request-changes, reject).
 3. If `request-changes`: feed findings back, revise, re-present.
 4. If `approve`: proceed to Stage 2.
-5. If the operator says "skip review" at any point: proceed without
-   review and note this in STATE.md.
+5. If the operator says "skip review" at any point: proceed without review and note this in STATE.md.
 
 ---
 
@@ -100,29 +89,21 @@ If a reviewer is configured:
 ### 2.1 Read inputs
 
 1. Read the locked `REQUIREMENTS.md`.
-2. If an `ENGINEERING.md` exists, read it as constraints.
-3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for
-   structural guidance.
+2. Read the locked `ENGINEERING.md` as technical constraints.
+3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md
 
 Write `IMPLEMENTATION_PLAN.md` in the project directory with:
 
-- **Purpose**: what this plan accomplishes and which source documents it
-  derives from.
-- **Architecture rules**: rules derived from requirements and
-  engineering standards. These are consequences of locked inputs, not
-  new decisions.
-- **Repo topology**: which repos are involved and what each owns. For
-  single-repo projects, a brief note.
+- **Purpose**: what this plan accomplishes and which source documents it derives from.
+- **Architecture rules**: rules derived from requirements and engineering standards. These are consequences of locked inputs, not new decisions.
+- **Repo topology**: which repos are involved and what each owns. For single-repo projects, a brief note.
 - **Phase sequence**: each phase with:
   - Goal
-  - Plan ref table (`PNN-KIND-NNN` format) listing build and research
-    items
+  - Plan ref table (`PNN-KIND-NNN` format) listing build and research items
   - Exit criteria
-- **Requirement coverage matrix**: every requirement from
-  `REQUIREMENTS.md` mapped to plan ref(s) and phase(s). Every
-  requirement must appear. Deferred requirements note the reason.
+- **Requirement coverage matrix**: every requirement from `REQUIREMENTS.md` mapped to plan ref(s) and phase(s). Every requirement must appear. Deferred requirements note the reason.
 - **Open questions by phase**: questions that arose during planning.
 - **Exit criteria summary**: per-phase exit criteria in one place.
 

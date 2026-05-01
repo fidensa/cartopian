@@ -133,9 +133,9 @@ Write `projects/<project-id>/ENGINEERING.md`:
      technical standards and constraints that govern implementation for
      this project. See templates/ENGINEERING.md for a starting template.
 
-     Fill this in before or during the planning phase. The plan-project
-     skill will read this document as constraints when generating the
-     implementation plan. -->
+     This document will be populated during the planning phase. The plan-project
+     skill will generate and update this document based on requirements and
+     architectural decisions or you can edit this file directly.-->
 ```
 
 ### Step 7 — Generate seed decisions/INDEX.md
@@ -159,7 +159,6 @@ Print a summary of everything that was created:
 
 Suggest next steps:
 
-- "Fill in `ENGINEERING.md` with your tech stack and standards (optional
-  but recommended)."
 - "Run `skills/plan-project.md` to begin the planning lifecycle:
-  requirements → plan → phases → tasks."
+  requirements → plan → phases → tasks. This will also generate your
+  `ENGINEERING.md` document based on the project requirements."
