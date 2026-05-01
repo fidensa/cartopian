@@ -32,7 +32,7 @@ heading.
 
 ## References
 
-- `Implementation Plan.md` section(s) by heading.
+- `IMPLEMENTATION_PLAN.md` section(s) by heading.
 - Matching `phases/PHASE-NN-slug.md` roll-up row(s).
 - Prior specs, tasks, or decisions this spec depends on.
 
@@ -51,7 +51,7 @@ closed.
 
 Filled by the reviewer, not the author.
 
-- [ ] Scope is consistent with `Implementation Plan.md`.
+- [ ] Scope is consistent with `IMPLEMENTATION_PLAN.md`.
 - [ ] `Plan refs` point to real plan anchors and matching phase rows.
 - [ ] Non-goals are honest.
 - [ ] Interface is precise enough to implement without clarification.

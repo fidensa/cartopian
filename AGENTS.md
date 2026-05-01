@@ -31,7 +31,7 @@ protocol specification, default templates, and a sample project.
 
 - **Naming is load-bearing.** Every artifact follows strict naming patterns
   defined in `protocol/CONVENTIONS.md`. Phase-scoped prefixes (`NN-NNN`)
-  create a trace chain from Implementation Plan → Phase → Task → Spec/Prompt/Review.
+  create a trace chain from `IMPLEMENTATION_PLAN.md` → Phase → Task → Spec/Prompt/Review.
 - **Status is a directory.** Task status is `open/`, `in-progress/`,
   `in-review/`, or `done/`. Moving the file is the status update. Never add a
   `status:` field to a task file.

@@ -22,13 +22,14 @@ auto-push are handled transparently at session close.
   re-review.
 - Prompts: `PROMPT-NN-NNN.md`. Matches task number.
 - Phases: `PHASE-NN-slug.md`. Two-digit counter matching plan order.
+- Implementation plan: `IMPLEMENTATION_PLAN.md`. One per project.
 - Decisions: `DEC-NNN-kebab-case-slug.md`. Three-digit counter, global
   across all projects.
 
 ### Trace chain
 
 ```
-Implementation Plan
+IMPLEMENTATION_PLAN.md
   └── ## Phase 01: Contract And Schema Foundation
         └── PHASE-01-contract-foundation.md
               ├── TASK-01-001-cert-schema.md
@@ -143,7 +144,7 @@ A Cartopian project directory is a governance container, not a codebase.
 
 **What it is:**
 
-- Tracks phase progress against `Implementation Plan.md`.
+- Tracks phase progress against `IMPLEMENTATION_PLAN.md`.
 - Holds specs, tasks, reviews, and decisions that guide the work.
 - Keeps one short, always-current state file (`STATE.md`) so every
   session starts on the same page.
@@ -161,7 +162,7 @@ A Cartopian project directory is a governance container, not a codebase.
 
 The canonical workflow is `Plan → Spec → Test → Code`.
 
-1. Read the relevant `Implementation Plan.md` section and the current
+1. Read the relevant `IMPLEMENTATION_PLAN.md` section and the current
    phase file.
 2. Draft a task in `tasks/open/`.
 3. If the task needs a new external interface, draft a spec in `specs/`.

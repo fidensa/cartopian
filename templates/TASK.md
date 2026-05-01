@@ -16,7 +16,7 @@ One or two sentences. What does done look like?
 
 ## Plan ref
 
-One primary plan item from `Implementation Plan.md`, for example
+One primary plan item from `IMPLEMENTATION_PLAN.md`, for example
 `P01-BUILD-001`. The matching phase file must carry the same plan ref.
 A task that truly advances multiple plan refs should usually be split;
 use References for secondary context.
@@ -45,7 +45,7 @@ must exist and fail before implementation starts. If `n/a`, say why.
 
 ## References
 
-- `Implementation Plan.md` section(s) by heading.
+- `IMPLEMENTATION_PLAN.md` section(s) by heading.
 - The matching `phases/PHASE-NN-slug.md` roll-up row.
 - Prior specs or tasks this depends on.
 

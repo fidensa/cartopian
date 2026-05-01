@@ -61,6 +61,9 @@ cartopian/                           ← this repo (public, generic)
     │   ├── cartopian.toml           ← project config
     │   ├── STATE.md
     │   ├── CONVENTIONS.md           ← extends protocol
+    │   ├── REQUIREMENTS.md
+    │   ├── ENGINEERING.md
+    │   ├── IMPLEMENTATION_PLAN.md
     │   ├── phases/
     │   ├── tasks/
     │   │   ├── open/

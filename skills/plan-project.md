@@ -8,7 +8,7 @@ agent and operator through the "happy path" that Cartopian was designed
 around.
 
 **Output:** A fully planned project with `REQUIREMENTS.md`,
-`Implementation Plan.md`, phase files, task files, spec files, and an
+`IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an
 up-to-date `STATE.md`.
 
 ---
@@ -104,9 +104,9 @@ If a reviewer is configured:
 3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for
    structural guidance.
 
-### 2.2 Generate Implementation Plan.md
+### 2.2 Generate IMPLEMENTATION_PLAN.md
 
-Write `Implementation Plan.md` in the project directory with:
+Write `IMPLEMENTATION_PLAN.md` in the project directory with:
 
 - **Purpose**: what this plan accomplishes and which source documents it
   derives from.
@@ -130,7 +130,7 @@ Write `Implementation Plan.md` in the project directory with:
 
 If a reviewer is configured:
 
-1. Present `Implementation Plan.md` to the reviewer.
+1. Present `IMPLEMENTATION_PLAN.md` to the reviewer.
 2. Iterate on findings as in Stage 1.
 3. Proceed to Stage 3 on approval.
 
@@ -140,7 +140,7 @@ If a reviewer is configured:
 
 ### 3.1 Read inputs
 
-Read the locked `Implementation Plan.md`.
+Read the locked `IMPLEMENTATION_PLAN.md`.
 
 ### 3.2 Generate phase files
 
