@@ -82,7 +82,9 @@ If a reviewer is configured:
    `reviews/REVIEW-PLAN-001-requirements-and-engineering.md` using the
    `REVIEW` template format (severity: blocker, major, minor, nit;
    verdict: approve, request-changes, reject).
-3. If `request-changes`: feed findings back, revise, re-present.
+3. If `request-changes`: the PM revises the target artifacts in place
+   against the findings, updates or recreates the review prompt in
+   `prompts/`, and re-assigns to the reviewer.
 4. If `approve`: proceed to Stage 2.
 5. If the operator says "skip review" at any point: proceed without
    review and note this in STATE.md.
@@ -119,9 +121,9 @@ If a reviewer is configured:
 1. Create `prompts/PROMPT-PLAN-002-implementation-plan-review.md` to
    hand off the review.
 2. The reviewer produces
-   `reviews/REVIEW-PLAN-002-implementation-plan.md`. Iterate on
-   findings as in Stage 1.
-3. Proceed to Stage 3 on approval.
+   `reviews/REVIEW-PLAN-002-implementation-plan.md`. On
+   `request-changes`, iterate as in Stage 1.5. Proceed to Stage 3 on
+   approval.
 
 ---
 
@@ -153,7 +155,8 @@ If a reviewer is configured:
 1. Create `prompts/PROMPT-PLAN-003-phase-review.md` to hand off the
    review.
 2. The reviewer produces `reviews/REVIEW-PLAN-003-phases.md`. Review
-   phase files against the plan. Iterate on findings.
+   phase files against the plan. On `request-changes`, iterate as in
+   Stage 1.5.
 
 ---
 
@@ -200,7 +203,8 @@ If a reviewer is configured:
    off the review.
 2. The reviewer produces
    `reviews/REVIEW-PLAN-004-tasks-and-specs.md`. Review tasks and specs
-   for completeness, traceability, and scope. Iterate on findings.
+   for completeness, traceability, and scope. On `request-changes`,
+   iterate as in Stage 1.5.
 
 ---
 
@@ -255,8 +259,9 @@ At every review checkpoint, this skill instructs the agent to:
    `REVIEW` template format:
    - Findings with severity (blocker, major, minor, nit)
    - Verdict (approve, request-changes, reject)
-3. If `request-changes`: feed findings back to the PM agent, revise the
-   artifact, re-present for review.
+3. If `request-changes`: the PM revises the target artifacts in place
+   against the findings, updates or recreates the review prompt in
+   `prompts/`, and re-assigns to the reviewer.
 4. If `approve`: proceed to the next stage.
 5. If the operator says "skip review" at any checkpoint: proceed without
    review and note this in STATE.md.
