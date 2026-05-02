@@ -82,3 +82,4 @@ protocol specification, default templates, and a sample project.
 - Role defaults live in `cartopian.toml`; project-level configs may override them.
 - The same agent can fill multiple roles. Operator is currently configured as human.
 - Guided workflows live in `skills/`.
+- Roles serve as a communication aid between the AI Project Manager and the human operator. They can be renamed, removed, or extended since they don't map to any actual software executables.

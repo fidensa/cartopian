@@ -38,8 +38,6 @@ Ask the operator about workspace-wide defaults:
    - **Reviewer**: AI agent, specific tool name, or none? (default: `none`)
    - Are any custom roles needed? (e.g., researcher, designer)
    - Do any of the existing roles need to be renamed or removed?
-3. **Ad-hoc role assignment** — Should the Operator make role assignments for each
-   task? (`true` or `false`, default `false`)
 
 ### Step 3 — Generate workspace config
 
@@ -54,7 +52,6 @@ pm = "<value>"
 operator = "<value>"
 coder = "<value>"
 reviewer = "<value>"
-# manual_assignment = true    # uncomment if requested
 # <custom roles if any>
 ```
 
