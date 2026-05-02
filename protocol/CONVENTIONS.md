@@ -258,7 +258,7 @@ The canonical workflow is `Plan -> Spec -> Test -> Code`.
 7. Task moves to `tasks/in-progress/`.
 8. Assignee creates or confirms red tests before implementation (when
    test gate is `required`).
-9. Task moves to `tasks/in-review/` when implementation is complete.
+9. Assignee produces a completion report for the PM when implementation is complete. The PM moves the task to `tasks/in-review/` and assigns a reviewer.
 10. Reviewer reviews. Verdict determines task movement:
     - **`approve`**: `done/`; delete the matching prompt if it exists.
     - **`request-changes`**: back to `in-progress/`.
