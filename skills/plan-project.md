@@ -76,11 +76,16 @@ Based on the requirements and any architectural principles or technical needs di
 
 If a reviewer is configured:
 
-1. Present `REQUIREMENTS.md` and `ENGINEERING.md` to the reviewer.
-2. The reviewer produces findings using the `REVIEW` template format (severity: blocker, major, minor, nit; verdict: approve, request-changes, reject).
+1. Create `prompts/PROMPT-PLAN-001-requirements-and-engineering-review.md`
+   to hand off the review.
+2. The reviewer produces
+   `reviews/REVIEW-PLAN-001-requirements-and-engineering.md` using the
+   `REVIEW` template format (severity: blocker, major, minor, nit;
+   verdict: approve, request-changes, reject).
 3. If `request-changes`: feed findings back, revise, re-present.
 4. If `approve`: proceed to Stage 2.
-5. If the operator says "skip review" at any point: proceed without review and note this in STATE.md.
+5. If the operator says "skip review" at any point: proceed without
+   review and note this in STATE.md.
 
 ---
 
@@ -111,8 +116,11 @@ Write `IMPLEMENTATION_PLAN.md` in the project directory with:
 
 If a reviewer is configured:
 
-1. Present `IMPLEMENTATION_PLAN.md` to the reviewer.
-2. Iterate on findings as in Stage 1.
+1. Create `prompts/PROMPT-PLAN-002-implementation-plan-review.md` to
+   hand off the review.
+2. The reviewer produces
+   `reviews/REVIEW-PLAN-002-implementation-plan.md`. Iterate on
+   findings as in Stage 1.
 3. Proceed to Stage 3 on approval.
 
 ---
@@ -140,8 +148,12 @@ Use the phase number and slug from the plan. The two-digit phase number
 
 ### 3.3 Review checkpoint
 
-If a reviewer is configured, present phase files for review against the
-plan. Iterate on findings.
+If a reviewer is configured:
+
+1. Create `prompts/PROMPT-PLAN-003-phase-review.md` to hand off the
+   review.
+2. The reviewer produces `reviews/REVIEW-PLAN-003-phases.md`. Review
+   phase files against the plan. Iterate on findings.
 
 ---
 
@@ -182,8 +194,13 @@ need specs.
 
 ### 4.4 Review checkpoint
 
-If a reviewer is configured, review tasks and specs for completeness,
-traceability, and scope. Iterate on findings.
+If a reviewer is configured:
+
+1. Create `prompts/PROMPT-PLAN-004-tasks-and-specs-review.md` to hand
+   off the review.
+2. The reviewer produces
+   `reviews/REVIEW-PLAN-004-tasks-and-specs.md`. Review tasks and specs
+   for completeness, traceability, and scope. Iterate on findings.
 
 ---
 
@@ -216,10 +233,26 @@ Print a summary of everything that was produced:
 
 ## Review Flow Reference
 
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in
+`reviews/`. The PM creates a matching `PROMPT-PLAN-NNN-slug.md` in
+`prompts/` to hand off the review work. `NNN` is a per-project
+sequential counter independent of task-scoped numbering — no tasks
+exist at the point of requirements generation.
+
+The standard checkpoint sequence is:
+
+| NNN | Stage | Prompt slug | Review slug |
+|---|---|---|---|
+| 001 | Requirements & Engineering | `requirements-and-engineering-review` | `requirements-and-engineering` |
+| 002 | Implementation Plan | `implementation-plan-review` | `implementation-plan` |
+| 003 | Phases | `phase-review` | `phases` |
+| 004 | Tasks & Specs | `tasks-and-specs-review` | `tasks-and-specs` |
+
 At every review checkpoint, this skill instructs the agent to:
 
-1. Present the artifact(s) to the reviewer.
-2. Collect the review using the `REVIEW` template format:
+1. Create a `prompts/PROMPT-PLAN-NNN-slug.md` to hand off the review.
+2. Collect the review as `reviews/REVIEW-PLAN-NNN-slug.md` using the
+   `REVIEW` template format:
    - Findings with severity (blocker, major, minor, nit)
    - Verdict (approve, request-changes, reject)
 3. If `request-changes`: feed findings back to the PM agent, revise the
@@ -227,6 +260,9 @@ At every review checkpoint, this skill instructs the agent to:
 4. If `approve`: proceed to the next stage.
 5. If the operator says "skip review" at any checkpoint: proceed without
    review and note this in STATE.md.
+
+Planning-checkpoint prompts and reviews are temporary artifacts. Delete
+them when the planning stage is approved or superseded. No archival.
 
 This creates a quality gate at every level of the hierarchy while keeping
 the operator in control of the pace.

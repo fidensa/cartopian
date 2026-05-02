@@ -18,8 +18,15 @@ auto-push are handled transparently at session close.
   do not have an independent counter.
 - Reviews: `REVIEW-NN-NNN.md`. One task-closure review per task.
   Overwritten on re-review.
+- Planning-checkpoint reviews: `REVIEW-PLAN-NNN-slug.md`. Used for
+  reviews of planning-stage artifacts (requirements, plan, phases,
+  tasks/specs). `NNN` is a per-project sequential counter independent
+  of task-scoped numbering.
 - Prompts: `PROMPT-NN-NNN.md`. Stored temporarily in `prompts/` while a
   task is being assigned or executed.
+- Planning-checkpoint prompts: `PROMPT-PLAN-NNN-slug.md`. Used to hand
+  off planning-stage review work to a reviewer. Same counter and
+  lifecycle as planning-checkpoint reviews.
 - Phases: `PHASE-NN-slug.md`. Two-digit counter matching plan order.
 - Implementation plan: `IMPLEMENTATION_PLAN.md`. One per project.
 - Decisions: `DEC-NNN-kebab-case-slug.md`. Three-digit counter within
@@ -42,6 +49,10 @@ IMPLEMENTATION_PLAN.md
               └── tasks/open/TASK-01-003-enforcement-envelope.md
                     └── specs/SPEC-01-003-enforcement-envelope.md
 ```
+
+Planning-checkpoint reviews (`REVIEW-PLAN-NNN-slug.md`) and prompts
+(`PROMPT-PLAN-NNN-slug.md`) are not part of the task trace chain. They
+attach to planning stages, not tasks.
 
 Plan refs (`P01-BUILD-003`) encode the phase number. `01` in
 `P01-BUILD-003` -> `PHASE-01-*` -> plan `## Phase 01:` section.
@@ -76,8 +87,11 @@ Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review
 file per task. The review file is overwritten on re-review. There is no
 round suffix and no closure sign-off section.
 
-Planning checkpoint reviews may use the `REVIEW` template format, but
-`REVIEW-NN-NNN.md` is the canonical task-closure review file.
+Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN-slug.md`.
+They follow the `REVIEW` template format but are not task-closure
+reviews. The PM creates a matching `prompts/PROMPT-PLAN-NNN-slug.md`
+to hand off the review. Both are temporary artifacts deleted when the
+planning stage is approved or superseded.
 
 Review verdicts:
 
