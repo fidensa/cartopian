@@ -21,9 +21,10 @@ protocol specification, default templates, and a sample project.
 > **Note to AI agents:** List the project root to discover current layout.
 
 - **protocol/** — Baseline protocol specification (`CONVENTIONS.md`)
-- **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW, DECISION)
+- **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW,
+  DECISION, PLAN_CLOSEOUT)
 - **skills/** — Agent-executable guided workflows (init-workspace, init-project,
-  plan-project), with workflow details in each skill file.
+  plan-project, close-plan), with workflow details in each skill file.
 - **Skill invocation names:** Natural-language skill names are derived from
   `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens
   with spaces, e.g. `init-project.md` maps to `init project`. The mapping is
@@ -46,6 +47,11 @@ protocol specification, default templates, and a sample project.
   files remain unchanged.
 - **Prompts are temporary.** Prompt files are assignee handoff artifacts in
   `prompts/`, not durable archives.
+- **One active plan.** A project has one live `IMPLEMENTATION_PLAN.md` at a
+  time. Run `close plan` before starting a fresh plan for the same project.
+- **Plan reset discipline.** Requirements and implementation plans always reset
+  between plans. Engineering standards and conventions carry forward only by
+  explicit operator choice.
 - **`STATE.md` ceiling:** 5KB hard limit per project.
 - **Lifecycle authority:** Task movement, review verdicts, session state, and
   Git behavior are governed by `protocol/CONVENTIONS.md`.

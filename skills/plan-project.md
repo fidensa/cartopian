@@ -21,6 +21,39 @@ up-to-date `STATE.md`.
 
 ---
 
+## Preflight — Active Plan Check
+
+Before gathering requirements, check whether the project already has a
+live plan:
+
+1. Read `STATE.md`.
+2. Check for `IMPLEMENTATION_PLAN.md`.
+3. Check whether `phases/`, `tasks/`, `specs/`, or `reviews/` contain
+   current plan artifacts.
+
+If `IMPLEMENTATION_PLAN.md` exists and the operator wants a fresh plan,
+stop and run `skills/close-plan.md` first. Do not overwrite an active
+plan as a way to start over.
+
+If `IMPLEMENTATION_PLAN.md` exists and the operator wants to revise the
+current plan, proceed only as an in-place revision of the current plan's
+artifacts. Make the revision path explicit to the operator before
+editing.
+
+If `IMPLEMENTATION_PLAN.md` does not exist but current plan artifacts
+exist in `phases/`, `tasks/`, `specs/`, or `reviews/`, stop and ask the
+operator to resolve the inconsistent state before planning.
+
+If `STATE.md` says there is no active plan but current plan artifacts
+still exist, stop and ask the operator to resolve the inconsistent
+state. The normal resolution is to run `skills/close-plan.md`.
+
+If a previous closeout carried forward `ENGINEERING.md` or
+`CONVENTIONS.md`, treat those files as seed context for the new planning
+cycle, not as locked requirements or a locked implementation plan.
+
+---
+
 ## Stage 0 — Role Check
 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
@@ -45,7 +78,8 @@ up-to-date `STATE.md`.
 Check if a `REQUIREMENTS.md` exists in the project directory.
 
 - If it exists and is populated, ask the operator: "Requirements already
-  exist. Do you want to revise them, or proceed to planning?"
+  exist. Do you want to revise them for this planning cycle, or proceed
+  to planning from them?"
 - If it does not exist (or is empty), proceed to gathering.
 
 ### 1.2 Engage the operator
@@ -70,7 +104,11 @@ Write `REQUIREMENTS.md` in the project directory. Use the structure that emerged
 
 ### 1.4 Generate ENGINEERING.md
 
-Based on the requirements and any architectural principles or technical needs discussed, generate or update `ENGINEERING.md` in the project directory. This document should capture the chosen tech stack, technical standards, and any constraints deduced from the requirements.
+Based on the requirements, any carried-forward engineering seed, and any
+architectural principles or technical needs discussed, generate or update
+`ENGINEERING.md` in the project directory. This document should capture
+the chosen tech stack, technical standards, and any constraints deduced
+from the current planning cycle's requirements.
 
 ### 1.5 Review checkpoint
 
@@ -96,7 +134,7 @@ If a reviewer is configured:
 ### 2.1 Read inputs
 
 1. Read the locked `REQUIREMENTS.md`.
-2. Read the locked `ENGINEERING.md` as technical constraints.
+2. Read the current-cycle `ENGINEERING.md` as technical constraints.
 3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md

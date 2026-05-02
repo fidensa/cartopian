@@ -35,6 +35,13 @@ their filenames (e.g., "init project", "init workspace", "plan project").
 - **`skills/init-workspace.md`** — Generate workspace and project config files.
 - **`skills/init-project.md`** — Scaffold a new project with the correct structure.
 - **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
+- **`skills/close-plan.md`** — Close a completed plan, optionally archive it, and reset for the next planning cycle.
+
+Typical project lifecycle:
+
+```text
+init project -> plan project -> execute tasks -> close plan -> plan project
+```
 
 ## Configuration
 
@@ -75,12 +82,14 @@ cartopian/                           ← this repo (public, generic)
 │   ├── DECISION.md
 │   ├── REQUIREMENTS.md
 │   ├── ENGINEERING.md
-│   └── IMPLEMENTATION_PLAN.md
+│   ├── IMPLEMENTATION_PLAN.md
+│   └── PLAN_CLOSEOUT.md
 ├── skills/                          ← agent-executable guided workflows
 │   ├── README.md
 │   ├── init-workspace.md
 │   ├── init-project.md
-│   └── plan-project.md
+│   ├── plan-project.md
+│   └── close-plan.md
 │
 └── projects/                        ← gitignored, its own git repo
     ├── <project-a>/
@@ -99,7 +108,8 @@ cartopian/                           ← this repo (public, generic)
     │   │   └── done/
     │   ├── specs/
     │   ├── decisions/
-    │   └── reviews/
+    │   ├── reviews/
+    │   └── archive/                 ← optional plan closeout snapshots
     │
     └── <project-b>/
         └── ...

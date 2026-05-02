@@ -12,3 +12,4 @@ needed and produces the output files.
 | **Init Workspace** | `init-workspace.md` | Generate workspace and project `cartopian.toml` config files |
 | **Init Project** | `init-project.md` | Scaffold a new project with the correct directory structure |
 | **Plan Project** | `plan-project.md` | Walk the full lifecycle: requirements → plan → phases → tasks |
+| **Close Plan** | `close-plan.md` | Close a completed plan, optionally archive it, and reset for the next planning cycle |

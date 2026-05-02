@@ -28,7 +28,11 @@ auto-push are handled transparently at session close.
   off planning-stage review work to a reviewer. Same counter and
   lifecycle as planning-checkpoint reviews.
 - Phases: `PHASE-NN-slug.md`. Two-digit counter matching plan order.
-- Implementation plan: `IMPLEMENTATION_PLAN.md`. One per project.
+- Implementation plan: `IMPLEMENTATION_PLAN.md`. One live plan per
+  project.
+- Plan archives: `archive/PLAN-NNN-slug/`. Optional snapshots of
+  completed plan artifacts created only during plan closeout.
+- Plan closeout summary: `archive/PLAN-NNN-slug/CLOSEOUT.md`.
 - Decisions: `DEC-NNN-kebab-case-slug.md`. Three-digit counter within
   the project's `decisions/` directory.
 
@@ -171,6 +175,73 @@ A Cartopian project directory is a governance container, not a codebase.
 - Not the product codebase. Source code lives in the target repos.
 - Not a workspace shell for the product repos.
 - Not a chat log, journal, or prompt archive.
+
+## Plan lifecycle
+
+A Cartopian project has one active implementation plan at a time. The
+live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`,
+`specs/`, `reviews/`, and `prompts/` describe the current plan only.
+
+When a plan completes, close it before starting a new plan. The
+canonical closeout workflow is `skills/close-plan.md`.
+
+Plan closeout preconditions:
+
+- No task files remain in `tasks/open/`, `tasks/in-progress/`, or
+  `tasks/in-review/`.
+- `prompts/` contains no active or ambiguous prompt files.
+- Phase exit criteria are satisfied by completed tasks, decisions,
+  specs, or documented operator acceptance.
+- The operator explicitly confirms that the current plan should close.
+
+Plan closeout always resets these live artifacts:
+
+- `REQUIREMENTS.md`
+- `IMPLEMENTATION_PLAN.md`
+- `phases/`
+- `tasks/`
+- `specs/`
+- `reviews/`
+- `prompts/`
+
+`REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md` never carry forward as
+live artifacts. A new planning cycle must produce fresh requirements and
+a fresh implementation plan.
+
+`ENGINEERING.md` and `CONVENTIONS.md` may carry forward only when the
+operator explicitly chooses to keep them as seed context for the next
+plan. If not carried forward, reset them to project seed files.
+
+`cartopian.toml` and `decisions/` remain live across plans. Decisions
+are immutable project memory. If a prior decision should no longer
+apply, create a new decision that supersedes it; do not delete or edit
+the old decision.
+
+### Optional plan archive
+
+Cartopian is anti-archival by default. Do not archive completed plan
+artifacts unless the operator explicitly asks for an archive during
+closeout.
+
+When requested, create `archive/PLAN-NNN-slug/` using the next available
+three-digit counter. The archive may include snapshots of:
+
+- `REQUIREMENTS.md`
+- `ENGINEERING.md`
+- `CONVENTIONS.md`
+- `IMPLEMENTATION_PLAN.md`
+- `STATE.md`
+- `phases/`
+- `tasks/`
+- `specs/`
+- `reviews/`
+- `CLOSEOUT.md`
+
+Do not archive `prompts/`. Prompt files are temporary handoff artifacts.
+Do not move `decisions/` into the archive. Decisions remain live.
+
+After closeout, `STATE.md` must say there is no active plan and name
+`skills/plan-project.md` as the next action.
 
 ## Task lifecycle
 
