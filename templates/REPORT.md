@@ -1,5 +1,9 @@
 # REPORT-NN-NNN
 
+This template is the canonical field schema for Cartopian handoff
+reports. Use exactly one variant: task completion, review completion, or
+planning-review completion.
+
 Status: <complete | blocked | failed>
 
 ## Identity

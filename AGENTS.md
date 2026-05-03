@@ -22,9 +22,10 @@ protocol specification, default templates, and a sample project.
 
 - **protocol/** — Baseline protocol specification (`CONVENTIONS.md`)
 - **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW,
-  DECISION, PLAN_CLOSEOUT)
-- **skills/** — Agent-executable guided workflows (init-workspace, init-project,
-  plan-project, close-plan), with workflow details in each skill file.
+  REPORT, DECISION, REQUIREMENTS, ENGINEERING, IMPLEMENTATION_PLAN,
+  PLAN_CLOSEOUT)
+- **skills/** — Agent-executable guided workflows, with workflow details
+  in each skill file.
   All skills understand CLI handoff automation.
 - **Skill invocation names:** Natural-language skill names are derived from
   `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens

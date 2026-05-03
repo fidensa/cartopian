@@ -44,28 +44,9 @@ must be absolute.>
 When you are done, write a completion report to the report path listed
 above. Use the report template at the report template path listed above.
 
-### Task handoff — include:
-
-- Status: `complete`, `blocked`, or `failed`.
-- Task ID.
-- This prompt path.
-- Task path.
-- Target repo path.
-- Files changed.
-- Test evidence.
-- Commit SHA or PR URL, when applicable.
-- Remaining risks.
-- Ready for review: `yes` or `no`.
-
-### Review handoff — include:
-
-- Status: `complete`, `blocked`, or `failed`.
-- Review ID.
-- This prompt path.
-- Review file path.
-- Evidence reviewed.
-- Verdict: `approve`, `request-changes`, or `reject`.
-- Blocking findings, when applicable.
+Use the task handoff, review handoff, or planning-review handoff variant
+from `templates/REPORT.md`, matching the type of work this prompt
+assigns.
 
 **Redact secrets.** Do not include API keys, credentials, tokens, private
 connection strings, or comparable sensitive values in the report.

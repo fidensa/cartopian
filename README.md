@@ -29,18 +29,20 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 
 Cartopian ships with guided skills that AI agents can follow to set up
 and plan projects. See `skills/README.md` for the full index.
-Cartopian skills can be run using the natural language equivelant of 
+Cartopian skills can be run using the natural language equivalent of
 their filenames (e.g., "init project", "init workspace", "plan project").
 
 - **`skills/init-workspace.md`** — Generate workspace and project config files.
 - **`skills/init-project.md`** — Scaffold a new project with the correct structure.
 - **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
+- **`skills/run-task.md`** — Drive one task from assignment through review.
+- **`skills/run-handoff.md`** — Execute a reusable prompt/report handoff.
 - **`skills/close-plan.md`** — Close a completed plan, optionally archive it, and reset for the next planning cycle.
 
 Typical project lifecycle:
 
 ```text
-init project -> plan project -> execute tasks -> close plan -> plan project
+init project -> plan project -> run task -> close plan -> plan project
 ```
 
 ## Configuration
@@ -106,7 +108,8 @@ Key design points:
 - `confirmation = "until-blocked"` is available for bounded unattended
   runs, but still launches handoffs sequentially.
 
-See `protocol/CONVENTIONS.md` for the full specification.
+See `protocol/CONVENTIONS.md` for the handoff contract and
+`skills/run-handoff.md` for the executable workflow.
 
 ## Workspace structure
 
@@ -132,6 +135,8 @@ cartopian/                           ← this repo (public, generic)
 │   ├── init-workspace.md
 │   ├── init-project.md
 │   ├── plan-project.md
+│   ├── run-handoff.md
+│   ├── run-task.md
 │   └── close-plan.md
 │
 └── projects/                        ← gitignored, its own git repo
@@ -161,7 +166,8 @@ cartopian/                           ← this repo (public, generic)
 
 ## Protocol
 
-See `protocol/CONVENTIONS.md` for the full protocol specification.
+See `protocol/CONVENTIONS.md` for the protocol contracts and
+`skills/` for executable workflows.
 
 ## License
 
