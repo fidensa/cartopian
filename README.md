@@ -63,8 +63,7 @@ Cartopian defines four basic roles configured in `cartopian.toml`:
 - **Coder** — Implements tasks from assignee prompts.
 - **Reviewer** — Reviews artifacts and produces findings.
 
-The same agent can fill multiple roles. Roles are extensible — define
-custom roles in `cartopian.toml` as needed.
+The same agent can be assigned to multiple roles. The human operator may take on multiple roles as well. Roles are extensible; define custom roles in `cartopian.toml` as needed.
 
 Role values are kind values that describe the assignee type:
 
