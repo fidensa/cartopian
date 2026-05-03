@@ -48,3 +48,7 @@ Findings:
 ## Reviewer notes
 
 Optional. Anything the author or a future reader should know.
+
+> **Reviewer boundary:** create the review file and record the verdict only.
+> Do not move task files, delete prompts, or perform lifecycle cleanup.
+> The PM applies lifecycle changes after reading the review.

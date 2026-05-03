@@ -259,14 +259,22 @@ The canonical workflow is `Plan -> Spec -> Test -> Code`.
 8. Assignee creates or confirms red tests before implementation (when
    test gate is `required`).
 9. Assignee produces a completion report for the PM when implementation is complete. The PM moves the task to `tasks/in-review/` and assigns a reviewer.
-10. Reviewer reviews. Verdict determines task movement:
-    - **`approve`**: `done/`; delete the matching prompt if it exists.
-    - **`request-changes`**: back to `in-progress/`.
-    - **`reject`**: back to `open/`.
+10. Reviewer reviews. Review verdicts are applied by the PM:
+    - **`approve`**: PM moves task to `done/`. PM deletes the matching prompt if it exists.
+    - **`request-changes`**: PM moves task back to `in-progress/`.
+    - **`reject`**: PM moves task back to `open/`.
 
 If the operator reports completion before the protocol recorded
 assignment/start, fast-forward the task to `in-review/` or `done/` as
 the evidence supports, then refresh `STATE.md`.
+
+## Lifecycle authority
+
+The PM owns task lifecycle movement. Reviewers create or update review
+files and record a verdict, but they do not move task files between
+`open/`, `in-progress/`, `in-review/`, or `done/`.
+
+After a review verdict, the PM applies the corresponding task movement.
 
 ## Sizing
 
