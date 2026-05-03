@@ -5,7 +5,7 @@
 !/projects/sample-project/**
 
 # Workspace-level config (user-specific)
-cartopian.toml
+/cartopian.toml
 
 # OS
 .DS_Store

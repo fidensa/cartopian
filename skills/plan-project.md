@@ -54,18 +54,25 @@ cycle, not as locked requirements or a locked implementation plan.
 
 ---
 
-## Stage 0 — Role Check
+## Stage 0 — Role And Handoff Resolution
 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Determine which roles are filled (ignoring those with an empty `""`
-   or `"none"` value), especially whether a **reviewer** is configured.
-3. If no reviewer is configured, ask the operator:
+2. Resolve the effective role kind for each role (project overrides
+   workspace).
+3. Resolve the effective handoff target for each agent role: check
+   project `[handoffs.*]`, then fall back to workspace `[handoffs.*]`.
+4. Resolve the effective automation policy: check project `[automation]`,
+   then fall back to workspace `[automation]`, then fall back to protocol
+   defaults (`confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
+5. Determine whether a **reviewer** is configured (role kind is not
+   `""` or `"none"`).
+6. If no reviewer is configured, ask the operator:
 
    > "No reviewer is configured. Do you want to designate a reviewer for
    > this planning session? If not, we'll proceed without review
    > checkpoints."
 
-4. If the operator provides a reviewer, note it for use at review
+7. If the operator provides a reviewer, note it for use at review
    checkpoints. If not, proceed without review checkpoints and note this
    in STATE.md.
 
@@ -114,17 +121,30 @@ from the current planning cycle's requirements.
 
 If a reviewer is configured:
 
-1. Create `prompts/PROMPT-PLAN-001-requirements-and-engineering-review.md`
-   to hand off the review.
-2. The reviewer produces
+1. Create `prompts/PROMPT-PLAN-001-requirements-and-engineering.md`
+   to hand off the review. Include absolute paths to all files the
+   reviewer needs to read.
+2. Delete any existing report at `reports/REPORT-PLAN-001-requirements-and-engineering.md`.
+3. For `auto_start = true` reviewer handoffs allowed by the current run
+   policy, launch the configured executable:
+   ```text
+   <agent> '<absolute prompt path>'
+   ```
+4. For `auto_start = false` reviewer handoffs, tell the operator the
+   exact command to run, shell-quoting the prompt path.
+5. Read the completion report at `reports/REPORT-PLAN-001-requirements-and-engineering.md`.
+   Parse the report as described in `protocol/CONVENTIONS.md` § Report
+   parsing.
+6. The reviewer produces
    `reviews/REVIEW-PLAN-001-requirements-and-engineering.md` using the
    `REVIEW` template format (severity: blocker, major, minor, nit;
    verdict: approve, request-changes, reject).
-3. If `request-changes`: the PM revises the target artifacts in place
+7. If `request-changes`: the PM revises the target artifacts in place
    against the findings, updates or recreates the review prompt in
-   `prompts/`, and re-assigns to the reviewer.
-4. If `approve`: proceed to Stage 2.
-5. If the operator says "skip review" at any point: proceed without
+   `prompts/`, deletes the existing report, and re-assigns to the
+   reviewer.
+8. If `approve`: proceed to Stage 2.
+9. If the operator says "skip review" at any point: proceed without
    review and note this in STATE.md.
 
 ---
@@ -156,9 +176,13 @@ Write `IMPLEMENTATION_PLAN.md` in the project directory with:
 
 If a reviewer is configured:
 
-1. Create `prompts/PROMPT-PLAN-002-implementation-plan-review.md` to
-   hand off the review.
-2. The reviewer produces
+1. Create `prompts/PROMPT-PLAN-002-implementation-plan.md` to
+   hand off the review. Include absolute paths.
+2. Delete any existing `reports/REPORT-PLAN-002-implementation-plan.md`.
+3. Launch or instruct the handoff per the resolved handoff config and
+   run policy, shell-quoting the prompt path.
+4. Read the completion report. Parse the report.
+5. The reviewer produces
    `reviews/REVIEW-PLAN-002-implementation-plan.md`. On
    `request-changes`, iterate as in Stage 1.5. Proceed to Stage 3 on
    approval.
@@ -190,9 +214,13 @@ Use the phase number and slug from the plan. The two-digit phase number
 
 If a reviewer is configured:
 
-1. Create `prompts/PROMPT-PLAN-003-phase-review.md` to hand off the
-   review.
-2. The reviewer produces `reviews/REVIEW-PLAN-003-phases.md`. Review
+1. Create `prompts/PROMPT-PLAN-003-phases.md` to hand off the
+   review. Include absolute paths.
+2. Delete any existing report at `reports/REPORT-PLAN-003-phases.md`.
+3. Launch or instruct the handoff per the resolved handoff config and
+   run policy.
+4. Read the completion report. Parse the report.
+5. The reviewer produces `reviews/REVIEW-PLAN-003-phases.md`. Review
    phase files against the plan. On `request-changes`, iterate as in
    Stage 1.5.
 
@@ -215,7 +243,7 @@ For each build and research item in the active phase, create
 - **Phase**: `PHASE-NN-slug`
 - **Plan ref**: `PNN-KIND-NNN`
 - **Target repo**: from config or plan
-- **Assignee**: based on roles config
+- **Assignee**: based on resolved role kind and handoff target
 - **Spec**: reference if a spec is needed, `none` otherwise
 - **Dependencies / Blocked by**: from phase dependencies and
   cross-task relationships
@@ -237,9 +265,13 @@ need specs.
 
 If a reviewer is configured:
 
-1. Create `prompts/PROMPT-PLAN-004-tasks-and-specs-review.md` to hand
-   off the review.
-2. The reviewer produces
+1. Create `prompts/PROMPT-PLAN-004-tasks-and-specs.md` to hand
+   off the review. Include absolute paths.
+2. Delete any existing report at `reports/REPORT-PLAN-004-tasks-and-specs.md`.
+3. Launch or instruct the handoff per the resolved handoff config and
+   run policy.
+4. Read the completion report. Parse the report.
+5. The reviewer produces
    `reviews/REVIEW-PLAN-004-tasks-and-specs.md`. Review tasks and specs
    for completeness, traceability, and scope. On `request-changes`,
    iterate as in Stage 1.5.
@@ -268,6 +300,8 @@ Print a summary of everything that was produced:
 - Number of phases generated
 - Number of tasks and specs generated
 - Review status (reviewed or skipped, with any noted findings)
+- Resolved handoff configuration (which roles have CLI targets)
+- Resolved automation policy
 - Suggested first action, including whether to create
   `prompts/PROMPT-NN-NNN.md` for the first assignment
 
@@ -283,29 +317,63 @@ exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
-| NNN | Stage | Prompt slug | Review slug |
-|---|---|---|---|
-| 001 | Requirements & Engineering | `requirements-and-engineering-review` | `requirements-and-engineering` |
-| 002 | Implementation Plan | `implementation-plan-review` | `implementation-plan` |
-| 003 | Phases | `phase-review` | `phases` |
-| 004 | Tasks & Specs | `tasks-and-specs-review` | `tasks-and-specs` |
+| NNN | Stage | Shared slug | Prompt | Report | Review |
+|---|---|---|---|---|---|
+| 001 | Requirements & Engineering | `requirements-and-engineering` | `PROMPT-PLAN-001-requirements-and-engineering.md` | `REPORT-PLAN-001-requirements-and-engineering.md` | `REVIEW-PLAN-001-requirements-and-engineering.md` |
+| 002 | Implementation Plan | `implementation-plan` | `PROMPT-PLAN-002-implementation-plan.md` | `REPORT-PLAN-002-implementation-plan.md` | `REVIEW-PLAN-002-implementation-plan.md` |
+| 003 | Phases | `phases` | `PROMPT-PLAN-003-phases.md` | `REPORT-PLAN-003-phases.md` | `REVIEW-PLAN-003-phases.md` |
+| 004 | Tasks & Specs | `tasks-and-specs` | `PROMPT-PLAN-004-tasks-and-specs.md` | `REPORT-PLAN-004-tasks-and-specs.md` | `REVIEW-PLAN-004-tasks-and-specs.md` |
 
 At every review checkpoint, this skill instructs the agent to:
 
 1. Create a `prompts/PROMPT-PLAN-NNN-slug.md` to hand off the review.
-2. Collect the review as `reviews/REVIEW-PLAN-NNN-slug.md` using the
+   Include absolute paths to all files the reviewer needs.
+2. Delete any existing report at the expected report path
+   (`reports/REPORT-PLAN-NNN-slug.md`).
+3. For `auto_start = true` reviewer handoffs allowed by the current run
+   policy, launch the configured executable. Pass the prompt path as a
+   single argument and shell-quote it in operator-facing command text.
+4. For `auto_start = false`, tell the operator the exact command to run.
+5. Read the completion report. Parse the report per
+   `protocol/CONVENTIONS.md` § Report parsing.
+6. Collect the review as `reviews/REVIEW-PLAN-NNN-slug.md` using the
    `REVIEW` template format:
    - Findings with severity (blocker, major, minor, nit)
    - Verdict (approve, request-changes, reject)
-3. If `request-changes`: the PM revises the target artifacts in place
+7. If `request-changes`: the PM revises the target artifacts in place
    against the findings, updates or recreates the review prompt in
-   `prompts/`, and re-assigns to the reviewer.
-4. If `approve`: proceed to the next stage.
-5. If the operator says "skip review" at any checkpoint: proceed without
+   `prompts/`, deletes the existing report, and re-assigns to the
+   reviewer.
+8. If `approve`: proceed to the next stage.
+9. If the operator says "skip review" at any checkpoint: proceed without
    review and note this in STATE.md.
+10. Stop when a report is blocked, failed, missing, malformed,
+    incomplete, inconsistent, late, ambiguous, or requires operator
+    judgment. Surface the issue to the operator.
+
+Launch handoffs sequentially, even when `confirmation = "until-blocked"`.
+Enforce configured handoff timeouts for PM-launched processes.
 
 Planning-checkpoint prompts and reviews are temporary artifacts. Delete
 them when the planning stage is approved or superseded. No archival.
 
 This creates a quality gate at every level of the hierarchy while keeping
 the operator in control of the pace.
+
+## Handoff Automation Reference
+
+This skill supports CLI handoff automation for review checkpoints. The
+resolved handoff configuration determines behavior:
+
+- **No handoff config**: PM creates the prompt and presents it to the
+  operator. Manual workflow.
+- **`auto_start = false`**: PM creates the prompt and tells the operator
+  the exact command: `<agent> '<absolute prompt path>'`.
+- **`auto_start = true`**: PM creates the prompt, deletes any stale
+  report, and launches the executable when allowed by the current run
+  policy.
+
+After any handoff (manual or automated), the PM reads the completion
+report at the protocol-derived path, parses it, and applies PM lifecycle
+changes. The PM does not launch the next handoff until the current one
+is fully processed.

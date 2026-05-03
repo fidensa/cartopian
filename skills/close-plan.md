@@ -30,8 +30,8 @@ one.
 2. Read `STATE.md`.
 3. Confirm the operator wants to close the current plan, not revise it.
 4. Explain that `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phases,
-   tasks, specs, reviews, and prompts will be removed from the live
-   project surface during reset.
+   tasks, specs, reviews, prompts, and reports will be removed from the
+   live project surface during reset.
 5. Explain that `cartopian.toml` and `decisions/` remain live.
 
 Do not proceed unless the operator explicitly confirms plan closeout.
@@ -74,7 +74,21 @@ them before closeout:
 - Delete superseded planning-checkpoint prompts.
 - Stop if a prompt points to work that is still active or ambiguous.
 
-### 1.4 Check phase exit criteria
+### 1.4 Check reports
+
+Inspect `reports/`.
+
+Report files are handoff result artifacts. Resolve any remaining reports
+before closeout:
+
+- Treat unresolved prompts or missing/ambiguous reports as active
+  handoff state.
+- Stop closeout if any handoff result is missing, malformed, incomplete,
+  ambiguous, failed to parse, or otherwise unresolved.
+- Reports that have been processed and whose corresponding tasks are in
+  `done/` may be cleared during reset.
+
+### 1.5 Check phase exit criteria
 
 Read each `phases/PHASE-NN-slug.md` file and confirm the exit criteria
 are satisfied by completed tasks, decisions, specs, or documented
@@ -153,6 +167,7 @@ Copy these live artifacts into the archive directory when they exist:
 - `tasks/`
 - `specs/`
 - `reviews/`
+- `reports/`
 - `decisions/`
 
 Do not archive `prompts/`. Prompts are temporary handoff artifacts and
@@ -179,12 +194,14 @@ Remove these live artifacts:
 - all files in `reviews/`
 - all files in `decisions/`
 - all files in `prompts/`
+- all files in `reports/`
 
 Recreate the directories if needed:
 
 ```text
 phases/
 prompts/
+reports/
 tasks/open/
 tasks/in-progress/
 tasks/in-review/
@@ -193,6 +210,9 @@ specs/
 reviews/
 decisions/
 ```
+
+Reports should not become a replacement for task, review, or decision
+records. They are cleared during reset along with other plan artifacts.
 
 ### 4.2 Conditionally reset `ENGINEERING.md`
 
@@ -282,7 +302,7 @@ the next implementation plan.
 Print a concise closeout summary:
 
 - Whether the plan was archived.
-- What was reset.
+- What was reset (including reports/).
 - Whether engineering standards carried forward.
 - Whether project conventions carried forward.
 - Any unresolved decision follow-up.

@@ -1,0 +1,26 @@
+[project]
+name = "Widget API"
+id = "sample-project"
+
+[roles]
+pm = "agent"
+coder = "agent"
+reviewer = "agent"
+
+[handoffs.coder]
+agent = "codex"
+auto_start = true
+timeout = "60m"
+
+[handoffs.reviewer]
+agent = "devin"
+auto_start = false
+timeout = "30m"
+
+[automation]
+confirmation = "each-handoff"
+max_handoffs_per_run = 1
+
+[repos.widget-api]
+path = "../local/path/to/widget-api"
+default_branch = "main"

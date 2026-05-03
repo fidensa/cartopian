@@ -27,6 +27,10 @@ auto-push are handled transparently at session close.
 - Planning-checkpoint prompts: `PROMPT-PLAN-NNN-slug.md`. Used to hand
   off planning-stage review work to a reviewer. Same counter and
   lifecycle as planning-checkpoint reviews.
+- Reports: `REPORT-NN-NNN.md`. Stored in `reports/`. Handoff result
+  artifacts read by the PM after task completion.
+- Planning-checkpoint reports: `REPORT-PLAN-NNN-slug.md`. Stored in
+  `reports/`. Handoff result artifacts for planning-stage reviews.
 - Phases: `PHASE-NN-slug.md`. Two-digit counter matching plan order.
 - Implementation plan: `IMPLEMENTATION_PLAN.md`. One live plan per
   project.
@@ -57,6 +61,10 @@ IMPLEMENTATION_PLAN.md
 Planning-checkpoint reviews (`REVIEW-PLAN-NNN-slug.md`) and prompts
 (`PROMPT-PLAN-NNN-slug.md`) are not part of the task trace chain. They
 attach to planning stages, not tasks.
+
+Completion reports (`REPORT-NN-NNN.md` and `REPORT-PLAN-NNN-slug.md`)
+live in `reports/`. Reports are handoff result artifacts, not part of
+the trace chain.
 
 Plan refs (`P01-BUILD-003`) encode the phase number. `01` in
 `P01-BUILD-003` -> `PHASE-01-*` -> plan `## Phase 01:` section.
@@ -138,6 +146,160 @@ spec for an assignee. Delete `prompts/PROMPT-NN-NNN.md` when the task
 reaches `done/` or when the prompt is superseded before assignment. No
 prompt archival.
 
+### Absolute path requirements
+
+When the PM writes an assignment or review prompt, it must include
+complete absolute paths for every resource the assignee is expected to
+use or produce.
+
+Prompts must not rely on relative path interpretation, current working
+directory assumptions, or vague instructions such as "read the PM
+system."
+
+## Role kinds
+
+Roles describe assignee kind, not tool names. The `[roles]` section in
+`cartopian.toml` maps each role to a kind value:
+
+```toml
+[roles]
+pm = "agent"
+operator = "human"
+coder = "agent"
+reviewer = "agent"
+```
+
+Supported role kind values:
+
+- `human` — manually assigned through the operator.
+- `agent` — may be assigned through CLI handoff when configured.
+- `none` — role is not used.
+- `""` — unset; the PM should ask the operator for the role assignment.
+- Custom values — allowed for local policy, but treated as manual unless
+  a project convention defines otherwise.
+
+## CLI handoff automation
+
+CLI handoff automation allows the PM to assign work to configured agents
+by creating protocol prompts, invoking a named executable with the
+absolute prompt path, reading the protocol-defined completion report,
+then applying normal task or review lifecycle changes.
+
+Automation is optional. Manual handoff remains valid for every role.
+
+### Handoff configuration
+
+Use `[handoffs.<role>]` only for agent roles that need a named target:
+
+```toml
+[handoffs.coder]
+agent = "codex"
+auto_start = true
+timeout = "60m"
+
+[handoffs.reviewer]
+agent = "gemini"
+auto_start = false
+timeout = "30m"
+```
+
+Fields:
+
+- `agent`: executable name. The PM invokes this exact command name with
+  the absolute prompt path as the only required argument.
+- `auto_start`: when `true`, the PM may launch the configured executable
+  after assignment is authorized by the current run policy. When `false`,
+  the PM creates the prompt and tells the operator the exact command to
+  run.
+- `timeout`: optional maximum wall-clock duration for an automatically
+  launched handoff. Use a duration string such as `30m`, `2h`, or
+  `1h30m`. When omitted, the protocol default is `60m` unless a project
+  convention defines a stricter default. Timeouts apply only to
+  PM-launched handoffs; manual handoffs remain operator-managed.
+
+### CLI invocation convention
+
+Every automated handoff follows this contract:
+
+```text
+<agent> <absolute prompt path>
+```
+
+The prompt path must be passed as one argument. Programmatic launchers
+should use argv-style execution, not shell string interpolation.
+Human-facing command text must shell-quote the absolute prompt path when
+needed.
+
+If a tool does not natively support that contract, the operator provides
+a wrapper executable with the configured name.
+
+### Wrapper responsibility
+
+Cartopian-level confirmation controls whether the PM starts handoffs.
+Tool-level confirmation controls whether the child CLI asks before
+editing files, running shell commands, or continuing. Cartopian cannot
+make an arbitrary CLI non-interactive.
+
+To run without tool prompts, the configured agent executable must be a
+native non-interactive command or a wrapper that sets the tool-specific
+flags, environment, sandbox, and approval policy. Cartopian does not
+store tool-specific flags in `cartopian.toml`.
+
+### Run policy
+
+Optional project or workspace automation policy:
+
+```toml
+[automation]
+confirmation = "each-handoff"
+max_handoffs_per_run = 1
+```
+
+Supported `confirmation` values:
+
+- `each-handoff` — stop after each handoff result is processed.
+- `until-blocked` — continue launching eligible `auto_start = true`
+  handoffs until a blocker, failed report, review rejection, missing
+  evidence, operator-required decision, phase boundary, or
+  `max_handoffs_per_run` limit.
+
+Both modes are sequential. `until-blocked` extends how many eligible
+handoffs the PM may run in one PM session; it does not permit concurrent
+child agents. Concurrent handoff execution is out of scope.
+
+Defaults when `[automation]` is omitted:
+
+- `confirmation = "each-handoff"`
+- `max_handoffs_per_run = 1`
+
+### Handoff timeout behavior
+
+If an automatically launched handoff exceeds its configured timeout, the
+PM must stop waiting for a successful result, record the timeout as a
+blocker, and return control to the operator. The PM must not move the
+task or review forward based on a late or missing report.
+
+### Sequential launch behavior
+
+Handoffs are launched sequentially. The PM must finish the current
+handoff, parse its report, and apply any PM-owned lifecycle updates
+before starting the next handoff.
+
+### Hard stop behavior
+
+UI interruption (e.g., closing a terminal, killing a process) is not a
+graceful pause. Graceful pause is represented by PM run policy, report
+boundaries, and `STATE.md`. The PM must not interpret a hard stop as a
+successful handoff.
+
+### Lifecycle authority after handoff
+
+Automated agents do not own Cartopian lifecycle authority. The PM remains
+responsible for task movement, prompt cleanup, review assignment,
+completion handling, and `STATE.md`. Assignees must not move Cartopian
+task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle
+cleanup.
+
 ## Dependencies
 
 - **Depends on**: tasks whose output this task reads or builds on.
@@ -157,6 +319,79 @@ Both fields carry `TASK-NN-NNN` identifiers only.
   showing the named red test existed before implementation, and a
   pointer showing the same test is green on the closing commit.
 
+## Completion reports
+
+Completion reports are protocol-defined handoff result artifacts. They
+live in `reports/`.
+
+### Report naming
+
+- Task completion reports: `reports/REPORT-NN-NNN.md`
+- Planning-checkpoint reports: `reports/REPORT-PLAN-NNN-slug.md`
+
+### Report contents — task completion
+
+Task reports must include:
+
+- `Status: complete | blocked | failed`
+- Task ID.
+- Prompt path.
+- Task path.
+- Target repo path.
+- Files changed.
+- Test evidence.
+- Commit SHA or PR URL, when applicable.
+- Remaining risks.
+- Ready for review: `yes | no`.
+
+### Report contents — review completion
+
+Review reports must include:
+
+- `Status: complete | blocked | failed`
+- Review ID.
+- Prompt path.
+- Review file path.
+- Evidence reviewed.
+- Verdict: `approve | request-changes | reject`.
+- Blocking findings, when applicable.
+
+### Secret redaction
+
+Reports must not include secrets or unnecessary environment-specific
+sensitive data. Assignees and wrappers should redact API keys,
+credentials, tokens, private connection strings, and comparable values
+before writing reports.
+
+### Stale report deletion
+
+Before issuing any new or retry handoff, including manual command
+instructions, the PM must delete any existing report at the expected
+protocol-derived report path. This prevents stale reports from being
+mistaken for the current handoff result when a task returns from review
+or is retried after a blocker.
+
+### Report parsing
+
+Report parsing outcomes are:
+
+- `accepted` — the report exists, is well-formed, includes all required
+  fields, and its status or verdict can be acted on.
+- `blocked` — the report is well-formed and explicitly reports `blocked`,
+  or the PM cannot proceed without operator judgment.
+- `failed` — the report is well-formed and explicitly reports `failed`.
+- `failed-to-parse` — the report is missing, malformed, incomplete,
+  internally inconsistent, uses an unsupported status or verdict, or
+  contradicts the expected task/review/prompt paths.
+
+`failed-to-parse` is a PM-level blocker. The PM must stop automation,
+preserve the prompt and any invalid report for inspection, avoid
+lifecycle movement, and surface the parse failure to the operator.
+
+Report files are read by the PM and may be summarized into task, review,
+decision, or state files as appropriate. Reports are not a replacement
+for task, review, or decision records.
+
 ## Project scope
 
 A Cartopian project directory is a governance container, not a codebase.
@@ -169,6 +404,7 @@ A Cartopian project directory is a governance container, not a codebase.
   session starts on the same page.
 - Records decisions once, in one place (`decisions/`).
 - Holds temporary assignee prompts in `prompts/`.
+- Holds handoff result reports in `reports/`.
 
 **What it is not:**
 
@@ -180,8 +416,8 @@ A Cartopian project directory is a governance container, not a codebase.
 
 A Cartopian project has one active implementation plan at a time. The
 live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`,
-`specs/`, `reviews/`, `decisions/` and `prompts/` describe the current 
-plan only.
+`specs/`, `reviews/`, `decisions/`, `prompts/`, and `reports/` describe
+the current plan only.
 
 When a plan completes, close it before starting a new plan. The
 canonical closeout workflow is `skills/close-plan.md`.
@@ -191,6 +427,7 @@ Plan closeout preconditions:
 - No task files remain in `tasks/open/`, `tasks/in-progress/`, or
   `tasks/in-review/`.
 - `prompts/` contains no active or ambiguous prompt files.
+- `reports/` contains no unresolved or ambiguous reports.
 - Phase exit criteria are satisfied by completed tasks, decisions,
   specs, or documented operator acceptance.
 - The operator explicitly confirms that the current plan should close.
@@ -205,6 +442,7 @@ Plan closeout always resets these live artifacts:
 - `specs/`
 - `reviews/`
 - `prompts/`
+- `reports/`
 
 `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md` never carry forward as
 live artifacts. A new planning cycle must produce fresh requirements and
@@ -235,6 +473,7 @@ three-digit counter. The archive may include snapshots of:
 - `tasks/`
 - `specs/`
 - `reviews/`
+- `reports/`
 - `CLOSEOUT.md`
 
 Do not archive `prompts/`. Prompt files are temporary handoff artifacts.
@@ -252,14 +491,20 @@ The canonical workflow is `Plan -> Spec -> Test -> Code`.
 3. If the task needs a new external interface, draft a spec in `specs/`.
 4. Record the task's test gate.
 5. PM creates an assignee-directed prompt (`prompts/PROMPT-NN-NNN.md`)
-   and proposes an assignee.
-6. Operator confirms assignment or start.
-7. Task moves to `tasks/in-progress/`.
-8. Assignee creates or confirms red tests before implementation (when
+   with absolute paths and proposes an assignee.
+6. PM deletes any existing report at the expected report path
+   (`reports/REPORT-NN-NNN.md`).
+7. Operator confirms assignment or start (or PM launches via CLI
+   handoff when `auto_start = true` and the run policy allows it).
+8. Task moves to `tasks/in-progress/`.
+9. Assignee creates or confirms red tests before implementation (when
    test gate is `required`).
-9. Assignee produces a completion report for the PM when implementation is complete. The PM moves the task to `tasks/in-review/` and assigns a reviewer.
-10. Reviewer reviews. Review verdicts are applied by the PM:
-    - **`approve`**: PM moves task to `done/`. PM deletes the matching prompt if it exists.
+10. Assignee produces a completion report at `reports/REPORT-NN-NNN.md`.
+    The PM reads the report, moves the task to `tasks/in-review/`, and
+    assigns a reviewer.
+11. Reviewer reviews. Review verdicts are applied by the PM:
+    - **`approve`**: PM moves task to `done/`. PM deletes the matching
+      prompt if it exists.
     - **`request-changes`**: PM moves task back to `in-progress/`.
     - **`reject`**: PM moves task back to `open/`.
 

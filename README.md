@@ -62,9 +62,51 @@ Cartopian defines four basic roles configured in `cartopian.toml`:
 - **Reviewer** — Reviews artifacts and produces findings.
 
 The same agent can fill multiple roles. Roles are extensible — define
-custom roles in `cartopian.toml` as needed. An empty value (`""`)
-indicates an unset or unassigned role. A value of `"none"` indicates the
-role is not used at all.
+custom roles in `cartopian.toml` as needed.
+
+Role values are kind values that describe the assignee type:
+
+- `human` — manually assigned through the operator.
+- `agent` — may be assigned through CLI handoff when configured.
+- `none` — role is not used.
+- `""` — unset; the PM should ask the operator.
+
+## Automated CLI handoffs
+
+Automation is optional. Manual handoff remains the default.
+
+When a role is set to `agent`, the PM can automate handoffs by
+configuring a named executable under `[handoffs.<role>]`:
+
+```toml
+[handoffs.coder]
+agent = "codex"
+auto_start = true
+timeout = "60m"
+```
+
+The executable convention is:
+
+```text
+<agent> <absolute prompt path>
+```
+
+Prompt paths are passed as one argument and should be shell-quoted in
+manual command examples.
+
+Key design points:
+
+- Tool-specific non-interactive behavior belongs in the executable or
+  wrapper, not in Cartopian config.
+- Optional handoff timeouts can be set per role.
+- PM-authored prompts always use absolute paths.
+- Completion reports live at protocol-defined paths under `reports/`.
+- Completion reports must redact secrets and sensitive environment values.
+- `confirmation = "each-handoff"` is the safe default.
+- `confirmation = "until-blocked"` is available for bounded unattended
+  runs, but still launches handoffs sequentially.
+
+See `protocol/CONVENTIONS.md` for the full specification.
 
 ## Workspace structure
 
@@ -79,6 +121,7 @@ cartopian/                           ← this repo (public, generic)
 │   ├── TASK.md
 │   ├── SPEC.md
 │   ├── REVIEW.md
+│   ├── REPORT.md
 │   ├── DECISION.md
 │   ├── REQUIREMENTS.md
 │   ├── ENGINEERING.md
@@ -101,6 +144,7 @@ cartopian/                           ← this repo (public, generic)
     │   ├── IMPLEMENTATION_PLAN.md
     │   ├── phases/
     │   ├── prompts/                 ← temporary assignee handoffs
+    │   ├── reports/                 ← handoff completion reports
     │   ├── tasks/
     │   │   ├── open/
     │   │   ├── in-progress/

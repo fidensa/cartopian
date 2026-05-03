@@ -26,10 +26,18 @@ Ask the operator for:
    derived from the name if the operator doesn't provide one.
 3. **Target repos** — paths to code repositories this project governs
    (if any). Each repo needs a name, relative path, and default branch.
-4. **Role overrides** — any roles that differ from workspace defaults
-   for this project. Remind the operator that an empty value `""`
-   indicates an unset or unassigned role, and `"none"` indicates the
-   role is not used at all.
+4. **Role kind overrides** — any roles that differ from workspace
+   defaults for this project. Remind the operator that role values are
+   kind values (`human`, `agent`, `none`, or `""` for unset). An empty
+   value `""` indicates an unset or unassigned role, and `"none"`
+   indicates the role is not used at all.
+5. **Handoff overrides** — for any agent roles, ask if the project
+   needs different CLI handoff targets, auto-start, or timeout values
+   than the workspace defaults. Explain that omitted handoff config
+   inherits workspace behavior.
+6. **Automation overrides** — ask if the project needs a different
+   confirmation policy or max handoffs per run than the workspace
+   defaults.
 
 ### Step 2 — Create directory structure
 
@@ -43,6 +51,7 @@ projects/<project-id>/
 ├── ENGINEERING.md
 ├── phases/
 ├── prompts/
+├── reports/
 ├── tasks/
 │   ├── open/
 │   ├── in-progress/
@@ -57,7 +66,8 @@ projects/<project-id>/
 Create all directories, including empty ones. The task status
 subdirectories (`open/`, `in-progress/`, `in-review/`, `done/`) must all
 exist even though they start empty. The `prompts/` directory starts
-empty and holds temporary assignee handoff prompts.
+empty and holds temporary assignee handoff prompts. The `reports/`
+directory starts empty and holds handoff completion reports.
 
 ### Step 3 — Generate project config
 
@@ -70,7 +80,18 @@ id = "<project-id>"
 
 [roles]
 # Include only overrides. Workspace defaults apply for omitted roles.
-# An empty value ("") means unassigned; "none" means unused.
+# Role kind values: "human", "agent", "none", or "" (unset).
+
+# [handoffs.<role>]
+# agent = "<executable name>"
+# auto_start = <true|false>
+# timeout = "<duration>"
+# Omitted handoff config inherits workspace behavior.
+
+# [automation]
+# confirmation = "each-handoff"
+# max_handoffs_per_run = 1
+# Omitted automation config inherits workspace behavior.
 
 [repos.<repo-name>]
 path = "<relative path>"
@@ -78,7 +99,11 @@ default_branch = "main"
 ```
 
 Omit the `[roles]` section entirely if there are no overrides. Include
-`[repos.*]` only if the operator provided target repos.
+`[repos.*]` only if the operator provided target repos. Include
+`[handoffs.*]` only for project-specific overrides. Include
+`[automation]` only for project-specific overrides.
+
+Keep manual handoff as the default.
 
 ### Step 4 — Generate seed STATE.md
 
@@ -153,9 +178,10 @@ Write `projects/<project-id>/decisions/INDEX.md`:
 
 Print a summary of everything that was created:
 
-- Directory structure
+- Directory structure (including `reports/`)
 - Config file location and contents
 - Seed files created
+- Handoff and automation config (if any overrides were set)
 
 Suggest next steps:
 

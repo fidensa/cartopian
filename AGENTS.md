@@ -25,6 +25,7 @@ protocol specification, default templates, and a sample project.
   DECISION, PLAN_CLOSEOUT)
 - **skills/** — Agent-executable guided workflows (init-workspace, init-project,
   plan-project, close-plan), with workflow details in each skill file.
+  All skills understand CLI handoff automation.
 - **Skill invocation names:** Natural-language skill names are derived from
   `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens
   with spaces, e.g. `init-project.md` maps to `init project`. The mapping is
@@ -47,6 +48,10 @@ protocol specification, default templates, and a sample project.
   files remain unchanged.
 - **Prompts are temporary.** Prompt files are assignee handoff artifacts in
   `prompts/`, not durable archives.
+- **Reports are temporary.** Report files are handoff result artifacts in
+  `reports/`, read by the PM and cleared during plan reset.
+- **Roles describe kind, not tools.** Role values are `human`, `agent`, `none`,
+  or empty. CLI handoff targets are configured separately under `[handoffs.*]`.
 - **One active plan.** A project has one live `IMPLEMENTATION_PLAN.md` at a
   time. Run `close plan` before starting a fresh plan for the same project.
 - **Plan reset discipline.** Requirements and implementation plans always reset
@@ -79,7 +84,10 @@ protocol specification, default templates, and a sample project.
 ## Roles & Assignment
 
 - Four basic roles: PM, Operator, Coder, Reviewer.
+- Role values are kind values (`human`, `agent`, `none`, or empty), not tool
+  names.
 - Role defaults live in `cartopian.toml`; project-level configs may override them.
+- CLI handoff targets are configured under `[handoffs.<role>]`.
 - The same agent can fill multiple roles. Operator is currently configured as human.
 - Guided workflows live in `skills/`.
 - Roles serve as a communication aid between the AI Project Manager and the human operator. They can be renamed, removed, or extended since they don't map to any actual software executables.
