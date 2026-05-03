@@ -180,7 +180,8 @@ A Cartopian project directory is a governance container, not a codebase.
 
 A Cartopian project has one active implementation plan at a time. The
 live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`,
-`specs/`, `reviews/`, and `prompts/` describe the current plan only.
+`specs/`, `reviews/`, `decisions/` and `prompts/` describe the current 
+plan only.
 
 When a plan completes, close it before starting a new plan. The
 canonical closeout workflow is `skills/close-plan.md`.
@@ -198,6 +199,7 @@ Plan closeout always resets these live artifacts:
 
 - `REQUIREMENTS.md`
 - `IMPLEMENTATION_PLAN.md`
+- `decisions/`
 - `phases/`
 - `tasks/`
 - `specs/`
@@ -212,10 +214,7 @@ a fresh implementation plan.
 operator explicitly chooses to keep them as seed context for the next
 plan. If not carried forward, reset them to project seed files.
 
-`cartopian.toml` and `decisions/` remain live across plans. Decisions
-are immutable project memory. If a prior decision should no longer
-apply, create a new decision that supersedes it; do not delete or edit
-the old decision.
+`cartopian.toml` remains live across plans. 
 
 ### Optional plan archive
 
@@ -231,6 +230,7 @@ three-digit counter. The archive may include snapshots of:
 - `CONVENTIONS.md`
 - `IMPLEMENTATION_PLAN.md`
 - `STATE.md`
+- `decisions/`
 - `phases/`
 - `tasks/`
 - `specs/`
@@ -238,7 +238,6 @@ three-digit counter. The archive may include snapshots of:
 - `CLOSEOUT.md`
 
 Do not archive `prompts/`. Prompt files are temporary handoff artifacts.
-Do not move `decisions/` into the archive. Decisions remain live.
 
 After closeout, `STATE.md` must say there is no active plan and name
 `skills/plan-project.md` as the next action.

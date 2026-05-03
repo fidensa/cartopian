@@ -153,13 +153,10 @@ Copy these live artifacts into the archive directory when they exist:
 - `tasks/`
 - `specs/`
 - `reviews/`
+- `decisions/`
 
 Do not archive `prompts/`. Prompts are temporary handoff artifacts and
 must not become a durable archive.
-
-Do not move or copy `decisions/` into the archive. Decisions remain live
-project memory. If an old decision should no longer govern the project,
-create a new decision that supersedes it.
 
 ---
 
@@ -180,6 +177,7 @@ Remove these live artifacts:
 - all files in `tasks/done/`
 - all files in `specs/`
 - all files in `reviews/`
+- all files in `decisions/`
 - all files in `prompts/`
 
 Recreate the directories if needed:
@@ -193,6 +191,7 @@ tasks/in-review/
 tasks/done/
 specs/
 reviews/
+decisions/
 ```
 
 ### 4.2 Conditionally reset `ENGINEERING.md`
@@ -231,12 +230,7 @@ This document extends the protocol-level conventions defined in
 Do not reset:
 
 - `cartopian.toml`
-- `decisions/`
 - `archive/`
-
-If a decision no longer applies to the next plan, create a new
-`DEC-NNN-kebab-case-slug.md` that supersedes the old one. Do not edit
-or delete old decision files.
 
 ---
 
