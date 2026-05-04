@@ -45,6 +45,44 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
+# --- Launch directory ------------------------------------------------
+# Cartopian convention: assignee CLIs run with cwd set to the parent of
+# the workspace root, so the assignee's filesystem access spans both the
+# protocol repo (for report write-back under .../projects/<proj>/reports/)
+# and the sibling target product repo named in the task's `Target repo:`
+# field. Prompts always live at <workspace>/projects/<proj>/prompts/
+# PROMPT-*.md, so the launch cwd is derivable from the prompt path
+# alone.
+#
+# Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
+# skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
+# or per-repo-sandbox setups. A non-existent path is a hard error, not
+# a silent fallback.
+if ($env:CARTOPIAN_LAUNCH_CWD) {
+    if (-not (Test-Path -PathType Container $env:CARTOPIAN_LAUNCH_CWD)) {
+        Write-Error "cartopian-claude: CARTOPIAN_LAUNCH_CWD='$($env:CARTOPIAN_LAUNCH_CWD)' is not a directory"
+        exit 1
+    }
+    $LaunchCwd = (Resolve-Path $env:CARTOPIAN_LAUNCH_CWD).Path
+    Set-Location $LaunchCwd
+    Write-Host "cartopian-claude: cwd=$LaunchCwd (CARTOPIAN_LAUNCH_CWD override)" -ForegroundColor DarkGray
+} else {
+    $PromptAbs    = (Resolve-Path $PromptPath).Path
+    $PromptsDir   = Split-Path -Parent $PromptAbs
+    $ProjectDir   = Split-Path -Parent $PromptsDir
+    $ProjectsDir  = Split-Path -Parent $ProjectDir
+    $WorkspaceRoot = Split-Path -Parent $ProjectsDir
+    if ((Split-Path -Leaf $PromptsDir) -eq 'prompts' -and `
+        (Split-Path -Leaf $ProjectsDir) -eq 'projects') {
+        $LaunchCwd = Split-Path -Parent $WorkspaceRoot
+        Set-Location $LaunchCwd
+        Write-Host "cartopian-claude: cwd=$LaunchCwd" -ForegroundColor DarkGray
+    } else {
+        Write-Host "cartopian-claude: prompt is outside a Cartopian workspace; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
+    }
+}
+# --------------------------------------------------------------------
+
 $Args = @('-p')
 if ($AllowedTools) {
     $Args += @('--allowedTools', $AllowedTools)

@@ -110,75 +110,90 @@ Key design points:
 Cartopian ships cross-platform wrapper scripts in `wrappers/` for Codex,
 Claude Code, Gemini, and Devin CLIs. These wrappers adapt each CLI to
 the `<agent> <prompt-path>` contract with the correct non-interactive
-flags. See `wrappers/README.md` for installation and customization.
+flags, and they `cd` to the parent of the workspace root before
+invoking the underlying CLI so a single sandbox covers both the
+workspace and the sibling target product repos. See
+`wrappers/README.md` for installation and customization.
 
 See `protocol/CONVENTIONS.md` for the handoff contract and
 `skills/run-handoff.md` for the executable workflow.
 
 ## Workspace structure
 
+The Cartopian workspace lives next to the product repos it manages.
+Target product repos sit as **siblings** of the workspace (or nested
+below it), under a shared parent directory. That shared parent is the
+launch cwd for assignee CLIs, so a single sandbox covers both the
+workspace (for report write-back) and the target repos (for code
+edits). See `wrappers/README.md` and `protocol/CONVENTIONS.md` for the
+launch-cwd contract.
+
 ```
-cartopian/                           ← this repo (public, generic)
-├── README.md                        ← you are here
-├── LICENSE                          ← MIT
-├── protocol/                        ← baseline protocol docs
-│   └── CONVENTIONS.md               ← protocol-level conventions
-├── templates/                       ← default templates
-│   ├── PROMPT.md
-│   ├── TASK.md
-│   ├── SPEC.md
-│   ├── REVIEW.md
-│   ├── REPORT.md
-│   ├── DECISION.md
-│   ├── REQUIREMENTS.md
-│   ├── ENGINEERING.md
-│   ├── IMPLEMENTATION_PLAN.md
-│   └── PLAN_CLOSEOUT.md
-├── skills/                          ← agent-executable guided workflows
-│   ├── README.md
-│   ├── init-workspace.md
-│   ├── init-project.md
-│   ├── plan-project.md
-│   ├── run-handoff.md
-│   ├── run-task.md
-│   └── close-plan.md
+~/Projects/                          ← parent dir (launch cwd for CLIs)
 │
-├── wrappers/                        ← cross-platform agent CLI wrappers
-│   ├── README.md
-│   ├── bin/                         ← bash wrappers (macOS/Linux/WSL)
-│   │   ├── cartopian-codex
-│   │   ├── cartopian-claude
-│   │   ├── cartopian-gemini
-│   │   └── cartopian-devin
-│   └── ps1/                         ← PowerShell wrappers (Windows)
-│       ├── cartopian-codex.ps1
-│       ├── cartopian-claude.ps1
-│       ├── cartopian-gemini.ps1
-│       └── cartopian-devin.ps1
+├── cartopian/                       ← workspace root (this repo)
+│   ├── README.md                    ← you are here
+│   ├── LICENSE                      ← MIT
+│   ├── protocol/                    ← baseline protocol docs
+│   │   └── CONVENTIONS.md           ← protocol-level conventions
+│   ├── templates/                   ← default templates
+│   │   ├── PROMPT.md
+│   │   ├── TASK.md
+│   │   ├── SPEC.md
+│   │   ├── REVIEW.md
+│   │   ├── REPORT.md
+│   │   ├── DECISION.md
+│   │   ├── REQUIREMENTS.md
+│   │   ├── ENGINEERING.md
+│   │   ├── IMPLEMENTATION_PLAN.md
+│   │   └── PLAN_CLOSEOUT.md
+│   ├── skills/                      ← agent-executable guided workflows
+│   │   ├── README.md
+│   │   ├── init-workspace.md
+│   │   ├── init-project.md
+│   │   ├── plan-project.md
+│   │   ├── run-handoff.md
+│   │   ├── run-task.md
+│   │   └── close-plan.md
+│   ├── wrappers/                    ← cross-platform agent CLI wrappers
+│   │   ├── README.md
+│   │   ├── bin/                     ← bash wrappers (macOS/Linux/WSL)
+│   │   │   ├── cartopian-codex
+│   │   │   ├── cartopian-claude
+│   │   │   ├── cartopian-gemini
+│   │   │   └── cartopian-devin
+│   │   └── ps1/                     ← PowerShell wrappers (Windows)
+│   │       ├── cartopian-codex.ps1
+│   │       ├── cartopian-claude.ps1
+│   │       ├── cartopian-gemini.ps1
+│   │       └── cartopian-devin.ps1
+│   │
+│   └── projects/                    ← gitignored, its own git repo
+│       ├── <project-a>/             ← project PM data
+│       │   ├── cartopian.toml       ← project config
+│       │   ├── STATE.md
+│       │   ├── CONVENTIONS.md       ← extends protocol
+│       │   ├── REQUIREMENTS.md
+│       │   ├── ENGINEERING.md
+│       │   ├── IMPLEMENTATION_PLAN.md
+│       │   ├── phases/
+│       │   ├── prompts/             ← temporary assignee handoffs
+│       │   ├── reports/             ← handoff completion reports
+│       │   ├── tasks/
+│       │   │   ├── open/            ← TASK files declare `Target repo: <name>`
+│       │   │   ├── in-progress/
+│       │   │   ├── in-review/
+│       │   │   └── done/
+│       │   ├── specs/
+│       │   ├── decisions/
+│       │   ├── reviews/
+│       │   └── archive/             ← optional plan closeout snapshots
+│       │
+│       └── <project-b>/
+│           └── ...
 │
-└── projects/                        ← gitignored, its own git repo
-    ├── <project-a>/
-    │   ├── cartopian.toml           ← project config
-    │   ├── STATE.md
-    │   ├── CONVENTIONS.md           ← extends protocol
-    │   ├── REQUIREMENTS.md
-    │   ├── ENGINEERING.md
-    │   ├── IMPLEMENTATION_PLAN.md
-    │   ├── phases/
-    │   ├── prompts/                 ← temporary assignee handoffs
-    │   ├── reports/                 ← handoff completion reports
-    │   ├── tasks/
-    │   │   ├── open/
-    │   │   ├── in-progress/
-    │   │   ├── in-review/
-    │   │   └── done/
-    │   ├── specs/
-    │   ├── decisions/
-    │   ├── reviews/
-    │   └── archive/                 ← optional plan closeout snapshots
-    │
-    └── <project-b>/
-        └── ...
+├── <project-a-repo>/                ← sibling target product repo
+└── <project-b-repo>/                ← sibling target product repo
 ```
 
 ## Protocol

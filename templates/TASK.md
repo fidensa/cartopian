@@ -23,8 +23,14 @@ use References for secondary context.
 
 ## Target repo
 
-Single-valued. A task that genuinely spans multiple repos is a sign the
-task should be split.
+Single-valued. The bare directory name of the target product repo,
+resolvable as `<launch cwd>/<target repo>` where the launch cwd is the
+parent of the workspace root (see `protocol/CONVENTIONS.md` →
+Handoffs → Launch Directory). Not a `<owner>/<repo>` slug, not a
+relative path, not an absolute path.
+
+Use `n/a` if the task does not touch a product repo. A task that
+genuinely spans multiple repos is a sign the task should be split.
 
 ## Dependencies
 

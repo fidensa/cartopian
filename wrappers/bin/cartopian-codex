@@ -56,6 +56,44 @@ fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
+# --- Launch directory ------------------------------------------------
+# Cartopian convention: assignee CLIs run with cwd set to the parent of
+# the workspace root, so a single workspace-write sandbox spans both the
+# protocol repo (for the assignee's report write-back under
+# .../projects/<proj>/reports/) and the sibling target product repo
+# named in the task's `Target repo:` field. Prompts always live at
+# <workspace>/projects/<proj>/prompts/PROMPT-*.md, so the launch cwd is
+# derivable from the prompt path alone.
+#
+# Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
+# skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
+# or per-repo-sandbox setups. A non-existent path is a hard error, not
+# a silent fallback.
+if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
+  if [[ ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
+    echo "cartopian-codex: CARTOPIAN_LAUNCH_CWD='$CARTOPIAN_LAUNCH_CWD' is not a directory" >&2
+    exit 1
+  fi
+  LAUNCH_CWD="$(cd "$CARTOPIAN_LAUNCH_CWD" && pwd)"
+  cd "$LAUNCH_CWD"
+  echo "cartopian-codex: cwd=$LAUNCH_CWD (CARTOPIAN_LAUNCH_CWD override)" >&2
+else
+  PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+  PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
+  PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
+  PROJECTS_DIR="$(dirname "$PROJECT_DIR")"
+  WORKSPACE_ROOT="$(dirname "$PROJECTS_DIR")"
+  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" \
+     && "$(basename "$PROJECTS_DIR")" == "projects" ]]; then
+    LAUNCH_CWD="$(dirname "$WORKSPACE_ROOT")"
+    cd "$LAUNCH_CWD"
+    echo "cartopian-codex: cwd=$LAUNCH_CWD" >&2
+  else
+    echo "cartopian-codex: prompt is outside a Cartopian workspace; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+  fi
+fi
+# --------------------------------------------------------------------
+
 CMD=(codex exec)
 
 if [[ "$CODEX_BYPASS" == "true" ]]; then

@@ -125,11 +125,89 @@ PM runs:  cartopian-codex /abs/path/to/PROMPT-01-003.md
               ├─ validates the file exists
               ├─ checks that 'codex' is installed
               ├─ reads the prompt file content
+              ├─ resolves the launch directory (parent of workspace root)
               └─ exec codex exec --sandbox workspace-write "<prompt content>"
 ```
 
 The wrapper replaces itself with the real CLI process (`exec`), so
 timeouts, signals, and exit codes all pass through cleanly to the PM.
+
+## Where the wrapper runs from
+
+Cartopian wrappers always change directory to the **parent of the
+workspace root** before invoking the underlying CLI. The launch cwd is
+derived from the absolute prompt path, which always lives at:
+
+```text
+<workspace>/projects/<project-id>/prompts/PROMPT-NN-NNN.md
+```
+
+So `LAUNCH_CWD = parent_of(<workspace>)`. For a workspace at
+`/Users/me/Projects/cartopian/`, the launch cwd is
+`/Users/me/Projects/`.
+
+Why this matters: with cwd at the parent of the workspace, a single
+`workspace-write`-style sandbox spans both surfaces the assignee needs:
+
+- the protocol repo, so the assignee can drop its
+  `reports/REPORT-NN-NNN.md` back into
+  `<workspace>/projects/<project-id>/reports/`, and
+- the sibling target product repo named in the task's `Target repo:`
+  field, so the assignee can edit code.
+
+This is why Cartopian's recommended workspace layout puts target
+product repos as **siblings of the workspace root** (or nested below
+it). For example:
+
+```text
+~/Projects/                              ← launch cwd (sandbox root)
+├── cartopian/                           ← workspace root (protocol repo)
+│   └── projects/
+│       └── cartopian-web/               ← project PM data
+│           ├── tasks/.../TASK-01-004... ← `Target repo: cartopian-web`
+│           └── prompts/PROMPT-01-004.md ← absolute path passed to wrapper
+└── cartopian-web/                       ← sibling target product repo
+```
+
+`Target repo: cartopian-web` plus the launch cwd resolves to
+`~/Projects/cartopian-web/` with no ambiguity.
+
+If the prompt is not inside a recognizable Cartopian workspace
+(missing the `prompts/` and `projects/` markers on its path), the
+wrapper leaves cwd unchanged and prints a notice. This keeps the
+wrappers usable in ad-hoc test harnesses.
+
+### Override: `CARTOPIAN_LAUNCH_CWD`
+
+If the recommended layout doesn't fit (split layouts where target
+repos live elsewhere, cross-drive setups on Windows, monorepo-internal
+workspaces, security policies that prefer narrower per-repo
+sandboxes, etc.), set `CARTOPIAN_LAUNCH_CWD` to the absolute or
+relative path the wrapper should `cd` to instead. Auto-resolution is
+skipped entirely.
+
+```bash
+# bash / zsh
+export CARTOPIAN_LAUNCH_CWD=/Users/me/code/work
+cartopian-codex /abs/path/to/PROMPT-01-001.md
+```
+
+```powershell
+# PowerShell
+$env:CARTOPIAN_LAUNCH_CWD = 'C:\Users\me\code\work'
+.\cartopian-codex.ps1 C:\abs\path\to\PROMPT-01-001.md
+```
+
+A `CARTOPIAN_LAUNCH_CWD` value that does not point to an existing
+directory is a hard error: the wrapper exits non-zero before invoking
+the underlying CLI. This is intentional — silently falling back to
+auto-resolution after an explicit override would mask typos and lead
+to confusing sandbox failures downstream.
+
+There is no `cartopian.toml` field for this. The launch cwd is
+treated as environment, not protocol: it varies per machine and per
+operator preference, and putting it in toml would invite drift between
+the recorded path and the actual filesystem.
 
 ## Configuration
 

@@ -285,6 +285,40 @@ belong in a wrapper executable, not in `cartopian.toml`.
 Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin)
 are in `wrappers/`. See `wrappers/README.md` for installation.
 
+### Launch Directory
+
+Assignee CLIs run with cwd set to the **parent of the workspace root**.
+The launch cwd is fully derivable from the absolute prompt path
+(`<workspace>/projects/<project-id>/prompts/PROMPT-NN-NNN.md`); the
+shipped wrappers resolve and `cd` to it automatically.
+
+This contract exists so a single `workspace-write`-style sandbox covers
+both surfaces a handoff touches:
+
+- the workspace, so the assignee can write its
+  `reports/REPORT-NN-NNN.md` back into
+  `<workspace>/projects/<project-id>/reports/`, and
+- the sibling target product repo named in the task's `Target repo:`
+  field, so the assignee can edit code.
+
+Recommended workspace layout: target product repos live as siblings of
+the workspace root (or nested below it). The task's `Target repo:`
+field is a directory name resolvable as
+`<launch cwd>/<target repo>` and is the only path the PM needs to
+construct to point an assignee at the right product repo.
+
+A handoff that needs to touch a repo outside this layout is a sign the
+project's workspace layout should be reorganized rather than the
+sandbox widened.
+
+The shipped wrappers honor a `CARTOPIAN_LAUNCH_CWD` environment
+variable as an escape hatch for layouts the convention does not fit
+(split, cross-drive, monorepo-internal, per-repo-sandbox setups).
+This is environment, not protocol: there is no `cartopian.toml`
+field for it, because the value varies per machine and per operator
+preference and any drift between a recorded path and the actual
+filesystem would defeat the filesystem-first stance.
+
 Optional automation policy:
 
 ```toml
