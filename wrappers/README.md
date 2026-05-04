@@ -89,7 +89,7 @@ with environment variables:
 
 ```bash
 # Example: let Codex run fully autonomously (careful!)
-export CARTOPIAN_CODEX_APPROVAL=never
+export CARTOPIAN_CODEX_BYPASS=true
 
 # Example: restrict Claude to read-only
 export CARTOPIAN_CLAUDE_TOOLS=Read
@@ -102,10 +102,20 @@ section below.
 
 | CLI            | Wrapper              | What it runs under the hood              |
 |----------------|----------------------|------------------------------------------|
-| Codex (OpenAI) | `cartopian-codex`    | `codex exec --approval-mode suggest ...` |
-| Claude Code    | `cartopian-claude`   | `claude -p --allowedTools Read,Write,Bash ...` |
-| Gemini CLI     | `cartopian-gemini`   | `gemini -p ...`                          |
-| Devin          | `cartopian-devin`    | `devin -p --permission-mode normal ...`  |
+| Codex (OpenAI) | `cartopian-codex`    | `codex exec --sandbox workspace-write ...` |
+| Claude Code    | `cartopian-claude`   | `claude -p --dangerously-skip-permissions ...` |
+| Gemini CLI     | `cartopian-gemini`   | `gemini --approval-mode yolo -p ...`     |
+| Devin          | `cartopian-devin`    | `devin -p --permission-mode bypass ...`  |
+
+By default, every wrapper runs its underlying CLI fully autonomously —
+no permission prompts, no TTY interaction. This is required for the
+PM→assignee handoff to complete without a human in the loop. If
+autonomy is not desired for a given role, the simple solution is not
+to run that role in auto mode (e.g. assign the role to `human` in
+`cartopian.toml`, or set `auto_start = false` on the handoff). Tighten
+an individual wrapper's defaults via the env vars in
+[Configuration](#configuration) if you need a more restrictive posture
+for a specific tool.
 
 ## How a wrapper works
 
@@ -115,7 +125,7 @@ PM runs:  cartopian-codex /abs/path/to/PROMPT-01-003.md
               ├─ validates the file exists
               ├─ checks that 'codex' is installed
               ├─ reads the prompt file content
-              └─ exec codex exec --approval-mode suggest "<prompt content>"
+              └─ exec codex exec --sandbox workspace-write "<prompt content>"
 ```
 
 The wrapper replaces itself with the real CLI process (`exec`), so
@@ -125,32 +135,38 @@ timeouts, signals, and exit codes all pass through cleanly to the PM.
 
 ### Codex
 
+`codex exec` is non-interactive and has no `--approval-mode` /
+`--ask-for-approval` flag — those live on the interactive `codex`
+command. Autonomy in `exec` mode is controlled by the sandbox scope
+plus an opt-in bypass.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `CARTOPIAN_CODEX_APPROVAL` | `suggest` | Approval mode: `suggest`, `on-request`, `untrusted`, `never` |
-| `CARTOPIAN_CODEX_SANDBOX`  | *(empty)* | Sandbox mode: `workspace-write`, `danger-full-access` |
+| `CARTOPIAN_CODEX_SANDBOX` | `workspace-write` | Sandbox scope: `read-only`, `workspace-write`, `danger-full-access` |
+| `CARTOPIAN_CODEX_BYPASS`  | `false`           | Set `true` to pass `--dangerously-bypass-approvals-and-sandbox` (overrides sandbox; only safe in externally-sandboxed environments) |
 
 ### Claude Code
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CARTOPIAN_CLAUDE_TOOLS` | `Read,Write,Bash` | Allowed tools (comma-separated) |
+| `CARTOPIAN_CLAUDE_TOOLS` | *(empty)* | Allowed-tool whitelist (comma-separated). Empty means claude's full default tool set. Set e.g. `Read` to restrict to read-only. |
 | `CARTOPIAN_CLAUDE_FORMAT` | `text` | Output format: `text`, `json`, `stream-json` |
 | `CARTOPIAN_CLAUDE_BARE` | `false` | Skip plugin/hook discovery (`true`/`false`) |
-| `CARTOPIAN_CLAUDE_SKIP_PERMS` | `false` | Skip all permission prompts — **dangerous** |
+| `CARTOPIAN_CLAUDE_SKIP_PERMS` | `true` | Pass `--dangerously-skip-permissions` so claude runs non-interactively. Set to `false` to re-enable permission prompts (interactive debugging only). |
 
 ### Gemini
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CARTOPIAN_GEMINI_YES` | `false` | Auto-confirm tool execution (`true`/`false`) |
-| `CARTOPIAN_GEMINI_SANDBOX` | *(empty)* | Sandbox mode |
+| `CARTOPIAN_GEMINI_APPROVAL` | `yolo`  | Approval mode: `default`, `auto_edit`, `yolo`, `plan`. Set to empty string to fall back to the legacy `-y/--yolo` toggle below. |
+| `CARTOPIAN_GEMINI_YES`      | `true`  | Legacy auto-confirm (`-y`). Used only when `CARTOPIAN_GEMINI_APPROVAL` is empty. |
+| `CARTOPIAN_GEMINI_SANDBOX`  | `false` | Boolean toggle for `--sandbox` (gemini's sandbox flag is presence-only, not a value flag). |
 
 ### Devin
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CARTOPIAN_DEVIN_PERMISSION` | `normal` | Permission mode: `normal`, `accept-edits`, `bypass`, `autonomous` |
+| `CARTOPIAN_DEVIN_PERMISSION` | `bypass` | Permission mode: `normal`, `dangerous`, `bypass` (per `devin --help`). Default `bypass` auto-approves all tool calls so devin runs non-interactively. `accept-edits`, `plan`, and `autonomous` are interactive slash commands inside a session, not flag values. |
 
 ## Alternative installation
 

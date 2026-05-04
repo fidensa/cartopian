@@ -6,6 +6,12 @@
     Reads a Cartopian prompt file and passes its content to codex exec
     with non-interactive flags.
 
+    Note: `codex exec` is non-interactive and has no --approval-mode /
+    --ask-for-approval flag (those live on the interactive `codex`
+    command). Autonomy in exec mode is controlled by the sandbox scope
+    plus --dangerously-bypass-approvals-and-sandbox. Verified against
+    codex-cli 0.128.0.
+
 .PARAMETER PromptPath
     Absolute path to the Cartopian prompt file.
 
@@ -21,11 +27,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Configuration ---------------------------------------------------
-# Approval mode: "on-request" | "untrusted" | "never"
-$ApprovalMode = if ($env:CARTOPIAN_CODEX_APPROVAL) { $env:CARTOPIAN_CODEX_APPROVAL } else { 'suggest' }
+# Sandbox scope: 'read-only' | 'workspace-write' | 'danger-full-access'
+$Sandbox = if ($env:CARTOPIAN_CODEX_SANDBOX) { $env:CARTOPIAN_CODEX_SANDBOX } else { 'workspace-write' }
 
-# Sandbox mode (optional). Leave empty for codex default.
-$Sandbox = if ($env:CARTOPIAN_CODEX_SANDBOX) { $env:CARTOPIAN_CODEX_SANDBOX } else { '' }
+# Bypass all approval gates AND the sandbox. EXTREMELY DANGEROUS.
+# Only enable inside externally-sandboxed environments.
+$Bypass = if ($env:CARTOPIAN_CODEX_BYPASS -eq 'true') { $true } else { $false }
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {
@@ -40,12 +47,18 @@ if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
 
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
-$Args = @('exec', '--approval-mode', $ApprovalMode)
-if ($Sandbox) {
+$Args = @('exec')
+if ($Bypass) {
+    $Args += '--dangerously-bypass-approvals-and-sandbox'
+} elseif ($Sandbox) {
     $Args += @('--sandbox', $Sandbox)
 }
 $Args += $PromptContent
 
-Write-Host "cartopian-codex: running codex exec (approval=$ApprovalMode)" -ForegroundColor DarkGray
+if ($Bypass) {
+    Write-Host "cartopian-codex: running codex exec (bypass=on, sandbox=disabled)" -ForegroundColor DarkGray
+} else {
+    Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox)" -ForegroundColor DarkGray
+}
 & codex @Args
 exit $LASTEXITCODE

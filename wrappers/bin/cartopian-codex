@@ -5,7 +5,13 @@
 #
 # Reads the prompt file and passes its content to `codex exec` with
 # non-interactive flags. Edit the Configuration section below to change
-# approval mode, sandbox, and other tool-specific settings.
+# sandbox scope and other tool-specific settings.
+#
+# Note on approvals: `codex exec` is non-interactive and has no
+# `--approval-mode`/`--ask-for-approval` flag (those live on the
+# interactive `codex` command). Autonomy in `exec` mode is controlled by
+# the sandbox scope plus `--dangerously-bypass-approvals-and-sandbox`.
+# Verified against codex-cli 0.128.0 (`codex exec --help`).
 #
 # Exit codes:
 #   0   — codex completed successfully
@@ -15,15 +21,18 @@
 set -euo pipefail
 
 # --- Configuration ---------------------------------------------------
-# Approval mode: "on-request" | "untrusted" | "never"
-#   on-request  — ask before every action (safest, requires terminal)
-#   untrusted   — auto-approve safe ops, ask for mutations
-#   never       — fully autonomous (use only in sandboxed environments)
-CODEX_APPROVAL_MODE="${CARTOPIAN_CODEX_APPROVAL:-suggest}"
+# Sandbox scope for model-generated shell commands.
+# Allowed values (per `codex exec --help`):
+#   read-only           — model cannot write outside its scratch space
+#   workspace-write     — model can write inside the working directory
+#   danger-full-access  — no filesystem sandbox (effectively unsandboxed)
+# Default is workspace-write so coder handoffs can actually edit files.
+CODEX_SANDBOX="${CARTOPIAN_CODEX_SANDBOX:-workspace-write}"
 
-# Sandbox mode (optional): "workspace-write" | "danger-full-access"
-# Leave empty to use codex default.
-CODEX_SANDBOX="${CARTOPIAN_CODEX_SANDBOX:-}"
+# Bypass all approval gates AND the sandbox. EXTREMELY DANGEROUS.
+# Only enable inside an externally-sandboxed environment (CI container,
+# VM, etc.). Equivalent to `--dangerously-bypass-approvals-and-sandbox`.
+CODEX_BYPASS="${CARTOPIAN_CODEX_BYPASS:-false}"
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -47,13 +56,19 @@ fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
-# Build the command
 CMD=(codex exec)
-CMD+=(--approval-mode "$CODEX_APPROVAL_MODE")
-if [[ -n "$CODEX_SANDBOX" ]]; then
+
+if [[ "$CODEX_BYPASS" == "true" ]]; then
+  CMD+=(--dangerously-bypass-approvals-and-sandbox)
+elif [[ -n "$CODEX_SANDBOX" ]]; then
   CMD+=(--sandbox "$CODEX_SANDBOX")
 fi
+
 CMD+=("$PROMPT_CONTENT")
 
-echo "cartopian-codex: running codex exec (approval=$CODEX_APPROVAL_MODE)" >&2
+if [[ "$CODEX_BYPASS" == "true" ]]; then
+  echo "cartopian-codex: running codex exec (bypass=on, sandbox=disabled)" >&2
+else
+  echo "cartopian-codex: running codex exec (sandbox=$CODEX_SANDBOX)" >&2
+fi
 exec "${CMD[@]}"

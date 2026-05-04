@@ -21,8 +21,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Configuration ---------------------------------------------------
-# Permission mode: "normal" | "accept-edits" | "bypass" | "autonomous"
-$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'normal' }
+# Permission mode (per `devin --help`): 'normal' | 'dangerous' | 'bypass'.
+# Default is 'bypass' so devin runs non-interactively, matching the
+# autonomy posture of cartopian-codex, cartopian-claude, and
+# cartopian-gemini. If autonomy is not desired for a given role, do
+# not run that role in auto mode.
+# 'accept-edits', 'plan', and 'autonomous' are interactive slash commands
+# inside a session, not values for the --permission-mode flag.
+$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'bypass' }
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {

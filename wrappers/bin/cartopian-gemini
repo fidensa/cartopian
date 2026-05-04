@@ -15,14 +15,24 @@
 set -euo pipefail
 
 # --- Configuration ---------------------------------------------------
-# Sandbox mode (optional). Leave empty for upstream default.
-# Values depend on gemini CLI version.
-GEMINI_SANDBOX="${CARTOPIAN_GEMINI_SANDBOX:-}"
+# Approval mode (modern gemini CLI). One of:
+#   default    — prompt for approval on every tool call
+#   auto_edit  — auto-approve edit tools, prompt for shell
+#   yolo       — auto-approve everything (equivalent to -y)
+#   plan       — read-only planning mode
+# Leave empty to fall back to the legacy --yolo / -y mechanism below.
+GEMINI_APPROVAL_MODE="${CARTOPIAN_GEMINI_APPROVAL:-yolo}"
 
-# Yes flag — auto-confirm tool-execution prompts.
-#   "true"  — pass --yes / -y (if supported by your CLI version)
+# Legacy YOLO toggle. Used only if GEMINI_APPROVAL_MODE is empty.
+#   "true"  — pass -y (auto-approve everything)
 #   "false" — let gemini use its default behavior
 GEMINI_AUTO_YES="${CARTOPIAN_GEMINI_YES:-true}"
+
+# Sandbox toggle. gemini's `-s/--sandbox` is a BOOLEAN flag, not a
+# value flag — it just enables sandboxed execution.
+#   "true"  — pass --sandbox
+#   "false" — leave sandbox disabled (gemini default)
+GEMINI_SANDBOX="${CARTOPIAN_GEMINI_SANDBOX:-false}"
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -50,15 +60,21 @@ PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 # content as -p's value.
 CMD=(gemini)
 
-if [[ "$GEMINI_AUTO_YES" == "true" ]]; then
+if [[ -n "$GEMINI_APPROVAL_MODE" ]]; then
+  CMD+=(--approval-mode "$GEMINI_APPROVAL_MODE")
+elif [[ "$GEMINI_AUTO_YES" == "true" ]]; then
   CMD+=(-y)
 fi
 
-if [[ -n "$GEMINI_SANDBOX" ]]; then
-  CMD+=(--sandbox "$GEMINI_SANDBOX")
+if [[ "$GEMINI_SANDBOX" == "true" ]]; then
+  CMD+=(--sandbox)
 fi
 
 CMD+=(-p "$PROMPT_CONTENT")
 
-echo "cartopian-gemini: running gemini -p" >&2
+if [[ -n "$GEMINI_APPROVAL_MODE" ]]; then
+  echo "cartopian-gemini: running gemini -p (approval=$GEMINI_APPROVAL_MODE)" >&2
+else
+  echo "cartopian-gemini: running gemini -p (yolo=$GEMINI_AUTO_YES)" >&2
+fi
 exec "${CMD[@]}"

@@ -15,12 +15,14 @@
 set -euo pipefail
 
 # --- Configuration ---------------------------------------------------
-# Allowed tools (comma-separated). Controls what claude can do without
-# asking. Common values:
-#   Read,Write,Bash  — can read, write files, and run shell commands
-#   Read             — read-only (safest)
-#   ""               — empty means use claude's default (will prompt)
-CLAUDE_ALLOWED_TOOLS="${CARTOPIAN_CLAUDE_TOOLS:-Read,Write,Bash}"
+# Allowed tools (comma-separated). RESTRICTS which tools claude can use.
+# Empty (default) means claude uses its full default tool set, which is
+# what an autonomous coder/reviewer handoff needs (Read, Write, Edit,
+# Bash, Glob, Grep, etc.).
+#   ""               — full default tool set (matches autonomous posture)
+#   Read,Write,Bash  — narrow whitelist
+#   Read             — read-only
+CLAUDE_ALLOWED_TOOLS="${CARTOPIAN_CLAUDE_TOOLS:-}"
 
 # Output format: "text" | "json" | "stream-json"
 CLAUDE_OUTPUT_FORMAT="${CARTOPIAN_CLAUDE_FORMAT:-text}"
@@ -28,9 +30,13 @@ CLAUDE_OUTPUT_FORMAT="${CARTOPIAN_CLAUDE_FORMAT:-text}"
 # Use --bare to skip auto-discovery of hooks/plugins (faster startup)
 CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
 
-# Skip all permission prompts (DANGEROUS — only for trusted environments)
-# Set to "true" to enable --dangerously-skip-permissions
-CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-false}"
+# Skip all permission prompts so claude runs non-interactively. Without
+# this, claude will hang waiting on TTY input the first time it tries
+# to write a file or run a shell command. This matches the autonomy
+# posture of cartopian-codex (workspace-write sandbox) and
+# cartopian-gemini (--approval-mode yolo). Set to "false" to re-enable
+# permission prompts (only useful for interactive debugging).
+CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-true}"
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -75,5 +81,6 @@ fi
 
 CMD+=("$PROMPT_CONTENT")
 
-echo "cartopian-claude: running claude -p (tools=$CLAUDE_ALLOWED_TOOLS)" >&2
+TRACE_TOOLS="${CLAUDE_ALLOWED_TOOLS:-default}"
+echo "cartopian-claude: running claude -p (tools=$TRACE_TOOLS, skip-perms=$CLAUDE_SKIP_PERMISSIONS)" >&2
 exec "${CMD[@]}"

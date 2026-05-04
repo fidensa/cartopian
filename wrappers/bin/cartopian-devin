@@ -15,12 +15,20 @@
 set -euo pipefail
 
 # --- Configuration ---------------------------------------------------
-# Permission mode: "normal" | "accept-edits" | "bypass" | "autonomous"
-#   normal       — ask before shell commands and file writes (safest)
-#   accept-edits — auto-approve file edits, ask for shell commands
-#   bypass       — skip all permission checks (trusted environments only)
-#   autonomous   — fully autonomous (use only in sandboxed environments)
-DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-normal}"
+# Permission mode (per `devin --help`): "normal" | "dangerous" | "bypass"
+#   normal     — ask before write/execute operations
+#   dangerous  — auto-approve write/execute operations
+#   bypass     — auto-approve all tool calls (full autonomy)
+# Default is "bypass" so devin runs non-interactively, matching the
+# autonomy posture of cartopian-codex (workspace-write sandbox),
+# cartopian-claude (--dangerously-skip-permissions), and
+# cartopian-gemini (--approval-mode yolo). The PM→assignee handoff
+# contract requires the assignee to complete without TTY interaction;
+# if autonomy is not desired for a given role, do not run that role in
+# auto mode.
+# Note: "accept-edits", "plan", and "autonomous" are interactive slash
+# commands inside a session, not values for the --permission-mode flag.
+DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-bypass}"
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"

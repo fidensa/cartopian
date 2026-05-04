@@ -21,10 +21,16 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Configuration ---------------------------------------------------
-$AllowedTools = if ($env:CARTOPIAN_CLAUDE_TOOLS) { $env:CARTOPIAN_CLAUDE_TOOLS } else { 'Read,Write,Bash' }
+# AllowedTools restricts which tools claude can use. Empty (default)
+# means claude uses its full default tool set, which is what an
+# autonomous coder/reviewer handoff needs.
+$AllowedTools = if ($env:CARTOPIAN_CLAUDE_TOOLS) { $env:CARTOPIAN_CLAUDE_TOOLS } else { '' }
 $OutputFormat = if ($env:CARTOPIAN_CLAUDE_FORMAT) { $env:CARTOPIAN_CLAUDE_FORMAT } else { 'text' }
 $Bare = if ($env:CARTOPIAN_CLAUDE_BARE -eq 'true') { $true } else { $false }
-$SkipPermissions = if ($env:CARTOPIAN_CLAUDE_SKIP_PERMS -eq 'true') { $true } else { $false }
+# Skip permission prompts so claude runs non-interactively. Matches
+# the autonomy posture of cartopian-codex and cartopian-gemini. Set
+# CARTOPIAN_CLAUDE_SKIP_PERMS=false to re-enable prompts.
+$SkipPermissions = if ($env:CARTOPIAN_CLAUDE_SKIP_PERMS -eq 'false') { $false } else { $true }
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {
@@ -54,6 +60,7 @@ if ($SkipPermissions) {
 }
 $Args += $PromptContent
 
-Write-Host "cartopian-claude: running claude -p (tools=$AllowedTools)" -ForegroundColor DarkGray
+$TraceTools = if ($AllowedTools) { $AllowedTools } else { 'default' }
+Write-Host "cartopian-claude: running claude -p (tools=$TraceTools, skip-perms=$SkipPermissions)" -ForegroundColor DarkGray
 & claude @Args
 exit $LASTEXITCODE
