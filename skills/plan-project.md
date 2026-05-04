@@ -223,7 +223,7 @@ For each build and research item in the active phase, create
 `templates/TASK.md`.
 
 Populate the template from the plan ref, phase file, resolved roles,
-target repo, dependencies, test gate, and checkable acceptance criteria.
+repo subpath, dependencies, test gate, and checkable acceptance criteria.
 
 ### 4.3 Generate spec files
 

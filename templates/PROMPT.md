@@ -9,7 +9,7 @@ Spec: <SPEC-NN-NNN-slug.md or none>
 
 - **Prompt path**: <absolute path to this prompt file>
 - **Project root**: <absolute path to the project directory>
-- **Repo path**: <absolute path to the target repository>
+- **Repo path**: <absolute path to the product repository, or n/a>
 - **Task path**: <absolute path to the task file>
 - **Spec path**: <absolute path to the spec file, or n/a>
 - **Report path**: <absolute path to the expected completion report>

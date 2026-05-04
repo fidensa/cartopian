@@ -121,12 +121,12 @@ See `protocol/CONVENTIONS.md` for the handoff contract and
 ## Workspace structure
 
 The Cartopian workspace lives next to the product repos it manages.
-Target product repos sit as **siblings** of the workspace (or nested
-below it), under a shared parent directory. That shared parent is the
-launch cwd for assignee CLIs, so a single sandbox covers both the
-workspace (for report write-back) and the target repos (for code
-edits). See `wrappers/README.md` and `protocol/CONVENTIONS.md` for the
-launch-cwd contract.
+Product repos sit as **siblings** of the workspace (or nested below
+it), under a shared parent directory. That shared parent is the launch
+cwd for assignee CLIs, so a single sandbox covers both the workspace
+(for report write-back) and the product repos (for code edits). See
+`wrappers/README.md` and `protocol/CONVENTIONS.md` for the launch-cwd
+contract.
 
 ```
 ~/Projects/                          ← parent dir (launch cwd for CLIs)

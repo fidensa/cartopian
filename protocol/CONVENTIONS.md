@@ -41,7 +41,7 @@ tasks, reviews, prompts, reports, and decisions, and keeps one short
 state file (`STATE.md`) so each session starts with current context.
 
 It is not a source repository for product code, a workspace shell for
-target repos, a chat log, journal, or prompt archive.
+product repos, a chat log, journal, or prompt archive.
 
 ## Naming
 
