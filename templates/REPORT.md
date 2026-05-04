@@ -11,7 +11,10 @@ Status: <complete | blocked | failed>
 - Task ID: <TASK-NN-NNN>
 - Prompt path: <absolute path to the prompt file>
 - Task path: <absolute path to the task file>
-- Repo path: <absolute path to the product repository, or n/a>
+- Repo subpath: <subpath from the task, or n/a>
+
+Legacy task reports that still say `Repo path` are tolerated when they
+identify the same product repository and are otherwise actionable.
 
 ## Files changed
 
@@ -30,6 +33,8 @@ When test gate was `n/a`:
 
 - Commit SHA: <SHA or n/a>
 - PR URL: <URL or n/a>
+  Use `n/a` when the project uses PM-owned product-repo git; the PM
+  creates the PR after this report lands.
 
 ## Remaining risks
 

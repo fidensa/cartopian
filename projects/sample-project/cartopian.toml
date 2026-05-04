@@ -20,3 +20,8 @@ timeout = "30m"
 [automation]
 confirmation = "each-handoff"
 max_handoffs_per_run = 1
+
+# [git]
+# pm_owns_product_branches = false
+# default_branch_pattern = "task/{task_id}-{slug}"
+# default_merge_strategy = "merge" # merge | squash | rebase

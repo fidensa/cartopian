@@ -121,6 +121,11 @@ move tasks between status directories.
 Automated agents do not gain lifecycle authority by completing a
 handoff. Their reports are evidence for the PM to process.
 
+When PM-owned product-repo git is enabled, PM lifecycle authority also
+includes branch, PR, merge, and post-merge review-evidence updates for
+product repos only. See
+[PM-Owned Product-Repo Branches](#pm-owned-product-repo-branches).
+
 ## Tasks
 
 Tasks are assignment-sized units of work derived from the current phase
@@ -468,6 +473,32 @@ repo, tracking all project PM data in a single history. This avoids
 creating a separate PM repo per project and eliminates naming collisions
 with code repos.
 
+Optional `[git]` configuration resolves from project-level
+`cartopian.toml`, to workspace-level `cartopian.toml`, to these protocol
+defaults:
+
+```toml
+[git]
+pm_owns_product_branches = false
+default_branch_pattern = "task/{task_id}-{slug}"
+default_merge_strategy = "merge"
+```
+
+`pm_owns_product_branches = false` is the legacy path. A project with no
+`[git]` section behaves exactly as before.
+
+`default_branch_pattern` is used only when
+`pm_owns_product_branches = true`. It supports `{task_id}` and `{slug}`.
+`{task_id}` is the numeric task identifier without the `TASK-` prefix
+(`NN-NNN`), and `{slug}` is the task filename slug. For
+`TASK-02-001-page-templates.md`, the protocol default produces
+`task/02-001-page-templates`.
+
+`default_merge_strategy` controls the PM merge command for opt-in
+product repos. Supported values are `merge`, `squash`, and `rebase`,
+mapping to `gh pr merge --merge`, `gh pr merge --squash`, and
+`gh pr merge --rebase`.
+
 When `git_versioning = true` in the effective `cartopian.toml`:
 
 - Session closeout includes auto-commit and auto-push by the PM.
@@ -481,6 +512,48 @@ When `git_versioning = false`:
 
 Git staging, commits, and pushes for the protocol repository itself are
 human-owned.
+
+### PM-Owned Product-Repo Branches
+
+When `git.pm_owns_product_branches = true`, the PM owns product-repo git
+plumbing for tasks whose `Repo subpath:` names a product repository. The
+setting does not apply to tasks whose `Repo subpath:` is `n/a`, and it
+never applies to the Cartopian protocol repository itself. Protocol-repo
+git staging, commits, pushes, and branch management remain human-owned
+regardless of any project setting.
+
+On an accepted coder completion report with `Ready for review: yes`, the
+coder is responsible for the implementation commit SHA and does not
+push, create a branch, or open a PR. The PM creates the configured
+product-repo branch at the reported commit SHA, pushes it with
+`git push -u origin <branch>`, and opens a pull request with
+`gh pr create`. The PR title and body reference the task ID and
+completion report.
+
+The protocol defaults are:
+
+- Branch pattern: `task/{task_id}-{slug}`.
+- Merge strategy: `merge`.
+- Branch cleanup: delete the product branch on merge.
+
+The PM resolves a deploy preview URL when one exists, such as from a
+deployment-bot PR comment. If no preview URL exists, the PM proceeds with
+the PR URL only and records the gap in `STATE.md`.
+
+On reviewer `approve`, the PM merges the PR with
+`gh pr merge --<strategy> --delete-branch`, using the effective
+`git.default_merge_strategy`. On `request-changes` or `reject`, the PM
+moves the task per the verdict and leaves the branch and PR open for the
+next coder pass.
+
+Review-evidence authorship follows the event boundary. Reviewers fill
+the pre-merge review fields: `Commit SHA`, findings, and verdict. For
+`Merge commit SHA`, reviewers write `pending` when PM-owned product-repo
+git is enabled, or `n/a` when it is not. After an approved PR is merged,
+the PM appends `Merge commit SHA` to the review file's existing
+`Implementation evidence` block and appends `PR URL` if the review file
+does not already contain it. Review reports remain assignee-to-PM
+evidence handoffs and are not PM-edited.
 
 ## Session State
 

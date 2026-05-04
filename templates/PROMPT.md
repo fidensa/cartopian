@@ -16,6 +16,16 @@ Spec: <SPEC-NN-NNN-slug.md or none>
 - **Review path**: <absolute path to the expected review file, if applicable>
 - **Report template path**: <absolute path to templates/REPORT.md>
 
+## Pull request
+
+- **PR URL**: <URL or n/a>
+- **Preview URL**: <URL or n/a>
+
+For review prompts in projects using PM-owned product-repo git, the PM
+populates `Branch`, `PR URL`, and `Preview URL` when available. If no
+preview URL exists, write `n/a`. Coder prompts may leave `PR URL` and
+`Preview URL` as `n/a` or omit them entirely.
+
 ## Your task
 <Imperative, directed at the assignee.>
 

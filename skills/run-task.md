@@ -28,7 +28,8 @@ consistent with that state.
 3. Read the target task file.
 4. Read the task's spec when the task references one.
 5. Read the project and workspace `cartopian.toml` files.
-6. Resolve effective roles, handoff targets, and automation policy.
+6. Resolve effective roles, handoff targets, automation policy, and
+   `[git]` configuration.
 
 If the task state in `STATE.md` disagrees with the filesystem, treat the
 filesystem as authoritative and refresh `STATE.md` before proceeding.
@@ -125,6 +126,35 @@ If the report is accepted with `Ready for review: yes`, move the task to
 `tasks/in-review/`, capture any evidence the reviewer will need from
 the completion report, and proceed to reviewer assignment.
 
+If the effective `[git]` configuration has
+`pm_owns_product_branches = false`, or the setting is unset, proceed to
+Stage 5 exactly as today.
+
+If `pm_owns_product_branches = true` and the task names a product repo
+with `Repo subpath:`, perform the PM-owned product-repo git step before
+Stage 5:
+
+1. Require the accepted completion report to include the coder's
+   implementation `Commit SHA`. If it does not, treat the report as
+   incomplete completion evidence and stop for operator inspection.
+2. Resolve the product repo from the task's `Repo subpath:`.
+3. Create the configured branch in the product repo at the coder's
+   reported commit SHA. The protocol default branch is
+   `task/NN-NNN-slug`, derived from
+   `git.default_branch_pattern = "task/{task_id}-{slug}"`.
+4. Push the branch with `git push -u origin <branch>`.
+5. Open a PR with `gh pr create`. The title and body must reference the
+   task ID and completion report.
+6. Resolve a deploy preview URL when one exists, for example from a
+   Vercel-bot PR comment. If no preview URL exists, proceed with the PR
+   URL only and record the missing preview URL in `STATE.md`.
+7. Capture the branch, PR URL, preview URL if present, and commit SHA as
+   review handoff evidence.
+
+If `pm_owns_product_branches = true` but the task's `Repo subpath:` is
+`n/a`, there is no product-repo branch or PR step; proceed to Stage 5
+with `PR URL` and `Preview URL` as `n/a`.
+
 ---
 
 ## Stage 5 - Assign Review
@@ -146,6 +176,8 @@ The review prompt must include absolute paths to:
 - The expected review file.
 - The repo path.
 - Relevant implementation evidence.
+- The PR URL and preview URL when the PM-owned product-repo git workflow
+  created them; otherwise `n/a`.
 
 After task completion evidence has been captured in the review prompt,
 task file, or review context, delete any stale review handoff report at:
@@ -171,10 +203,22 @@ reviews/REVIEW-NN-NNN.md
 
 The PM applies the verdict:
 
-- `approve`: move the task to `tasks/done/` and delete the matching
-  prompt.
-- `request-changes`: move the task to `tasks/in-progress/`.
-- `reject`: move the task to `tasks/open/`.
+- `approve`, when `git.pm_owns_product_branches = false` or unset, or
+  when no product-repo PR exists: move the task to `tasks/done/` and
+  delete the matching prompt.
+- `approve`, when `git.pm_owns_product_branches = true` and a PR exists:
+  merge with `gh pr merge --<strategy> --delete-branch`, using the
+  effective `git.default_merge_strategy` (`merge`, `squash`, or
+  `rebase`). Capture the merge commit SHA, append it to the review
+  file's existing `Implementation evidence` block as
+  `Merge commit SHA`, append `PR URL` if the review file does not
+  already include it, then move the task to `tasks/done/` and delete the
+  matching prompt.
+- `request-changes`: move the task to `tasks/in-progress/`. When
+  PM-owned product-repo git is enabled, leave the branch and PR open for
+  the next coder pass.
+- `reject`: move the task to `tasks/open/`. When PM-owned product-repo
+  git is enabled, leave the branch and PR open for the next coder pass.
 
 On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round
 suffixes.

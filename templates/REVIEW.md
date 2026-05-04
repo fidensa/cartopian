@@ -15,11 +15,14 @@ Two lines. What was reviewed, and what the verdict rests on.
 Required for build and porting tasks. For planning and repo-admin tasks,
 use `n/a` in each field and say why.
 
-- **Commit SHA** — the green commit the reviewer approved against.
-- **Merge commit SHA** — the merge commit on `main` that landed the
-  feature branch. For tasks whose `Repo subpath:` is `n/a`, write
-  `n/a`.
-- **PR URL** — the pull request, if one exists.
+- **Commit SHA** — filled by the reviewer: the green commit they
+  approved against.
+- **Merge commit SHA** — filled by the PM in Stage 6 of
+  `skills/run-task.md`, post-merge. The reviewer writes `pending`, or
+  `n/a` when the project does not use PM-owned product-repo git.
+- **PR URL** — filled by whichever role has it: the reviewer when the
+  PR existed before review in the PM-owned product-repo git workflow,
+  otherwise by the PM after merge.
 - **Test evidence** — two parts when the task's test gate was `required`:
   - Red test was present before implementation.
   - Test is green at closure.
