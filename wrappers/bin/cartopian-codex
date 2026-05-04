@@ -13,6 +13,14 @@
 # the sandbox scope plus `--dangerously-bypass-approvals-and-sandbox`.
 # Verified against codex-cli 0.128.0 (`codex exec --help`).
 #
+# Note on git-repo check: `codex exec` refuses to run unless cwd is
+# inside a git repository (or `--skip-git-repo-check` is passed). Under
+# the Cartopian launch-cwd convention the cwd is the parent of the
+# workspace, which is intentionally not a git repo, so the wrapper
+# passes `--skip-git-repo-check` unconditionally. Sandbox safety still
+# comes from `--sandbox workspace-write`, which roots writes at the
+# launch cwd; it does not depend on cwd being a git repo.
+#
 # Exit codes:
 #   0   — codex completed successfully
 #   1   — wrapper error (missing file, missing CLI, bad arguments)
@@ -94,7 +102,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-CMD=(codex exec)
+CMD=(codex exec --skip-git-repo-check)
 
 if [[ "$CODEX_BYPASS" == "true" ]]; then
   CMD+=(--dangerously-bypass-approvals-and-sandbox)
@@ -105,8 +113,8 @@ fi
 CMD+=("$PROMPT_CONTENT")
 
 if [[ "$CODEX_BYPASS" == "true" ]]; then
-  echo "cartopian-codex: running codex exec (bypass=on, sandbox=disabled)" >&2
+  echo "cartopian-codex: running codex exec (bypass=on, sandbox=disabled, skip-git-repo-check=on)" >&2
 else
-  echo "cartopian-codex: running codex exec (sandbox=$CODEX_SANDBOX)" >&2
+  echo "cartopian-codex: running codex exec (sandbox=$CODEX_SANDBOX, skip-git-repo-check=on)" >&2
 fi
 exec "${CMD[@]}"

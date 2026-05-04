@@ -12,6 +12,14 @@
     plus --dangerously-bypass-approvals-and-sandbox. Verified against
     codex-cli 0.128.0.
 
+    Note on git-repo check: `codex exec` refuses to run unless cwd is
+    inside a git repository (or --skip-git-repo-check is passed). Under
+    the Cartopian launch-cwd convention the cwd is the parent of the
+    workspace, which is intentionally not a git repo, so the wrapper
+    passes --skip-git-repo-check unconditionally. Sandbox safety still
+    comes from --sandbox workspace-write, which roots writes at the
+    launch cwd; it does not depend on cwd being a git repo.
+
 .PARAMETER PromptPath
     Absolute path to the Cartopian prompt file.
 
@@ -85,7 +93,7 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-$Args = @('exec')
+$Args = @('exec', '--skip-git-repo-check')
 if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'
 } elseif ($Sandbox) {
@@ -94,9 +102,9 @@ if ($Bypass) {
 $Args += $PromptContent
 
 if ($Bypass) {
-    Write-Host "cartopian-codex: running codex exec (bypass=on, sandbox=disabled)" -ForegroundColor DarkGray
+    Write-Host "cartopian-codex: running codex exec (bypass=on, sandbox=disabled, skip-git-repo-check=on)" -ForegroundColor DarkGray
 } else {
-    Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox)" -ForegroundColor DarkGray
+    Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox, skip-git-repo-check=on)" -ForegroundColor DarkGray
 }
 & codex @Args
 exit $LASTEXITCODE

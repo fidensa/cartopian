@@ -319,6 +319,14 @@ field for it, because the value varies per machine and per operator
 preference and any drift between a recorded path and the actual
 filesystem would defeat the filesystem-first stance.
 
+**Note for custom wrapper authors.** The launch cwd is, by design, the
+parent of the workspace and therefore not itself a git repository.
+Tools that refuse to run outside a git repo (e.g. Codex's
+`--skip-git-repo-check`) must be told to skip that check; the
+sandbox/permission model lives at the wrapper layer, not at the
+"is-this-a-git-repo" layer. Wrappers shipped with Cartopian apply this
+flag unconditionally for tools that need it.
+
 Optional automation policy:
 
 ```toml
