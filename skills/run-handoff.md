@@ -89,7 +89,7 @@ operator-facing command text.
 Assignee CLIs run with cwd set to the parent of the workspace root, so
 a single sandbox covers both the workspace (for the assignee's report
 write-back) and the sibling target product repo named in the task's
-`Target repo:` field. The shipped wrappers in `wrappers/` resolve and
+`Repo subpath:` field. The shipped wrappers in `wrappers/` resolve and
 `cd` to this directory automatically; custom agents must honor the
 same convention.
 

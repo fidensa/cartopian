@@ -180,7 +180,7 @@ launch-cwd contract.
 │       │   ├── prompts/             ← temporary assignee handoffs
 │       │   ├── reports/             ← handoff completion reports
 │       │   ├── tasks/
-│       │   │   ├── open/            ← TASK files declare `Target repo: <name>`
+│       │   │   ├── open/            ← TASK files declare `Repo subpath: <subpath>`
 │       │   │   ├── in-progress/
 │       │   │   ├── in-review/
 │       │   │   └── done/

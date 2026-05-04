@@ -2,7 +2,7 @@
 
 Phase: PHASE-NN-slug
 Plan ref: PNN-KIND-NNN
-Target repo: <repo | n/a>
+Repo subpath: <subpath | n/a>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN-slug.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
@@ -21,13 +21,14 @@ One primary plan item from `IMPLEMENTATION_PLAN.md`, for example
 A task that truly advances multiple plan refs should usually be split;
 use References for secondary context.
 
-## Target repo
+## Repo subpath
 
-Single-valued. The bare directory name of the target product repo,
-resolvable as `<launch cwd>/<target repo>` where the launch cwd is the
-parent of the workspace root (see `protocol/CONVENTIONS.md` →
-Handoffs → Launch Directory). Not a `<owner>/<repo>` slug, not a
-relative path, not an absolute path.
+Single-valued path fragment, resolved as `<launch cwd>/<repo subpath>`.
+The launch cwd is the parent of the workspace root (see
+`protocol/CONVENTIONS.md` → Handoffs → Launch Directory). Typically a
+bare directory name (e.g., `cartopian-web`); multi-segment is allowed
+for nested layouts (e.g., `team-a/cartopian-web`). Not absolute, not a
+`<owner>/<repo>` GitHub slug.
 
 Use `n/a` if the task does not touch a product repo. A task that
 genuinely spans multiple repos is a sign the task should be split.

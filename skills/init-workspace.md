@@ -134,9 +134,7 @@ If yes:
    (different from workspace defaults).
 3. Ask about **CLI handoff target overrides** for any agent roles.
 4. Ask about **automation policy overrides** for this project.
-5. Ask about **target repos** — paths to code repositories this project
-   governs, and their default branches.
-6. Write `projects/<project-id>/cartopian.toml`:
+5. Write `projects/<project-id>/cartopian.toml`:
 
 ```toml
 [project]
@@ -158,11 +156,12 @@ id = "<project-id>"
 # [automation]
 # confirmation = "each-handoff"
 # max_handoffs_per_run = 1
-
-[repos.<repo-name>]
-path = "<relative path to local repo>"
-default_branch = "main"
 ```
+
+Target product repos are not declared in `cartopian.toml`. Each task
+records its own `Repo subpath:` and the assignee CLI is launched with
+cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md`
+→ Handoffs → Launch Directory).
 
 ### Step 8 — Validate and summarize
 

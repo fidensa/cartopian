@@ -2,7 +2,7 @@
 
 Phase: PHASE-01-core
 Plan ref: P01-BUILD-001
-Target repo: widget-api
+Repo subpath: widget-api
 Assignee: coder
 Spec: SPEC-01-001-widget-schema.md
 Depends on: none
@@ -21,7 +21,7 @@ and type generation.
 P01-BUILD-001 — first build item in Phase 01. The schema contract blocks
 all endpoint work.
 
-## Target repo
+## Repo subpath
 
 widget-api — the schema file lives at `schemas/widget.schema.json`.
 

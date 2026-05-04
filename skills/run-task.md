@@ -63,7 +63,7 @@ The prompt must be directed at the assignee and include:
 
 - Absolute prompt path.
 - Absolute project root.
-- Absolute target repo path.
+- Absolute repo path.
 - Absolute task path.
 - Absolute spec path, or `n/a`.
 - Absolute expected report path.
@@ -144,7 +144,7 @@ The review prompt must include absolute paths to:
 - The spec file, when present.
 - The completion report.
 - The expected review file.
-- The target repo path.
+- The repo path.
 - Relevant implementation evidence.
 
 After task completion evidence has been captured in the review prompt,

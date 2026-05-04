@@ -2,7 +2,7 @@
 
 Phase: PHASE-00-baseline
 Plan ref: P00-BUILD-001
-Target repo: n/a
+Repo subpath: n/a
 Assignee: PM
 Spec: none
 Depends on: none
@@ -20,7 +20,7 @@ lock it as the authoritative input for implementation planning.
 P00-BUILD-001 — the first step in Phase 00. No code is written; this is
 a planning gate.
 
-## Target repo
+## Repo subpath
 
 n/a — this task operates on the PM system, not a code repo.
 

@@ -1,7 +1,7 @@
 # TASK-NN-NNN: <title>
 
 Plan ref: PNN-KIND-NNN
-Target repo: <repo>
+Repo subpath: <subpath>
 Branch: <branch or n/a>
 Spec: <SPEC-NN-NNN-slug.md or none>
 
@@ -9,7 +9,7 @@ Spec: <SPEC-NN-NNN-slug.md or none>
 
 - **Prompt path**: <absolute path to this prompt file>
 - **Project root**: <absolute path to the project directory>
-- **Target repo path**: <absolute path to the target repository>
+- **Repo path**: <absolute path to the target repository>
 - **Task path**: <absolute path to the task file>
 - **Spec path**: <absolute path to the spec file, or n/a>
 - **Report path**: <absolute path to the expected completion report>

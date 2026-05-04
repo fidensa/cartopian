@@ -24,20 +24,24 @@ Ask the operator for:
 1. **Project name** — human-readable (e.g., "Widget API").
 2. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one
    derived from the name if the operator doesn't provide one.
-3. **Target repos** — paths to code repositories this project governs
-   (if any). Each repo needs a name, relative path, and default branch.
-4. **Role kind overrides** — any roles that differ from workspace
+3. **Role kind overrides** — any roles that differ from workspace
    defaults for this project. Remind the operator that role values are
    kind values (`human`, `agent`, `none`, or `""` for unset). An empty
    value `""` indicates an unset or unassigned role, and `"none"`
    indicates the role is not used at all.
-5. **Handoff overrides** — for any agent roles, ask if the project
+4. **Handoff overrides** — for any agent roles, ask if the project
    needs different CLI handoff targets, auto-start, or timeout values
    than the workspace defaults. Explain that omitted handoff config
    inherits workspace behavior.
-6. **Automation overrides** — ask if the project needs a different
+5. **Automation overrides** — ask if the project needs a different
    confirmation policy or max handoffs per run than the workspace
    defaults.
+
+Target product repos are not declared in `cartopian.toml`. Each task
+records its own `Repo subpath:` and the assignee CLI is launched with
+cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md`
+→ Handoffs → Launch Directory). Per-task branch information lives on
+the prompt's `Branch:` field, populated by the PM at handoff time.
 
 ### Step 2 — Create directory structure
 
@@ -92,14 +96,9 @@ id = "<project-id>"
 # confirmation = "each-handoff"
 # max_handoffs_per_run = 1
 # Omitted automation config inherits workspace behavior.
-
-[repos.<repo-name>]
-path = "<relative path>"
-default_branch = "main"
 ```
 
 Omit the `[roles]` section entirely if there are no overrides. Include
-`[repos.*]` only if the operator provided target repos. Include
 `[handoffs.*]` only for project-specific overrides. Include
 `[automation]` only for project-specific overrides.
 

@@ -52,7 +52,7 @@ $PromptContent = Get-Content -Path $PromptPath -Raw
 # Cartopian convention: assignee CLIs run with cwd set to the parent of
 # the workspace root, so the assignee's filesystem access spans both the
 # protocol repo (for report write-back under .../projects/<proj>/reports/)
-# and the sibling target product repo named in the task's `Target repo:`
+# and the sibling target product repo named in the task's `Repo subpath:`
 # field. Prompts always live at <workspace>/projects/<proj>/prompts/
 # PROMPT-*.md, so the launch cwd is derivable from the prompt path
 # alone.

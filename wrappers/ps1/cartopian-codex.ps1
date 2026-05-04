@@ -52,7 +52,7 @@ $PromptContent = Get-Content -Path $PromptPath -Raw
 # the workspace root, so a single workspace-write sandbox spans both the
 # protocol repo (for the assignee's report write-back under
 # .../projects/<proj>/reports/) and the sibling target product repo
-# named in the task's `Target repo:` field. Prompts always live at
+# named in the task's `Repo subpath:` field. Prompts always live at
 # <workspace>/projects/<proj>/prompts/PROMPT-*.md, so the launch cwd is
 # derivable from the prompt path alone.
 #

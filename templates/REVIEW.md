@@ -2,7 +2,7 @@
 
 Target: <TASK-NN-NNN-slug or SPEC-NN-NNN-slug>
 Plan ref: <PNN-KIND-NNN | n/a>
-Target repo: <repo | n/a>
+Repo subpath: <subpath | n/a>
 Reviewer: <free text>
 Verdict: approve | request-changes | reject
 
@@ -17,8 +17,8 @@ use `n/a` in each field and say why.
 
 - **Commit SHA** — the green commit the reviewer approved against.
 - **Merge commit SHA** — the merge commit on `main` that landed the
-  feature branch. For tasks whose target repo is the PM system or
-  `n/a`, write `n/a`.
+  feature branch. For tasks whose `Repo subpath:` is `n/a`, write
+  `n/a`.
 - **PR URL** — the pull request, if one exists.
 - **Test evidence** — two parts when the task's test gate was `required`:
   - Red test was present before implementation.

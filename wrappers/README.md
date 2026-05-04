@@ -152,7 +152,7 @@ Why this matters: with cwd at the parent of the workspace, a single
 - the protocol repo, so the assignee can drop its
   `reports/REPORT-NN-NNN.md` back into
   `<workspace>/projects/<project-id>/reports/`, and
-- the sibling target product repo named in the task's `Target repo:`
+- the sibling target product repo named in the task's `Repo subpath:`
   field, so the assignee can edit code.
 
 This is why Cartopian's recommended workspace layout puts target
@@ -164,12 +164,12 @@ it). For example:
 ├── cartopian/                           ← workspace root (protocol repo)
 │   └── projects/
 │       └── cartopian-web/               ← project PM data
-│           ├── tasks/.../TASK-01-004... ← `Target repo: cartopian-web`
+│           ├── tasks/.../TASK-01-004... ← `Repo subpath: cartopian-web`
 │           └── prompts/PROMPT-01-004.md ← absolute path passed to wrapper
 └── cartopian-web/                       ← sibling target product repo
 ```
 
-`Target repo: cartopian-web` plus the launch cwd resolves to
+`Repo subpath: cartopian-web` plus the launch cwd resolves to
 `~/Projects/cartopian-web/` with no ambiguity.
 
 If the prompt is not inside a recognizable Cartopian workspace

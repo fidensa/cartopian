@@ -11,7 +11,7 @@ Status: <complete | blocked | failed>
 - Task ID: <TASK-NN-NNN>
 - Prompt path: <absolute path to the prompt file>
 - Task path: <absolute path to the task file>
-- Target repo path: <absolute path to the target repository>
+- Repo path: <absolute path to the target repository>
 
 ## Files changed
 

@@ -298,14 +298,14 @@ both surfaces a handoff touches:
 - the workspace, so the assignee can write its
   `reports/REPORT-NN-NNN.md` back into
   `<workspace>/projects/<project-id>/reports/`, and
-- the sibling target product repo named in the task's `Target repo:`
+- the sibling target product repo named in the task's `Repo subpath:`
   field, so the assignee can edit code.
 
 Recommended workspace layout: target product repos live as siblings of
-the workspace root (or nested below it). The task's `Target repo:`
-field is a directory name resolvable as
-`<launch cwd>/<target repo>` and is the only path the PM needs to
-construct to point an assignee at the right product repo.
+the workspace root (or nested below it). The task's `Repo subpath:`
+field is a path fragment resolvable as `<launch cwd>/<repo subpath>`
+and is the only path the PM needs to construct to point an assignee
+at the right product repo.
 
 A handoff that needs to touch a repo outside this layout is a sign the
 project's workspace layout should be reorganized rather than the

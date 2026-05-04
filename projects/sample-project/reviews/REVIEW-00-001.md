@@ -2,7 +2,7 @@
 
 Target: TASK-00-001-lock-requirements
 Plan ref: P00-BUILD-001
-Target repo: n/a
+Repo subpath: n/a
 Reviewer: AI reviewer
 Verdict: approve
 
