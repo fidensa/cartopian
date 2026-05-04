@@ -107,6 +107,11 @@ Key design points:
 - `confirmation = "until-blocked"` is available for bounded unattended
   runs, but still launches handoffs sequentially.
 
+Cartopian ships cross-platform wrapper scripts in `wrappers/` for Codex,
+Claude Code, Gemini, and Devin CLIs. These wrappers adapt each CLI to
+the `<agent> <prompt-path>` contract with the correct non-interactive
+flags. See `wrappers/README.md` for installation and customization.
+
 See `protocol/CONVENTIONS.md` for the handoff contract and
 `skills/run-handoff.md` for the executable workflow.
 
@@ -137,6 +142,19 @@ cartopian/                           ← this repo (public, generic)
 │   ├── run-handoff.md
 │   ├── run-task.md
 │   └── close-plan.md
+│
+├── wrappers/                        ← cross-platform agent CLI wrappers
+│   ├── README.md
+│   ├── bin/                         ← bash wrappers (macOS/Linux/WSL)
+│   │   ├── cartopian-codex
+│   │   ├── cartopian-claude
+│   │   ├── cartopian-gemini
+│   │   └── cartopian-devin
+│   └── ps1/                         ← PowerShell wrappers (Windows)
+│       ├── cartopian-codex.ps1
+│       ├── cartopian-claude.ps1
+│       ├── cartopian-gemini.ps1
+│       └── cartopian-devin.ps1
 │
 └── projects/                        ← gitignored, its own git repo
     ├── <project-a>/

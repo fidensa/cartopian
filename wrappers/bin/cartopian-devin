@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# cartopian-devin — Cartopian wrapper for the Devin CLI.
+#
+# Usage:  cartopian-devin <absolute-prompt-path>
+#
+# Reads the prompt file and passes its content to `devin -p` with
+# non-interactive flags. Edit the Configuration section below to change
+# permission mode and other tool-specific settings.
+#
+# Exit codes:
+#   0   — devin completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   *   — upstream devin exit code
+
+set -euo pipefail
+
+# --- Configuration ---------------------------------------------------
+# Permission mode: "normal" | "accept-edits" | "bypass" | "autonomous"
+#   normal       — ask before shell commands and file writes (safest)
+#   accept-edits — auto-approve file edits, ask for shell commands
+#   bypass       — skip all permission checks (trusted environments only)
+#   autonomous   — fully autonomous (use only in sandboxed environments)
+DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-normal}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-devin: error: missing prompt path argument" >&2
+  echo "usage: cartopian-devin <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-devin: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v devin &>/dev/null; then
+  echo "cartopian-devin: error: 'devin' not found in PATH" >&2
+  echo "Install: https://docs.devin.ai/" >&2
+  exit 1
+fi
+
+PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+
+# Build the command
+CMD=(devin -p)
+CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
+CMD+=("--" "$PROMPT_CONTENT")
+
+echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE)" >&2
+exec "${CMD[@]}"

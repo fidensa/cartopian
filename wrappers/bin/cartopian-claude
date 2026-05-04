@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# cartopian-claude — Cartopian wrapper for the Claude Code CLI.
+#
+# Usage:  cartopian-claude <absolute-prompt-path>
+#
+# Reads the prompt file and passes its content to `claude -p` with
+# non-interactive flags. Edit the Configuration section below to change
+# allowed tools, output format, and other tool-specific settings.
+#
+# Exit codes:
+#   0   — claude completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   *   — upstream claude exit code
+
+set -euo pipefail
+
+# --- Configuration ---------------------------------------------------
+# Allowed tools (comma-separated). Controls what claude can do without
+# asking. Common values:
+#   Read,Write,Bash  — can read, write files, and run shell commands
+#   Read             — read-only (safest)
+#   ""               — empty means use claude's default (will prompt)
+CLAUDE_ALLOWED_TOOLS="${CARTOPIAN_CLAUDE_TOOLS:-Read,Write,Bash}"
+
+# Output format: "text" | "json" | "stream-json"
+CLAUDE_OUTPUT_FORMAT="${CARTOPIAN_CLAUDE_FORMAT:-text}"
+
+# Use --bare to skip auto-discovery of hooks/plugins (faster startup)
+CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
+
+# Skip all permission prompts (DANGEROUS — only for trusted environments)
+# Set to "true" to enable --dangerously-skip-permissions
+CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-false}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-claude: error: missing prompt path argument" >&2
+  echo "usage: cartopian-claude <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-claude: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v claude &>/dev/null; then
+  echo "cartopian-claude: error: 'claude' not found in PATH" >&2
+  echo "Install: https://docs.anthropic.com/en/docs/claude-code" >&2
+  exit 1
+fi
+
+PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+
+# Build the command
+CMD=(claude -p)
+
+if [[ -n "$CLAUDE_ALLOWED_TOOLS" ]]; then
+  CMD+=(--allowedTools "$CLAUDE_ALLOWED_TOOLS")
+fi
+
+if [[ "$CLAUDE_OUTPUT_FORMAT" != "text" ]]; then
+  CMD+=(--output-format "$CLAUDE_OUTPUT_FORMAT")
+fi
+
+if [[ "$CLAUDE_BARE" == "true" ]]; then
+  CMD+=(--bare)
+fi
+
+if [[ "$CLAUDE_SKIP_PERMISSIONS" == "true" ]]; then
+  CMD+=(--dangerously-skip-permissions)
+fi
+
+CMD+=("$PROMPT_CONTENT")
+
+echo "cartopian-claude: running claude -p (tools=$CLAUDE_ALLOWED_TOOLS)" >&2
+exec "${CMD[@]}"

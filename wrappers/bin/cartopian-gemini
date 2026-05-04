@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# cartopian-gemini — Cartopian wrapper for the Google Gemini CLI.
+#
+# Usage:  cartopian-gemini <absolute-prompt-path>
+#
+# Reads the prompt file and passes its content to `gemini -p` with
+# non-interactive flags. Edit the Configuration section below to change
+# tool-specific settings.
+#
+# Exit codes:
+#   0   — gemini completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   *   — upstream gemini exit code
+
+set -euo pipefail
+
+# --- Configuration ---------------------------------------------------
+# Sandbox mode (optional). Leave empty for upstream default.
+# Values depend on gemini CLI version.
+GEMINI_SANDBOX="${CARTOPIAN_GEMINI_SANDBOX:-}"
+
+# Yes flag — auto-confirm tool-execution prompts.
+#   "true"  — pass --yes / -y (if supported by your CLI version)
+#   "false" — let gemini use its default behavior
+GEMINI_AUTO_YES="${CARTOPIAN_GEMINI_YES:-false}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-gemini: error: missing prompt path argument" >&2
+  echo "usage: cartopian-gemini <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-gemini: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v gemini &>/dev/null; then
+  echo "cartopian-gemini: error: 'gemini' not found in PATH" >&2
+  echo "Install: https://github.com/google-gemini/gemini-cli" >&2
+  exit 1
+fi
+
+PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+
+# Build the command
+CMD=(gemini -p)
+
+if [[ "$GEMINI_AUTO_YES" == "true" ]]; then
+  CMD+=(-y)
+fi
+
+if [[ -n "$GEMINI_SANDBOX" ]]; then
+  CMD+=(--sandbox "$GEMINI_SANDBOX")
+fi
+
+CMD+=("$PROMPT_CONTENT")
+
+echo "cartopian-gemini: running gemini -p" >&2
+exec "${CMD[@]}"

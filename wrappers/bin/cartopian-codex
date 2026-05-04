@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# cartopian-codex — Cartopian wrapper for the OpenAI Codex CLI.
+#
+# Usage:  cartopian-codex <absolute-prompt-path>
+#
+# Reads the prompt file and passes its content to `codex exec` with
+# non-interactive flags. Edit the Configuration section below to change
+# approval mode, sandbox, and other tool-specific settings.
+#
+# Exit codes:
+#   0   — codex completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   *   — upstream codex exit code
+
+set -euo pipefail
+
+# --- Configuration ---------------------------------------------------
+# Approval mode: "on-request" | "untrusted" | "never"
+#   on-request  — ask before every action (safest, requires terminal)
+#   untrusted   — auto-approve safe ops, ask for mutations
+#   never       — fully autonomous (use only in sandboxed environments)
+CODEX_APPROVAL_MODE="${CARTOPIAN_CODEX_APPROVAL:-suggest}"
+
+# Sandbox mode (optional): "workspace-write" | "danger-full-access"
+# Leave empty to use codex default.
+CODEX_SANDBOX="${CARTOPIAN_CODEX_SANDBOX:-}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-codex: error: missing prompt path argument" >&2
+  echo "usage: cartopian-codex <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-codex: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v codex &>/dev/null; then
+  echo "cartopian-codex: error: 'codex' not found in PATH" >&2
+  echo "Install: https://github.com/openai/codex" >&2
+  exit 1
+fi
+
+PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+
+# Build the command
+CMD=(codex exec)
+CMD+=(--approval-mode "$CODEX_APPROVAL_MODE")
+if [[ -n "$CODEX_SANDBOX" ]]; then
+  CMD+=(--sandbox "$CODEX_SANDBOX")
+fi
+CMD+=("$PROMPT_CONTENT")
+
+echo "cartopian-codex: running codex exec (approval=$CODEX_APPROVAL_MODE)" >&2
+exec "${CMD[@]}"

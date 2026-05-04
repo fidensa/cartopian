@@ -24,6 +24,9 @@ protocol specification, default templates, and a sample project.
 - **templates/** — Default file templates (TASK, SPEC, PROMPT, REVIEW,
   REPORT, DECISION, REQUIREMENTS, ENGINEERING, IMPLEMENTATION_PLAN,
   PLAN_CLOSEOUT)
+- **wrappers/** — Cross-platform agent CLI wrappers (`bin/` for bash,
+  `ps1/` for PowerShell). Pre-built for Codex, Claude Code, Gemini,
+  and Devin.
 - **skills/** — Agent-executable guided workflows, with workflow details
   in each skill file.
   All skills understand CLI handoff automation.
