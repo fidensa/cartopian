@@ -37,14 +37,14 @@ if (-not (Get-Command gemini -ErrorAction SilentlyContinue)) {
 
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
-$Args = @('-p')
+$Args = @()
 if ($AutoYes) {
     $Args += '-y'
 }
 if ($Sandbox) {
     $Args += @('--sandbox', $Sandbox)
 }
-$Args += $PromptContent
+$Args += @('-p', $PromptContent)
 
 Write-Host "cartopian-gemini: running gemini -p" -ForegroundColor DarkGray
 & gemini @Args

@@ -22,7 +22,7 @@ GEMINI_SANDBOX="${CARTOPIAN_GEMINI_SANDBOX:-}"
 # Yes flag — auto-confirm tool-execution prompts.
 #   "true"  — pass --yes / -y (if supported by your CLI version)
 #   "false" — let gemini use its default behavior
-GEMINI_AUTO_YES="${CARTOPIAN_GEMINI_YES:-false}"
+GEMINI_AUTO_YES="${CARTOPIAN_GEMINI_YES:-true}"
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -46,8 +46,9 @@ fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
-# Build the command
-CMD=(gemini -p)
+# Build the command. Flags must precede -p so gemini receives the prompt
+# content as -p's value.
+CMD=(gemini)
 
 if [[ "$GEMINI_AUTO_YES" == "true" ]]; then
   CMD+=(-y)
@@ -57,7 +58,7 @@ if [[ -n "$GEMINI_SANDBOX" ]]; then
   CMD+=(--sandbox "$GEMINI_SANDBOX")
 fi
 
-CMD+=("$PROMPT_CONTENT")
+CMD+=(-p "$PROMPT_CONTENT")
 
 echo "cartopian-gemini: running gemini -p" >&2
 exec "${CMD[@]}"
