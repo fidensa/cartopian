@@ -32,6 +32,8 @@ When test gate was `n/a`:
 ## Commit / PR
 
 - Commit SHA: <SHA or n/a>
+  Use `n/a` when the project uses PM-owned product-repo git; the PM
+  stages and commits the task changes after this report lands.
 - PR URL: <URL or n/a>
   Use `n/a` when the project uses PM-owned product-repo git; the PM
   creates the PR after this report lands.
