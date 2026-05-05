@@ -45,6 +45,9 @@ must be absolute.>
 - Do not move Cartopian task files between status directories.
 - Do not delete prompt files.
 - Do not rewrite `STATE.md` or perform PM lifecycle cleanup.
+- When the project uses PM-owned product-repo git, do not stage,
+  commit, push, create branches, open PRs, merge, or otherwise perform
+  product-repo git plumbing.
 
 ## Done criteria
 <Checkable. Boolean-verifiable.>

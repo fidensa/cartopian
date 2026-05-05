@@ -74,6 +74,10 @@ The prompt must be directed at the assignee and include:
   gate.
 - A reminder that assignees do not move Cartopian task files, delete
   prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
+- When `git.pm_owns_product_branches = true` and `Repo subpath:` names
+  a product repo, a reminder that assignees do not stage, commit, push,
+  branch, open PRs, merge, or otherwise perform product-repo git
+  plumbing.
 
 Delete any stale report at:
 
@@ -134,22 +138,32 @@ If `pm_owns_product_branches = true` and the task names a product repo
 with `Repo subpath:`, perform the PM-owned product-repo git step before
 Stage 5:
 
-1. Require the accepted completion report to include the coder's
-   implementation `Commit SHA`. If it does not, treat the report as
-   incomplete completion evidence and stop for operator inspection.
+1. Treat coder-supplied product-repo git evidence as a boundary
+   violation. If the report claims the assignee staged, committed,
+   pushed, branched, opened a PR, or merged product-repo code, stop for
+   operator inspection.
 2. Resolve the product repo from the task's `Repo subpath:`.
-3. Create the configured branch in the product repo at the coder's
-   reported commit SHA. The protocol default branch is
-   `task/NN-NNN-slug`, derived from
+3. Resolve the configured branch name. The protocol default branch name
+   is `task/NN-NNN-slug`, derived from
    `git.default_branch_pattern = "task/{task_id}-{slug}"`.
-4. Push the branch with `git push -u origin <branch>`.
-5. Open a PR with `gh pr create`. The title and body must reference the
-   task ID and completion report.
-6. Resolve a deploy preview URL when one exists, for example from a
+4. Create or update that branch in the product repo. On a first pass,
+   create it before committing the task changes. On a rework pass with
+   an existing open PR, reuse the same branch.
+5. Inspect the product-repo worktree and stage only the changes that
+   belong to the task. If the worktree does not contain actionable task
+   changes, or contains unrelated changes that cannot be separated, stop
+   for operator inspection.
+6. Commit the staged task changes with a message that references the
+   task ID and completion report. Capture the resulting implementation
+   commit SHA.
+7. Push the branch with `git push -u origin <branch>`.
+8. Open a PR with `gh pr create`, or reuse the existing PR on rework.
+   The title and body must reference the task ID and completion report.
+9. Resolve a deploy preview URL when one exists, for example from a
    Vercel-bot PR comment. If no preview URL exists, proceed with the PR
    URL only and record the missing preview URL in `STATE.md`.
-7. Capture the branch, PR URL, preview URL if present, and commit SHA as
-   review handoff evidence.
+10. Capture the branch, PR URL, preview URL if present, and
+    implementation commit SHA as review handoff evidence.
 
 If `pm_owns_product_branches = true` but the task's `Repo subpath:` is
 `n/a`, there is no product-repo branch or PR step; proceed to Stage 5

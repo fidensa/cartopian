@@ -122,8 +122,8 @@ Automated agents do not gain lifecycle authority by completing a
 handoff. Their reports are evidence for the PM to process.
 
 When PM-owned product-repo git is enabled, PM lifecycle authority also
-includes branch, PR, merge, and post-merge review-evidence updates for
-product repos only. See
+includes product-repo staging, commits, branches, pushes, PRs, merges,
+and post-merge review-evidence updates for product repos only. See
 [PM-Owned Product-Repo Branches](#pm-owned-product-repo-branches).
 
 ## Tasks
@@ -516,19 +516,22 @@ human-owned.
 ### PM-Owned Product-Repo Branches
 
 When `git.pm_owns_product_branches = true`, the PM owns product-repo git
-plumbing for tasks whose `Repo subpath:` names a product repository. The
+plumbing for tasks whose `Repo subpath:` names a product repository:
+staging, commits, branches, pushes, PRs, merges, and branch cleanup. The
 setting does not apply to tasks whose `Repo subpath:` is `n/a`, and it
 never applies to the Cartopian protocol repository itself. Protocol-repo
 git staging, commits, pushes, and branch management remain human-owned
 regardless of any project setting.
 
 On an accepted coder completion report with `Ready for review: yes`, the
-coder is responsible for the implementation commit SHA and does not
-push, create a branch, or open a PR. The PM creates the configured
-product-repo branch at the reported commit SHA, pushes it with
+coder is responsible for completed worktree changes and completion
+evidence only. The coder does not stage, commit, push, create a branch,
+or open a PR. The PM resolves the product repo, creates or updates the
+configured product-repo branch, stages and commits the task changes,
+captures the resulting implementation commit SHA, pushes with
 `git push -u origin <branch>`, and opens a pull request with
-`gh pr create`. The PR title and body reference the task ID and
-completion report.
+`gh pr create`. The commit message, PR title, and PR body reference the
+task ID and completion report.
 
 The protocol defaults are:
 

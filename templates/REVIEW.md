@@ -15,8 +15,9 @@ Two lines. What was reviewed, and what the verdict rests on.
 Required for build and porting tasks. For planning and repo-admin tasks,
 use `n/a` in each field and say why.
 
-- **Commit SHA** — filled by the reviewer: the green commit they
-  approved against.
+- **Commit SHA** — filled by the reviewer: the green implementation
+  commit they approved against. In PM-owned product-repo git projects,
+  this is the PM-created task commit from `skills/run-task.md` Stage 4.
 - **Merge commit SHA** — filled by the PM in Stage 6 of
   `skills/run-task.md`, post-merge. The reviewer writes `pending`, or
   `n/a` when the project does not use PM-owned product-repo git.
