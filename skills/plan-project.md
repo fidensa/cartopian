@@ -1,11 +1,21 @@
 # Skill: Plan Project
 
-Walk the full Cartopian lifecycle: requirements → implementation plan →
-phases → tasks, with optional review checkpoints at every stage.
+Walk the full Cartopian lifecycle: requirements gathering → implementation
+plan → phases → tasks, with optional review checkpoints at every stage.
 
-This is the core skill. It unlocks the system's value by guiding the
-agent and operator through the "happy path" that Cartopian was designed
-around.
+Use this skill when you are starting from scratch and want a guided
+requirements conversation before generating a plan. If you already have
+requirements or a plan from an external source, consider the targeted
+alternatives first:
+
+- **`adopt-requirements`** — generate `REQUIREMENTS.md` from an existing
+  JIRA story, Confluence document, or any external requirements source,
+  without running the full planning pipeline. Feed its output into this
+  skill starting at Stage 2, or into `adopt-plan`.
+- **`adopt-plan`** — migrate an existing implementation plan (JIRA epic,
+  Confluence doc, slide deck, or any structured plan) into Cartopian
+  format, without a requirements-gathering conversation. Requirements may
+  be referenced externally, summarized as a stub, or adopted inline.
 
 **Output:** A fully planned project with `REQUIREMENTS.md`,
 `IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an
@@ -84,9 +94,12 @@ cycle, not as locked requirements or a locked implementation plan.
 
 Check if a `REQUIREMENTS.md` exists in the project directory.
 
-- If it exists and is populated, ask the operator: "Requirements already
-  exist. Do you want to revise them for this planning cycle, or proceed
-  to planning from them?"
+- If it exists and is populated (including a reference stub from
+  `adopt-requirements`), ask the operator: "Requirements already exist.
+  Do you want to revise them for this planning cycle, or proceed to
+  planning from them?"
+- If the operator wants to proceed from existing requirements, skip
+  Stages 1.2–1.4 and go directly to Stage 2.
 - If it does not exist (or is empty), proceed to gathering.
 
 ### 1.2 Engage the operator

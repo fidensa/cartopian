@@ -11,7 +11,9 @@ needed and produces the output files.
 |---|---|---|---|
 | **Init Workspace** | `init-workspace.md` | Generate workspace and project `cartopian.toml` config files | Configures handoff targets and automation policy |
 | **Init Project** | `init-project.md` | Scaffold a new project with the correct directory structure | Scaffolds `reports/` and supports handoff overrides |
-| **Plan Project** | `plan-project.md` | Walk the full lifecycle: requirements → plan → phases → tasks | Resolves handoff config, launches or instructs CLI handoffs for review checkpoints |
+| **Adopt Requirements** | `adopt-requirements.md` | Generate `REQUIREMENTS.md` from external sources (JIRA, Confluence, PRD, etc.) without running the full planning pipeline | None — PM-only skill; no handoff |
+| **Adopt Plan** | `adopt-plan.md` | Migrate an existing implementation plan from any external format into Cartopian artifacts; requirements may be external, stubbed, or adopted inline | Resolves handoff config; launches or instructs CLI handoffs for review checkpoints |
+| **Plan Project** | `plan-project.md` | Walk the full lifecycle from requirements gathering through plan, phases, and tasks | Resolves handoff config, launches or instructs CLI handoffs for review checkpoints |
 | **Run Handoff** | `run-handoff.md` | Execute one manual or CLI handoff and parse its report outcome | Reusable handoff/report mechanics for planning, task, and review work |
 | **Run Task** | `run-task.md` | Drive one task from assignment through completion report, review, and state refresh | Uses handoff automation for assignee and reviewer work |
 | **Close Plan** | `close-plan.md` | Close a completed plan, optionally archive it, and reset for the next planning cycle | Inspects `reports/` for unresolved handoffs, resets reports during closeout |
