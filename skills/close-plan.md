@@ -176,6 +176,23 @@ Copy these live artifacts into the archive directory when they exist:
 Do not archive `prompts/`. Prompts are temporary handoff artifacts and
 must not become a durable archive.
 
+### 3.4 Update archive index
+
+Create `archive/INDEX.md` if it does not exist, or append to the
+existing table. Use this structure:
+
+```markdown
+# Archive Index
+
+| Archive | Closed | Summary |
+|---|---|---|
+| `PLAN-NNN-slug` | YYYY-MM-DD | Brief plan outcome |
+```
+
+Each row records one archived plan. The summary is a short phrase
+derived from the plan title or project outcome used in the archive
+slug.
+
 ---
 
 ## Stage 4 - Reset Live Project Surface

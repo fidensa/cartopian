@@ -109,6 +109,7 @@ lifecycle skill.
 - Plan archives: `archive/PLAN-NNN-slug/`. Optional completed-plan
   snapshots created only during plan closeout.
 - Plan closeout summary: `archive/PLAN-NNN-slug/CLOSEOUT.md`.
+- Archive index: `archive/INDEX.md`. One-line-per-archive summary table.
 - Decisions: `DEC-NNN-kebab-case-slug.md`. `NNN` is a project-local
   counter within `decisions/`.
 
@@ -483,6 +484,10 @@ Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
 - `CLOSEOUT.md`
 
 Prompts are not archived.
+
+`archive/INDEX.md` is a one-line-per-archive summary table. It is
+created with the first archive and updated on each subsequent closeout
+that produces an archive.
 
 After closeout, `STATE.md` says there is no active plan and names
 `skills/plan-project.md` as the next action.
