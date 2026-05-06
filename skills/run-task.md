@@ -6,6 +6,9 @@ review, verdict handling, and session state refresh.
 Use this skill when the operator wants to start, continue, review, or
 close a task in the current plan.
 
+For vague session-start requests that do not name a project or target
+task, use `skills/start-session.md` first.
+
 **Output:** The task is moved to the lifecycle state supported by the
 evidence; prompts, reports, reviews, decisions, and `STATE.md` are left
 consistent with that state.

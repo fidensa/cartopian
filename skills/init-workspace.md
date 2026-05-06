@@ -178,3 +178,5 @@ cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md`
      a new project."
    - If a project exists but has no plan: "Run `skills/plan-project.md`
      to start the planning lifecycle."
+   - If a project already has a plan: "Run `skills/start-session.md` to
+     read `STATE.md` and choose the current or next PM action."

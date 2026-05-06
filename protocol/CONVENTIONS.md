@@ -38,10 +38,52 @@ codebase.
 
 It tracks phase progress against `IMPLEMENTATION_PLAN.md`, holds specs,
 tasks, reviews, prompts, reports, and decisions, and keeps one short
-state file (`STATE.md`) so each session starts with current context.
+state file (`STATE.md`) so each project session starts with current
+context.
 
 It is not a source repository for product code, a workspace shell for
 product repos, a chat log, journal, or prompt archive.
+
+## Session Startup And Project Selection
+
+A PM session starts only after the project is unambiguous.
+
+A project is selected explicitly when the operator names a project ID or
+project path. A project is selected implicitly when the agent's current
+working directory is inside `projects/<project-id>/` and that directory
+contains both `STATE.md` and `cartopian.toml`.
+
+For project-agnostic startup directions such as "start working",
+"continue", "check `STATE.md`", "what's next", or "pick up where we left
+off", the PM first resolves the workspace and eligible projects:
+
+1. List child directories under `projects/` that contain both `STATE.md`
+   and `cartopian.toml`.
+2. If the current working directory is inside one eligible project, use
+   that project and name it to the operator.
+3. If there is exactly one eligible project, use it and name it to the
+   operator.
+4. If there is more than one eligible project and none was selected,
+   ask the operator which project to use. Do not read or mutate
+   project-specific lifecycle artifacts until the project is selected.
+5. If there are no eligible projects, start with `skills/init-project.md`.
+
+After project selection, the PM reads the project and workspace
+`cartopian.toml` files and resolves the effective PM role. If the agent
+is the PM for the selected project, session startup duty is:
+
+1. Read `STATE.md` before taking lifecycle action.
+2. Reconcile `STATE.md` against the filesystem when it names task state
+   that disagrees with task directories.
+3. Tell the operator the current phase, active work, and next protocol
+   action from `STATE.md`.
+4. Ask whether to begin or continue the current task, or proceed to the
+   next task when no task is active.
+
+A bare startup direction is not permission to launch a handoff or move a
+task. The PM waits for the operator to confirm the current or next task
+before using `skills/run-task.md`, `skills/plan-project.md`, or another
+lifecycle skill.
 
 ## Naming
 
@@ -560,8 +602,9 @@ evidence handoffs and are not PM-edited.
 
 ## Session State
 
-Every session starts from `STATE.md` and ends with `STATE.md` refreshed.
-The file remains short, current, and under 5KB.
+After project selection, every PM session starts from that project's
+`STATE.md` and ends with `STATE.md` refreshed. The file remains short,
+current, and under 5KB.
 
 Session closeout leaves task directories, prompts, reports, decisions,
 and git state consistent with the lifecycle evidence processed during

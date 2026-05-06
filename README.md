@@ -32,6 +32,8 @@ and plan projects. See `skills/README.md` for the full index.
 Cartopian skills can be run using the natural language equivalent of
 their filenames (e.g., "init project", "init workspace", "plan project").
 
+- **`skills/start-session.md`** — Select the right project, read
+  `STATE.md`, and ask whether to begin the current or next PM action.
 - **`skills/init-workspace.md`** — Generate workspace and project config files.
 - **`skills/init-project.md`** — Scaffold a new project with the correct structure.
 - **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
@@ -42,8 +44,13 @@ their filenames (e.g., "init project", "init workspace", "plan project").
 Typical project lifecycle:
 
 ```text
-init project -> plan project -> run task -> close plan -> plan project
+init project -> plan project -> start session -> run task -> close plan -> plan project
 ```
+
+In a workspace with multiple projects, vague PM startup requests such as
+"start working" or "check `STATE.md`" require project selection first.
+After the project is selected, an agent PM reads `STATE.md`, reports the
+current or next protocol action, and asks whether to begin.
 
 ## Configuration
 
@@ -151,6 +158,7 @@ contract.
 │   │   ├── README.md
 │   │   ├── init-workspace.md
 │   │   ├── init-project.md
+│   │   ├── start-session.md
 │   │   ├── plan-project.md
 │   │   ├── run-handoff.md
 │   │   ├── run-task.md

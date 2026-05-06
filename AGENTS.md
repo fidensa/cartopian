@@ -29,7 +29,7 @@ protocol specification, default templates, and a sample project.
   and Devin.
 - **skills/** — Agent-executable guided workflows, with workflow details
   in each skill file.
-  All skills understand CLI handoff automation.
+  Planning, task, and review workflows understand CLI handoff automation.
 - **Skill invocation names:** Natural-language skill names are derived from
   `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens
   with spaces, e.g. `init-project.md` maps to `init project`. The mapping is
@@ -64,6 +64,12 @@ protocol specification, default templates, and a sample project.
 - **`STATE.md` ceiling:** 5KB hard limit per project.
 - **Lifecycle authority:** Task movement, review verdicts, session state, and
   Git behavior are governed by `protocol/CONVENTIONS.md`.
+- **Session startup safety:** For vague PM startup requests such as "start
+  working", "continue", or "check STATE.md", use `skills/start-session.md`.
+  If more than one project exists and no project is specified, ask which
+  project to use before reading or mutating project lifecycle artifacts.
+  When this agent is PM for the selected project, read `STATE.md`, summarize
+  the current/next protocol action, and ask whether to begin.
 
 ## Formatting & Linting
 
