@@ -1,9 +1,9 @@
 # Cartopian
 
-Filesystem-first project governance for AI-native development.
+Filesystem-first project governance for AI-native development with optional multi-agent orchestration.
 
 Cartopian is a lightweight, protocol-driven project management system
-designed for AI agent workflows. It tracks phases, tasks, specs,
+designed for AI agent workflows. Said differently, Cartopian is a project-governance substrate where an agent PM turns requirements into structured project state. It tracks phases, tasks, specs,
 decisions, and reviews using plain markdown files and directory-as-status
 conventions. No database, no SaaS dependency, no mandatory tooling.
 
