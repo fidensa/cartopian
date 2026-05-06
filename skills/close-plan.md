@@ -30,9 +30,12 @@ one.
 2. Read `STATE.md`.
 3. Confirm the operator wants to close the current plan, not revise it.
 4. Explain that `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phases,
-   tasks, specs, reviews, prompts, and reports will be removed from the
-   live project surface during reset.
-5. Explain that `cartopian.toml` and `decisions/` remain live.
+   tasks, specs, reviews, prompts, reports, and decisions will be
+   removed from the live project surface during reset.
+5. Explain that `cartopian.toml` remains live across the reset. The
+   optional `archive/PLAN-NNN-slug/` directory (if the operator chose
+   to archive at Stage 3) also remains and holds the closed plan's
+   snapshot, including its `decisions/`.
 
 Do not proceed unless the operator explicitly confirms plan closeout.
 
