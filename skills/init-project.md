@@ -24,15 +24,20 @@ Ask the operator for:
 1. **Project name** — human-readable (e.g., "Widget API").
 2. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one
    derived from the name if the operator doesn't provide one.
-3. **Role kind overrides** — any roles that differ from workspace
-   defaults for this project. Remind the operator that role values are
-   kind values (`human`, `agent`, `none`, or `""` for unset). An empty
-   value `""` indicates an unset or unassigned role, and `"none"`
-   indicates the role is not used at all.
-4. **Handoff overrides** — for any agent roles, ask if the project
-   needs different CLI handoff targets, auto-start, or timeout values
-   than the workspace defaults. Explain that omitted handoff config
-   inherits workspace behavior.
+3. **Role overrides** — any roles that differ from the workspace
+   `[roles]` table for this project. Each role value is a one-line
+   description string describing the role's responsibility. A role
+   exists in the project iff its key appears in `[roles]`; omit a
+   key to drop a workspace-default role from this project. The
+   protocol-default roster is `pm` and `operator`; common example
+   labels operators add are `coder` and `reviewer`. There is no
+   kind field on the role itself.
+4. **Handoff overrides** — for any role that should dispatch
+   automatically, ask if the project needs different CLI handoff
+   targets, auto-start, or timeout values than the workspace
+   defaults. Whether a role dispatches automatically is inferred
+   from the presence of a `[handoffs.<role>]` block. Explain that
+   omitted handoff config inherits workspace behavior.
 5. **Automation overrides** — ask if the project needs a different
    confirmation policy or max handoffs per run than the workspace
    defaults.
@@ -52,7 +57,7 @@ projects/<project-id>/
 ├── cartopian.toml
 ├── STATE.md
 ├── CONVENTIONS.md
-├── ENGINEERING.md
+├── STANDARDS.md
 ├── phases/
 ├── prompts/
 ├── reports/
@@ -83,8 +88,16 @@ name = "<project name>"
 id = "<project-id>"
 
 [roles]
-# Include only overrides. Workspace defaults apply for omitted roles.
-# Role kind values: "human", "agent", "none", or "" (unset).
+# Include only overrides. Workspace defaults apply for omitted
+# roles. Each value is a one-line description string describing
+# the role's responsibility. Whether a role dispatches
+# automatically is inferred from the presence of a
+# `[handoffs.<role>]` block below; there is no kind field on the
+# role itself. To drop a workspace-default role from this project,
+# omit its key from `[roles]` here and document the choice.
+# Example:
+# coder = "Implements tasks per spec."
+# reviewer = "Reviews per acceptance evidence."
 
 # [handoffs.<role>]
 # agent = "<executable name>"
@@ -146,20 +159,21 @@ This document extends the protocol-level conventions defined in
      constraints here. Delete this comment when you add real content. -->
 ```
 
-### Step 6 — Generate seed ENGINEERING.md
+### Step 6 — Generate seed STANDARDS.md
 
-Write `projects/<project-id>/ENGINEERING.md`:
+Write `projects/<project-id>/STANDARDS.md`:
 
 ```markdown
-# <project name> — Engineering Standards
+# <project name> — Standards
 
 <!-- This document is recommended but not required. It captures the
-     technical standards and constraints that govern implementation for
-     this project. See templates/ENGINEERING.md for a starting template.
+     domain-neutral standards and constraints that govern execution
+     of this project. See templates/STANDARDS.md for a starting
+     template.
 
      This document will be populated during the planning phase. The plan-project
      skill will generate and update this document based on requirements and
-     architectural decisions or you can edit this file directly.-->
+     other locked decisions, or you can edit this file directly.-->
 ```
 
 ### Step 7 — Generate seed decisions/INDEX.md
@@ -186,4 +200,4 @@ Suggest next steps:
 
 - "Run `skills/plan-project.md` to begin the planning lifecycle:
   requirements → plan → phases → tasks. This will also generate your
-  `ENGINEERING.md` document based on the project requirements."
+  `STANDARDS.md` document based on the project requirements."

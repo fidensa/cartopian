@@ -106,15 +106,15 @@ If exit criteria are not satisfied, stop and name the missing evidence.
 Ask the operator three closeout questions:
 
 1. **Archive:** "Do you want to archive the completed plan before reset?"
-2. **Engineering:** "Should `ENGINEERING.md` carry forward as the seed
-   for the next plan, or reset to a blank project engineering file?"
+2. **Standards:** "Should `STANDARDS.md` carry forward as the seed
+   for the next plan, or reset to a blank project standards file?"
 3. **Conventions:** "Should `CONVENTIONS.md` carry forward as the seed
    for the next plan, or reset to the default project conventions file?"
 
 Defaults:
 
 - Archive: no.
-- Engineering: carry forward only if the operator says so.
+- Standards: carry forward only if the operator says so.
 - Conventions: carry forward only if the operator says so.
 
 Requirements and implementation plans never carry forward as live
@@ -153,7 +153,7 @@ The closeout summary records:
 - Whether this was a full completion or another operator-approved
   closeout after all active work was resolved.
 - Archive contents.
-- Carry-forward choices for `ENGINEERING.md` and `CONVENTIONS.md`.
+- Carry-forward choices for `STANDARDS.md` and `CONVENTIONS.md`.
 - Any plan refs or work intentionally not carried forward.
 - Suggested seed context for the next requirements session.
 
@@ -162,7 +162,7 @@ The closeout summary records:
 Copy these live artifacts into the archive directory when they exist:
 
 - `REQUIREMENTS.md`
-- `ENGINEERING.md`
+- `STANDARDS.md`
 - `CONVENTIONS.md`
 - `IMPLEMENTATION_PLAN.md`
 - `STATE.md`
@@ -234,15 +234,15 @@ decisions/
 Reports should not become a replacement for task, review, or decision
 records. They are cleared during reset along with other plan artifacts.
 
-### 4.2 Conditionally reset `ENGINEERING.md`
+### 4.2 Conditionally reset `STANDARDS.md`
 
-If the operator chose to carry forward engineering standards, leave
-`ENGINEERING.md` in place and treat it as seed context for the next
+If the operator chose to carry forward project standards, leave
+`STANDARDS.md` in place and treat it as seed context for the next
 planning cycle.
 
 If the operator chose not to carry it forward, replace
-`ENGINEERING.md` with a fresh project engineering seed based on
-`templates/ENGINEERING.md`.
+`STANDARDS.md` with a fresh project standards seed based on
+`templates/STANDARDS.md`.
 
 ### 4.3 Conditionally reset `CONVENTIONS.md`
 
@@ -281,7 +281,7 @@ Rewrite `STATE.md` so it is under 5KB and says:
 - There is no active plan.
 - The previous plan has been closed.
 - Whether an archive was created, and where.
-- Whether `ENGINEERING.md` and `CONVENTIONS.md` were carried forward.
+- Whether `STANDARDS.md` and `CONVENTIONS.md` were carried forward.
 - The next action is to run `skills/plan-project.md` to gather fresh
   requirements and generate the next implementation plan.
 
@@ -323,7 +323,7 @@ Print a concise closeout summary:
 
 - Whether the plan was archived.
 - What was reset (including reports/).
-- Whether engineering standards carried forward.
+- Whether project standards carried forward.
 - Whether project conventions carried forward.
 - Any unresolved decision follow-up.
 - The exact next action: run `skills/plan-project.md`.

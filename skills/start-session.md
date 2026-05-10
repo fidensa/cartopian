@@ -43,17 +43,24 @@ project is selected.
 ## Stage 1 - Resolve PM Role
 
 Read the workspace-level `cartopian.toml` and the selected project's
-`cartopian.toml`.
+`cartopian.toml`. Resolve the effective `[roles]` table and the
+effective `[handoffs.*]` blocks, with project config overriding
+workspace config.
 
-Resolve the effective `roles.pm` value, with project config overriding
-workspace config:
+Determine PM availability and dispatch path from the resolved
+config:
 
-- `agent`: this agent may act as PM for the startup flow.
-- `human` or `none`: summarize state only; do not take PM lifecycle
-  action unless the operator explicitly assigns the agent as PM for this
-  session.
-- `""` or omitted: ask the operator who should act as PM before taking
-  lifecycle action.
+- If `pm` is not declared in the resolved `[roles]` table, surface
+  a blocker: the project does not declare a PM role. Ask the
+  operator how to proceed (declare `pm` in `[roles]`, name a
+  different role to act as PM for this session, or stop) before
+  taking any PM lifecycle action.
+- If `pm` is declared in `[roles]` and a `[handoffs.pm]` block is
+  configured, PM dispatch is automated via that block's wrapper.
+- If `pm` is declared in `[roles]` and no `[handoffs.pm]` block is
+  configured, PM dispatch is manual: this agent may summarize
+  state and propose the next action, but lifecycle execution
+  requires explicit operator confirmation per stage.
 
 ---
 

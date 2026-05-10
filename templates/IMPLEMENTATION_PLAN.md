@@ -3,7 +3,7 @@
 ## Purpose
 
 What this plan exists to accomplish. Name the source documents or external
-references that drive it — e.g., `REQUIREMENTS.md`, `ENGINEERING.md`, a
+references that drive it — e.g., `REQUIREMENTS.md`, `STANDARDS.md`, a
 JIRA epic, or a Confluence page — and their versions or dates where
 applicable.
 

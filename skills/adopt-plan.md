@@ -47,15 +47,20 @@ stop and ask the operator to resolve the state before proceeding.
 ## Stage 0 — Role and Handoff Resolution
 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Resolve the effective role kind for each role (project overrides
-   workspace).
-3. Resolve the effective handoff target for each agent role: check project
-   `[handoffs.*]`, then fall back to workspace `[handoffs.*]`.
+2. Resolve the effective `[roles]` table (project overrides
+   workspace). Each value is a one-line description string; a
+   role exists in this project iff its key appears in `[roles]`.
+3. Resolve the effective handoff target for each role: check
+   project `[handoffs.*]`, then fall back to workspace
+   `[handoffs.*]`. A role with a `[handoffs.<role>]` block
+   dispatches automatically; a role without one dispatches
+   manually.
 4. Resolve the effective automation policy: check project `[automation]`,
    then workspace `[automation]`, then protocol defaults
    (`confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
-5. Check whether a reviewer is configured (role kind is not `""` or
-   `"none"`). If not, ask the operator:
+5. Check whether a reviewer is configured: `reviewer` appears as
+   a key in the resolved `[roles]` table. If not, ask the
+   operator:
    > "No reviewer is configured. Do you want to designate a reviewer for
    > this session? If not, we'll proceed without review checkpoints."
 
@@ -190,7 +195,7 @@ For each build and research item in the active phase, create
 - `Assignee:` from the resolved role configuration
 - `Spec:` link if a spec is being created; otherwise `none`
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
-- `Test gate:` use judgment — `required` for code-producing tasks; `n/a`
+- `Evidence gate:` use judgment — `required` for code-producing tasks; `n/a`
   for research, documentation, or configuration tasks
 
 For tasks that need specs (new interfaces, schemas, contracts), create

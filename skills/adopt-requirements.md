@@ -1,6 +1,6 @@
 # Skill: Adopt Requirements
 
-Generate `REQUIREMENTS.md` (and optionally `ENGINEERING.md`) from external
+Generate `REQUIREMENTS.md` (and optionally `STANDARDS.md`) from external
 sources — JIRA stories, Confluence documents, PRDs, design documents, or
 any other form. Use this when requirements live outside the Cartopian
 project directory and you want a local requirements artifact.
@@ -9,7 +9,7 @@ Running this skill is optional. If you prefer to reference requirements
 entirely externally, use `adopt-plan` directly — it handles the missing
 `REQUIREMENTS.md` case without requiring this skill first.
 
-**Output:** `REQUIREMENTS.md` (and optionally `ENGINEERING.md`) in the
+**Output:** `REQUIREMENTS.md` (and optionally `STANDARDS.md`) in the
 project directory.
 
 ---
@@ -111,14 +111,14 @@ give `adopt-plan` or `plan-project` enough to trace coverage.
 
 ---
 
-## Step 4 — Optionally Generate ENGINEERING.md
+## Step 4 — Optionally Generate STANDARDS.md
 
-Generate or update `ENGINEERING.md` if:
+Generate or update `STANDARDS.md` if:
 - The operator requests it, or
 - The requirements reveal clear technical constraints (specific stack,
   performance targets, integration requirements) that should be captured.
 
-Otherwise, leave `ENGINEERING.md` as its seed stub — the planning phase can
+Otherwise, leave `STANDARDS.md` as its seed stub — the planning phase can
 generate or refine it later.
 
 ---
@@ -140,5 +140,5 @@ Report to the operator:
 - Source(s) used
 - Number of functional and non-functional requirements captured (or note if
   stub was generated)
-- Whether `ENGINEERING.md` was generated or left as seed stub
+- Whether `STANDARDS.md` was generated or left as seed stub
 - Suggested next step (`adopt-plan` or `plan-project`)

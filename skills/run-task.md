@@ -46,7 +46,7 @@ filesystem as authoritative and refresh `STATE.md` before proceeding.
 2. Verify `Depends on` and `Blocked by` fields use `TASK-NN-NNN`
    identifiers only.
 3. Verify each `Blocked by` task is in `tasks/done/`.
-4. Verify the task has a valid test gate:
+4. Verify the task has a valid evidence gate:
    - `required` names concrete red-before-green targets.
    - `n/a` explains why no executable gate applies.
 5. Verify the task has checkable acceptance criteria.

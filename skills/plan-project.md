@@ -58,7 +58,7 @@ If `STATE.md` says there is no active plan but current plan artifacts
 still exist, stop and ask the operator to resolve the inconsistent
 state. The normal resolution is to run `skills/close-plan.md`.
 
-If a previous closeout carried forward `ENGINEERING.md` or
+If a previous closeout carried forward `STANDARDS.md` or
 `CONVENTIONS.md`, treat those files as seed context for the new planning
 cycle, not as locked requirements or a locked implementation plan.
 
@@ -67,16 +67,25 @@ cycle, not as locked requirements or a locked implementation plan.
 ## Stage 0 — Role And Handoff Resolution
 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Resolve the effective role kind for each role (project overrides
-   workspace).
-3. Resolve the effective handoff target for each agent role: check
-   project `[handoffs.*]`, then fall back to workspace `[handoffs.*]`.
+2. Resolve the effective `[roles]` table (project overrides
+   workspace). Each value is a one-line description string; a
+   role exists in this project iff its key appears in `[roles]`.
+3. Resolve the effective handoff target for each role: check
+   project `[handoffs.*]`, then fall back to workspace
+   `[handoffs.*]`. A role with a `[handoffs.<role>]` block
+   dispatches automatically; a role without one dispatches
+   manually.
 4. Resolve the effective automation policy: check project `[automation]`,
    then fall back to workspace `[automation]`, then fall back to protocol
    defaults (`confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
-5. Determine whether a **reviewer** is configured (role kind is not
-   `""` or `"none"`).
-6. If no reviewer is configured, ask the operator:
+5. Determine whether a **reviewer** is configured. A reviewer is
+   considered configured when `reviewer` appears as a key in the
+   resolved `[roles]` table. If `[handoffs.reviewer]` is also
+   configured, review checkpoints dispatch automatically; if only
+   the `[roles].reviewer` key is present, review checkpoints
+   dispatch manually (the PM surfaces the prompt; the operator
+   acts).
+6. If `reviewer` is not declared in `[roles]`, ask the operator:
 
    > "No reviewer is configured. Do you want to designate a reviewer for
    > this planning session? If not, we'll proceed without review
@@ -122,12 +131,12 @@ Do **not** present a blank form. Be conversational. Draw out requirements throug
 
 Write `REQUIREMENTS.md` in the project directory. Use the structure that emerged from the conversation, not a rigid template.
 
-### 1.4 Generate ENGINEERING.md
+### 1.4 Generate STANDARDS.md
 
-Based on the requirements, any carried-forward engineering seed, and any
+Based on the requirements, any carried-forward standards seed, and any
 architectural principles or technical needs discussed, generate or update
-`ENGINEERING.md` in the project directory. This document should capture
-the chosen tech stack, technical standards, and any constraints deduced
+`STANDARDS.md` in the project directory. This document should capture
+the chosen tools/stack, working standards, and any constraints deduced
 from the current planning cycle's requirements.
 
 ### 1.5 Review checkpoint
@@ -136,7 +145,7 @@ If a reviewer is configured:
 
 1. Run planning-review checkpoint `001 requirements-and-engineering`
    using the Review Flow Reference.
-2. Target artifacts: `REQUIREMENTS.md` and `ENGINEERING.md`.
+2. Target artifacts: `REQUIREMENTS.md` and `STANDARDS.md`.
 3. If `approve`: proceed to Stage 2.
 4. If `request-changes`: revise the target artifacts in place and rerun
    the checkpoint.
@@ -152,7 +161,7 @@ If a reviewer is configured:
 ### 2.1 Read inputs
 
 1. Read the locked `REQUIREMENTS.md`.
-2. Read the current-cycle `ENGINEERING.md` as technical constraints.
+2. Read the current-cycle `STANDARDS.md` as technical constraints.
 3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md
@@ -236,7 +245,7 @@ For each build and research item in the active phase, create
 `templates/TASK.md`.
 
 Populate the template from the plan ref, phase file, resolved roles,
-repo subpath, dependencies, test gate, and checkable acceptance criteria.
+repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 
 ### 4.3 Generate spec files
 

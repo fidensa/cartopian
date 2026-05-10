@@ -19,7 +19,7 @@ List the artifacts copied into this archive.
 
 ## Carry-forward choices
 
-- `ENGINEERING.md`: `<carried forward | reset>`
+- `STANDARDS.md`: `<carried forward | reset>`
 - `CONVENTIONS.md`: `<carried forward | reset>`
 
 ## Not carried forward

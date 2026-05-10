@@ -31,17 +31,21 @@ Ask the operator about workspace-wide defaults:
 
 1. **Git versioning** — Should project PM data be git-versioned?
    (`true` or `false`, default `false`)
-2. **Role kinds** — What kind of assignee fills each role?
-   - **PM**: `agent`, `human`, or `none`? (default: `agent`)
-   - **Operator**: `human` or `agent`? (default: `human`)
-   - **Coder**: `agent`, `human`, or `none`? (default: `agent`)
-   - **Reviewer**: `agent`, `human`, or `none`? (default: `none`)
-   - Are any custom roles needed? (e.g., researcher, designer)
-   - Do any of the existing roles need to be renamed or removed?
+2. **Roles** — Which roles should the workspace declare? The
+   protocol-default roster is `pm` and `operator`. For each role
+   the operator wants in the workspace, gather a role name
+   (operator-chosen string) and a one-line description string that
+   names the role's responsibility. Common example labels
+   operators add to the default roster include `coder` (e.g.,
+   "Implements tasks per spec.") and `reviewer` (e.g., "Reviews
+   per acceptance evidence."); these are illustrative, not
+   defaults. Confirm whether any existing role should be renamed
+   or removed.
 
 ### Step 3 — Gather CLI handoff targets
 
-For each role set to `agent`, ask the operator:
+For each role that should dispatch automatically, ask the
+operator:
 
 1. **CLI handoff target** — Should this role have a named executable
    for CLI handoff automation? If yes, what is the executable name?
@@ -52,9 +56,12 @@ For each role set to `agent`, ask the operator:
    duration string such as `30m`, `2h`, or `1h30m`. Leave blank to use
    the protocol default of `60m`.
 
-If the operator does not want CLI handoff for an agent role, skip the
-`[handoffs.*]` section for that role. The PM will create the prompt and
-the operator will handle execution manually (plain manual handoff).
+If the operator does not want automated CLI handoff for a role,
+skip the `[handoffs.*]` section for that role. The PM will create
+the prompt and the operator will handle execution manually
+(plain manual handoff). Whether a role dispatches automatically
+is inferred from the presence of a `[handoffs.<role>]` block, not
+from any field on the role itself.
 
 ### Step 4 — Gather automation policy
 
@@ -75,13 +82,14 @@ Write `cartopian.toml` at the workspace root with the gathered values:
 git_versioning = <true|false>
 
 [roles]
-# Role kind values: "human", "agent", "none", or "" (unset).
-# Roles describe assignee kind, not tool names.
-pm = "<value>"
-operator = "<value>"
-coder = "<value>"
-reviewer = "<value>"
-# <custom roles if any>
+# Each value is a one-line description string describing the
+# role's responsibility. A role exists in the workspace iff its
+# key appears here. Whether a role dispatches automatically is
+# inferred from the presence of a `[handoffs.<role>]` block
+# below; there is no kind field on the role itself.
+pm = "<one-line description>"
+operator = "<one-line description>"
+# <additional roles operators chose, e.g. coder / reviewer>
 
 # [handoffs.<role>]
 # agent = "<executable name>"
@@ -93,11 +101,10 @@ confirmation = "<each-handoff|until-blocked>"
 max_handoffs_per_run = <number>
 ```
 
-Use commented-out lines for optional settings the user did not enable.
-An empty value (`""`) indicates an unset or unassigned role. A value of
-`"none"` indicates the role is not used at all.
-Reminder: Roles and handoff config can be overridden at the project
-level.
+Use commented-out lines for optional settings the user did not
+enable. To remove a role from a project, omit its key from
+`[roles]`. Reminder: roles and handoff config can be overridden at
+the project level.
 
 Do not generate `[agents.*]` sections.
 
@@ -130,9 +137,11 @@ If yes:
 
 1. Ask for the **project name** (human-readable) and **project ID**
    (kebab-case slug).
-2. Ask if any **role kind overrides** are needed for this project
-   (different from workspace defaults).
-3. Ask about **CLI handoff target overrides** for any agent roles.
+2. Ask whether any **role overrides** are needed for this project
+   (different from workspace defaults): adding a role, replacing
+   a role's description, or removing a role by omitting its key.
+3. Ask about **CLI handoff target overrides** for any role that
+   should dispatch automatically.
 4. Ask about **automation policy overrides** for this project.
 5. Write `projects/<project-id>/cartopian.toml`:
 
@@ -142,11 +151,12 @@ name = "<project name>"
 id = "<project-id>"
 
 [roles]
-# Only include overrides — workspace defaults apply for omitted roles.
-# Role kind values: "human", "agent", "none", or "" (unset).
-# pm = "agent"
-# coder = "none"         # e.g. no coder role is used for this project
-# reviewer = "agent"
+# Only include overrides — workspace defaults apply for omitted
+# roles. Each value is a one-line description string. Whether a
+# role dispatches automatically is inferred from the presence of
+# a `[handoffs.<role>]` block; there is no kind field.
+# pm = "<one-line description that overrides workspace>"
+# reviewer = "Reviews per acceptance evidence."
 
 # [handoffs.<role>]
 # agent = "<executable name>"
@@ -168,7 +178,7 @@ cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md`
 1. Confirm the generated file(s) are valid TOML.
 2. Print a summary of what was configured:
    - Workspace defaults
-   - Role kind assignments (noting which are defaults vs. explicit)
+   - Role descriptions and declared roles (noting which are defaults vs. explicit)
    - CLI handoff targets configured
    - Automation policy
    - Projects directory git status (initialized, exclude entry present)

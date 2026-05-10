@@ -62,29 +62,33 @@ Run Cartopian's `init-workspace` skill to quickly set these up.
 
 ## Roles
 
-Cartopian defines four basic roles configured in `cartopian.toml`:
+The default Cartopian role roster is **PM** and **Operator**.
 
 - **PM** — Drives planning. Produces assignments and proposes assignees.
 - **Operator** — Decision-maker. Confirms assignments, gives them to
   assignees, reports progress.
-- **Coder** — Implements tasks from assignee prompts.
-- **Reviewer** — Reviews artifacts and produces findings.
 
-The same agent can be assigned to multiple roles. The human operator may take on multiple roles as well. Roles are extensible; define custom roles in `cartopian.toml` as needed.
+Operators add whatever further roles their project needs. Common
+example labels are **Coder** ("Implements tasks per spec.") and
+**Reviewer** ("Reviews per acceptance evidence."), but these are
+illustrative — pick whatever names fit the work.
 
-Role values are kind values that describe the assignee type:
+`[roles]` in `cartopian.toml` maps each role name to a one-line
+description that the PM uses to align tasks to roles during
+assignment. The same agent can be assigned to multiple roles, and the
+human operator may take on multiple roles as well.
 
-- `human` — manually assigned through the operator.
-- `agent` — may be assigned through CLI handoff when configured.
-- `none` — role is not used.
-- `""` — unset; the PM should ask the operator.
+Whether a role dispatches automatically or manually is inferred from
+whether `[handoffs.<role>]` is configured for it — there is no
+separate "kind" field. See `protocol/CONVENTIONS.md` for the full
+dispatch contract.
 
 ## Automated CLI handoffs
 
 Automation is optional. Manual handoff remains the default.
 
-When a role is set to `agent`, the PM can automate handoffs by
-configuring a named executable under `[handoffs.<role>]`:
+When a role has a `[handoffs.<role>]` block, the PM can automate
+handoffs by naming an executable under it:
 
 ```toml
 [handoffs.coder]
@@ -151,7 +155,7 @@ contract.
 │   │   ├── REPORT.md
 │   │   ├── DECISION.md
 │   │   ├── REQUIREMENTS.md
-│   │   ├── ENGINEERING.md
+│   │   ├── STANDARDS.md
 │   │   ├── IMPLEMENTATION_PLAN.md
 │   │   └── PLAN_CLOSEOUT.md
 │   ├── skills/                      ← agent-executable guided workflows
@@ -182,7 +186,7 @@ contract.
 │       │   ├── STATE.md
 │       │   ├── CONVENTIONS.md       ← extends protocol
 │       │   ├── REQUIREMENTS.md
-│       │   ├── ENGINEERING.md
+│       │   ├── STANDARDS.md
 │       │   ├── IMPLEMENTATION_PLAN.md
 │       │   ├── phases/
 │       │   ├── prompts/             ← temporary assignee handoffs

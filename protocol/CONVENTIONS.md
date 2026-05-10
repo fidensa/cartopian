@@ -185,8 +185,17 @@ PM may fast-forward the task to the status supported by that evidence.
 
 ## Specs
 
-Specs are mutable, single-file contracts. The current file is the
-current version.
+Specs are mutable, single-file **work contracts** — a generic agreement
+between the PM and the assignee about what "done" looks like for the
+work the spec covers. In software contexts they typically describe an
+implementation contract, but the same artifact carries operating
+procedures, creative briefs, research plans, checklists, and similar
+domain-neutral work agreements. The `SPEC-NN-NNN` identifier prefix,
+the `templates/SPEC.md` filename, the `Spec:` task-file field, and the
+`specs/` project directory are retained as compatibility labels; the
+reframing is editorial.
+
+The current file is the current version.
 
 Spec files follow the canonical field schema in `templates/SPEC.md`.
 
@@ -269,25 +278,35 @@ invalid report for inspection and prevents lifecycle movement.
 
 ## Roles
 
-Roles describe assignee kind, not tool names. The `[roles]` section in
-`cartopian.toml` maps each role to a kind value:
+The `[roles]` section in `cartopian.toml` maps each role name to a
+one-line description string. Role names are operator-chosen identifiers;
+descriptions explain what the role is responsible for so the PM can
+align tasks to roles during assignment.
 
 ```toml
 [roles]
-pm = "agent"
-operator = "human"
-coder = "agent"
-reviewer = "agent"
+pm = "Plans phases, dispatches handoffs, integrates results."
+operator = "Approves locks, unblocks, sets cadence."
 ```
 
-Supported kind values are:
+The protocol-default roster is **`pm` and `operator`**. Operators
+may add any further roles their project needs. Common example labels
+operators pick are `coder` ("Implements tasks per spec.") and
+`reviewer` ("Reviews per acceptance evidence."), but these are
+illustrative only — they are not part of the default roster.
 
-- `human`: manually assigned through the operator.
-- `agent`: may be assigned through CLI handoff when configured.
-- `none`: role is not used.
-- `""`: unset; the PM should ask the operator for the role assignment.
-- Custom values: allowed for local policy, but manual unless a project
-  convention defines otherwise.
+Dispatch path is inferred from the presence of a matching
+`[handoffs.<role>]` block, not from a `kind` value:
+
+- Role declared in `[roles]` with a configured `[handoffs.<role>]` —
+  automated dispatch via that wrapper.
+- Role declared in `[roles]` with no `[handoffs.<role>]` block —
+  manual dispatch; the PM surfaces the prompt and the operator acts.
+- Role omitted from `[roles]` — role does not exist in this project;
+  tasks may not assign it.
+
+A `[handoffs.<role>]` block whose role name is not declared in
+`[roles]` is a config error.
 
 ## Handoffs
 
@@ -408,18 +427,20 @@ report is not successful completion evidence.
 
 Both fields carry `TASK-NN-NNN` identifiers only.
 
-## Test Gate Discipline
+## Evidence Gate Discipline
 
-Every task declares `Test gate: required` or `Test gate: n/a`.
+Every task declares `Evidence gate: required` or `Evidence gate: n/a`.
 
-`required` tasks name concrete test targets that must fail before
-implementation starts.
+`required` tasks name concrete acceptance evidence — typically test
+targets that must fail before implementation starts, but any verifiable
+red-before-green check (fixture run, validation script, fact-check
+pass) is acceptable when no test target exists.
 
 `n/a` is only for non-executable work and must say why.
 
 Reviews of `required` tasks record red-before-green evidence: a pointer
-showing the named red test existed before implementation, and a pointer
-showing the same test is green on the closing commit.
+showing the named red check existed before implementation, and a pointer
+showing the same check is green on the closing commit.
 
 ## Plan Lifecycle
 
@@ -457,7 +478,7 @@ Plan closeout resets the live plan surface:
 live artifacts. A new planning cycle produces fresh requirements and a
 fresh implementation plan.
 
-`ENGINEERING.md` and project-level `CONVENTIONS.md` may carry forward
+`STANDARDS.md` and project-level `CONVENTIONS.md` may carry forward
 only when the operator explicitly chooses to keep them as seed context
 for the next plan. Otherwise, they reset to seed files.
 
@@ -471,7 +492,7 @@ archived only when the operator explicitly asks during closeout.
 Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
 
 - `REQUIREMENTS.md`
-- `ENGINEERING.md`
+- `STANDARDS.md`
 - `CONVENTIONS.md`
 - `IMPLEMENTATION_PLAN.md`
 - `STATE.md`
@@ -520,6 +541,11 @@ repo, tracking all project PM data in a single history. This avoids
 creating a separate PM repo per project and eliminates naming collisions
 with code repos.
 
+The protocol default for `[defaults] git_versioning` is **`false`**.
+Source attribution: the explicit `git_versioning = false` value in the
+repo-root `cartopian.toml` shipped with this protocol — projects opt
+in by setting `git_versioning = true` in their own config.
+
 Optional `[git]` configuration resolves from project-level
 `cartopian.toml`, to workspace-level `cartopian.toml`, to these protocol
 defaults:
@@ -550,7 +576,7 @@ When `git_versioning = true` in the effective `cartopian.toml`:
 
 - Session closeout includes auto-commit and auto-push by the PM.
 - Commit messages describe the unit-of-work grain.
-- Product-repo commits preserve red-then-green test-gate discipline.
+- Product-repo commits preserve red-then-green evidence-gate discipline.
 
 When `git_versioning = false`:
 

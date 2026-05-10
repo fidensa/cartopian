@@ -36,7 +36,7 @@ must be absolute.>
 ## What to produce
 <File paths, interfaces, test targets.>
 
-## Test gate
+## Evidence gate
 <Red before code, or n/a with reason.>
 
 ## What not to do

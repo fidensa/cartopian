@@ -8,7 +8,7 @@ Spec: <SPEC-NN-NNN-slug.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
 Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none>
 Created: YYYY-MM-DD
-Test gate: <required | n/a>
+Evidence gate: <required | n/a>
 
 ## Goal
 
@@ -40,10 +40,11 @@ genuinely spans multiple repos is a sign the task should be split.
 - **Blocked by** names tasks that must be in `done/` before this task
   can start.
 
-## Test gate
+## Evidence gate
 
-If `required`, name the concrete test targets or fixture checks that
-must exist and fail before implementation starts. If `n/a`, say why.
+If `required`, name the concrete acceptance evidence (test targets,
+fixture checks, validation runs, etc.) that must exist and fail
+before implementation starts. If `n/a`, say why.
 
 ## Acceptance
 

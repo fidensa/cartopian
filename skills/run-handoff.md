@@ -29,18 +29,24 @@ owns.
 
 1. Read the project `cartopian.toml`.
 2. Read the workspace `cartopian.toml`, when present.
-3. Resolve the role kind from project config first, then workspace
-   config.
-4. Resolve `[handoffs.<role>]` from project config first, then workspace
-   config.
+3. Resolve the effective `[roles]` table (project overrides
+   workspace). Each value is a one-line description string.
+4. Resolve `[handoffs.<role>]` for the role being assigned, from
+   project config first, then workspace config.
 5. Resolve `[automation]` from project config first, then workspace
    config, then protocol defaults:
    - `confirmation = "each-handoff"`
    - `max_handoffs_per_run = 1`
 
-If the role kind is `none`, stop and return a blocked outcome to the
-caller. If the role kind is unset (`""`), ask the operator who should
-perform the work.
+If the role being assigned is not declared in the resolved
+`[roles]` table, stop and return a blocked outcome to the caller
+("role not declared in `[roles]`; declare it or assign a
+different role").
+
+If the role is declared in `[roles]` but no `[handoffs.<role>]`
+block is configured, return a manual-dispatch outcome to the
+caller: the PM surfaces the prompt path and expected report path,
+and the operator handles execution.
 
 ---
 

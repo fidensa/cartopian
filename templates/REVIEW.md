@@ -24,10 +24,10 @@ use `n/a` in each field and say why.
 - **PR URL** — filled by whichever role has it: the reviewer when the
   PR existed before review in the PM-owned product-repo git workflow,
   otherwise by the PM after merge.
-- **Test evidence** — two parts when the task's test gate was `required`:
+- **Test evidence** — two parts when the task's evidence gate was `required`:
   - Red test was present before implementation.
   - Test is green at closure.
-  When test gate was `n/a`, write `n/a — test gate was n/a per task`.
+  When evidence gate was `n/a`, write `n/a — evidence gate was n/a per task`.
 
 ## Findings
 

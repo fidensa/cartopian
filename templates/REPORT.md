@@ -22,11 +22,11 @@ identify the same product repository and are otherwise actionable.
 
 ## Test evidence
 
-<When test gate was `required`:
+<When evidence gate was `required`:
 - Red test evidence: <pointer to the failing test before implementation>
 - Green test evidence: <pointer to the passing test after implementation>
 
-When test gate was `n/a`:
+When evidence gate was `n/a`:
 - n/a — <reason>>
 
 ## Commit / PR
