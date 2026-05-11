@@ -48,10 +48,18 @@ class _UsageParser(argparse.ArgumentParser):
 
     def error(self, message: str) -> None:  # pragma: no cover - exercised via subprocess
         if message.startswith("argument ") and "invalid choice" in message:
-            # extract the offending subcommand name from argparse's message
             try:
-                bad = message.split("invalid choice: ", 1)[1].split(" ", 1)[0].strip("'\"")
-                stderr_usage(f"unknown subcommand: {bad}")
+                head, tail = message.split(": invalid choice: ", 1)
+                arg_name = head[len("argument "):]
+                # Top-level subparsers metavar is `<subcommand>`; per-command
+                # positionals carry plain identifier names (e.g. `to_status`).
+                # Brackets/braces in the arg_name mean it's the subcommand
+                # selector, not a real argument.
+                if arg_name.startswith("<") or arg_name.startswith("{"):
+                    bad = tail.split(" ", 1)[0].strip("'\"")
+                    stderr_usage(f"unknown subcommand: {bad}")
+                else:
+                    stderr_usage(f"invalid {arg_name}: {tail}")
             except Exception:
                 stderr_usage(message)
         else:
@@ -73,9 +81,10 @@ def _real_handlers():
     Imported lazily to avoid circular imports (command modules import EXIT_*
     constants from this module).
     """
-    from cli.commands import parse_report, resolve_config, validate_task_readiness as vtr
+    from cli.commands import move_task, parse_report, resolve_config, validate_task_readiness as vtr
 
     return {
+        "move-task": (move_task.configure_parser, move_task.handler),
         "parse-report": (parse_report.configure_parser, parse_report.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
