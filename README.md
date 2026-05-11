@@ -208,6 +208,25 @@ contract.
 └── <project-b-repo>/                ← sibling target product repo
 ```
 
+## Running the CLI test suite
+
+The canonical invocation, from the repo root, is:
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
+
+The `-t .` flag is **load-bearing**: `tests/cli/` shadows the source
+`cli/` package by name, and unittest's discovery uses the top-level
+directory (`-t`) to set `sys.path[0]`. Without `-t .`, discovery
+walks into `tests/cli/` first and the test modules end up importing
+themselves instead of the source CLI, breaking every per-command
+test. Always pass `-t .` when discovering from a different working
+directory than the repo root would be hostile.
+
+Python 3.11+ is required (the CLI uses `tomllib`); the entrypoint
+shim at `bin/cartopian` enforces this.
+
 ## Protocol
 
 See `protocol/CONVENTIONS.md` for the protocol contracts and
