@@ -67,6 +67,19 @@ def _placeholder(name: str):
     return handler
 
 
+def _real_handlers():
+    """Map of subcommand name → (configure_parser, handler) for implemented commands.
+
+    Imported lazily to avoid circular imports (command modules import EXIT_*
+    constants from this module).
+    """
+    from cli.commands import resolve_config
+
+    return {
+        "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
+    }
+
+
 def build_parser() -> _UsageParser:
     parser = _UsageParser(
         prog="cartopian",
@@ -74,9 +87,16 @@ def build_parser() -> _UsageParser:
         add_help=True,
     )
     subparsers = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
+    real = _real_handlers()
     for name in SUBCOMMANDS:
-        sub = subparsers.add_parser(name, help=f"{name} (not yet implemented)")
-        sub.set_defaults(_handler=_placeholder(name))
+        if name in real:
+            sub = subparsers.add_parser(name, help=name)
+            configure, handler = real[name]
+            configure(sub)
+            sub.set_defaults(_handler=handler)
+        else:
+            sub = subparsers.add_parser(name, help=f"{name} (not yet implemented)")
+            sub.set_defaults(_handler=_placeholder(name))
     return parser
 
 

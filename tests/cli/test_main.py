@@ -60,7 +60,9 @@ class TestUsageGuards(unittest.TestCase):
 
 class TestPlaceholderHandlers(unittest.TestCase):
     def test_placeholder_handler_emits_not_implemented(self):
-        result = _run("resolve-config")
+        # parse-report remains a placeholder until TASK-01-006. Pick any
+        # still-unimplemented subcommand to assert the placeholder shape.
+        result = _run("parse-report")
         self.assertEqual(result.returncode, 1)
         self.assertIn("[error] not yet implemented", result.stderr)
         self.assertEqual(result.stdout, "")
