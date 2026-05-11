@@ -73,9 +73,10 @@ def _real_handlers():
     Imported lazily to avoid circular imports (command modules import EXIT_*
     constants from this module).
     """
-    from cli.commands import resolve_config
+    from cli.commands import parse_report, resolve_config
 
     return {
+        "parse-report": (parse_report.configure_parser, parse_report.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
     }
 
