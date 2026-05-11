@@ -81,12 +81,23 @@ def _real_handlers():
     Imported lazily to avoid circular imports (command modules import EXIT_*
     constants from this module).
     """
-    from cli.commands import move_task, parse_report, resolve_config, validate_task_readiness as vtr
+    from cli.commands import (
+        discover_projects,
+        move_task,
+        parse_report,
+        register_project,
+        resolve_config,
+        unregister_project,
+        validate_task_readiness as vtr,
+    )
 
     return {
+        "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
         "parse-report": (parse_report.configure_parser, parse_report.handler),
+        "register-project": (register_project.configure_parser, register_project.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
+        "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
     }
 
