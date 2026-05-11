@@ -1,0 +1,170 @@
+# global.cartopian.toml — first-install seed for ~/.cartopian/cartopian.toml
+#
+# This file is the commented-only seed that the install/upgrade flow copies
+# verbatim to ~/.cartopian/cartopian.toml on first install. Its sole job is
+# documentation: it shows operators which global-config keys exist and what
+# their protocol defaults are, while leaving the installed global file
+# functionally empty so the FR-011 resolution chain
+#
+#     project (<project-root>/cartopian.toml)
+#     -> global (~/.cartopian/cartopian.toml)
+#     -> protocol defaults (shipped with the tool)
+#
+# falls all the way through to protocol defaults. To override a default,
+# uncomment the relevant table header AND the value line, then edit the
+# value. The global file is operator-edited directly with a text editor;
+# there is no V1 CLI authoring path for global defaults (FR-011).
+#
+# Style choice: every line in this file is a comment, including table
+# headers. With this style `tomllib.loads(open(path).read())` returns an
+# empty dict, so the seeded global config contributes nothing to the
+# resolution chain until the operator opts in by uncommenting. To override
+# a default: uncomment the table header AND the key line(s) you want to set.
+#
+# Schema authority lives in the protocol — see protocol/CONVENTIONS.md and
+# the FR-011 protocol-defaults table in projects/cartopian-manager/
+# REQUIREMENTS.md for the canonical list. STANDARDS.md (the engineering-
+# standards file shipped per project) is unrelated to this global config;
+# it is mentioned here only because operators sometimes confuse the two.
+
+# -----------------------------------------------------------------------------
+# [defaults]
+# -----------------------------------------------------------------------------
+# Top-level protocol toggles.
+#
+# git_versioning: whether the cartopian protocol manages git operations on
+# the project (auto-stage, auto-commit at session close, optional push).
+# Protocol default: false. PM-owned product-repo git is opt-in per project.
+# When true, the [git] block below becomes load-bearing.
+
+# [defaults]
+# git_versioning = false
+
+# -----------------------------------------------------------------------------
+# [git]
+# -----------------------------------------------------------------------------
+# Optional. Absent by default. Only meaningful when
+# [defaults] git_versioning = true. Resolution chain treats absent as
+# falsy. The full sub-key schema (commit cadence, push policy, branch
+# naming, etc.) lives in protocol/CONVENTIONS.md — consult that file
+# before uncommenting any [git] keys.
+
+# [git]
+# (see protocol/CONVENTIONS.md for the full schema)
+
+# -----------------------------------------------------------------------------
+# [automation]
+# -----------------------------------------------------------------------------
+# Controls how aggressively the PM dispatches handoffs without operator
+# confirmation.
+#
+# confirmation: when the PM pauses to confirm with the operator before
+#   dispatching the next handoff. Protocol default: "each-handoff".
+# max_handoffs_per_run: hard ceiling on consecutive automated handoffs in
+#   a single session. Protocol default: 1.
+
+# [automation]
+# confirmation = "each-handoff"
+# max_handoffs_per_run = 1
+
+# -----------------------------------------------------------------------------
+# [roles]
+# -----------------------------------------------------------------------------
+# Per DEC-007: [roles] is a flat name -> one-line description string table.
+# There is no `kind` field. Whether a role dispatches automatically is
+# inferred from the presence (or absence) of a matching [handoffs.<role>]
+# block below — a role with a [handoffs.<role>] block dispatches via that
+# wrapper; a role without one is manual-dispatch (the PM surfaces the
+# prompt and the operator acts).
+#
+# Default roster (FR-011, DEC-002 Pick 3): `pm` and `operator` only.
+# `coder` and `reviewer` are common example role labels operators may add
+# but are NOT default roles — they appear below strictly as commented
+# examples. Operators may rename, remove, or add roles freely; role names
+# are operator-chosen identifiers.
+
+# [roles]
+# pm = "Manages the project lifecycle and orchestrates handoffs."
+# operator = "Human direction-setter who approves transitions and resolves judgment calls."
+#
+# Common example role labels (NOT defaults — uncomment only if you want
+# to declare them at the global level):
+# coder = "Implements tasks per spec."
+# reviewer = "Reviews per acceptance evidence."
+
+# -----------------------------------------------------------------------------
+# [handoffs.<role>]
+# -----------------------------------------------------------------------------
+# Per DEC-007: the presence of a [handoffs.<role>] block is the dispatch
+# trigger. If a role has a [handoffs.<role>] block here (or in the
+# project's cartopian.toml), the PM dispatches that role automatically
+# via the configured wrapper. If the block is absent, the role is
+# manual-dispatch.
+#
+# Keys:
+#   agent       — the wrapper script name the PM invokes (e.g. "cartopian-claude").
+#   auto_start  — if true, the wrapper launches without operator confirmation
+#                 (subject to [automation] confirmation policy above).
+#   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
+#
+# Example — uncomment and edit to wire up an automated `pm` dispatch:
+
+# [handoffs.pm]
+# agent = "claude-vscode"
+# auto_start = false
+# timeout = "60m"
+
+# Additional example for a custom role label:
+
+# [handoffs.coder]
+# agent = "cartopian-claude"
+# auto_start = false
+# timeout = "60m"
+
+# -----------------------------------------------------------------------------
+# [project] — schema reference only; rarely set at the global level
+# -----------------------------------------------------------------------------
+# The [project] block is normally authored per-project in
+# <project-root>/cartopian.toml, not here. It is documented in this global
+# seed so operators have one canonical reference for the schema.
+#
+# work_roots: per DEC-004, this is an inline list of operator-chosen
+# identifier strings under [project]. Each string is a logical handle
+# (e.g. "product", "design", "docs") for an external work location the
+# project's tasks reference. The list declares only the *name set*; the
+# absolute path each name resolves to lives in the per-machine override
+# file (see "Per-machine cartopian.local.toml" below).
+
+# [project]
+# work_roots = ["product", "design"]
+
+# -----------------------------------------------------------------------------
+# Per-machine cartopian.local.toml (DEC-003)
+# -----------------------------------------------------------------------------
+# When a project declares work_roots in its [project] block, the absolute
+# name -> path mapping for each operator's machine lives in
+#
+#     <project-root>/cartopian.local.toml
+#
+# under a [work_roots] table. That file is gitignored by `scaffold-project`
+# (FR-004 #8) and is never committed — different operators on different
+# machines author their own cartopian.local.toml with their machine's
+# absolute paths, while the committed cartopian.toml stays identical for
+# every operator. Paths must be platform-native absolute paths;
+# project-relative paths are not supported in V1.
+#
+# Illustrative cartopian.local.toml (NOT this file — shown here only as a
+# schema pointer):
+#
+#     [work_roots]
+#     product = "/Users/<name>/Projects/<product-repo>"
+#     design  = "/Users/<name>/Projects/<design-repo>"
+#
+# `cartopian resolve-config <project>` merges the committed cartopian.toml
+# and the per-machine cartopian.local.toml, validates that every declared
+# work-root name has a path mapping, and emits absolute paths to its
+# downstream consumers (skills, wrappers, launchers).
+
+# -----------------------------------------------------------------------------
+# End of seed. Everything above is commented out by design.
+# -----------------------------------------------------------------------------

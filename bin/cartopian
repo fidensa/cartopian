@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Cartopian Core CLI entrypoint shim.
+
+Verifies Python 3.11+ and dispatches to cli.main:main().
+"""
+import os
+import sys
+
+
+def _require_python_3_11() -> None:
+    if sys.version_info < (3, 11):
+        found = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        sys.stderr.write(
+            f"[error] cartopian requires Python 3.11 or later (found {found})\n"
+        )
+        sys.exit(3)
+
+
+def _bootstrap_path() -> None:
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(here)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+
+def main() -> int:
+    _require_python_3_11()
+    _bootstrap_path()
+    from cli.main import main as cli_main
+    return cli_main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())
