@@ -83,6 +83,7 @@ def _real_handlers():
     """
     from cli.commands import (
         discover_projects,
+        generate_config,
         move_task,
         parse_report,
         register_project,
@@ -93,6 +94,7 @@ def _real_handlers():
 
     return {
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
+        "generate-config": (generate_config.configure_parser, generate_config.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
         "parse-report": (parse_report.configure_parser, parse_report.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
