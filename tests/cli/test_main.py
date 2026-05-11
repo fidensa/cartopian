@@ -61,7 +61,7 @@ class TestUsageGuards(unittest.TestCase):
 class TestPlaceholderHandlers(unittest.TestCase):
     def test_placeholder_handler_emits_not_implemented(self):
         # Pick any still-unimplemented subcommand to assert the placeholder shape.
-        result = _run("validate-task-readiness")
+        result = _run("move-task")
         self.assertEqual(result.returncode, 1)
         self.assertIn("[error] not yet implemented", result.stderr)
         self.assertEqual(result.stdout, "")
