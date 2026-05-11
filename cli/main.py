@@ -88,6 +88,7 @@ def _real_handlers():
         parse_report,
         register_project,
         resolve_config,
+        scaffold_project,
         unregister_project,
         validate_task_readiness as vtr,
     )
@@ -99,6 +100,7 @@ def _real_handlers():
         "parse-report": (parse_report.configure_parser, parse_report.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
+        "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
     }

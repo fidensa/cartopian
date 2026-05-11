@@ -109,7 +109,7 @@ class TestInvalidChoiceMessageRouting(unittest.TestCase):
 class TestPlaceholderHandlers(unittest.TestCase):
     def test_placeholder_handler_emits_not_implemented(self):
         # Pick any still-unimplemented subcommand to assert the placeholder shape.
-        result = _run("scaffold-project")
+        result = _run("delete-prompt")
         self.assertEqual(result.returncode, 1)
         self.assertIn("[error] not yet implemented", result.stderr)
         self.assertEqual(result.stdout, "")
