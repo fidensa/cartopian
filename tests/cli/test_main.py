@@ -106,14 +106,5 @@ class TestInvalidChoiceMessageRouting(unittest.TestCase):
         self.assertNotIn("unknown subcommand", result.stderr)
 
 
-class TestPlaceholderHandlers(unittest.TestCase):
-    def test_placeholder_handler_emits_not_implemented(self):
-        # Pick any still-unimplemented subcommand to assert the placeholder shape.
-        result = _run("delete-prompt")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("[error] not yet implemented", result.stderr)
-        self.assertEqual(result.stdout, "")
-
-
 if __name__ == "__main__":
     unittest.main()

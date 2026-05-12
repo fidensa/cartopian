@@ -198,6 +198,48 @@ class TestFr004Smoke(unittest.TestCase):
                 (project / "tasks" / "in-progress" / task_path.name).is_file()
             )
 
+            # list-tasks — enumerate the seeded task; AND-filter happy path
+            listing = _run_cli(
+                "list-tasks",
+                "--project", "smoke-demo",
+                "--phase", "PHASE-99-smoke",
+                "--status", "in-progress",
+                home=home,
+            )
+            self.assertEqual(listing.returncode, 0, msg=listing.stderr)
+            list_lines = listing.stdout.splitlines()
+            self.assertEqual(len(list_lines), 1)
+            list_rec = json.loads(list_lines[0])
+            self.assertEqual(list_rec["task_id"], "TASK-99-999")
+            self.assertEqual(list_rec["phase"], "PHASE-99-smoke")
+            self.assertEqual(list_rec["status"], "in-progress")
+
+            # delete-prompt — seed a prompt then delete it
+            prompt_path = project / "prompts" / "PROMPT-99-999.md"
+            prompt_path.write_text("# prompt\n", encoding="utf-8")
+            delete_p = _run_cli(
+                "delete-prompt", str(prompt_path), home=home,
+            )
+            self.assertEqual(delete_p.returncode, 0, msg=delete_p.stderr)
+            delete_p_rec = json.loads(delete_p.stdout.strip())
+            self.assertEqual(delete_p_rec["action"], "delete-prompt")
+            self.assertEqual(
+                delete_p_rec["details"]["deleted_path"], str(prompt_path)
+            )
+            self.assertFalse(prompt_path.exists())
+
+            # delete-report — reuse the seeded report
+            delete_r = _run_cli(
+                "delete-report", str(report_path), home=home,
+            )
+            self.assertEqual(delete_r.returncode, 0, msg=delete_r.stderr)
+            delete_r_rec = json.loads(delete_r.stdout.strip())
+            self.assertEqual(delete_r_rec["action"], "delete-report")
+            self.assertEqual(
+                delete_r_rec["details"]["deleted_path"], str(report_path)
+            )
+            self.assertFalse(report_path.exists())
+
             # unregister-project — tear down
             unregister = _run_cli(
                 "unregister-project", "smoke-demo", home=home,

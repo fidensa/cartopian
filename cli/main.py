@@ -1,8 +1,8 @@
-"""Cartopian Core CLI dispatcher (FR-014 contract scaffolding).
+"""Cartopian Core CLI dispatcher (FR-014 contract).
 
-Subcommand handlers are placeholders for TASK-01-005..011. This module
-defines the exit-code contract, stderr-prefix helpers, and the argparse
-surface every later command builds on.
+Defines the exit-code contract, stderr-prefix helpers, and the argparse
+surface every Phase-01 subcommand binds into. Every entry of
+``SUBCOMMANDS`` is wired to a real handler in :func:`_real_handlers`.
 """
 import argparse
 import sys
@@ -67,14 +67,6 @@ class _UsageParser(argparse.ArgumentParser):
         sys.exit(EXIT_USAGE)
 
 
-def _placeholder(name: str):
-    def handler(_args: argparse.Namespace) -> int:
-        stderr_error(f"not yet implemented: {name}")
-        return EXIT_FAIL
-
-    return handler
-
-
 def _real_handlers():
     """Map of subcommand name → (configure_parser, handler) for implemented commands.
 
@@ -82,8 +74,11 @@ def _real_handlers():
     constants from this module).
     """
     from cli.commands import (
+        delete_prompt,
+        delete_report,
         discover_projects,
         generate_config,
+        list_tasks,
         move_task,
         parse_report,
         register_project,
@@ -94,8 +89,11 @@ def _real_handlers():
     )
 
     return {
+        "delete-prompt": (delete_prompt.configure_parser, delete_prompt.handler),
+        "delete-report": (delete_report.configure_parser, delete_report.handler),
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
         "generate-config": (generate_config.configure_parser, generate_config.handler),
+        "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
         "parse-report": (parse_report.configure_parser, parse_report.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
@@ -109,20 +107,16 @@ def _real_handlers():
 def build_parser() -> _UsageParser:
     parser = _UsageParser(
         prog="cartopian",
-        description="Cartopian Core CLI (scaffolding — subcommands not yet implemented)",
+        description="Cartopian Core CLI",
         add_help=True,
     )
     subparsers = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
     real = _real_handlers()
     for name in SUBCOMMANDS:
-        if name in real:
-            sub = subparsers.add_parser(name, help=name)
-            configure, handler = real[name]
-            configure(sub)
-            sub.set_defaults(_handler=handler)
-        else:
-            sub = subparsers.add_parser(name, help=f"{name} (not yet implemented)")
-            sub.set_defaults(_handler=_placeholder(name))
+        configure, handler = real[name]
+        sub = subparsers.add_parser(name, help=name)
+        configure(sub)
+        sub.set_defaults(_handler=handler)
     return parser
 
 

@@ -31,6 +31,10 @@ FR004_COMMANDS = (
     "unregister_project",
     "scaffold_project",
     "generate_config",
+    # FR-005 stretch commands retained by DEC-010.
+    "list_tasks",
+    "delete_prompt",
+    "delete_report",
 )
 
 COMMANDS_DIR = Path(__file__).resolve().parent / "commands"
