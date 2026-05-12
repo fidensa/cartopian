@@ -25,6 +25,169 @@ conventions. No database, no SaaS dependency, no mandatory tooling.
 - **Protocol, not methodology.** Best practices are adopted because they
   work, not because a methodology prescribes them.
 
+## Install
+
+Cartopian's canonical V1 install path is **manual `git clone` plus a
+symlink-based tree at `~/.cartopian/`** (per DEC-012). No homebrew, no
+npm, no `curl … | bash`, no Microsoft Store package — `git clone +
+symlink` is the only install method shipped in V1.
+
+### Prerequisite
+
+The single operator-facing install prerequisite is **Python 3.11+** (per
+DEC-001). The Core CLI relies on stdlib `tomllib`, introduced in 3.11,
+and the entrypoint at `bin/cartopian` enforces the version. No
+`pip install` runs at install or runtime.
+
+- **macOS gotcha (read first):** the stock `/usr/bin/python3` is
+  3.9.x and silently fails both the CLI entrypoint and the canonical
+  test runner. Install Homebrew `python@3.11` (or any ≥3.11 interpreter
+  on your `PATH`) before running any `cartopian` or test command:
+
+  ```bash
+  brew install python@3.11
+  ```
+
+- **Linux:** Ubuntu 22.04 has `python3.11` in the official repo;
+  Ubuntu 24.04+ and Debian 12 ship 3.11/3.12 as default; Fedora and
+  Arch ship current.
+- **Native Windows:** install Python 3.11+ from python.org or the
+  Microsoft Store package.
+- **WSL on Windows:** same as Linux. WSL and native Windows are
+  separate installs with separate registries by design.
+
+### Install (first-time)
+
+The install/upgrade flow lays out `~/.cartopian/` per the
+`STANDARDS.md` install-behavior table: tool-shipped paths are
+symlinked (or copied) from the cloned repo; operator-owned paths
+(`cartopian.toml`, `projects.json`) are seeded on first install and
+preserved thereafter.
+
+**macOS / Linux / WSL** (`~/.cartopian/` resolves to
+`$HOME/.cartopian/`):
+
+```bash
+git clone https://github.com/<org>/cartopian.git ~/src/cartopian
+python3 ~/src/cartopian/scripts/install.py
+```
+
+The script creates `~/.cartopian/` and symlinks `protocol/`,
+`templates/`, `skills/`, `wrappers/`, `cli/`, `bin/cartopian`, and
+`CHANGELOG.md` (a real copy of `protocol/CHANGELOG.md`) into it. It
+seeds `~/.cartopian/cartopian.toml` (from
+`templates/global.cartopian.toml`) and writes an empty
+`~/.cartopian/projects.json` (`[]\n` per DEC-009).
+
+Add `~/.cartopian/bin` to your `PATH` so `cartopian` resolves:
+
+```bash
+echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
+```
+
+**Pure-manual variant** (no helper script): the script's behavior
+reduces to a handful of shell commands you can run yourself:
+
+```bash
+mkdir -p ~/.cartopian/bin
+ln -sfn ~/src/cartopian/protocol   ~/.cartopian/protocol
+ln -sfn ~/src/cartopian/templates  ~/.cartopian/templates
+ln -sfn ~/src/cartopian/skills     ~/.cartopian/skills
+ln -sfn ~/src/cartopian/wrappers   ~/.cartopian/wrappers
+ln -sfn ~/src/cartopian/cli        ~/.cartopian/cli
+ln -sfn ~/src/cartopian/bin/cartopian ~/.cartopian/bin/cartopian
+cp ~/src/cartopian/protocol/CHANGELOG.md  ~/.cartopian/CHANGELOG.md
+cp ~/src/cartopian/templates/global.cartopian.toml ~/.cartopian/cartopian.toml
+printf '[]\n' > ~/.cartopian/projects.json
+```
+
+**Native Windows (PowerShell)** (`~/.cartopian/` resolves to
+`%USERPROFILE%\.cartopian\`):
+
+```powershell
+git clone https://github.com/<org>/cartopian.git $HOME\src\cartopian
+python $HOME\src\cartopian\scripts\install.py
+```
+
+Symlink creation on native Windows requires either **Developer Mode**
+(Settings → Privacy & Security → For developers) or an elevated
+PowerShell. If neither is available, re-run with `--mode copy`:
+
+```powershell
+python $HOME\src\cartopian\scripts\install.py --mode copy
+```
+
+Then add the install `bin` to your `PATH`:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "Path",
+  "$HOME\.cartopian\bin;" + [Environment]::GetEnvironmentVariable("Path","User"),
+  "User"
+)
+```
+
+### Upgrade
+
+Upgrades follow the install-behavior table: tool-shipped paths are
+replaced with the new repo version; `cartopian.toml` and
+`projects.json` are preserved.
+
+The canonical upgrade flow is `git pull` followed by rerunning the
+install script — in **both** symlink and copy modes:
+
+```bash
+git -C ~/src/cartopian pull
+python3 ~/src/cartopian/scripts/install.py
+```
+
+Rerunning the installer is required even in symlink mode because
+`CHANGELOG.md` is always a real copy of `protocol/CHANGELOG.md` (not a
+symlink); `git pull` refreshes the source tree but does not update the
+copy at `~/.cartopian/CHANGELOG.md`. The installer also picks up any
+newly added tool-shipped paths.
+
+In copy mode, pass `--mode copy` so the refresh stays in copy mode:
+
+```bash
+git -C ~/src/cartopian pull
+python3 ~/src/cartopian/scripts/install.py --mode copy
+```
+
+The script is idempotent: tool-shipped paths (including the copied
+`CHANGELOG.md`) are recreated; the operator-owned `cartopian.toml` and
+`projects.json` are reported as `preserved` and never touched.
+
+### Install layout
+
+After install or upgrade, `~/.cartopian/` contains:
+
+```text
+~/.cartopian/
+├── protocol/           ← symlink/copy → repo protocol/
+├── templates/          ← symlink/copy → repo templates/
+├── skills/             ← symlink/copy → repo skills/
+├── wrappers/           ← symlink/copy → repo wrappers/
+├── cli/                ← symlink/copy → repo cli/ (incl. _vendor/tomli_w.py)
+├── bin/
+│   └── cartopian       ← symlink/copy → repo bin/cartopian
+├── CHANGELOG.md        ← copy of repo protocol/CHANGELOG.md
+├── cartopian.toml      ← operator-owned (seeded; preserved on upgrade)
+└── projects.json       ← operator-owned (seeded `[]`; preserved on upgrade)
+```
+
+### Verify
+
+After install, sanity-check the layout and entrypoint:
+
+```bash
+cartopian --help
+cat ~/.cartopian/projects.json   # → []
+```
+
+The full post-install verification checklist is in
+`projects/cartopian-manager/tasks/open/TASK-01-014-install-verification-checklist.md`.
+
 ## Getting started
 
 Cartopian ships with guided skills that AI agents can follow to set up
