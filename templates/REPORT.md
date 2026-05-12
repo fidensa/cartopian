@@ -11,10 +11,12 @@ Status: <complete | blocked | failed>
 - Task ID: <TASK-NN-NNN>
 - Prompt path: <absolute path to the prompt file>
 - Task path: <absolute path to the task file>
-- Repo subpath: <subpath from the task, or n/a>
+- Work root: <name | name, name | n/a from the task>
 
-Legacy task reports that still say `Repo path` are tolerated when they
-identify the same product repository and are otherwise actionable.
+The `Work root:` value carries names only — the same names declared in
+the task file's `Work root:` field, drawn from
+`[project].work_roots`. The PM resolves names to absolute paths via
+`cartopian resolve-config` when it needs them.
 
 ## Files changed
 

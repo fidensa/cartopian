@@ -48,29 +48,36 @@ product repos, a chat log, journal, or prompt archive.
 
 A PM session starts only after the project is unambiguous.
 
-A project is selected explicitly when the operator names a project ID or
-project path. A project is selected implicitly when the agent's current
-working directory is inside `projects/<project-id>/` and that directory
-contains both `STATE.md` and `cartopian.toml`.
+Project selection is **registry-only**. The project registry lives at
+`~/.cartopian/projects.<format>` (per FR-003) and maps project IDs to
+absolute filesystem paths. Projects may live anywhere on disk; the
+registry is the discovery mechanism. The PM reads it via
+`cartopian discover-projects` (FR-004 #5) and resolves a project by
+its registered `id` or `path`. There is no directory-scan, no
+working-directory inference, and no protocol-defined "workspace"
+directory whose children are projects.
+
+A project is selected explicitly when the operator names a registered
+project ID or registered project path.
 
 For project-agnostic startup directions such as "start working",
 "continue", "check `STATE.md`", "what's next", or "pick up where we left
-off", the PM first resolves the workspace and eligible projects:
+off", the PM resolves eligible projects through the registry:
 
-1. List child directories under `projects/` that contain both `STATE.md`
-   and `cartopian.toml`.
-2. If the current working directory is inside one eligible project, use
-   that project and name it to the operator.
-3. If there is exactly one eligible project, use it and name it to the
+1. Enumerate registered projects via `cartopian discover-projects`.
+2. If exactly one project is registered, use it and name it to the
    operator.
-4. If there is more than one eligible project and none was selected,
-   ask the operator which project to use. Do not read or mutate
+3. If more than one project is registered and none was selected, ask
+   the operator which project to use. Do not read or mutate
    project-specific lifecycle artifacts until the project is selected.
-5. If there are no eligible projects, start with `skills/init-project.md`.
+4. If no projects are registered, start with `skills/init-project.md`,
+   which scaffolds a new project at an operator-supplied path and
+   registers it via `cartopian register-project`.
 
-After project selection, the PM reads the project and workspace
-`cartopian.toml` files and resolves the effective PM role. If the agent
-is the PM for the selected project, session startup duty is:
+After project selection, the PM reads the selected project's
+`cartopian.toml` and the global `~/.cartopian/cartopian.toml` along the
+FR-011 resolution chain and resolves the effective PM role. If the
+agent is the PM for the selected project, session startup duty is:
 
 1. Read `STATE.md` before taking lifecycle action.
 2. Reconcile `STATE.md` against the filesystem when it names task state
@@ -354,45 +361,92 @@ are in `wrappers/`. See `wrappers/README.md` for installation.
 
 ### Launch Directory
 
-Assignee CLIs run with cwd set to the **parent of the workspace root**.
-The launch cwd is fully derivable from the absolute prompt path
-(`<workspace>/projects/<project-id>/prompts/PROMPT-NN-NNN.md`); the
-shipped wrappers resolve and `cd` to it automatically.
+Assignee CLIs run with cwd set to the **cartopian project root** — the
+absolute path recorded for the selected project in the registry
+(FR-003). The shipped wrappers resolve and `cd` to that path
+automatically; the prompt path passed to the wrapper carries the
+project root in its prefix
+(`<project-root>/prompts/PROMPT-NN-NNN.md`) so derivation is
+unambiguous.
 
-This contract exists so a single `workspace-write`-style sandbox covers
-both surfaces a handoff touches:
+The cartopian project root is the home for every artifact the assignee
+must read or produce in the cartopian protocol surface — the task
+file, spec file, prompt, and the report path the assignee writes back
+to `<project-root>/reports/`. No "parent" or "shared workspace"
+directory is involved in the launch contract.
 
-- the workspace, so the assignee can write its
-  `reports/REPORT-NN-NNN.md` back into
-  `<workspace>/projects/<project-id>/reports/`, and
-- the sibling target product repo named in the task's `Repo subpath:`
-  field, so the assignee can edit code.
+When a task needs to read or write outside the cartopian project root
+(for example, a sibling product repo), the additional locations are
+declared as **work roots**: the project's `cartopian.toml` carries a
+`[project].work_roots` name set; the per-machine
+`<project-root>/cartopian.local.toml` maps each name to a
+platform-native absolute path on this operator's machine; and the task
+file's `Work root:` field names the subset of work roots the task
+touches. The launcher consumes the resolved, absolute path set emitted
+by `cartopian resolve-config <project>` and grants the agent
+read/write access to the **union of**:
 
-Recommended workspace layout: target product repos live as siblings of
-the workspace root (or nested below it). The task's `Repo subpath:`
-field is a path fragment resolvable as `<launch cwd>/<repo subpath>`
-and is the only path the PM needs to construct to point an assignee
-at the right product repo.
+- the cartopian project root (also the launch cwd); and
+- every absolute path resolved from the task's `Work root:` names.
 
-A handoff that needs to touch a repo outside this layout is a sign the
-project's workspace layout should be reorganized rather than the
-sandbox widened.
+Nothing wider, nothing narrower. The access model is documented in
+[Work Roots](#work-roots) below.
 
-The shipped wrappers honor a `CARTOPIAN_LAUNCH_CWD` environment
-variable as an escape hatch for layouts the convention does not fit
-(split, cross-drive, monorepo-internal, per-repo-sandbox setups).
-This is environment, not protocol: there is no `cartopian.toml`
-field for it, because the value varies per machine and per operator
-preference and any drift between a recorded path and the actual
-filesystem would defeat the filesystem-first stance.
+**Fail-closed default.** The wrapper does not launch the agent if any
+of the following hold: a declared work-root name has no per-machine
+path mapping (`resolve-config` exits non-zero); a resolved absolute
+path does not exist on disk; or the target tool's sandbox cannot scope
+the full union natively. The wrapper exits non-zero with a
+`[work-root]` stderr line naming the failure. The operator must fix the
+mapping, declare the missing root, remove the bogus declaration, or
+opt in to the per-tool unrestricted mode (per-invocation env var; see
+the wrapper-layer documentation).
 
-**Note for custom wrapper authors.** The launch cwd is, by design, the
-parent of the workspace and therefore not itself a git repository.
-Tools that refuse to run outside a git repo (e.g. Codex's
+**Note for custom wrapper authors.** The launch cwd is the cartopian
+project root, which is a regular directory the operator chose at
+registration time and is not automatically a git repository. Tools
+that refuse to run outside a git repo (e.g. Codex's
 `--skip-git-repo-check`) must be told to skip that check; the
 sandbox/permission model lives at the wrapper layer, not at the
 "is-this-a-git-repo" layer. Wrappers shipped with Cartopian apply this
 flag unconditionally for tools that need it.
+
+### Work Roots
+
+Work roots are the protocol mechanism that lets a cartopian project
+reference filesystem locations outside its own root — typically a
+sibling product repository, a design repo, a docs repo, or any
+external location the project's tasks need to read or write.
+
+The committed `<project-root>/cartopian.toml` declares a **name set**
+under `[project].work_roots`: an inline list of operator-chosen
+identifiers (e.g., `["product", "design"]`). Names are
+platform-independent and portable across operators. The committed
+file carries no paths; this keeps multi-operator and multi-machine use
+viable.
+
+The per-machine `<project-root>/cartopian.local.toml` carries the
+**name → absolute-path mapping** for the current operator's machine,
+under a `[work_roots]` table. The file is gitignored by
+`cartopian scaffold-project` and is never committed. Two operators on
+two machines author their own `cartopian.local.toml` with their own
+absolute paths; the committed `cartopian.toml` remains identical for
+both.
+
+`cartopian resolve-config <project>` merges the committed and
+per-machine files, validates that every declared name has a path
+mapping, and emits the resolved absolute paths as the single
+canonical form. Skills, wrappers, and launchers consume the resolved
+output; they never read the raw committed name set or the raw
+per-machine file. Unmapped names exit non-zero with a `[work-root]`
+stderr line.
+
+Tasks reference work roots by **name** in the `Work root:` task-file
+field (see `templates/TASK.md`). The field is optional,
+comma-separated multi-valued, and rejects absolute paths,
+project-relative paths, and `<owner>/<repo>` slugs. Names that are
+absent from `[project].work_roots` cause
+`cartopian validate-task-readiness` to block the task.
 
 Optional automation policy:
 
@@ -536,19 +590,21 @@ A decision that changes a prior decision creates a new file with
 
 ## Git
 
-When git versioning is used, the `projects/` directory is its own git
-repo, tracking all project PM data in a single history. This avoids
-creating a separate PM repo per project and eliminates naming collisions
-with code repos.
+When git versioning is used, each cartopian project root is its own
+git repository, tracking that project's PM data (phases, tasks, specs,
+reviews, decisions, prompts, reports, `STATE.md`, and `cartopian.toml`)
+in a single history. Projects live anywhere on disk per FR-003, so
+git scope is per-project and never assumes a shared parent directory.
 
 The protocol default for `[defaults] git_versioning` is **`false`**.
-Source attribution: the explicit `git_versioning = false` value in the
-repo-root `cartopian.toml` shipped with this protocol — projects opt
-in by setting `git_versioning = true` in their own config.
+Source attribution: the explicit `git_versioning = false` value in
+the global `~/.cartopian/cartopian.toml` shipped as the
+`templates/global.cartopian.toml` seed — projects opt in by setting
+`git_versioning = true` in their own `cartopian.toml`.
 
-Optional `[git]` configuration resolves from project-level
-`cartopian.toml`, to workspace-level `cartopian.toml`, to these protocol
-defaults:
+Optional `[git]` configuration resolves along the FR-011 resolution
+chain (project-level `cartopian.toml` → global
+`~/.cartopian/cartopian.toml` → these protocol defaults):
 
 ```toml
 [git]
@@ -589,12 +645,13 @@ human-owned.
 ### PM-Owned Product-Repo Branches
 
 When `git.pm_owns_product_branches = true`, the PM owns product-repo git
-plumbing for tasks whose `Repo subpath:` names a product repository:
-staging, commits, branches, pushes, PRs, merges, and branch cleanup. The
-setting does not apply to tasks whose `Repo subpath:` is `n/a`, and it
-never applies to the Cartopian protocol repository itself. Protocol-repo
-git staging, commits, pushes, and branch management remain human-owned
-regardless of any project setting.
+plumbing for tasks whose `Work root:` field names a work root that
+resolves to a product repository: staging, commits, branches, pushes,
+PRs, merges, and branch cleanup. The setting does not apply to tasks
+whose `Work root:` is `n/a` or omitted, and it never applies to the
+Cartopian protocol repository itself. Protocol-repo git staging,
+commits, pushes, and branch management remain human-owned regardless
+of any project setting.
 
 On an accepted coder completion report with `Ready for review: yes`, the
 coder is responsible for completed worktree changes and completion

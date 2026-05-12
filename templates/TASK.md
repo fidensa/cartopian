@@ -2,7 +2,7 @@
 
 Phase: PHASE-NN-slug
 Plan ref: PNN-KIND-NNN
-Repo subpath: <subpath | n/a>
+Work root: <name | name, name | n/a>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN-slug.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
@@ -21,17 +21,26 @@ One primary plan item from `IMPLEMENTATION_PLAN.md`, for example
 A task that truly advances multiple plan refs should usually be split;
 use References for secondary context.
 
-## Repo subpath
+## Work root
 
-Single-valued path fragment, resolved as `<launch cwd>/<repo subpath>`.
-The launch cwd is the parent of the workspace root (see
-`protocol/CONVENTIONS.md` → Handoffs → Launch Directory). Typically a
-bare directory name (e.g., `cartopian-web`); multi-segment is allowed
-for nested layouts (e.g., `team-a/cartopian-web`). Not absolute, not a
-`<owner>/<repo>` GitHub slug.
+Optional, multi-valued, name-only. Each value is a work-root **name**
+drawn from the project's `[project].work_roots` list in
+`cartopian.toml` (see `protocol/CONVENTIONS.md` → Work Roots).
+Multiple names are comma-separated:
 
-Use `n/a` if the task does not touch a product repo. A task that
-genuinely spans multiple repos is a sign the task should be split.
+```
+Work root: product, design
+```
+
+Names only. Absolute paths, project-relative paths, and
+`<owner>/<repo>` slugs are rejected. Operator-machine path mapping
+lives in `<project-root>/cartopian.local.toml` and is resolved by
+`cartopian resolve-config`; the launcher consumes the resolved
+absolute paths and fails closed on unmapped names.
+
+Use `n/a` (or omit the line) when the task touches nothing outside
+the cartopian project root. Within-root subdirectory scope belongs
+in the task body, not in this field.
 
 ## Dependencies
 

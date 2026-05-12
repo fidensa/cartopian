@@ -2,7 +2,7 @@
 
 Target: <TASK-NN-NNN-slug or SPEC-NN-NNN-slug>
 Plan ref: <PNN-KIND-NNN | n/a>
-Repo subpath: <subpath | n/a>
+Work root: <name | name, name | n/a>
 Reviewer: <free text>
 Verdict: approve | request-changes | reject
 
