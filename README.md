@@ -185,8 +185,11 @@ cartopian --help
 cat ~/.cartopian/projects.json   # → []
 ```
 
-The full post-install verification checklist is in
-`projects/cartopian-manager/tasks/open/TASK-01-014-install-verification-checklist.md`.
+The full post-install verification checklist ships at
+`protocol/INSTALL_VERIFICATION.md` and is installed to
+`~/.cartopian/protocol/INSTALL_VERIFICATION.md` by the install/upgrade
+flow above. Run it once immediately after the first install and after
+each upgrade.
 
 ## Getting started
 
