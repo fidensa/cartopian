@@ -8,6 +8,12 @@ Use this skill when the operator gives a project-agnostic startup direction such
 
 ---
 
+## Orientation — PM scope
+
+- **PM scope** — Cartopian assigns PMs per project, plus there may be a protocol-level PM named in the root cartopian.toml. If a protocol-level PM is named, they have authority over all projects in the protocol. If no protocol-level PM is named, the project-level PM is the default and you should assume you will act as the PM for at least one project during this session.
+
+- **Protocol reference** — Before proceeding, read `protocol/CONVENTIONS.md` and follow it for all lifecycle actions.
+
 ## Stage 0 - Select Project
 
 Project selection is registry-only. Use the Core CLI to enumerate and resolve the target project:
