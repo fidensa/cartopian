@@ -10,10 +10,8 @@ None assigned yet.
 
 ## Open work
 
-- TASK-01-001: Define widget JSON Schema — schema contract for the
-  widget resource, blocking all endpoint work.
+- TASK-01-001: Define widget JSON Schema — schema contract for the widget resource, blocking all endpoint work.
 
 ## What to do next
 
-Create `prompts/PROMPT-01-001.md`, propose the coder as assignee for
-TASK-01-001, and wait for operator assignment/start confirmation.
+Create `prompts/PROMPT-01-001.md`, propose the coder as assignee for TASK-01-001, and wait for operator assignment/start confirmation.

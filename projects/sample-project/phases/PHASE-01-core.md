@@ -2,9 +2,7 @@
 
 ## Goal
 
-Build the widget schema, CRUD endpoints, and validation layer. By the
-end of this phase the API accepts and serves widget data with full input
-validation.
+Build the widget schema, CRUD endpoints, and validation layer. By the end of this phase the API accepts and serves widget data with full input validation.
 
 ## Plan refs covered
 
@@ -32,5 +30,4 @@ None.
 
 ## Dependencies
 
-- Phase 00 must be complete (requirements and engineering standards
-  locked).
+- Phase 00 must be complete (requirements and engineering standards locked).

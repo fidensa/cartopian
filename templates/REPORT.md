@@ -1,8 +1,6 @@
 # REPORT-NN-NNN
 
-This template is the canonical field schema for Cartopian handoff
-reports. Use exactly one variant: task completion, review completion, or
-planning-review completion.
+This template is the canonical field schema for Cartopian handoff reports. Use exactly one variant: task completion, review completion, or planning-review completion.
 
 Status: <complete | blocked | failed>
 
@@ -13,10 +11,7 @@ Status: <complete | blocked | failed>
 - Task path: <absolute path to the task file>
 - Work root: <name | name, name | n/a from the task>
 
-The `Work root:` value carries names only — the same names declared in
-the task file's `Work root:` field, drawn from
-`[project].work_roots`. The PM resolves names to absolute paths via
-`cartopian resolve-config` when it needs them.
+The `Work root:` value carries names only — the same names declared in the task file's `Work root:` field, drawn from `[project].work_roots`. The PM resolves names to absolute paths via `cartopian resolve-config` when it needs them.
 
 ## Files changed
 
@@ -25,20 +20,18 @@ the task file's `Work root:` field, drawn from
 ## Test evidence
 
 <When evidence gate was `required`:
+
 - Red test evidence: <pointer to the failing test before implementation>
 - Green test evidence: <pointer to the passing test after implementation>
 
 When evidence gate was `n/a`:
+
 - n/a — <reason>>
 
 ## Commit / PR
 
-- Commit SHA: <SHA or n/a>
-  Use `n/a` when the project uses PM-owned product-repo git; the PM
-  stages and commits the task changes after this report lands.
-- PR URL: <URL or n/a>
-  Use `n/a` when the project uses PM-owned product-repo git; the PM
-  creates the PR after this report lands.
+- Commit SHA: <SHA or n/a> Use `n/a` when the project uses PM-owned product-repo git; the PM stages and commits the task changes after this report lands.
+- PR URL: <URL or n/a> Use `n/a` when the project uses PM-owned product-repo git; the PM creates the PR after this report lands.
 
 ## Remaining risks
 
@@ -80,8 +73,7 @@ Status: <complete | blocked | failed>
 
 ## Planning-review completion variant
 
-Use this section instead of the above when reporting on a planning-
-checkpoint review handoff (e.g., requirements review, plan review).
+Use this section instead of the above when reporting on a planning- checkpoint review handoff (e.g., requirements review, plan review).
 
 # REPORT-PLAN-NNN-slug
 
@@ -107,6 +99,4 @@ Status: <complete | blocked | failed>
 
 ---
 
-> **Redaction reminder:** Do not include API keys, credentials, tokens,
-> private connection strings, or comparable sensitive values in this
-> report. Redact before writing.
+> **Redaction reminder:** Do not include API keys, credentials, tokens, private connection strings, or comparable sensitive values in this report. Redact before writing.

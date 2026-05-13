@@ -1,14 +1,11 @@
 # Cartopian Skills
 
-Skills are agent-executable markdown runbooks. Each skill is a
-structured, step-by-step instruction document that an AI coding assistant
-reads and follows. The agent interacts with the user where decisions are
-needed and produces the output files.
+Skills are agent-executable markdown runbooks. Each skill is a structured, step-by-step instruction document that an AI coding assistant reads and follows. The agent interacts with the user where decisions are needed and produces the output files.
 
 ## Available skills
 
 | Skill | File | Purpose | CLI Handoff |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Init Workspace** | `init-workspace.md` | Generate workspace and project `cartopian.toml` config files | Configures handoff targets and automation policy |
 | **Init Project** | `init-project.md` | Scaffold a new project with the correct directory structure | Scaffolds `reports/` and supports handoff overrides |
 | **Adopt Requirements** | `adopt-requirements.md` | Generate `REQUIREMENTS.md` from external sources (JIRA, Confluence, PRD, etc.) without running the full planning pipeline | None — PM-only skill; no handoff |
@@ -21,24 +18,10 @@ needed and produces the output files.
 
 ## CLI handoff automation
 
-Planning, task, and review workflows understand CLI handoff automation.
-The `init-workspace` and `init-project` skills configure handoff targets
-and automation policy. The `run-handoff` skill defines the reusable
-mechanics for prompt handoff, stale report handling, report parsing,
-timeout behavior, and automation policy. The `plan-project` and
-`run-task` skills use those mechanics for planning checkpoints and task
-execution. The `close-plan` skill audits `reports/` and ensures no
-unresolved handoff state remains before plan closeout.
+Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff targets and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
 
-Automation is optional. Manual handoff remains valid for every role and
-every skill. See `protocol/CONVENTIONS.md` for the handoff contract and
-`skills/run-handoff.md` for the executable workflow.
+Automation is optional. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the handoff contract and `skills/run-handoff.md` for the executable workflow.
 
 ## Session startup
 
-Use `start-session.md` for vague PM startup requests like "start
-working", "continue", or "check `STATE.md`". In a workspace with more
-than one eligible project, the PM asks which project to use before
-reading or mutating project lifecycle artifacts. Once the project is
-selected, an agent PM reads `STATE.md`, reports the current/next
-protocol action, and asks whether to begin.
+Use `start-session.md` for vague PM startup requests like "start working", "continue", or "check `STATE.md`". In a workspace with more than one eligible project, the PM asks which project to use before reading or mutating project lifecycle artifacts. Once the project is selected, an agent PM reads `STATE.md`, reports the current/next protocol action, and asks whether to begin.

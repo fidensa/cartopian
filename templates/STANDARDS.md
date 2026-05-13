@@ -9,8 +9,7 @@
 
 ## Tools and stack
 
-List the languages, frameworks, runtimes, infrastructure, or other
-tools the project relies on. Pin versions where stability matters.
+List the languages, frameworks, runtimes, infrastructure, or other tools the project relies on. Pin versions where stability matters.
 
 ## Working standards
 
@@ -18,25 +17,19 @@ Style, formatting, naming, or process conventions the team follows.
 
 ## Constraints
 
-Boundaries that execution must not cross. Examples for software work:
-no shared mutable state, all services behind the API gateway, no direct
-DB access from the frontend. Adapt freely to the project's domain.
+Boundaries that execution must not cross. Examples for software work: no shared mutable state, all services behind the API gateway, no direct DB access from the frontend. Adapt freely to the project's domain.
 
 ## Security and compliance
 
-Authentication model, secrets management, data classification, or
-regulatory requirements.
+Authentication model, secrets management, data classification, or regulatory requirements.
 
 ## Quality checks
 
-Acceptance evidence required by the project: test types, review
-checklists, fact-check passes, validation runs, or whatever proves the
-work is done. Coverage targets and tooling go here too.
+Acceptance evidence required by the project: test types, review checklists, fact-check passes, validation runs, or whatever proves the work is done. Coverage targets and tooling go here too.
 
 ## Infrastructure / delivery
 
-Deployment targets, CI/CD pipeline, publishing path, or whatever the
-project's "delivery" surface is.
+Deployment targets, CI/CD pipeline, publishing path, or whatever the project's "delivery" surface is.
 
 ## Open standards questions
 

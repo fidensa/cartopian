@@ -1,7 +1,6 @@
 # Widget API — Conventions
 
-This document extends the protocol-level conventions defined in
-`protocol/CONVENTIONS.md`. Rules here apply only to this project.
+This document extends the protocol-level conventions defined in `protocol/CONVENTIONS.md`. Rules here apply only to this project.
 
 ## Project-specific conventions
 

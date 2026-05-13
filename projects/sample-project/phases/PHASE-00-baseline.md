@@ -2,9 +2,7 @@
 
 ## Goal
 
-Lock requirements and engineering standards before writing any code.
-Establish the project foundation so all subsequent phases build on
-reviewed, stable inputs.
+Lock requirements and engineering standards before writing any code. Establish the project foundation so all subsequent phases build on reviewed, stable inputs.
 
 ## Plan refs covered
 

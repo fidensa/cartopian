@@ -15,15 +15,13 @@
 - Prettier for formatting.
 - Strict TypeScript (`strict: true`).
 - All API responses use JSON:API envelope format.
-- Schema files use `.schema.json` extension and live in `schemas/`
-  within the target repo.
+- Schema files use `.schema.json` extension and live in `schemas/` within the target repo.
 - Error codes follow the format `WIDGET-ENNN` (three-digit counter).
 
 ## Architecture constraints
 
 - All validation through JSON Schema — no ad-hoc checks in handlers.
-- No direct SQL in route handlers; all queries go through the data
-  access layer.
+- No direct SQL in route handlers; all queries go through the data access layer.
 - Every endpoint returns JSON:API envelope format.
 
 ## Testing standards

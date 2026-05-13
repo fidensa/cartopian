@@ -2,17 +2,13 @@
 
 ## Purpose
 
-This plan derives from `REQUIREMENTS.md` (locked) and
-`ENGINEERING.md` (locked). It defines the phased build for the Widget
-API service.
+This plan derives from `REQUIREMENTS.md` (locked) and `ENGINEERING.md` (locked). It defines the phased build for the Widget API service.
 
 ## Architecture rules
 
-- All validation through JSON Schema — no ad-hoc validation in handlers
-  (ENGINEERING.md: Architecture constraints).
+- All validation through JSON Schema — no ad-hoc validation in handlers (ENGINEERING.md: Architecture constraints).
 - JSON:API envelope on all responses (ENGINEERING.md + FR-006).
-- No direct SQL in handlers; data access layer required
-  (ENGINEERING.md: Architecture constraints).
+- No direct SQL in handlers; data access layer required (ENGINEERING.md: Architecture constraints).
 
 ## Repo topology
 
@@ -26,8 +22,7 @@ Single-repo project. All code lives in `widget-api`.
 
 ### Phase 00: Baseline
 
-**Goal:** Lock requirements and engineering standards. Establish the
-project foundation before writing any code.
+**Goal:** Lock requirements and engineering standards. Establish the project foundation before writing any code.
 
 | Plan ref      | Kind  | Description          |
 | ------------- | ----- | -------------------- |
@@ -39,7 +34,7 @@ project foundation before writing any code.
 - REQUIREMENTS.md reviewed and locked.
 - ENGINEERING.md reviewed and locked.
 
-______________________________________________________________________
+---
 
 ### Phase 01: Core
 
@@ -76,8 +71,7 @@ ______________________________________________________________________
 
 ### Phase 01
 
-- OQ-001: Widget type enum vs. extensible (Owner: PM). Blocks
-  P01-BUILD-001.
+- OQ-001: Widget type enum vs. extensible (Owner: PM). Blocks P01-BUILD-001.
 
 ## Exit criteria summary
 

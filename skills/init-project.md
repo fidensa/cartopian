@@ -1,7 +1,6 @@
 # Skill: Init Project
 
-Scaffold a new project under `projects/` with the full directory
-structure and seed files.
+Scaffold a new project under `projects/` with the full directory structure and seed files.
 
 **Output:** A fully scaffolded project directory ready for use.
 
@@ -9,8 +8,7 @@ structure and seed files.
 
 ## Prerequisites
 
-- A workspace-level `cartopian.toml` exists (run `skills/init-workspace.md`
-  first if not).
+- A workspace-level `cartopian.toml` exists (run `skills/init-workspace.md` first if not).
 - You know the path to the Cartopian workspace root.
 
 ---
@@ -22,31 +20,12 @@ structure and seed files.
 Ask the operator for:
 
 1. **Project name** — human-readable (e.g., "Widget API").
-2. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one
-   derived from the name if the operator doesn't provide one.
-3. **Role overrides** — any roles that differ from the workspace
-   `[roles]` table for this project. Each role value is a one-line
-   description string describing the role's responsibility. A role
-   exists in the project iff its key appears in `[roles]`; omit a
-   key to drop a workspace-default role from this project. The
-   protocol-default roster is `pm` and `operator`; common example
-   labels operators add are `coder` and `reviewer`. There is no
-   kind field on the role itself.
-4. **Handoff overrides** — for any role that should dispatch
-   automatically, ask if the project needs different CLI handoff
-   targets, auto-start, or timeout values than the workspace
-   defaults. Whether a role dispatches automatically is inferred
-   from the presence of a `[handoffs.<role>]` block. Explain that
-   omitted handoff config inherits workspace behavior.
-5. **Automation overrides** — ask if the project needs a different
-   confirmation policy or max handoffs per run than the workspace
-   defaults.
+2. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one derived from the name if the operator doesn't provide one.
+3. **Role overrides** — any roles that differ from the workspace `[roles]` table for this project. Each role value is a one-line description string describing the role's responsibility. A role exists in the project iff its key appears in `[roles]`; omit a key to drop a workspace-default role from this project. The protocol-default roster is `pm` and `operator`; common example labels operators add are `coder` and `reviewer`. There is no kind field on the role itself.
+4. **Handoff overrides** — for any role that should dispatch automatically, ask if the project needs different CLI handoff targets, auto-start, or timeout values than the workspace defaults. Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block. Explain that omitted handoff config inherits workspace behavior.
+5. **Automation overrides** — ask if the project needs a different confirmation policy or max handoffs per run than the workspace defaults.
 
-Target product repos are not declared in `cartopian.toml`. Each task
-records its own `Repo subpath:` and the assignee CLI is launched with
-cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md`
-→ Handoffs → Launch Directory). Per-task branch information lives on
-the prompt's `Branch:` field, populated by the PM at handoff time.
+Target product repos are not declared in `cartopian.toml`. Each task records its own `Repo subpath:` and the assignee CLI is launched with cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md` → Handoffs → Launch Directory). Per-task branch information lives on the prompt's `Branch:` field, populated by the PM at handoff time.
 
 ### Step 2 — Create directory structure
 
@@ -72,11 +51,7 @@ projects/<project-id>/
 └── reviews/
 ```
 
-Create all directories, including empty ones. The task status
-subdirectories (`open/`, `in-progress/`, `in-review/`, `done/`) must all
-exist even though they start empty. The `prompts/` directory starts
-empty and holds temporary assignee handoff prompts. The `reports/`
-directory starts empty and holds handoff completion reports.
+Create all directories, including empty ones. The task status subdirectories (`open/`, `in-progress/`, `in-review/`, `done/`) must all exist even though they start empty. The `prompts/` directory starts empty and holds temporary assignee handoff prompts. The `reports/` directory starts empty and holds handoff completion reports.
 
 ### Step 3 — Generate project config
 
@@ -111,9 +86,7 @@ id = "<project-id>"
 # Omitted automation config inherits workspace behavior.
 ```
 
-Omit the `[roles]` section entirely if there are no overrides. Include
-`[handoffs.*]` only for project-specific overrides. Include
-`[automation]` only for project-specific overrides.
+Omit the `[roles]` section entirely if there are no overrides. Include `[handoffs.*]` only for project-specific overrides. Include `[automation]` only for project-specific overrides.
 
 Keep manual handoff as the default.
 
@@ -126,8 +99,7 @@ Write `projects/<project-id>/STATE.md`:
 
 ## Current phase
 
-No phases defined yet. Run `skills/plan-project.md` to generate the
-project plan.
+No phases defined yet. Run `skills/plan-project.md` to generate the project plan.
 
 ## Active work
 
@@ -139,8 +111,7 @@ None.
 
 ## What to do next
 
-Run `skills/plan-project.md` to begin requirements gathering and
-generate the implementation plan, phases, and tasks.
+Run `skills/plan-project.md` to begin requirements gathering and generate the implementation plan, phases, and tasks.
 ```
 
 ### Step 5 — Generate seed CONVENTIONS.md
@@ -150,8 +121,7 @@ Write `projects/<project-id>/CONVENTIONS.md`:
 ```markdown
 # <project name> — Conventions
 
-This document extends the protocol-level conventions defined in
-`protocol/CONVENTIONS.md`. Rules here apply only to this project.
+This document extends the protocol-level conventions defined in `protocol/CONVENTIONS.md`. Rules here apply only to this project.
 
 ## Project-specific conventions
 
@@ -183,8 +153,8 @@ Write `projects/<project-id>/decisions/INDEX.md`:
 ```markdown
 # Decision Index
 
-| ID | Title | Date | Status | Supersedes |
-|---|---|---|---|---|
+| ID  | Title | Date | Status | Supersedes |
+| --- | ----- | ---- | ------ | ---------- |
 ```
 
 ### Step 8 — Summary and next steps
@@ -198,6 +168,4 @@ Print a summary of everything that was created:
 
 Suggest next steps:
 
-- "Run `skills/plan-project.md` to begin the planning lifecycle:
-  requirements → plan → phases → tasks. This will also generate your
-  `STANDARDS.md` document based on the project requirements."
+- "Run `skills/plan-project.md` to begin the planning lifecycle: requirements → plan → phases → tasks. This will also generate your `STANDARDS.md` document based on the project requirements."

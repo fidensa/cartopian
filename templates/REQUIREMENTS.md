@@ -6,8 +6,7 @@
 
 ## Thesis
 
-What is this thing? Define it precisely — it is exactly this, and it is
-surely not that.
+What is this thing? Define it precisely — it is exactly this, and it is surely not that.
 
 ## Primary users
 
@@ -19,8 +18,7 @@ How does it work at a high level? What does the user experience?
 
 ## Architecture principles
 
-What structural rules govern the build? What constraints does the team
-agree to work within?
+What structural rules govern the build? What constraints does the team agree to work within?
 
 ## Functional requirements
 

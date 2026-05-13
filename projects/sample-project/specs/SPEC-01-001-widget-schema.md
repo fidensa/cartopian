@@ -1,21 +1,14 @@
 # SPEC-01-001: Widget Schema
 
-Status: draft
-Author: PM
-Reviewer: AI reviewer
-Date: 2025-01-20
-Plan refs: P01-BUILD-001
+Status: draft Author: PM Reviewer: AI reviewer Date: 2025-01-20 Plan refs: P01-BUILD-001
 
 ## Problem
 
-The API needs a formal contract for the widget resource before any
-endpoint can be built. Without a schema, validation logic will be
-ad-hoc and inconsistent.
+The API needs a formal contract for the widget resource before any endpoint can be built. Without a schema, validation logic will be ad-hoc and inconsistent.
 
 ## Goal
 
-Define the wire format for a widget resource so that all endpoints,
-validators, and consumers share a single source of truth.
+Define the wire format for a widget resource so that all endpoints, validators, and consumers share a single source of truth.
 
 ## Non-goals
 
@@ -37,14 +30,12 @@ validators, and consumers share a single source of truth.
 }
 ```
 
-Required fields on create: `type`, `displayName`, `configuration`.
-Read-only fields: `id`, `archived`, `createdAt`, `updatedAt`.
+Required fields on create: `type`, `displayName`, `configuration`. Read-only fields: `id`, `archived`, `createdAt`, `updatedAt`.
 
 ## Constraints
 
 - JSON Schema draft-2020-12 (ENGINEERING.md: Tech stack).
-- Schema file lives at `schemas/widget.schema.json`
-  (CONVENTIONS.md: project-specific conventions).
+- Schema file lives at `schemas/widget.schema.json` (CONVENTIONS.md: project-specific conventions).
 
 ## References
 
@@ -60,8 +51,7 @@ Read-only fields: `id`, `archived`, `createdAt`, `updatedAt`.
 
 ## Open questions
 
-- OQ-001: Widget type enum values (Owner: PM). Must resolve before
-  schema locks.
+- OQ-001: Widget type enum values (Owner: PM). Must resolve before schema locks.
 
 ## Review checklist
 

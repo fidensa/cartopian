@@ -1,20 +1,14 @@
 # SPEC-NN-NNN: <short noun-phrase title>
 
-Status: draft | locked
-Author: <name or role>
-Reviewer: <name or role>
-Date: YYYY-MM-DD
-Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
+Status: draft | locked Author: <name or role> Reviewer: <name or role> Date: YYYY-MM-DD Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
 
 ## Problem
 
-What existing gap or decision makes this spec necessary? Two or three
-sentences.
+What existing gap or decision makes this spec necessary? Two or three sentences.
 
 ## Goal
 
-The product outcome this spec exists to enable. Not the implementation;
-the outcome.
+The product outcome this spec exists to enable. Not the implementation; the outcome.
 
 ## Non-goals
 
@@ -22,13 +16,11 @@ Explicit list of things this spec does not cover.
 
 ## Interface
 
-The external contract — names, shapes, and semantics. Enough that two
-implementers working independently would produce wire-compatible results.
+The external contract — names, shapes, and semantics. Enough that two implementers working independently would produce wire-compatible results.
 
 ## Constraints
 
-What the Implementation Plan or a prior spec requires. Cite by section
-heading.
+What the Implementation Plan or a prior spec requires. Cite by section heading.
 
 ## References
 
@@ -44,8 +36,7 @@ heading.
 
 ## Open questions
 
-Each question names its owner. A spec locks only when every question is
-closed.
+Each question names its owner. A spec locks only when every question is closed.
 
 ## Review checklist
 
