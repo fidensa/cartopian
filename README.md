@@ -38,7 +38,7 @@ The install/upgrade flow lays out `~/.cartopian/` per the `STANDARDS.md` install
 **macOS / Linux / WSL** (`~/.cartopian/` resolves to `$HOME/.cartopian/`):
 
 ```bash
-git clone https://github.com/<org>/cartopian.git ~/src/cartopian
+git clone https://github.com/fidensa/cartopian.git ~/src/cartopian
 python3 ~/src/cartopian/scripts/install.py
 ```
 
@@ -68,7 +68,7 @@ printf '[]\n' > ~/.cartopian/projects.json
 **Native Windows (PowerShell)** (`~/.cartopian/` resolves to `%USERPROFILE%\.cartopian\`):
 
 ```powershell
-git clone https://github.com/<org>/cartopian.git $HOME\src\cartopian
+git clone https://github.com/fidensa/cartopian.git $HOME\src\cartopian
 python $HOME\src\cartopian\scripts\install.py
 ```
 
