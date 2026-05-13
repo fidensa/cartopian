@@ -30,9 +30,12 @@ consistent with that state.
 2. Read the current phase file.
 3. Read the target task file.
 4. Read the task's spec when the task references one.
-5. Read the project and workspace `cartopian.toml` files.
-6. Resolve effective roles, handoff targets, automation policy, and
-   `[git]` configuration.
+5. Resolve effective roles, handoff targets, automation policy,
+   work roots, and `[git]` configuration via the Core CLI:
+
+   ```
+   cartopian resolve-config <project>
+   ```
 
 If the task state in `STATE.md` disagrees with the filesystem, treat the
 filesystem as authoritative and refresh `STATE.md` before proceeding.
@@ -41,17 +44,15 @@ filesystem as authoritative and refresh `STATE.md` before proceeding.
 
 ## Stage 1 - Confirm Task Readiness
 
-1. Verify the task's phase and plan ref exist in the implementation plan
-   and phase file.
-2. Verify `Depends on` and `Blocked by` fields use `TASK-NN-NNN`
-   identifiers only.
-3. Verify each `Blocked by` task is in `tasks/done/`.
-4. Verify the task has a valid evidence gate:
-   - `required` names concrete red-before-green targets.
-   - `n/a` explains why no executable gate applies.
-5. Verify the task has checkable acceptance criteria.
+1. Call the Core CLI to validate readiness:
 
-Stop and surface a blocker if readiness cannot be established.
+   ```
+   cartopian validate-task-readiness <task-path>
+   ```
+
+   Treat a non-zero exit as a blocker and stop.
+2. Confirm acceptance criteria are actionable for the assignee/reviewer
+   per task context.
 
 ---
 
@@ -102,8 +103,12 @@ to the operator and wait for explicit assignment/start confirmation.
 For configured agent handoff, follow the resolved `auto_start` value and
 automation policy.
 
-Move the task to `tasks/in-progress/` only after assignment/start is
-confirmed or after an auto-start handoff is actually launched.
+Move the task to `tasks/in-progress/` using the Core CLI only after
+assignment/start is confirmed or after an auto-start handoff is launched:
+
+```
+cartopian move-task <task-path> in-progress
+```
 
 If the operator returns later with completion evidence even though
 assignment was never recorded, fast-forward to the evidence-supported
@@ -218,24 +223,26 @@ Reviewers record their findings and verdict in:
 reviews/REVIEW-NN-NNN.md
 ```
 
-The PM applies the verdict:
+The PM applies the verdict, delegating directory status transitions to
+the Core CLI:
 
 - `approve`, when `git.pm_owns_product_branches = false` or unset, or
-  when no product-repo PR exists: move the task to `tasks/done/` and
-  delete the matching prompt.
+  when no product-repo PR exists: use `cartopian move-task <task-path> done`
+  and delete the matching prompt.
 - `approve`, when `git.pm_owns_product_branches = true` and a PR exists:
   merge with `gh pr merge --<strategy> --delete-branch`, using the
   effective `git.default_merge_strategy` (`merge`, `squash`, or
   `rebase`). Capture the merge commit SHA, append it to the review
   file's existing `Implementation evidence` block as
   `Merge commit SHA`, append `PR URL` if the review file does not
-  already include it, then move the task to `tasks/done/` and delete the
-  matching prompt.
-- `request-changes`: move the task to `tasks/in-progress/`. When
-  PM-owned product-repo git is enabled, leave the branch and PR open for
-  the next coder pass.
-- `reject`: move the task to `tasks/open/`. When PM-owned product-repo
-  git is enabled, leave the branch and PR open for the next coder pass.
+  already include it, then `cartopian move-task <task-path> done` and
+  delete the matching prompt.
+- `request-changes`: `cartopian move-task <task-path> in-progress`.
+  When PM-owned product-repo git is enabled, leave the branch and PR
+  open for the next coder pass.
+- `reject`: `cartopian move-task <task-path> open`. When PM-owned
+  product-repo git is enabled, leave the branch and PR open for the next
+  coder pass.
 
 On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round
 suffixes.

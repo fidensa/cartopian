@@ -27,16 +27,20 @@ owns.
 
 ## Stage 0 - Resolve Effective Configuration
 
-1. Read the project `cartopian.toml`.
-2. Read the workspace `cartopian.toml`, when present.
-3. Resolve the effective `[roles]` table (project overrides
-   workspace). Each value is a one-line description string.
-4. Resolve `[handoffs.<role>]` for the role being assigned, from
-   project config first, then workspace config.
-5. Resolve `[automation]` from project config first, then workspace
-   config, then protocol defaults:
-   - `confirmation = "each-handoff"`
-   - `max_handoffs_per_run = 1`
+Use the Core CLI to resolve effective roles, handoff targets, automation
+policy, work roots, and relevant `[git]` keys for the selected project
+id or path:
+
+```
+cartopian resolve-config <project>
+```
+
+Read from the resolved output:
+
+- The `[roles]` table (name -> one-line description string).
+- The `[handoffs.<role>]` block for the role being assigned.
+- The `[automation]` policy, defaulting to `confirmation = "each-handoff"`
+  and `max_handoffs_per_run = 1` when unset.
 
 If the role being assigned is not declared in the resolved
 `[roles]` table, stop and return a blocked outcome to the caller
@@ -92,12 +96,12 @@ Automated launch contract:
 Pass the prompt path as one argv argument. Use shell quoting only in
 operator-facing command text.
 
-Assignee CLIs run with cwd set to the parent of the workspace root, so
-a single sandbox covers both the workspace (for the assignee's report
-write-back) and the sibling target product repo named in the task's
-`Repo subpath:` field. The shipped wrappers in `wrappers/` resolve and
-`cd` to this directory automatically; custom agents must honor the
-same convention.
+Per FR-012 launch semantics, assignee CLIs run with cwd set to the
+cartopian project root (the registered project path). Access grants cover
+the union of the project root and any declared work-root absolute paths
+resolved via `resolve-config`. The shipped wrappers in `wrappers/`
+resolve the project root and apply access grants automatically; custom
+agents must honor the same convention.
 
 Launch only one child handoff at a time. Do not start another handoff
 until this one has produced an accepted or blocked report outcome.
@@ -127,19 +131,23 @@ successful completion evidence.
 
 ## Stage 4 - Parse The Report
 
-Read the report at the expected absolute report path.
+Use the Core CLI to parse the report at the expected absolute report path
+and validate it against the applicable variant in `templates/REPORT.md`:
 
-Validate the report against the applicable variant in
-`templates/REPORT.md`:
+```
+cartopian parse-report <report-path> [--variant <variant>]
+```
 
-- Task completion variant for task handoffs.
-- Review completion variant for task-review handoffs.
-- Planning-review completion variant for planning-checkpoint review
-  handoffs.
+Variants:
+- Task completion for task handoffs.
+- Review completion for task-review handoffs.
+- Planning-review completion for planning-checkpoint review handoffs.
 
-Reject the report as `failed-to-parse` when it is missing, malformed,
-incomplete, internally inconsistent, uses unsupported status or verdict
-values, or contradicts the expected task/review/prompt/report paths.
+Caller-side path-consistency check (per AR-5): verify that the parsed
+report’s embedded paths, when present, match the expected task,
+prompt, review, and report paths the caller supplied. If the report is
+missing, malformed, inconsistent, uses unsupported values, or fails the
+expected-path check, treat it as `failed-to-parse`.
 
 Treat `failed-to-parse` as blocked for the caller. Preserve the prompt
 and invalid report for operator inspection.

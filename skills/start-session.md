@@ -18,37 +18,37 @@ confirmation.
 
 ## Stage 0 - Select Project
 
-Resolve the Cartopian workspace root, then identify eligible project
-directories under `projects/`. An eligible project contains both:
+Project selection is registry-only. Use the Core CLI to enumerate and
+resolve the target project:
 
-- `STATE.md`
-- `cartopian.toml`
-
-Select the project using this order:
-
-1. If the operator named a project ID or project path, use that project.
-2. If the current working directory is inside one eligible project, use
+1. Enumerate registered projects via `cartopian discover-projects`.
+   This emits NDJSON records with `id`, `path`, and `label`.
+2. If the operator named a registered `id` or absolute `path`, select
    that project.
-3. If there is exactly one eligible project, use that project.
-4. If there is more than one eligible project and none was selected,
-   ask the operator which project to use. List the project IDs and stop
-   until the operator chooses one.
-5. If there are no eligible projects, stop and run `init project`.
+3. If exactly one project is registered, select it and name it to the
+   operator.
+4. If more than one project is registered and none was selected, list
+   the registered IDs and ask the operator to choose one; pause until a
+   choice is made.
+5. If no projects are registered, stop and run `init project` to
+   scaffold, generate config, and register a project.
 
-Do not read or mutate project-specific lifecycle artifacts until the
-project is selected.
+Do not read or mutate project-specific lifecycle artifacts until a
+registered project is selected.
 
 ---
 
 ## Stage 1 - Resolve PM Role
 
-Read the workspace-level `cartopian.toml` and the selected project's
-`cartopian.toml`. Resolve the effective `[roles]` table and the
-effective `[handoffs.*]` blocks, with project config overriding
-workspace config.
+Resolve effective roles, handoff targets, automation policy, and
+relevant `[git]` keys via the Core CLI for the selected project id or
+path:
 
-Determine PM availability and dispatch path from the resolved
-config:
+```
+cartopian resolve-config <project>
+```
+
+Determine PM availability and dispatch path from the resolved config:
 
 - If `pm` is not declared in the resolved `[roles]` table, surface
   a blocker: the project does not declare a PM role. Ask the
