@@ -16,9 +16,9 @@ API service.
 
 ## Repo topology
 
-| Repo | Owns | Branch |
-|---|---|---|
-| widget-api | API service, schemas, tests | main |
+| Repo       | Owns                        | Branch |
+| ---------- | --------------------------- | ------ |
+| widget-api | API service, schemas, tests | main   |
 
 Single-repo project. All code lives in `widget-api`.
 
@@ -29,46 +29,48 @@ Single-repo project. All code lives in `widget-api`.
 **Goal:** Lock requirements and engineering standards. Establish the
 project foundation before writing any code.
 
-| Plan ref | Kind | Description |
-|---|---|---|
+| Plan ref      | Kind  | Description          |
+| ------------- | ----- | -------------------- |
 | P00-BUILD-001 | build | Lock REQUIREMENTS.md |
-| P00-BUILD-002 | build | Lock ENGINEERING.md |
+| P00-BUILD-002 | build | Lock ENGINEERING.md  |
 
 **Exit criteria:**
+
 - REQUIREMENTS.md reviewed and locked.
 - ENGINEERING.md reviewed and locked.
 
----
+______________________________________________________________________
 
 ### Phase 01: Core
 
 **Goal:** Build the widget schema, CRUD endpoints, and validation layer.
 
-| Plan ref | Kind | Description |
-|---|---|---|
-| P01-BUILD-001 | build | Define widget JSON Schema |
-| P01-BUILD-002 | build | Implement data access layer |
-| P01-BUILD-003 | build | Implement CRUD endpoints |
+| Plan ref      | Kind  | Description                     |
+| ------------- | ----- | ------------------------------- |
+| P01-BUILD-001 | build | Define widget JSON Schema       |
+| P01-BUILD-002 | build | Implement data access layer     |
+| P01-BUILD-003 | build | Implement CRUD endpoints        |
 | P01-BUILD-004 | build | Add input validation middleware |
 
 **Exit criteria:**
+
 - Widget JSON Schema locked and tested.
 - All CRUD endpoints operational with validation.
 - Integration tests passing for all endpoints.
 
 ## Requirement coverage
 
-| Requirement | Plan ref(s) | Phase |
-|---|---|---|
-| FR-001 | P01-BUILD-003 | 01 |
-| FR-002 | P01-BUILD-003 | 01 |
-| FR-003 | P01-BUILD-003 | 01 |
-| FR-004 | P01-BUILD-003 | 01 |
-| FR-005 | P01-BUILD-003 | 01 |
-| FR-006 | P01-BUILD-001, P01-BUILD-004 | 01 |
-| NF-001 | P01-BUILD-002, P01-BUILD-003 | 01 |
-| NF-002 | P01-BUILD-003 | 01 |
-| NF-003 | P01-BUILD-004 | 01 |
+| Requirement | Plan ref(s)                  | Phase |
+| ----------- | ---------------------------- | ----- |
+| FR-001      | P01-BUILD-003                | 01    |
+| FR-002      | P01-BUILD-003                | 01    |
+| FR-003      | P01-BUILD-003                | 01    |
+| FR-004      | P01-BUILD-003                | 01    |
+| FR-005      | P01-BUILD-003                | 01    |
+| FR-006      | P01-BUILD-001, P01-BUILD-004 | 01    |
+| NF-001      | P01-BUILD-002, P01-BUILD-003 | 01    |
+| NF-002      | P01-BUILD-003                | 01    |
+| NF-003      | P01-BUILD-004                | 01    |
 
 ## Open questions by phase
 
@@ -79,7 +81,7 @@ project foundation before writing any code.
 
 ## Exit criteria summary
 
-| Phase | Exit criteria |
-|---|---|
-| 00 | Requirements and engineering standards reviewed and locked |
-| 01 | All CRUD endpoints operational, validated, and integration-tested |
+| Phase | Exit criteria                                                     |
+| ----- | ----------------------------------------------------------------- |
+| 00    | Requirements and engineering standards reviewed and locked        |
+| 01    | All CRUD endpoints operational, validated, and integration-tested |

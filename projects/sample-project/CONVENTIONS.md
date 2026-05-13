@@ -6,5 +6,7 @@ This document extends the protocol-level conventions defined in
 ## Project-specific conventions
 
 # It is not typical to require this file at the project level,
-# however it is included here to illustrate customization of 
+
+# however it is included here to illustrate customization of
+
 # policies and governance at the heart of the system is possible.

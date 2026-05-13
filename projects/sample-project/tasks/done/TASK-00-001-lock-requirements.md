@@ -32,7 +32,7 @@ n/a — this is a review-and-lock task with no executable output.
 
 - [x] REQUIREMENTS.md reviewed by the configured reviewer.
 - [x] All open questions either resolved or explicitly deferred with
-      an owner.
+  an owner.
 - [x] No blocker findings remain in the review.
 - [x] Document marked as locked.
 
