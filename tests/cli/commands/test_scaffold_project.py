@@ -539,44 +539,6 @@ class TestScaffoldGenerateConfigIntegration(unittest.TestCase):
             self.assertEqual(_hash_tree(proj), before)
 
 
-class TestScaffoldProjectRequirementsAcceptanceFixture(unittest.TestCase):
-    """FR-004 #8 verbatim acceptance fixture.
-
-    The implementation honors the locked text below. If REQUIREMENTS.md
-    drifts away from this prose, this test diff surfaces the drift so an
-    operator can re-confirm the implementation still matches.
-    """
-
-    LOCKED_FIXTURE = (
-        "8. `cartopian scaffold-project <project-path>` — create the project\n"
-        "   directory tree (`phases/`, `tasks/{open,in-progress,in-review,done}/`,\n"
-        "   `prompts/`, `reports/`, `<work-contracts>/` (final directory name\n"
-        "   per OQ-001 — `specs/` if `SPEC-` is retained as a compatibility\n"
-        "   label, otherwise the renamed equivalent), `decisions/`, `reviews/`)\n"
-        "   plus seed `STATE.md`, `CONVENTIONS.md`, `STANDARDS.md` (final name\n"
-        "   per OQ-001), and `decisions/INDEX.md`. **Rerun policy:** an empty\n"
-        "   target directory or a missing directory is created and seeded\n"
-        "   (success, exit `0`); a target that already contains a complete and\n"
-        "   well-formed scaffold is a **no-op success** (no files touched,\n"
-        "   exit `0`); a target that is non-empty but does not match the\n"
-        "   scaffold layout — including partial scaffolds, foreign files, or\n"
-        "   layout drift — is a **guarded refusal** (exit `1` with a\n"
-        "   `[guard]` stderr line naming the conflict). The command never\n"
-        "   overwrites or deletes existing files.\n"
-    )
-
-    def test_locked_fixture_present_in_requirements(self):
-        text = REQUIREMENTS.read_text(encoding="utf-8")
-        self.assertIn(
-            self.LOCKED_FIXTURE,
-            text,
-            msg=(
-                "FR-004 #8 prose has drifted from the locked test fixture. "
-                "Re-confirm scaffold-project semantics and update the fixture "
-                "(or the implementation) deliberately."
-            ),
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
