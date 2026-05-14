@@ -86,6 +86,7 @@ else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
+  # FR-012 launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
   if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
     cd "$PROJECT_DIR"
     echo "cartopian-codex: cwd=$PROJECT_DIR" >&2
@@ -100,7 +101,7 @@ fi
 # non-empty and per-tool sandbox cannot scope multi-root access. Allow an
 # explicit per-invocation bypass via CARTOPIAN_CODEX_UNRESTRICTED=true.
 if command -v cartopian &>/dev/null; then
-  RC_JSON="$(cartopian resolve-config "$PWD" 2>/dev/null | head -n 1 || true)"
+  RC_JSON="$(cartopian resolve-config "$PWD" | head -n 1)"
   if [[ -n "$RC_JSON" ]]; then
     WORK_ROOTS=$(python3 - <<'PY'
 import sys, json

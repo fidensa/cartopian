@@ -79,6 +79,40 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
+# --- Access grants (OQ-009) -----------------------------------------
+# Read resolved work-root absolute paths via Core CLI. Fail-closed when
+# non-empty and per-tool sandbox cannot scope multi-root access. Allow an
+# explicit per-invocation bypass via CARTOPIAN_GEMINI_UNRESTRICTED=true.
+$WorkRootsJson = ''
+$ResolveOut = cartopian resolve-config (Get-Location).Path | Select-Object -First 1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[work-root] resolve-config failed for $(Get-Location).Path"
+    exit 1
+}
+if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
+if ($WorkRootsJson) {
+    try {
+        $rec = $WorkRootsJson | ConvertFrom-Json
+        $roots = @()
+        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
+        if ($roots.Count -gt 0) {
+            foreach ($r in $roots) {
+                if (-not (Test-Path -PathType Container $r)) {
+                    Write-Error "[work-root] missing: $r"
+                    exit 1
+                }
+            }
+            if ($env:CARTOPIAN_GEMINI_UNRESTRICTED -ne 'true') {
+                Write-Error "[work-root] tool cannot scope multi-root access; set CARTOPIAN_GEMINI_UNRESTRICTED=true to bypass (dangerous)"
+                exit 1
+            } else {
+                Write-Host "cartopian-gemini: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
+            }
+        }
+    } catch {}
+}
+# --------------------------------------------------------------------
+
 $Args = @()
 if ($ApprovalMode) {
     $Args += @('--approval-mode', $ApprovalMode)
