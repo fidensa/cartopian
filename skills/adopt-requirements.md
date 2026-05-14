@@ -13,6 +13,31 @@ Running this skill is optional. If you prefer to reference requirements entirely
 - The project directory exists (run `init-project` first if needed).
 - A project-level `cartopian.toml` exists with `[project]` configured.
 
+You must either (a) select the project from the registry using `cartopian discover-projects` or (b) know its absolute path for `cartopian resolve-config`.
+
+---
+
+## Stage 0 — Resolve Project And Config
+
+1. Discover the project or accept an explicit absolute project path:
+
+   - Use `cartopian discover-projects` to list registered projects and select one, or
+   - If the operator provides an absolute `<project-path>`, use it directly.
+
+2. If the selected absolute `<project-path>` is not yet in the registry, register it so future sessions can select it deterministically:
+
+   ```
+   cartopian register-project <project-path> [--label "Human-friendly name"]
+   ```
+
+3. Resolve effective configuration for this project (roles, handoffs, automation policy, and declared work roots):
+
+   ```
+   cartopian resolve-config <project-path>
+   ```
+
+Record the absolute `<project-path>`; subsequent steps write files within that directory.
+
 ---
 
 ## Preflight — Existing Requirements Check

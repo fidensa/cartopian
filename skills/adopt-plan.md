@@ -12,6 +12,7 @@ This skill does not require a `REQUIREMENTS.md` or a requirements-gathering conv
 
 - The project directory exists (run `init-project` first if needed).
 - A project-level `cartopian.toml` exists with `[project]` configured.
+You must either (a) select the project from the registry using `cartopian discover-projects` or (b) know its absolute path for `cartopian resolve-config`.
 
 ---
 
@@ -31,13 +32,27 @@ If inconsistent state exists (plan artifacts without a plan file, or `STATE.md` 
 
 ---
 
-## Stage 0 — Role and Handoff Resolution
+## Stage 0 — Resolve Project, Register If Needed, And Load Config
 
-1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Resolve the effective `[roles]` table (project overrides workspace). Each value is a one-line description string; a role exists in this project iff its key appears in `[roles]`.
-3. Resolve the effective handoff target for each role: check project `[handoffs.*]`, then fall back to workspace `[handoffs.*]`. A role with a `[handoffs.<role>]` block dispatches automatically; a role without one dispatches manually.
-4. Resolve the effective automation policy: check project `[automation]`, then workspace `[automation]`, then protocol defaults (`confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
-5. Check whether a reviewer is configured: `reviewer` appears as a key in the resolved `[roles]` table. If not, ask the operator:
+1. Discover the project or accept an explicit absolute project path:
+
+   - Use `cartopian discover-projects` to list registered projects and select one, or
+   - If the operator provides an absolute `<project-path>`, use it directly.
+
+2. If the selected absolute `<project-path>` is not yet in the registry, register it so future sessions can select it deterministically:
+
+   ```
+   cartopian register-project <project-path> [--label "Human-friendly name"]
+   ```
+
+3. Resolve the effective configuration for this project (roles, handoffs, automation policy, declared work roots) via the Core CLI:
+
+   ```
+   cartopian resolve-config <project-path>
+   ```
+
+4. Check whether a reviewer is configured in the resolved roles. If not, ask the operator:
+
    > "No reviewer is configured. Do you want to designate a reviewer for this session? If not, we'll proceed without review checkpoints."
 
 ---
@@ -89,7 +104,7 @@ Write `IMPLEMENTATION_PLAN.md` in the project directory following the structure 
 
 **Architecture rules:** Derive from any constraints stated in the external plan or the requirements source. Note the origin of each rule.
 
-**Repo topology:** Identify which repos are involved. Populate `Repo subpath:` values for use in task files.
+**Repo topology:** Identify which repos are involved. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `templates/TASK.md`.
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
 
@@ -136,7 +151,7 @@ For each build and research item in the active phase, create `tasks/open/TASK-NN
 
 - `Phase:` from the phase file
 - `Plan ref:` from the `PNN-KIND-NNN` table
-- `Repo subpath:` from the plan's repo topology (or `n/a` if not applicable)
+- `Work root:` name(s) from the resolved config's `[project].work_roots` (or `n/a` if not applicable). Names only; do not write paths.
 - `Assignee:` from the resolved role configuration
 - `Spec:` link if a spec is being created; otherwise `none`
 - `Depends on:` / `Blocked by:` from the external plan's dependency information

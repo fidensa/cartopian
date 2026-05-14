@@ -16,16 +16,19 @@ Use this skill when another Cartopian skill needs to hand work to a human or con
 - The caller knows the expected absolute report path.
 - The caller knows the expected report variant from `templates/REPORT.md`.
 - The caller knows which lifecycle action, if any, is allowed after the report is accepted.
+- The absolute project path is known (selected from `cartopian discover-projects`) so `cartopian resolve-config <project-path>` can be run.
 
 ---
 
 ## Stage 0 - Resolve Effective Configuration
 
-Use the Core CLI to resolve effective roles, handoff targets, automation policy, work roots, and relevant `[git]` keys for the selected project id or path:
+Use the Core CLI to resolve effective roles, handoff targets, automation policy, work roots, and relevant `[git]` keys for the selected project absolute path:
 
 ```
-cartopian resolve-config <project>
+cartopian resolve-config <project-path>
 ```
+
+If you do not have the absolute path, run `cartopian discover-projects` and select the entry; use its `path` field.
 
 Read from the resolved output:
 
@@ -45,9 +48,13 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
 2. Ensure the prompt contains absolute paths for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names the expected absolute report path.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
-5. Delete any stale report at the expected report path before issuing the handoff.
+5. Remove any stale report at the expected report path using the Core CLI before issuing the handoff:
 
-Do not delete unrelated reports. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
+   ```
+   cartopian delete-report <report-path>
+   ```
+
+Do not delete unrelated reports. Use `delete-report` only for the expected report path. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
 ---
 

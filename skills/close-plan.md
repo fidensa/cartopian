@@ -52,10 +52,20 @@ Inspect `tasks/done/` and compare completed task identifiers to the current phas
 
 Inspect `prompts/`.
 
-Prompt files are temporary. If any `PROMPT-*.md` files remain, resolve them before closeout:
+Prompt files are temporary. If any `PROMPT-*.md` files remain, resolve them before closeout using the Core CLI:
 
-- Delete prompts for tasks already in `done/`.
-- Delete superseded planning-checkpoint prompts.
+- Remove prompts for tasks already in `done/`:
+
+  ```
+  cartopian delete-prompt <project-path>/prompts/PROMPT-NN-NNN-<slug>.md
+  ```
+
+- Remove superseded planning-checkpoint prompts:
+
+  ```
+  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
+  ```
+
 - Stop if a prompt points to work that is still active or ambiguous.
 
 ### 1.4 Check reports
@@ -66,7 +76,11 @@ Report files are handoff result artifacts. Resolve any remaining reports before 
 
 - Treat unresolved prompts or missing/ambiguous reports as active handoff state.
 - Stop closeout if any handoff result is missing, malformed, incomplete, ambiguous, failed to parse, or otherwise unresolved.
-- Reports that have been processed and whose corresponding tasks are in `done/` may be cleared during reset.
+- Reports that have been processed and whose corresponding tasks are in `done/` may be cleared via the Core CLI during reset:
+
+  ```
+  cartopian delete-report <project-path>/reports/REPORT-NN-NNN-<slug>.md
+  ```
 
 ### 1.5 Check phase exit criteria
 
@@ -165,7 +179,7 @@ Reset the live project surface after optional archival is complete.
 
 ### 4.1 Always reset
 
-Remove these live artifacts:
+Remove these live artifacts. Use the Core CLI for prompt and report files:
 
 - `REQUIREMENTS.md`
 - `IMPLEMENTATION_PLAN.md`
@@ -177,8 +191,8 @@ Remove these live artifacts:
 - all files in `specs/`
 - all files in `reviews/`
 - all files in `decisions/`
-- all files in `prompts/`
-- all files in `reports/`
+- all files in `prompts/` (via `cartopian delete-prompt <path>`)
+- all files in `reports/` (via `cartopian delete-report <path>`)
 
 Recreate the directories if needed:
 

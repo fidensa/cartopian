@@ -1,15 +1,16 @@
 # Skill: Init Project
 
-Scaffold a new project under `projects/` with the full directory structure and seed files.
+Initialize a new project at an operator-supplied absolute path using the Core CLI: scaffold the directory tree, generate the project config, and register the project in the registry.
 
-**Output:** A fully scaffolded project directory ready for use.
+**Output:** A scaffolded project at the chosen path, with config written and the project registered.
 
 ---
 
 ## Prerequisites
 
-- A workspace-level `cartopian.toml` exists (run `skills/init-workspace.md` first if not).
-- You know the path to the Cartopian workspace root.
+- Cartopian Core CLI is installed and available as `cartopian`.
+- An absolute `<project-path>` chosen for the new project (operator-supplied; may live anywhere on disk).
+- Project name and ID decided (human-readable name and kebab-case ID).
 
 ---
 
@@ -19,143 +20,63 @@ Scaffold a new project under `projects/` with the full directory structure and s
 
 Ask the operator for:
 
-1. **Project name** — human-readable (e.g., "Widget API").
-2. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one derived from the name if the operator doesn't provide one.
-3. **Role overrides** — any roles that differ from the workspace `[roles]` table for this project. Each role value is a one-line description string describing the role's responsibility. A role exists in the project iff its key appears in `[roles]`; omit a key to drop a workspace-default role from this project. The protocol-default roster is `pm` and `operator`; common example labels operators add are `coder` and `reviewer`. There is no kind field on the role itself.
-4. **Handoff overrides** — for any role that should dispatch automatically, ask if the project needs different CLI handoff targets, auto-start, or timeout values than the workspace defaults. Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block. Explain that omitted handoff config inherits workspace behavior.
-5. **Automation overrides** — ask if the project needs a different confirmation policy or max handoffs per run than the workspace defaults.
+1. **Project path** — absolute filesystem path where the project will live (e.g., `/path/to/projects/widget-api`).
+2. **Project name** — human-readable (e.g., "Widget API").
+3. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one derived from the name if the operator doesn't provide one.
+4. **Role overrides** — any roles that differ from defaults for this project. Each role value is a one-line description string describing the role's responsibility. A role exists in the project iff its key appears in `[roles]`; omit a key to drop a default role from this project. The protocol-default roster is `pm` and `operator`; common example labels operators add are `coder` and `reviewer`. There is no kind field on the role itself.
+5. **Handoff overrides** — for any role that should dispatch automatically, ask if the project needs specific handoff targets, auto-start, or timeout values. Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block.
+6. **Automation overrides** — ask if the project needs a different confirmation policy or max handoffs per run.
+7. **Work roots (optional)** — operator-declared external work locations to be surfaced by the config (names that resolve to absolute paths per-machine via `cartopian resolve-config`).
 
-Target product repos are not declared in `cartopian.toml`. Each task records its own `Repo subpath:` and the assignee CLI is launched with cwd at the parent of the workspace root (see `protocol/CONVENTIONS.md` → Handoffs → Launch Directory). Per-task branch information lives on the prompt's `Branch:` field, populated by the PM at handoff time.
+Launch cwd is the cartopian project root (registry-based). Tasks reference external work locations via the renamed work-location field. Projects that routinely use fixed external roots declare named work roots in `cartopian.toml`; `cartopian resolve-config` resolves these names to absolute paths per machine, and launchers grant access to declared paths per the access-grant model.
 
-### Step 2 — Create directory structure
+### Step 2 — Scaffold project via Core CLI
 
-Create the following under `projects/<project-id>/`:
+Run the scaffold command against the absolute `<project-path>`:
 
 ```
-projects/<project-id>/
-├── cartopian.toml
-├── STATE.md
-├── CONVENTIONS.md
-├── STANDARDS.md
-├── phases/
-├── prompts/
-├── reports/
-├── tasks/
-│   ├── open/
-│   ├── in-progress/
-│   ├── in-review/
-│   └── done/
-├── specs/
-├── decisions/
-│   └── INDEX.md
-└── reviews/
+cartopian scaffold-project <project-path>
 ```
 
-Create all directories, including empty ones. The task status subdirectories (`open/`, `in-progress/`, `in-review/`, `done/`) must all exist even though they start empty. The `prompts/` directory starts empty and holds temporary assignee handoff prompts. The `reports/` directory starts empty and holds handoff completion reports.
+Outcomes per contract:
+- Exit 0 and files created when the target is empty or missing (created).
+- Exit 0 and no-op when a complete scaffold already exists.
+- Exit 1 with a `[guard]` message when the target is non-empty and conflicts with the scaffold layout.
 
-### Step 3 — Generate project config
+The scaffold seeds the directory structure and seed files (STATE.md, CONVENTIONS.md, STANDARDS.md, phases/, tasks/{open,in-progress,in-review,done}/, prompts/, reports/, specs-or-renamed-work-contracts/, decisions/ with INDEX.md, reviews/).
 
-Write `projects/<project-id>/cartopian.toml`:
+### Step 3 — Generate project config via Core CLI
 
-```toml
-[project]
-name = "<project name>"
-id = "<project-id>"
+Write the project-level config with the CLI, supplying the gathered inputs as flags:
 
-[roles]
-# Include only overrides. Workspace defaults apply for omitted
-# roles. Each value is a one-line description string describing
-# the role's responsibility. Whether a role dispatches
-# automatically is inferred from the presence of a
-# `[handoffs.<role>]` block below; there is no kind field on the
-# role itself. To drop a workspace-default role from this project,
-# omit its key from `[roles]` here and document the choice.
-# Example:
-# coder = "Implements tasks per spec."
-# reviewer = "Reviews per acceptance evidence."
-
-# [handoffs.<role>]
-# agent = "<executable name>"
-# auto_start = <true|false>
-# timeout = "<duration>"
-# Omitted handoff config inherits workspace behavior.
-
-# [automation]
-# confirmation = "each-handoff"
-# max_handoffs_per_run = 1
-# Omitted automation config inherits workspace behavior.
+```
+cartopian generate-config <project-path> \
+  --name "<project name>" \
+  --id "<project-id>" \
+  [role description flags] [handoff flags] [automation flags] [work-root flags]
 ```
 
-Omit the `[roles]` section entirely if there are no overrides. Include `[handoffs.*]` only for project-specific overrides. Include `[automation]` only for project-specific overrides.
+Notes:
+- Include only role overrides; defaults apply when a role key is omitted.
+- `[handoffs.<role>]` blocks are emitted only when provided; omitted inherits defaults.
+- `[automation]` is emitted only when provided.
+- Work-root flags declare named roots; resolution to absolute paths is per-machine via `cartopian resolve-config`.
 
-Keep manual handoff as the default.
+### Step 4 — Register the project in the registry
 
-### Step 4 — Generate seed STATE.md
+Add the new project to the registry so skills discover it by ID:
 
-Write `projects/<project-id>/STATE.md`:
-
-```markdown
-# <project name> — State
-
-## Current phase
-
-No phases defined yet. Run `skills/plan-project.md` to generate the project plan.
-
-## Active work
-
-None.
-
-## Open work
-
-None.
-
-## What to do next
-
-Run `skills/plan-project.md` to begin requirements gathering and generate the implementation plan, phases, and tasks.
+```
+cartopian register-project <project-path> [--label "<project name>"]
 ```
 
-### Step 5 — Generate seed CONVENTIONS.md
+Verify registration:
 
-Write `projects/<project-id>/CONVENTIONS.md`:
-
-```markdown
-# <project name> — Conventions
-
-This document extends the protocol-level conventions defined in `protocol/CONVENTIONS.md`. Rules here apply only to this project.
-
-## Project-specific conventions
-
-<!-- Add project-specific naming rules, workflow modifications, or
-     constraints here. Delete this comment when you add real content. -->
+```
+cartopian discover-projects
 ```
 
-### Step 6 — Generate seed STANDARDS.md
-
-Write `projects/<project-id>/STANDARDS.md`:
-
-```markdown
-# <project name> — Standards
-
-<!-- This document is recommended but not required. It captures the
-     domain-neutral standards and constraints that govern execution
-     of this project. See templates/STANDARDS.md for a starting
-     template.
-
-     This document will be populated during the planning phase. The plan-project
-     skill will generate and update this document based on requirements and
-     other locked decisions, or you can edit this file directly.-->
-```
-
-### Step 7 — Generate seed decisions/INDEX.md
-
-Write `projects/<project-id>/decisions/INDEX.md`:
-
-```markdown
-# Decision Index
-
-| ID  | Title | Date | Status | Supersedes |
-| --- | ----- | ---- | ------ | ---------- |
-```
+Expect an entry with `id = <project-id>`, `path = <absolute project-path>`, and `label` (defaults to name when omitted).
 
 ### Step 8 — Summary and next steps
 

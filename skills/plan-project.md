@@ -15,6 +15,7 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 - The project directory exists with the correct structure (run `skills/init-project.md` first if needed).
 - A project-level `cartopian.toml` exists with `[project]` configured.
+- The project is discoverable via `cartopian discover-projects` (registered), or you know its absolute path for `cartopian resolve-config`.
 
 ---
 
@@ -40,10 +41,15 @@ If a previous closeout carried forward `STANDARDS.md` or `CONVENTIONS.md`, treat
 
 ## Stage 0 — Role And Handoff Resolution
 
-1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
-2. Resolve the effective `[roles]` table (project overrides workspace). Each value is a one-line description string; a role exists in this project iff its key appears in `[roles]`.
-3. Resolve the effective handoff target for each role: check project `[handoffs.*]`, then fall back to workspace `[handoffs.*]`. A role with a `[handoffs.<role>]` block dispatches automatically; a role without one dispatches manually.
-4. Resolve the effective automation policy: check project `[automation]`, then fall back to workspace `[automation]`, then fall back to protocol defaults (`confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
+1. Select the active project from the registry.
+
+   - Run `cartopian discover-projects` and choose the entry by `id`/`label`; capture its `path` as the project's absolute path.
+   - If the project is not yet registered but you know its absolute path, proceed with that path and register it later via `cartopian register-project`.
+
+2. Resolve the effective configuration via the Core CLI.
+
+   - Run `cartopian resolve-config <project-path>` to obtain the canonical `project_path` and merged `roles`, `handoffs`, `automation`, `work_roots`, and `git_versioning`.
+   - Use this emitted record instead of reading and merging TOML by hand.
 5. Determine whether a **reviewer** is configured. A reviewer is considered configured when `reviewer` appears as a key in the resolved `[roles]` table. If `[handoffs.reviewer]` is also configured, review checkpoints dispatch automatically; if only the `[roles].reviewer` key is present, review checkpoints dispatch manually (the PM surfaces the prompt; the operator acts).
 6. If `reviewer` is not declared in `[roles]`, ask the operator:
 
@@ -250,7 +256,21 @@ If the operator says "skip review" at any checkpoint, do not call `skills/run-ha
 
 `skills/run-handoff.md` owns stale report deletion, manual versus CLI handoff behavior, timeout enforcement, report parsing, and sequential automation boundaries.
 
-Planning-checkpoint prompts and reviews are temporary artifacts. Delete them when the planning stage is approved or superseded. No archival.
+Planning-checkpoint prompts and reviews are temporary artifacts. When a planning stage is approved or superseded, clear its prompt and report artifacts using the Core CLI and keep the review as the durable record:
+
+- Remove the checkpoint prompt:
+
+  ```
+  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
+  ```
+
+- Remove the checkpoint report (if present):
+
+  ```
+  cartopian delete-report <project-path>/reports/REPORT-PLAN-NNN-<slug>.md
+  ```
+
+No archival for prompts or reports.
 
 This creates a quality gate at every level of the hierarchy while keeping the operator in control of the pace.
 
