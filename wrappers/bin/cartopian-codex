@@ -65,13 +65,10 @@ fi
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
-# Cartopian convention: assignee CLIs run with cwd set to the parent of
-# the workspace root, so a single workspace-write sandbox spans both the
-# protocol repo (for the assignee's report write-back under
-# .../projects/<proj>/reports/) and the sibling target product repo
-# named in the task's `Repo subpath:` field. Prompts always live at
-# <workspace>/projects/<proj>/prompts/PROMPT-*.md, so the launch cwd is
-# derivable from the prompt path alone.
+# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# (the registered project path). Prompts always live at
+# <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
+# root is derivable from the prompt path alone.
 #
 # Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
 # skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
@@ -89,15 +86,51 @@ else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
-  PROJECTS_DIR="$(dirname "$PROJECT_DIR")"
-  WORKSPACE_ROOT="$(dirname "$PROJECTS_DIR")"
-  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" \
-     && "$(basename "$PROJECTS_DIR")" == "projects" ]]; then
-    LAUNCH_CWD="$(dirname "$WORKSPACE_ROOT")"
-    cd "$LAUNCH_CWD"
-    echo "cartopian-codex: cwd=$LAUNCH_CWD" >&2
+  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
+    cd "$PROJECT_DIR"
+    echo "cartopian-codex: cwd=$PROJECT_DIR" >&2
   else
-    echo "cartopian-codex: prompt is outside a Cartopian workspace; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+    echo "cartopian-codex: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+  fi
+fi
+# --------------------------------------------------------------------
+
+# --- Access grants (OQ-009) -----------------------------------------
+# Read resolved work-root absolute paths via Core CLI. Fail-closed when
+# non-empty and per-tool sandbox cannot scope multi-root access. Allow an
+# explicit per-invocation bypass via CARTOPIAN_CODEX_UNRESTRICTED=true.
+if command -v cartopian &>/dev/null; then
+  RC_JSON="$(cartopian resolve-config "$PWD" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$RC_JSON" ]]; then
+    WORK_ROOTS=$(python3 - <<'PY'
+import sys, json
+try:
+    rec = json.loads(sys.stdin.read())
+except Exception:
+    print("")
+    raise SystemExit(0)
+wr = rec.get("work_roots") or {}
+if isinstance(wr, dict) and wr:
+    print("\n".join(str(p) for p in wr.values()))
+else:
+    print("")
+PY
+    <<<"$RC_JSON")
+    if [[ -n "$WORK_ROOTS" ]]; then
+      while IFS= read -r root; do
+        [[ -z "$root" ]] && continue
+        if [[ ! -d "$root" ]]; then
+          echo "[work-root] missing: $root" >&2
+          exit 1
+        fi
+      done <<< "$WORK_ROOTS"
+      if [[ "${CARTOPIAN_CODEX_UNRESTRICTED:-false}" != "true" ]]; then
+        echo "[work-root] tool cannot scope multi-root access; set CARTOPIAN_CODEX_UNRESTRICTED=true to bypass (dangerous)" >&2
+        exit 1
+      else
+        echo "cartopian-codex: unrestricted mode enabled; proceeding without scoped grants" >&2
+      fi
+    fi
   fi
 fi
 # --------------------------------------------------------------------

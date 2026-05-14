@@ -107,7 +107,7 @@ PM runs:  cartopian-codex /abs/path/to/PROMPT-01-003.md
               ├─ validates the file exists
               ├─ checks that 'codex' is installed
               ├─ reads the prompt file content
-              ├─ resolves the launch directory (parent of workspace root)
+              ├─ resolves the launch directory (Cartopian project root)
               └─ exec codex exec --sandbox workspace-write "<prompt content>"
 ```
 
@@ -115,34 +115,17 @@ The wrapper replaces itself with the real CLI process (`exec`), so timeouts, sig
 
 ## Where the wrapper runs from
 
-Cartopian wrappers always change directory to the **parent of the workspace root** before invoking the underlying CLI. The launch cwd is derived from the absolute prompt path, which always lives at:
+Cartopian wrappers always change directory to the **Cartopian project root** before invoking the underlying CLI (FR-012). The launch cwd is derived from the absolute prompt path, which always lives at:
 
 ```text
 <workspace>/projects/<project-id>/prompts/PROMPT-NN-NNN.md
 ```
 
-So `LAUNCH_CWD = parent_of(<workspace>)`. For a workspace at `/Users/me/Projects/cartopian/`, the launch cwd is `/Users/me/Projects/`.
+So `LAUNCH_CWD = <workspace>/projects/<project-id>`.
 
-Why this matters: with cwd at the parent of the workspace, a single `workspace-write`-style sandbox spans both surfaces the assignee needs:
+Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly and aligns with the FR-012 contract enforced by `skills/run-handoff.md`. Access to outside-the-project resources is explicitly granted via resolved absolute work-root paths (OQ-009) rather than by broadening cwd.
 
-- the protocol repo, so the assignee can drop its `reports/REPORT-NN-NNN.md` back into `<workspace>/projects/<project-id>/reports/`, and
-- the sibling target product repo named in the task's `Repo subpath:` field, so the assignee can edit code.
-
-This is why Cartopian's recommended workspace layout puts target product repos as **siblings of the workspace root** (or nested below it). For example:
-
-```text
-~/Projects/                              ← launch cwd (sandbox root)
-├── cartopian/                           ← workspace root (protocol repo)
-│   └── projects/
-│       └── cartopian-web/               ← project PM data
-│           ├── tasks/.../TASK-01-004... ← `Repo subpath: cartopian-web`
-│           └── prompts/PROMPT-01-004.md ← absolute path passed to wrapper
-└── cartopian-web/                       ← sibling target product repo
-```
-
-`Repo subpath: cartopian-web` plus the launch cwd resolves to `~/Projects/cartopian-web/` with no ambiguity.
-
-If the prompt is not inside a recognizable Cartopian workspace (missing the `prompts/` and `projects/` markers on its path), the wrapper leaves cwd unchanged and prints a notice. This keeps the wrappers usable in ad-hoc test harnesses.
+If the prompt is not inside a recognizable Cartopian project layout (missing the `prompts/` marker on its path), the wrapper leaves cwd unchanged and prints a notice. This keeps the wrappers usable in ad-hoc test harnesses.
 
 ### Override: `CARTOPIAN_LAUNCH_CWD`
 

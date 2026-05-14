@@ -46,13 +46,10 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
 # --- Launch directory ------------------------------------------------
-# Cartopian convention: assignee CLIs run with cwd set to the parent of
-# the workspace root, so the assignee's filesystem access spans both the
-# protocol repo (for report write-back under .../projects/<proj>/reports/)
-# and the sibling target product repo named in the task's `Repo subpath:`
-# field. Prompts always live at <workspace>/projects/<proj>/prompts/
-# PROMPT-*.md, so the launch cwd is derivable from the prompt path
-# alone.
+# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# (the registered project path). Prompts always live at
+# <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
+# root is derivable from the prompt path alone.
 #
 # Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
 # skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
@@ -70,18 +67,41 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
     $PromptAbs    = (Resolve-Path $PromptPath).Path
     $PromptsDir   = Split-Path -Parent $PromptAbs
     $ProjectDir   = Split-Path -Parent $PromptsDir
-    $ProjectsDir  = Split-Path -Parent $ProjectDir
-    $WorkspaceRoot = Split-Path -Parent $ProjectsDir
-    if ((Split-Path -Leaf $PromptsDir) -eq 'prompts' -and `
-        (Split-Path -Leaf $ProjectsDir) -eq 'projects') {
-        $LaunchCwd = Split-Path -Parent $WorkspaceRoot
-        Set-Location $LaunchCwd
-        Write-Host "cartopian-claude: cwd=$LaunchCwd" -ForegroundColor DarkGray
+    if ((Split-Path -Leaf $PromptsDir) -eq 'prompts') {
+        Set-Location $ProjectDir
+        Write-Host "cartopian-claude: cwd=$ProjectDir" -ForegroundColor DarkGray
     } else {
-        Write-Host "cartopian-claude: prompt is outside a Cartopian workspace; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
+        Write-Host "cartopian-claude: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
     }
 }
 # --------------------------------------------------------------------
+
+$WorkRootsJson = ''
+try {
+    $ResolveOut = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
+    if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
+} catch { $WorkRootsJson = '' }
+if ($WorkRootsJson) {
+    try {
+        $rec = $WorkRootsJson | ConvertFrom-Json
+        $roots = @()
+        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
+        if ($roots.Count -gt 0) {
+            foreach ($r in $roots) {
+                if (-not (Test-Path -PathType Container $r)) {
+                    Write-Error "[work-root] missing: $r"
+                    exit 1
+                }
+            }
+            if ($env:CARTOPIAN_CLAUDE_UNRESTRICTED -ne 'true') {
+                Write-Error "[work-root] tool cannot scope multi-root access; set CARTOPIAN_CLAUDE_UNRESTRICTED=true to bypass (dangerous)"
+                exit 1
+            } else {
+                Write-Host "cartopian-claude: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
+            }
+        }
+    } catch {}
+}
 
 $Args = @('-p')
 if ($AllowedTools) {
