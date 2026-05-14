@@ -1,86 +1,45 @@
 # Cartopian
 
-Filesystem-first project governance for AI-native development with optional multi-agent orchestration.
+**An AI-native project manager that lives in your filesystem.**
 
-Cartopian is a lightweight, protocol-driven project management system designed for AI agent workflows. Said differently, Cartopian is a project-governance substrate where an agent PM turns requirements into structured project state. It tracks phases, tasks, specs, decisions, and reviews using plain markdown files and directory-as-status conventions. No database, no SaaS dependency, no mandatory tooling.
+Cartopian turns "I want to do X" into a tracked plan, logical phases, structured tasks, real specs, and dispatched work. All without third-party MCP servers, no database, and no project disappearing into a chat window when you close the tab. It's flexible enough to run a SaaS product, an Etsy store launch, or a weekend garage sale, and disciplined enough that an AI agent can pick the project back up tomorrow and keep going.
 
-## Design principles
+## What it actually does
 
-- **Filesystem-first.** Status is a directory. Moving a file is the status update. No metadata to sync.
-- **Git-optional.** Git versioning can be enabled per project in `cartopian.toml`. The protocol works without it.
-- **Multi-project workspaces.** Each managed project is a child directory under `projects/` with its own config and state. Projects are fully isolated from each other.
-- **Single projects repo.** All project PM data lives under `projects/`, which is its own git repo — one repo for all projects. No per-project PM repos, no naming collisions with code repos.
-- **AI-native prompts.** The PM produces temporary assignee-directed prompts with full context. The operator confirms assignment explicitly.
-- **Protocol, not methodology.** Best practices are adopted because they work, not because a methodology prescribes them.
+- **Plans the work.** An AI Project Manager interviews you, drafts requirements, breaks them into phases, and emits tasks with acceptance criteria.
+- **Tracks progress.** Phases, tasks, decisions, reviews, and session state live as plain markdown so progress is visible at a glance — and survives any tool change.
+- **Writes the specs.** Each task gets a real spec, not a vibes-based prompt. Decisions get recorded as they happen, so future-you knows why.
+- **Orchestrates the doers.** Roles map tasks to the right resource: a programmer agent, a reviewer agent, a designer, or you. Define any role you need; only the Operator and Project Manger roles are required. The PM hands off, collects results, and integrates.
+- **Automates the boring parts.** Handoffs to CLI agents (Codex, Claude Code, Gemini, Devin, or others) can be one-tap or fully unattended, with timeouts and confirmation gates you control.
+- **Stays out of your way.** Git is optional. Automation is optional. Roles are operator-chosen. Every decision is overridable.
+
+## How it feels in practice
+
+```text
+init project   →   plan project   →   start session   →   run task   →   close plan
+```
+
+You tell the PM what you want. It asks the questions it needs to ask, produces a requirements doc, drafts a plan, breaks it into phases and tasks, and parks everything on disk. When you come back, "start session" reads the current state and tells you what's next. "Run task" dispatches it, either to an agent if you've wired one up, or to you if you'd rather drive.
+
+When the plan is done, "close plan" archives it and you're ready for the next one.
 
 ## Install
 
-Cartopian's canonical V1 install path is **manual `git clone` plus a symlink-based tree at `~/.cartopian/`** (per DEC-012). No homebrew, no npm, no `curl … | bash`, no Microsoft Store package — `git clone + symlink` is the only install method shipped in V1.
+Requirements: **Python 3.11+** on your PATH. (macOS users: the stock `/usr/bin/python3` is 3.9 — use `brew install python@3.11` or any 3.11+ interpreter.)
 
-### Prerequisite
-
-The single operator-facing install prerequisite is **Python 3.11+** (per DEC-001). The Core CLI relies on stdlib `tomllib`, introduced in 3.11, and the entrypoint at `bin/cartopian` enforces the version. No `pip install` runs at install or runtime.
-
-- **macOS gotcha (read first):** the stock `/usr/bin/python3` is 3.9.x and silently fails both the CLI entrypoint and the canonical test runner. Install Homebrew `python@3.11` (or any ≥3.11 interpreter on your `PATH`) before running any `cartopian` or test command:
-
-  ```bash
-  brew install python@3.11
-  ```
-
-- **Linux:** Ubuntu 22.04 has `python3.11` in the official repo; Ubuntu 24.04+ and Debian 12 ship 3.11/3.12 as default; Fedora and Arch ship current.
-- **Native Windows:** install Python 3.11+ from python.org or the Microsoft Store package.
-- **WSL on Windows:** same as Linux. WSL and native Windows are separate installs with separate registries by design.
-
-### Install (first-time)
-
-The install/upgrade flow lays out `~/.cartopian/` per the `STANDARDS.md` install-behavior table: tool-shipped paths are symlinked (or copied) from the cloned repo; operator-owned paths (`cartopian.toml`, `projects.json`) are seeded on first install and preserved thereafter.
-
-**macOS / Linux / WSL** (`~/.cartopian/` resolves to `$HOME/.cartopian/`):
+**macOS / Linux / WSL:**
 
 ```bash
 git clone https://github.com/fidensa/cartopian.git ~/src/cartopian
 python3 ~/src/cartopian/scripts/install.py
-```
-
-The script creates `~/.cartopian/` and symlinks `protocol/`, `templates/`, `skills/`, `wrappers/`, `cli/`, `bin/cartopian`, and `CHANGELOG.md` (a real copy of `protocol/CHANGELOG.md`) into it. It seeds `~/.cartopian/cartopian.toml` (from `templates/global.cartopian.toml`) and writes an empty `~/.cartopian/projects.json` (`[]\n` per DEC-009).
-
-Add `~/.cartopian/bin` to your `PATH` so `cartopian` resolves:
-
-```bash
 echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
 ```
 
-**Pure-manual variant** (no helper script): the script's behavior reduces to a handful of shell commands you can run yourself:
-
-```bash
-mkdir -p ~/.cartopian/bin
-ln -sfn ~/src/cartopian/protocol   ~/.cartopian/protocol
-ln -sfn ~/src/cartopian/templates  ~/.cartopian/templates
-ln -sfn ~/src/cartopian/skills     ~/.cartopian/skills
-ln -sfn ~/src/cartopian/wrappers   ~/.cartopian/wrappers
-ln -sfn ~/src/cartopian/cli        ~/.cartopian/cli
-ln -sfn ~/src/cartopian/bin/cartopian ~/.cartopian/bin/cartopian
-cp ~/src/cartopian/protocol/CHANGELOG.md  ~/.cartopian/CHANGELOG.md
-cp ~/src/cartopian/templates/global.cartopian.toml ~/.cartopian/cartopian.toml
-printf '[]\n' > ~/.cartopian/projects.json
-```
-
-**Native Windows (PowerShell)** (`~/.cartopian/` resolves to `%USERPROFILE%\.cartopian\`):
+**Windows (PowerShell):**
 
 ```powershell
 git clone https://github.com/fidensa/cartopian.git $HOME\src\cartopian
 python $HOME\src\cartopian\scripts\install.py
-```
-
-Symlink creation on native Windows requires either **Developer Mode** (Settings → Privacy & Security → For developers) or an elevated PowerShell. If neither is available, re-run with `--mode copy`:
-
-```powershell
-python $HOME\src\cartopian\scripts\install.py --mode copy
-```
-
-Then add the install `bin` to your `PATH`:
-
-```powershell
 [Environment]::SetEnvironmentVariable(
   "Path",
   "$HOME\.cartopian\bin;" + [Environment]::GetEnvironmentVariable("Path","User"),
@@ -88,219 +47,110 @@ Then add the install `bin` to your `PATH`:
 )
 ```
 
-### Upgrade
+Symlinks on native Windows need either **Developer Mode** or an elevated shell. If neither is available, re-run with `--mode copy`.
 
-Upgrades follow the install-behavior table: tool-shipped paths are replaced with the new repo version; `cartopian.toml` and `projects.json` are preserved.
+**Upgrade** is `git pull` followed by re-running the installer. Your `cartopian.toml` and `projects.json` are preserved; everything tool-shipped gets refreshed.
 
-The canonical upgrade flow is `git pull` followed by rerunning the install script — in **both** symlink and copy modes:
-
-```bash
-git -C ~/src/cartopian pull
-python3 ~/src/cartopian/scripts/install.py
-```
-
-Rerunning the installer is required even in symlink mode because `CHANGELOG.md` is always a real copy of `protocol/CHANGELOG.md` (not a symlink); `git pull` refreshes the source tree but does not update the copy at `~/.cartopian/CHANGELOG.md`. The installer also picks up any newly added tool-shipped paths.
-
-In copy mode, pass `--mode copy` so the refresh stays in copy mode:
-
-```bash
-git -C ~/src/cartopian pull
-python3 ~/src/cartopian/scripts/install.py --mode copy
-```
-
-The script is idempotent: tool-shipped paths (including the copied `CHANGELOG.md`) are recreated; the operator-owned `cartopian.toml` and `projects.json` are reported as `preserved` and never touched.
-
-### Install layout
-
-After install or upgrade, `~/.cartopian/` contains:
-
-```text
-~/.cartopian/
-├── protocol/           ← symlink/copy → repo protocol/
-├── templates/          ← symlink/copy → repo templates/
-├── skills/             ← symlink/copy → repo skills/
-├── wrappers/           ← symlink/copy → repo wrappers/
-├── cli/                ← symlink/copy → repo cli/ (incl. _vendor/tomli_w.py)
-├── bin/
-│   └── cartopian       ← symlink/copy → repo bin/cartopian
-├── CHANGELOG.md        ← copy of repo protocol/CHANGELOG.md
-├── cartopian.toml      ← operator-owned (seeded; preserved on upgrade)
-└── projects.json       ← operator-owned (seeded `[]`; preserved on upgrade)
-```
-
-### Verify
-
-After install, sanity-check the layout and entrypoint:
+Verify with:
 
 ```bash
 cartopian --help
-cat ~/.cartopian/projects.json   # → []
 ```
 
-The full post-install verification checklist ships at `protocol/INSTALL_VERIFICATION.md` and is installed to `~/.cartopian/protocol/INSTALL_VERIFICATION.md` by the install/upgrade flow above. Run it once immediately after the first install and after each upgrade.
+The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
 
 ## Getting started
 
-Cartopian ships with guided skills that AI agents can follow to set up and plan projects. See `skills/README.md` for the full index. Cartopian skills can be run using the natural language equivalent of their filenames (e.g., "init project", "init workspace", "plan project").
+Cartopian ships **skills** — runbooks an AI agent reads and follows to do real work. You invoke them by their natural-language name (the filename, hyphens as spaces).
 
-- **`skills/start-session.md`** — Select the right project, read `STATE.md`, and ask whether to begin the current or next PM action.
-- **`skills/init-workspace.md`** — Generate workspace and project config files.
-- **`skills/init-project.md`** — Scaffold a new project with the correct structure.
-- **`skills/plan-project.md`** — Walk the full lifecycle: requirements → plan → phases → tasks.
-- **`skills/run-task.md`** — Drive one task from assignment through review.
-- **`skills/run-handoff.md`** — Execute a reusable prompt/report handoff.
-- **`skills/close-plan.md`** — Close a completed plan, optionally archive it, and reset for the next planning cycle.
+| Say this | What happens |
+| --- | --- |
+| `init workspace` | Sets up your workspace and config defaults |
+| `init project` | Scaffolds a new project |
+| `adopt requirements` | Imports requirements from JIRA, a PRD, Confluence, etc. |
+| `adopt plan` | Pulls an existing plan into Cartopian's shape |
+| `plan project` | Drives the full lifecycle: requirements → plan → phases → tasks |
+| `start session` | "Where were we?" — reads state, proposes next action |
+| `run task` | Drives one task from assignment through review |
+| `run handoff` | Executes one prompt/report handoff |
+| `close plan` | Closes the active plan and resets for the next |
 
-Typical project lifecycle:
+In a workspace with multiple projects, vague requests like *"start working"* prompt the PM to ask which project first. Then it reads `STATE.md`, reports the current or next move, and waits for your go-ahead.
 
-```text
-init project -> plan project -> start session -> run task -> close plan -> plan project
+See `skills/README.md` for the full index.
+
+## Roles and AI orchestration
+
+The default roster is **PM** and **Operator** — the planner and the decider. From there, you name whatever roles your project needs: Coder, Reviewer, Designer, Researcher, Photographer, whoever. Each role gets a one-line description; the PM uses those descriptions to match tasks to the right resource.
+
+```toml
+[roles]
+pm        = "Plans phases, dispatches handoffs, integrates results."
+operator  = "Approves locks, unblocks, sets cadence."
+coder     = "Implements programming tasks per spec."
+reviewer  = "Reviews per acceptance evidence."
+designer  = "Owns visual contracts and design decisions."
 ```
 
-In a workspace with multiple projects, vague PM startup requests such as "start working" or "check `STATE.md`" require project selection first. After the project is selected, an agent PM reads `STATE.md`, reports the current or next protocol action, and asks whether to begin.
+The same agent can wear multiple hats. So can you.
 
-## Configuration
+### Automated handoffs (optional)
 
-**Workspace-level** `cartopian.toml` at the workspace root sets defaults. **Project-level** `cartopian.toml` in each project directory overrides defaults and configures project-specific settings.
-
-Run Cartopian's `init-workspace` skill to quickly set these up.
-
-## Roles
-
-The default Cartopian role roster is **PM** and **Operator**.
-
-- **PM** — Drives planning. Produces assignments and proposes assignees.
-- **Operator** — Decision-maker. Confirms assignments, gives them to assignees, reports progress.
-
-Operators add whatever further roles their project needs. Common example labels are **Coder** ("Implements tasks per spec.") and **Reviewer** ("Reviews per acceptance evidence."), but these are illustrative — pick whatever names fit the work.
-
-`[roles]` in `cartopian.toml` maps each role name to a one-line description that the PM uses to align tasks to roles during assignment. The same agent can be assigned to multiple roles, and the human operator may take on multiple roles as well.
-
-Whether a role dispatches automatically or manually is inferred from whether `[handoffs.<role>]` is configured for it — there is no separate "kind" field. See `protocol/CONVENTIONS.md` for the full dispatch contract.
-
-## Automated CLI handoffs
-
-Automation is optional. Manual handoff remains the default.
-
-When a role has a `[handoffs.<role>]` block, the PM can automate handoffs by naming an executable under it:
+Add a `[handoffs.<role>]` block and the PM can launch the work itself:
 
 ```toml
 [handoffs.coder]
-agent = "codex"
+agent = "cartopian-codex"
 auto_start = true
 timeout = "60m"
 ```
 
-The executable convention is:
+Cartopian ships cross-platform wrappers for **Codex, Claude Code, Gemini, and Devin** under `wrappers/`. They handle non-interactive flags, set the right working directory, and conform to the simple `<agent> <prompt-path>` contract. Bring-your-own works too — anything that fits the contract is a valid agent.
+
+Confirmation is per-handoff by default. Bounded unattended runs are available when you want them. Manual handoff is always supported; automation is opt-in.
+
+See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full contract.
+
+## Configuration
+
+Two layers:
+
+- **Workspace** `cartopian.toml` at the workspace root — defaults across projects.
+- **Project** `cartopian.toml` in each project directory — overrides and project-specific settings.
+
+Run `init workspace` to scaffold them. Edit either with any text editor.
+
+## Layout
+
+The workspace lives next to the product repos it manages:
 
 ```text
-<agent> <absolute prompt path>
-```
-
-Prompt paths are passed as one argument and should be shell-quoted in manual command examples.
-
-Key design points:
-
-- Tool-specific non-interactive behavior belongs in the executable or wrapper, not in Cartopian config.
-- Optional handoff timeouts can be set per role.
-- PM-authored prompts always use absolute paths.
-- Completion reports live at protocol-defined paths under `reports/`.
-- Completion reports must redact secrets and sensitive environment values.
-- `confirmation = "each-handoff"` is the safe default.
-- `confirmation = "until-blocked"` is available for bounded unattended runs, but still launches handoffs sequentially.
-
-Cartopian ships cross-platform wrapper scripts in `wrappers/` for Codex, Claude Code, Gemini, and Devin CLIs. These wrappers adapt each CLI to the `<agent> <prompt-path>` contract with the correct non-interactive flags, and they `cd` to the parent of the workspace root before invoking the underlying CLI so a single sandbox covers both the workspace and the sibling target product repos. See `wrappers/README.md` for installation and customization.
-
-See `protocol/CONVENTIONS.md` for the handoff contract and `skills/run-handoff.md` for the executable workflow.
-
-## Workspace structure
-
-The Cartopian workspace lives next to the product repos it manages. Product repos sit as **siblings** of the workspace (or nested below it), under a shared parent directory. That shared parent is the launch cwd for assignee CLIs, so a single sandbox covers both the workspace (for report write-back) and the product repos (for code edits). See `wrappers/README.md` and `protocol/CONVENTIONS.md` for the launch-cwd contract.
-
-```
-~/Projects/                          ← parent dir (launch cwd for CLIs)
+~/Projects/
+├── cartopian/                  ← this repo (the workspace)
+│   ├── protocol/               ← baseline protocol docs
+│   ├── templates/              ← PROMPT, TASK, SPEC, REVIEW, ...
+│   ├── skills/                 ← runbooks the PM follows
+│   ├── wrappers/               ← agent CLI wrappers
+│   └── projects/               ← per-project PM data (gitignored, own repo)
+│       └── <project>/
+│           ├── cartopian.toml
+│           ├── STATE.md
+│           ├── REQUIREMENTS.md
+│           ├── IMPLEMENTATION_PLAN.md
+│           ├── phases/  prompts/  reports/
+│           ├── tasks/{open,in-progress,in-review,done}/
+│           ├── specs/  decisions/  reviews/
+│           └── archive/
 │
-├── cartopian/                       ← workspace root (this repo)
-│   ├── README.md                    ← you are here
-│   ├── LICENSE                      ← MIT
-│   ├── protocol/                    ← baseline protocol docs
-│   │   └── CONVENTIONS.md           ← protocol-level conventions
-│   ├── templates/                   ← default templates
-│   │   ├── PROMPT.md
-│   │   ├── TASK.md
-│   │   ├── SPEC.md
-│   │   ├── REVIEW.md
-│   │   ├── REPORT.md
-│   │   ├── DECISION.md
-│   │   ├── REQUIREMENTS.md
-│   │   ├── STANDARDS.md
-│   │   ├── IMPLEMENTATION_PLAN.md
-│   │   └── PLAN_CLOSEOUT.md
-│   ├── skills/                      ← agent-executable guided workflows
-│   │   ├── README.md
-│   │   ├── init-workspace.md
-│   │   ├── init-project.md
-│   │   ├── start-session.md
-│   │   ├── plan-project.md
-│   │   ├── run-handoff.md
-│   │   ├── run-task.md
-│   │   └── close-plan.md
-│   ├── wrappers/                    ← cross-platform agent CLI wrappers
-│   │   ├── README.md
-│   │   ├── bin/                     ← bash wrappers (macOS/Linux/WSL)
-│   │   │   ├── cartopian-codex
-│   │   │   ├── cartopian-claude
-│   │   │   ├── cartopian-gemini
-│   │   │   └── cartopian-devin
-│   │   └── ps1/                     ← PowerShell wrappers (Windows)
-│   │       ├── cartopian-codex.ps1
-│   │       ├── cartopian-claude.ps1
-│   │       ├── cartopian-gemini.ps1
-│   │       └── cartopian-devin.ps1
-│   │
-│   └── projects/                    ← gitignored, its own git repo
-│       ├── <project-a>/             ← project PM data
-│       │   ├── cartopian.toml       ← project config
-│       │   ├── STATE.md
-│       │   ├── CONVENTIONS.md       ← extends protocol
-│       │   ├── REQUIREMENTS.md
-│       │   ├── STANDARDS.md
-│       │   ├── IMPLEMENTATION_PLAN.md
-│       │   ├── phases/
-│       │   ├── prompts/             ← temporary assignee handoffs
-│       │   ├── reports/             ← handoff completion reports
-│       │   ├── tasks/
-│       │   │   ├── open/            ← TASK files declare `Repo subpath: <subpath>`
-│       │   │   ├── in-progress/
-│       │   │   ├── in-review/
-│       │   │   └── done/
-│       │   ├── specs/
-│       │   ├── decisions/
-│       │   ├── reviews/
-│       │   └── archive/             ← optional plan closeout snapshots
-│       │
-│       └── <project-b>/
-│           └── ...
-│
-├── <project-a-repo>/                ← sibling target product repo
-└── <project-b-repo>/                ← sibling target product repo
+├── <project-a-repo>/           ← sibling product repo
+└── <project-b-repo>/
 ```
 
-## Running the CLI test suite
-
-The canonical invocation, from the repo root, is:
-
-```bash
-python3 -m unittest discover -s tests -t .
-```
-
-The `-t .` flag is **load-bearing**: `tests/cli/` shadows the source `cli/` package by name, and unittest's discovery uses the top-level directory (`-t`) to set `sys.path[0]`. Without `-t .`, discovery walks into `tests/cli/` first and the test modules end up importing themselves instead of the source CLI, breaking every per-command test. Always pass `-t .` when discovering from a different working directory than the repo root would be hostile.
-
-Python 3.11+ is required (the CLI uses `tomllib`); the entrypoint shim at `bin/cartopian` enforces this.
+Status is a directory. Moving a task file *is* the status update — no metadata to sync, no DB to migrate, no integration that breaks when the vendor pivots.
 
 ## Protocol
 
-See `protocol/CONVENTIONS.md` for the protocol contracts and `skills/` for executable workflows.
+The contracts are in `protocol/CONVENTIONS.md`. The executable workflows are in `skills/`. Both are plain markdown and meant to be read by humans and agents alike.
 
 ## License
 
