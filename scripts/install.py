@@ -6,10 +6,17 @@ Installs or upgrades a Cartopian tree at ``~/.cartopian/`` (or
 
 Mechanics follow the STANDARDS.md "Build / Distribution" install-behavior
 table: tool-shipped paths (``protocol/``, ``templates/``, ``skills/``,
-``wrappers/``, ``bin/cartopian``, ``cli/``, ``CHANGELOG.md``) are
-symlinked or copied from the source repo and replaced on upgrade;
-operator-owned paths (``cartopian.toml``, ``projects.json``) are seeded
-on first install and never overwritten thereafter.
+``wrappers/``, ``bin/cartopian``, ``bin/cartopian.cmd``, ``cli/``,
+``CHANGELOG.md``) are symlinked or copied from the source repo and
+replaced on upgrade; operator-owned paths (``cartopian.toml``,
+``projects.json``) are seeded on first install and never overwritten
+thereafter.
+
+``bin/cartopian.cmd`` is the native-Windows PATH shim that forwards to
+the extensionless ``bin/cartopian`` Python entrypoint via the system
+``python``. It is installed on every platform (harmless on Unix, where
+``.cmd`` files are not in ``PATHEXT``); the install root is single-tree
+across platforms and tests assume the shim is present.
 
 DEC-012 locks the canonical V1 install path to manual ``git clone +
 symlink``; this script is a zero-extra-dependency helper that performs
@@ -44,6 +51,7 @@ TOOL_SHIPPED: Tuple[Tuple[str, str], ...] = (
     ("wrappers", "wrappers"),
     ("cli", "cli"),
     ("bin/cartopian", "bin/cartopian"),
+    ("bin/cartopian.cmd", "bin/cartopian.cmd"),
     ("CHANGELOG.md", "protocol/CHANGELOG.md"),
 )
 

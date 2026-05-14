@@ -36,6 +36,7 @@ TOOL_SHIPPED_TARGETS = (
     "wrappers",
     "cli",
     "bin/cartopian",
+    "bin/cartopian.cmd",
     "CHANGELOG.md",
 )
 

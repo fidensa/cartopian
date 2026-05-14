@@ -54,6 +54,7 @@ test -d ~/.cartopian/skills
 test -d ~/.cartopian/wrappers
 test -d ~/.cartopian/cli
 test -f ~/.cartopian/bin/cartopian
+test -f ~/.cartopian/bin/cartopian.cmd   # native-Windows PATH shim; present on all platforms
 test -f ~/.cartopian/CHANGELOG.md
 test -f ~/.cartopian/cartopian.toml
 test -f ~/.cartopian/projects.json
@@ -69,6 +70,7 @@ Test-Path $HOME\.cartopian\skills -PathType Container
 Test-Path $HOME\.cartopian\wrappers -PathType Container
 Test-Path $HOME\.cartopian\cli -PathType Container
 Test-Path $HOME\.cartopian\bin\cartopian -PathType Leaf
+Test-Path $HOME\.cartopian\bin\cartopian.cmd -PathType Leaf   # PATH shim that resolves the bare 'cartopian' command on PowerShell/cmd
 Test-Path $HOME\.cartopian\CHANGELOG.md -PathType Leaf
 Test-Path $HOME\.cartopian\cartopian.toml -PathType Leaf
 Test-Path $HOME\.cartopian\projects.json -PathType Leaf
@@ -110,7 +112,7 @@ $LASTEXITCODE      # PowerShell
 
 Pass when: the help text prints (subcommands listed, including at least `resolve-config`, `move-task`, `scaffold-project`, `register-project`, `discover-projects`) and the exit code is `0`.
 
-If `cartopian` is not on `PATH`, add `~/.cartopian/bin` (POSIX) or `%USERPROFILE%\.cartopian\bin` (Windows) to `PATH` per the README install steps, then re-run.
+If `cartopian` is not on `PATH`, add `~/.cartopian/bin` (POSIX) or `%USERPROFILE%\.cartopian\bin` (Windows) to `PATH` per the README install steps, then re-run. On native Windows the bare command resolves via the shipped `bin/cartopian.cmd` shim (verified in Section 1); if PowerShell still fails to find `cartopian`, confirm `.CMD` is in `PATHEXT` (it is by default).
 
 ## 4. Registry parses cleanly (JSON, DEC-009)
 
@@ -161,28 +163,34 @@ If you did not keep a backup, sanity-check by re-listing your registered project
 
 ## 6. Tool-shipped files match the newly-installed source
 
-Tool-shipped paths are replaced on upgrade (per the `STANDARDS.md` install-behavior table). After a fresh install or upgrade, the content under `~/.cartopian/protocol/`, `templates/`, `skills/`, `wrappers/`, `cli/`, `bin/cartopian`, and `CHANGELOG.md` must match the source repo you installed from.
+Tool-shipped paths are replaced on every install/upgrade (per the `STANDARDS.md` install-behavior table). After a fresh install or upgrade, the content under `~/.cartopian/protocol/`, `templates/`, `skills/`, `wrappers/`, `cli/`, `bin/cartopian`, `bin/cartopian.cmd`, and `CHANGELOG.md` must match the source you installed from.
 
-The commands below assume the source clone lives at `~/src/cartopian` (POSIX) or `$HOME\src\cartopian` (Windows). Adjust the source path if you cloned elsewhere.
+There are two install shapes; pick the section that matches your install:
 
-`CHANGELOG.md` is a special case: per `scripts/install.py` it is always a real copy of `protocol/CHANGELOG.md`, even in symlink mode. A `git pull` of the source clone refreshes the source file but does not touch `~/.cartopian/CHANGELOG.md` until the install script is rerun, so the comparison below is meaningful in both modes.
+- **Copy mode (primary end-user path)** — driven by the `install-cartopian` skill (the README's primary `Install` flow). Tool-shipped paths under `~/.cartopian/` are real copies of an extracted release tarball. There is no on-disk source clone; verify against the upstream tag recorded in `~/.cartopian/VERSION` if you need a remote comparison.
+- **Symlink mode (contributor path)** — `git clone` + `python3 scripts/install.py` (no `--mode copy`). Tool-shipped paths under `~/.cartopian/` are symlinks back into your local clone.
 
-### 6a. Symlink mode (canonical install)
+The commands below assume the source clone lives at `~/src/cartopian` (POSIX) or `$HOME\src\cartopian` (Windows) for any clone-relative checks. Adjust the source path if you cloned elsewhere.
 
-In symlink mode each tool-shipped directory and `bin/cartopian` is a symlink into the cloned source tree; confirm the link target resolves into your clone. Then compare `CHANGELOG.md` to its source because it is always a real copy.
+`CHANGELOG.md` is a special case: per `scripts/install.py` it is always a real copy of `protocol/CHANGELOG.md`, even in symlink mode. A `git pull` of the source clone refreshes the source file but does not touch `~/.cartopian/CHANGELOG.md` until the install script is rerun.
+
+### 6a. Symlink mode (contributor install)
+
+In symlink mode each tool-shipped directory, `bin/cartopian`, and `bin/cartopian.cmd` is a symlink into the cloned source tree; confirm each link target resolves into your clone. Then compare `CHANGELOG.md` to its source because it is always a real copy.
 
 **macOS / Linux / WSL:**
 
 ```sh
 ls -l ~/.cartopian/protocol ~/.cartopian/templates ~/.cartopian/skills \
-      ~/.cartopian/wrappers ~/.cartopian/cli ~/.cartopian/bin/cartopian
+      ~/.cartopian/wrappers ~/.cartopian/cli \
+      ~/.cartopian/bin/cartopian ~/.cartopian/bin/cartopian.cmd
 diff -u ~/src/cartopian/protocol/CHANGELOG.md ~/.cartopian/CHANGELOG.md
 ```
 
 **Native Windows (PowerShell):**
 
 ```powershell
-foreach ($p in 'protocol','templates','skills','wrappers','cli','bin\cartopian') {
+foreach ($p in 'protocol','templates','skills','wrappers','cli','bin\cartopian','bin\cartopian.cmd') {
   $item = Get-Item -Force "$HOME\.cartopian\$p"
   "{0,-20} {1} -> {2}" -f $p, $item.LinkType, $item.Target
 }
@@ -193,12 +201,12 @@ Compare-Object `
 
 Pass when:
 
-- Each directory and `bin/cartopian` is a symlink (leading `l` in `ls -l`; `LinkType` `SymbolicLink` in PowerShell) whose target is the matching path inside your local clone, and the target exists.
+- Each directory, `bin/cartopian`, and `bin/cartopian.cmd` is a symlink (leading `l` in `ls -l`; `LinkType` `SymbolicLink` in PowerShell) whose target is the matching path inside your local clone, and the target exists.
 - The `CHANGELOG.md` `diff` / `Compare-Object` returns no output.
 
-### 6b. Copy mode (e.g., native Windows without Developer Mode)
+### 6b. Copy mode (primary end-user install)
 
-In copy mode every tool-shipped path is a real copy, so checking only one file is not enough — each path must be compared against the source recursively. Drift in any of them means the install script did not re-run after the latest `git pull`.
+In copy mode every tool-shipped path is a real copy. If you also keep a local source clone (e.g., for contributor work) you can compare against it; otherwise rely on step 7 (the `VERSION` marker) to confirm which upstream ref the copy was taken from. Drift in any path below means the install script did not re-run after the source was updated.
 
 **macOS / Linux / WSL:**
 
@@ -207,6 +215,7 @@ for p in protocol templates skills wrappers cli; do
   diff -r ~/src/cartopian/$p ~/.cartopian/$p
 done
 diff -u ~/src/cartopian/bin/cartopian ~/.cartopian/bin/cartopian
+diff -u ~/src/cartopian/bin/cartopian.cmd ~/.cartopian/bin/cartopian.cmd
 diff -u ~/src/cartopian/protocol/CHANGELOG.md ~/.cartopian/CHANGELOG.md
 ```
 
@@ -232,12 +241,37 @@ Compare-Object `
   (Get-Content $HOME\src\cartopian\bin\cartopian) `
   (Get-Content $HOME\.cartopian\bin\cartopian)
 Compare-Object `
+  (Get-Content $HOME\src\cartopian\bin\cartopian.cmd) `
+  (Get-Content $HOME\.cartopian\bin\cartopian.cmd)
+Compare-Object `
   (Get-Content $HOME\src\cartopian\protocol\CHANGELOG.md) `
   (Get-Content $HOME\.cartopian\CHANGELOG.md)
 ```
 
 Pass when: every `diff` is empty (POSIX) and every `Compare-Object` / `Compare-Tree` call returns no rows (PowerShell). A non-empty result means the upgrade did not refresh tool-shipped content (commonly: `git pull` ran but the install script did not re-run; see the README upgrade section).
 
+## 7. `VERSION` marker matches the installed ref
+
+The `install-cartopian` skill writes `~/.cartopian/VERSION` as a single line: the git ref the installer resolved (a release tag like `v0.3.0`, or the literal `main` when no release has been tagged upstream). The `check-for-updates` skill reads this file to decide whether an upgrade is needed.
+
+**macOS / Linux / WSL:**
+
+```sh
+test -f ~/.cartopian/VERSION
+cat ~/.cartopian/VERSION
+```
+
+**Native Windows (PowerShell):**
+
+```powershell
+Test-Path $HOME\.cartopian\VERSION -PathType Leaf
+Get-Content $HOME\.cartopian\VERSION
+```
+
+Pass when: the file exists, is non-empty, and contains exactly one ref token (release tag or `main`) on a single line.
+
+If `VERSION` is missing, the install predates the marker; re-run `install-cartopian` to refresh it. `check-for-updates` will otherwise treat the install as ref-unknown.
+
 ## Failure → re-run the install/upgrade flow
 
-If any step above fails, re-run the install/upgrade flow documented in `README.md` (canonical `git clone + symlink`, per DEC-012) and re-execute this checklist from step 0. The flow is idempotent: tool-shipped paths are recreated, and operator-owned `cartopian.toml` / `projects.json` are preserved.
+If any step above fails, re-run the install/upgrade flow documented in `README.md` (primary end-user path: the `install-cartopian` skill; contributor path: `git clone` + `scripts/install.py`) and re-execute this checklist from step 0. The flow is idempotent: tool-shipped paths are recreated, and operator-owned `cartopian.toml` / `projects.json` are preserved.

@@ -25,31 +25,15 @@ When the plan is done, "close plan" archives it and you're ready for the next on
 
 ## Install
 
-Requirements: **Python 3.11+** on your PATH. (macOS users: the stock `/usr/bin/python3` is 3.9 — use `brew install python@3.11` or any 3.11+ interpreter.)
+Requirements: **Python 3.11+** on your PATH. (macOS users: the stock `/usr/bin/python3` is 3.9 — use `brew install python@3.11` or any 3.11+ interpreter.) That's it. No git knowledge required.
 
-**macOS / Linux / WSL:**
+Open your AI agent of choice (Claude Code, Codex, Gemini CLI, Devin, anything that can read a URL and run shell commands) and tell it:
 
-```bash
-git clone https://github.com/fidensa/cartopian.git ~/src/cartopian
-python3 ~/src/cartopian/scripts/install.py
-echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
-```
+> Install Cartopian by following https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md
 
-**Windows (PowerShell):**
+The skill is a step-by-step runbook the agent reads and executes — detect your platform, fetch the latest release, copy it into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), add `bin/` to your user PATH, verify. Nothing is left on disk except the install root itself. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved across re-runs.
 
-```powershell
-git clone https://github.com/fidensa/cartopian.git $HOME\src\cartopian
-python $HOME\src\cartopian\scripts\install.py
-[Environment]::SetEnvironmentVariable(
-  "Path",
-  "$HOME\.cartopian\bin;" + [Environment]::GetEnvironmentVariable("Path","User"),
-  "User"
-)
-```
-
-Symlinks on native Windows need either **Developer Mode** or an elevated shell. If neither is available, re-run with `--mode copy`.
-
-**Upgrade** is `git pull` followed by re-running the installer. Your `cartopian.toml` and `projects.json` are preserved; everything tool-shipped gets refreshed.
+**Upgrade** the same way: ask any Cartopian-aware agent to run `check for updates`. It compares your installed version against the latest release and re-installs on your approval.
 
 Verify with:
 
@@ -57,7 +41,35 @@ Verify with:
 cartopian --help
 ```
 
-The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
+On native Windows, the installer ships a `bin/cartopian.cmd` shim alongside the extensionless Python entrypoint, so PowerShell and `cmd.exe` resolve `cartopian` the same way as Unix once `bin/` is on PATH (open a new shell first). The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
+
+**Contributors:** if you want a working clone (symlink mode, edit-in-place), use the manual flow:
+
+```bash
+git clone https://github.com/fidensa/cartopian.git
+python3 cartopian/scripts/install.py
+```
+
+This symlinks `~/.cartopian/` back to your clone so edits take effect without re-installing. The agent-driven installer also patches your PATH; under the manual flow you do that yourself. Add `bin/` to your user PATH:
+
+```bash
+# zsh
+echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# bash
+echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+```powershell
+# Windows PowerShell (user-scope PATH; open a new shell after)
+$bin = "$HOME\.cartopian\bin"
+$current = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($current -split ";") -notcontains $bin) {
+  [Environment]::SetEnvironmentVariable("Path", "$bin;$current", "User")
+}
+```
+
+On native Windows, symlink mode requires Developer Mode or an elevated shell — otherwise pass `--mode copy` to `scripts/install.py`.
 
 ## Getting started
 
