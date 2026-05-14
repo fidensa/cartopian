@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cartopian is a filesystem-first project governance protocol for AI-native development. It tracks phases, tasks, specs, decisions, and reviews using plain markdown files and directory-as-status conventions. No database, no SaaS dependency, no mandatory tooling. This repository contains the protocol specification, default templates, and a sample project.
+Cartopian is a filesystem-first project governance protocol for AI-native development. It tracks phases, tasks, specs, decisions, and reviews using plain markdown files and directory-as-status conventions. No database, no SaaS dependency, no mandatory tooling. This repository contains the protocol specification and default templates.
 
 ## Tech Stack
 
@@ -21,7 +21,7 @@ Cartopian is a filesystem-first project governance protocol for AI-native develo
 - **wrappers/** — Cross-platform agent CLI wrappers (`bin/` for bash, `ps1/` for PowerShell). Pre-built for Codex, Claude Code, Gemini, and Devin.
 - **skills/** — Agent-executable guided workflows, with workflow details in each skill file. Planning, task, and review workflows understand CLI handoff automation.
 - **Skill invocation names:** Natural-language skill names are derived from `skills/*.md` filenames at runtime by dropping `.md` and replacing hyphens with spaces, e.g. `init-project.md` maps to `init project`. The mapping is dynamic, not a maintained static list.
-- **projects/** — Gitignored; its own git repo. Each child directory is an independent project with its own config, state, phases, tasks, and decisions. Only `projects/sample-project/` ships with the protocol repo.
+- **projects/** — Gitignored; its own git repo. Each child directory is an independent project with its own config, state, phases, tasks, and decisions.
 
 ## Code Conventions
 
