@@ -16,10 +16,10 @@ Cartopian turns "I want to do X" into a tracked plan, logical phases, structured
 ## How it feels in practice
 
 ```text
-init project   →   plan project   →   start session   →   run task   →   close plan
+use cartopian   →   init project   →   plan project   →   start session   →   run task   →   close plan
 ```
 
-You tell the PM what you want. It asks the questions it needs to ask, produces a requirements doc, drafts a plan, breaks it into phases and tasks, and parks everything on disk. When you come back, "start session" reads the current state and tells you what's next. "Run task" dispatches it, either to an agent if you've wired one up, or to you if you'd rather drive.
+You open any MCP-aware agent — Claude Code, Claude Desktop, Codex, Gemini CLI, whatever you use — and say "use cartopian". The agent loads Cartopian PM mode and asks what you want to do. From there you tell the PM what you want; it asks the questions it needs to ask, produces a requirements doc, drafts a plan, breaks it into phases and tasks, and parks everything on disk. When you come back, "start session" reads the current state and tells you what's next. "Run task" dispatches it, either to an agent if you've wired one up, or to you if you'd rather drive.
 
 When the plan is done, "close plan" archives it and you're ready for the next one.
 
@@ -27,21 +27,30 @@ When the plan is done, "close plan" archives it and you're ready for the next on
 
 Requirements: **Python 3.11+** on your PATH. (macOS users: the stock `/usr/bin/python3` is 3.9 — use `brew install python@3.11` or any 3.11+ interpreter.) That's it. No git knowledge required.
 
-Open your AI agent of choice (Claude Code, Codex, Gemini CLI, Devin, anything that can read a URL and run shell commands) and tell it:
+Open your AI agent of choice (Claude Code, Claude Desktop, Codex, Gemini CLI, Devin — any MCP-aware agent that can read a URL and run shell commands) and tell it:
 
 > Install Cartopian by following https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md
 
-The skill is a step-by-step runbook the agent reads and executes — detect your platform, fetch the latest release, copy it into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), add `bin/` to your user PATH, verify. Nothing is left on disk except the install root itself. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved across re-runs.
+The skill is a step-by-step runbook the agent reads and executes — detect your platform, fetch the latest release, copy it into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), add `bin/` to your user PATH, **register Cartopian's MCP server with your agent**, and verify. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved across re-runs.
+
+After install, open **any** registered MCP-aware agent in **any** directory and say:
+
+> use cartopian
+
+That's the entry point. The agent loads Cartopian PM mode, lists the available skills, and proposes the first useful action — `start session` if you have projects registered, `init project` if you don't. You never have to remember a path, a working directory, or a magic CLI command.
 
 **Upgrade** the same way: ask any Cartopian-aware agent to run `check for updates`. It compares your installed version against the latest release and re-installs on your approval.
 
-Verify with:
+Verify the install with:
 
 ```bash
 cartopian --help
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | cartopian-mcp
 ```
 
-On native Windows, the installer ships a `bin/cartopian.cmd` shim alongside the extensionless Python entrypoint, so PowerShell and `cmd.exe` resolve `cartopian` the same way as Unix once `bin/` is on PATH (open a new shell first). The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
+The first command exits 0 with the CLI subcommand list. The second emits a single JSON-RPC line containing `"name":"cartopian"` and `"protocolVersion":"2024-11-05"`.
+
+On native Windows, the installer ships `bin/cartopian.cmd` and `bin/cartopian-mcp.cmd` shims alongside the extensionless Python entrypoints, so PowerShell and `cmd.exe` resolve both commands once `bin/` is on PATH (open a new shell first). The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
 
 **Contributors:** if you want a working clone (symlink mode, edit-in-place), use the manual flow:
 
@@ -73,10 +82,13 @@ On native Windows, symlink mode requires Developer Mode or an elevated shell —
 
 ## Getting started
 
-Cartopian ships **skills** — runbooks an AI agent reads and follows to do real work. You invoke them by their natural-language name (the filename, hyphens as spaces).
+After install, the entry point is one phrase: **"use cartopian"**. Any registered MCP-aware agent picks it up and routes you to the right skill.
+
+Cartopian ships **skills** — runbooks the agent reads and follows to do real work. You don't have to memorize them; the `use cartopian` entry lists what's available and proposes the first useful action. If you want to jump straight to a specific skill, say its natural-language name:
 
 | Say this | What happens |
 | --- | --- |
+| `use cartopian` | Enter PM mode. Lists the surface and routes to the next useful action. |
 | `init workspace` | Sets up your workspace and config defaults |
 | `init project` | Scaffolds a new project |
 | `adopt requirements` | Imports requirements from JIRA, a PRD, Confluence, etc. |
@@ -143,6 +155,8 @@ The workspace lives next to the product repos it manages:
 │   ├── templates/              ← PROMPT, TASK, SPEC, REVIEW, ...
 │   ├── skills/                 ← runbooks the PM follows
 │   ├── wrappers/               ← agent CLI wrappers
+│   ├── cli/                    ← the cartopian CLI helpers
+│   ├── mcp_server/             ← the cartopian-mcp MCP server
 │   └── projects/               ← per-project PM data (gitignored, own repo)
 │       └── <project>/
 │           ├── cartopian.toml

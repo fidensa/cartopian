@@ -2,7 +2,7 @@
 
 Walk an operator through installing (or upgrading) Cartopian using only their AI agent. The agent does the work; the operator only approves. No git knowledge required.
 
-**Output:** Cartopian copied to the install root (default: `~/.cartopian/` on macOS / Linux / WSL, `%USERPROFILE%\.cartopian\` on native Windows — or wherever the operator's `--prefix` points), `bin/` added to the user PATH, `cartopian --help` exits 0 on every supported platform (via the shipped `bin/cartopian.cmd` shim on native Windows), and `VERSION` at the install root records the installed git ref.
+**Output:** Cartopian copied to the install root (default: `~/.cartopian/` on macOS / Linux / WSL, `%USERPROFILE%\.cartopian\` on native Windows — or wherever the operator's `--prefix` points), `bin/` added to the user PATH, `cartopian --help` exits 0 on every supported platform (via the shipped `bin/cartopian.cmd` shim on native Windows), the Cartopian MCP server is registered with the operator's agent so they can say "use cartopian" from any directory, and `VERSION` at the install root records the installed git ref.
 
 ---
 
@@ -140,24 +140,73 @@ Remove `$workdir` from Step 4 (`rm -rf "$workdir"` on Unix, `Remove-Item -Recurs
 
 ### Step 9 — Verify
 
-Run the installed entrypoint by full path (the operator's current shell hasn't picked up the new PATH yet):
+Run the installed CLI entrypoint and the MCP server entrypoint by full path (the operator's current shell hasn't picked up the new PATH yet).
+
+**CLI** — exits 0 on `--help`:
 
 - Unix: `"$install_root/bin/cartopian" --help`
-- Windows: `& "$installRoot\bin\cartopian.cmd" --help` — the shim is what makes the bare command `cartopian` work in a fresh PowerShell session once PATH is reloaded.
+- Windows: `& "$installRoot\bin\cartopian.cmd" --help`
 
-Confirm it exits 0. If it doesn't, surface the error and stop — do not report success.
+**MCP server** — initialize handshake exits cleanly. The server speaks newline-delimited JSON-RPC on stdio; pipe one `initialize` request and read one response:
+
+- Unix:
+  ```bash
+  echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    | "$install_root/bin/cartopian-mcp"
+  ```
+- Windows (PowerShell):
+  ```powershell
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' `
+    | & "$installRoot\bin\cartopian-mcp.cmd"
+  ```
+
+The response must be a single JSON-RPC line containing `"name":"cartopian"` and `"protocolVersion":"2024-11-05"`. If either probe doesn't pass, surface the error and stop — do not report success.
 
 Point the operator at the install verification checklist: `$install_root/protocol/INSTALL_VERIFICATION.md`.
 
-### Step 10 — Summarize
+### Step 10 — Register the MCP server with the operator's agent
+
+This is the step that gives the operator a real entry point. After this step, the operator can open the chosen agent in any directory and say "use cartopian" to enter Cartopian PM mode.
+
+Ask the operator which agent(s) they want to enter Cartopian from. Cartopian supports any MCP-aware agent; recipes below cover the common ones. For each one the operator picks, apply the recipe and report what changed. Always confirm before writing to a file the agent owns; never modify a registration that already points at `cartopian-mcp` with the same command.
+
+**Claude Code (CLI):**
+```bash
+claude mcp add cartopian "$install_root/bin/cartopian-mcp" --scope user
+```
+Verify with `claude mcp list`. The entry must show `cartopian` pointing at the install root's `bin/cartopian-mcp`.
+
+**Claude Desktop (macOS / Windows):** edit `claude_desktop_config.json` and add a `cartopian` entry under `mcpServers`. Config file location:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add (preserve any existing `mcpServers` siblings):
+```json
+{
+  "mcpServers": {
+    "cartopian": {
+      "command": "<install_root>/bin/cartopian-mcp"
+    }
+  }
+}
+```
+On Windows, set `"command"` to the `.cmd` shim: `"<installRoot>\\bin\\cartopian-mcp.cmd"`. The operator must fully quit and reopen Claude Desktop for the server to register.
+
+**Codex CLI / Gemini CLI / any other MCP-aware agent:** use that agent's documented MCP-server registration surface, pointing the `command` at `$install_root/bin/cartopian-mcp` (or the `.cmd` shim on Windows). Cartopian itself is agent-agnostic; the registration mechanism is whatever the agent provides.
+
+If the operator names an agent the skill doesn't have a recipe for, print the bare facts they need (`command = <install_root>/bin/cartopian-mcp`, transport = stdio, protocol = MCP 2024-11-05) and ask the operator to register it via that agent's own MCP-server documentation.
+
+### Step 11 — Summarize
 
 Print:
 
 - Installed ref (from Step 3).
 - Install root (`$install_root`, including any `--prefix` override).
 - PATH entry added (or "already present").
-- `cartopian --help` exit status (from the Step 9 invocation).
-- Next-step suggestions: `init workspace` if `$install_root/cartopian.toml` is a freshly-seeded default; `init project` if the workspace is already configured.
+- `cartopian --help` exit status and MCP `initialize` probe result (from Step 9).
+- MCP server registered with: <agents the operator chose in Step 10>.
+- **Entry point**: tell the operator, in plain language, that they can now open any registered agent in any directory and say "use cartopian" to enter Cartopian PM mode. The agent will load the `use_cartopian` prompt, which briefs it on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
+- Next-step suggestion if the operator wants to proceed in this same conversation: `init workspace` if `$install_root/cartopian.toml` is a freshly-seeded default; otherwise `init project`.
 
 ---
 

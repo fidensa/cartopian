@@ -50,8 +50,12 @@ TOOL_SHIPPED: Tuple[Tuple[str, str], ...] = (
     ("skills", "skills"),
     ("wrappers", "wrappers"),
     ("cli", "cli"),
+    ("mcp_server", "mcp_server"),
     ("bin/cartopian", "bin/cartopian"),
     ("bin/cartopian.cmd", "bin/cartopian.cmd"),
+    ("bin/cartopian-mcp", "bin/cartopian-mcp"),
+    ("bin/cartopian-mcp.cmd", "bin/cartopian-mcp.cmd"),
+    ("install-cartopian.md", "install-cartopian.md"),
     ("CHANGELOG.md", "protocol/CHANGELOG.md"),
 )
 

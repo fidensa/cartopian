@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Cartopian MCP server entrypoint shim.
+
+Verifies Python 3.11+ and dispatches to mcp_server.server.run(). The
+script lives next to ``bin/cartopian`` so the same PATH that resolves
+the CLI also resolves the MCP server.
+
+Agents register this script as the command for their MCP integration
+(e.g. ``"command": "cartopian-mcp"`` in Claude Code / Claude Desktop
+MCP config) so that any operator who says "use cartopian" from any
+directory enters Cartopian PM mode without further setup.
+"""
+import os
+import sys
+
+
+def _require_python_3_11() -> None:
+    if sys.version_info < (3, 11):
+        found = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        sys.stderr.write(
+            f"[error] cartopian-mcp requires Python 3.11 or later (found {found})\n"
+        )
+        sys.exit(3)
+
+
+def _bootstrap_path() -> None:
+    here = os.path.dirname(os.path.abspath(__file__))
+    install_root = os.path.dirname(here)
+    if install_root not in sys.path:
+        sys.path.insert(0, install_root)
+
+
+def main() -> int:
+    _require_python_3_11()
+    _bootstrap_path()
+    from mcp_server.server import run
+    return run()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

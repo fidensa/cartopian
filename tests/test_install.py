@@ -35,8 +35,12 @@ TOOL_SHIPPED_TARGETS = (
     "skills",
     "wrappers",
     "cli",
+    "mcp_server",
     "bin/cartopian",
     "bin/cartopian.cmd",
+    "bin/cartopian-mcp",
+    "bin/cartopian-mcp.cmd",
+    "install-cartopian.md",
     "CHANGELOG.md",
 )
 
