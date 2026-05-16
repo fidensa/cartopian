@@ -279,6 +279,133 @@ class TestResourceSurface(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Security remediations: path traversal, resource limits, error scrubbing
+# ---------------------------------------------------------------------------
+
+class TestResourceSafety(unittest.TestCase):
+    """Regression tests for the MCP resource read security findings.
+
+    Covers:
+    - SSS-03: project / protocol / template path traversal must be blocked.
+    - SSS-03: project `kind` must be allowlisted, not user-controlled.
+    - SSS-08: oversize files must be refused before being loaded.
+    - SSS-02: internal exceptions must not leak tracebacks/paths to callers.
+    """
+
+    def _read(self, uri: str) -> Dict[str, Any]:
+        return single("resources/read", {"uri": uri})
+
+    def test_project_kind_traversal_blocked(self):
+        # Even if the project entry is valid, a `kind` containing path
+        # separators must be rejected before any filesystem access.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            (proj / "STATE.md").write_text("# STATE\n", encoding="utf-8")
+            # Plant a "sensitive" file outside the project to prove we don't
+            # reach it.
+            sibling = Path(tmp).parent / "cartopian-mcp-sensitive.md"
+            try:
+                sibling.write_text("SECRET", encoding="utf-8")
+                fake_entries = [{"id": "demo", "path": str(proj), "label": "Demo"}]
+                with patch.object(server, "_registry_entries", return_value=fake_entries):
+                    response = self._read(
+                        f"cartopian://project/demo/../../{sibling.stem}"
+                    )
+            finally:
+                if sibling.exists():
+                    sibling.unlink()
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_project_kind_must_be_allowlisted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            # File exists, but the kind is not in PROJECT_KINDS.
+            (proj / "SECRET.md").write_text("nope", encoding="utf-8")
+            fake_entries = [{"id": "demo", "path": str(proj), "label": "Demo"}]
+            with patch.object(server, "_registry_entries", return_value=fake_entries):
+                response = self._read("cartopian://project/demo/SECRET")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_project_id_traversal_blocked(self):
+        # `..` as a project id must be rejected by segment validation.
+        response = self._read("cartopian://project/../STATE")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_protocol_traversal_blocked(self):
+        response = self._read("cartopian://protocol/../README")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_templates_traversal_blocked(self):
+        response = self._read("cartopian://templates/../README.md")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_oversize_resource_rejected(self):
+        # Force the size cap below any real resource so the next read trips it.
+        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
+            response = self._read("cartopian://skills/start_session")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+        self.assertIn("size limit", response["error"]["message"])
+
+    def test_oversize_skill_prompt_rejected(self):
+        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
+            response = single("prompts/get", {"name": "start_session"})
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+        # Message must not contain an absolute filesystem path.
+        self.assertNotIn(str(server.ROOT), response["error"]["message"])
+
+    def test_resource_read_error_does_not_leak_paths(self):
+        # If the resolved file disappears between resolve and read, the
+        # caller-visible error must reference only the URI — never the
+        # internal absolute path.
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp)
+            state = proj / "STATE.md"
+            state.write_text("# STATE\n", encoding="utf-8")
+            fake_entries = [{"id": "demo", "path": str(proj), "label": "Demo"}]
+            with patch.object(server, "_registry_entries", return_value=fake_entries):
+                # Patch read_text to simulate an OSError after resolution.
+                original_read_text = Path.read_text
+
+                def fail_read_text(self, *args, **kwargs):
+                    if self == state.resolve():
+                        raise OSError("simulated I/O failure on " + str(self))
+                    return original_read_text(self, *args, **kwargs)
+
+                with patch.object(Path, "read_text", fail_read_text):
+                    response = self._read("cartopian://project/demo/STATE")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+        msg = response["error"]["message"]
+        self.assertNotIn(str(state.resolve()), msg)
+        self.assertNotIn("simulated I/O failure", msg)
+
+
+class TestHandleMessageScrubsTraceback(unittest.TestCase):
+    def test_unhandled_exception_does_not_return_traceback(self):
+        def boom(method, params):
+            raise RuntimeError("internal path /etc/passwd should not leak")
+
+        with patch.object(server, "handle_request", side_effect=boom):
+            response = single("initialize")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+        # No traceback data block should appear, and the message must be
+        # generic — no internal paths, exception text, or stack frames.
+        self.assertNotIn("data", response["error"])
+        msg = response["error"]["message"]
+        self.assertNotIn("/etc/passwd", msg)
+        self.assertNotIn("Traceback", msg)
+        self.assertNotIn("RuntimeError", msg)
+
+
+# ---------------------------------------------------------------------------
 # Subprocess-level smoke (bin/cartopian-mcp via stdio)
 # ---------------------------------------------------------------------------
 

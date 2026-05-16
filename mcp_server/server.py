@@ -51,6 +51,20 @@ ERR_INTERNAL = -32603
 
 URI_SCHEME = "cartopian"
 
+# Hard caps applied before any read_text() of operator/agent-facing files.
+# Skills, protocol docs, templates, and project artifacts are all hand-authored
+# markdown; 1 MiB is several orders of magnitude above any realistic file.
+MAX_RESOURCE_BYTES = 1 * 1024 * 1024
+# `_first_line_summary` only needs the first non-empty line for prompt/resource
+# listings; reading a small head avoids loading large files just to format a
+# directory listing.
+SUMMARY_HEAD_BYTES = 4096
+
+# Resource kinds we publish under `cartopian://project/<id>/<kind>`. Restricting
+# read access to this allowlist mirrors what `_project_paths` lists and blocks
+# user-controlled `kind` from constructing arbitrary paths under a project root.
+PROJECT_KINDS = ("STATE", "REQUIREMENTS", "IMPLEMENTATION_PLAN")
+
 
 class McpError(Exception):
     def __init__(self, code: int, message: str, data: Any = None) -> None:
@@ -58,6 +72,53 @@ class McpError(Exception):
         self.message = message
         self.data = data
         super().__init__(message)
+
+
+def _log_internal(context: str) -> None:
+    """Write a traceback to the real stderr for operator debugging.
+
+    Used in defensive ``except Exception`` paths so the model-visible response
+    can stay generic while operators still have a diagnosable trail in the MCP
+    client's stderr capture (or wherever the host pipes it).
+    """
+    try:
+        sys.__stderr__.write(f"[cartopian-mcp] {context}\n{traceback.format_exc()}")
+    except Exception:  # pragma: no cover — never let logging mask the original error
+        pass
+
+
+def _safe_segment(name: str) -> bool:
+    """True iff ``name`` is a single, traversal-free path component.
+
+    Rejects empty strings, ``.`` / ``..``, any path separator, NUL, and
+    anything longer than a typical filesystem name limit.
+    """
+    if not name or len(name) > 255:
+        return False
+    if name in (".", ".."):
+        return False
+    if "/" in name or "\\" in name or "\x00" in name:
+        return False
+    return True
+
+
+def _bounded_path(candidate: Path, root: Path) -> Optional[Path]:
+    """Resolve ``candidate`` and return it iff it lives under ``root``.
+
+    Uses ``Path.resolve(strict=True)`` so symlinks (and any traversal that
+    survived ``_safe_segment``) cannot escape the intended root. Returns
+    ``None`` for any failure — caller decides how to surface it.
+    """
+    try:
+        resolved = candidate.resolve(strict=True)
+        root_resolved = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        return None
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -108,16 +169,18 @@ def _skill_name(path: Path) -> str:
 
 def _first_line_summary(path: Path, limit: int = 160) -> str:
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("#"):
-                cleaned = stripped.lstrip("#").strip()
-                return cleaned[:limit] if cleaned else path.name
-            return stripped[:limit]
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            head = fh.read(SUMMARY_HEAD_BYTES)
     except OSError:
-        pass
+        return path.name
+    for line in head.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            cleaned = stripped.lstrip("#").strip()
+            return cleaned[:limit] if cleaned else path.name
+        return stripped[:limit]
     return path.name
 
 
@@ -174,9 +237,15 @@ def _use_cartopian_messages() -> List[Dict[str, Any]]:
 
 def _skill_messages(path: Path) -> List[Dict[str, Any]]:
     try:
+        size = path.stat().st_size
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read skill: {path.name}")
+    if size > MAX_RESOURCE_BYTES:
+        raise McpError(ERR_INTERNAL, f"skill exceeds size limit: {path.name}")
+    try:
         body = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise McpError(ERR_INTERNAL, f"cannot read skill {path}: {exc}")
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read skill: {path.name}")
     header = (
         f"Follow this Cartopian skill: **`{path.name}`**. The skill is the "
         f"authoritative runbook for this workflow — read every step before "
@@ -384,8 +453,11 @@ def _invoke_cli(subcommand: str, argv: List[str]) -> Dict[str, Any]:
             except SystemExit as exc:
                 code = exc.code if isinstance(exc.code, int) else 1
     except Exception:  # pragma: no cover — defensive
-        err_buf.write("[error] mcp_server caught unexpected exception:\n")
-        err_buf.write(traceback.format_exc())
+        # Internal details (paths, stack frames) go to the real stderr for
+        # operator debugging — never into the captured stderr that gets
+        # surfaced back to the model.
+        _log_internal(f"_invoke_cli unexpected exception in {subcommand}:")
+        err_buf.write("[error] mcp_server caught unexpected exception\n")
         return _build_invoke_result(1, out_buf, err_buf)
 
     return _build_invoke_result(code, out_buf, err_buf)
@@ -529,28 +601,38 @@ def read_resource(uri: str) -> Dict[str, Any]:
 
     resolved_path: Optional[Path] = None
     if namespace == "skills":
+        # `_skill_paths()` returns a fixed enumeration of *.md files under
+        # SKILL_DIR (and the install skill); matching by `_skill_name(path)`
+        # against tail[0] cannot escape that allowlist.
         for path in _skill_paths():
             if _skill_name(path) == tail[0]:
                 resolved_path = path
                 break
     elif namespace == "protocol":
+        if not _safe_segment(tail[0]):
+            raise McpError(ERR_INVALID_PARAMS, f"invalid protocol name: {uri}")
         candidate = ROOT / "protocol" / f"{tail[0]}.md"
-        if candidate.exists():
-            resolved_path = candidate
+        resolved_path = _bounded_path(candidate, ROOT / "protocol")
     elif namespace == "templates":
+        if not _safe_segment(tail[0]):
+            raise McpError(ERR_INVALID_PARAMS, f"invalid template name: {uri}")
         candidate = ROOT / "templates" / tail[0]
-        if candidate.exists():
-            resolved_path = candidate
+        resolved_path = _bounded_path(candidate, ROOT / "templates")
     elif namespace == "project":
         if len(tail) != 2:
             raise McpError(ERR_INVALID_PARAMS, f"project uri requires <id>/<file>: {uri}")
         project_id, kind = tail
+        if not _safe_segment(project_id) or not _safe_segment(kind):
+            raise McpError(ERR_INVALID_PARAMS, f"invalid project uri: {uri}")
+        if kind not in PROJECT_KINDS:
+            raise McpError(ERR_INVALID_PARAMS, f"unknown project kind: {kind}")
         for entry in _registry_entries():
-            if entry["id"] == project_id:
-                candidate = Path(entry["path"]) / f"{kind}.md"
-                if candidate.exists():
-                    resolved_path = candidate
-                break
+            if entry.get("id") != project_id:
+                continue
+            base = Path(entry["path"])
+            candidate = base / f"{kind}.md"
+            resolved_path = _bounded_path(candidate, base)
+            break
     else:
         raise McpError(ERR_INVALID_PARAMS, f"unknown cartopian namespace: {namespace}")
 
@@ -558,9 +640,15 @@ def read_resource(uri: str) -> Dict[str, Any]:
         raise McpError(ERR_INVALID_PARAMS, f"resource not found: {uri}")
 
     try:
+        size = resolved_path.stat().st_size
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+    if size > MAX_RESOURCE_BYTES:
+        raise McpError(ERR_INTERNAL, f"resource exceeds size limit: {uri}")
+    try:
         text = resolved_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise McpError(ERR_INTERNAL, f"cannot read {resolved_path}: {exc}")
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
     return {
         "contents": [{
             "uri": uri,
@@ -642,13 +730,12 @@ def handle_message(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         result = handle_request(method, params if isinstance(params, dict) else {})
     except McpError as exc:
         return _error_response(rpc_id, exc.code, exc.message, exc.data)
-    except Exception as exc:  # pragma: no cover — defensive
-        return _error_response(
-            rpc_id,
-            ERR_INTERNAL,
-            f"unhandled server exception: {exc}",
-            {"traceback": traceback.format_exc()},
-        )
+    except Exception:  # pragma: no cover — defensive
+        # Surface a generic message to the caller; the traceback (which can
+        # carry filesystem paths and internal state) goes to the real stderr
+        # only.
+        _log_internal(f"unhandled exception in {method}:")
+        return _error_response(rpc_id, ERR_INTERNAL, "internal server error")
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
 
 
