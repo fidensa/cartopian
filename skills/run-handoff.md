@@ -126,10 +126,14 @@ Treat `failed-to-parse` as blocked for the caller. Preserve the prompt and inval
 
 Return one of these outcomes:
 
-- `accepted`: the report is well-formed and actionable.
+- `accepted`: the report is well-formed and actionable (task report, or review/planning-review report with `Verdict: approve`).
+- `changes-requested`: review/planning-review report with `Verdict: request-changes`. Caller may iterate against the same artifacts.
+- `rejected`: review/planning-review report with `Verdict: reject`. Caller must stop and surface to the operator.
 - `blocked`: the report is well-formed and explicitly blocked, or the PM cannot proceed without operator judgment.
 - `failed`: the report is well-formed and explicitly failed.
-- `failed-to-parse`: the report is invalid or missing.
+- `failed-to-parse`: the report is invalid, missing, or has an unrecognized/missing `## Verdict` body when the variant requires one.
+
+For review and planning-review variants, the outcome above is derived from both the `Status:` header and the `## Verdict` body. The raw `approve | request-changes | reject` token is also returned as `review_verdict` for callers that want to branch on it directly.
 
 For `accepted`, also return the parsed report kind, status, verdict when present, readiness-for-review when present, and the report path.
 

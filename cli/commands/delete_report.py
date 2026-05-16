@@ -2,7 +2,9 @@
 
 Deletes a report file that lives under a registered project's ``reports/``
 directory and emits one NDJSON confirmation record. Filename must match the
-Cartopian report grammar: ``REPORT-NN-NNN.md`` or ``REPORT-PLAN-NNN.md``.
+Cartopian report grammar: ``REPORT-NN-NNN.md`` or
+``REPORT-PLAN-NNN[-kebab-slug].md`` (planning-checkpoint reports carry an
+operator-authored slug per CONVENTIONS.md).
 """
 import argparse
 import os
@@ -19,7 +21,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 REPORT_FILENAME_RE = re.compile(
-    r"^REPORT-(?:\d{2}-\d{3}|PLAN-\d{3})\.md$"
+    r"^REPORT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)\.md$"
 )
 
 
@@ -54,7 +56,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr(
             "guard",
             f"report filename does not match REPORT-NN-NNN.md or "
-            f"REPORT-PLAN-NNN.md grammar: {report_path.name}",
+            f"REPORT-PLAN-NNN[-slug].md grammar: {report_path.name}",
         )
         return EXIT_FAIL
 

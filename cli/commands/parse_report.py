@@ -15,6 +15,14 @@ STATUS_VERDICT = {
     "failed": "failed",
 }
 
+REVIEW_VERDICT_OUTCOME = {
+    "approve": "accepted",
+    "request-changes": "changes-requested",
+    "reject": "rejected",
+}
+
+REVIEW_VARIANTS = ("review", "planning-review")
+
 REQUIRED_SECTIONS = {
     "task": (
         "## Identity",
@@ -92,6 +100,24 @@ def _extract_status(content: str) -> Optional[str]:
     return None
 
 
+def _extract_review_verdict(content: str) -> Optional[str]:
+    """Return the first valid token under `## Verdict`, or None if missing/unrecognized."""
+    match = re.search(
+        r"^##\s+Verdict\s*$(.*?)(?=^##\s|\Z)",
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        return None
+    body = match.group(1).strip()
+    if not body:
+        return None
+    first_line = body.splitlines()[0].strip()
+    if first_line in REVIEW_VERDICT_OUTCOME:
+        return first_line
+    return None
+
+
 def _schema_ok(variant: str, content: str) -> bool:
     for section in REQUIRED_SECTIONS[variant]:
         if section not in content:
@@ -126,6 +152,7 @@ def handler(args: argparse.Namespace) -> int:
             stderr_usage(err)
             return EXIT_USAGE
 
+    review_verdict: Optional[str] = None
     if not _schema_ok(variant, content):
         verdict = "failed-to-parse"
         status_value: Optional[str] = None
@@ -135,14 +162,28 @@ def handler(args: argparse.Namespace) -> int:
             verdict = "failed-to-parse"
             status_value = None
         else:
-            verdict = STATUS_VERDICT[raw_status]
             status_value = raw_status
+            if variant in REVIEW_VARIANTS:
+                raw_verdict = _extract_review_verdict(content)
+                if raw_status == "complete":
+                    if raw_verdict is None:
+                        verdict = "failed-to-parse"
+                        status_value = None
+                    else:
+                        verdict = REVIEW_VERDICT_OUTCOME[raw_verdict]
+                        review_verdict = raw_verdict
+                else:
+                    verdict = STATUS_VERDICT[raw_status]
+                    review_verdict = raw_verdict
+            else:
+                verdict = STATUS_VERDICT[raw_status]
 
     record = {
         "verdict": verdict,
         "variant": variant,
         "report_path": str(report_path),
         "status": status_value,
+        "review_verdict": review_verdict,
     }
     emit_record(record)
     return EXIT_OK

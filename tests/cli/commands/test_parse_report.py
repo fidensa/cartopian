@@ -124,15 +124,17 @@ def _assert_record_schema(
     expected_variant,
     expected_status,
     expected_report_path,
+    expected_review_verdict=None,
 ):
     testcase.assertEqual(
         set(record.keys()),
-        {"verdict", "variant", "report_path", "status"},
+        {"verdict", "variant", "report_path", "status", "review_verdict"},
     )
     testcase.assertEqual(record["verdict"], expected_verdict)
     testcase.assertEqual(record["variant"], expected_variant)
     testcase.assertEqual(record["report_path"], expected_report_path)
     testcase.assertEqual(record["status"], expected_status)
+    testcase.assertEqual(record["review_verdict"], expected_review_verdict)
 
 
 class _Sandbox:
@@ -170,7 +172,7 @@ class TestTaskHappy(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         record = json.loads(lines[0])
         self.assertEqual(list(record.keys()),
-                         ["verdict", "variant", "report_path", "status"])
+                         ["verdict", "variant", "report_path", "status", "review_verdict"])
         _assert_record_schema(
             self,
             record,
@@ -195,6 +197,47 @@ class TestReviewHappy(unittest.TestCase):
             expected_variant="review",
             expected_status="complete",
             expected_report_path=str(report.resolve()),
+            expected_review_verdict="approve",
+        )
+
+    def test_emits_changes_requested_for_review_request_changes(self):
+        body = REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nrequest-changes\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-01-006.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        _assert_record_schema(
+            self,
+            record,
+            expected_verdict="changes-requested",
+            expected_variant="review",
+            expected_status="complete",
+            expected_report_path=str(report.resolve()),
+            expected_review_verdict="request-changes",
+        )
+
+    def test_emits_rejected_for_review_reject(self):
+        body = REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nreject\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-01-006.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        _assert_record_schema(
+            self,
+            record,
+            expected_verdict="rejected",
+            expected_variant="review",
+            expected_status="complete",
+            expected_report_path=str(report.resolve()),
+            expected_review_verdict="reject",
         )
 
 
@@ -212,6 +255,98 @@ class TestPlanningReviewHappy(unittest.TestCase):
             expected_variant="planning-review",
             expected_status="complete",
             expected_report_path=str(report.resolve()),
+            expected_review_verdict="approve",
+        )
+
+    def test_emits_changes_requested_for_planning_review_request_changes(self):
+        body = PLAN_REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nrequest-changes\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-PLAN-002-slug.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        _assert_record_schema(
+            self,
+            record,
+            expected_verdict="changes-requested",
+            expected_variant="planning-review",
+            expected_status="complete",
+            expected_report_path=str(report.resolve()),
+            expected_review_verdict="request-changes",
+        )
+
+    def test_emits_rejected_for_planning_review_reject(self):
+        body = PLAN_REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nreject\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-PLAN-002-slug.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        _assert_record_schema(
+            self,
+            record,
+            expected_verdict="rejected",
+            expected_variant="planning-review",
+            expected_status="complete",
+            expected_report_path=str(report.resolve()),
+            expected_review_verdict="reject",
+        )
+
+    def test_missing_verdict_body_emits_failed_to_parse(self):
+        body = PLAN_REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-PLAN-002-slug.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        self.assertEqual(record["verdict"], "failed-to-parse")
+        self.assertEqual(record["variant"], "planning-review")
+        self.assertIsNone(record["status"])
+        self.assertIsNone(record["review_verdict"])
+
+    def test_unknown_verdict_token_emits_failed_to_parse(self):
+        body = PLAN_REVIEW_BODY.replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nmaybe\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-PLAN-002-slug.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        self.assertEqual(record["verdict"], "failed-to-parse")
+        self.assertIsNone(record["status"])
+        self.assertIsNone(record["review_verdict"])
+
+    def test_blocked_status_preserves_review_verdict_when_present(self):
+        body = PLAN_REVIEW_BODY.replace(
+            "Status: complete", "Status: blocked"
+        ).replace(
+            "## Verdict\n\napprove\n",
+            "## Verdict\n\nrequest-changes\n",
+        )
+        with _Sandbox() as sb:
+            report = sb.write_report("REPORT-PLAN-002-slug.md", body)
+            result = _run(str(report), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        _assert_record_schema(
+            self,
+            record,
+            expected_verdict="blocked",
+            expected_variant="planning-review",
+            expected_status="blocked",
+            expected_report_path=str(report.resolve()),
+            expected_review_verdict="request-changes",
         )
 
 
