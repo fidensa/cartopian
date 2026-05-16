@@ -95,7 +95,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | Codex (OpenAI) | `cartopian-codex` | `codex exec --sandbox workspace-write ...` |
 | Claude Code | `cartopian-claude` | `claude -p --dangerously-skip-permissions ...` |
 | Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
-| Devin | `cartopian-devin` | `devin -p --permission-mode bypass ...` |
+| Devin | `cartopian-devin` | `devin -p --permission-mode dangerous --prompt-file <abs path>` |
 
 By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired for a given role, the simple solution is not to run that role in auto mode (e.g. assign the role to `human` in `cartopian.toml`, or set `auto_start = false` on the handoff). Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
@@ -177,9 +177,11 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 
 ### Devin
 
+The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`) rather than streaming prompt content on the command line. This avoids shell-quoting failures on multiline prompts and matches the current devin CLI's expected invocation.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_DEVIN_PERMISSION` | `bypass` | Permission mode: `normal`, `dangerous`, `bypass` (per `devin --help`). Default `bypass` auto-approves all tool calls so devin runs non-interactively. `accept-edits`, `plan`, and `autonomous` are interactive slash commands inside a session, not flag values. |
+| `CARTOPIAN_DEVIN_PERMISSION` | `dangerous` | Permission mode: `auto`, `dangerous` (per current `devin --help`). Default `dangerous` auto-approves all tool calls so devin runs non-interactively. Legacy values `normal` and `bypass` are accepted for backward compatibility and mapped to `auto` and `dangerous` respectively. |
 
 ## Alternative installation
 

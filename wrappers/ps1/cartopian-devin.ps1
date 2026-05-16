@@ -3,7 +3,7 @@
     Cartopian wrapper for the Devin CLI (PowerShell).
 
 .DESCRIPTION
-    Reads a Cartopian prompt file and passes its content to devin -p
+    Passes a Cartopian prompt file path to devin -p --prompt-file
     with non-interactive flags.
 
 .PARAMETER PromptPath
@@ -21,14 +21,19 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- Configuration ---------------------------------------------------
-# Permission mode (per `devin --help`): 'normal' | 'dangerous' | 'bypass'.
-# Default is 'bypass' so devin runs non-interactively, matching the
+# Permission mode (per current `devin --help`): 'auto' | 'dangerous'.
+# Default is 'dangerous' so devin runs non-interactively, matching the
 # autonomy posture of cartopian-codex, cartopian-claude, and
 # cartopian-gemini. If autonomy is not desired for a given role, do
 # not run that role in auto mode.
-# 'accept-edits', 'plan', and 'autonomous' are interactive slash commands
-# inside a session, not values for the --permission-mode flag.
-$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'bypass' }
+# Legacy values are accepted for backward compatibility:
+#   normal -> auto
+#   bypass -> dangerous
+$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'dangerous' }
+switch ($PermissionMode) {
+    'normal' { $PermissionMode = 'auto' }
+    'bypass' { $PermissionMode = 'dangerous' }
+}
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {
@@ -41,7 +46,7 @@ if (-not (Get-Command devin -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$PromptContent = Get-Content -Path $PromptPath -Raw
+$PromptPathAbs = (Resolve-Path $PromptPath).Path
 
 # --- Launch directory ------------------------------------------------
 # FR-012: assignee CLIs run with cwd set to the Cartopian project root
@@ -57,8 +62,7 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
     Set-Location $LaunchCwd
     Write-Host "cartopian-devin: cwd=$LaunchCwd (CARTOPIAN_LAUNCH_CWD override)" -ForegroundColor DarkGray
 } else {
-    $PromptAbs    = (Resolve-Path $PromptPath).Path
-    $PromptsDir   = Split-Path -Parent $PromptAbs
+    $PromptsDir   = Split-Path -Parent $PromptPathAbs
     $ProjectDir   = Split-Path -Parent $PromptsDir
     if ((Split-Path -Leaf $PromptsDir) -eq 'prompts') {
         Set-Location $ProjectDir
@@ -103,7 +107,7 @@ if ($WorkRootsJson) {
 }
 # --------------------------------------------------------------------
 
-$Args = @('-p', '--permission-mode', $PermissionMode, '--', $PromptContent)
+$Args = @('-p', '--permission-mode', $PermissionMode, '--prompt-file', $PromptPathAbs)
 
 Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode)" -ForegroundColor DarkGray
 & devin @Args
