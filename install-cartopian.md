@@ -8,10 +8,12 @@ Walk an operator through installing (or upgrading) Cartopian using only their AI
 
 ## Prerequisites
 
-- Python **3.11+** on PATH. (macOS: the stock `/usr/bin/python3` is 3.9 — `brew install python@3.11` or any 3.11+ interpreter satisfies this.)
+- Python **3.11+** on PATH. (macOS: the stock `/usr/bin/python3` is 3.9 — `brew install python@3.11` or any 3.11+ interpreter satisfies this. Windows: prefer the Python Launcher `py -3`; the bare name `python` is often Python 2 on legacy hosts.)
 - On macOS / Linux / WSL: `curl` and `tar` (both standard).
-- On native Windows: PowerShell 5.1+ (built in) with `Invoke-WebRequest`, plus `tar` (ships with Windows 10 1803+ as `C:\Windows\System32\tar.exe`). Confirm `tar --version` resolves before starting.
+- On native Windows: PowerShell 5.1+ (built in) with `Invoke-WebRequest`, plus `tar.exe` shipped with Windows 10 1803+ at `C:\Windows\System32\tar.exe`. Invoke that path explicitly — bare `tar` on PATH may resolve to Git-for-Windows' bundled tar, which fails to extract Windows-style paths.
 - Internet access to `api.github.com` and `codeload.github.com`.
+
+**Native Windows installs run from PowerShell, not Git Bash.** Git Bash on Windows is a hybrid environment: the shell looks Unix-like but `python3` is usually absent, `tar` on PATH may be Git's bundled tar (which fails on `C:\...` paths), and `curl` may hit `schannel` certificate errors against GitHub. If the operator is in Git Bash on Windows, tell them to re-launch this install in PowerShell.
 
 If any prerequisite is missing, stop and tell the operator what to install before re-running.
 
@@ -23,16 +25,19 @@ If any prerequisite is missing, stop and tell the operator what to install befor
 
 Detect:
 
-- **OS family**: `uname -s` returns `Darwin` (macOS), `Linux` (Linux/WSL), or `MINGW*`/`MSYS*` (git-bash on Windows — treat as Linux for the install commands but warn). On native PowerShell, detect Windows reliably across 5.1 and 7+ via `[System.Environment]::OSVersion.Platform` (returns `Win32NT`), or `$env:OS -eq 'Windows_NT'`. Avoid `$PSVersionTable.OS` — it does not exist in Windows PowerShell 5.1.
+- **OS family**: `uname -s` returns `Darwin` (macOS), `Linux` (Linux/WSL), or `MINGW*`/`MSYS*` (Git Bash on Windows — see special handling below). On native PowerShell, detect Windows reliably across 5.1 and 7+ via `[System.Environment]::OSVersion.Platform` (returns `Win32NT`), or `$env:OS -eq 'Windows_NT'`. Avoid `$PSVersionTable.OS` — it does not exist in Windows PowerShell 5.1.
+- **Git Bash on Windows (MINGW/MSYS)** is *not* Linux for install purposes. `python3` is usually missing on PATH, bare `tar` often resolves to Git's bundled tar (which cannot extract to `C:\…` paths), and `curl` may fail with `schannel` certificate errors against GitHub. **Tell the operator to re-launch this install in PowerShell and stop.** Do not try to bridge the gap with `python3` shims or PATH rewrites — the native Windows path is the supported one.
 - **Shell**: on Unix, read `$SHELL` — `zsh` → `~/.zshrc`, `bash` → `~/.bashrc`, anything else → tell the operator they'll need to add the PATH line themselves.
 
 Branch the rest of the steps on platform.
 
 ### Step 2 — Verify Python 3.11+
 
-Run `python3 --version` (Unix) or `python --version` (Windows). If the major.minor is below 3.11, stop and tell the operator to install Python 3.11+ before continuing.
+Run `python3 --version` on Unix.
 
-Hold the interpreter command (`python3` or `python`) for use in Step 5.
+On Windows, **probe `py -3 --version` first** (the Python Launcher; this is the canonical way to invoke Python 3 on Windows because the bare name `python` is frequently bound to a legacy Python 2 install). If `py -3` is not installed, fall back to `python --version`. If neither yields 3.11+, stop and tell the operator to install Python 3.11+ before continuing.
+
+Hold the resolved interpreter command (`python3` on Unix; `py -3` or, only as a fallback, `python` on Windows) for use in Step 5.
 
 ### Step 3 — Resolve the install ref
 
@@ -64,7 +69,11 @@ tar -xzf "$workdir/cartopian.tar.gz" -C "$workdir"
 $workdir = Join-Path ([System.IO.Path]::GetTempPath()) ("cartopian-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $workdir | Out-Null
 Invoke-WebRequest -Uri "<tarball_url>" -OutFile "$workdir\cartopian.tar.gz" -UseBasicParsing
-tar -xzf "$workdir\cartopian.tar.gz" -C "$workdir"   # tar ships with Windows 10+
+# Invoke the native Windows tar.exe by full path. Bare `tar` on PATH may
+# resolve to Git-for-Windows' bundled tar, which cannot extract paths like
+# `C:\Users\...` and fails with "Cannot connect to C: resolve failed".
+$nativeTar = Join-Path $env:SystemRoot 'System32\tar.exe'
+& $nativeTar -xzf "$workdir\cartopian.tar.gz" -C "$workdir"
 ```
 
 GitHub tarballs extract to a single top-level directory named `<owner>-<repo>-<sha>` inside `$workdir`. Resolve that path; it becomes `$repo_root` for the next step. Keep `$workdir` around through Step 8 so cleanup can target it exactly.
@@ -82,8 +91,10 @@ python3 "$repo_root/scripts/install.py" --mode copy --quiet
 **Windows:**
 
 ```powershell
-python "$repo_root\scripts\install.py" --mode copy --quiet
+py -3 "$repo_root\scripts\install.py" --mode copy --quiet
 ```
+
+Use the same interpreter command resolved in Step 2 — `py -3` is the canonical choice; substitute `python` only if Step 2 confirmed a Python 3.11+ behind the bare name.
 
 If the operator wants a non-default install root, pass `--prefix <path>` as well.
 
@@ -146,6 +157,8 @@ Run the installed CLI entrypoint and the MCP server entrypoint by full path (the
 
 - Unix: `"$install_root/bin/cartopian" --help`
 - Windows: `& "$installRoot\bin\cartopian.cmd" --help`
+
+A non-zero exit code on Windows almost always means the `.cmd` shim resolved to an unsuitable Python interpreter (typically a stale Python 2 on PATH that the launcher fallback could not avoid). The shipped shim prefers `py -3`, so this should be rare — if it does fail, confirm `py -3 --version` reports 3.11+ from the operator's PowerShell before declaring the install broken.
 
 **MCP server** — initialize handshake exits cleanly. The server speaks newline-delimited JSON-RPC on stdio; pipe one `initialize` request and read one response:
 
