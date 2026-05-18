@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -217,6 +218,29 @@ def install(
     return actions
 
 
+def _check_optional_coreutils() -> Optional[str]:
+    """Return a recommendation string if macOS is missing coreutils.
+
+    The bash wrappers in ``wrappers/bin/`` rely on ``timeout`` (GNU
+    coreutils) or ``gtimeout`` (Homebrew coreutils on macOS) to enforce
+    ``CARTOPIAN_TIMEOUT`` at the OS level. Without it the wrapper warns
+    and runs unbounded, which is functional but means a hung assignee
+    will not be killed at the configured deadline. We intentionally do
+    not run ``brew`` — this installer is zero-extra-dependency by
+    design (DEC-012). Return ``None`` when no recommendation is needed.
+    """
+    if platform.system() != "Darwin":
+        return None
+    if shutil.which("timeout") or shutil.which("gtimeout"):
+        return None
+    return (
+        "[recommended] GNU coreutils not detected on PATH. The bash\n"
+        "              wrappers use `gtimeout` to enforce CARTOPIAN_TIMEOUT;\n"
+        "              without it, handoffs run unbounded. Install with:\n"
+        "                  brew install coreutils"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cartopian-install",
@@ -263,6 +287,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         for line in actions:
             print(line)
     print(f"cartopian installed at {install_root} (mode={args.mode}).")
+    coreutils_note = _check_optional_coreutils()
+    if coreutils_note:
+        print(coreutils_note)
     return EXIT_OK
 
 

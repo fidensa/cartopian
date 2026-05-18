@@ -135,5 +135,72 @@ class TestTaskBundleHappyPath(unittest.TestCase):
         )
 
 
+class TestTaskBundleNoPlan(unittest.TestCase):
+    """F1: Plan ref: n/a must be accepted as a valid no-plan state (exit 0, ready=true)."""
+
+    def test_no_plan_accepted_as_valid(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-003-no-plan.md",
+                (
+                    "# TASK-01-003: No Plan\n\n"
+                    "Phase: PHASE-01-foundation\n"
+                    "Plan ref: n/a\n"
+                    "Work root: tool-repo\n"
+                    "Assignee: coder\n"
+                    "Spec: none\n"
+                    "Depends on: n/a\n"
+                    "Blocked by: n/a\n"
+                    "Created: 2026-05-18\n"
+                    "Evidence gate: n/a\n\n"
+                    "## Goal\n\nNo plan goal.\n\n"
+                    "## Acceptance\n\n"
+                    "- [ ] Some acceptance item.\n"
+                ),
+            )
+            result = _run(str(task_path), scaffold.root)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertTrue(record["ready"], msg=f"validator_blockers={record.get('validator_blockers')}")
+        self.assertEqual(record["validator_blockers"], [])
+        self.assertIsNone(record["spec_path"])
+
+
+class TestTaskBundleMissingConfig(unittest.TestCase):
+    """F2: Missing cartopian.toml must return exit code 3 (EXIT_ENV), not 1."""
+
+    def test_missing_cartopian_toml_exits_3(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            (scaffold.project_root / "cartopian.toml").unlink()
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-004-no-config.md",
+                (
+                    "# TASK-01-004: No Config\n\n"
+                    "Phase: PHASE-01-foundation\n"
+                    "Plan ref: n/a\n"
+                    "Work root: n/a\n"
+                    "Assignee: coder\n"
+                    "Spec: none\n"
+                    "Depends on: n/a\n"
+                    "Blocked by: n/a\n"
+                    "Created: 2026-05-18\n"
+                    "Evidence gate: n/a\n\n"
+                    "## Goal\n\nNo config goal.\n\n"
+                    "## Acceptance\n\n"
+                    "- [ ] Some acceptance item.\n"
+                ),
+            )
+            result = _run(str(task_path), scaffold.root)
+        self.assertEqual(result.returncode, 3, msg=f"stderr={result.stderr!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

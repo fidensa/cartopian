@@ -119,10 +119,41 @@ if ($Bypass) {
 }
 $Args += $PromptContent
 
-if ($Bypass) {
-    Write-Host "cartopian-codex: running codex exec (bypass=on, sandbox=disabled, skip-git-repo-check=on)" -ForegroundColor DarkGray
-} else {
-    Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox, skip-git-repo-check=on)" -ForegroundColor DarkGray
+# --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
+# Spawn the upstream CLI as a child process and kill it deterministically
+# at the configured deadline (default 60m). The PM sets CARTOPIAN_TIMEOUT
+# from the resolved [handoffs.<role>].timeout; it does not poll or
+# watchdog the running process. Exit code 124 signals deadline kill.
+# See protocol/CONVENTIONS.md -> Handoffs.
+function ConvertTo-CartopianTimeoutSeconds([string]$spec) {
+    if (-not $spec) { return 3600 }
+    if ($spec -match '^\s*(\d+)\s*([smhSMH]?)\s*$') {
+        $n = [int]$Matches[1]
+        $unit = $Matches[2].ToLower()
+        if (-not $unit) { return $n * 60 }
+        switch ($unit) {
+            's' { return $n }
+            'm' { return $n * 60 }
+            'h' { return $n * 3600 }
+        }
+    }
+    return 3600
 }
-& codex @Args
-exit $LASTEXITCODE
+$TimeoutSpec = if ($env:CARTOPIAN_TIMEOUT) { $env:CARTOPIAN_TIMEOUT } else { '60m' }
+$TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
+# --------------------------------------------------------------------
+
+if ($Bypass) {
+    Write-Host "cartopian-codex: running codex exec (bypass=on, sandbox=disabled, skip-git-repo-check=on, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
+} else {
+    Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox, skip-git-repo-check=on, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
+}
+
+$proc = Start-Process -FilePath codex -ArgumentList $Args -NoNewWindow -PassThru -ErrorAction Stop
+if ($proc.WaitForExit($TimeoutSec * 1000)) {
+    exit $proc.ExitCode
+} else {
+    try { $proc.Kill() } catch {}
+    Write-Host "cartopian-codex: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
+    exit 124
+}

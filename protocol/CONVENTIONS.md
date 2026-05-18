@@ -244,7 +244,7 @@ Handoff fields are:
 
 - `agent`: executable name.
 - `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
-- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
+- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`. The PM delegates deadline enforcement to the wrapper (which kills the upstream process at the deadline) and waits for completion rather than watchdogging the running process; it does not impose a separate PM-side deadline.
 
 Every automated handoff follows this argument contract:
 

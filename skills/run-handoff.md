@@ -73,32 +73,37 @@ Use the resolved role and handoff configuration:
 Automated launch contract:
 
 ```text
-<agent> <absolute prompt path>
+CARTOPIAN_TIMEOUT=<duration> <agent> <absolute prompt path>
 ```
 
-Pass the prompt path as one argv argument. Use shell quoting only in operator-facing command text.
+Pass the prompt path as one argv argument. Use shell quoting only in operator-facing command text. Set `CARTOPIAN_TIMEOUT` in the launch environment to the resolved `[handoffs.<role>].timeout` value (e.g. `30m`, `2h`); if the field is absent, the wrapper applies the protocol default of `60m`. The shipped wrappers enforce this deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exit `124` when the deadline elapses.
 
 Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path). Access grants cover the union of the project root and any declared work-root absolute paths resolved via `resolve-config`. The shipped wrappers in `wrappers/` resolve the project root and apply access grants automatically; custom agents must honor the same convention.
 
-Launch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
+Launch the handoff as a background subprocess (do not impose a foreground tool-call deadline shorter than the configured timeout). Launch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
 
 ---
 
-## Stage 3 - Enforce Timeout And Stop Conditions
+## Stage 3 - Wait For Completion
 
-For PM-launched handoffs, apply the configured timeout. If omitted, use `60m`.
+The dispatch is OS-bounded by the wrapper using `CARTOPIAN_TIMEOUT`. Wait for the wrapper subprocess to exit. Do not poll status repeatedly, do not impose a separate PM-side deadline, and do not intervene before the wrapper completes on its own. The wrapper is the watchdog; the PM is the consumer of its result.
 
-Stop and return a blocked outcome when:
+The wrapper will exit in one of two ways:
 
-- The handoff times out.
-- The process is killed or interrupted.
-- The report is missing.
-- The report is late after timeout.
-- The report is malformed, incomplete, internally inconsistent, or path-mismatched.
-- The report says `blocked`.
-- The report requires operator judgment.
+- **Natural exit**: the assignee finished. Exit code is the assignee's exit code.
+- **Deadline exit**: the OS killed the assignee at the wall-clock limit. Exit code is `124` (or platform equivalent).
 
-A killed terminal or process is not a graceful pause and is not successful completion evidence.
+After the wrapper exits, check the expected report path before interpreting the outcome — the assignee may have finished writing the report just before a deadline kill, so report presence is decided by filesystem, not exit code.
+
+Return a blocked outcome when:
+
+- The wrapper exited non-zero (including code `124` for deadline) and the expected report is missing or invalid.
+- The expected report file is missing after wrapper exit.
+- The expected report is malformed, incomplete, internally inconsistent, or path-mismatched.
+- The expected report says `blocked`.
+- The expected report requires operator judgment.
+
+A deadline kill, hard process stop, or missing/late/invalid report is not successful completion evidence.
 
 ---
 

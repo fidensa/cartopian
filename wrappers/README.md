@@ -14,6 +14,15 @@ These wrappers fix that. They accept a prompt path, read the prompt file, and ca
 
 ## Quickstart
 
+### Prerequisites
+
+- A supported agent CLI on PATH (`codex`, `claude`, `gemini`, or `devin`).
+- **macOS only:** GNU coreutils provides the `gtimeout` binary the bash wrappers use to enforce `CARTOPIAN_TIMEOUT` at the OS level:
+  ```bash
+  brew install coreutils
+  ```
+  Without coreutils, the wrappers will warn at launch and run unbounded — handoffs will still execute, but a hung assignee can run forever instead of being killed at the configured deadline. Linux distributions ship `timeout` in coreutils by default; native Windows uses PowerShell's `Start-Process` + `WaitForExit` and needs no extra install.
+
 ### Step 1: Put the wrappers on your PATH
 
 **macOS / Linux / WSL (bash or zsh):**
@@ -108,10 +117,11 @@ PM runs:  cartopian-codex /abs/path/to/PROMPT-01-003.md
               ├─ checks that 'codex' is installed
               ├─ reads the prompt file content
               ├─ resolves the launch directory (Cartopian project root)
-              └─ exec codex exec --sandbox workspace-write "<prompt content>"
+              ├─ wraps the invocation in an OS-level deadline (CARTOPIAN_TIMEOUT)
+              └─ exec timeout 60m codex exec --sandbox workspace-write "<prompt content>"
 ```
 
-The wrapper replaces itself with the real CLI process (`exec`), so timeouts, signals, and exit codes all pass through cleanly to the PM.
+The bash wrappers `exec` into `timeout <duration> <real-cli> ...` so the OS owns the deadline; signals and exit codes pass through cleanly to the PM, and the upstream process receives SIGTERM at the configured wall-clock limit (exit code 124). The PowerShell wrappers achieve the same with `Start-Process` + `WaitForExit($TimeoutMs)`. The PM does not poll or watchdog the running process — it dispatches and waits for the platform's background-completion signal.
 
 ## Where the wrapper runs from
 
@@ -148,6 +158,14 @@ A `CARTOPIAN_LAUNCH_CWD` value that does not point to an existing directory is a
 There is no `cartopian.toml` field for this. The launch cwd is treated as environment, not protocol: it varies per machine and per operator preference, and putting it in toml would invite drift between the recorded path and the actual filesystem.
 
 ## Configuration
+
+### Common (all wrappers)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline for the dispatched handoff. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). Set by the PM from the resolved `[handoffs.<role>].timeout`. When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
+
+> Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
 
 ### Codex
 

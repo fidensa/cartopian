@@ -144,9 +144,26 @@ fi
 
 CMD+=(-p "$PROMPT_CONTENT")
 
-if [[ -n "$GEMINI_APPROVAL_MODE" ]]; then
-  echo "cartopian-gemini: running gemini -p (approval=$GEMINI_APPROVAL_MODE)" >&2
+# --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
+# Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
+# upstream process at the configured deadline (default 60m). The PM
+# sets CARTOPIAN_TIMEOUT from the resolved [handoffs.<role>].timeout;
+# it does not poll or watchdog the running process. SIGTERM at deadline
+# returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
+TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
+if command -v timeout &>/dev/null; then
+  CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
+elif command -v gtimeout &>/dev/null; then
+  CMD=(gtimeout "$TIMEOUT_DURATION" "${CMD[@]}")
 else
-  echo "cartopian-gemini: running gemini -p (yolo=$GEMINI_AUTO_YES)" >&2
+  echo "cartopian-gemini: warning: no 'timeout'/'gtimeout' on PATH; running without OS-enforced deadline (macOS: brew install coreutils)" >&2
+  TIMEOUT_DURATION="unbounded"
+fi
+# --------------------------------------------------------------------
+
+if [[ -n "$GEMINI_APPROVAL_MODE" ]]; then
+  echo "cartopian-gemini: running gemini -p (approval=$GEMINI_APPROVAL_MODE, timeout=$TIMEOUT_DURATION)" >&2
+else
+  echo "cartopian-gemini: running gemini -p (yolo=$GEMINI_AUTO_YES, timeout=$TIMEOUT_DURATION)" >&2
 fi
 exec "${CMD[@]}"

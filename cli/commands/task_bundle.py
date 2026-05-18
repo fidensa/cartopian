@@ -13,7 +13,6 @@ from cli.commands.validate_task_readiness import (
     _check_phase,
     _check_plan_ref,
     _check_work_root,
-    _find_project_root,
     _parse_headers,
     _split_csv,
 )
@@ -22,6 +21,27 @@ from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, std
 
 _TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?$")
 _STATUS_DIRS = ("open", "in-progress", "in-review", "done")
+_NO_PLAN_VALUES = frozenset({"n/a", "none", ""})
+
+
+def _find_project_root_bundle(task_path: Path) -> Optional[Path]:
+    """Find project root by structural markers without requiring cartopian.toml.
+
+    Uses phases/ or IMPLEMENTATION_PLAN.md as anchor, so that a missing
+    cartopian.toml is reported as EXIT_ENV rather than EXIT_FAIL.
+    """
+    for candidate in [task_path.parent] + list(task_path.parents):
+        if (candidate / "phases").is_dir() or (candidate / "IMPLEMENTATION_PLAN.md").is_file():
+            return candidate
+    return None
+
+
+def _check_plan_ref_bundle(project_root: Path, headers: Dict[str, str]) -> Dict[str, Any]:
+    """Like _check_plan_ref but treats n/a / none as a valid no-plan state (pass)."""
+    plan_ref = headers.get("Plan ref", "").strip()
+    if plan_ref.lower() in _NO_PLAN_VALUES:
+        return {"name": "plan-ref-exists", "pass": True, "reason": None}
+    return _check_plan_ref(project_root, headers)
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -142,7 +162,7 @@ def _build_validation_checks(
     warnings: List[str] = []
     checks_by_name = {
         "phase-exists": _check_phase(project_root, headers),
-        "plan-ref-exists": _check_plan_ref(project_root, headers),
+        "plan-ref-exists": _check_plan_ref_bundle(project_root, headers),
         "blocked-by-complete": _check_blocked_by(project_root, headers),
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
         "acceptance-present": _check_acceptance(content),
@@ -181,7 +201,7 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"task file unreadable: {raw_path} — {exc}")
         return EXIT_FAIL
 
-    project_root = _find_project_root(task_path)
+    project_root = _find_project_root_bundle(task_path)
     if project_root is None:
         stderr_error(f"project root not found for task: {raw_path}")
         return EXIT_FAIL
