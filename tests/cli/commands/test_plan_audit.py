@@ -82,6 +82,23 @@ class TestPlanAuditUsage(unittest.TestCase):
             self.assertTrue(proc.stderr.startswith("[error]"), msg=proc.stderr)
             self.assertIn("cartopian.toml", proc.stderr)
 
+    def test_defaults_only_cartopian_toml_is_not_a_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = tmp_path / "project"
+            project.mkdir()
+            (project / "cartopian.toml").write_text(
+                '[defaults]\ngit_versioning = false\n',
+                encoding="utf-8",
+            )
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 1)
+            self.assertEqual(proc.stdout, "")
+            self.assertEqual(
+                proc.stderr.rstrip("\n"),
+                f"[guard] not a Cartopian project: {project / 'cartopian.toml'} has no [project] table",
+            )
+
 
 class TestPlanAuditClean(unittest.TestCase):
     def test_empty_project_is_clean(self):

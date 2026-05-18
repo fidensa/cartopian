@@ -10,8 +10,9 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.commands.resolve_config import _CliError, _require_project_keys
 from cli.emit import emit_record
-from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
+from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
 _PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
@@ -346,8 +347,14 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"project config unreadable: {toml_path} — {exc}")
         return EXIT_ENV
 
-    project_table = cfg.get("project", {}) or {}
-    project_id = str(project_table.get("id", ""))
+    try:
+        project_id, _project_name, _protocol_version = _require_project_keys(cfg, toml_path)
+    except _CliError as err:
+        if err.prefix == "guard":
+            stderr_guard(err.message)
+        else:
+            stderr_error(err.message)
+        return err.exit_code
 
     try:
         pm_role, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)

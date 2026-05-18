@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
@@ -230,6 +231,13 @@ def handler(args: argparse.Namespace) -> int:
     if not (project_path / "cartopian.toml").is_file():
         _stderr("error", f"no cartopian.toml found at: {project_path}")
         return EXIT_FAIL
+
+    try:
+        project_cfg = _load_project_config(project_path)
+        _require_project_keys(project_cfg, project_path / "cartopian.toml")
+    except _CliError as err:
+        _stderr(err.prefix, err.message)
+        return err.exit_code
 
     blockers: List[Dict[str, Any]] = []
     blockers.extend(_check_artifact_chains(project_path))

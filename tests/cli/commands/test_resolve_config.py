@@ -169,6 +169,24 @@ class TestMissingProjectConfig(unittest.TestCase):
         self.assertIn("[error] project config not found:", result.stderr)
         self.assertIn("cartopian.toml", result.stderr)
 
+    def test_defaults_only_cartopian_toml_is_not_a_project(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                '[defaults]\n'
+                'git_versioning = false\n'
+                '\n'
+                '[roles]\n'
+                'pm = "Plans the work."\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(
+            result.stderr.rstrip("\n"),
+            f"[guard] not a Cartopian project: {sb.project.resolve() / 'cartopian.toml'} has no [project] table",
+        )
+
 
 class TestGitVersioningAttribution(unittest.TestCase):
     _BARE_PROJECT = (

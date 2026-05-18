@@ -58,6 +58,32 @@ class _CliError(Exception):
         super().__init__(message)
 
 
+def _require_project_table(project_cfg: Dict[str, Any], project_toml: Path) -> Dict[str, Any]:
+    if "project" not in project_cfg:
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"not a Cartopian project: {project_toml} has no [project] table",
+        )
+    project_table = project_cfg["project"]
+    if not isinstance(project_table, dict):
+        raise _CliError(
+            EXIT_FAIL,
+            "error",
+            f"project config malformed: [project] must be a table in {project_toml}",
+        )
+    return project_table
+
+
+def _load_project_config(project_path: Path) -> Dict[str, Any]:
+    project_toml = project_path / "cartopian.toml"
+    if not project_toml.exists():
+        raise _CliError(EXIT_FAIL, "error", f"project config not found: {project_toml}")
+    project_cfg = _load_toml(project_toml, "project config") or {}
+    _require_project_table(project_cfg, project_toml)
+    return project_cfg
+
+
 def _merge_table(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """Shallow merge: override wins, preserving base entries not in override."""
     result = dict(base)
@@ -178,8 +204,8 @@ def _resolve_work_roots(
     return resolved
 
 
-def _require_project_keys(project_cfg: Dict[str, Any]) -> Tuple[str, str, str]:
-    project_table = project_cfg.get("project", {}) or {}
+def _require_project_keys(project_cfg: Dict[str, Any], project_toml: Path) -> Tuple[str, str, str]:
+    project_table = _require_project_table(project_cfg, project_toml)
     for key in ("id", "name", "protocol_version"):
         if key not in project_table:
             raise _CliError(
@@ -205,17 +231,13 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("error", f"project path does not exist: {raw_path}")
         return EXIT_FAIL
 
-    project_toml = project_path / "cartopian.toml"
-    if not project_toml.exists():
-        _stderr("error", f"project config not found: {project_toml}")
-        return EXIT_FAIL
-
     try:
-        project_cfg = _load_toml(project_toml, "project config") or {}
+        project_toml = project_path / "cartopian.toml"
+        project_cfg = _load_project_config(project_path)
         global_toml = Path.home() / ".cartopian" / "cartopian.toml"
         global_cfg = _load_toml(global_toml, "global config") or {}
 
-        project_id, project_name, protocol_version = _require_project_keys(project_cfg)
+        project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
         roles = _resolve_roles(global_cfg, project_cfg)
         handoffs = _resolve_handoffs(global_cfg, project_cfg)
         automation = _resolve_automation(global_cfg, project_cfg)

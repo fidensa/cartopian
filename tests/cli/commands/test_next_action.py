@@ -177,6 +177,12 @@ class TestNextActionExitCodes(unittest.TestCase):
         rc = next_action.handler(args)
         self.assertEqual(rc, 2)
 
+    def test_exit1_on_defaults_only_cartopian_toml(self) -> None:
+        with project_scaffold(cartopian_toml='[defaults]\ngit_versioning = false\n') as scaffold:
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 1)
+            self.assertEqual(records, [])
+
 
 class TestNextActionDisagreement(unittest.TestCase):
     def test_disagreement_detected(self) -> None:
