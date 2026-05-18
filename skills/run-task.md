@@ -97,6 +97,8 @@ Move the task to `tasks/in-progress/` using the Core CLI only after assignment/s
 cartopian move-task <task-path> in-progress
 ```
 
+The CLI verifies that `prompts/PROMPT-NN-NNN.md` exists before executing this rename. The prompt written in Stage 2 satisfies this check.
+
 If the operator returns later with completion evidence even though assignment was never recorded, fast-forward to the evidence-supported state instead of leaving completed work in `open/`.
 
 ---
@@ -115,7 +117,13 @@ If the report is `blocked`, `failed`, or `failed-to-parse`, stop automation, kee
 
 If the report is accepted with `Ready for review: no`, keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
 
-If the report is accepted with `Ready for review: yes`, move the task to `tasks/in-review/`, capture any evidence the reviewer will need from the completion report, and proceed to reviewer assignment.
+If the report is accepted with `Ready for review: yes`, move the task to `tasks/in-review/` using the Core CLI:
+
+```
+cartopian move-task <task-path> in-review
+```
+
+The CLI verifies that `reports/REPORT-NN-NNN.md` exists, references this task's ID, and has `Status: complete` before executing this rename. The parsed completion report already on disk satisfies this check. Capture any evidence the reviewer will need from the completion report and proceed to reviewer assignment.
 
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
 
@@ -181,13 +189,19 @@ The PM applies the verdict, delegating directory status transitions to the Core 
   ```
   cartopian delete-prompt <prompt-path>
   ```
+
+  The CLI verifies that `reviews/REVIEW-NN-NNN.md` exists with `Verdict: approve` before executing this rename. The review file the reviewer wrote satisfies this check.
+
 - `approve`, when `git.pm_owns_product_branches = true` and a PR exists: merge with `gh pr merge --<strategy> --delete-branch`, using the effective `git.default_merge_strategy` (`merge`, `squash`, or `rebase`). Capture the merge commit SHA, append it to the review file's existing `Implementation evidence` block as `Merge commit SHA`, append `PR URL` if the review file does not already include it, then `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
 
   ```
   cartopian delete-prompt <prompt-path>
   ```
-- `request-changes`: `cartopian move-task <task-path> in-progress`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
-- `reject`: `cartopian move-task <task-path> open`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
+
+  Same guard as above: `reviews/REVIEW-NN-NNN.md` must exist with `Verdict: approve`.
+
+- `request-changes`: `cartopian move-task <task-path> in-progress`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: request-changes`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
+- `reject`: `cartopian move-task <task-path> open`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: reject`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
 
 On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round suffixes.
 

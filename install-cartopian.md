@@ -177,37 +177,11 @@ The response must be a single JSON-RPC line containing `"name":"cartopian"` and 
 
 Point the operator at the install verification checklist: `$install_root/protocol/INSTALL_VERIFICATION.md`.
 
-### Step 10 — Register the MCP server with the operator's agent
+### Step 10 — Register the MCP server with the operator's agent(s)
 
-This is the step that gives the operator a real entry point. After this step, the operator can open the chosen agent in any directory and say "use cartopian" to enter Cartopian PM mode.
+Run `skills/register-mcp.md`. The install root `$install_root` is already resolved from Step 5 — pass it so Stage 0 of that skill is skipped.
 
-Ask the operator which agent(s) they want to enter Cartopian from. Cartopian supports any MCP-aware agent; recipes below cover the common ones. For each one the operator picks, apply the recipe and report what changed. Always confirm before writing to a file the agent owns; never modify a registration that already points at `cartopian-mcp` with the same command.
-
-**Claude Code (CLI):**
-```bash
-claude mcp add cartopian "$install_root/bin/cartopian-mcp" --scope user
-```
-Verify with `claude mcp list`. The entry must show `cartopian` pointing at the install root's `bin/cartopian-mcp`.
-
-**Claude Desktop (macOS / Windows):** edit `claude_desktop_config.json` and add a `cartopian` entry under `mcpServers`. Config file location:
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-
-Add (preserve any existing `mcpServers` siblings):
-```json
-{
-  "mcpServers": {
-    "cartopian": {
-      "command": "<install_root>/bin/cartopian-mcp"
-    }
-  }
-}
-```
-On Windows, set `"command"` to the `.cmd` shim: `"<installRoot>\\bin\\cartopian-mcp.cmd"`. The operator must fully quit and reopen Claude Desktop for the server to register.
-
-**Codex CLI / Gemini CLI / any other MCP-aware agent:** use that agent's documented MCP-server registration surface, pointing the `command` at `$install_root/bin/cartopian-mcp` (or the `.cmd` shim on Windows). Cartopian itself is agent-agnostic; the registration mechanism is whatever the agent provides.
-
-If the operator names an agent the skill doesn't have a recipe for, print the bare facts they need (`command = <install_root>/bin/cartopian-mcp`, transport = stdio, protocol = MCP 2024-11-05) and ask the operator to register it via that agent's own MCP-server documentation.
+`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate registration recipe for each agent the operator selects. It covers Claude Code, Claude Desktop, Cursor, Windsurf, and any other agent via a generic fallback.
 
 ### Step 11 — Summarize
 

@@ -8,6 +8,8 @@ Cartopian is filesystem-first. Directories and filenames carry the project's sta
 
 Git is optional. When git versioning is enabled, it records the same filesystem state; it is not the source of protocol authority.
 
+AI agents come pre-trained to "be helpful and proactive". That training causes project drift and failure to follow governance verbatim. Cartopian aims to correct this training by producing a rigid framework for agentic behavior that defines exactly what helpful and proactive mean. Agents should not guess, make assumptions, or behave in any way contrary to the conventions or pronciples held by the Cartopian project mangement framework.
+
 ## Protocol And Skills
 
 `protocol/CONVENTIONS.md` is the invariant layer. It defines naming, lifecycle authority, artifact meaning, and cross-session constraints.
@@ -17,6 +19,8 @@ Git is optional. When git versioning is enabled, it records the same filesystem 
 `skills/*.md` files are executable runbooks. They define operational procedure for initialization, planning, task execution, handoff automation, and plan closeout.
 
 Skill invocation names are derived from skill filenames by dropping `.md` and replacing hyphens with spaces. For example, `run-task.md` maps to `run task`.
+
+`use cartopian` is a common phrase used to start the cartopian project management system. This and other commands correlate to Cartopian MCP server tools and dialogs and other Cartopian skills. Map available skill and MCP server volcabulary before making assumptions about the Operator's instruction meaning.
 
 ## Project Scope
 
@@ -103,6 +107,31 @@ Reviewers create or update review files and record verdicts. They do not move ta
 Automated agents do not gain lifecycle authority by completing a handoff. Their reports are evidence for the PM to process.
 
 When PM-owned product-repo git is enabled, PM lifecycle authority also includes product-repo staging, commits, branches, pushes, PRs, merges, and post-merge review-evidence updates for product repos only. See [PM-Owned Product-Repo Branches](#pm-owned-product-repo-branches).
+
+## Lifecycle CLI Guards
+
+`cartopian move-task` enforces artifact prerequisites before executing any status rename. No workaround, manual task-file move, or worktree edit bypasses these checks; the guard runs on every invocation of the CLI command.
+
+Guarded transitions and their prerequisites:
+
+| Transition | Required artifact | Validation |
+| --- | --- | --- |
+| `open → in-progress` | `prompts/PROMPT-NN-NNN.md` | file must exist |
+| `in-progress → in-review` | `reports/REPORT-NN-NNN.md` | must reference this task's `Task ID:`; `Status: complete` |
+| `in-review → done` | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
+| `in-review → in-progress` | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
+| `in-review → open` | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
+
+Fast-forward transitions (e.g., `open → done`) carry no artifact guard and remain available for operator-initiated cleanup and administrative movement.
+
+Guards apply only to task files whose names match the canonical `TASK-NN-NNN` prefix. Tasks with non-canonical names skip artifact checks. A canonical task file with no findable project root is a hard block; the CLI cannot verify prerequisites and will not execute the rename.
+
+`cartopian plan-audit <project-path>` is a companion audit that surfaces provenance gaps across the whole project:
+
+- **Artifact chain integrity**: every `TASK-NN-NNN` file in `tasks/in-progress/` must have a matching `prompts/PROMPT-NN-NNN.md`; every file in `tasks/in-review/` must have a matching `reviews/REVIEW-NN-NNN.md` with a `Verdict:` field present.
+- **Work-root provenance**: for each configured work root, if uncommitted git changes exist and no active task is assigned to that root (or no active prompt exists for the assigned task), the audit emits an `unattributed-work-root-changes` warning. This warns that Cartopian cannot attribute the current dirty state to an active handoff chain; it does not imply the operator was not allowed to make the changes.
+
+Run `plan-audit` at session startup and before plan closeout. A non-zero exit is a PM-level blocker; do not advance lifecycle state until all blockers are resolved. Warnings should be surfaced to the operator, but they do not block lifecycle movement by themselves.
 
 ## Tasks
 

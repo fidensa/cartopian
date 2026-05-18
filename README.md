@@ -15,13 +15,19 @@ Cartopian turns "I want to do X" into a tracked plan, logical phases, structured
 
 ## How it feels in practice
 
+Once installed, open your agent from any directory and say:
+
+> use cartopian
+
+That phrase triggers Cartopian's MCP server and loads PM mode — no working directory to set, no path to remember. From there the skill progression is:
+
 ```text
-use cartopian   →   init project   →   plan project   →   start session   →   run task   →   close plan
+init project   →   plan project   →   start session   →   run task   →   close plan
 ```
 
-You open any MCP-aware agent — Claude Code, Claude Desktop, Codex, Gemini CLI, whatever you use — and say "use cartopian". The agent loads Cartopian PM mode and asks what you want to do. From there you tell the PM what you want; it asks the questions it needs to ask, produces a requirements doc, drafts a plan, breaks it into phases and tasks, and parks everything on disk. When you come back, "start session" reads the current state and tells you what's next. "Run task" dispatches it, either to an agent if you've wired one up, or to you if you'd rather drive.
+Tell the PM what you want to build. It interviews you, produces a requirements doc, drafts a plan, breaks it into phases and tasks, and parks everything on disk as plain markdown. When you come back, **"start session"** reads the current state and tells you what's next. **"Run task"** dispatches the work — to a CLI agent if you've wired one up, or to you directly.
 
-When the plan is done, "close plan" archives it and you're ready for the next one.
+When the plan is done, **"close plan"** archives it and you're ready for the next one.
 
 ## Install
 
@@ -33,11 +39,11 @@ Open your AI agent of choice (Claude Code, Claude Desktop, Codex, Gemini CLI, De
 
 The skill is a step-by-step runbook the agent reads and executes — detect your platform, fetch the latest release, copy it into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), add `bin/` to your user PATH, **register Cartopian's MCP server with your agent**, and verify. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved across re-runs.
 
-After install, open **any** registered MCP-aware agent in **any** directory and say:
+After install, open that agent in **any** directory and say:
 
 > use cartopian
 
-That's the entry point. The agent loads Cartopian PM mode, lists the available skills, and proposes the first useful action — `start session` if you have projects registered, `init project` if you don't. You never have to remember a path, a working directory, or a magic CLI command.
+That's the entry point. The agent enters Cartopian PM mode, reads the protocol contract, loads the session startup runbook, and begins registry-based project selection — no working directory required, no path to remember. If you have projects registered it moves straight to `start session`; if you don't, it offers `init project`.
 
 **Upgrade** the same way: ask any Cartopian-aware agent to run `check for updates`. It compares your installed version against the latest release and re-installs on your approval.
 
@@ -84,11 +90,11 @@ On native Windows, symlink mode requires Developer Mode or an elevated shell —
 
 After install, the entry point is one phrase: **"use cartopian"**. Any registered MCP-aware agent picks it up and routes you to the right skill.
 
-Cartopian ships **skills** — runbooks the agent reads and follows to do real work. You don't have to memorize them; the `use cartopian` entry lists what's available and proposes the first useful action. If you want to jump straight to a specific skill, say its natural-language name:
+Cartopian ships **skills** — runbooks the agent reads and follows to do real work. You don't have to memorize them; saying `use cartopian` bootstraps PM mode and routes you to the right next step automatically. If you want to jump straight to a specific skill, say its natural-language name:
 
 | Say this | What happens |
 | --- | --- |
-| `use cartopian` | Enter PM mode. Lists the surface and routes to the next useful action. |
+| `use cartopian` | Enter PM mode. Reads the protocol contract and startup runbook, then selects a project via the registry. Never inspects the current directory. |
 | `init workspace` | Sets up your workspace and config defaults |
 | `init project` | Scaffolds a new project |
 | `adopt requirements` | Imports requirements from JIRA, a PRD, Confluence, etc. |
@@ -98,6 +104,8 @@ Cartopian ships **skills** — runbooks the agent reads and follows to do real w
 | `run task` | Drives one task from assignment through review |
 | `run handoff` | Executes one prompt/report handoff |
 | `close plan` | Closes the active plan and resets for the next |
+| `register mcp` | Register `cartopian-mcp` with additional agents after install |
+| `check for updates` | Compares installed version to latest release; upgrades on approval |
 
 In a workspace with multiple projects, vague requests like *"start working"* prompt the PM to ask which project first. Then it reads `STATE.md`, reports the current or next move, and waits for your go-ahead.
 

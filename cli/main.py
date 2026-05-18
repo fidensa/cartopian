@@ -22,12 +22,17 @@ SUBCOMMANDS: List[str] = [
     "register-project",
     "resolve-config",
     "scaffold-project",
+    "task-bundle",
     "unregister-project",
     "validate-task-readiness",
     # FR-005
     "delete-prompt",
     "delete-report",
     "list-tasks",
+    # FR-014 aggregator
+    "next-action",
+    # lifecycle + provenance audit
+    "plan-audit",
 ]
 
 
@@ -80,10 +85,13 @@ def _real_handlers():
         generate_config,
         list_tasks,
         move_task,
+        next_action,
         parse_report,
+        plan_audit,
         register_project,
         resolve_config,
         scaffold_project,
+        task_bundle,
         unregister_project,
         validate_task_readiness as vtr,
     )
@@ -95,10 +103,13 @@ def _real_handlers():
         "generate-config": (generate_config.configure_parser, generate_config.handler),
         "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
+        "next-action": (next_action.configure_parser, next_action.handler),
         "parse-report": (parse_report.configure_parser, parse_report.handler),
+        "plan-audit": (plan_audit.configure_parser, plan_audit.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
+        "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
     }

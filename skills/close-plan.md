@@ -30,6 +30,20 @@ Do not proceed unless the operator explicitly confirms plan closeout.
 
 ## Stage 1 - Completion Audit
 
+### 1.0 Run plan audit
+
+Before inspecting individual directories, run a full lifecycle and provenance audit using the Core CLI:
+
+```
+cartopian plan-audit <project-path>
+```
+
+If the audit exits non-zero, stop closeout and surface each blocker to the operator. Blockers must be resolved before the close can proceed:
+
+- **Missing artifact chain**: a task in `tasks/in-progress/` or `tasks/in-review/` has no matching prompt or review artifact. Move the task through the proper lifecycle stages or obtain an operator decision to remove it from the active directories before rerunning closeout.
+
+Surface any audit warnings before continuing. In particular, `unattributed-work-root-changes` means Cartopian cannot tie the current dirty work-root state to an active prompt chain. This is informational and should inform operator judgment during closeout, but it does not by itself block the close.
+
 ### 1.1 Check active task directories
 
 Inspect:

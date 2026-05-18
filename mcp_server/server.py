@@ -6,7 +6,10 @@ MCP) is configured to launch ``cartopian-mcp``, the operator can say
 "use cartopian" from any directory and the agent gets:
 
 - Prompts — one per skill in ``skills/``, plus a ``use_cartopian``
-  meta-prompt that orients the agent and routes it to the right skill.
+  entry-point prompt loaded from ``skills/use-cartopian.md``. It issues
+  an imperative startup contract: read the protocol, load the startup
+  runbook, select a project via the registry. It never inspects the
+  current working directory.
 - Tools — one per CLI subcommand in ``cli.main.SUBCOMMANDS``. Each tool
   invokes its handler in-process with stdout/stderr captured, parses
   NDJSON output back into structured records, and surfaces stderr
@@ -187,13 +190,11 @@ def _first_line_summary(path: Path, limit: int = 160) -> str:
 def list_prompts() -> List[Dict[str, Any]]:
     prompts: List[Dict[str, Any]] = [{
         "name": "use_cartopian",
-        "description": (
-            "Enter Cartopian PM mode. Orients the agent, lists the skill / "
-            "tool / resource surface, and routes to the right skill for the "
-            "operator's intent."
-        ),
+        "description": "Enter Cartopian PM mode — the startup entry point.",
     }]
     for path in _skill_paths():
+        if _skill_name(path) == "use_cartopian":
+            continue  # already listed as entry point above
         prompts.append({
             "name": _skill_name(path),
             "description": _first_line_summary(path),
@@ -202,35 +203,16 @@ def list_prompts() -> List[Dict[str, Any]]:
 
 
 def _use_cartopian_messages() -> List[Dict[str, Any]]:
-    skill_names = [_skill_name(p) for p in _skill_paths()]
-    tool_names = sorted(_tool_registry().keys())
+    skill_path = SKILL_DIR / "use-cartopian.md"
+    if skill_path.exists():
+        return _skill_messages(skill_path)
+    # Hard fallback if the skill file is missing
     text = (
-        "You have entered **Cartopian PM mode**. Cartopian is a "
-        "filesystem-first project governance protocol. For this conversation "
-        "you are the Project Manager unless the operator says otherwise.\n\n"
-        "## Surface available to you\n\n"
-        "**Prompts** — invoke as MCP prompts when the operator's intent maps "
-        "to a lifecycle skill:\n"
-        + "\n".join(f"- `{name}`" for name in skill_names)
-        + "\n\n**Tools** — invoke directly when you need structured data or "
-        "to mutate lifecycle state. Each tool wraps a Cartopian CLI "
-        "subcommand and returns NDJSON records:\n"
-        + "\n".join(f"- `{name}`" for name in tool_names)
-        + "\n\n**Resources** — read on demand:\n"
-        "- `cartopian://protocol/CONVENTIONS` — protocol contract\n"
-        "- `cartopian://skills/<name>` — every skill, readable\n"
-        "- `cartopian://templates/<name>` — every template\n"
-        "- `cartopian://project/<id>/STATE` / `REQUIREMENTS` / "
-        "`IMPLEMENTATION_PLAN` — per-project artifacts\n\n"
-        "## Default first move\n\n"
-        "Invoke the **`start_session`** prompt to resolve the current "
-        "project and propose the next PM action. If `discover_projects` "
-        "returns no rows, invoke **`init_project`** instead — the operator "
-        "has nothing to resume.\n\n"
-        "## Lifecycle authority\n\n"
-        "`cartopian://protocol/CONVENTIONS` is the contract for all "
-        "lifecycle actions (task movement, review verdicts, session state, "
-        "git behavior). Read it before any mutating action.\n"
+        "You are in **Cartopian PM mode**. Execute in order:\n"
+        "1. Read `cartopian://protocol/CONVENTIONS`.\n"
+        "2. Read `cartopian://skills/start_session`.\n"
+        "3. Do not inspect workspace or project files yet.\n"
+        "4. Call `discover_projects` and run Stage 0 of `start_session`."
     )
     return [{"role": "user", "content": {"type": "text", "text": text}}]
 

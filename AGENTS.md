@@ -9,8 +9,8 @@ Cartopian is a filesystem-first project governance protocol for AI-native develo
 - **Language:** Markdown (protocol documents, templates)
 - **Configuration:** TOML (`cartopian.toml` at workspace and project levels)
 - **Versioning:** Git-optional — controlled per project via `cartopian.toml`
-- **Runtime:** None. This is a protocol specification repo, not a software project.
-- **Dependency manifests:** None at the repo root.
+- **Runtime:** Python 3.11+ — `cli/` is the Core CLI dispatcher; `mcp_server/` is the JSON-RPC MCP server. Both use stdlib only; no third-party packages.
+- **Dependency manifests:** `pyproject.toml` at the repo root — declares Python ≥ 3.11 and no third-party dependencies. Supports `pip install -e .` for contributors; the standard install uses the file-copy flow in `scripts/install.py`.
 
 ## Project Structure
 
@@ -36,7 +36,8 @@ Cartopian is a filesystem-first project governance protocol for AI-native develo
 - **Plan reset discipline.** Requirements and implementation plans always reset between plans. Project standards and conventions carry forward only by explicit operator choice.
 - **`STATE.md` ceiling:** 5KB hard limit per project.
 - **Lifecycle authority:** Task movement, review verdicts, session state, and Git behavior are governed by `protocol/CONVENTIONS.md`.
-- **Session startup safety:** For vague PM startup requests such as "start working", "continue", or "check STATE.md", use `skills/start-session.md`. If more than one project exists and no project is specified, ask which project to use before reading or mutating project lifecycle artifacts. When this agent is PM for the selected project, read `STATE.md`, summarize the current/next protocol action, and ask whether to begin.
+- **Session startup safety:** For vague PM startup requests such as "start working", "continue", or "check STATE.md", use `skills/start-session.md`. If more than one project exists and no project is specified, ask which project to use before reading or mutating project lifecycle artifacts. When this agent is PM for the selected project, read `STATE.md`, briefly summarize the current/next protocol action, and suggest the most logical next step to move the project forward. Do NOT offer alternative work or introduce alternative steps; follow the plan.
+- **Protocol protection:** The PM is strictly forbidden from making changes to the cartopian codebase. The PM role is intended to work within designated project management directories only and may only CREATE/READ/UPDATE/DELETE MARKDOWN files. Use roles for other operations.
 
 ## Formatting & Linting
 
@@ -57,6 +58,7 @@ Cartopian is a filesystem-first project governance protocol for AI-native develo
 
 ## Roles & Assignment
 
+- Roles exist to be assigned, which means a PM who takes on the work rather than assigning it is undermining the entire system. The PM is NEVER allowed to make changes outside the project currently being managed. Assign those tasks to the correct roles.
 - Default roster: PM and Operator. Common example labels operators add are Coder and Reviewer, but role names are operator-chosen.
 - `[roles]` in `cartopian.toml` maps each role name to a one-line description. There is no `kind` field; whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block.
 - Role defaults live in `cartopian.toml`; project-level configs may override them.

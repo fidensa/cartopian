@@ -56,6 +56,20 @@ Read `STATE.md` and keep the summary short:
 
 Check task directories when `STATE.md` names a task state. The filesystem is authoritative if `STATE.md` disagrees with task directory placement. Surface the mismatch and refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency.
 
+Run a lifecycle and provenance audit using the Core CLI:
+
+```
+cartopian plan-audit <project-path>
+```
+
+If the audit exits non-zero, surface each blocker to the operator and stop. Do not proceed to Stage 3 while blockers exist.
+
+- **Missing artifact chain**: a task in `tasks/in-progress/` has no matching `prompts/PROMPT-NN-NNN.md`, or a task in `tasks/in-review/` has no matching `reviews/REVIEW-NN-NNN.md`. This indicates the task was moved without following the proper workflow.
+
+Surface any audit warnings to the operator before proceeding. In particular, `unattributed-work-root-changes` means Cartopian cannot link the current dirty work-root state to an active prompt chain; it is informational and does not by itself block lifecycle action.
+
+Resolve blockers with the operator before taking any lifecycle action.
+
 ---
 
 ## Stage 3 - Propose The Next Action

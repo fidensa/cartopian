@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "cartopian"
+version = "0.1.0"
+description = "AI-native project manager that lives in your filesystem"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+cartopian = "cli.main:main"
+cartopian-mcp = "mcp_server.server:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "mcp_server*"]
