@@ -16,14 +16,16 @@ Read `cartopian://skills/start_session` now. This is your active runbook for the
 
 ## Step 3 — Constraints until project is selected
 
-Do **not** inspect any of the following until a registered project is selected via the registry:
+This startup sequence is **registry-only**. It must work correctly from any directory, and the current working directory must not influence project selection.
 
-- The current working directory
-- Any local repository or workspace config files
-- Any local `AGENTS.md` file
-- Any project-level lifecycle artifacts
+Until a registered project is selected via the registry, do **not** read or infer context from:
 
-This startup sequence is **registry-only**. It must work correctly from any directory.
+- The current working directory itself (path, name, contents listing).
+- Any `AGENTS.md`, `CLAUDE.md`, `README.md`, or similar agent-instruction file in the current working directory or its ancestors. These describe whatever repository the operator happens to be in — including the Cartopian repo itself — not the Cartopian-governed project you are about to manage.
+- Any `cartopian.toml`, `.git/`, or other repo/workspace config discovered relative to the current working directory.
+- Any project-level lifecycle artifacts (`STATE.md`, `IMPLEMENTATION_PLAN.md`, `tasks/`, `prompts/`, `reports/`, etc.).
+
+Project context comes from the registry (`discover_projects` → `resolve_config <project>`), not from where the operator launched the agent.
 
 ## Step 4 — Begin project selection
 

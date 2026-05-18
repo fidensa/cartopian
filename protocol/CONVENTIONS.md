@@ -204,6 +204,19 @@ Report parsing outcomes are:
 
 The `[roles]` section in `cartopian.toml` maps each role name to a one-line description string. Role names are operator-chosen identifiers; descriptions explain what the role is responsible for so the PM can align tasks to roles during assignment.
 
+Roles exist to be assigned, which means a PM who takes on the work rather than assigning it is undermining the system. Assign work to role(s) with appropriate descriptions/permissions.
+
+### PM Scope
+
+The PM role is bounded to project-management authoring:
+
+- **Directory scope.** The PM may only read or mutate files inside the project directory currently being managed. It may not modify files outside that project — including sibling Cartopian-governed projects, the Cartopian protocol repository itself, or any unrelated repository the operator happens to have on disk.
+- **File-type scope.** Within the managed project, the PM may CREATE, READ, UPDATE, or DELETE markdown (`.md`) files only. All non-markdown work — source code, configuration, data files, build artifacts, executables — must be dispatched to another role via a handoff.
+- **Config is not a PM responsibility.** `cartopian.toml` is authored once at project initialization via `skills/init-project.md`, which invokes `cartopian generate-config`. After init, runtime config edits are operator-owned and happen outside the PM lifecycle; the PM may read effective config via `cartopian resolve-config` but never writes or mutates `cartopian.toml`.
+- **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
+
+These limits apply to every PM, whether dispatched automatically via `[handoffs.pm]` or acting manually.
+
 ```toml
 [roles]
 pm = "Plans phases, dispatches handoffs, integrates results."
