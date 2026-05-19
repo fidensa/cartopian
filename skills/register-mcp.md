@@ -125,7 +125,7 @@ On Windows, use the `.cmd` shim. Cursor must be restarted.
 
 ### Windsurf
 
-Windsurf needs two things: the MCP server registered globally, and a per-workspace slash-command workflow that maps the operator's "use cartopian" phrase onto the MCP `use_cartopian` prompt. Cascade does not auto-surface MCP prompts as slash commands — only files under `.windsurf/workflows/` map to slash commands — so MCP registration alone is insufficient.
+Windsurf needs two things: the MCP server registered globally, and a global slash-command workflow that maps the operator's "use cartopian" phrase onto the MCP `use_cartopian` prompt. Cascade does not auto-surface MCP prompts as slash commands — only files under a `workflows/` directory map to slash commands — so MCP registration alone is insufficient.
 
 **Step A — Register the MCP server (global).** Same `mcpServers` structure as Claude Desktop. Read and merge the config file.
 
@@ -144,9 +144,9 @@ Windsurf needs two things: the MCP server registered globally, and a per-workspa
 
 On Windows, use the `.cmd` shim. Windsurf must be restarted.
 
-**Step B — Install the `/use-cartopian` workflow (per-workspace).** Cascade workflows are workspace-scoped, so this step is repeated for each workspace where the operator wants `/use-cartopian` to be available.
+**Step B — Install the `/use-cartopian` workflow (global).** Install the workflow file once into Windsurf's global workflows directory so `/use-cartopian` is available in every Cascade session, regardless of workspace.
 
-For each workspace the operator names, copy the template:
+Copy the template:
 
 ```text
 <install_root>/templates/clients/windsurf/use-cartopian.md
@@ -154,11 +154,10 @@ For each workspace the operator names, copy the template:
 
 into:
 
-```text
-<workspace>/.windsurf/workflows/use-cartopian.md
-```
+**macOS/Linux:** `~/.codeium/windsurf/workflows/use-cartopian.md`  
+**Windows:** `%APPDATA%\Windsurf\workflows\use-cartopian.md`
 
-Create `.windsurf/workflows/` if it does not exist. Do not modify the template content during the copy — operators can tune it in place afterward. After the file is in place, the operator can type `/use-cartopian` from Cascade in that workspace to enter Cartopian PM mode; saying "use cartopian" in natural language is best-effort and depends on Cascade's prompt routing, so the slash form is the contract.
+Create the `workflows/` directory if it does not exist. Do not modify the template content during the copy — operators can tune it in place afterward. After the file is in place, the operator can type `/use-cartopian` from Cascade to enter Cartopian PM mode; saying "use cartopian" in natural language is best-effort and depends on Cascade's prompt routing, so the slash form is the contract.
 
 ### Other agents
 
@@ -177,11 +176,11 @@ Report:
 - Each agent already registered (no change made).
 - Each agent newly registered in this run.
 - Each agent that requires a restart before "use cartopian" will work (Claude Desktop, Cursor, Windsurf).
-- For Windsurf: list each workspace where the `/use-cartopian` workflow file was installed (Step B), and remind the operator that this step must be repeated for any additional workspaces.
+- For Windsurf: confirm the global `/use-cartopian` workflow file was installed (Step B) and note that no per-workspace setup is needed.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
 After registration, the operator can open any registered agent and say:
 
 > use cartopian
 
-The agent's MCP client will launch `cartopian-mcp`, which loads PM mode and routes to the first useful action. In Windsurf, the operator types `/use-cartopian` (slash-command form) from any workspace where Step B has been completed.
+The agent's MCP client will launch `cartopian-mcp`, which loads PM mode and routes to the first useful action. In Windsurf, the operator types `/use-cartopian` (slash-command form) from any Cascade session once Step B has been completed.
