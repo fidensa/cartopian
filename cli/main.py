@@ -31,6 +31,8 @@ SUBCOMMANDS: List[str] = [
     "list-tasks",
     # FR-014 aggregator
     "next-action",
+    # FR-003 aggregator
+    "handoff-packet",
     # lifecycle + provenance audit
     "plan-audit",
 ]
@@ -83,6 +85,7 @@ def _real_handlers():
         delete_report,
         discover_projects,
         generate_config,
+        handoff_packet,
         list_tasks,
         move_task,
         next_action,
@@ -101,6 +104,7 @@ def _real_handlers():
         "delete-report": (delete_report.configure_parser, delete_report.handler),
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
         "generate-config": (generate_config.configure_parser, generate_config.handler),
+        "handoff-packet": (handoff_packet.configure_parser, handoff_packet.handler),
         "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
         "next-action": (next_action.configure_parser, next_action.handler),
