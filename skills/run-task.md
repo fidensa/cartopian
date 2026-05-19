@@ -70,6 +70,7 @@ The prompt must be directed at the assignee and include:
 - Absolute expected review path, when applicable.
 - Absolute report template path.
 - Task goal, context, acceptance criteria, scope boundaries, and test gate.
+- A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When `git.pm_owns_product_branches = true` and the task declares one or more `Work root:` names, a reminder that assignees do not stage, commit, push, branch, open PRs, merge, or otherwise perform product-repo git plumbing.
 
@@ -163,6 +164,11 @@ The review prompt must include absolute paths to:
 - Absolute path(s) for the declared work root(s), if any.
 - Relevant implementation evidence.
 - The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
+
+The review prompt must also include:
+
+- A reminder that reviewers do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files. If the spec is wrong, ambiguous, or contradicts the implementation, the reviewer records the finding in the review file (and verdict accordingly) rather than rewriting the spec to match what was built.
+- A reminder that reviewers do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 
 After task completion evidence has been captured in the review prompt, task file, or review context, remove any stale review handoff report using the Core CLI when issuing a distinct review handoff that expects the same report path:
 

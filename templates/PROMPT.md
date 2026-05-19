@@ -45,6 +45,7 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 <Scope boundaries. Non-goals.>
 
+- Do not modify spec, task, phase, or prompt files. Only the PM edits Cartopian protocol files. If the spec, task, or this prompt is wrong, ambiguous, or insufficient, stop and report it as a blocker in the completion report rather than rewriting the protocol file to match what you built.
 - Do not move Cartopian task files between status directories.
 - Do not delete prompt files.
 - Do not rewrite `STATE.md` or perform PM lifecycle cleanup.

@@ -1,9 +1,11 @@
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from typing import Dict
 
 from tests.scaffold import project_scaffold
 
@@ -31,6 +33,24 @@ def _run(task_path: str, home: Path):
         text=True,
         env=env,
     )
+
+
+def _snapshot_tree(root: Path) -> Dict[str, str]:
+    """Capture a hash of every file plus a marker for every directory under ``root``.
+
+    Used by the read-only invariant test to detect any filesystem mutation
+    caused by ``task-bundle`` invocation (NFR-001).
+    """
+    snap: Dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        rel = str(path.relative_to(root))
+        if path.is_symlink():
+            snap[rel] = f"<symlink:{os.readlink(path)}>"
+        elif path.is_file():
+            snap[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        elif path.is_dir():
+            snap[rel + "/"] = "<dir>"
+    return snap
 
 
 def _parse_single_record(result):
@@ -200,6 +220,115 @@ class TestTaskBundleMissingConfig(unittest.TestCase):
             )
             result = _run(str(task_path), scaffold.root)
         self.assertEqual(result.returncode, 3, msg=f"stderr={result.stderr!r}")
+
+
+class TestTaskBundleUnmetReadiness(unittest.TestCase):
+    """Blocked-by task not in done/ must set ready=false and surface an explanation."""
+
+    def test_blocked_by_open_marks_not_ready_with_blocker_reason(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            scaffold.write("IMPLEMENTATION_PLAN.md", "P01-BUILD-002\n")
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write(
+                "tasks/open/TASK-01-001-prereq.md",
+                "# TASK-01-001: Prereq\n",
+            )
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-002-example.md",
+                (
+                    "# TASK-01-002: Example\n\n"
+                    "Phase: PHASE-01-foundation\n"
+                    "Plan ref: P01-BUILD-002\n"
+                    "Work root: tool-repo\n"
+                    "Assignee: coder\n"
+                    "Spec: none\n"
+                    "Depends on: n/a\n"
+                    "Blocked by: TASK-01-001\n"
+                    "Created: 2026-05-18\n"
+                    "Evidence gate: required\n\n"
+                    "## Goal\n\nGoal.\n\n"
+                    "## Acceptance\n\n"
+                    "- [ ] Example acceptance.\n"
+                ),
+            )
+            result = _run(str(task_path), scaffold.root)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertFalse(record["ready"])
+        self.assertTrue(
+            any("blocked-by-complete" in b for b in record["validator_blockers"]),
+            msg=f"expected blocked-by-complete blocker, got {record['validator_blockers']!r}",
+        )
+        self.assertTrue(
+            any("TASK-01-001" in b for b in record["validator_blockers"]),
+            msg=f"expected TASK-01-001 mentioned in blockers, got {record['validator_blockers']!r}",
+        )
+        self.assertEqual(
+            record["dependencies"],
+            [
+                {
+                    "task_id": "TASK-01-001",
+                    "title": "TASK-01-001: Prereq",
+                    "path": str(
+                        (scaffold.project_root / "tasks" / "open" / "TASK-01-001-prereq.md").resolve()
+                    ),
+                    "status": "open",
+                }
+            ],
+        )
+
+
+class TestTaskBundleReadOnly(unittest.TestCase):
+    """NFR-001: task-bundle must not mutate the project tree."""
+
+    def test_invocation_leaves_fixture_tree_unchanged(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            scaffold.write("IMPLEMENTATION_PLAN.md", "P01-BUILD-002\n")
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("specs/SPEC-01-001-demo.md", "# Demo Spec\n")
+            scaffold.write(
+                "tasks/done/TASK-01-001-prereq.md",
+                "# TASK-01-001: Prereq\n",
+            )
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-002-example.md",
+                (
+                    "# TASK-01-002: Example\n\n"
+                    "Phase: PHASE-01-foundation\n"
+                    "Plan ref: P01-BUILD-002\n"
+                    "Work root: tool-repo\n"
+                    "Assignee: coder\n"
+                    "Spec: SPEC-01-001-demo.md\n"
+                    "Depends on: n/a\n"
+                    "Blocked by: TASK-01-001\n"
+                    "Created: 2026-05-18\n"
+                    "Evidence gate: required\n\n"
+                    "## Goal\n\nGoal.\n\n"
+                    "## Acceptance\n\n"
+                    "- [ ] Example acceptance.\n"
+                ),
+            )
+            before = _snapshot_tree(scaffold.root)
+            result = _run(str(task_path), scaffold.root)
+            after = _snapshot_tree(scaffold.root)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(
+            before,
+            after,
+            msg="task-bundle invocation mutated the fixture tree (NFR-001 violation)",
+        )
 
 
 if __name__ == "__main__":
