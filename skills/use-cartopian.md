@@ -33,6 +33,6 @@ Call `discover_projects` now. Follow Stage 0 of `start_session` exactly:
 
 - **One project registered** — select it automatically and name it to the operator.
 - **Multiple projects registered** — list them by ID and ask the operator to choose; pause until a choice is made.
-- **No projects registered** — stop and run `init project` to scaffold and register a project first.
+- **No projects registered** — stop and invoke the `init_project` prompt (the `init project` skill) to scaffold and register a project first.
 
 Do not advance to Stage 1 of `start_session` until a project is selected and confirmed.
