@@ -55,6 +55,55 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 self.assertIn(field, rec, msg=f"missing field: {field}")
 
 
+class TestNextActionHappyPath(unittest.TestCase):
+    """Happy-path test: valid project fixture → all FR-001 fields populated."""
+
+    def test_all_fr001_fields_populated(self) -> None:
+        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n\n[handoffs.pm]\nagent = "pm-agent"\n'
+        state_md = (
+            "# test-proj — State\n\n"
+            "## Current phase\n\nPHASE-01-foundation\n\n"
+            "## Active work\n\nTASK-01-001 (build) is `in-progress`\n\n"
+            "## Open Questions\n\nNone.\n"
+        )
+        with project_scaffold(cartopian_toml=toml, state_md=state_md) as scaffold:
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write(
+                "tasks/in-progress/TASK-01-001-build.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+            )
+            scaffold.write(
+                "tasks/open/TASK-01-002-pending.md",
+                "# TASK-01-002: pending\n\nPhase: PHASE-01-foundation\n",
+            )
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(records), 1)
+            rec = records[0]
+
+            self.assertEqual(rec["project_id"], "test-proj")
+            self.assertEqual(rec["project_path"], str(scaffold.project_root.resolve()))
+            self.assertEqual(rec["phase_id"], "PHASE-01-foundation")
+
+            self.assertIsNotNone(rec["active_task"])
+            self.assertEqual(rec["active_task"]["id"], "TASK-01-001")
+            self.assertEqual(rec["active_task"]["status"], "in-progress")
+            self.assertIn("TASK-01-001", rec["active_task"]["title"])
+            self.assertTrue(rec["active_task"]["path"].endswith("TASK-01-001-build.md"))
+
+            self.assertIsNotNone(rec["next_open_task"])
+            self.assertEqual(rec["next_open_task"]["id"], "TASK-01-002")
+            self.assertIn("TASK-01-002", rec["next_open_task"]["title"])
+            self.assertTrue(rec["next_open_task"]["path"].endswith("TASK-01-002-pending.md"))
+
+            self.assertEqual(rec["pm_role"], "Plans the work.")
+            self.assertEqual(rec["pm_dispatch_kind"], "automated")
+
+            self.assertEqual(rec["blockers"], [])
+            self.assertIsNone(rec["state_filesystem_disagreement"])
+
+
 class TestNextActionNullables(unittest.TestCase):
     def test_nullables_are_none_on_empty_project(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:

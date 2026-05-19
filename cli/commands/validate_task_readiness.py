@@ -124,7 +124,7 @@ def _check_plan_ref(project_root: Path, headers: Dict[str, str]) -> Dict[str, An
 
 def _check_blocked_by(project_root: Path, headers: Dict[str, str]) -> Dict[str, Any]:
     raw = headers.get("Blocked by", "").strip()
-    if not raw or raw == "n/a":
+    if not raw or raw.lower() in {"n/a", "none"}:
         return {"name": "blocked-by-complete", "pass": True, "reason": None}
     items = _split_csv(raw)
     done_dir = project_root / "tasks" / "done"

@@ -238,6 +238,26 @@ class TestBlockedByComplete(unittest.TestCase):
         check = next(c for c in record["checks"] if c["name"] == "blocked-by-complete")
         self.assertTrue(check["pass"])
 
+    def test_blocked_by_none_sentinel_passes(self):
+        # The TASK template documents `Blocked by: <... | none>`, so `none`
+        # must be treated as the no-blockers sentinel — not a literal task id.
+        for sentinel in ("none", "None", "NONE", "n/a"):
+            with self.subTest(sentinel=sentinel):
+                with _Sandbox() as sb:
+                    sb.make()
+                    task = sb.write_task(
+                        "TASK-01-007-x.md",
+                        _task_body(blocked_by=sentinel),
+                    )
+                    result = _run(str(task), home=sb.home)
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                record = _parse_single_record(result)
+                check = next(
+                    c for c in record["checks"] if c["name"] == "blocked-by-complete"
+                )
+                self.assertTrue(check["pass"], msg=check)
+                self.assertIsNone(check["reason"])
+
 
 class TestEvidenceGateValid(unittest.TestCase):
     def test_post_dec002_required_passes(self):

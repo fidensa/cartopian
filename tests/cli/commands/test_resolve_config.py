@@ -184,7 +184,10 @@ class TestMissingProjectConfig(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(
             result.stderr.rstrip("\n"),
-            f"[guard] not a Cartopian project: {sb.project.resolve() / 'cartopian.toml'} has no [project] table",
+            f"[guard] {sb.project.resolve() / 'cartopian.toml'} is a Cartopian workspace config, "
+            "not a project config. "
+            "Run `cartopian discover-projects` (or call the `discover_projects` MCP tool) "
+            "to list registered projects, then pass a project id or absolute path to this command.",
         )
 
 
