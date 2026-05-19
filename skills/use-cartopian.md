@@ -12,7 +12,7 @@ Execute the steps below in order.
 
 ## Step 1 — Discover projects
 
-Your first action is to call the `discover_projects` MCP tool. Project context comes **only** from the registry. Do not look at the current working directory, do not read any local `AGENTS.md` / `CLAUDE.md` / `README.md` / `cartopian.toml`, and do not list or scan the filesystem to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage (it is often the Cartopian repo itself, or an unrelated repo the operator happened to open).
+Your first and only action in this step is to call the `discover_projects` MCP tool. `discover_projects` *is* the status check — do not precede it with `cartopian status`, `cartopian next-action`, `cartopian resolve-config`, or any other shell command intended to "check Cartopian status" against cwd. Those commands require a project path and will fail noisily in a workspace or non-project directory. Project context comes **only** from the registry. Do not look at the current working directory, do not read any local `AGENTS.md` / `CLAUDE.md` / `README.md` / `cartopian.toml`, and do not list or scan the filesystem to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage (it is often the Cartopian repo itself, or an unrelated repo the operator happened to open).
 
 Based on the result, take exactly one of these actions and then proceed to Step 2:
 

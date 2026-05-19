@@ -60,11 +60,20 @@ class _CliError(Exception):
 
 def _require_project_table(project_cfg: Dict[str, Any], project_toml: Path) -> Dict[str, Any]:
     if "project" not in project_cfg:
-        raise _CliError(
-            EXIT_FAIL,
-            "guard",
-            f"not a Cartopian project: {project_toml} has no [project] table",
-        )
+        looks_like_workspace = any(key in project_cfg for key in ("defaults", "roles", "handoffs", "workspace"))
+        if looks_like_workspace:
+            hint = (
+                f"{project_toml} is a Cartopian workspace config, not a project config. "
+                "Run `cartopian discover-projects` (or call the `discover_projects` MCP tool) "
+                "to list registered projects, then pass a project id or absolute path to this command."
+            )
+        else:
+            hint = (
+                f"not a Cartopian project: {project_toml} has no [project] table. "
+                "Run `cartopian discover-projects` to see registered projects, "
+                "or run `cartopian scaffold-project` / the `init project` skill to create one."
+            )
+        raise _CliError(EXIT_FAIL, "guard", hint)
     project_table = project_cfg["project"]
     if not isinstance(project_table, dict):
         raise _CliError(
