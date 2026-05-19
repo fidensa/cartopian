@@ -12,13 +12,15 @@ Execute the steps below in order.
 
 ## Step 1 — Discover projects
 
-Your first action is to call the `discover_projects` MCP tool. Project context comes from the registry, not from the current working directory — do not infer the project from cwd or from any local `AGENTS.md`, `CLAUDE.md`, or `README.md`. Those describe whichever repository the operator happens to be in (often the Cartopian repo itself), not the project you will manage.
+Your first action is to call the `discover_projects` MCP tool. Project context comes **only** from the registry. Do not look at the current working directory, do not read any local `AGENTS.md` / `CLAUDE.md` / `README.md` / `cartopian.toml`, and do not list or scan the filesystem to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage (it is often the Cartopian repo itself, or an unrelated repo the operator happened to open).
 
-Based on the result:
+Based on the result, take exactly one of these actions and then proceed to Step 2:
 
-- **One project registered** — select it and name it to the operator.
-- **Multiple projects registered** — list them by `id` and ask the operator which to use; pause until they choose.
-- **No projects registered** — stop and run the `init_project` skill to scaffold and register a project first.
+- **One project registered** — select it. Name it to the operator and proceed. A mismatch between the project's path and cwd is **not** a reason to skip it, scan cwd, or offer alternatives — the registry is authoritative. If the operator wants a different project, they will say so after you name it.
+- **Multiple projects registered** — list them by `id` and ask the operator which to use; pause until they choose. Do not pre-filter the list by cwd.
+- **No projects registered** — stop and run the `init_project` skill to scaffold and register a project first. Only in this case may you consider cwd, and only as a candidate location to propose to the operator.
+
+Do not call `resolve_config`, `generate_config`, `next_action`, or any other tool against cwd-derived paths in this step. The only tool you call here is `discover_projects`.
 
 ## Step 2 — Load the lifecycle contract and runbook
 

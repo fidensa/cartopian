@@ -16,15 +16,17 @@ Use this skill when the operator gives a project-agnostic startup direction such
 
 ## Stage 0 - Select Project
 
-Project selection is registry-only. Use the Core CLI to enumerate and resolve the target project:
+Project selection is registry-only. The registry is authoritative — do not consult cwd or local config files (`cartopian.toml`, `AGENTS.md`, `CLAUDE.md`, `README.md`) to confirm, override, or filter the registry result. A registered project whose `path` differs from cwd is still the correct selection; cwd mismatch is not a reason to skip it or offer alternatives.
+
+Use the Core CLI to enumerate and resolve the target project:
 
 1. Enumerate registered projects via `cartopian discover-projects`. This emits NDJSON records with `id`, `path`, and `label`.
 2. If the operator named a registered `id` or absolute `path`, select that project.
 3. If exactly one project is registered, select it and name it to the operator.
 4. If more than one project is registered and none was selected, list the registered IDs and ask the operator to choose one; pause until a choice is made.
-5. If no projects are registered, stop and run `init project` to scaffold, generate config, and register a project.
+5. If no projects are registered, stop and run `init project` to scaffold, generate config, and register a project. Only in this case may cwd be proposed as a candidate scaffold location.
 
-Do not read or mutate project-specific lifecycle artifacts until a registered project is selected.
+Do not read or mutate project-specific lifecycle artifacts, and do not call `resolve-config` or `plan-audit`, until a registered project is selected.
 
 ---
 
