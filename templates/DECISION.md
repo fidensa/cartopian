@@ -1,6 +1,8 @@
 # DEC-NNN: <short descriptive title>
 
-Date: YYYY-MM-DD Status: locked | open Supersedes: <DEC-NNN | none>
+Date: YYYY-MM-DD
+Status: <locked | open>
+Supersedes: <DEC-NNN | none>
 
 ## Context
 

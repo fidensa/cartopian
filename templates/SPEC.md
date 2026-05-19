@@ -1,6 +1,10 @@
 # SPEC-NN-NNN: <short noun-phrase title>
 
-Status: draft | locked Author: <name or role> Reviewer: <name or role> Date: YYYY-MM-DD Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
+Status: <draft | locked>
+Author: <name or role>
+Reviewer: <name or role>
+Date: YYYY-MM-DD
+Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
 
 ## Problem
 

@@ -1,6 +1,14 @@
 # TASK-NN-NNN: <short imperative title>
 
-Phase: PHASE-NN-slug Plan ref: PNN-KIND-NNN Work root: <name | name, name | n/a> Assignee: <free text; decided per task> Spec: <SPEC-NN-NNN-slug.md | none> Depends on: <TASK-NN-NNN, TASK-NN-NNN | none> Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none> Created: YYYY-MM-DD Evidence gate: <required | n/a>
+Phase: PHASE-NN-slug
+Plan ref: PNN-KIND-NNN
+Work root: <name | name, name | n/a>
+Assignee: <free text; decided per task>
+Spec: <SPEC-NN-NNN-slug.md | none>
+Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
+Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none>
+Created: YYYY-MM-DD
+Evidence gate: <required | n/a>
 
 ## Goal
 

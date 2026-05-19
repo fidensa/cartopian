@@ -13,7 +13,7 @@ from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
 _WORK_ROOT_RE = re.compile(r"^Work root:\s*(.+)$", re.MULTILINE)
-_VERDICT_RE = re.compile(r"^Verdict:\s*(.+)$", re.MULTILINE)
+_VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
 
 

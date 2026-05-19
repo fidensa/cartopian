@@ -25,7 +25,7 @@ DISALLOWED: Dict[Tuple[str, str], str] = {
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
-_VERDICT_RE = re.compile(r"^Verdict:\s*(.+)$", re.MULTILINE)
+_VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 
 
 def _stderr(prefix: str, msg: str) -> None:

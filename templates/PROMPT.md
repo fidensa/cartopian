@@ -1,6 +1,9 @@
 # TASK-NN-NNN: <title>
 
-Plan ref: PNN-KIND-NNN Work root: <name | name, name | n/a> Branch: <branch or n/a> Spec: <SPEC-NN-NNN-slug.md or none>
+Plan ref: PNN-KIND-NNN
+Work root: <name | name, name | n/a>
+Branch: <branch or n/a>
+Spec: <SPEC-NN-NNN-slug.md or none>
 
 ## Paths
 
