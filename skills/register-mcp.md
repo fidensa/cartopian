@@ -35,6 +35,7 @@ Check for the presence of each supported agent using the platform-appropriate si
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/` dir exists | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
 | Windsurf | `~/.codeium/windsurf/` dir exists | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Windsurf\mcp_config.json` |
+| Devin | `devin` on PATH **or** config file exists | `~/.config/devin/config.json` | `%APPDATA%\devin\config.json` |
 
 For Claude Code: run `claude mcp list` and check for a `cartopian` entry to determine registration status.
 
@@ -57,6 +58,7 @@ Claude Code     present — not registered
 Claude Desktop  present — already registered
 Cursor          not detected
 Windsurf        present — not registered
+Devin           present — not registered
 ```
 
 Ask:
@@ -176,6 +178,36 @@ into:
 
 Create the `workflows/` directory if it does not exist. Do not modify the template content during the copy — operators can tune it in place afterward. After the file is in place, the operator can type `/use-cartopian` from Cascade to enter Cartopian PM mode; saying "use cartopian" in natural language is best-effort and depends on Cascade's prompt routing, so the slash form is the contract.
 
+### Devin
+
+Same `mcpServers` structure as Claude Desktop. Read the config file; if it does not exist, create the parent directory (`~/.config/devin/` on Unix or `%APPDATA%\devin\` on Windows) and write a fresh `{}` first. Merge the `cartopian` entry under `mcpServers`, preserving every existing top-level key and every existing sibling under `mcpServers` — Devin stores other settings in this same file and a clobbering write would lose them.
+
+**macOS/Linux:** `~/.config/devin/config.json`  
+**Windows:** `%APPDATA%\devin\config.json`
+
+```json
+{
+  "mcpServers": {
+    "cartopian": {
+      "command": "<install_root>/bin/cartopian-mcp"
+    }
+  }
+}
+```
+
+**Windows — use the `.cmd` shim and escape backslashes:**
+```json
+{
+  "mcpServers": {
+    "cartopian": {
+      "command": "<installRoot>\\bin\\cartopian-mcp.cmd"
+    }
+  }
+}
+```
+
+Write the merged document back atomically (write to a sibling temp file in the same directory, then rename over the original) so a crash mid-write cannot leave Devin with a truncated config. Devin must be restarted before the new server is available.
+
 ### Other agents
 
 If the operator names an agent not covered above, provide the registration facts and direct them to that agent's MCP documentation:
@@ -192,7 +224,7 @@ Report:
 
 - Each agent already registered (no change made).
 - Each agent newly registered in this run.
-- Each agent that requires a restart before "use cartopian" will work (Codex, Claude Desktop, Cursor, Windsurf).
+- Each agent that requires a restart before "use cartopian" will work (Codex, Claude Desktop, Cursor, Windsurf, Devin).
 - For Windsurf: confirm the global `/use-cartopian` workflow file was installed (Step B) and note that no per-workspace setup is needed.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 

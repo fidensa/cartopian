@@ -68,7 +68,7 @@ The file refresh in Step 5 does not touch any agent's MCP config. New supported 
 
 Ask the operator:
 
-> Want me to check your agent registrations and repair any that are missing? This will look at each supported agent (Claude Code, Codex, Claude Desktop, Cursor, Windsurf), show you what's registered, and only change configs you approve.
+> Want me to check your agent registrations and repair any that are missing? This will look at each supported agent (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Devin), show you what's registered, and only change configs you approve.
 
 If no, skip to Step 7.
 
