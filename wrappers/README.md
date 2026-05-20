@@ -25,6 +25,10 @@ These wrappers fix that. They accept a prompt path, read the prompt file, and ca
 
 ### Step 1: Put the wrappers on your PATH
 
+If Cartopian was installed via `install-cartopian.md`, the installer already added the platform-appropriate wrapper directory to your user PATH (`$install_root/wrappers/bin` on Unix, `$installRoot\wrappers\ps1` on Windows) alongside `bin/`. Open a new terminal and skip to Step 2.
+
+If you're running the wrappers from a source checkout (no install root yet), add the directory manually:
+
 **macOS / Linux / WSL (bash or zsh):**
 
 ```bash

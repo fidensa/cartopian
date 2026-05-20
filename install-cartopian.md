@@ -2,7 +2,7 @@
 
 Walk an operator through installing (or upgrading) Cartopian using only their AI agent. The agent does the work; the operator only approves. No git knowledge required.
 
-**Output:** Cartopian copied to the install root (default: `~/.cartopian/` on macOS / Linux / WSL, `%USERPROFILE%\.cartopian\` on native Windows — or wherever the operator's `--prefix` points), `bin/` added to the user PATH, `cartopian --help` exits 0 on every supported platform (via the shipped `bin/cartopian.cmd` shim on native Windows), the Cartopian MCP server is registered with the operator's agent so they can say "use cartopian" from any directory, and `VERSION` at the install root records the installed git ref.
+**Output:** Cartopian copied to the install root (default: `~/.cartopian/` on macOS / Linux / WSL, `%USERPROFILE%\.cartopian\` on native Windows — or wherever the operator's `--prefix` points), `bin/` and the platform-appropriate wrapper directory (`wrappers/bin` on Unix, `wrappers\ps1` on Windows) added to the user PATH, `cartopian --help` exits 0 on every supported platform (via the shipped `bin/cartopian.cmd` shim on native Windows), the agent wrappers (`cartopian-codex`, `cartopian-claude`, `cartopian-devin`, `cartopian-gemini`) resolve as bare commands, the Cartopian MCP server is registered with the operator's agent so they can say "use cartopian" from any directory, and `VERSION` at the install root records the installed git ref.
 
 ---
 
@@ -116,7 +116,10 @@ Write the resolved ref from Step 3 to `$install_root/VERSION` (one line, no trai
 
 ### Step 7 — Patch the user PATH
 
-Add `$install_root/bin` to the operator's user PATH. On Unix this lets the bare command `cartopian` resolve via the shebang on `bin/cartopian`. On native Windows it lets PowerShell resolve `cartopian` to the shipped `bin/cartopian.cmd` shim, which forwards to the Python entrypoint.
+Add two entries to the operator's user PATH:
+
+1. `$install_root/bin` — exposes the bare commands `cartopian` and `cartopian-mcp`. On Unix this resolves via the shebang on `bin/cartopian`; on native Windows PowerShell finds `bin\cartopian.cmd` via the default `PATHEXT`.
+2. The platform-appropriate wrapper directory — exposes the bare agent CLI wrappers (`cartopian-codex`, `cartopian-claude`, `cartopian-devin`, `cartopian-gemini`) used by the PM handoff contract. The wrappers are platform-specific scripts: `$install_root/wrappers/bin` ships bash wrappers (Unix), `$installRoot\wrappers\ps1` ships PowerShell wrappers (Windows). Without this entry, `cartopian.toml` would have to reference each wrapper by absolute path.
 
 **Unix (zsh / bash):**
 
@@ -124,26 +127,33 @@ Append to the operator's rc file (`~/.zshrc` for zsh, `~/.bashrc` for bash) only
 
 ```
 # Cartopian (default install root shown; substitute the --prefix path if used)
-export PATH="$HOME/.cartopian/bin:$PATH"
+export PATH="$HOME/.cartopian/bin:$HOME/.cartopian/wrappers/bin:$PATH"
 ```
 
 Tell the operator they need to `source` the rc file or open a new terminal for the change to take effect.
 
 **Windows (native PowerShell):**
 
-Update the user's persistent PATH via the registry-backed `[Environment]` API. Read the current value, add `$installRoot\bin` at the front only if absent, write it back:
+Update the user's persistent PATH via the registry-backed `[Environment]` API. Read the current value, add both `$installRoot\bin` and `$installRoot\wrappers\ps1` at the front only if absent, write it back:
 
 ```powershell
-$bin = Join-Path $installRoot "bin"   # $installRoot was set in Step 5
+$bin     = Join-Path $installRoot "bin"             # $installRoot was set in Step 5
+$wrapBin = Join-Path $installRoot "wrappers\ps1"    # PowerShell wrappers for Windows
 $current = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($current -split ";") -notcontains $bin) {
-  [Environment]::SetEnvironmentVariable("Path", "$bin;$current", "User")
+$parts   = $current -split ";"
+$prepend = @()
+foreach ($p in @($bin, $wrapBin)) {
+  if ($parts -notcontains $p) { $prepend += $p }
+}
+if ($prepend.Count -gt 0) {
+  $new = ($prepend -join ";") + ";" + $current
+  [Environment]::SetEnvironmentVariable("Path", $new, "User")
 }
 ```
 
 Tell the operator to open a new terminal — existing sessions won't see the change.
 
-**Unrecognized shell:** print the exact line and tell the operator where to add it.
+**Unrecognized shell:** print the exact lines and tell the operator where to add them.
 
 ### Step 8 — Clean up the tempdir
 
@@ -181,7 +191,7 @@ Point the operator at the install verification checklist: `$install_root/protoco
 
 Run `skills/register-mcp.md`. The install root `$install_root` is already resolved from Step 5 — pass it so Stage 0 of that skill is skipped.
 
-`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate registration recipe for each agent the operator selects. It covers Claude Code, Claude Desktop, Cursor, Windsurf, and any other agent via a generic fallback.
+`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate registration recipe for each agent the operator selects. It covers Claude Code, Codex, Claude Desktop, Cursor, Windsurf, and any other agent via a generic fallback.
 
 ### Step 11 — Summarize
 
@@ -189,7 +199,7 @@ Print:
 
 - Installed ref (from Step 3).
 - Install root (`$install_root`, including any `--prefix` override).
-- PATH entry added (or "already present").
+- PATH entries added (or "already present") — `bin/` plus the wrappers directory.
 - `cartopian --help` exit status and MCP `initialize` probe result (from Step 9).
 - MCP server registered with: <agents the operator chose in Step 10>.
 - **Entry point**: tell the operator, in plain language, that they can now open any registered agent in any directory and say "use cartopian" to enter Cartopian PM mode. The agent will load the `use_cartopian` prompt, which briefs it on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).

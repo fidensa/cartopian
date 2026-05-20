@@ -31,11 +31,14 @@ Check for the presence of each supported agent using the platform-appropriate si
 | Agent | Detection signal | Config file (macOS/Linux) | Config file (Windows) |
 | --- | --- | --- | --- |
 | Claude Code | `claude` on PATH | n/a — uses CLI | n/a — uses CLI |
+| Codex | `codex` on PATH | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/` dir exists | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
 | Windsurf | `~/.codeium/windsurf/` dir exists | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Windsurf\mcp_config.json` |
 
 For Claude Code: run `claude mcp list` and check for a `cartopian` entry to determine registration status.
+
+For Codex: run `codex mcp list` and check for a `cartopian` entry to determine registration status. (The underlying store is `~/.codex/config.toml` under `[mcp_servers.cartopian]`, but the CLI is the supported interface.)
 
 For JSON-config agents: read the file (if it exists) and check for `mcpServers.cartopian`.
 
@@ -75,6 +78,20 @@ claude mcp add cartopian "$install_root/bin/cartopian-mcp" --scope user
 ```
 
 Verify with `claude mcp list`. The entry must show `cartopian` pointing at the install root's `bin/cartopian-mcp`. No restart required — takes effect immediately.
+
+### Codex
+
+```bash
+codex mcp add cartopian -- "$install_root/bin/cartopian-mcp"
+```
+
+**Windows (PowerShell) — use the `.cmd` shim:**
+
+```powershell
+codex mcp add cartopian -- "$installRoot\bin\cartopian-mcp.cmd"
+```
+
+Verify with `codex mcp list`. The entry must show `cartopian` pointing at the install root's `bin/cartopian-mcp` (Unix) or `bin\cartopian-mcp.cmd` (Windows). Codex reads `~/.codex/config.toml` at launch; existing Codex sessions need to be restarted before the new server is available.
 
 ### Claude Desktop
 
@@ -175,7 +192,7 @@ Report:
 
 - Each agent already registered (no change made).
 - Each agent newly registered in this run.
-- Each agent that requires a restart before "use cartopian" will work (Claude Desktop, Cursor, Windsurf).
+- Each agent that requires a restart before "use cartopian" will work (Codex, Claude Desktop, Cursor, Windsurf).
 - For Windsurf: confirm the global `/use-cartopian` workflow file was installed (Step B) and note that no per-workspace setup is needed.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
