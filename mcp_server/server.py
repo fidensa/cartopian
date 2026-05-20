@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import subprocess
 import sys
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -43,7 +44,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "cartopian"
-SERVER_VERSION = "0.1.0"
 
 # JSON-RPC error codes (per spec + MCP extensions).
 ERR_PARSE = -32700
@@ -143,6 +143,39 @@ def _resolve_install_root() -> Path:
 
 
 ROOT = _resolve_install_root()
+
+
+def _read_installed_version(root: Path) -> Optional[str]:
+    """Return the installed Cartopian ref from ``<root>/VERSION`` if present."""
+    version_path = root / "VERSION"
+    try:
+        value = version_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def _read_git_version(root: Path) -> Optional[str]:
+    """Return ``git describe`` output for developer checkouts when available."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "describe", "--tags", "--always", "--dirty"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = proc.stdout.strip()
+    return value or None
+
+
+def _server_version() -> str:
+    """Return the Cartopian release/ref this MCP server was loaded from."""
+    return _read_installed_version(ROOT) or _read_git_version(ROOT) or "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +678,7 @@ def read_resource(uri: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _server_info() -> Dict[str, Any]:
-    return {"name": SERVER_NAME, "version": SERVER_VERSION}
+    return {"name": SERVER_NAME, "version": _server_version()}
 
 
 def _capabilities() -> Dict[str, Any]:

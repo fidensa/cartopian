@@ -65,9 +65,28 @@ class TestInitializeHandshake(unittest.TestCase):
         result = response["result"]
         self.assertEqual(result["protocolVersion"], "2024-11-05")
         self.assertEqual(result["serverInfo"]["name"], "cartopian")
+        self.assertEqual(result["serverInfo"]["version"], server._server_version())
         self.assertIn("prompts", result["capabilities"])
         self.assertIn("tools", result["capabilities"])
         self.assertIn("resources", result["capabilities"])
+
+
+class TestServerVersionResolution(unittest.TestCase):
+    def test_version_marker_is_preferred_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "VERSION").write_text("v1.2.4\n", encoding="utf-8")
+            with patch.object(server, "ROOT", root):
+                with patch.object(server, "_read_git_version") as git_version:
+                    self.assertEqual(server._server_version(), "v1.2.4")
+            git_version.assert_not_called()
+
+    def test_git_describe_fallback_used_without_version_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(server, "ROOT", root):
+                with patch.object(server, "_read_git_version", return_value="v1.2.4-1-gcc16f01"):
+                    self.assertEqual(server._server_version(), "v1.2.4-1-gcc16f01")
 
 
 class TestRpcErrorContract(unittest.TestCase):
