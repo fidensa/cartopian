@@ -235,13 +235,39 @@ def list_prompts() -> List[Dict[str, Any]]:
     return prompts
 
 
+def _install_context_block() -> str:
+    """Authoritative install metadata to prepend to the use_cartopian prompt.
+
+    Without this, the agent has no way to know where Cartopian is installed
+    or which version is running, and cannot answer "where does cartopian
+    live?" or run upgrade flows without scanning the filesystem.
+    """
+    version = _server_version()
+    return (
+        "**Cartopian install context** (authoritative — do not re-derive by "
+        "scanning the filesystem):\n"
+        f"- Install root: `{ROOT}`\n"
+        f"- Installed version: `{version}`\n"
+        f"- Upgrade skill: `cartopian://skills/check_for_updates`\n\n"
+        "Use this whenever the operator asks about upgrading, updating, or "
+        "where Cartopian is installed.\n\n---\n\n"
+    )
+
+
 def _use_cartopian_messages() -> List[Dict[str, Any]]:
     skill_path = SKILL_DIR / "use-cartopian.md"
+    context = _install_context_block()
     if skill_path.exists():
-        return _skill_messages(skill_path)
+        messages = _skill_messages(skill_path)
+        # Prepend install context to the skill body so the agent sees it
+        # before executing any step.
+        first = messages[0]
+        first["content"]["text"] = context + first["content"]["text"]
+        return messages
     # Hard fallback if the skill file is missing
     text = (
-        "You are in **Cartopian PM mode**. Execute in order:\n"
+        context
+        + "You are in **Cartopian PM mode**. Execute in order:\n"
         "1. Read `cartopian://protocol/CONVENTIONS`.\n"
         "2. Read `cartopian://skills/start_session`.\n"
         "3. Do not inspect workspace or project files yet.\n"

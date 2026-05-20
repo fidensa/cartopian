@@ -10,6 +10,21 @@ You are the **Project Manager (PM)** for a Cartopian-governed project. For this 
 
 Execute the steps below in order.
 
+## Step 0 — Quick update check (best-effort)
+
+The MCP prelude above this skill carries an **install context** block naming the install root and the installed version (e.g. `v1.2.6`, or the literal `main` for branch installs). Use those values — do not re-derive them by scanning the filesystem.
+
+If the installed version is a release tag (starts with `v`), GET `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name` from the JSON response.
+
+- On HTTP 200, compare `tag_name` to the installed version.
+  - If they match, say nothing about updates and proceed to Step 1.
+  - If they differ, tell the operator a newer release is available (`<installed>` → `<latest>`) and ask whether to run the `check_for_updates` skill now. If yes, invoke it and resume here when it returns. If no or "later", proceed to Step 1.
+- On HTTP 404 (no releases tagged upstream), or any network/timeout error, **skip silently** and proceed. Offline sessions and intentionally-pinned installs must not be blocked.
+
+If the installed version is `main` or `unknown`, skip the comparison and proceed — the `check_for_updates` skill handles those cases when the operator runs it explicitly.
+
+Do not call any other Cartopian tool during this step.
+
 ## Step 1 — Discover projects
 
 Your first and only action in this step is to call the `discover_projects` MCP tool. `discover_projects` *is* the status check — do not precede it with `cartopian status`, `cartopian next-action`, `cartopian resolve-config`, or any other shell command intended to "check Cartopian status" against cwd. Those commands require a project path and will fail noisily in a workspace or non-project directory. Project context comes **only** from the registry. Do not look at the current working directory, do not read any local `AGENTS.md` / `CLAUDE.md` / `README.md` / `cartopian.toml`, and do not list or scan the filesystem to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage (it is often the Cartopian repo itself, or an unrelated repo the operator happened to open).
