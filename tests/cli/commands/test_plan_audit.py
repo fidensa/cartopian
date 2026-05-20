@@ -115,6 +115,7 @@ class TestPlanAuditClean(unittest.TestCase):
             self.assertTrue(record["clean"])
             self.assertEqual(record["blockers"], [])
             self.assertEqual(record["warnings"], [])
+            self.assertEqual(record["attributions"], [])
 
     def test_in_progress_task_with_prompt_is_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -236,7 +237,88 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
 
 class TestPlanAuditOutput(unittest.TestCase):
     @unittest.skipUnless(shutil.which("git"), "git required")
-    def test_dirty_work_root_is_warning_not_blocker(self):
+    def test_dirty_work_root_is_warning_when_pm_owns_product_branches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            (project / "cartopian.toml").write_text(
+                _MINIMAL_TOML
+                + 'work_roots = ["tool-repo"]\n'
+                + '\n[git]\npm_owns_product_branches = true\n',
+                encoding="utf-8",
+            )
+            work_root = tmp_path / "tool-repo"
+            work_root.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "init"],
+                cwd=str(work_root),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            (project / "cartopian.local.toml").write_text(
+                f"[work_roots]\ntool-repo = \"{work_root}\"\n",
+                encoding="utf-8",
+            )
+            _write(work_root / "scratch.txt", "local changes\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            self.assertEqual(record["blockers"], [])
+            self.assertEqual(len(record["warnings"]), 1)
+            self.assertEqual(record["warnings"][0]["kind"], "unattributed-work-root-changes")
+            self.assertEqual(record.get("attributions", []), [])
+            self.assertIn("[warning]", proc.stderr)
+
+    @unittest.skipUnless(shutil.which("git"), "git required")
+    def test_dirty_work_root_attributed_when_pm_does_not_own_product_branches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            (project / "cartopian.toml").write_text(
+                _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+                encoding="utf-8",
+            )
+            work_root = tmp_path / "tool-repo"
+            work_root.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "init"],
+                cwd=str(work_root),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            (project / "cartopian.local.toml").write_text(
+                f"[work_roots]\ntool-repo = \"{work_root}\"\n",
+                encoding="utf-8",
+            )
+            _write(work_root / "scratch.txt", "local changes\n")
+            _write(
+                project / "tasks" / "done" / "TASK-01-001-build.md",
+                "# task\n\nWork root: tool-repo\nAssignee: coder\n",
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertTrue(record["clean"])
+            self.assertEqual(record["blockers"], [])
+            self.assertEqual(record["warnings"], [])
+            self.assertEqual(len(record["attributions"]), 1)
+            attr = record["attributions"][0]
+            self.assertEqual(attr["kind"], "work-root-attribution")
+            self.assertEqual(attr["work_root"], "tool-repo")
+            self.assertEqual(attr["assignee"], "coder")
+            self.assertEqual(attr["task_id"], "TASK-01-001")
+            self.assertNotIn("[warning]", proc.stderr)
+            self.assertIn("[info]", proc.stderr)
+
+    @unittest.skipUnless(shutil.which("git"), "git required")
+    def test_dirty_work_root_attribution_unknown_when_no_prior_task(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
@@ -263,11 +345,13 @@ class TestPlanAuditOutput(unittest.TestCase):
 
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             record = json.loads(proc.stdout.strip())
-            self.assertFalse(record["clean"])
-            self.assertEqual(record["blockers"], [])
-            self.assertEqual(len(record["warnings"]), 1)
-            self.assertEqual(record["warnings"][0]["kind"], "unattributed-work-root-changes")
-            self.assertIn("[warning]", proc.stderr)
+            self.assertTrue(record["clean"])
+            self.assertEqual(record["warnings"], [])
+            self.assertEqual(len(record["attributions"]), 1)
+            attr = record["attributions"][0]
+            self.assertEqual(attr["kind"], "work-root-attribution")
+            self.assertNotIn("assignee", attr)
+            self.assertIn("attribution is unknown", attr["detail"])
 
     def test_output_is_single_ndjson_line(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -282,6 +366,7 @@ class TestPlanAuditOutput(unittest.TestCase):
             self.assertIn("clean", record)
             self.assertIn("blockers", record)
             self.assertIn("warnings", record)
+            self.assertIn("attributions", record)
 
     def test_blockers_emit_audit_stderr_lines(self):
         with tempfile.TemporaryDirectory() as tmp:

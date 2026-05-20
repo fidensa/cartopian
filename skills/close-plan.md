@@ -42,7 +42,9 @@ If the audit exits non-zero, stop closeout and surface each blocker to the opera
 
 - **Missing artifact chain**: a task in `tasks/in-progress/` or `tasks/in-review/` has no matching prompt or review artifact. Move the task through the proper lifecycle stages or obtain an operator decision to remove it from the active directories before rerunning closeout.
 
-Surface any audit warnings before continuing. In particular, `unattributed-work-root-changes` means Cartopian cannot tie the current dirty work-root state to an active prompt chain. This is informational and should inform operator judgment during closeout, but it does not by itself block the close.
+Surface any audit warnings before continuing. `unattributed-work-root-changes` only fires when the effective `git.pm_owns_product_branches = true` and a configured work root has uncommitted changes that cannot be linked to an active prompt chain. It is informational and should inform operator judgment during closeout, but it does not by itself block the close.
+
+The audit also emits `work-root-attribution` entries (under `attributions`) when `git.pm_owns_product_branches = false` and a work root is dirty. These are informational records that name the most-recently-modified task and assignee for that work root. They never block closeout; do not treat them as a reason to pause.
 
 ### 1.1 Check active task directories
 

@@ -3,8 +3,9 @@ import argparse
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
 from cli.emit import emit_record
@@ -12,7 +13,9 @@ from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
+_ALL_TASK_DIRS = ("open", "in-progress", "in-review", "done")
 _WORK_ROOT_RE = re.compile(r"^Work root:\s*(.+)$", re.MULTILINE)
+_ASSIGNEE_RE = re.compile(r"^Assignee:\s*(.+)$", re.MULTILINE)
 _VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
 
@@ -57,13 +60,86 @@ def _git_changed_files(work_root_path: str) -> Optional[List[str]]:
     return [l[3:].strip() for l in lines if len(l) > 3]
 
 
+def _resolve_pm_owns_product_branches(project_path: Path) -> bool:
+    """Return effective git.pm_owns_product_branches.
+
+    Resolution order (project > global > protocol default):
+      1. <project>/cartopian.toml `[git].pm_owns_product_branches`
+      2. ~/.cartopian/cartopian.toml `[git].pm_owns_product_branches`
+      3. protocol default: False
+    """
+    project_toml = project_path / "cartopian.toml"
+    if project_toml.exists():
+        try:
+            with project_toml.open("rb") as fh:
+                project_cfg = tomllib.load(fh)
+            p_git = project_cfg.get("git", {}) or {}
+            if "pm_owns_product_branches" in p_git:
+                return bool(p_git["pm_owns_product_branches"])
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+
+    global_toml = Path.home() / ".cartopian" / "cartopian.toml"
+    if global_toml.exists():
+        try:
+            with global_toml.open("rb") as fh:
+                global_cfg = tomllib.load(fh)
+            g_git = global_cfg.get("git", {}) or {}
+            if "pm_owns_product_branches" in g_git:
+                return bool(g_git["pm_owns_product_branches"])
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+
+    return False
+
+
+def _read_assignee(task_content: str) -> Optional[str]:
+    m = _ASSIGNEE_RE.search(task_content)
+    if not m:
+        return None
+    value = m.group(1).strip()
+    if not value or value.lower() == "n/a":
+        return None
+    return value
+
+
+def _find_last_assignee(project_path: Path, work_root_name: str) -> Optional[Dict[str, str]]:
+    """Find the most-recently-modified task naming this work_root and return
+    {task_id, assignee, status} or None if no attribution can be made."""
+    candidates: List[Tuple[float, str, str, str]] = []
+    for status_dir in _ALL_TASK_DIRS:
+        tasks_dir = project_path / "tasks" / status_dir
+        if not tasks_dir.is_dir():
+            continue
+        for task_file in tasks_dir.iterdir():
+            if not task_file.is_file() or task_file.suffix != ".md":
+                continue
+            m = _TASK_ID_RE.match(task_file.stem)
+            if not m:
+                continue
+            try:
+                content = task_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if work_root_name not in _read_work_root_names(content):
+                continue
+            assignee = _read_assignee(content)
+            if not assignee:
+                continue
+            try:
+                mtime = task_file.stat().st_mtime
+            except OSError:
+                continue
+            candidates.append((mtime, f"TASK-{m.group(1)}", assignee, status_dir))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    _, task_id, assignee, status = candidates[0]
+    return {"task_id": task_id, "assignee": assignee, "task_status": status}
+
+
 def _load_work_roots(project_path: Path) -> Dict[str, str]:
     """Return {name: abs_path} from cartopian.toml + cartopian.local.toml."""
-    try:
-        import tomllib
-    except ImportError:
-        return {}
-
     project_toml = project_path / "cartopian.toml"
     if not project_toml.exists():
         return {}
@@ -154,10 +230,22 @@ def _check_artifact_chains(project_path: Path) -> List[Dict[str, Any]]:
 def _check_work_root_provenance(
     project_path: Path,
     work_roots: Dict[str, str],
-) -> List[Dict[str, Any]]:
-    """Collect non-blocking warnings for dirty work_roots with ambiguous task provenance."""
+    pm_owns_product_branches: bool,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Inspect dirty work_roots and return (warnings, attributions).
+
+    When `pm_owns_product_branches` is True, the PM owns product-repo plumbing,
+    so dirty state without an active prompted task is anomalous and emits an
+    `unattributed-work-root-changes` warning (legacy behavior).
+
+    When False (the protocol default), product-repo state belongs to the
+    assignee, not the PM. Dirty state is expected and does not warrant a
+    warning. Instead, the audit emits an informational `work-root-attribution`
+    entry naming the most-recently-modified task that targeted this work_root
+    and its assignee, so attribution is preserved without blocking the PM.
+    """
     if not work_roots:
-        return []
+        return [], []
 
     # Build a map: work_root_name -> list of task_ids currently assigned
     active_assignments: Dict[str, List[str]] = {name: [] for name in work_roots}
@@ -180,11 +268,46 @@ def _check_work_root_provenance(
                     active_assignments[root_name].append(f"TASK-{m.group(1)}")
 
     warnings: List[Dict[str, Any]] = []
+    attributions: List[Dict[str, Any]] = []
     for name, abs_path in work_roots.items():
         changed = _git_changed_files(abs_path)
         if changed is None or not changed:
             continue
         assigned_tasks = active_assignments.get(name, [])
+        has_prompt = bool(assigned_tasks) and any(
+            (project_path / "prompts" / f"PROMPT-{tid.replace('TASK-', '')}.md").is_file()
+            for tid in assigned_tasks
+        )
+        unattributed = not assigned_tasks or not has_prompt
+
+        if not unattributed:
+            continue
+
+        if not pm_owns_product_branches:
+            attribution = _find_last_assignee(project_path, name)
+            entry: Dict[str, Any] = {
+                "kind": "work-root-attribution",
+                "work_root": name,
+                "work_root_path": abs_path,
+                "changed_files": changed,
+            }
+            if attribution:
+                entry.update(attribution)
+                entry["detail"] = (
+                    f"uncommitted changes under '{name}' ({abs_path}) "
+                    f"attributed to {attribution['assignee']} via "
+                    f"{attribution['task_id']} ({attribution['task_status']}); "
+                    f"PM does not own product-repo branches"
+                )
+            else:
+                entry["detail"] = (
+                    f"uncommitted changes under '{name}' ({abs_path}); "
+                    f"no prior task names this work root, so attribution is unknown. "
+                    f"PM does not own product-repo branches"
+                )
+            attributions.append(entry)
+            continue
+
         if not assigned_tasks:
             warnings.append({
                 "kind": "unattributed-work-root-changes",
@@ -197,24 +320,19 @@ def _check_work_root_provenance(
                 ),
             })
         else:
-            has_prompt = any(
-                (project_path / "prompts" / f"PROMPT-{tid.replace('TASK-', '')}.md").is_file()
-                for tid in assigned_tasks
-            )
-            if not has_prompt:
-                warnings.append({
-                    "kind": "unattributed-work-root-changes",
-                    "work_root": name,
-                    "work_root_path": abs_path,
-                    "changed_files": changed,
-                    "assigned_tasks": assigned_tasks,
-                    "detail": (
-                        f"uncommitted changes exist under '{name}' ({abs_path}); "
-                        f"task(s) {', '.join(assigned_tasks)} are assigned but no active prompt exists"
-                    ),
-                })
+            warnings.append({
+                "kind": "unattributed-work-root-changes",
+                "work_root": name,
+                "work_root_path": abs_path,
+                "changed_files": changed,
+                "assigned_tasks": assigned_tasks,
+                "detail": (
+                    f"uncommitted changes exist under '{name}' ({abs_path}); "
+                    f"task(s) {', '.join(assigned_tasks)} are assigned but no active prompt exists"
+                ),
+            })
 
-    return warnings
+    return warnings, attributions
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -243,7 +361,10 @@ def handler(args: argparse.Namespace) -> int:
     blockers.extend(_check_artifact_chains(project_path))
 
     work_roots = _load_work_roots(project_path)
-    warnings = _check_work_root_provenance(project_path, work_roots)
+    pm_owns_product_branches = _resolve_pm_owns_product_branches(project_path)
+    warnings, attributions = _check_work_root_provenance(
+        project_path, work_roots, pm_owns_product_branches
+    )
 
     clean = len(blockers) == 0 and len(warnings) == 0
     record: Dict[str, Any] = {
@@ -252,6 +373,7 @@ def handler(args: argparse.Namespace) -> int:
         "clean": clean,
         "blockers": blockers,
         "warnings": warnings,
+        "attributions": attributions,
     }
     emit_record(record)
 
@@ -261,4 +383,6 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
     for w in warnings:
         _stderr("warning", w["detail"])
+    for a in attributions:
+        _stderr("info", a["detail"])
     return EXIT_OK

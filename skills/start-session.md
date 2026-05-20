@@ -68,7 +68,9 @@ If the audit exits non-zero, surface each blocker to the operator and stop. Do n
 
 - **Missing artifact chain**: a task in `tasks/in-progress/` has no matching `prompts/PROMPT-NN-NNN.md`, or a task in `tasks/in-review/` has no matching `reviews/REVIEW-NN-NNN.md`. This indicates the task was moved without following the proper workflow.
 
-Surface any audit warnings to the operator before proceeding. In particular, `unattributed-work-root-changes` means Cartopian cannot link the current dirty work-root state to an active prompt chain; it is informational and does not by itself block lifecycle action.
+Surface any audit warnings to the operator before proceeding. `unattributed-work-root-changes` only fires when the effective `git.pm_owns_product_branches = true` and a configured work root has uncommitted changes that cannot be linked to an active prompt chain; it is informational and does not by itself block lifecycle action.
+
+The audit also emits `work-root-attribution` entries (alongside `warnings`, under `attributions`) when `git.pm_owns_product_branches = false` and a work root is dirty. These are informational records that name the most-recently-modified task and assignee responsible for that work root. They never block; do not treat them as a reason to pause lifecycle action.
 
 Resolve blockers with the operator before taking any lifecycle action.
 
