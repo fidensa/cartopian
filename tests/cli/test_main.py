@@ -12,6 +12,7 @@ ENTRYPOINT = os.path.join(REPO_ROOT, "bin", "cartopian")
 SUBCOMMANDS = [
     "resolve-config",
     "parse-report",
+    "report-action",
     "validate-task-readiness",
     "move-task",
     "discover-projects",
