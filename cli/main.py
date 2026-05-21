@@ -28,6 +28,7 @@ SUBCOMMANDS: List[str] = [
     "validate-task-readiness",
     # FR-005
     "close-audit",
+    "compose-state",
     "delete-prompt",
     "delete-report",
     "list-tasks",
@@ -84,6 +85,7 @@ def _real_handlers():
     """
     from cli.commands import (
         close_audit,
+        compose_state,
         delete_prompt,
         delete_report,
         discover_projects,
@@ -105,6 +107,7 @@ def _real_handlers():
 
     return {
         "close-audit": (close_audit.configure_parser, close_audit.handler),
+        "compose-state": (compose_state.configure_parser, compose_state.handler),
         "delete-prompt": (delete_prompt.configure_parser, delete_prompt.handler),
         "delete-report": (delete_report.configure_parser, delete_report.handler),
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),

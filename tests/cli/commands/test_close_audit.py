@@ -1,8 +1,10 @@
 """Tests for `cartopian close-audit` (FR-005)."""
 import argparse
 import unittest
+from unittest import mock
 
 from cli.commands import close_audit  # noqa: F401 - red stage: module must exist
+from cli.commands.resolve_config import _CliError
 from cli.main import SUBCOMMANDS, build_parser
 from tests.scaffold import (
     project_scaffold,
@@ -111,11 +113,19 @@ class TestCloseAuditNoPlanState(unittest.TestCase):
 
 
 class TestCloseAuditBlockingStates(unittest.TestCase):
-    def test_open_tasks_block_closeout(self) -> None:
+    def test_active_tasks_block_closeout_and_counts_are_reported_by_status(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             open_task = scaffold.write(
                 "tasks/open/TASK-01-002-open-work.md",
                 "# TASK-01-002: open work\n",
+            )
+            in_progress_task = scaffold.write(
+                "tasks/in-progress/TASK-01-003-active-work.md",
+                "# TASK-01-003: active work\n",
+            )
+            in_review_task = scaffold.write(
+                "tasks/in-review/TASK-01-004-review-work.md",
+                "# TASK-01-004: review work\n",
             )
 
             records, rc = _invoke(str(scaffold.project_root))
@@ -124,12 +134,38 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
             rec = records[0]
             self.assertFalse(rec["closable"])
             self.assertEqual(rec["open_count"], 1)
+            self.assertEqual(rec["in_progress_count"], 1)
+            self.assertEqual(rec["in_review_count"], 1)
             self.assertEqual(
                 rec["open_tasks"],
-                [{"task_id": "TASK-01-002", "path": str(open_task.resolve()), "status": "open"}],
+                [
+                    {"task_id": "TASK-01-002", "path": str(open_task.resolve()), "status": "open"},
+                    {
+                        "task_id": "TASK-01-003",
+                        "path": str(in_progress_task.resolve()),
+                        "status": "in-progress",
+                    },
+                    {
+                        "task_id": "TASK-01-004",
+                        "path": str(in_review_task.resolve()),
+                        "status": "in-review",
+                    },
+                ],
             )
             self.assertTrue(
                 any("open" in reason.lower() and "TASK-01-002" in reason for reason in rec["blocking_reasons"])
+            )
+            self.assertTrue(
+                any(
+                    "in-progress" in reason.lower() and "TASK-01-003" in reason
+                    for reason in rec["blocking_reasons"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    "in-review" in reason.lower() and "TASK-01-004" in reason
+                    for reason in rec["blocking_reasons"]
+                )
             )
 
     def test_stale_prompt_blocks_closeout(self) -> None:
@@ -147,6 +183,30 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
             )
             self.assertTrue(
                 any("stale prompt" in reason.lower() and "TASK-01-003" in reason for reason in rec["blocking_reasons"])
+            )
+
+    def test_prompt_with_only_open_task_is_stale(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write(
+                "tasks/open/TASK-01-005-not-started.md",
+                "# TASK-01-005: not started\n",
+            )
+            prompt_path = scaffold.write(
+                "prompts/PROMPT-01-005.md",
+                "# PROMPT-01-005\n\n## Your task\n\nRun TASK-01-005.\n",
+            )
+
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertFalse(rec["closable"])
+            self.assertEqual(
+                rec["stale_prompts"],
+                [{"path": str(prompt_path.resolve()), "task_id": "TASK-01-005"}],
+            )
+            self.assertTrue(
+                any("stale prompt" in reason.lower() and "TASK-01-005" in reason for reason in rec["blocking_reasons"])
             )
 
     def test_unresolved_report_blocks_closeout(self) -> None:
@@ -207,11 +267,12 @@ class TestCloseAuditExitCodes(unittest.TestCase):
             rc = close_audit.handler(args)
             self.assertEqual(rc, 3)
 
-    def test_exit3_on_corrupt_toml(self) -> None:
+    def test_exit3_on_unreadable_config(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.config.write_text("[[this is not valid toml\x00", encoding="utf-8")
             args = argparse.Namespace(project_path=str(scaffold.project_root))
-            rc = close_audit.handler(args)
+            unreadable = _CliError(3, "error", f"project config unreadable: {scaffold.config}")
+            with mock.patch.object(close_audit, "_load_toml", side_effect=unreadable):
+                rc = close_audit.handler(args)
             self.assertEqual(rc, 3)
 
 

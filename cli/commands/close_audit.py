@@ -95,14 +95,18 @@ def _collect_active_tasks(project_root: Path) -> List[Dict[str, str]]:
 
 
 def _collect_stale_prompts(project_root: Path) -> List[Dict[str, str]]:
-    active_ids = {task["task_id"] for task in _collect_active_tasks(project_root)}
+    prompted_task_ids = {
+        task["task_id"]
+        for task in _collect_active_tasks(project_root)
+        if task["status"] in {"in-progress", "in-review"}
+    }
     stale_prompts: List[Dict[str, str]] = []
     for prompt_path in _iter_matching_files(project_root / "prompts", _PROMPT_TASK_RE):
         match = _PROMPT_TASK_RE.match(prompt_path.name)
         if match is None:
             continue
         task_id = f"TASK-{match.group(1)}"
-        if task_id not in active_ids:
+        if task_id not in prompted_task_ids:
             stale_prompts.append(
                 {
                     "path": str(prompt_path.resolve()),

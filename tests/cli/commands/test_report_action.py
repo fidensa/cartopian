@@ -38,6 +38,74 @@ def _run(report_path: str, *, home: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _parse_single_record(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+    lines = result.stdout.splitlines()
+    if len(lines) != 1:
+        raise AssertionError(
+            f"expected 1 stdout line, got {len(lines)}: stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+    return json.loads(lines[0])
+
+
+def _task_report(
+    *,
+    task_id: str,
+    prompt_path: Path,
+    task_path: Path,
+    work_root: str,
+    status: str,
+    ready_for_review: str,
+) -> str:
+    suffix = task_id.removeprefix("TASK-")
+    return (
+        f"# REPORT-{suffix}\n\n"
+        f"Status: {status}\n\n"
+        "## Identity\n\n"
+        f"- Task ID: {task_id}\n"
+        f"- Prompt path: {prompt_path}\n"
+        f"- Task path: {task_path}\n"
+        f"- Work root: {work_root}\n\n"
+        "## Files changed\n\n"
+        "- cli/commands/report_action.py - exercised\n\n"
+        "## Test evidence\n\n"
+        "- Red test evidence: targeted red\n"
+        "- Green test evidence: targeted green\n\n"
+        "## Commit / PR\n\n"
+        "- Commit SHA: n/a\n"
+        "- PR URL: n/a\n\n"
+        "## Remaining risks\n\n"
+        "None.\n\n"
+        "## Ready for review\n\n"
+        f"{ready_for_review}\n"
+    )
+
+
+def _review_report(
+    *,
+    report_stem: str,
+    review_id: str,
+    prompt_path: Path,
+    review_path: Path,
+    status: str,
+    verdict: str | None = None,
+) -> str:
+    verdict_body = verdict if verdict is not None else ""
+    return (
+        f"# {report_stem}\n\n"
+        f"Status: {status}\n\n"
+        "## Identity\n\n"
+        f"- Review ID: {review_id}\n"
+        f"- Prompt path: {prompt_path}\n"
+        f"- Review file path: {review_path}\n\n"
+        "## Evidence reviewed\n\n"
+        "- report-action routing fields\n\n"
+        "## Verdict\n\n"
+        f"{verdict_body}\n\n"
+        "## Blocking findings\n\n"
+        "none.\n"
+    )
+
+
 def _snapshot_tree(root: Path) -> dict[str, tuple[int, str, int]]:
     snapshot: dict[str, tuple[int, str, int]] = {}
     for path in sorted(root.rglob("*")):
@@ -95,9 +163,7 @@ class TestReportActionHappyPath(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertEqual(result.stderr, "")
-        lines = result.stdout.splitlines()
-        self.assertEqual(len(lines), 1)
-        record = json.loads(lines[0])
+        record = _parse_single_record(result)
 
         for field in (
             "verdict",
@@ -125,6 +191,150 @@ class TestReportActionHappyPath(unittest.TestCase):
         self.assertEqual(record["review_path"], str((scaffold.reviews / "REVIEW-01-006.md").resolve()))
         self.assertEqual(record["declared_report_task_path"], str(task_path.resolve()))
         self.assertFalse(record["path_mismatch"])
+
+    def test_task_blocked_and_failed_route_back_to_in_progress(self) -> None:
+        for status in ("blocked", "failed"):
+            with self.subTest(status=status):
+                with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+                    home = scaffold.root / "home"
+                    home.mkdir()
+                    task_path = scaffold.write(
+                        "tasks/in-progress/TASK-01-006-demo.md",
+                        (
+                            "# TASK-01-006: demo\n\n"
+                            "Work root: tool-repo\n"
+                        ),
+                    )
+                    report_path = scaffold.write(
+                        "reports/REPORT-01-006.md",
+                        _task_report(
+                            task_id="TASK-01-006",
+                            prompt_path=scaffold.prompts / "PROMPT-01-006.md",
+                            task_path=task_path,
+                            work_root="tool-repo",
+                            status=status,
+                            ready_for_review="no",
+                        ),
+                    )
+
+                    result = _run(str(report_path), home=home)
+
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                record = _parse_single_record(result)
+                self.assertEqual(record["verdict"], status)
+                self.assertEqual(record["variant"], "task")
+                self.assertEqual(record["status"], status)
+                self.assertEqual(record["target_task_status"], "in-progress")
+                self.assertFalse(record["requires_pr_step"])
+                self.assertIsNone(record["prompt_to_overwrite"])
+                self.assertIsNone(record["review_path"])
+                self.assertFalse(record["path_mismatch"])
+                self.assertEqual(record["recommended_action"], "return-control-to-operator")
+
+
+class TestReportActionReviewVariants(unittest.TestCase):
+    def test_review_accepts_valid_no_plan_state_with_nullable_task_fields(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            review_path = scaffold.write("reviews/REVIEW-01-007.md", "# REVIEW-01-007\n")
+            report_path = scaffold.write(
+                "reports/REPORT-01-007.md",
+                _review_report(
+                    report_stem="REPORT-01-007",
+                    review_id="REVIEW-01-007",
+                    prompt_path=scaffold.prompts / "PROMPT-01-007.md",
+                    review_path=review_path,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "accepted")
+        self.assertEqual(record["variant"], "review")
+        self.assertEqual(record["status"], "complete")
+        self.assertEqual(record["review_verdict"], "approve")
+        self.assertEqual(record["target_task_status"], "done")
+        self.assertFalse(record["requires_pr_step"])
+        self.assertEqual(record["prompt_to_overwrite"], str((scaffold.prompts / "PROMPT-01-007.md").resolve()))
+        self.assertEqual(record["review_path"], str(review_path.resolve()))
+        self.assertIsNone(record["task_id"])
+        self.assertIsNone(record["task_path"])
+        self.assertIsNone(record["expected_task_path"])
+        self.assertFalse(record["path_mismatch"])
+        self.assertEqual(record["recommended_action"], "close-task")
+
+    def test_review_blocked_and_failed_keep_task_in_review(self) -> None:
+        for status in ("blocked", "failed"):
+            with self.subTest(status=status):
+                with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+                    home = scaffold.root / "home"
+                    home.mkdir()
+                    review_path = scaffold.write("reviews/REVIEW-01-008.md", "# REVIEW-01-008\n")
+                    report_path = scaffold.write(
+                        "reports/REPORT-01-008.md",
+                        _review_report(
+                            report_stem="REPORT-01-008",
+                            review_id="REVIEW-01-008",
+                            prompt_path=scaffold.prompts / "PROMPT-01-008.md",
+                            review_path=review_path,
+                            status=status,
+                        ),
+                    )
+
+                    result = _run(str(report_path), home=home)
+
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                record = _parse_single_record(result)
+                self.assertEqual(record["verdict"], status)
+                self.assertEqual(record["variant"], "review")
+                self.assertEqual(record["status"], status)
+                self.assertIsNone(record["review_verdict"])
+                self.assertEqual(record["target_task_status"], "in-review")
+                self.assertFalse(record["requires_pr_step"])
+                self.assertIsNone(record["prompt_to_overwrite"])
+                self.assertEqual(record["review_path"], str(review_path.resolve()))
+                self.assertFalse(record["path_mismatch"])
+                self.assertEqual(record["recommended_action"], "return-control-to-operator")
+
+    def test_planning_review_request_changes_routes_back_to_in_progress(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            review_path = scaffold.write("reviews/REVIEW-PLAN-001-demo.md", "# REVIEW-PLAN-001-demo\n")
+            report_path = scaffold.write(
+                "reports/REPORT-PLAN-001-demo.md",
+                _review_report(
+                    report_stem="REPORT-PLAN-001-demo",
+                    review_id="REVIEW-PLAN-001-demo",
+                    prompt_path=scaffold.prompts / "PROMPT-PLAN-001-demo.md",
+                    review_path=review_path,
+                    status="complete",
+                    verdict="request-changes",
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "changes-requested")
+        self.assertEqual(record["variant"], "planning-review")
+        self.assertEqual(record["status"], "complete")
+        self.assertEqual(record["review_verdict"], "request-changes")
+        self.assertEqual(record["target_task_status"], "in-progress")
+        self.assertFalse(record["requires_pr_step"])
+        self.assertEqual(
+            record["prompt_to_overwrite"],
+            str((scaffold.prompts / "PROMPT-PLAN-001-demo.md").resolve()),
+        )
+        self.assertEqual(record["review_path"], str(review_path.resolve()))
+        self.assertFalse(record["path_mismatch"])
+        self.assertEqual(record["recommended_action"], "return-task-to-in-progress")
 
 
 class TestReportActionPathMismatch(unittest.TestCase):
@@ -161,8 +371,48 @@ class TestReportActionPathMismatch(unittest.TestCase):
             result = _run(str(report_path), home=home)
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        record = json.loads(result.stdout.splitlines()[0])
+        record = _parse_single_record(result)
         self.assertTrue(record["path_mismatch"])
+
+
+class TestReportActionFailedToParse(unittest.TestCase):
+    def test_incomplete_report_emits_failed_to_parse_record(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-01-009-demo.md",
+                "# TASK-01-009: demo\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-01-009.md",
+                (
+                    "# REPORT-01-009\n\n"
+                    "Status: complete\n\n"
+                    "## Identity\n\n"
+                    "- Task ID: TASK-01-009\n"
+                    f"- Prompt path: {scaffold.prompts / 'PROMPT-01-009.md'}\n"
+                    f"- Task path: {task_path}\n"
+                    "- Work root: n/a\n\n"
+                    "## Ready for review\n\n"
+                    "yes\n"
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "failed-to-parse")
+        self.assertEqual(record["variant"], "task")
+        self.assertIsNone(record["status"])
+        self.assertIsNone(record["review_verdict"])
+        self.assertIsNone(record["target_task_status"])
+        self.assertFalse(record["requires_pr_step"])
+        self.assertIsNone(record["prompt_to_overwrite"])
+        self.assertIsNone(record["review_path"])
+        self.assertFalse(record["path_mismatch"])
+        self.assertEqual(record["recommended_action"], "stop-for-inspection")
 
 
 class TestReportActionExitCodes(unittest.TestCase):
@@ -181,6 +431,22 @@ class TestReportActionExitCodes(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertEqual(result.stdout, "")
         self.assertIn("[error] project config not found:", result.stderr)
+
+    def test_unreadable_project_config_exits_env(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            scaffold.config.write_text("[[not-valid-toml\x00", encoding="utf-8")
+            report_path = scaffold.write(
+                "reports/REPORT-01-006.md",
+                "# REPORT-01-006\n\nStatus: complete\n",
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("[error]", result.stderr)
 
 
 class TestReportActionReadOnly(unittest.TestCase):
