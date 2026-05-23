@@ -31,6 +31,11 @@ class SkillsStaticCoverageTest(unittest.TestCase):
             "cartopian move-task",
             "cartopian delete-report",
             "cartopian delete-prompt",
+            "cartopian next-action",
+            "cartopian task-bundle",
+            "cartopian handoff-packet",
+            "cartopian report-action",
+            "cartopian compose-state",
             "Work root:",
         ):
             self.assertIn(needle, text, msg=f"run-task.md must reference `{needle}`")
@@ -43,9 +48,27 @@ class SkillsStaticCoverageTest(unittest.TestCase):
             "cartopian resolve-config",
             "cartopian delete-report",
             "cartopian report-action",
+            "cartopian handoff-packet",
         ):
             self.assertIn(needle, text, msg=f"run-handoff.md must reference `{needle}`")
         self.assertNotRegex(text, r"Repo subpath:")
+
+    def test_start_session_references_core_cli(self) -> None:
+        text = self._read("start-session.md")
+        for needle in (
+            "cartopian discover-projects",
+            "cartopian resolve-config",
+            "cartopian next-action",
+        ):
+            self.assertIn(needle, text, msg=f"start-session.md must reference `{needle}`")
+
+    def test_close_plan_references_core_cli(self) -> None:
+        text = self._read("close-plan.md")
+        for needle in (
+            "cartopian close-audit",
+            "cartopian compose-state",
+        ):
+            self.assertIn(needle, text, msg=f"close-plan.md must reference `{needle}`")
 
     def test_adopt_plan_stage0_has_registry_and_resolve(self) -> None:
         text = self._read("adopt-plan.md")
