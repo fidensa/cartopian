@@ -22,51 +22,72 @@ For vague session-start requests that do not name a project or target task, use 
 
 ## Stage 0 - Open Session Context
 
-1. Read `STATE.md`.
-2. Read the current phase file.
-3. Read the target task file.
-4. Read the task's spec when the task references one.
-5. Resolve effective roles, handoff targets, automation policy, work roots, and `[git]` configuration via the Core CLI (absolute project path required):
+Run the orientation aggregator using the Core CLI for the selected project path:
 
-   ```
-   cartopian resolve-config <project-path>
-   ```
+```
+cartopian next-action <project-path>
+```
 
-If the task state in `STATE.md` disagrees with the filesystem, treat the filesystem as authoritative and refresh `STATE.md` before proceeding.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit) and performs the lifecycle audit `cartopian plan-audit` would, so neither needs to be invoked separately to orient the session.
+
+Surface the disagreement and blocker fields to the operator before proposing any action:
+
+- **`state_filesystem_disagreement`**: if non-null, a task status claimed in `STATE.md` does not match the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch and offer to refresh `STATE.md` before continuing.
+- **`blockers`**: any non-empty `blockers` array is a PM-level blocker (for example `no active phase detected but tasks are present`, or `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not advance lifecycle state while blockers exist.
+
+Resolve blockers with the operator before proceeding to Stage 1.
 
 ---
 
 ## Stage 1 - Confirm Task Readiness
 
-1. Call the Core CLI to validate readiness:
+1. Assemble the task + spec + phase + dependency context with a single Core CLI call:
+
+   ```
+   cartopian task-bundle <task-path>
+   ```
+
+   `task-bundle` is the FR-002 aggregator. It emits one NDJSON record with the resolved task identity (`task_id`, `task_title`, `task_path`, `task_status`), the resolved `spec_path`, the ordered `dependencies` list (each carrying `task_id`, `title`, `path`, `status`), the resolved `work_roots_resolved` entries (each `{name, absolute_path, exists}`), the `expected_prompt_path`, and the `expected_report_path` Stage 2 and Stage 4 will reference. Consume these fields directly; do not re-read the task, spec, or phase files to derive them.
+
+2. Validate readiness gates with the Core CLI:
 
    ```
    cartopian validate-task-readiness <task-path>
    ```
 
-   Treat a non-zero exit as a blocker and stop.
+   `task-bundle` assembles content; `validate-task-readiness` enforces readiness gating — the two are complementary. Treat a non-zero exit from `validate-task-readiness` as a blocker and stop.
 
-2. Confirm acceptance criteria are actionable for the assignee/reviewer per task context.
+3. Confirm acceptance criteria are actionable for the assignee/reviewer per task context.
 
 ---
 
 ## Stage 2 - Prepare Assignment Prompt
 
-For a task assignment, create or update:
+First, assemble the prompt-input bundle with a single Core CLI call:
+
+```
+cartopian handoff-packet <task-path> --role <role>
+```
+
+`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `auto_start`, `timeout`), the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths or roles.
+
+If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
+
+Then, create or update:
 
 ```text
 prompts/PROMPT-NN-NNN.md
 ```
 
-The prompt must be directed at the assignee and include:
+The prompt must be directed at the assignee and include, sourced from the `handoff-packet` record:
 
 - Absolute prompt path.
 - Absolute project root.
 - Declared `Work root:` names from the task header (comma-separated), or `n/a`.
-- Absolute path(s) for the declared work root(s) from the resolved config (if any); use `n/a` when none are declared.
+- Absolute path(s) for the declared work root(s) (from the record's `work_roots[].absolute_path`); use `n/a` when none are declared.
 - Absolute task path.
 - Absolute spec path, or `n/a`.
-- Absolute expected report path.
+- Absolute expected report path (from the record's `expected_report_path`).
 - Absolute expected review path, when applicable.
 - Absolute report template path.
 - Task goal, context, acceptance criteria, scope boundaries, and test gate.
@@ -106,19 +127,29 @@ If the operator returns later with completion evidence even though assignment wa
 
 ## Stage 4 - Process Completion Report
 
-Read and parse:
+Parse the assignee's completion report with the Core CLI:
 
-```text
-reports/REPORT-NN-NNN.md
+```
+cartopian report-action <report-path>
 ```
 
-Use the parsing outcomes from `skills/run-handoff.md`.
+`report-action` is the FR-004 aggregator. It infers the report variant from filename and content (here, the `task` variant) and emits a single NDJSON record carrying:
 
-If the report is `blocked`, `failed`, or `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
+- `verdict` — `accepted | blocked | failed | failed-to-parse`.
+- `variant` — `task` for this stage.
+- `status` — the report's `Status:` header value.
+- `target_task_status` — the lifecycle directory the PM should move the task into next (typically `in-review` for accepted task reports).
+- `requires_pr_step` — true when the PM-owned product-repo git step is required before reviewer dispatch.
+- `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
+- `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
 
-If the report is accepted with `Ready for review: no`, keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
+Confirm with the operator before applying any lifecycle move.
 
-If the report is accepted with `Ready for review: yes`, move the task to `tasks/in-review/` using the Core CLI:
+If the verdict is `blocked`, `failed`, or `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
+
+If the verdict is `accepted` with `Ready for review: no`, keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
+
+If the verdict is `accepted` with `Ready for review: yes`, apply the lifecycle move named by `target_task_status` (typically `in-review`) using the Core CLI:
 
 ```
 cartopian move-task <task-path> in-review
@@ -128,7 +159,7 @@ The CLI verifies that `reports/REPORT-NN-NNN.md` exists, references this task's 
 
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
 
-If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, perform the PM-owned product-repo git step before Stage 5:
+If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before Stage 5:
 
 1. Treat coder-supplied product-repo git evidence as a boundary violation. If the report claims the assignee staged, committed, pushed, branched, opened a PR, or merged product-repo code, stop for operator inspection.
 2. Resolve the product-repo absolute path(s) from the declared work-root names via the resolved config's `work_roots` mapping; when multiple are declared, choose the root that actually owns this task's changes. If ambiguous, stop for operator inspection.
@@ -188,7 +219,20 @@ Reviewers record their findings and verdict in:
 reviews/REVIEW-NN-NNN.md
 ```
 
-The PM applies the verdict, delegating directory status transitions to the Core CLI:
+Parse the reviewer's completion report with the Core CLI:
+
+```
+cartopian report-action <reviewer-report-path>
+```
+
+For the `review` variant, the emitted record carries:
+
+- `verdict` — `accepted | blocked | failed | failed-to-parse` for handoff state.
+- `review_verdict` — the raw reviewer token, one of `approve | request-changes | reject`.
+- `target_task_status` — the post-verdict lifecycle directory (`done` for `approve`, `in-progress` for `request-changes`, `open` for `reject`).
+- `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` after an `approve` verdict.
+
+Confirm the verdict with the operator before applying any lifecycle move. Then apply the verdict by delegating directory status transitions to the Core CLI:
 
 - `approve`, when `git.pm_owns_product_branches = false` or unset, or when no product-repo PR exists: use `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
 
@@ -229,7 +273,13 @@ Do not treat reports as durable substitutes for task, review, or decision record
 
 ## Stage 8 - Close Session
 
-Refresh `STATE.md` so it remains under 5KB and names:
+Render the post-task `STATE.md` body via the Core CLI:
+
+```
+cartopian compose-state <project-path>
+```
+
+`compose-state` is the FR-006 aggregator. It emits a single NDJSON record with `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` — the last is the full markdown body. Write `rendered_body` directly to `STATE.md`. Confirm the result is under 5KB and names:
 
 - Current phase.
 - Active work.
