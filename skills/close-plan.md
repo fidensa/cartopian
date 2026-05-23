@@ -46,63 +46,50 @@ Surface any audit warnings before continuing. `unattributed-work-root-changes` o
 
 The audit also emits `work-root-attribution` entries (under `attributions`) when `git.pm_owns_product_branches = false` and a work root is dirty. These are informational records that name the most-recently-modified task and assignee for that work root. They never block closeout; do not treat them as a reason to pause.
 
-### 1.1 Check active task directories
+### 1.1 Run close-audit
 
-Inspect:
+After the plan-audit clears, run the closeout-readiness aggregator using the Core CLI:
 
-- `tasks/open/`
-- `tasks/in-progress/`
-- `tasks/in-review/`
+```
+cartopian close-audit <project-path>
+```
 
-If any task files exist in these directories, stop. The plan is not closable until each active task reaches `tasks/done/` or the operator records an explicit decision that the work will not close in this plan and removes it from the active task directories before rerunning closeout.
+`cartopian close-audit` folds the per-directory checks (active tasks in `tasks/open/`, `tasks/in-progress/`, `tasks/in-review/`; completed tasks in `tasks/done/`; stale prompts; unresolved reports; phase exit criteria) into a single structured record. Consume its output as follows:
 
-### 1.2 Check completed task directory
+- **`blocking_reasons` (closeout-blocking):** if this list is non-empty, stop closeout. Surface each entry to the operator and resolve it before re-running close-audit. The aggregator also populates the structured fields that name the offending artifacts:
+  - `open_tasks` — tasks remaining in `tasks/open/`, `tasks/in-progress/`, or `tasks/in-review/`. Each active task must reach `tasks/done/` or be removed under an explicit operator decision before rerunning closeout.
+  - `stale_prompts` — `PROMPT-*.md` files whose tasks are already in `done/` or otherwise no longer active. Resolve each named prompt with the Core CLI before rerunning closeout:
 
-Inspect `tasks/done/` and compare completed task identifiers to the current phase files and `IMPLEMENTATION_PLAN.md`.
+    ```
+    cartopian delete-prompt <project-path>/prompts/PROMPT-NN-NNN-<slug>.md
+    ```
+
+    Superseded planning-checkpoint prompts are cleared the same way:
+
+    ```
+    cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
+    ```
+
+    Do not delete a prompt whose work is still active or ambiguous; obtain an operator decision first.
+  - `unresolved_reports` — `REPORT-*.md` files whose tasks are not in `done/` while their prompts still exist (i.e. handoff state is still open). Treat these as active handoff state. Reports that have been processed and whose corresponding tasks are in `done/` may instead be cleared via the Core CLI during Stage 4 reset:
+
+    ```
+    cartopian delete-report <project-path>/reports/REPORT-NN-NNN-<slug>.md
+    ```
+
+  - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN-slug.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
+
+- **`closable`:** the aggregator's verdict. When `blocking_reasons` is empty, `closable` is `true` and closeout may proceed to Stage 2.
+
+- **Informational counts (`open_count`, `in_progress_count`, `in_review_count`):** surface to the operator alongside any non-blocking observations. These do not by themselves block closeout when their corresponding `blocking_reasons` entries are absent.
+
+The `cartopian delete-prompt` and `cartopian delete-report` commands remain operator-driven remediation actions: they are invoked in response to specific `stale_prompts` or `unresolved_reports` entries that name the files to remove, not as a blanket sweep.
+
+Also compare the task identifiers reported under `tasks/done/` to the current phase files and `IMPLEMENTATION_PLAN.md`:
 
 - Confirm that generated tasks are in `done/`.
 - Note any plan refs that were intentionally not taskified.
 - Surface any mismatch to the operator before continuing.
-
-### 1.3 Check prompts
-
-Inspect `prompts/`.
-
-Prompt files are temporary. If any `PROMPT-*.md` files remain, resolve them before closeout using the Core CLI:
-
-- Remove prompts for tasks already in `done/`:
-
-  ```
-  cartopian delete-prompt <project-path>/prompts/PROMPT-NN-NNN-<slug>.md
-  ```
-
-- Remove superseded planning-checkpoint prompts:
-
-  ```
-  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
-  ```
-
-- Stop if a prompt points to work that is still active or ambiguous.
-
-### 1.4 Check reports
-
-Inspect `reports/`.
-
-Report files are handoff result artifacts. Resolve any remaining reports before closeout:
-
-- Treat unresolved prompts or missing/ambiguous reports as active handoff state.
-- Stop closeout if any handoff result is missing, malformed, incomplete, ambiguous, failed to parse, or otherwise unresolved.
-- Reports that have been processed and whose corresponding tasks are in `done/` may be cleared via the Core CLI during reset:
-
-  ```
-  cartopian delete-report <project-path>/reports/REPORT-NN-NNN-<slug>.md
-  ```
-
-### 1.5 Check phase exit criteria
-
-Read each `phases/PHASE-NN-slug.md` file and confirm the exit criteria are satisfied by completed tasks, decisions, specs, or documented operator acceptance.
-
-If exit criteria are not satisfied, stop and name the missing evidence.
 
 ---
 
@@ -261,6 +248,14 @@ Do not reset:
 
 ## Stage 5 - State Reset
 
+Render the post-closeout `STATE.md` body via the Core CLI:
+
+```
+cartopian compose-state <project-path>
+```
+
+After Stage 4 the live plan surface is empty, so `cartopian compose-state` returns the no-plan record shape — `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` are all `null`. Because `rendered_body` is `null` in the no-plan case, treat the aggregator as the signal that the project surface is reset, and author `STATE.md` directly so it captures the closeout-specific fields the aggregator does not emit (closeout date, archive note, carry-forward choices, next-action pointer).
+
 Rewrite `STATE.md` so it is under 5KB and says:
 
 - There is no active plan.
@@ -296,6 +291,8 @@ None.
 
 Run `skills/plan-project.md` to gather fresh requirements and generate the next implementation plan.
 ```
+
+Confirm the no-plan `cartopian compose-state` record (all fields `null`) before writing — a non-null `current_phase`, `active_work`, `open_work`, or `rendered_body` means Stage 4 reset did not complete and closeout must not finalize the new `STATE.md`.
 
 ---
 
