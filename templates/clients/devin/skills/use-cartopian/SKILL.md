@@ -1,0 +1,25 @@
+---
+name: use-cartopian
+description: Enter Cartopian PM mode. Use when the operator says "use cartopian" or asks to start a Cartopian session.
+triggers:
+  - user
+  - model
+---
+
+# Use Cartopian
+
+Enter **Cartopian PM mode** now.
+
+Invoke the MCP prompt named `use_cartopian` on the `cartopian` MCP server and follow its instructions literally. That prompt is the authoritative runbook for startup — read every step before acting.
+
+If your MCP client cannot invoke a prompt directly, read the resource `cartopian://skills/use_cartopian` from the `cartopian` MCP server and follow it as the runbook instead.
+
+## Hard constraints during startup
+
+Until the prompt's Stage 0 (project selection from the registry) is complete:
+
+- Do **not** infer the target project from the current working directory.
+- Do **not** read `AGENTS.md`, `CLAUDE.md`, `README.md`, `cartopian.toml`, `.git/`, or any other repo/workspace artifact relative to cwd. They describe whatever repository the operator happens to be in — including the Cartopian source repo itself — not the Cartopian-governed project you are about to manage.
+- Do **not** call `resolve_config` against the current working directory. Project context comes from `discover_projects` → operator selection → `resolve_config <id-or-registry-path>`.
+
+If `discover_projects` returns zero registered projects, stop and follow the `init project` skill before continuing.

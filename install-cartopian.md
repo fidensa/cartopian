@@ -191,7 +191,7 @@ Point the operator at the install verification checklist: `$install_root/protoco
 
 Run `skills/register-mcp.md`. The install root `$install_root` is already resolved from Step 5 — pass it so Stage 0 of that skill is skipped.
 
-`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate registration recipe for each agent the operator selects. It covers Claude Code, Codex, Claude Desktop, Cursor, Windsurf, and any other agent via a generic fallback.
+`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate recipe for each agent the operator selects. For Claude Code, Codex, Gemini, Devin, and Windsurf it does the full two-part hookup — registers the MCP server **and** installs a "use cartopian" trigger bridge (skill, prompt, or command) so the entry phrase routes to the `use_cartopian` prompt. Claude Desktop and Cursor are MCP-only (no local bridge mechanism); any other agent is handled via a generic fallback.
 
 ### Step 11 — Summarize
 
@@ -201,8 +201,8 @@ Print:
 - Install root (`$install_root`, including any `--prefix` override).
 - PATH entries added (or "already present") — `bin/` plus the wrappers directory.
 - `cartopian --help` exit status and MCP `initialize` probe result (from Step 9).
-- MCP server registered with: <agents the operator chose in Step 10>.
-- **Entry point**: tell the operator, in plain language, that they can now open any registered agent in any directory and say "use cartopian" to enter Cartopian PM mode. The agent will load the `use_cartopian` prompt, which briefs it on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
+- MCP server registered with, and trigger bridge installed for: <agents the operator chose in Step 10>.
+- **Entry point**: tell the operator, in plain language, how to enter Cartopian PM mode from each agent they configured — say "use cartopian" in Claude Code and Devin for Terminal, or type `/use-cartopian` in Codex, Gemini, and Windsurf (Claude Code also accepts the slash form). From any directory, that loads the `use_cartopian` prompt, which briefs the agent on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
 - Next-step suggestion if the operator wants to proceed in this same conversation: `init workspace` if `$install_root/cartopian.toml` is a freshly-seeded default; otherwise `init project`.
 
 ---
