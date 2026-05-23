@@ -44,9 +44,27 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `auto_start`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
+
+```
+cartopian handoff-packet <task-path> --role <role>
+```
+
+Read from the emitted record:
+
+- `role_description` — the one-line description for the role being assigned.
+- `handoff_target`, `auto_start`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2.
+- `work_roots` — the ordered list of `{name, absolute_path}` entries the assignee will receive read/write access to. Use these absolute paths verbatim when composing the prompt; do not re-derive them.
+- `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
+- `git_policy` — `branch_strategy`, `auto_commit`, `auto_push` for the assignee's git boundary, when `git_versioning` is true.
+
+If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error to the caller and return a blocked outcome; do not fall back to a manual read sequence.
+
+Then, sourcing every value from the `handoff-packet` record above:
+
 1. Write or update the prompt at the caller-provided absolute prompt path.
-2. Ensure the prompt contains absolute paths for every file or directory the assignee is expected to read, modify, or produce.
-3. Ensure the prompt names the expected absolute report path.
+2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
+3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 5. Remove any stale report at the expected report path using the Core CLI before issuing the handoff:
 
@@ -54,7 +72,7 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
    cartopian delete-report <report-path>
    ```
 
-Do not delete unrelated reports. Use `delete-report` only for the expected report path. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
+Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet`. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
 ---
 
