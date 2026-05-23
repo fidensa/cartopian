@@ -26,51 +26,41 @@ Use the Core CLI to enumerate and resolve the target project:
 4. If more than one project is registered and none was selected, list the registered IDs and ask the operator to choose one; pause until a choice is made.
 5. If no projects are registered, stop and run `init project` to scaffold, generate config, and register a project. Only in this case may cwd be proposed as a candidate scaffold location.
 
-Do not read or mutate project-specific lifecycle artifacts, and do not call `resolve-config` or `plan-audit`, until a registered project is selected.
+Do not read or mutate project-specific lifecycle artifacts, and do not call `next-action` or any other lifecycle command, until a registered project is selected.
 
 ---
 
 ## Stage 1 - Resolve PM Role
 
-Resolve effective roles, handoff targets, automation policy, and relevant `[git]` keys via the Core CLI for the selected project id or path:
+PM role and dispatch path are read from the `pm_role` and `pm_dispatch_kind` fields of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Apply these rules to the values returned:
 
-```
-cartopian resolve-config <project>
-```
-
-Determine PM availability and dispatch path from the resolved config:
-
-- If `pm` is not declared in the resolved `[roles]` table, surface a blocker: the project does not declare a PM role. Ask the operator how to proceed (declare `pm` in `[roles]`, name a different role to act as PM for this session, or stop) before taking any PM lifecycle action.
-- If `pm` is declared in `[roles]` and a `[handoffs.pm]` block is configured, PM dispatch is automated via that block's wrapper.
-- If `pm` is declared in `[roles]` and no `[handoffs.pm]` block is configured, PM dispatch is manual: this agent may summarize state and propose the next action, but lifecycle execution requires explicit operator confirmation per stage.
+- If `pm_role` is the default placeholder (`Manages the project lifecycle and orchestrates handoffs.`) because no `pm` entry is declared in the resolved `[roles]` table, surface a blocker: the project does not declare a PM role. Ask the operator how to proceed (declare `pm` in `[roles]`, name a different role to act as PM for this session, or stop) before taking any PM lifecycle action.
+- If `pm_dispatch_kind` is `automated`, a `[handoffs.pm]` block is configured and PM dispatch is automated via that block's wrapper.
+- If `pm_dispatch_kind` is `manual`, no `[handoffs.pm]` block is configured: this agent may summarize state and propose the next action, but lifecycle execution requires explicit operator confirmation per stage.
 
 ---
 
 ## Stage 2 - Read Session State
 
-Read `STATE.md` and keep the summary short:
-
-- Selected project.
-- Current phase.
-- Active work.
-- Open or queued work.
-- The "What to do next" instruction.
-
-Check task directories when `STATE.md` names a task state. The filesystem is authoritative if `STATE.md` disagrees with task directory placement. Surface the mismatch and refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency.
-
-Run a lifecycle and provenance audit using the Core CLI:
+Run the orientation aggregator using the Core CLI for the selected project path:
 
 ```
-cartopian plan-audit <project-path>
+cartopian next-action <project-path>
 ```
 
-If the audit exits non-zero, surface each blocker to the operator and stop. Do not proceed to Stage 3 while blockers exist.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit) and performs the lifecycle audit that `cartopian plan-audit` would, so neither needs to be invoked separately as part of the start-session flow. Operators may still run `cartopian plan-audit` ad-hoc for deeper diagnostics; it is not part of the canonical orientation.
 
-- **Missing artifact chain**: a task in `tasks/in-progress/` has no matching `prompts/PROMPT-NN-NNN.md`, or a task in `tasks/in-review/` has no matching `reviews/REVIEW-NN-NNN.md`. This indicates the task was moved without following the proper workflow.
+Present a short summary to the operator from the returned record:
 
-Surface any audit warnings to the operator before proceeding. `unattributed-work-root-changes` only fires when the effective `git.pm_owns_product_branches = true` and a configured work root has uncommitted changes that cannot be linked to an active prompt chain; it is informational and does not by itself block lifecycle action.
+- Selected project — `project_id` at `project_path`.
+- Current phase — `phase_id`.
+- Active work — `active_task` (id, title, status).
+- Open or queued work — `next_open_task` (id, title).
 
-The audit also emits `work-root-attribution` entries (alongside `warnings`, under `attributions`) when `git.pm_owns_product_branches = false` and a work root is dirty. These are informational records that name the most-recently-modified task and assignee responsible for that work root. They never block; do not treat them as a reason to pause lifecycle action.
+Then check the disagreement and blocker fields before proposing any action:
+
+- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency.
+- **`blockers`**: any non-empty `blockers` array is a PM-level blocker (e.g. `no active phase detected but tasks are present`, `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not proceed to Stage 3 while blockers exist.
 
 Resolve blockers with the operator before taking any lifecycle action.
 
@@ -78,13 +68,13 @@ Resolve blockers with the operator before taking any lifecycle action.
 
 ## Stage 3 - Propose The Next Action
 
-Convert `STATE.md` into one proposed PM action:
+Convert the `next-action` record's `active_task` and `next_open_task` fields into one proposed PM action:
 
-- If a task is active, ask whether to continue it with `run task`.
-- If a task is in review, ask whether to process the review path with `run task`.
-- If no plan exists, ask whether to begin planning with `plan project`.
-- If the current plan is complete, ask whether to close it with `close plan`.
-- If `STATE.md` names the next open task, ask whether to start that task with `run task`.
+- If `active_task` is non-null and its status is `in-progress`, ask whether to continue it with `run task`.
+- If `active_task` is non-null and its status is `in-review`, ask whether to process the review path with `run task`.
+- If `phase_id` is null and no plan exists for the project, ask whether to begin planning with `plan project`.
+- If the current plan is complete (no `active_task`, no `next_open_task`, and `phase_id` resolved), ask whether to close it with `close plan`.
+- If `active_task` is null and `next_open_task` is non-null, ask whether to start that task with `run task`.
 - If `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact, ask whether to perform that PM-owned authoring action now.
 
 Ask the operator for confirmation before launching a handoff, moving a task, creating an assignment prompt, or otherwise advancing lifecycle state.
