@@ -61,7 +61,7 @@ class TestFr004Smoke(unittest.TestCase):
 
     - scaffold-project / generate-config / register-project /
       discover-projects / resolve-config (project bring-up);
-    - parse-report and validate-task-readiness against minimal seeded
+    - report-action and validate-task-readiness against minimal seeded
       fixtures;
     - move-task on a seeded task file;
     - unregister-project to tear down the registry entry.
@@ -143,7 +143,7 @@ class TestFr004Smoke(unittest.TestCase):
             validate_rec = json.loads(validate.stdout.strip())
             self.assertTrue(validate_rec["ready"])
 
-            # parse-report — seed a minimal task report and parse it
+            # report-action — seed a minimal task report and parse it
             report_path = project / "reports" / "REPORT-99-999.md"
             report_path.write_text(
                 "# REPORT-99-999\n"
@@ -178,7 +178,7 @@ class TestFr004Smoke(unittest.TestCase):
                 "yes\n",
                 encoding="utf-8",
             )
-            parse = _run_cli("parse-report", str(report_path), home=home)
+            parse = _run_cli("report-action", str(report_path), home=home)
             self.assertEqual(parse.returncode, 0, msg=parse.stderr)
             parse_rec = json.loads(parse.stdout.strip())
             self.assertEqual(parse_rec["verdict"], "accepted")

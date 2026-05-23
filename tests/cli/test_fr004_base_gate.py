@@ -23,7 +23,6 @@ from pathlib import Path
 
 FR004_COMMANDS = (
     "resolve_config",
-    "parse_report",
     "validate_task_readiness",
     "move_task",
     "discover_projects",

@@ -42,7 +42,7 @@ class SkillsStaticCoverageTest(unittest.TestCase):
         for needle in (
             "cartopian resolve-config",
             "cartopian delete-report",
-            "cartopian parse-report",
+            "cartopian report-action",
         ):
             self.assertIn(needle, text, msg=f"run-handoff.md must reference `{needle}`")
         self.assertNotRegex(text, r"Repo subpath:")

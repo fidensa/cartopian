@@ -112,16 +112,18 @@ A deadline kill, hard process stop, or missing/late/invalid report is not succes
 Use the Core CLI to parse the report at the expected absolute report path and validate it against the applicable variant in `templates/REPORT.md`:
 
 ```
-cartopian parse-report <report-path> [--variant <variant>]
+cartopian report-action <report-path>
 ```
 
-Variants:
+`report-action` infers the report variant from filename and content; the supported variants are:
 
 - Task completion for task handoffs.
 - Review completion for task-review handoffs.
 - Planning-review completion for planning-checkpoint review handoffs.
 
-Caller-side path-consistency check (per AR-5): verify that the parsed report’s embedded paths, when present, match the expected task, prompt, review, and report paths the caller supplied. If the report is missing, malformed, inconsistent, uses unsupported values, or fails the expected-path check, treat it as `failed-to-parse`.
+The emitted record is a strict superset of the legacy `parse-report` record: it carries the same `verdict`, `variant`, `report_path`, `status`, and `review_verdict` fields and adds routing fields such as `path_mismatch`, `target_task_status`, and `recommended_action`. The `path_mismatch` flag captures the AR-5 expected-path check directly; treat `path_mismatch = true` as `failed-to-parse` for the caller.
+
+If the report is missing, malformed, inconsistent, uses unsupported values, or fails the expected-path check, treat it as `failed-to-parse`.
 
 Treat `failed-to-parse` as blocked for the caller. Preserve the prompt and invalid report for operator inspection.
 
