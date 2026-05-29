@@ -9,7 +9,7 @@ Cartopian turns "I want to do X" into a tracked plan, logical phases, structured
 - **Plans the work.** An AI Project Manager interviews you, drafts requirements, breaks them into phases, and emits tasks with acceptance criteria.
 - **Tracks progress.** Phases, tasks, decisions, reviews, and session state live as plain markdown so progress is visible at a glance — and survives any tool change.
 - **Writes the specs.** Each task gets a real spec, not a vibes-based prompt. Decisions get recorded as they happen, so future-you knows why.
-- **Orchestrates the doers.** Roles map tasks to the right resource: a programmer agent, a reviewer agent, a designer, or you. Define any role you need; only the Operator and Project Manger roles are required. The PM hands off, collects results, and integrates.
+- **Orchestrates the doers.** Roles map tasks to the right resource: a programmer agent, a reviewer agent, a designer, or you. Define any role you need; only the Operator and Project Manager roles are required. The PM hands off, collects results, and integrates.
 - **Automates the boring parts.** Handoffs to CLI agents (Codex, Claude Code, Gemini, Devin, or others) can be one-tap or fully unattended, with timeouts and confirmation gates you control.
 - **Stays out of your way.** Git is optional. Automation is optional. Roles are operator-chosen. Every decision is overridable.
 
@@ -33,7 +33,7 @@ When the plan is done, **"close plan"** archives it and you're ready for the nex
 
 Requirements: **Python 3.11+** on your PATH. (macOS users: the stock `/usr/bin/python3` is 3.9 — use `brew install python@3.11` or any 3.11+ interpreter.) That's it. No git knowledge required.
 
-Open your AI agent of choice (Claude Code, Claude Desktop, Codex, Gemini CLI, Devin — any MCP-aware agent that can read a URL and run shell commands) and tell it:
+Open your AI agent of choice (Claude Code, Claude Desktop, Codex, Gemini CLI, Devin, Windsurf, Cursor — any MCP-aware agent that can read a URL and run shell commands) and tell it:
 
 > Install Cartopian by following https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md
 
@@ -43,7 +43,7 @@ After install, open that agent in **any** directory and say:
 
 > use cartopian
 
-That's the entry point. The agent enters Cartopian PM mode, reads the protocol contract, loads the session startup runbook, and begins registry-based project selection — no working directory required, no path to remember. If you have projects registered it moves straight to `start session`; if you don't, it offers `init project`.
+That's the entry point. The agent enters Cartopian PM mode, reads the protocol contract, loads the session startup runbook, and begins registry-based project selection — no working directory required, no path to remember. If you have projects registered it moves straight to `start session`; if you don't, it offers `init project`. On MCP-only clients with no command/skill bridge (Claude Desktop, Cursor), trigger the same flow by invoking the `use_cartopian` prompt from the client's prompt picker — every skill is also exposed as an MCP prompt.
 
 **Upgrade** the same way: ask any Cartopian-aware agent to run `check for updates`. It compares your installed version against the latest release and re-installs on your approval.
 
@@ -65,23 +65,23 @@ git clone https://github.com/fidensa/cartopian.git
 python3 cartopian/scripts/install.py
 ```
 
-This symlinks `~/.cartopian/` back to your clone so edits take effect without re-installing. The agent-driven installer also patches your PATH; under the manual flow you do that yourself. Add `bin/` to your user PATH:
+This symlinks `~/.cartopian/` back to your clone so edits take effect without re-installing. The agent-driven installer also patches your PATH; under the manual flow you do that yourself. Add both `bin/` and the platform wrapper directory to your user PATH — `bin/` exposes `cartopian` and `cartopian-mcp`, while the wrapper directory (`wrappers/bin` on Unix, `wrappers\ps1` on Windows) exposes the `cartopian-codex`/`cartopian-claude`/… handoff wrappers as bare commands:
 
 ```bash
 # zsh
-echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+echo 'export PATH="$HOME/.cartopian/bin:$HOME/.cartopian/wrappers/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 
 # bash
-echo 'export PATH="$HOME/.cartopian/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+echo 'export PATH="$HOME/.cartopian/bin:$HOME/.cartopian/wrappers/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ```powershell
 # Windows PowerShell (user-scope PATH; open a new shell after)
-$bin = "$HOME\.cartopian\bin"
 $current = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($current -split ";") -notcontains $bin) {
-  [Environment]::SetEnvironmentVariable("Path", "$bin;$current", "User")
+foreach ($dir in "$HOME\.cartopian\bin", "$HOME\.cartopian\wrappers\ps1") {
+  if (($current -split ";") -notcontains $dir) { $current = "$dir;$current" }
 }
+[Environment]::SetEnvironmentVariable("Path", $current, "User")
 ```
 
 On native Windows, symlink mode requires Developer Mode or an elevated shell — otherwise pass `--mode copy` to `scripts/install.py`.
@@ -104,7 +104,7 @@ Cartopian ships **skills** — runbooks the agent reads and follows to do real w
 | `run task` | Drives one task from assignment through review |
 | `run handoff` | Executes one prompt/report handoff |
 | `close plan` | Closes the active plan and resets for the next |
-| `register mcp` | Register `cartopian-mcp` with additional agents after install |
+| `register mcp` | Register `cartopian-mcp` with more agents and install their `use cartopian` / `/use-cartopian` triggers |
 | `check for updates` | Compares installed version to latest release; upgrades on approval |
 
 In a workspace with multiple projects, vague requests like *"start working"* prompt the PM to ask which project first. Then it reads `STATE.md`, reports the current or next move, and waits for your go-ahead.
@@ -145,12 +145,15 @@ See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full co
 
 ## Configuration
 
-Two layers:
+Config resolves in three layers, most-specific first:
 
-- **Workspace** `cartopian.toml` at the workspace root — defaults across projects.
 - **Project** `cartopian.toml` in each project directory — overrides and project-specific settings.
+- **Global** `cartopian.toml` at the install root (`~/.cartopian/`) — defaults shared across projects.
+- **Protocol defaults** shipped with the tool — the fallback when neither file sets a key.
 
-Run `init workspace` to scaffold them. Edit either with any text editor.
+Per-machine absolute paths (the `work_roots` a project's tasks point at — e.g. the sibling product repo) live in a gitignored **`cartopian.local.toml`** beside each project's `cartopian.toml`. That keeps the committed config identical for every operator while paths stay machine-local.
+
+Run `init workspace` to scaffold the global and project files. Edit any of them with a text editor.
 
 ## Layout
 
@@ -167,10 +170,10 @@ The workspace lives next to the product repos it manages:
 │   ├── mcp_server/             ← the cartopian-mcp MCP server
 │   └── projects/               ← per-project PM data (gitignored, own repo)
 │       └── <project>/
-│           ├── cartopian.toml
-│           ├── STATE.md
-│           ├── REQUIREMENTS.md
-│           ├── IMPLEMENTATION_PLAN.md
+│           ├── cartopian.toml        ← committed project config
+│           ├── cartopian.local.toml  ← per-machine work_root paths (gitignored)
+│           ├── STATE.md  CONVENTIONS.md  STANDARDS.md
+│           ├── REQUIREMENTS.md  IMPLEMENTATION_PLAN.md
 │           ├── phases/  prompts/  reports/
 │           ├── tasks/{open,in-progress,in-review,done}/
 │           ├── specs/  decisions/  reviews/
@@ -185,6 +188,8 @@ Status is a directory. Moving a task file *is* the status update — no metadata
 ## Protocol
 
 The contracts are in `protocol/CONVENTIONS.md`. The executable workflows are in `skills/`. Both are plain markdown and meant to be read by humans and agents alike.
+
+Skills don't make the agent reason through bookkeeping. The deterministic parts — reading state, validating task readiness, assembling handoff prompts, auditing a plan, moving a task between status directories — are handled by `cartopian` CLI subcommands (exposed to MCP clients as the matching tools). The skill calls the command and acts on the result, so that work stays out of the model's context: fewer tokens burned, less noise, and the same answer every time.
 
 ## License
 
