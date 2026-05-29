@@ -55,6 +55,49 @@ def single(method: str, params: Optional[Dict[str, Any]] = None, rpc_id: int = 1
 
 
 # ---------------------------------------------------------------------------
+# Byte-exact stdio harness (Content-Length framing + newline-delimited)
+# ---------------------------------------------------------------------------
+
+def run_bytes(raw: bytes) -> bytes:
+    """Drive server.run() over genuine byte streams; return raw stdout bytes."""
+    stdin = io.BytesIO(raw)
+    stdout = io.BytesIO()
+    server.run(stdin=stdin, stdout=stdout)
+    return stdout.getvalue()
+
+
+def frame(message: Dict[str, Any], eol: bytes = b"\r\n") -> bytes:
+    """Encode a message with a Content-Length header block."""
+    body = json.dumps(message).encode("utf-8")
+    header = b"Content-Length: " + str(len(body)).encode("ascii")
+    return header + eol + eol + body
+
+
+def newline(message: Dict[str, Any]) -> bytes:
+    """Encode a message as newline-delimited JSON."""
+    return json.dumps(message).encode("utf-8") + b"\n"
+
+
+def parse_framed(out: bytes) -> List[Dict[str, Any]]:
+    """Parse one-or-more Content-Length-framed messages from a byte stream."""
+    messages: List[Dict[str, Any]] = []
+    rest = out
+    while rest:
+        header_blob, sep, after = rest.partition(b"\r\n\r\n")
+        assert sep, f"no header/body separator in: {rest!r}"
+        length = None
+        for hline in header_blob.split(b"\r\n"):
+            name, _, value = hline.partition(b":")
+            if name.strip().lower() == b"content-length":
+                length = int(value.strip())
+        assert length is not None, f"no Content-Length in: {header_blob!r}"
+        body = after[:length]
+        messages.append(json.loads(body.decode("utf-8")))
+        rest = after[length:]
+    return messages
+
+
+# ---------------------------------------------------------------------------
 # JSON-RPC dispatch
 # ---------------------------------------------------------------------------
 
@@ -422,6 +465,98 @@ class TestHandleMessageScrubsTraceback(unittest.TestCase):
         self.assertNotIn("/etc/passwd", msg)
         self.assertNotIn("Traceback", msg)
         self.assertNotIn("RuntimeError", msg)
+
+
+# ---------------------------------------------------------------------------
+# Dual stdio framing (Content-Length headers + newline-delimited)
+# ---------------------------------------------------------------------------
+
+class TestStdioFraming(unittest.TestCase):
+    INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+
+    def test_content_length_framed_request_is_parsed(self):
+        # Read/parse loop must consume exactly Content-Length bytes and
+        # dispatch the request, rather than treating the header line as JSON.
+        out = run_bytes(frame(self.INIT))
+        messages = parse_framed(out)
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["id"], 1)
+        self.assertEqual(messages[0]["result"]["protocolVersion"], "2024-11-05")
+
+    def test_framed_request_gets_framed_response(self):
+        # Symmetry: a Content-Length request gets a Content-Length response.
+        out = run_bytes(frame(self.INIT))
+        self.assertTrue(
+            out.startswith(b"Content-Length:"),
+            msg=f"expected framed response, got: {out!r}",
+        )
+        self.assertIn(b"\r\n\r\n", out)
+
+    def test_newline_request_gets_newline_response(self):
+        # Symmetry: a newline-delimited request gets a newline-delimited
+        # response — no Content-Length header is emitted.
+        out = run_bytes(newline(self.INIT))
+        self.assertFalse(
+            out.startswith(b"Content-Length:"),
+            msg=f"expected newline response, got: {out!r}",
+        )
+        self.assertTrue(out.endswith(b"\n"))
+        message = json.loads(out.splitlines()[0].decode("utf-8"))
+        self.assertEqual(message["id"], 1)
+        self.assertEqual(message["result"]["protocolVersion"], "2024-11-05")
+
+    def test_newline_response_body_has_no_embedded_framing(self):
+        out = run_bytes(newline(self.INIT))
+        self.assertNotIn(b"Content-Length", out)
+
+    def test_multiple_framed_messages_back_to_back(self):
+        ping = {"jsonrpc": "2.0", "id": 2, "method": "ping", "params": {}}
+        out = run_bytes(frame(self.INIT) + frame(ping))
+        messages = parse_framed(out)
+        self.assertEqual([m["id"] for m in messages], [1, 2])
+        self.assertEqual(messages[1]["result"], {})
+
+    def test_framed_payload_is_read_byte_exact(self):
+        # A payload whose JSON contains an embedded newline must still be read
+        # in full by byte count — line iteration would truncate it.
+        msg = {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "does_not_exist\ninjected", "arguments": {}},
+        }
+        out = run_bytes(frame(msg))
+        messages = parse_framed(out)
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["id"], 9)
+        # Whole payload parsed: the bogus tool name reaches dispatch and errors.
+        self.assertEqual(messages[0]["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_lf_only_header_terminator_is_accepted(self):
+        # Some clients emit LF rather than CRLF around the header block.
+        out = run_bytes(frame(self.INIT, eol=b"\n"))
+        self.assertTrue(out.startswith(b"Content-Length:"))
+        messages = parse_framed(out)
+        self.assertEqual(messages[0]["id"], 1)
+
+    def test_mixed_framing_in_one_stream(self):
+        ping = {"jsonrpc": "2.0", "id": 3, "method": "ping", "params": {}}
+        out = run_bytes(frame(self.INIT) + newline(ping))
+        # First response framed, second newline-delimited.
+        self.assertTrue(out.startswith(b"Content-Length:"))
+        first_blob, _, after = out.partition(b"\r\n\r\n")
+        length = int(first_blob.split(b": ")[1])
+        first = json.loads(after[:length].decode("utf-8"))
+        self.assertEqual(first["id"], 1)
+        tail = after[length:]
+        second = json.loads(tail.splitlines()[0].decode("utf-8"))
+        self.assertEqual(second["id"], 3)
+        self.assertNotIn(b"Content-Length", tail)
+
+    def test_framed_notification_produces_no_response(self):
+        note = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        out = run_bytes(frame(note))
+        self.assertEqual(out, b"")
 
 
 # ---------------------------------------------------------------------------

@@ -18,9 +18,12 @@ MCP) is configured to launch ``cartopian-mcp``, the operator can say
   ``cartopian://templates/<name>``, and ``cartopian://project/<id>/<file>``
   for registered projects.
 
-Transport is newline-delimited JSON-RPC over stdin/stdout (no
-Content-Length headers); this matches what current MCP clients
-(Claude Code, Claude Desktop) negotiate by default on stdio.
+Transport is JSON-RPC over stdin/stdout with dual framing: the server
+reads (and replies in) either ``Content-Length``-header framing
+(``Content-Length: <n>\r\n\r\n<payload>``, the standard MCP SDK framing)
+or raw newline-delimited JSON-RPC, matching the framing each request
+arrives in. Stdio is handled byte-exact via the binary buffer so no
+``\n``↔``\r\n`` text-mode translation can corrupt a framed payload.
 
 The server depends on the rest of the install tree (``skills/``,
 ``protocol/``, ``templates/``, ``cli/``, ``projects.json``) but pulls
@@ -31,6 +34,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import subprocess
 import sys
 import traceback
@@ -788,37 +792,166 @@ def _error_response(rpc_id: Any, code: int, message: str, data: Any = None) -> D
 
 
 # ---------------------------------------------------------------------------
-# Stdio loop
+# Stdio loop — dual framing (Content-Length headers + newline-delimited)
 # ---------------------------------------------------------------------------
+#
+# stdin/stdout are byte streams. To stay byte-exact for ``Content-Length``
+# framing (and to dodge ``\n``↔``\r\n`` text-mode translation on Windows) the
+# loop works on the binary buffer: it reads header/framing lines with
+# ``readline()`` and framed payloads with an exact byte count. Each request's
+# framing is remembered and the response is emitted in the same framing.
+
+# Matches an RFC-822-style header field name followed by a colon, e.g.
+# ``Content-Length:``. A JSON-RPC message always starts with ``{`` (or ``[``),
+# never a bare ``token:``, so this cleanly distinguishes the two framings.
+_HEADER_LINE = re.compile(rb"^[A-Za-z][A-Za-z0-9-]*:")
+
+FRAMING_HEADER = "header"
+FRAMING_NEWLINE = "newline"
+
+
+class _TextReaderAdapter:
+    """Expose a text stream (e.g. ``io.StringIO``) as a byte reader.
+
+    Only the legacy in-process test harness drives the server with text
+    streams; the real entry point uses ``sys.stdin.buffer``. ``read`` is
+    char-based here (exact for the ASCII payloads the text harness uses);
+    byte-exact framed reads come through the binary path.
+    """
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    def readline(self) -> bytes:
+        return self._stream.readline().encode("utf-8")
+
+    def read(self, size: int) -> bytes:
+        return self._stream.read(size).encode("utf-8")
+
+
+class _TextWriterAdapter:
+    """Expose a text stream as a byte writer (mirror of the reader adapter)."""
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    def write(self, data: bytes) -> None:
+        self._stream.write(data.decode("utf-8"))
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+
+def _byte_reader(stdin):
+    if stdin is None:
+        return sys.stdin.buffer
+    buffer = getattr(stdin, "buffer", None)
+    if buffer is not None:  # real text stdio (TextIOWrapper) → use its binary buffer
+        return buffer
+    if isinstance(stdin, io.TextIOBase):  # in-memory text stream (StringIO)
+        return _TextReaderAdapter(stdin)
+    return stdin  # already a binary stream (BytesIO / BufferedReader)
+
+
+def _byte_writer(stdout):
+    if stdout is None:
+        return sys.stdout.buffer
+    buffer = getattr(stdout, "buffer", None)
+    if buffer is not None:
+        return buffer
+    if isinstance(stdout, io.TextIOBase):
+        return _TextWriterAdapter(stdout)
+    return stdout
+
+
+def _read_exact(reader, count: int) -> bytes:
+    """Read exactly ``count`` bytes, or fewer only at EOF."""
+    chunks: List[bytes] = []
+    remaining = count
+    while remaining > 0:
+        chunk = reader.read(remaining)
+        if not chunk:
+            break  # EOF before the declared payload was complete
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _read_content_length(first_line: bytes, reader) -> Optional[int]:
+    """Consume a header block (starting at ``first_line``) up to the blank
+    separator line and return the parsed ``Content-Length``.
+
+    Returns ``None`` if no valid ``Content-Length`` header is present. Handles
+    both ``\r\n`` and ``\n`` line endings since ``strip`` drops either.
+    """
+    content_length: Optional[int] = None
+    line = first_line
+    while True:
+        stripped = line.strip()
+        if not stripped:
+            break  # blank line terminates the header block
+        name, sep, value = stripped.partition(b":")
+        if sep and name.strip().lower() == b"content-length":
+            try:
+                content_length = int(value.strip())
+            except ValueError:
+                return None
+        line = reader.readline()
+        if not line:
+            break  # EOF before the blank separator
+    return content_length
+
 
 def run(stdin=None, stdout=None) -> int:
-    """Serve MCP requests on stdin/stdout until EOF."""
-    stdin = stdin or sys.stdin
-    stdout = stdout or sys.stdout
+    """Serve MCP requests on stdin/stdout until EOF, in either framing."""
+    reader = _byte_reader(stdin)
+    writer = _byte_writer(stdout)
 
-    for raw in stdin:
-        line = raw.strip()
+    while True:
+        line = reader.readline()
         if not line:
-            continue
+            break  # EOF
+        stripped = line.strip()
+        if not stripped:
+            continue  # blank line between messages
+
+        if _HEADER_LINE.match(stripped):
+            framing = FRAMING_HEADER
+            content_length = _read_content_length(stripped, reader)
+            if content_length is None:
+                _write(writer, framing, _error_response(None, ERR_PARSE, "invalid Content-Length header"))
+                continue
+            payload = _read_exact(reader, content_length)
+            if len(payload) < content_length:
+                _write(writer, framing, _error_response(None, ERR_PARSE, "unexpected EOF in framed payload"))
+                break
+        else:
+            framing = FRAMING_NEWLINE
+            payload = stripped
+
         try:
-            message = json.loads(line)
-        except json.JSONDecodeError:
-            response = _error_response(None, ERR_PARSE, "invalid JSON")
-            _write(stdout, response)
+            message = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            _write(writer, framing, _error_response(None, ERR_PARSE, "invalid JSON"))
             continue
         if not isinstance(message, dict):
-            response = _error_response(None, ERR_INVALID_REQUEST, "message must be a JSON object")
-            _write(stdout, response)
+            _write(writer, framing, _error_response(None, ERR_INVALID_REQUEST, "message must be a JSON object"))
             continue
         response = handle_message(message)
         if response is not None:
-            _write(stdout, response)
+            _write(writer, framing, response)
     return 0
 
 
-def _write(stream, payload: Dict[str, Any]) -> None:
-    stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    stream.flush()
+def _write(writer, framing: str, payload: Dict[str, Any]) -> None:
+    """Serialize ``payload`` to ``writer`` in the requested framing."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if framing == FRAMING_HEADER:
+        header = b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n"
+        writer.write(header + body)
+    else:
+        writer.write(body + b"\n")
+    writer.flush()
 
 
 if __name__ == "__main__":  # pragma: no cover
