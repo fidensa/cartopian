@@ -195,15 +195,28 @@ def _current_phase(project_path: Path) -> Optional[str]:
 
 
 def _active_work(project_path: Path) -> Optional[str]:
-    """Return the active work summary from in-progress or in-review work."""
-    for status in _ACTIVE_STATUSES:
+    """Return active work bullet lines from in-progress and in-review work.
+
+    Every task in an active status directory is surfaced, ordered by phase,
+    then by status (in-progress before in-review), then filename. The
+    filesystem is the source of truth, so concurrent active tasks must all
+    appear here just as ``list-tasks`` reports them.
+    """
+    order = _phase_order(project_path)
+    rows: List[tuple[int, int, str, str]] = []
+    for status_rank, status in enumerate(_ACTIVE_STATUSES):
         for task_path in _iter_task_paths(project_path, status):
             task = _read_task_record(task_path)
             if task is None:
                 continue
+            phase_id = task["phase_id"] if isinstance(task["phase_id"], str) else ""
             rel_path = task_path.relative_to(project_path).as_posix()
-            return f"{task['task_id']}: {task['title']} (`{rel_path}`)"
-    return None
+            line = f"- {task['task_id']}: {task['title']} (`{rel_path}`)"
+            rows.append((order.get(phase_id, len(order)), status_rank, task_path.name, line))
+    if not rows:
+        return None
+    rows.sort(key=lambda item: (item[0], item[1], item[2]))
+    return "\n".join(item[3] for item in rows)
 
 
 def _dependency_state(project_path: Path, blocked_by: List[str]) -> str:

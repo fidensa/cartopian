@@ -101,7 +101,7 @@ class TestComposeStateHappyPath(unittest.TestCase):
             )
             self.assertEqual(
                 rec["active_work"],
-                "TASK-01-002: Build core (`tasks/in-progress/TASK-01-002-build-core.md`)",
+                "- TASK-01-002: Build core (`tasks/in-progress/TASK-01-002-build-core.md`)",
             )
             self.assertEqual(
                 rec["open_work"],
@@ -118,12 +118,47 @@ class TestComposeStateHappyPath(unittest.TestCase):
                 "## Current phase\n\n"
                 "PHASE-01-foundation: Foundation (`phases/PHASE-01-foundation.md`)\n\n"
                 "## Active work\n\n"
-                "TASK-01-002: Build core (`tasks/in-progress/TASK-01-002-build-core.md`)\n\n"
+                "- TASK-01-002: Build core (`tasks/in-progress/TASK-01-002-build-core.md`)\n\n"
                 "## Open work\n\n"
                 "- TASK-01-003: Polish core (`tasks/open/TASK-01-003-polish-core.md`) [ready]\n"
                 "- TASK-02-001: Expand scope (`tasks/open/TASK-02-001-expand-scope.md`) [ready]\n\n"
                 "## What to do next\n\n"
                 "Continue TASK-01-002 (`tasks/in-progress/TASK-01-002-build-core.md`).",
+            )
+
+
+class TestComposeStateMultipleActiveTasks(unittest.TestCase):
+    def test_all_active_tasks_surface_as_bullets(self) -> None:
+        # Regression: every task in an active status directory must appear,
+        # matching list-tasks. compose-state previously returned only the
+        # first in-progress task and silently dropped concurrent siblings.
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write(
+                "phases/PHASE-01-foundation.md",
+                "# PHASE-01-foundation: Foundation\n",
+            )
+            scaffold.write(
+                "tasks/in-progress/TASK-01-002-build-core.md",
+                "# TASK-01-002: Build core\n\nPhase: PHASE-01-foundation\n",
+            )
+            scaffold.write(
+                "tasks/in-progress/TASK-01-005-wire-cli.md",
+                "# TASK-01-005: Wire CLI\n\nPhase: PHASE-01-foundation\n",
+            )
+            scaffold.write(
+                "tasks/in-review/TASK-01-004-review-me.md",
+                "# TASK-01-004: Review me\n\nPhase: PHASE-01-foundation\n",
+            )
+
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(
+                records[0]["active_work"],
+                "- TASK-01-002: Build core (`tasks/in-progress/TASK-01-002-build-core.md`)\n"
+                "- TASK-01-005: Wire CLI (`tasks/in-progress/TASK-01-005-wire-cli.md`)\n"
+                "- TASK-01-004: Review me (`tasks/in-review/TASK-01-004-review-me.md`)",
             )
 
 
