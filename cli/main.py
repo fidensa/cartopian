@@ -33,6 +33,9 @@ SUBCOMMANDS: List[str] = [
     "list-tasks",
     # FR-014 aggregator
     "next-action",
+    # FR-014 stdio wait primitives
+    "wait-report",
+    "wait-handoff",
     # FR-003 aggregator
     "handoff-packet",
     # lifecycle + provenance audit
@@ -101,6 +104,8 @@ def _real_handlers():
         task_bundle,
         unregister_project,
         validate_task_readiness as vtr,
+        wait_handoff,
+        wait_report,
     )
 
     return {
@@ -122,6 +127,8 @@ def _real_handlers():
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
+        "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
+        "wait-report": (wait_report.configure_parser, wait_report.handler),
     }
 
 

@@ -102,6 +102,17 @@ def _build_work_roots(
     return [{"name": name, "absolute_path": resolved.get(name)} for name in names]
 
 
+def _expected_report_path(project_root: Path, task_id: str) -> Path:
+    """Return the protocol-derived expected report path for a task.
+
+    The report path is task-derived (``reports/REPORT-NN-NNN.md``), not
+    role-derived. Shared with ``wait-handoff`` so both commands resolve the
+    expected report path identically.
+    """
+    nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
+    return (project_root / "reports" / f"REPORT-{nn_nnn}.md").resolve()
+
+
 def _build_git_policy(git_block: Dict[str, Any]) -> Dict[str, Any]:
     """Project the resolved git block down to the FR-003 git_policy shape."""
     return {
@@ -190,8 +201,7 @@ def handler(args: argparse.Namespace) -> int:
 
     task_id = _extract_task_id(task_path) or task_path.stem
     task_title = _first_heading(content) or task_path.stem
-    nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
-    expected_report_path = (project_root / "reports" / f"REPORT-{nn_nnn}.md").resolve()
+    expected_report_path = _expected_report_path(project_root, task_id)
 
     record: Dict[str, Any] = {
         "task_id": task_id,
