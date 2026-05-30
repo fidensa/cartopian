@@ -104,24 +104,37 @@ Launch the handoff as a background subprocess (do not impose a foreground tool-c
 
 ## Stage 3 - Wait For Completion
 
-The dispatch is OS-bounded by the wrapper using `CARTOPIAN_TIMEOUT`. Wait for the wrapper subprocess to exit. Do not poll status repeatedly, do not impose a separate PM-side deadline, and do not intervene before the wrapper completes on its own. The wrapper is the watchdog; the PM is the consumer of its result.
+Detect completion with a Core CLI wait primitive rather than a hand-rolled timing loop, a repeated manual re-read of the report on a fixed cadence, or a "tell me when it's done" prompt to the operator. The wait commands are read-only filesystem observers: the **report file is the authoritative completion signal**, and the optional `<report-path>.status` wrapper file is consulted only as early crash detection. They never write, move, or launch anything.
 
-The wrapper will exit in one of two ways:
+Choose the primitive by handoff kind:
 
-- **Natural exit**: the assignee finished. Exit code is the assignee's exit code.
-- **Deadline exit**: the OS killed the assignee at the wall-clock limit. Exit code is `124` (or platform equivalent).
+- **Task-scoped handoff** (a task file exists — task assignment or task review): block on the task's expected report with
 
-After the wrapper exits, check the expected report path before interpreting the outcome — the assignee may have finished writing the report just before a deadline kill, so report presence is decided by filesystem, not exit code.
+  ```
+  cartopian wait-handoff <task-path> --role <role> --max-block <duration>
+  ```
 
-Return a blocked outcome when:
+  It resolves the same expected report path Stage 1 named, honors the configured `[handoffs.<role>].timeout` as the absolute ceiling, and emits one NDJSON record carrying a `status` flag.
 
-- The wrapper exited non-zero (including code `124` for deadline) and the expected report is missing or invalid.
-- The expected report file is missing after wrapper exit.
-- The expected report is malformed, incomplete, internally inconsistent, or path-mismatched.
-- The expected report says `blocked`.
-- The expected report requires operator judgment.
+- **Report-path-only handoff** (no task file — for example a planning-checkpoint review): block on the report path directly with
 
-A deadline kill, hard process stop, or missing/late/invalid report is not successful completion evidence.
+  ```
+  cartopian wait-report <report-path> --max-block <duration>
+  ```
+
+  It watches the single report file and emits `accepted` (done), a `[guard]` failure (a report is present but not acceptable), or `still_running` (the budget elapsed first).
+
+Interpret the emitted `status`:
+
+- `done` / `accepted`: a report is present and parses. Proceed to Stage 4 to read its verdict.
+- `failed-to-parse`: a report is present but invalid. Treat as blocked; preserve the prompt and report for inspection.
+- `failed`: the wrapper status file reports the assignee crashed and no valid report appeared. Return a blocked outcome.
+- `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
+- `still-running` / `still_running`: the `--max-block` budget elapsed before the configured timeout, so the assignee may still be working. Yield control back to the operator or host harness and re-call the same wait command on resume. The filesystem observation survives the yield, so nothing is lost by stopping and resuming, and no second handoff is started.
+
+The wrapper still enforces the wall-clock deadline at the OS level using `CARTOPIAN_TIMEOUT` (Stage 2); the wait command observes the result rather than imposing a separate PM-side deadline.
+
+Return a blocked outcome when the wait reports `failed`, `failed-to-parse`, or `timeout`; when the expected report is missing, malformed, incomplete, internally inconsistent, or path-mismatched; when the report says `blocked`; or when the report requires operator judgment. A hard process stop or a missing/late/invalid report is not successful completion evidence.
 
 ---
 

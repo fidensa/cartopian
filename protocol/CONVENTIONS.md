@@ -259,7 +259,7 @@ Handoff fields are:
 
 - `agent`: executable name.
 - `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
-- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`. The PM delegates deadline enforcement to the wrapper (which kills the upstream process at the deadline) and waits for completion rather than watchdogging the running process; it does not impose a separate PM-side deadline.
+- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`. The PM delegates deadline enforcement to the wrapper (which kills the upstream process at the deadline) and observes completion through the wait primitives described in [Waiting For Completion](#waiting-for-completion) rather than watchdogging the running process; it does not impose a separate PM-side deadline.
 
 Every automated handoff follows this argument contract:
 
@@ -318,6 +318,21 @@ Defaults are `confirmation = "each-handoff"` and `max_handoffs_per_run = 1`.
 Handoffs are sequential. Concurrent child agents are out of scope.
 
 A timeout, hard process stop, missing report, late report, or invalid report is not successful completion evidence.
+
+### Waiting For Completion
+
+The PM detects handoff completion by observing the filesystem, not by hand-rolled timing loops, repeated manual report reads on a fixed cadence, manual "tell me when it's done" prompts, or PM-side watchdog timers. Two read-only wait primitives own this step and replace all ad-hoc polling:
+
+- `cartopian wait-handoff <task-path> --role <role> --max-block <duration>` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path (the same path `cartopian handoff-packet` derives) and honors the role's configured `[handoffs.<role>].timeout` as the absolute ceiling.
+- `cartopian wait-report <report-path> --max-block <duration>` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file.
+
+The completion contract is:
+
+- **The report file is the authoritative completion signal.** A handoff is complete only when its expected report file is present and parses. The optional `<report-path>.status` wrapper file is enrichment for early crash detection only; when it is absent, the wait commands degrade to report-only observation. Both commands are read-only — they never write to the project tree, move tasks, or launch processes.
+- **Terminal observations** are `done` (report present and parses; the PM reads the report verdict for lifecycle action), `failed-to-parse` (report present but invalid), `failed` (the wrapper status file reports a crash and no valid report appeared), and `timeout` (the configured handoff ceiling elapsed first). A `timeout`, hard process stop, crash, or missing/late/invalid report is not successful completion evidence.
+- **`still-running` is the yield-and-resume signal.** When the `--max-block` budget elapses before the configured timeout, the assignee may still be working. The PM yields control back to the operator or host harness and re-calls the same wait command on resume. The filesystem observation survives the yield, so stopping and resuming loses no progress and starts no second handoff.
+
+The wrapper still enforces the wall-clock deadline at the OS level (see the `timeout` field above); the wait commands observe the result. The PM does not impose a separate PM-side deadline or watchdog.
 
 ## Dependencies
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_ROOT / "skills"
+PROTOCOL_DIR = REPO_ROOT / "protocol"
 WRAPPERS_BIN_DIR = REPO_ROOT / "wrappers" / "bin"
 WRAPPERS_PS1_DIR = REPO_ROOT / "wrappers" / "ps1"
 WRAPPERS_README = REPO_ROOT / "wrappers" / "README.md"
@@ -177,6 +178,81 @@ class WrappersStaticCoverageTest(unittest.TestCase):
             ("work-root" in text) or ("work_roots" in text),
             msg="wrappers/README.md should mention work-root access model",
         )
+
+
+class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
+    """P01-BUILD-004: wait-primitive integration into skills and § Handoffs.
+
+    The wait commands (`cartopian wait-handoff` / `cartopian wait-report`) must
+    replace ad-hoc sleep loops, manual "wait for the operator to tell you"
+    prompts, and PM-side watchdog timers across the handoff-wait surface. These
+    assertions check that the wait commands are present and that no ad-hoc
+    sleep/poll instruction survives in the updated files.
+    """
+
+    # Phrases that signal a hand-rolled sleep/poll/manual-wait instruction —
+    # exactly what the wait primitives are meant to replace. Generic words like
+    # "polling" used to *describe* the replacement are intentionally not matched.
+    FORBIDDEN_PATTERNS = (
+        r"\bsleep\b",
+        r"busy[-\s]?wait",
+        r"poll[-\s]?loop",
+        r"poll(?:ing)?[^.\n]{0,30}\brepeatedly\b",
+        r"\brepeatedly\b[^.\n]{0,30}poll",
+        r"wait for the operator to tell you",
+    )
+
+    def _read_skill(self, name: str) -> str:
+        return (SKILLS_DIR / name).read_text(encoding="utf-8")
+
+    def _handoffs_section(self) -> str:
+        text = (PROTOCOL_DIR / "CONVENTIONS.md").read_text(encoding="utf-8")
+        # Extract the "## Handoffs" section body (up to the next H2 heading).
+        match = re.search(r"\n## Handoffs\b.*?(?=\n## )", text, re.DOTALL)
+        self.assertIsNotNone(
+            match, "CONVENTIONS.md must contain a `## Handoffs` section"
+        )
+        return match.group(0)
+
+    def _assert_no_adhoc_polling(self, label: str, body: str) -> None:
+        for pattern in self.FORBIDDEN_PATTERNS:
+            self.assertIsNone(
+                re.search(pattern, body, re.IGNORECASE),
+                msg=(
+                    f"{label} must not contain an ad-hoc sleep/poll/manual-wait "
+                    f"instruction matching /{pattern}/; use a wait primitive instead"
+                ),
+            )
+
+    def test_run_handoff_uses_wait_primitives(self) -> None:
+        text = self._read_skill("run-handoff.md")
+        self.assertIn("cartopian wait-handoff", text)
+        self.assertIn("cartopian wait-report", text)
+        self.assertIn("still-running", text)
+        self._assert_no_adhoc_polling("run-handoff.md", text)
+
+    def test_run_task_uses_wait_handoff(self) -> None:
+        text = self._read_skill("run-task.md")
+        self.assertIn("cartopian wait-handoff", text)
+        self._assert_no_adhoc_polling("run-task.md", text)
+
+    def test_plan_project_uses_wait_report(self) -> None:
+        text = self._read_skill("plan-project.md")
+        self.assertIn("cartopian wait-report", text)
+        self._assert_no_adhoc_polling("plan-project.md", text)
+
+    def test_conventions_handoffs_formalizes_wait_contract(self) -> None:
+        section = self._handoffs_section()
+        # Wait commands replace ad-hoc polling.
+        self.assertIn("cartopian wait-handoff", section)
+        self.assertIn("cartopian wait-report", section)
+        # Report file is authoritative; the wrapper status file is optional.
+        self.assertRegex(section, r"authoritative")
+        self.assertRegex(section, r"\.status|status file")
+        # still-running yield-and-resume model.
+        self.assertIn("still-running", section)
+        self.assertRegex(section, r"yield")
+        self._assert_no_adhoc_polling("CONVENTIONS.md § Handoffs", section)
 
 
 if __name__ == "__main__":  # pragma: no cover

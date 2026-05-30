@@ -127,7 +127,15 @@ If the operator returns later with completion evidence even though assignment wa
 
 ## Stage 4 - Process Completion Report
 
-Parse the assignee's completion report with the Core CLI:
+Wait for the assignee to finish before parsing. Detect task-execution completion with the Core CLI wait primitive rather than a hand-rolled timing loop or a manual "tell me when it's done" prompt:
+
+```
+cartopian wait-handoff <task-path> --role <role> --max-block <duration>
+```
+
+The report file is the authoritative completion signal; `wait-handoff` blocks read-only until it observes a terminal `status` (`done`, `failed`, `failed-to-parse`, or `timeout`) or its `--max-block` budget elapses (`still-running`). On `still-running`, yield control back to the operator and re-call `wait-handoff` on resume — the filesystem observation survives the yield, so no progress is lost and no second handoff starts. Only proceed once the status is `done`. When assignment runs through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
+
+Then parse the assignee's completion report with the Core CLI:
 
 ```
 cartopian report-action <report-path>

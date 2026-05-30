@@ -252,9 +252,17 @@ At every review checkpoint:
 3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `templates/REVIEW.md`.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
+Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:
+
+```
+cartopian wait-report <project>/reports/REPORT-PLAN-NNN-slug.md --max-block <duration>
+```
+
+`cartopian wait-report` is a read-only observer: the report file is the authoritative completion signal. It emits `accepted` when the planning-review report is present and parses, a `[guard]` failure when a report is present but not acceptable, or `still_running` when the `--max-block` budget elapses before the report lands. On `still_running`, yield control back to the operator and re-call `wait-report` on resume; the filesystem observation survives the yield. When the checkpoint is dispatched through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
+
 If the operator says "skip review" at any checkpoint, do not call `skills/run-handoff.md`; proceed without review and note the skip in `STATE.md`.
 
-`skills/run-handoff.md` owns stale report deletion, manual versus CLI handoff behavior, timeout enforcement, report parsing, and sequential automation boundaries.
+`skills/run-handoff.md` owns stale report deletion, manual versus CLI handoff behavior, timeout enforcement, completion waiting via `cartopian wait-handoff` / `cartopian wait-report`, report parsing, and sequential automation boundaries.
 
 Planning-checkpoint prompts and reviews are temporary artifacts. When a planning stage is approved or superseded, clear its prompt and report artifacts using the Core CLI and keep the review as the durable record:
 
