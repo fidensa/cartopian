@@ -121,11 +121,96 @@ PM runs:  cartopian-codex /abs/path/to/PROMPT-01-003.md
               ├─ checks that 'codex' is installed
               ├─ reads the prompt file content
               ├─ resolves the launch directory (Cartopian project root)
+              ├─ derives the optional status-file path (<report-path>.status)
               ├─ wraps the invocation in an OS-level deadline (CARTOPIAN_TIMEOUT)
-              └─ exec timeout 60m codex exec --sandbox workspace-write "<prompt content>"
+              ├─ runs timeout 60m codex exec --sandbox workspace-write "<prompt content>"
+              ├─ writes the status file capturing the assignee exit outcome
+              └─ exits with the assignee's exit code
 ```
 
-The bash wrappers `exec` into `timeout <duration> <real-cli> ...` so the OS owns the deadline; signals and exit codes pass through cleanly to the PM, and the upstream process receives SIGTERM at the configured wall-clock limit (exit code 124). The PowerShell wrappers achieve the same with `Start-Process` + `WaitForExit($TimeoutMs)`. The PM does not poll or watchdog the running process — it dispatches and waits for the platform's background-completion signal.
+The bash wrappers run `timeout <duration> <real-cli> ...` so the OS owns the deadline; the upstream process receives SIGTERM at the configured wall-clock limit (exit code 124). The PowerShell wrappers achieve the same with `Start-Process` + `WaitForExit($TimeoutMs)`. The PM does not poll or watchdog the running process — it dispatches and waits for the platform's background-completion signal.
+
+The wrappers no longer `exec` into the CLI: they run it as a child, capture its exit code, write the [status file](#status-file-early-crash-detection) below, and then exit with the assignee's exit code (so signals/exit codes still reach the PM faithfully).
+
+## Status file (early-crash detection)
+
+When the assignee process exits, every wrapper writes a small **status file** capturing the exit outcome. This is the optional early-crash-detection signal `cartopian wait-handoff` polls for: if the assignee dies before producing a report, wait-handoff can return `failed` immediately instead of blocking to the deadline.
+
+**The report file remains the authoritative completion signal.** The status file is never a hard requirement — if it is missing (helper absent, unwritable directory, prompt outside a project layout), wait-handoff degrades gracefully to the report-only path. Wrappers therefore write it best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
+
+### Path
+
+The status file lives at the expected report path with a `.status` suffix — exactly the path `wait_handoff.py` derives:
+
+```text
+<project-root>/reports/REPORT-NN-NNN.md.status
+```
+
+The `NN-NNN` id comes from the prompt filename (`PROMPT-NN-NNN.md`), and the project root is the prompt's grandparent directory (`<project-root>/prompts/PROMPT-NN-NNN.md`). Wrappers compute this from the prompt path *before* changing the launch cwd, so a relative prompt path still resolves.
+
+### Shape
+
+Newline-separated `key=value` lines, UTF-8:
+
+```text
+state=exited
+exit_code=<int>
+reason=clean|error|timeout
+```
+
+| Field | Meaning |
+| --- | --- |
+| `state` | Always `exited` once the assignee process has terminated. The consumer only acts on `state=exited`. |
+| `exit_code` | The assignee's exit code. A **non-zero** code is the crash signal (`wait-handoff` reports `failed`); `0` is not a crash. |
+| `reason` | Human/diagnostic distinction only — **ignored by the consumer**, which keys off `exit_code` alone. One of `clean` (exit 0), `error` (any other non-zero exit), or `timeout` (the OS deadline killed the assignee). |
+
+### Outcome → fields
+
+| Outcome | `state` | `exit_code` | `reason` | wait-handoff verdict |
+| --- | --- | --- | --- | --- |
+| Clean exit | `exited` | `0` | `clean` | not a crash (falls through to report/budget) |
+| Non-zero exit | `exited` | `<n≠0>` | `error` | `failed` |
+| Timeout kill | `exited` | `124` | `timeout` | `failed` |
+
+A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout` returns when it kills the child at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is deliberately surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
+
+### Consumer / producer agreement
+
+The producer (the shared helpers `bin/_cartopian-status.sh` and `ps1/CartopianStatus.ps1`) and the consumer (`cli/commands/wait_handoff.py :: _status_exit_code`) must agree on path and shape. The agreement is asserted directly in `tests/wrappers/test_wrapper_status_file.py`, which runs each wrapper against a fake assignee and feeds the produced file back through the real consumer function.
+
+### Security
+
+Only the three fields above are ever written — all derived from the exit outcome. No environment variables, prompt content, credentials, tokens, or connection strings are written to the status file.
+
+### Lifecycle (write → consume → remove)
+
+The status file is transient and must never outlive the handoff it describes. Its full lifecycle is:
+
+1. **Write on assignee exit.** Every wrapper — all of `wrappers/bin/*` and `wrappers/ps1/*` — writes the file under the same condition: once the assignee process has exited and a status path could be derived from the prompt (a prompt inside a `…/prompts/PROMPT-NN-NNN.md` layout). Emission does not depend on the exit code — clean, error, and timeout exits all produce a file — and it does not depend on whether `cartopian resolve-config` succeeds (an unregistered or ad-hoc project still emits). Writing is best-effort, so a genuinely unwritable target degrades to no file rather than a wrapper failure.
+2. **Consume during wait.** `cartopian wait-handoff` reads it as the optional early-crash signal while it blocks. The report file remains the authoritative completion signal; an absent `.status` simply leaves the wait on its report-only path.
+3. **Remove at report-clear / task-close.** `cartopian delete-report <report-path>` removes the companion `<report-path>.status` together with the report at report-clear (before a slot is reused), and `cartopian delete-report <report-path> --status-only` removes just the status file at task close, when the report `.md` is retained as evidence. The PM lifecycle (`skills/run-task.md`, `skills/run-handoff.md`) calls these at the right stages; absence of the file is always a no-op.
+
+Because emission is uniform across every wrapper, a `.status` left behind always traces to step 3 not yet having run — not to which wrapper produced it.
+
+### Custom wrapper authors
+
+A custom wrapper that wants to emit the same signal should source `bin/_cartopian-status.sh` (Unix) or dot-source `ps1/CartopianStatus.ps1` (Windows) and, after the assignee exits, call:
+
+```bash
+# bash
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"   # before any cd
+# ... run the assignee, capture $ASSIGNEE_EXIT ...
+cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
+```
+
+```powershell
+# PowerShell
+$StatusPath = Get-CartopianStatusPath $PromptPath     # before any Set-Location
+# ... run the assignee ...
+Write-CartopianStatus -StatusPath $StatusPath -ExitCode $code -TimedOut $false
+```
+
+Emitting the status file is optional; omitting it simply leaves wait-handoff on its report-only path.
 
 ## Where the wrapper runs from
 
@@ -224,7 +309,7 @@ ln -s /Users/scott/Projects/cartopian/wrappers/bin/cartopian-codex /usr/local/bi
 
 ## Adding a new CLI
 
-Copy any existing wrapper from `bin/`, change the CLI invocation in the `exec` line, and point your `cartopian.toml` to the new wrapper name.
+Copy any existing wrapper from `bin/`, change the CLI invocation in the `CMD=(...)` array (keep the run-capture-status tail that sources `_cartopian-status.sh` and calls `cartopian_write_status`), and point your `cartopian.toml` to the new wrapper name. See [Status file → Custom wrapper authors](#custom-wrapper-authors) for the helper API.
 
 ## Cross-platform notes
 

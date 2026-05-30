@@ -101,7 +101,7 @@ Remove any stale report using the Core CLI before assigning or retrying the task
 cartopian delete-report <report-path>
 ```
 
-The expected `<report-path>` is the absolute path for this task's completion report in the project `reports/` directory.
+The expected `<report-path>` is the absolute path for this task's completion report in the project `reports/` directory. This also removes the companion `<report-path>.status` wrapper status file when present, so a reused report slot never carries a stale early-crash signal into the next handoff.
 
 ---
 
@@ -274,6 +274,13 @@ Failed reviews do not create replacement tasks. Continue with the original task.
 3. Ensure task, review, and report evidence agree.
 4. Remove superseded prompts.
 5. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or state files.
+6. Remove the transient wrapper status file for any report whose handoff is finished, even when the report `.md` is intentionally retained as evidence:
+
+   ```text
+   cartopian delete-report <report-path> --status-only
+   ```
+
+   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. See `wrappers/README.md` and `protocol/CONVENTIONS.md` § Handoffs.
 
 Do not treat reports as durable substitutes for task, review, or decision records.
 

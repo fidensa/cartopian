@@ -28,6 +28,20 @@
 
 set -euo pipefail
 
+# --- Status-file helper (early-crash signal for wait-handoff) --------
+# Source the shared helper that emits <report-path>.status on assignee
+# exit. Optional: if the helper is missing, degrade to no-op stubs so the
+# wrapper still runs (the status file is never a hard requirement).
+_CARTOPIAN_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
+  # shellcheck source=_cartopian-status.sh
+  source "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh"
+else
+  cartopian_status_path() { echo ""; }
+  cartopian_write_status() { return 0; }
+fi
+# --------------------------------------------------------------------
+
 # --- Configuration ---------------------------------------------------
 # Sandbox scope for model-generated shell commands.
 # Allowed values (per `codex exec --help`):
@@ -63,6 +77,10 @@ if ! command -v codex &>/dev/null; then
 fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+
+# Derive the optional status-file path now, before any cd, so a relative
+# prompt path still resolves. Empty when the prompt is outside a project.
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
 # FR-012: assignee CLIs run with cwd set to the Cartopian project root
@@ -153,10 +171,15 @@ CMD+=("$PROMPT_CONTENT")
 # it does not poll or watchdog the running process. SIGTERM at deadline
 # returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
 TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
+# Whether an OS timeout wraps the command — lets the status file distinguish
+# a deadline kill (exit 124) from a plain non-zero exit.
+TIMEOUT_APPLIED=false
 if command -v timeout &>/dev/null; then
   CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
 elif command -v gtimeout &>/dev/null; then
   CMD=(gtimeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
 else
   echo "cartopian-codex: warning: no 'timeout'/'gtimeout' on PATH; running without OS-enforced deadline (macOS: brew install coreutils)" >&2
   TIMEOUT_DURATION="unbounded"
@@ -168,4 +191,12 @@ if [[ "$CODEX_BYPASS" == "true" ]]; then
 else
   echo "cartopian-codex: running codex exec (sandbox=$CODEX_SANDBOX, skip-git-repo-check=on, timeout=$TIMEOUT_DURATION)" >&2
 fi
-exec "${CMD[@]}"
+
+# Run the assignee (not exec) so we can capture its exit outcome and emit
+# the optional status file wait-handoff polls for early-crash detection.
+set +e
+"${CMD[@]}"
+ASSIGNEE_EXIT=$?
+set -e
+cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
+exit "$ASSIGNEE_EXIT"

@@ -72,6 +72,8 @@ Then, sourcing every value from the `handoff-packet` record above:
    cartopian delete-report <report-path>
    ```
 
+   `delete-report` also removes the companion `<report-path>.status` wrapper status file when present, clearing any early-crash signal a prior handoff left in the same slot.
+
 Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet`. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
 ---
@@ -104,7 +106,7 @@ Launch the handoff as a background subprocess (do not impose a foreground tool-c
 
 ## Stage 3 - Wait For Completion
 
-Detect completion with a Core CLI wait primitive rather than a hand-rolled timing loop, a repeated manual re-read of the report on a fixed cadence, or a "tell me when it's done" prompt to the operator. The wait commands are read-only filesystem observers: the **report file is the authoritative completion signal**, and the optional `<report-path>.status` wrapper file is consulted only as early crash detection. They never write, move, or launch anything.
+Detect completion with a Core CLI wait primitive rather than a hand-rolled timing loop, a repeated manual re-read of the report on a fixed cadence, or a "tell me when it's done" prompt to the operator. The wait commands are read-only filesystem observers: the **report file is the authoritative completion signal**, and the optional `<report-path>.status` wrapper file is consulted only as early crash detection. They never write, move, or launch anything. The PM removes that `<report-path>.status` file through `cartopian delete-report` at report-clear (Stage 1) and through `cartopian delete-report <report-path> --status-only` at task close (`skills/run-task.md` Stage 7), so it never outlives the handoff.
 
 Choose the primitive by handoff kind:
 
