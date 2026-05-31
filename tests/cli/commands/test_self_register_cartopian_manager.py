@@ -5,11 +5,9 @@ rejection using the real `projects/cartopian-manager/` cartopian.toml as
 the registration target. HOME is redirected to a tempdir so the operator's
 real `~/.cartopian/projects.json` is never touched.
 """
-import json
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 

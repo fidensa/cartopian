@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from cli.commands import wait_handoff
-from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
+from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 
 
 @pytest.fixture

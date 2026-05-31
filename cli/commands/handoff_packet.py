@@ -186,7 +186,7 @@ def handler(args: argparse.Namespace) -> int:
 
     role_handoff = handoffs.get(role, {}) or {}
     automation = _resolve_automation(global_cfg, project_cfg)
-    git_versioning, _attribution = _resolve_git_versioning(global_cfg, project_cfg)
+    git_versioning = _resolve_git_versioning(global_cfg, project_cfg)[0]
     git_policy: Optional[Dict[str, Any]]
     if git_versioning:
         git_policy = _build_git_policy(_resolve_git_block(global_cfg, project_cfg))

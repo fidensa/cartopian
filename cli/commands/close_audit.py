@@ -2,7 +2,7 @@
 import argparse
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
@@ -221,10 +221,10 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         project_cfg = _load_project_config(project_path)
-        project_id, _project_name, _protocol_version = _require_project_keys(
+        project_id = _require_project_keys(
             project_cfg,
             project_path / "cartopian.toml",
-        )
+        )[0]
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code

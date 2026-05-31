@@ -103,7 +103,6 @@ def _parse_report_state(
         if variant is None:
             raise _CliError(EXIT_USAGE, "usage", err or "cannot infer variant")
 
-    review_verdict: Optional[str] = None
     if not parse_report._schema_ok(variant, content):
         return "failed-to-parse", variant, None, None
 

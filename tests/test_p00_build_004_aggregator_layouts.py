@@ -13,7 +13,6 @@ from __future__ import annotations
 import unittest
 
 from tests.scaffold import (
-    ProjectScaffold,
     project_scaffold,
     write_disagreement_layout,
     write_phase_ordering_layout,

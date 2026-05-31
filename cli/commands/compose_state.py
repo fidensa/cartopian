@@ -337,10 +337,10 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         project_cfg = _load_project_config(project_path)
-        _project_id, project_name, _protocol_version = _require_project_keys(
+        project_name = _require_project_keys(
             project_cfg,
             project_path / "cartopian.toml",
-        )
+        )[1]
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code

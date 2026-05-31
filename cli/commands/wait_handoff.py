@@ -142,11 +142,11 @@ def _report_verdict(report_path: Path) -> Optional[str]:
     except OSError:
         return "failed-to-parse"
     try:
-        verdict, _variant, _status, _review = report_action._parse_report_state(
+        verdict = report_action._parse_report_state(
             report_path,
             content,
             None,
-        )
+        )[0]
     except _CliError:
         return "failed-to-parse"
     return verdict

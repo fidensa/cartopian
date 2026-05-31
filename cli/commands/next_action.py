@@ -348,7 +348,7 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_ENV
 
     try:
-        project_id, _project_name, _protocol_version = _require_project_keys(cfg, toml_path)
+        project_id = _require_project_keys(cfg, toml_path)[0]
     except _CliError as err:
         if err.prefix == "guard":
             stderr_guard(err.message)
