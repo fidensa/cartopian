@@ -1,6 +1,3 @@
-# Projects directory — its own git repo, decoupled from this protocol repo
-/projects/
-
 # Workspace-level config (user-specific)
 /cartopian.toml
 
@@ -8,5 +5,10 @@
 .DS_Store
 
 # Python
-pycache/
+__pycache__/
 *.py[cod]
+.pytest_cache/
+
+# Personal Agents
+.claude/
+.gemini/
