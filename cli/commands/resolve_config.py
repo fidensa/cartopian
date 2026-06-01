@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from cli.commands._advisory_gate import evaluate_advisory_gate
 from cli.commands._containment import (
     contained_pm_owned_git_block_message,
     pm_is_contained,
@@ -262,6 +263,19 @@ def handler(args: argparse.Namespace) -> int:
             raise _CliError(EXIT_FAIL, "guard", guard_msg)
 
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
+
+        # FR-008 advisory-tier gate (P02-BUILD-001): when the PM harness cannot
+        # be constrained to Tier 1/2 (TASK-02-001 → tier-3) and no valid
+        # operator acknowledgment exists for (harness, project), refuse launch /
+        # lifecycle entry fail-closed before any config is emitted. With a valid
+        # acknowledgment, proceed under a persistent per-session advisory banner
+        # and do not re-prompt. Tier-1/2 (or no configured harness) is unaffected.
+        advisory = evaluate_advisory_gate(project_path, project_id)
+        if advisory.blocked:
+            raise _CliError(EXIT_FAIL, "guard", advisory.detail)
+        if advisory.advisory:
+            _stderr("advisory", advisory.advisory)
+
         roles = _resolve_roles(global_cfg, project_cfg)
         handoffs = _resolve_handoffs(global_cfg, project_cfg)
         automation = _resolve_automation(global_cfg, project_cfg)

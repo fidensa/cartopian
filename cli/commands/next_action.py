@@ -6,10 +6,12 @@ dispatch kind, blockers, and any STATE.md vs. filesystem disagreement.
 """
 import argparse
 import re
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.commands._advisory_gate import evaluate_advisory_gate
 from cli.commands._containment import (
     contained_pm_owned_git_block_message,
     pm_is_contained,
@@ -370,6 +372,18 @@ def handler(args: argparse.Namespace) -> int:
     if guard_msg is not None:
         stderr_guard(guard_msg)
         return EXIT_FAIL
+
+    # FR-008 advisory-tier gate (P02-BUILD-001): refuse a tier-3 (unconstrainable)
+    # PM harness with no valid operator acknowledgment fail-closed before any
+    # orientation is emitted; with a valid acknowledgment, proceed under a
+    # persistent advisory banner and do not re-prompt. The sibling of the FR-013
+    # guard above, generalized to the whole "harness cannot be constrained" case.
+    advisory = evaluate_advisory_gate(project_path, project_id)
+    if advisory.blocked:
+        stderr_guard(advisory.detail)
+        return EXIT_FAIL
+    if advisory.advisory:
+        sys.stderr.write(f"[advisory] {advisory.advisory}\n")
 
     try:
         pm_role, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)

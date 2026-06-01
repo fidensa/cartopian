@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Operator-only entrypoint: acknowledge / revoke a Tier-3 PM harness (FR-008).
+
+A thin shim over ``cli.commands.acknowledge_harness`` — the one explicit,
+operator-owned action that records (or revokes) acceptance of running a PM
+harness Cartopian cannot constrain to Tier 1/2 (SPEC-02-002 / TASK-02-002).
+
+This is deliberately a separate operator entrypoint, NOT a Cartopian CLI
+subcommand and NOT an MCP tool: the contained PM must never be able to
+acknowledge its own unconstrained risk (that would make the FR-008 launch gate
+self-bypassable). See the module docstring for the full rationale.
+
+Usage:
+  cartopian-ack-harness <project-root> --harness <h> \\
+      --acknowledged-by <operator> --rationale <why>
+  cartopian-ack-harness <project-root> --harness <h> --revoke
+"""
+import os
+import sys
+
+
+def _require_python_3_11() -> None:
+    if sys.version_info < (3, 11):
+        found = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        sys.stderr.write(
+            f"[error] cartopian-ack-harness requires Python 3.11 or later (found {found})\n"
+        )
+        sys.exit(3)
+
+
+def _bootstrap_path() -> None:
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(here)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+
+def main() -> int:
+    _require_python_3_11()
+    _bootstrap_path()
+    from cli.commands.acknowledge_harness import main as ack_main
+    return ack_main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

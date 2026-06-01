@@ -1,0 +1,169 @@
+.FFFFFFFF........                                                        [100%]
+=================================== FAILURES ===================================
+_______________ TestTier3BlockedNoRecord.test_next_action_blocks _______________
+
+self = <tests.containment.test_fr008_advisory_gate.TestTier3BlockedNoRecord testMethod=test_next_action_blocks>
+
+    def test_next_action_blocks(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            result = sb.run("next-action")
+>       _assert_blocked(self, result)
+
+tests/containment/test_fr008_advisory_gate.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:124: in _assert_blocked
+    tc.assertNotEqual(result.returncode, 0,
+E   AssertionError: 0 == 0 : expected non-zero exit, got 0
+E   stdout='{"project_id":"demo","project_path":"/private/tmp/claude-501/claude-501/tmpwqusq65t/proj","phase_id":null,"active_task":null,"next_open_task":null,"pm_role":"Manages the project lifecycle and orchestrates handoffs.","pm_dispatch_kind":"automated","blockers":[],"state_filesystem_disagreement":null}\n'
+_____________ TestTier3BlockedNoRecord.test_resolve_config_blocks ______________
+
+self = <tests.containment.test_fr008_advisory_gate.TestTier3BlockedNoRecord testMethod=test_resolve_config_blocks>
+
+    def test_resolve_config_blocks(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            result = sb.run("resolve-config")
+>       _assert_blocked(self, result)
+
+tests/containment/test_fr008_advisory_gate.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:124: in _assert_blocked
+    tc.assertNotEqual(result.returncode, 0,
+E   AssertionError: 0 == 0 : expected non-zero exit, got 0
+E   stdout='{"project_id":"demo","project_name":"Demo Project","project_path":"/private/tmp/claude-501/claude-501/tmpa9t4iglf/proj","protocol_version":"v0.2.0","roles":{"pm":"Manages the project lifecycle and orchestrates handoffs.","operator":"Human direction-setter who approves transitions and resolves judgment calls."},"handoffs":{"pm":{"agent":"cascade","auto_start":null,"timeout":null}},"automation":{"confirmation":"each-handoff","max_handoffs_per_run":1},"work_roots":{},"git_versioning":false,"git":null,"defaults_attribution":{"git_versioning":"protocol-default: false"}}\n'
+_______ TestAcknowledgedProceeds.test_next_action_proceeds_with_advisory _______
+
+self = <tests.containment.test_fr008_advisory_gate.TestAcknowledgedProceeds testMethod=test_next_action_proceeds_with_advisory>
+
+    def test_next_action_proceeds_with_advisory(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            _ack_valid(sb)
+            result = sb.run("next-action")
+        _assert_proceeds(self, result)
+>       self._assert_advisory(result)
+
+tests/containment/test_fr008_advisory_gate.py:222: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:203: in _assert_advisory
+    self.assertIn("[advisory]", result.stderr,
+E   AssertionError: '[advisory]' not found in '' : expected a persistent advisory banner: ''
+_____ TestAcknowledgedProceeds.test_no_reprompt_idempotent_across_sessions _____
+
+self = <tests.containment.test_fr008_advisory_gate.TestAcknowledgedProceeds testMethod=test_no_reprompt_idempotent_across_sessions>
+
+    def test_no_reprompt_idempotent_across_sessions(self):
+        """Two consecutive launches both proceed identically — the record is the
+        audit trail; the gate never re-prompts or mutates state."""
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            _ack_valid(sb)
+            ledger_before = sb.read_ledger()
+            first = sb.run("resolve-config")
+            second = sb.run("resolve-config")
+            ledger_after = sb.read_ledger()
+        _assert_proceeds(self, first)
+        _assert_proceeds(self, second)
+>       self._assert_advisory(first)
+
+tests/containment/test_fr008_advisory_gate.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:203: in _assert_advisory
+    self.assertIn("[advisory]", result.stderr,
+E   AssertionError: '[advisory]' not found in '' : expected a persistent advisory banner: ''
+_____ TestAcknowledgedProceeds.test_resolve_config_proceeds_with_advisory ______
+
+self = <tests.containment.test_fr008_advisory_gate.TestAcknowledgedProceeds testMethod=test_resolve_config_proceeds_with_advisory>
+
+    def test_resolve_config_proceeds_with_advisory(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            _ack_valid(sb)
+            result = sb.run("resolve-config")
+        _assert_proceeds(self, result)
+>       self._assert_advisory(result)
+
+tests/containment/test_fr008_advisory_gate.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:203: in _assert_advisory
+    self.assertIn("[advisory]", result.stderr,
+E   AssertionError: '[advisory]' not found in '' : expected a persistent advisory banner: ''
+_______ TestRevokedOrMismatchedReblocks.test_mismatched_harness_reblocks _______
+
+self = <tests.containment.test_fr008_advisory_gate.TestRevokedOrMismatchedReblocks testMethod=test_mismatched_harness_reblocks>
+
+    def test_mismatched_harness_reblocks(self):
+        """A record for a different harness does not satisfy the gate."""
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            # Acknowledge a *different* tier-3 harness, not the configured one.
+            res = sb.acknowledge(
+                "--harness", "gemini",
+                "--acknowledged-by", "operator",
+                "--rationale", "other harness",
+                "--acknowledged-on", "2026-06-01",
+            )
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+            result = sb.run("resolve-config")
+>       _assert_blocked(self, result)
+
+tests/containment/test_fr008_advisory_gate.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:124: in _assert_blocked
+    tc.assertNotEqual(result.returncode, 0,
+E   AssertionError: 0 == 0 : expected non-zero exit, got 0
+E   stdout='{"project_id":"demo","project_name":"Demo Project","project_path":"/private/tmp/claude-501/claude-501/tmph8obc734/proj","protocol_version":"v0.2.0","roles":{"pm":"Manages the project lifecycle and orchestrates handoffs.","operator":"Human direction-setter who approves transitions and resolves judgment calls."},"handoffs":{"pm":{"agent":"cascade","auto_start":null,"timeout":null}},"automation":{"confirmation":"each-handoff","max_handoffs_per_run":1},"work_roots":{},"git_versioning":false,"git":null,"defaults_attribution":{"git_versioning":"protocol-default: false"}}\n'
+_______ TestRevokedOrMismatchedReblocks.test_mismatched_project_reblocks _______
+
+self = <tests.containment.test_fr008_advisory_gate.TestRevokedOrMismatchedReblocks testMethod=test_mismatched_project_reblocks>
+
+    def test_mismatched_project_reblocks(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            res = sb.acknowledge(
+                "--harness", TIER3_HARNESS,
+                "--project-id", "some-other-project",
+                "--acknowledged-by", "operator",
+                "--rationale", "wrong project",
+                "--acknowledged-on", "2026-06-01",
+            )
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+            result = sb.run("resolve-config")
+>       _assert_blocked(self, result)
+
+tests/containment/test_fr008_advisory_gate.py:281: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:124: in _assert_blocked
+    tc.assertNotEqual(result.returncode, 0,
+E   AssertionError: 0 == 0 : expected non-zero exit, got 0
+E   stdout='{"project_id":"demo","project_name":"Demo Project","project_path":"/private/tmp/claude-501/claude-501/tmp8903ct2k/proj","protocol_version":"v0.2.0","roles":{"pm":"Manages the project lifecycle and orchestrates handoffs.","operator":"Human direction-setter who approves transitions and resolves judgment calls."},"handoffs":{"pm":{"agent":"cascade","auto_start":null,"timeout":null}},"automation":{"confirmation":"each-handoff","max_handoffs_per_run":1},"work_roots":{},"git_versioning":false,"git":null,"defaults_attribution":{"git_versioning":"protocol-default: false"}}\n'
+_________ TestRevokedOrMismatchedReblocks.test_revoked_record_reblocks _________
+
+self = <tests.containment.test_fr008_advisory_gate.TestRevokedOrMismatchedReblocks testMethod=test_revoked_record_reblocks>
+
+    def test_revoked_record_reblocks(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent=TIER3_HARNESS)
+            _ack_valid(sb)
+            rev = sb.acknowledge("--harness", TIER3_HARNESS, "--revoke")
+            self.assertEqual(rev.returncode, 0, msg=rev.stderr)
+            result = sb.run("resolve-config")
+>       _assert_blocked(self, result)
+
+tests/containment/test_fr008_advisory_gate.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/containment/test_fr008_advisory_gate.py:124: in _assert_blocked
+    tc.assertNotEqual(result.returncode, 0,
+E   AssertionError: 0 == 0 : expected non-zero exit, got 0
+E   stdout='{"project_id":"demo","project_name":"Demo Project","project_path":"/private/tmp/claude-501/claude-501/tmp_9ecop71/proj","protocol_version":"v0.2.0","roles":{"pm":"Manages the project lifecycle and orchestrates handoffs.","operator":"Human direction-setter who approves transitions and resolves judgment calls."},"handoffs":{"pm":{"agent":"cascade","auto_start":null,"timeout":null}},"automation":{"confirmation":"each-handoff","max_handoffs_per_run":1},"work_roots":{},"git_versioning":false,"git":null,"defaults_attribution":{"git_versioning":"protocol-default: false"}}\n'
+=========================== short test summary info ============================
+FAILED tests/containment/test_fr008_advisory_gate.py::TestTier3BlockedNoRecord::test_next_action_blocks
+FAILED tests/containment/test_fr008_advisory_gate.py::TestTier3BlockedNoRecord::test_resolve_config_blocks
+FAILED tests/containment/test_fr008_advisory_gate.py::TestAcknowledgedProceeds::test_next_action_proceeds_with_advisory
+FAILED tests/containment/test_fr008_advisory_gate.py::TestAcknowledgedProceeds::test_no_reprompt_idempotent_across_sessions
+FAILED tests/containment/test_fr008_advisory_gate.py::TestAcknowledgedProceeds::test_resolve_config_proceeds_with_advisory
+FAILED tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedReblocks::test_mismatched_harness_reblocks
+FAILED tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedReblocks::test_mismatched_project_reblocks
+FAILED tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedReblocks::test_revoked_record_reblocks
+8 failed, 9 passed in 0.83s

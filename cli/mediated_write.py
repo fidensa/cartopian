@@ -23,8 +23,10 @@ Design (per SPEC-01-002 Interface), stdlib-only (NF-001):
 - **Refusals (fail closed).** Outside the allowlist; final-component symlink;
   ``..`` traversal; pre-existing non-regular file or hardlink (``st_nlink > 1``);
   an executable ``mode``; a recognized config file (``cartopian.toml``,
-  ``cartopian.local.toml``, or any dotfile); or any case where the safety
-  re-verification cannot be completed → refuse and write nothing.
+  ``cartopian.local.toml``, or any dotfile); a root destination whose basename
+  is not the one named-root file bound to its ``dest_kind`` (:data:`ROOT_FILES`);
+  or any case where the safety re-verification cannot be completed → refuse and
+  write nothing.
 - **Success.** Atomic temp-write in the same allowlisted dir + ``fsync`` +
   ``os.replace``, permissions masked to non-executable.
 
@@ -72,6 +74,36 @@ DEST_KINDS: Dict[str, str] = {
     "state": "",
     "roadmap": "",
     "backlog": "",
+    # FR-008 / TASK-02-002: the persisted advisory-acknowledgment ledger. This
+    # is the single new entry extending the named-root-files allowlist (see
+    # ROOT_FILES) — no directory entry, no other root file. The operator-only
+    # acknowledgment command (cli.commands.acknowledge_harness) is the sole
+    # caller; it writes the fixed basename COMPATIBILITY.md and nothing else.
+    "compatibility": "",
+}
+
+# ---------------------------------------------------------------------------
+# Fixed named-root-files allowlist.
+#
+# A root destination (a ``dest_kind`` whose subtree is ``""``) maps to exactly
+# one permitted basename at the project root — the FR-003 "fixed set of named
+# project-root files". The primitive refuses any other basename for a root
+# kind, so a root ``dest_kind`` cannot be repurposed to author an arbitrary
+# (non-config, non-dotfile) file at the project root. This binding is the
+# writer-enforced form of FR-003's allowlist; it is strictly *tightening*
+# (every existing root writer already passes its bound basename) and adds no
+# new permission beyond the single COMPATIBILITY.md entry (NF-004 additive).
+# ---------------------------------------------------------------------------
+ROOT_FILES: Dict[str, str] = {
+    "requirements": "REQUIREMENTS.md",
+    "plan": "IMPLEMENTATION_PLAN.md",
+    "standards": "STANDARDS.md",
+    "conventions": "CONVENTIONS.md",
+    "state": "STATE.md",
+    "roadmap": "ROADMAP.md",
+    "backlog": "BACKLOG.md",
+    # The single FR-008 / TASK-02-002 extension. Net-new writable root file.
+    "compatibility": "COMPATIBILITY.md",
 }
 
 # Recognized config files: never writable through this primitive regardless of
@@ -269,6 +301,19 @@ def mediated_write(
         raise GuardRefusal(
             "config-file", f"destination is a protected config file: {final_name}"
         )
+
+    # 9b. Named-root-files allowlist (FR-003). A root destination (subtree "")
+    #     may write only the single fixed basename bound to its dest_kind. This
+    #     refuses any non-allowlisted root file — a root kind cannot be turned
+    #     into a free-form root-file writer. Directory kinds are unaffected.
+    if subdir == "":
+        expected_basename = ROOT_FILES.get(dest_kind)
+        if expected_basename is None or final_name != expected_basename:
+            raise GuardRefusal(
+                "non-allowlisted-root-file",
+                f"root dest_kind {dest_kind!r} may write only "
+                f"{expected_basename or '<no allowlisted root file>'}, not {final_name}",
+            )
 
     # 10. If the destination already exists it must be a plain regular file with
     #     a single link (a hardlink — st_nlink > 1 — may alias an out-of-subtree

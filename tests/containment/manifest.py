@@ -211,6 +211,52 @@ PROHIBITED_OPERATIONS: List[Dict[str, object]] = [
         "red_baseline": "inmodule:tests/cli/test_p01_build_002_mediated_write.py",
         "harness_evidence": [],
     },
+    # --- FR-008 advisory tier (Phase 02, TASK-02-002) — the FR-008 phase gate. ---
+    {
+        "key": "advisory-tier-unacknowledged-launch",
+        "description": (
+            "Enter the lifecycle with a tier-3 (unconstrainable) PM harness and no "
+            "operator acknowledgment record (fail-closed block; no silent-continue)."
+        ),
+        "negative_tests": [
+            "tests/containment/test_fr008_advisory_gate.py::TestRedNoAdvisoryGateBaseline",
+            "tests/containment/test_fr008_advisory_gate.py::TestTier3BlockedNoRecord",
+            "tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedReblocks",
+        ],
+        "red_baseline": "inmodule:tests/containment/test_fr008_advisory_gate.py",
+        "harness_evidence": [],
+    },
+    {
+        "key": "advisory-tier-acknowledged-launch",
+        "description": (
+            "A valid recorded acknowledgment permits the tier-3 launch under a "
+            "persistent advisory banner with no re-prompt; tier-1/2 unaffected (NF-004)."
+        ),
+        "negative_tests": [
+            "tests/containment/test_fr008_advisory_gate.py::TestAcknowledgedProceeds",
+            "tests/containment/test_fr008_advisory_gate.py::TestNoRegressionTier12",
+            "tests/containment/test_fr008_advisory_gate.py::TestAcknowledgmentCommand",
+            "tests/containment/test_fr008_advisory_gate.py::TestAcknowledgmentNotOnPmSurface",
+        ],
+        "red_baseline": "inmodule:tests/containment/test_fr008_advisory_gate.py",
+        "harness_evidence": [],
+    },
+    {
+        "key": "compatibility-allowlist-extension",
+        "description": (
+            "FR-003 mediated-writer named-root-files allowlist gains exactly "
+            "COMPATIBILITY.md; every other root-file refusal still holds fail-closed."
+        ),
+        "negative_tests": [
+            "tests/containment/test_fr008_allowlist_integrity.py::TestAllowlistGrewByExactlyOne",
+            "tests/containment/test_fr008_allowlist_integrity.py::TestRefusesNonAllowlistedRootFile",
+            "tests/containment/test_fr008_allowlist_integrity.py::TestRefusesConfigViaCompatibilityKind",
+            "tests/containment/test_fr008_allowlist_integrity.py::TestRefusesSymlinkedCompatibility",
+            "tests/containment/test_fr008_allowlist_integrity.py::TestRefusesRealPathEscape",
+        ],
+        "red_baseline": "inmodule:tests/containment/test_fr008_allowlist_integrity.py",
+        "harness_evidence": [],
+    },
 ]
 
 

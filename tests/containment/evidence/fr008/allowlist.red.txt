@@ -1,0 +1,172 @@
+FFFF.FFFF                                                                [100%]
+=================================== FAILURES ===================================
+__ TestAllowlistGrewByExactlyOne.test_compatibility_dest_kind_is_a_root_kind ___
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestAllowlistGrewByExactlyOne testMethod=test_compatibility_dest_kind_is_a_root_kind>
+
+    def test_compatibility_dest_kind_is_a_root_kind(self):
+>       self.assertIn("compatibility", DEST_KINDS)
+E       AssertionError: 'compatibility' not found in {'task': 'tasks', 'spec': 'specs', 'phase': 'phases', 'prompt': 'prompts', 'report': 'reports', 'review': 'reviews', 'decision': 'decisions', 'requirements': '', 'plan': '', 'standards': '', 'conventions': '', 'state': '', 'roadmap': '', 'backlog': ''}
+
+tests/containment/test_fr008_allowlist_integrity.py:80: AssertionError
+_ TestAllowlistGrewByExactlyOne.test_root_files_allowlist_is_original_plus_one _
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestAllowlistGrewByExactlyOne testMethod=test_root_files_allowlist_is_original_plus_one>
+
+    def test_root_files_allowlist_is_original_plus_one(self):
+        permitted = set(ROOT_FILES.values())
+        new_entries = permitted - _FR003_ORIGINAL_ROOT_FILES
+>       self.assertEqual(
+            new_entries, {_NEW_ROOT_FILE},
+            msg=f"named-root-files allowlist must grow by exactly {_NEW_ROOT_FILE}; "
+                f"unexpected new entries: {sorted(new_entries - {_NEW_ROOT_FILE})}",
+        )
+E       AssertionError: Items in the second set but not the first:
+E       'COMPATIBILITY.md' : named-root-files allowlist must grow by exactly COMPATIBILITY.md; unexpected new entries: []
+
+tests/containment/test_fr008_allowlist_integrity.py:67: AssertionError
+____________ TestPermitsCompatibility.test_writes_compatibility_md _____________
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestPermitsCompatibility testMethod=test_writes_compatibility_md>
+
+    def test_writes_compatibility_md(self):
+>       result = mediated_write(self.root, "compatibility", "COMPATIBILITY.md", "x\n")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/containment/test_fr008_allowlist_integrity.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+project_root = '/private/tmp/claude-501/claude-501/tmpafpwvdvn'
+dest_kind = 'compatibility', relative_target = 'COMPATIBILITY.md'
+content = 'x\n'
+
+    def mediated_write(
+        project_root: Union[str, os.PathLike],
+        dest_kind: str,
+        relative_target: str,
+        content: Union[str, bytes],
+        *,
+        mode: int = 0o644,
+    ) -> Dict[str, object]:
+        """Write ``content`` to the allowlisted destination, or refuse fail-closed.
+    
+        Returns a result dict on success. Raises :class:`GuardRefusal` and writes
+        nothing on any refusal. See module docstring for the full rule set.
+        """
+        # 1. dest_kind must be in the closed allowlist.
+        if dest_kind not in DEST_KINDS:
+>           raise GuardRefusal(
+                "unknown-dest-kind",
+                f"{dest_kind!r} is not an allowlisted destination category",
+            )
+E           cli.mediated_write.GuardRefusal: unknown-dest-kind: 'compatibility' is not an allowlisted destination category
+
+cli/mediated_write.py:213: GuardRefusal
+_ TestRefusesNonAllowlistedRootFile.test_compatibility_kind_refuses_other_basename _
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestRefusesNonAllowlistedRootFile testMethod=test_compatibility_kind_refuses_other_basename>
+
+    def test_compatibility_kind_refuses_other_basename(self):
+        # RED: a naive writer keyed off a caller-supplied name lands an arbitrary
+        # file at the project root.
+        naive_dest = os.path.join(self.root, "EVIL.md")
+        _naive_write(naive_dest, "PWNED")
+        self.assertTrue(os.path.isfile(naive_dest),
+                        "red: naive write created a non-allowlisted root file")
+        os.remove(naive_dest)
+    
+        # GREEN: the writer refuses any basename other than COMPATIBILITY.md.
+        with self.assertRaises(GuardRefusal) as ctx:
+            mediated_write(self.root, "compatibility", "EVIL.md", "SAFE")
+>       self.assertEqual(ctx.exception.rule, "non-allowlisted-root-file")
+E       AssertionError: 'unknown-dest-kind' != 'non-allowlisted-root-file'
+E       - unknown-dest-kind
+E       + non-allowlisted-root-file
+
+tests/containment/test_fr008_allowlist_integrity.py:113: AssertionError
+______ TestRefusesConfigViaCompatibilityKind.test_cartopian_toml_refused _______
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestRefusesConfigViaCompatibilityKind testMethod=test_cartopian_toml_refused>
+
+    def test_cartopian_toml_refused(self):
+        cfg = Path(self.root) / "cartopian.toml"
+        original = cfg.read_text(encoding="utf-8")
+    
+        # RED: naive write clobbers the project config.
+        _naive_write(cfg, "id = \"PWNED\"\n")
+        self.assertIn("PWNED", cfg.read_text(encoding="utf-8"),
+                      "red: naive write clobbered cartopian.toml")
+        cfg.write_text(original, encoding="utf-8")
+    
+        with self.assertRaises(GuardRefusal) as ctx:
+            mediated_write(self.root, "compatibility", "cartopian.toml", "x")
+>       self.assertEqual(ctx.exception.rule, "config-file")
+E       AssertionError: 'unknown-dest-kind' != 'config-file'
+E       - unknown-dest-kind
+E       + config-file
+
+tests/containment/test_fr008_allowlist_integrity.py:140: AssertionError
+________ TestRefusesConfigViaCompatibilityKind.test_local_toml_refused _________
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestRefusesConfigViaCompatibilityKind testMethod=test_local_toml_refused>
+
+    def test_local_toml_refused(self):
+        with self.assertRaises(GuardRefusal) as ctx:
+            mediated_write(self.root, "compatibility", "cartopian.local.toml", "x")
+>       self.assertEqual(ctx.exception.rule, "config-file")
+E       AssertionError: 'unknown-dest-kind' != 'config-file'
+E       - unknown-dest-kind
+E       + config-file
+
+tests/containment/test_fr008_allowlist_integrity.py:146: AssertionError
+____ TestRefusesSymlinkedCompatibility.test_symlink_final_component_refused ____
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestRefusesSymlinkedCompatibility testMethod=test_symlink_final_component_refused>
+
+    def test_symlink_final_component_refused(self):
+        secret = Path(self.outside) / "secret.txt"
+        secret.write_text("ORIGINAL", encoding="utf-8")
+        link = Path(self.root) / "COMPATIBILITY.md"
+        os.symlink(secret, link)
+    
+        # RED: naive write follows the symlink and clobbers the outside file.
+        _naive_write(link, "PWNED")
+        self.assertEqual(secret.read_text(encoding="utf-8"), "PWNED",
+                         "red: naive write escaped via symlink")
+        secret.write_text("ORIGINAL", encoding="utf-8")  # reset; link survives
+    
+        with self.assertRaises(GuardRefusal) as ctx:
+            mediated_write(self.root, "compatibility", "COMPATIBILITY.md", "SAFE")
+>       self.assertEqual(ctx.exception.rule, "symlink")
+E       AssertionError: 'unknown-dest-kind' != 'symlink'
+E       - unknown-dest-kind
+E       + symlink
+
+tests/containment/test_fr008_allowlist_integrity.py:167: AssertionError
+_____________ TestRefusesRealPathEscape.test_dotdot_escape_refused _____________
+
+self = <tests.containment.test_fr008_allowlist_integrity.TestRefusesRealPathEscape testMethod=test_dotdot_escape_refused>
+
+    def test_dotdot_escape_refused(self):
+        escaped = os.path.join(self.root, "..", "escaped-red.md")
+        _naive_write(escaped, "x")
+        self.assertTrue(os.path.isfile(os.path.join(self.root, "..", "escaped-red.md")),
+                        "red: naive write escaped the project root")
+        os.remove(escaped)
+    
+        with self.assertRaises(GuardRefusal) as ctx:
+            mediated_write(self.root, "compatibility", "../escaped-green.md", "x")
+>       self.assertIn(ctx.exception.rule, ("outside-allowlist", "non-allowlisted-root-file"))
+E       AssertionError: 'unknown-dest-kind' not found in ('outside-allowlist', 'non-allowlisted-root-file')
+
+tests/containment/test_fr008_allowlist_integrity.py:183: AssertionError
+=========================== short test summary info ============================
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestAllowlistGrewByExactlyOne::test_compatibility_dest_kind_is_a_root_kind
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestAllowlistGrewByExactlyOne::test_root_files_allowlist_is_original_plus_one
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestPermitsCompatibility::test_writes_compatibility_md
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestRefusesNonAllowlistedRootFile::test_compatibility_kind_refuses_other_basename
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestRefusesConfigViaCompatibilityKind::test_cartopian_toml_refused
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestRefusesConfigViaCompatibilityKind::test_local_toml_refused
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestRefusesSymlinkedCompatibility::test_symlink_final_component_refused
+FAILED tests/containment/test_fr008_allowlist_integrity.py::TestRefusesRealPathEscape::test_dotdot_escape_refused
+8 failed, 1 passed in 0.02s
