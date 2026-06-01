@@ -1,0 +1,29 @@
+{
+  "_comment": "Cartopian PM containment — Tier-2 native-sandbox DEPTH profile (FR-007 / TASK-01-005). Loaded by wrappers/bin/cartopian-claude-pm via --settings, BENEATH the DEC-001 tool-removal floor. The floor (--tools \"\") removes Bash/Read/Write/Edit so this layer is normally inert; it exists for defense-in-depth: if the floor were ever bypassed and a shell/file tool reappeared, Claude Code's OWN native OS sandbox (sandbox-exec/seatbelt on macOS, bubblewrap on Linux) still denies the product-repo / work-root filesystem reach and raw write/exec. Native mechanism + config only — no third-party sandbox (NF-001). Absolute paths are host/project-specific, exactly as wrappers/etc/mcp-cartopian-only.json hard-codes the cartopian-mcp path; regenerate them for another project root / work root.",
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "filesystem": {
+      "denyRead": [
+        "/Users/scott/Projects/cartopian-manager",
+        "/Users/scott/Projects/cartopian"
+      ],
+      "denyWrite": [
+        "/Users/scott/Projects/cartopian-manager",
+        "/Users/scott/Projects/cartopian"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "Read(/Users/scott/Projects/cartopian-manager/**)",
+      "Read(/Users/scott/Projects/cartopian/**)",
+      "Edit(/Users/scott/Projects/cartopian-manager/**)",
+      "Edit(/Users/scott/Projects/cartopian/**)",
+      "Write(/Users/scott/Projects/cartopian-manager/**)",
+      "Write(/Users/scott/Projects/cartopian/**)"
+    ]
+  }
+}

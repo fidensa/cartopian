@@ -31,6 +31,18 @@ SUBCOMMANDS: List[str] = [
     "delete-prompt",
     "delete-report",
     "list-tasks",
+    # FR-005 structured PM authoring commands (SPEC-01-003)
+    "write-requirements",
+    "write-plan",
+    "write-standards",
+    "write-conventions",
+    "write-phase",
+    "write-task",
+    "write-spec",
+    "write-prompt",
+    "write-decision",
+    "write-state",
+    "reset-plan",
     # FR-014 aggregator
     "next-action",
     # FR-014 stdio wait primitives
@@ -38,6 +50,8 @@ SUBCOMMANDS: List[str] = [
     "wait-handoff",
     # FR-003 aggregator
     "handoff-packet",
+    # FR-006 mediated handoff dispatch (G20)
+    "dispatch",
     # lifecycle + provenance audit
     "plan-audit",
 ]
@@ -90,6 +104,7 @@ def _real_handlers():
         compose_state,
         delete_prompt,
         delete_report,
+        dispatch,
         discover_projects,
         generate_config,
         handoff_packet,
@@ -99,6 +114,7 @@ def _real_handlers():
         plan_audit,
         report_action,
         register_project,
+        reset_plan,
         resolve_config,
         scaffold_project,
         task_bundle,
@@ -106,6 +122,16 @@ def _real_handlers():
         validate_task_readiness as vtr,
         wait_handoff,
         wait_report,
+        write_conventions,
+        write_decision,
+        write_phase,
+        write_plan,
+        write_prompt,
+        write_requirements,
+        write_spec,
+        write_standards,
+        write_state,
+        write_task,
     )
 
     return {
@@ -113,6 +139,7 @@ def _real_handlers():
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "delete-prompt": (delete_prompt.configure_parser, delete_prompt.handler),
         "delete-report": (delete_report.configure_parser, delete_report.handler),
+        "dispatch": (dispatch.configure_parser, dispatch.handler),
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
         "generate-config": (generate_config.configure_parser, generate_config.handler),
         "handoff-packet": (handoff_packet.configure_parser, handoff_packet.handler),
@@ -122,6 +149,7 @@ def _real_handlers():
         "plan-audit": (plan_audit.configure_parser, plan_audit.handler),
         "report-action": (report_action.configure_parser, report_action.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
+        "reset-plan": (reset_plan.configure_parser, reset_plan.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
@@ -129,6 +157,16 @@ def _real_handlers():
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
         "wait-report": (wait_report.configure_parser, wait_report.handler),
+        "write-conventions": (write_conventions.configure_parser, write_conventions.handler),
+        "write-decision": (write_decision.configure_parser, write_decision.handler),
+        "write-phase": (write_phase.configure_parser, write_phase.handler),
+        "write-plan": (write_plan.configure_parser, write_plan.handler),
+        "write-prompt": (write_prompt.configure_parser, write_prompt.handler),
+        "write-requirements": (write_requirements.configure_parser, write_requirements.handler),
+        "write-spec": (write_spec.configure_parser, write_spec.handler),
+        "write-standards": (write_standards.configure_parser, write_standards.handler),
+        "write-state": (write_state.configure_parser, write_state.handler),
+        "write-task": (write_task.configure_parser, write_task.handler),
     }
 
 

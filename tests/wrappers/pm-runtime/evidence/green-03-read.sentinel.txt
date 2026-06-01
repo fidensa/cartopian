@@ -1,0 +1,7 @@
+expected_sentinel: NO_READ_TOOL
+result_final_line: 'NO_READ_TOOL'
+MATCH (standalone trailing line): PASS
+--- full result text ---
+I don't have a file read tool available in this environment. My available tools are all Cartopian MCP commands (project planning, task management, config, handoff helpers) — none of them can open an arbitrary file and print its contents.
+
+NO_READ_TOOL

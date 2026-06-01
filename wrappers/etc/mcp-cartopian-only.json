@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "cartopian": {
+      "command": "/Users/scott/.cartopian/bin/cartopian-mcp",
+      "args": [],
+      "env": {
+        "CARTOPIAN_PM_CONTAINED": "1"
+      }
+    }
+  }
+}

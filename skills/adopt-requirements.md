@@ -1,6 +1,6 @@
 # Skill: Adopt Requirements
 
-Generate `REQUIREMENTS.md` (and optionally `STANDARDS.md`) from external sources — JIRA stories, Confluence documents, PRDs, design documents, or any other form. Use this when requirements live outside the Cartopian project directory and you want a local requirements artifact.
+Derive a `REQUIREMENTS.md` (and optionally a `STANDARDS.md`) from external sources — JIRA stories, Confluence documents, PRDs, design documents, or any other form. Use this when requirements live outside the Cartopian project directory and you want a local requirements artifact.
 
 Running this skill is optional. If you prefer to reference requirements entirely externally, use `adopt-plan` directly — it handles the missing `REQUIREMENTS.md` case without requiring this skill first.
 
@@ -91,9 +91,15 @@ If working from a JIRA story, subtasks often map directly to functional requirem
 
 ## Step 3 — Generate REQUIREMENTS.md
 
-Write `REQUIREMENTS.md` in the project directory. Use the template in `templates/REQUIREMENTS.md` as a structural guide — adapt sections to fit the actual project. Not every project needs every section.
+Authoring `REQUIREMENTS.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body using the template in `templates/REQUIREMENTS.md` as a structural guide — adapt sections to fit the actual project — and write it through the mediated writer:
 
-**If the operator prefers a reference stub** (requirements maintained externally, not duplicated locally):
+```
+cartopian write-requirements <project-root> --content-file <body-path>
+```
+
+Not every project needs every section.
+
+**If the operator prefers a reference stub** (requirements maintained externally, not duplicated locally), pass the stub below as the `--content-file` body to the same `cartopian write-requirements` command:
 
 ```markdown
 # Requirements: <project name>
@@ -120,18 +126,28 @@ A stub with a summary and numbered key requirements is preferable to either a bl
 
 ## Step 4 — Optionally Generate STANDARDS.md
 
-Generate or update `STANDARDS.md` if:
+Author `STANDARDS.md` through the mediated writer `cartopian write-standards` (a **PM-performed** write) if:
 
 - The operator requests it, or
 - The requirements reveal clear technical constraints (specific stack, performance targets, integration requirements) that should be captured.
 
-Otherwise, leave `STANDARDS.md` as its seed stub — the planning phase can generate or refine it later.
+```
+cartopian write-standards <project-root> --content-file <body-path>
+```
+
+Otherwise, leave `STANDARDS.md` as its seed stub — the planning phase can refine it later.
 
 ---
 
 ## Step 5 — Update STATE.md
 
-Add a note to the "What to do next" section of `STATE.md`:
+Updating `STATE.md` is **PM-performed**. Compose the updated body — adding a note to its "What to do next" section — and write it through the mediated writer (never a raw `Edit`):
+
+```
+cartopian write-state <project-root> --content-file <body-path>
+```
+
+The added note reads:
 
 > Requirements adopted from <source name> on <date>. Next: run `adopt-plan` to migrate an existing implementation plan, or run `plan-project` starting from Stage 2 (implementation plan generation) to build a plan from these requirements.
 

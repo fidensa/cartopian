@@ -87,11 +87,19 @@ Do **not** present a blank form. Be conversational. Draw out requirements throug
 
 ### 1.3 Produce REQUIREMENTS.md
 
-Write `REQUIREMENTS.md` in the project directory. Use the structure that emerged from the conversation, not a rigid template.
+Authoring `REQUIREMENTS.md` is a **PM-performed** write. The contained PM has no raw `Write` tool, so author it through the mediated writer (use the structure that emerged from the conversation, not a rigid template):
+
+```
+cartopian write-requirements <project-root> --content-file <body-path>
+```
 
 ### 1.4 Generate STANDARDS.md
 
-Based on the requirements, any carried-forward standards seed, and any architectural principles or technical needs discussed, generate or update `STANDARDS.md` in the project directory. This document should capture the chosen tools/stack, working standards, and any constraints deduced from the current planning cycle's requirements.
+Compose `STANDARDS.md` from the requirements, any carried-forward standards seed, and any architectural principles or technical needs discussed — the chosen tools/stack, working standards, and any constraints deduced from this cycle's requirements. Author or update it through the mediated writer (a **PM-performed** write):
+
+```
+cartopian write-standards <project-root> --content-file <body-path>
+```
 
 ### 1.5 Review checkpoint
 
@@ -116,7 +124,13 @@ If a reviewer is configured:
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md
 
-Write `IMPLEMENTATION_PLAN.md` in the project directory with:
+Authoring the plan is **PM-performed**; compose the body and write it through the mediated writer (never a raw `Write`):
+
+```
+cartopian write-plan <project-root> --content-file <body-path>
+```
+
+The `IMPLEMENTATION_PLAN.md` body must contain:
 
 - **Purpose**: what this plan accomplishes and which source documents it derives from.
 - **Architecture rules**: rules derived from requirements and engineering standards. These are consequences of locked inputs, not new decisions.
@@ -149,7 +163,13 @@ Read the locked `IMPLEMENTATION_PLAN.md`.
 
 ### 3.2 Generate phase files
 
-For each phase in the plan, create `phases/PHASE-NN-slug.md` with:
+Authoring phase files is **PM-performed**. For each phase in the plan, author `phases/PHASE-NN-slug.md` through the mediated writer `cartopian write-phase` (the `--phase-id` resolves the allowlisted `phases/` destination, so the PM supplies the id, not a path):
+
+```
+cartopian write-phase <project-root> --phase-id PHASE-NN-slug --content-file <body-path>
+```
+
+Each phase body contains:
 
 - **Phase goal**: one or two sentences.
 - **Plan refs covered**: list from the plan's phase table.
@@ -180,13 +200,21 @@ Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if start
 
 ### 4.2 Generate task files
 
-For each build and research item in the active phase, create `tasks/open/TASK-NN-NNN-slug.md` following the template in `templates/TASK.md`.
+Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `templates/TASK.md`:
 
-Populate the template from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
+```
+cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
+```
+
+New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advances them from there. Populate the body from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 
 ### 4.3 Generate spec files
 
-For tasks that need specs (new interfaces, schemas, contracts), create `specs/SPEC-NN-NNN-slug.md` following the template in `templates/SPEC.md`.
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `templates/SPEC.md` (a **PM-performed** write):
+
+```
+cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
+```
 
 Not every task needs a spec. Use judgment: configuration tasks, documentation tasks, and simple implementation tasks typically do not need specs.
 
@@ -206,7 +234,13 @@ If a reviewer is configured:
 
 ### 5.1 Update STATE.md
 
-Generate or update `STATE.md` reflecting:
+Updating `STATE.md` is **PM-performed**. Compose the state body and write it through the mediated writer (never a raw `Write`):
+
+```
+cartopian write-state <project-root> --content-file <body-path>
+```
+
+The body reflects:
 
 - **Current phase**: the first active phase
 - **Active work**: none yet (nothing assigned)
@@ -229,7 +263,7 @@ Print a summary of everything that was produced:
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/`. The PM creates a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` to hand off the review work. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the reviewer, who is not contained). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path>` — to hand off the review work; the contained PM has no raw `Write`. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
@@ -242,7 +276,7 @@ The standard checkpoint sequence is:
 
 At every review checkpoint:
 
-1. Prepare the checkpoint prompt at the table's prompt path, resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `templates/REPORT.md`.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `templates/REPORT.md`.
 2. Call `skills/run-handoff.md` with:
    - Role: `reviewer`
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`

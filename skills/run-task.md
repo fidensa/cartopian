@@ -73,13 +73,13 @@ cartopian handoff-packet <task-path> --role <role>
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
-Then, create or update:
+Then author the assignment prompt. This is a **PM-performed** write; the contained PM has no raw `Write` tool, so create or update `prompts/PROMPT-NN-NNN.md` through the mediated writer:
 
-```text
-prompts/PROMPT-NN-NNN.md
+```
+cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
 ```
 
-The prompt must be directed at the assignee and include, sourced from the `handoff-packet` record:
+The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
 
 - Absolute prompt path.
 - Absolute project root.
@@ -167,7 +167,9 @@ The CLI verifies that `reports/REPORT-NN-NNN.md` exists, references this task's 
 
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
 
-If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before Stage 5:
+If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before Stage 5.
+
+> **Containment boundary.** The product-repo git steps below (`git`/`gh` plumbing, and the merge-evidence append to the review file in Stage 6) are raw shell operations against the product repo. They have no mediated Cartopian command in the Phase-01 set, so they are **outside the contained-PM path**: a contained PM (no shell) runs only with `pm_owns_product_branches = false` (or unset), where `requires_pr_step` is never set and this entire block is skipped. When `pm_owns_product_branches = true`, the git workflow is owned by the operator or an uncontained PM. This is a deliberate boundary, not a lifecycle-authoring action the mediated writers cover.
 
 1. Treat coder-supplied product-repo git evidence as a boundary violation. If the report claims the assignee staged, committed, pushed, branched, opened a PR, or merged product-repo code, stop for operator inspection.
 2. Resolve the product-repo absolute path(s) from the declared work-root names via the resolved config's `work_roots` mapping; when multiple are declared, choose the root that actually owns this task's changes. If ambiguous, stop for operator inspection.
@@ -186,13 +188,11 @@ If `pm_owns_product_branches = true` but no `Work root:` is declared (or it is `
 
 ## Stage 5 - Assign Review
 
-Create or update:
+Authoring the review prompt is **PM-performed**. Create or update `prompts/PROMPT-NN-NNN.md` for the reviewer through the mediated writer when the same prompt path is being reused for review, or ensure the existing prompt clearly identifies the review assignment:
 
-```text
-prompts/PROMPT-NN-NNN.md
 ```
-
-for the reviewer when the same prompt path is being reused for review, or ensure the existing prompt clearly identifies the review assignment.
+cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
+```
 
 The review prompt must include absolute paths to:
 
@@ -269,11 +269,16 @@ Failed reviews do not create replacement tasks. Continue with the original task.
 
 ## Stage 7 - Update Durable Records
 
-1. Record any non-trivial decisions in `decisions/DEC-NNN-slug.md`.
-2. Update `decisions/INDEX.md` when decisions changed.
-3. Ensure task, review, and report evidence agree.
-4. Remove superseded prompts.
-5. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or state files.
+1. Record any non-trivial decisions. Authoring a decision is **PM-performed**; write `decisions/DEC-NNN-slug.md` through the mediated writer rather than a raw `Write`:
+
+   ```
+   cartopian write-decision <project-root> --dec-id DEC-NNN --slug <slug> --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>
+   ```
+
+   The same command renders the `decisions/INDEX.md` row from the `--title` / `--date` / `--status` / `--supersedes` arguments, so a separate raw edit of `INDEX.md` is not needed (and the contained PM cannot perform one).
+2. Ensure task, review, and report evidence agree.
+3. Remove superseded prompts with the Core CLI (`cartopian delete-prompt <prompt-path>`), never a raw `rm`.
+4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or state files.
 6. Remove the transient wrapper status file for any report whose handoff is finished, even when the report `.md` is intentionally retained as evidence:
 
    ```text
@@ -294,7 +299,13 @@ Render the post-task `STATE.md` body via the Core CLI:
 cartopian compose-state <project-path>
 ```
 
-`compose-state` is the FR-006 aggregator. It emits a single NDJSON record with `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` — the last is the full markdown body. Write `rendered_body` directly to `STATE.md`. Confirm the result is under 5KB and names:
+`compose-state` is the FR-006 aggregator. It emits a single NDJSON record with `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` — the last is the full markdown body. Persisting that body is a **PM-performed** write; the contained PM has no raw `Write` tool, so write `STATE.md` through the mediated writer, passing `rendered_body` verbatim as the content:
+
+```
+cartopian write-state <project-root> --content-file <rendered-body-path>
+```
+
+Confirm the result is under 5KB and names:
 
 - Current phase.
 - Active work.

@@ -115,6 +115,8 @@ Requirements and implementation plans never carry forward as live artifacts. The
 
 Skip this stage unless the operator requested an archive.
 
+> **Containment boundary.** The archive steps below (creating `archive/`, writing `archive/PLAN-NNN-slug/CLOSEOUT.md`, copying live artifacts into the snapshot, and creating/appending `archive/INDEX.md`) are raw filesystem create/copy/append operations. They have no mediated Cartopian command in the Phase-01 set, so they are **outside the contained-PM path** and are **operator-owned**: a contained PM (no shell, no raw `Write`) does **not** perform them. The archive snapshot remains an operator-requested option (the semantics below are unchanged) — but when an archive is requested under containment, the raw create/copy/append work is owned by the operator or an uncontained PM, exactly like the `pm_owns_product_branches` git block in `skills/run-task.md`. A contained PM that reaches this stage either **skips the optional archive** (the default — Stage 2 archive answer is "no") or, when the operator did request an archive, **stops here for operator execution** and resumes at the mediated `cartopian reset-plan` in Stage 4 only after the operator reports the snapshot is in place. This is a deliberate boundary, not a lifecycle-authoring action the mediated writers cover.
+
 ### 3.1 Choose archive path
 
 Create `archive/` if it does not exist.
@@ -178,68 +180,38 @@ Each row records one archived plan. The summary is a short phrase derived from t
 
 ## Stage 4 - Reset Live Project Surface
 
-Reset the live project surface after optional archival is complete.
+Resetting the live surface is **PM-performed**. The contained PM has no `rm`/`mkdir`/raw-`Write` tool, so the entire reset routes through mediated commands: the close-surface reset itself through `cartopian reset-plan`, and the prompt/report files through `cartopian delete-prompt` / `cartopian delete-report` (which `reset-plan` deliberately does not touch).
 
-### 4.1 Always reset
+### 4.1 Clear prompts and reports
 
-Remove these live artifacts. Use the Core CLI for prompt and report files:
-
-- `REQUIREMENTS.md`
-- `IMPLEMENTATION_PLAN.md`
-- all files in `phases/`
-- all files in `tasks/open/`
-- all files in `tasks/in-progress/`
-- all files in `tasks/in-review/`
-- all files in `tasks/done/`
-- all files in `specs/`
-- all files in `reviews/`
-- all files in `decisions/`
-- all files in `prompts/` (via `cartopian delete-prompt <path>`)
-- all files in `reports/` (via `cartopian delete-report <path>`)
-
-Recreate the directories if needed:
+Clear every remaining file in `prompts/` and `reports/` through the Core CLI — never a raw `rm`:
 
 ```text
-phases/
-prompts/
-reports/
-tasks/open/
-tasks/in-progress/
-tasks/in-review/
-tasks/done/
-specs/
-reviews/
-decisions/
+cartopian delete-prompt <project-path>/prompts/<file>.md
+cartopian delete-report <project-path>/reports/<file>.md
 ```
 
-Reports should not become a replacement for task, review, or decision records. They are cleared during reset along with other plan artifacts.
+`delete-report` also clears the companion `<report-path>.status` file. Reports should not become a replacement for task, review, or decision records; they are cleared during reset along with other plan artifacts.
 
-### 4.2 Conditionally reset `STANDARDS.md`
+### 4.2 Run the mediated close-surface reset
 
-If the operator chose to carry forward project standards, leave `STANDARDS.md` in place and treat it as seed context for the next planning cycle.
+Run `cartopian reset-plan` to fold the rest of Stage 4 into one fail-closed pass:
 
-If the operator chose not to carry it forward, replace `STANDARDS.md` with a fresh project standards seed based on `templates/STANDARDS.md`.
-
-### 4.3 Conditionally reset `CONVENTIONS.md`
-
-If the operator chose to carry forward conventions, leave `CONVENTIONS.md` in place and treat it as seed context for the next planning cycle.
-
-If the operator chose not to carry them forward, replace `CONVENTIONS.md` with the default project conventions seed:
-
-```markdown
-# <project name> - Conventions
-
-This document extends the protocol-level conventions defined in `protocol/CONVENTIONS.md`. Rules here apply only to this project.
-
-## Project-specific conventions
-
-<!-- Add project-specific naming rules, workflow modifications, or
-     constraints here. Delete this comment when you add real content. -->
+```
+cartopian reset-plan <project-root> [--carry-standards] [--carry-conventions]
 ```
 
-### 4.4 Preserve live project memory
+`reset-plan` (FR-005, the OQ-003 close-surface verb):
 
-Do not reset:
+- **Removes** the live plan artifacts — `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, and every file in `phases/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`. (It does **not** touch `prompts/` or `reports/` — those were cleared in 4.1.)
+- **Recreates** the empty lifecycle directories (`phases/`, `prompts/`, `reports/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`).
+- **Conditionally reseeds** `STANDARDS.md` and `CONVENTIONS.md` from the carry-forward choices in Stage 2: pass `--carry-standards` / `--carry-conventions` to **keep** a file in place as seed context; **omit** the flag to reseed that file to a fresh project seed. The reseed writes go through the same mediated-write guards as the `write-*` commands.
+
+The command supplies only the project root — the PM never names a path to remove, create, or reseed; every target is a fixed, code-owned member of the close-surface allowlist. A symlink, foreign subdirectory, or out-of-root target aborts the whole pass with nothing removed, created, or written.
+
+### 4.3 Preserve live project memory
+
+`reset-plan` never touches these — they survive the reset:
 
 - `cartopian.toml`
 - `archive/`
@@ -254,9 +226,15 @@ Render the post-closeout `STATE.md` body via the Core CLI:
 cartopian compose-state <project-path>
 ```
 
-After Stage 4 the live plan surface is empty, so `cartopian compose-state` returns the no-plan record shape — `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` are all `null`. Because `rendered_body` is `null` in the no-plan case, treat the aggregator as the signal that the project surface is reset, and author `STATE.md` directly so it captures the closeout-specific fields the aggregator does not emit (closeout date, archive note, carry-forward choices, next-action pointer).
+After Stage 4 the live plan surface is empty, so `cartopian compose-state` returns the no-plan record shape — `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` are all `null`. Because `rendered_body` is `null` in the no-plan case, treat the aggregator as the signal that the project surface is reset, then compose the closeout `STATE.md` body the PM owns (closeout date, archive note, carry-forward choices, next-action pointer) — the aggregator does not emit these.
 
-Rewrite `STATE.md` so it is under 5KB and says:
+Authoring that body is a **PM-performed** write; the contained PM has no raw `Write`, so write it through the mediated writer so it is under 5KB:
+
+```
+cartopian write-state <project-root> --content-file <closeout-body-path>
+```
+
+The composed body says:
 
 - There is no active plan.
 - The previous plan has been closed.

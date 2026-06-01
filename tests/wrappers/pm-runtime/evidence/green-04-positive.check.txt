@@ -1,0 +1,11 @@
+discover_projects tool_use present: True
+tool_result is_error: False
+result_final_line: 'CARTOPIAN_TOOL_OK'
+POSITIVE TOOL CALL: PASS
+--- full result text ---
+The call succeeded. It returned **2 projects**:
+
+1. **Cartopian Manager** (`cartopian-manager`) — `/Users/scott/Projects/cartopian-manager`
+2. **Fidensa Manager** (`fidensa-manager`) — `/Users/scott/Projects/fidensa-manager`
+
+CARTOPIAN_TOOL_OK

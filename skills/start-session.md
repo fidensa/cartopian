@@ -59,7 +59,7 @@ Present a short summary to the operator from the returned record:
 
 Then check the disagreement and blocker fields before proposing any action:
 
-- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency.
+- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency. The refresh is **PM-performed** — write the corrected body through the mediated writer (`cartopian write-state <project-root> --content-file <body-path>`), never a raw `Edit`.
 - **`blockers`**: any non-empty `blockers` array is a PM-level blocker (e.g. `no active phase detected but tasks are present`, `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not proceed to Stage 3 while blockers exist.
 
 Resolve blockers with the operator before taking any lifecycle action.
@@ -75,7 +75,7 @@ Convert the `next-action` record's `active_task` and `next_open_task` fields int
 - If `phase_id` is null and no plan exists for the project, ask whether to begin planning with `plan project`.
 - If the current plan is complete (no `active_task`, no `next_open_task`, and `phase_id` resolved), ask whether to close it with `close plan`.
 - If `active_task` is null and `next_open_task` is non-null, ask whether to start that task with `run task`.
-- If `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact, ask whether to perform that PM-owned authoring action now.
+- If `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact, ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
 
 Ask the operator for confirmation before launching a handoff, moving a task, creating an assignment prompt, or otherwise advancing lifecycle state.
 

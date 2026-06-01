@@ -5,6 +5,11 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from cli.commands._containment import (
+    contained_pm_owned_git_block_message,
+    pm_is_contained,
+    resolve_pm_owns_product_branches,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
@@ -245,6 +250,16 @@ def handler(args: argparse.Namespace) -> int:
         project_cfg = _load_project_config(project_path)
         global_toml = Path.home() / ".cartopian" / "cartopian.toml"
         global_cfg = _load_toml(global_toml, "global config") or {}
+
+        # FR-013 fail-closed guard (P01-BUILD-006): a contained PM cannot honor
+        # git.pm_owns_product_branches=true (no shell for git/gh; mediated-git
+        # deferred, RM-004). Refuse before any lifecycle data is resolved/emitted.
+        guard_msg = contained_pm_owned_git_block_message(
+            resolve_pm_owns_product_branches(global_cfg, project_cfg),
+            pm_is_contained(),
+        )
+        if guard_msg is not None:
+            raise _CliError(EXIT_FAIL, "guard", guard_msg)
 
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
         roles = _resolve_roles(global_cfg, project_cfg)

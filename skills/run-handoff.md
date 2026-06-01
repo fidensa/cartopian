@@ -60,9 +60,15 @@ Read from the emitted record:
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error to the caller and return a blocked outcome; do not fall back to a manual read sequence.
 
-Then, sourcing every value from the `handoff-packet` record above:
+Then, sourcing every value from the `handoff-packet` record above. Preparing the prompt is a **PM-performed** action: the PM has no raw `Write`/`Edit` tool (FR-002 containment), so author the prompt through the mediated writer rather than writing the file directly:
 
-1. Write or update the prompt at the caller-provided absolute prompt path.
+1. Author or update the prompt at the caller-provided absolute prompt path with the Core CLI (never a raw `Write`):
+
+   ```
+   cartopian write-prompt <project-root> --prompt-id <PROMPT-id> --content-file <body-path>
+   ```
+
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry.
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
@@ -80,27 +86,27 @@ Do not delete unrelated reports. Use `delete-report` only for the `expected_repo
 
 ## Stage 2 - Issue The Handoff
 
-Use the resolved role and handoff configuration:
+Issuing the handoff is **PM-performed**. The contained PM has no shell or process-exec tool, so an automated launch goes through the mediated `cartopian dispatch` command — never a raw subprocess. Choose the path from the resolved role and handoff configuration:
 
-- Human role: present the prompt path and expected report path to the operator.
-- Agent role without handoff config: present the prompt path and expected report path to the operator for manual assignment.
-- Agent role with `auto_start = false`: present the exact command for the operator to run:
+- **Human role** — *operator-performed*: present the prompt path and expected report path to the operator.
+- **Agent role without handoff config** — *operator-performed*: present the prompt path and expected report path to the operator for manual assignment.
+- **Agent role with `auto_start = false`** — *operator-performed*: present the exact command for the operator to run (the PM does not launch it):
   ```text
   <agent> '<absolute prompt path>'
   ```
-- Agent role with `auto_start = true`: launch the configured executable only when the current automation policy allows it.
+- **Agent role with `auto_start = true`, task-scoped handoff** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
 
-Automated launch contract:
+  ```
+  cartopian dispatch <task-path> --role <role>
+  ```
 
-```text
-CARTOPIAN_TIMEOUT=<duration> <agent> <absolute prompt path>
-```
+  `dispatch` is the FR-006 mediated launch (TASK-01-004). On the PM's behalf it composes the same `handoff-packet` / `resolve-config` data, fails closed on a missing `[handoffs.<role>]` block, an unmapped or non-existent work root, or a missing prompt, exports `CARTOPIAN_TIMEOUT` from the resolved `[handoffs.<role>].timeout` (the protocol default of `60m` applies when unset), and launches the operator-configured `[handoffs.<role>].agent` with the single absolute-prompt-path argv from the cartopian project-root cwd. There is no caller-supplied executable argument, so the contained PM cannot turn dispatch into a raw exec primitive.
 
-Pass the prompt path as one argv argument. Use shell quoting only in operator-facing command text. Set `CARTOPIAN_TIMEOUT` in the launch environment to the resolved `[handoffs.<role>].timeout` value (e.g. `30m`, `2h`); if the field is absent, the wrapper applies the protocol default of `60m`. The shipped wrappers enforce this deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exit `124` when the deadline elapses.
+- **Agent role with `auto_start = true`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *operator-performed*: `dispatch` is keyed on a task path, so there is no mediated auto-launch for a task-less handoff. Present the command for the operator to run, exactly as in the `auto_start = false` case.
 
-Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path). Access grants cover the union of the project root and any declared work-root absolute paths resolved via `resolve-config`. The shipped wrappers in `wrappers/` resolve the project root and apply access grants automatically; custom agents must honor the same convention.
+The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path); access grants cover the union of the project root and any declared work-root absolute paths resolved via `resolve-config`. `dispatch` and the shipped `wrappers/` apply this launch contract automatically; custom agents must honor the same convention.
 
-Launch the handoff as a background subprocess (do not impose a foreground tool-call deadline shorter than the configured timeout). Launch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
+`dispatch` returns as soon as the wrapper is launched in the background — it does not block to completion and never reaps the child; the PM observes the result through Stage 3's wait primitive. Dispatch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
 
 ---
 

@@ -98,7 +98,11 @@ Proceed only after operator confirmation.
 
 ## Stage 3 — Generate IMPLEMENTATION_PLAN.md
 
-Write `IMPLEMENTATION_PLAN.md` in the project directory following the structure in `templates/IMPLEMENTATION_PLAN.md`.
+Authoring `IMPLEMENTATION_PLAN.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body following the structure in `templates/IMPLEMENTATION_PLAN.md` and write it through the mediated writer:
+
+```
+cartopian write-plan <project-root> --content-file <body-path>
+```
 
 **Purpose section:** Name the source of the plan and the requirements reference. If requirements are external, identify the external source (e.g., "JIRA story HUB-123" or "Confluence 'Hub UI Design' page"). Include approximate date or version if known.
 
@@ -128,7 +132,13 @@ If a reviewer is configured, run review checkpoint `002 implementation-plan` per
 
 ## Stage 4 — Generate Phase Files
 
-For each phase in `IMPLEMENTATION_PLAN.md`, create `phases/PHASE-NN-slug.md` with:
+For each phase in `IMPLEMENTATION_PLAN.md`, author `phases/PHASE-NN-slug.md` through the mediated writer (a **PM-performed** write; `--phase-id` resolves the allowlisted `phases/` destination):
+
+```
+cartopian write-phase <project-root> --phase-id PHASE-NN-slug --content-file <body-path>
+```
+
+Each phase body contains:
 
 - **Phase goal:** one or two sentences
 - **Plan refs covered:** list from the plan's phase table
@@ -147,7 +157,13 @@ If a reviewer is configured, run review checkpoint `003 phases`.
 
 Generate task files only for the **first active phase** (lowest-numbered phase with open work). Do not generate tasks for future phases — later phases may change as earlier work completes.
 
-For each build and research item in the active phase, create `tasks/open/TASK-NN-NNN-slug.md` following the template in `templates/TASK.md`. Populate all fields:
+For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `templates/TASK.md` (a **PM-performed** write):
+
+```
+cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
+```
+
+Populate all fields:
 
 - `Phase:` from the phase file
 - `Plan ref:` from the `PNN-KIND-NNN` table
@@ -157,7 +173,11 @@ For each build and research item in the active phase, create `tasks/open/TASK-NN
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
 - `Evidence gate:` use judgment — `required` for code-producing tasks; `n/a` for research, documentation, or configuration tasks
 
-For tasks that need specs (new interfaces, schemas, contracts), create `specs/SPEC-NN-NNN-slug.md` following the template in `templates/SPEC.md`.
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `templates/SPEC.md`:
+
+```
+cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
+```
 
 If a reviewer is configured, run review checkpoint `004 tasks-and-specs`.
 
@@ -165,7 +185,13 @@ If a reviewer is configured, run review checkpoint `004 tasks-and-specs`.
 
 ## Stage 6 — Update STATE.md
 
-Update `STATE.md` to reflect:
+Updating `STATE.md` is **PM-performed**; compose the body and write it through the mediated writer (never a raw `Write`):
+
+```
+cartopian write-state <project-root> --content-file <body-path>
+```
+
+The body reflects:
 
 - **Current phase:** the first active phase
 - **Active work:** none yet (nothing assigned)

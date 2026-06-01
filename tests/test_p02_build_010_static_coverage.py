@@ -104,13 +104,49 @@ class SkillsStaticCoverageTest(unittest.TestCase):
         # Do not assert Repo subpath absence here; legacy mention may persist until its own task.
 
 
+# --- PM-containment wrapper class (DEC-001 / FR-002) -----------------------
+# The contained Claude Code PM wrapper (`cartopian-claude-pm`) is NOT a blanket
+# Cartopian launcher. By DEC-001 it exposes ONLY the fixed Cartopian MCP toolset
+# and DELIBERATELY OMITS the two blanket-wrapper properties asserted by
+# WrappersStaticCoverageTest below:
+#   * it has NO `CARTOPIAN_*_UNRESTRICTED` bypass — a bypass is a containment
+#     hole, forbidden by the floor; and
+#   * it launches from an isolated, content-free `pm-surface` cwd, NOT the
+#     project root via prompts-dir detection — the product repo and work roots
+#     must stay unreachable.
+# Those omissions are correct, so the blanket assertions EXCLUDE this class. To
+# stop the exclusion from silently masking a regression, PmContainmentWrapper-
+# StaticCoverageTest turns it into an enforced *opposite* contract.
+# See decisions/DEC-001-pm-containment-claude-code-go.md.
+
+PM_CONTAINMENT_MARKER = "PM containment"  # in-file self-identification
+
+
+def _is_pm_containment_wrapper(path: Path) -> bool:
+    """True for the DEC-001 PM-containment wrapper class.
+
+    Recognized by BOTH a `-pm` filename suffix (`cartopian-*-pm`, optionally
+    `.ps1`) AND an in-file containment marker, so a plain launcher cannot be
+    excluded by name alone and the contained wrapper cannot shed its identity
+    silently.
+    """
+    stem = path.name[:-4] if path.name.endswith(".ps1") else path.name
+    if not stem.endswith("-pm"):
+        return False
+    return PM_CONTAINMENT_MARKER in path.read_text(encoding="utf-8")
+
+
 class WrappersStaticCoverageTest(unittest.TestCase):
     def test_wrappers_call_resolve_config_and_offer_unrestricted_bypass(self) -> None:
-        # Every wrapper (bash and PowerShell) should reference `cartopian resolve-config`
-        # and expose a CARTOPIAN_*_UNRESTRICTED env-var bypass.
+        # Every blanket wrapper (bash and PowerShell) should reference
+        # `cartopian resolve-config` and expose a CARTOPIAN_*_UNRESTRICTED
+        # env-var bypass. PM-containment wrappers are excluded (DEC-001): they
+        # run MCP-only and must have NO bypass — see
+        # PmContainmentWrapperStaticCoverageTest for their inverse contract.
         wrappers = []
         wrappers.extend(sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")))
         wrappers.extend(sorted(WRAPPERS_PS1_DIR.glob("cartopian-*.ps1")))
+        wrappers = [p for p in wrappers if not _is_pm_containment_wrapper(p)]
         self.assertTrue(wrappers, "expected wrapper scripts to exist")
 
         missing_resolve = []
@@ -140,13 +176,20 @@ class WrappersStaticCoverageTest(unittest.TestCase):
 
     def test_wrappers_implement_project_root_launch_detection(self) -> None:
         # Check for the prompts-directory launch-cwd detection in both shells.
+        # PM-containment wrappers are excluded (DEC-001): they launch from an
+        # isolated `pm-surface` cwd, NOT the project root — that isolated launch
+        # is positively enforced by PmContainmentWrapperStaticCoverageTest.
         bash_hits = []
         for path in sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")):
+            if _is_pm_containment_wrapper(path):
+                continue
             text = path.read_text(encoding="utf-8")
             if not re.search(r"basename\s*\(\"\$PROMPTS_DIR\"\)\"?\s*\)\s*==\s*\"prompts\"", text):
                 bash_hits.append(path)
         ps1_hits = []
         for path in sorted(WRAPPERS_PS1_DIR.glob("cartopian-*.ps1")):
+            if _is_pm_containment_wrapper(path):
+                continue
             text = path.read_text(encoding="utf-8")
             if not re.search(r"Split-Path\s+-Leaf\s+\$PromptsDir\).*prompts", text):
                 # Simpler fallback: at least mention 'prompts' and Set-Location logic
@@ -177,6 +220,242 @@ class WrappersStaticCoverageTest(unittest.TestCase):
         self.assertTrue(
             ("work-root" in text) or ("work_roots" in text),
             msg="wrappers/README.md should mention work-root access model",
+        )
+
+
+class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
+    """Inverse-guarantee contract for the DEC-001 PM-containment wrapper class.
+
+    WrappersStaticCoverageTest EXCLUDES these wrappers from the blanket
+    `offer-unrestricted-bypass` and `project-root launch` assertions because, by
+    DEC-001/FR-002 design, a contained PM wrapper intentionally lacks both. This
+    class enforces the *opposite* contract so the exclusion can never silently
+    mask a floor regression: a PM-containment wrapper MUST NOT grow a bypass or a
+    surface-reopening flag (`--add-dir`/`--dangerously-skip-permissions`), and
+    MUST launch from its isolated surface rather than the project root.
+    """
+
+    # Identifiers whose value is the project root, a work root, or the prompts
+    # directory. Deriving or `cd`-ing a launch cwd from ANY of them re-opens the
+    # surface the PM-containment floor is meant to keep unreachable. Both the
+    # bash (`PROMPTS_DIR`) and PowerShell (`$PromptsDir`) spellings are covered;
+    # IGNORECASE folds case but NOT the underscore vs. camelCase split, so both
+    # forms are listed explicitly. CARTOPIAN_PM_SURFACE / $PM_SURFACE are NOT in
+    # this set — launching from the isolated surface is exactly what's required.
+    _LAUNCH_SOURCE_RE = re.compile(
+        r"(?<![\w-])"
+        r"(?:PROJECT_DIR|PROJECT_ROOT|PROMPTS_DIR|LAUNCH_CWD|CARTOPIAN_LAUNCH_CWD"
+        r"|PromptsDir|ProjectDir|ProjectRoot|LaunchCwd)"
+        r"(?![\w-])",
+        re.IGNORECASE,
+    )
+    # Prompts-dir launch DETECTION used to choose the cwd, e.g.
+    # `[[ $(basename "$PROMPTS_DIR") == "prompts" ]]` (bash) or
+    # `(Split-Path -Leaf $PromptsDir) -eq 'prompts'` (PowerShell). This is the
+    # FR-012 blanket-launcher trigger that a contained PM must never perform.
+    _PROMPTS_DETECT_RE = re.compile(
+        r"""(?:==|-eq)\s*["']?prompts["']?""",
+        re.IGNORECASE,
+    )
+
+    def _pm_wrappers(self) -> list:
+        wrappers = []
+        wrappers.extend(sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")))
+        wrappers.extend(sorted(WRAPPERS_PS1_DIR.glob("cartopian-*.ps1")))
+        return [p for p in wrappers if _is_pm_containment_wrapper(p)]
+
+    @classmethod
+    def _offending_launch_lines(cls, text: str) -> list:
+        """Executable lines that derive/`cd` a launch cwd from the project root,
+        a work root, or the prompts dir — i.e. that would re-open the surface.
+
+        Mirrors `_offending_flag_lines`: comments and purely diagnostic /
+        refusal / validation lines may *name* these locations (an `echo`/
+        `Write-*` message, a comment) without launching from them, and are
+        allowed. A line counts as offending only when it actually references a
+        project-root/prompts launch-source identifier (`_LAUNCH_SOURCE_RE`) or
+        performs prompts-dir launch detection (`_PROMPTS_DETECT_RE`) in an
+        executable position — catching ANY project-root/prompts-dir launch
+        path, not just the one old static `== "prompts"` pattern.
+        """
+        # Lines that merely report or refuse: they may name a location without
+        # ever changing the launch cwd to it.
+        diag_starts = (
+            "echo ", "echo\t", "echo>", "printf", "print ",
+            "write-host", "write-error", "write-warning", "write-output",
+            "write-verbose", "write-debug",
+        )
+        offending = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue  # documentation / comment
+            if line.lower().startswith(diag_starts):
+                continue  # diagnostic / refusal message — names, never launches
+            if cls._LAUNCH_SOURCE_RE.search(line) or cls._PROMPTS_DETECT_RE.search(line):
+                offending.append(line)
+        return offending
+
+    @staticmethod
+    def _offending_flag_lines(text: str, flag: str) -> list:
+        """Lines that PASS `flag` to the launcher (not comments/refusal guard).
+
+        A PM wrapper legitimately *names* `--add-dir` /
+        `--dangerously-skip-permissions` in comments and in the refusal guard
+        that rejects them. Those occurrences are allowed; an occurrence on an
+        executable line that actually hands the flag to `claude` is not.
+        """
+        offending = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue  # documentation / comment
+            if flag not in line:
+                continue
+            lowered = line.lower()
+            # Allowed only where the flag is REFUSED, not launched: the refusal
+            # `case` pattern (a `| --…` alternation or a trailing-`\` line) or an
+            # echo describing the refusal.
+            if "refus" in lowered or "echo" in lowered or "| --" in line or line.endswith("\\"):
+                continue
+            offending.append(line)
+        return offending
+
+    def test_pm_containment_class_is_non_empty(self) -> None:
+        # Anti-vacuity guard: if the `-pm` suffix / in-file marker convention
+        # ever stops matching, the exclusions in WrappersStaticCoverageTest would
+        # silently cover nothing and this inverse contract would pass vacuously.
+        self.assertTrue(
+            self._pm_wrappers(),
+            "expected at least one PM-containment wrapper (cartopian-*-pm); the "
+            "blanket-test exclusions would otherwise be vacuous",
+        )
+
+    def test_pm_wrappers_have_no_unrestricted_bypass(self) -> None:
+        # DEC-001: a CARTOPIAN_*_UNRESTRICTED bypass is a containment hole and
+        # must not exist in the contained PM profile.
+        offenders = []
+        for path in self._pm_wrappers():
+            if re.search(r"CARTOPIAN_[A-Z]+_UNRESTRICTED", path.read_text(encoding="utf-8")):
+                offenders.append(path)
+        self.assertEqual(
+            offenders,
+            [],
+            msg=(
+                "PM-containment wrappers must NOT expose a CARTOPIAN_*_UNRESTRICTED "
+                "bypass: " + ", ".join(str(p.relative_to(REPO_ROOT)) for p in offenders)
+            ),
+        )
+
+    def test_pm_wrappers_do_not_add_surface_reopening_flags(self) -> None:
+        # DEC-001: --add-dir / --dangerously-skip-permissions re-open the
+        # surface. The wrapper may name them only to refuse them.
+        for path in self._pm_wrappers():
+            text = path.read_text(encoding="utf-8")
+            for flag in ("--add-dir", "--dangerously-skip-permissions"):
+                offending = self._offending_flag_lines(text, flag)
+                self.assertEqual(
+                    offending,
+                    [],
+                    msg=(
+                        f"{path.relative_to(REPO_ROOT)} passes `{flag}` to the "
+                        f"launcher outside the refusal guard: {offending}"
+                    ),
+                )
+
+    def test_pm_wrappers_launch_from_isolated_surface(self) -> None:
+        # DEC-001: the contained PM launches from an isolated, content-free
+        # surface and must NOT derive its launch cwd from the project root, a
+        # work root, or the prompts dir. Two halves: (1) positively require the
+        # launch-from-$PM_SURFACE path, and (2) reject ANY executable
+        # project-root/prompts-dir launch path via `_offending_launch_lines`,
+        # not just the single old static `== "prompts"` regex.
+        for path in self._pm_wrappers():
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(wrapper=str(path.relative_to(REPO_ROOT))):
+                if path.name.endswith(".ps1"):
+                    self.assertRegex(text, r"(?i)surface")
+                    self.assertIn("Set-Location", text)
+                else:
+                    self.assertRegex(
+                        text, r'cd\s+"\$PM_SURFACE"',
+                        "bash PM wrapper must cd into the isolated $PM_SURFACE",
+                    )
+                    self.assertRegex(
+                        text, r"pm-surface",
+                        "bash PM wrapper must default to an isolated pm-surface cwd",
+                    )
+                # Inverse half: no executable line may derive/cd a launch cwd
+                # from PROJECT_DIR/PROJECT_ROOT/a PROMPTS_DIR parent, nor perform
+                # prompts-dir launch detection to choose the cwd. This supersedes
+                # the old narrow `basename("$PROMPTS_DIR") == "prompts"` regex,
+                # which is just one shape this now rejects.
+                offending = self._offending_launch_lines(text)
+                self.assertEqual(
+                    offending,
+                    [],
+                    msg=(
+                        f"{path.relative_to(REPO_ROOT)} derives a launch cwd from "
+                        "the project root / work root / prompts dir (the product "
+                        "repo must stay unreachable in the contained PM profile): "
+                        f"{offending}"
+                    ),
+                )
+
+    def test_isolated_surface_assertion_bites_project_root_launch(self) -> None:
+        # Bite check, parallel to the bypass / --add-dir guards: prove the
+        # strengthened inverse assertion actually fails for a realistically
+        # shaped project-root launch mutation — including the one the reviewer
+        # flagged as slipping past the old narrow regex — and passes once the
+        # mutation is reverted. Operates on synthetic text so the live wrappers
+        # are never mutated on disk.
+        clean = (
+            '#!/usr/bin/env bash\n'
+            '# PM containment launch profile.\n'
+            'PM_SURFACE="${CARTOPIAN_PM_SURFACE:-/var/pm-surface}"\n'
+            'cd "$PM_SURFACE"\n'
+            'exec claude "${FLOOR[@]}" "$@"\n'
+        )
+        self.assertEqual(
+            self._offending_launch_lines(clean),
+            [],
+            "the isolated-surface launch profile must be accepted",
+        )
+
+        # Each mutation is an executable project-root/prompts-dir launch path
+        # that the OLD narrow regex would have missed but the strengthened
+        # assertion must catch.
+        mutations = {
+            # The reviewer's exact example: a later guarded project-root launch.
+            "guarded-project-root": (
+                'if [[ $(basename "$PROMPTS_DIR") == "prompts" ]]; then cd "$PROJECT_DIR"; fi\n'
+            ),
+            # Bare cd to the project root.
+            "bare-project-root": 'cd "$PROJECT_DIR"\n',
+            # Launch-cwd override derivation.
+            "launch-cwd-override": 'LAUNCH_CWD="$CARTOPIAN_LAUNCH_CWD"; cd "$LAUNCH_CWD"\n',
+            # Deriving the prompts-dir parent (the FR-012 blanket pattern).
+            "prompts-dir-parent": 'PROJECT_DIR="$(dirname "$PROMPTS_DIR")"\n',
+            # PowerShell prompts-dir detection.
+            "ps1-prompts-detect": "if ((Split-Path -Leaf $PromptsDir) -eq 'prompts') { Set-Location $ProjectDir }\n",
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertNotEqual(
+                    self._offending_launch_lines(clean + mutation),
+                    [],
+                    f"strengthened assertion must bite the {name} project-root launch",
+                )
+
+        # A diagnostic line that merely NAMES the project root (never launches
+        # from it) must still be allowed — the wrapper legitimately reports/
+        # refuses without re-opening the surface.
+        self.assertEqual(
+            self._offending_launch_lines(
+                clean + 'echo "cartopian-claude-pm: PROJECT_DIR is unreachable" >&2\n'
+            ),
+            [],
+            "a diagnostic that only names the project root must not be flagged",
         )
 
 

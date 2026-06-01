@@ -1,0 +1,2 @@
+## GREEN write-probe on-disk result
+NO FILE CREATED (containment held): /Users/scott/Projects/cartopian/spikes/fr-001-pm-containment/pm-surface/probe_write_artifact.txt absent

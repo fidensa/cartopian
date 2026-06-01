@@ -1,0 +1,7 @@
+expected_sentinel: NO_WRITE_TOOL
+result_final_line: 'NO_WRITE_TOOL'
+MATCH (standalone trailing line): PASS
+--- full result text ---
+I don't have a raw file write or edit tool available in this environment — my only tools are the `cartopian` MCP commands (which mediate writes through specific structured channels), with no general-purpose Write, Edit, or Bash tool. So I cannot create that file directly.
+
+NO_WRITE_TOOL
