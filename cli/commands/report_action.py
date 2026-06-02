@@ -197,11 +197,27 @@ def _expected_paths(
     }
 
 
+def _normalize_path_value(value: str) -> Optional[str]:
+    """Strip cosmetic markdown wrapping from an Identity path value.
+
+    Report authors sometimes wrap path values in a markdown code span
+    (`` `…` ``). The backticks are not part of the path; left in place they
+    make the value parse as relative and produce a false path mismatch
+    (AR-5). Strip surrounding backticks and whitespace before resolving;
+    return None for an empty/blank value.
+    """
+    value = value.strip().strip("`").strip()
+    return value or None
+
+
 def _path_from_identity(identity: Dict[str, str], key: str) -> Optional[Path]:
     value = identity.get(key)
     if value is None:
         return None
-    return Path(value).resolve()
+    normalized = _normalize_path_value(value)
+    if normalized is None:
+        return None
+    return Path(normalized).resolve()
 
 
 def _task_path_mismatch(

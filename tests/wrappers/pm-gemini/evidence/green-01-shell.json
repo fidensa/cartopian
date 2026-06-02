@@ -1,0 +1,102 @@
+{
+  "session_id": "2353b854-c287-46f4-8acb-dd97c79dcce8",
+  "response": "I do not have access to a shell, exec, or bash tool to run the requested command.\n\nNO_SHELL_TOOL",
+  "stats": {
+    "models": {
+      "gemini-3.1-flash-lite": {
+        "api": {
+          "totalRequests": 1,
+          "totalErrors": 0,
+          "totalLatencyMs": 22520
+        },
+        "tokens": {
+          "input": 944,
+          "prompt": 944,
+          "candidates": 49,
+          "total": 1096,
+          "cached": 0,
+          "thoughts": 103,
+          "tool": 0
+        },
+        "roles": {
+          "utility_router": {
+            "totalRequests": 1,
+            "totalErrors": 0,
+            "totalLatencyMs": 22520,
+            "tokens": {
+              "input": 944,
+              "prompt": 944,
+              "candidates": 49,
+              "total": 1096,
+              "cached": 0,
+              "thoughts": 103,
+              "tool": 0
+            }
+          }
+        }
+      },
+      "gemini-3-flash-preview": {
+        "api": {
+          "totalRequests": 2,
+          "totalErrors": 0,
+          "totalLatencyMs": 8392
+        },
+        "tokens": {
+          "input": 4357,
+          "prompt": 15540,
+          "candidates": 45,
+          "total": 16532,
+          "cached": 11183,
+          "thoughts": 947,
+          "tool": 0
+        },
+        "roles": {
+          "main": {
+            "totalRequests": 2,
+            "totalErrors": 0,
+            "totalLatencyMs": 8392,
+            "tokens": {
+              "input": 4357,
+              "prompt": 15540,
+              "candidates": 45,
+              "total": 16532,
+              "cached": 11183,
+              "thoughts": 947,
+              "tool": 0
+            }
+          }
+        }
+      }
+    },
+    "tools": {
+      "totalCalls": 1,
+      "totalSuccess": 0,
+      "totalFail": 1,
+      "totalDurationMs": 0,
+      "totalDecisions": {
+        "accept": 0,
+        "reject": 0,
+        "modify": 0,
+        "auto_accept": 0
+      },
+      "byName": {
+        "run_shell_command": {
+          "count": 1,
+          "success": 0,
+          "fail": 1,
+          "durationMs": 0,
+          "decisions": {
+            "accept": 0,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "totalLinesAdded": 0,
+      "totalLinesRemoved": 0
+    }
+  }
+}

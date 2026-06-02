@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"019e8985-7f70-7d92-b88e-44f977cba004"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"web_search","id":"ws_0bf76d38c362f68d016a1f1c0a8e888190bfdc08c3fd24c07f","query":"","action":{"type":"other"}}}
+{"type":"item.completed","item":{"id":"item_0","type":"web_search","id":"ws_0bf76d38c362f68d016a1f1c0a8e888190bfdc08c3fd24c07f","query":"https://example.com/","action":{"type":"other"}}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"HTTP status: `200 OK`\n\nFirst line: `# Example Domain`"}}
+{"type":"turn.completed","usage":{"input_tokens":10417,"cached_input_tokens":1920,"output_tokens":183,"reasoning_output_tokens":162}}

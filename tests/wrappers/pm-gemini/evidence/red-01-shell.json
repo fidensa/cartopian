@@ -1,0 +1,102 @@
+{
+  "session_id": "4da6257b-b08d-49a5-a0b3-383363145192",
+  "response": "uid=501(scott) gid=20(staff) groups=20(staff),12(everyone),61(localaccounts),79(_appserverusr),80(admin),81(_appserveradm),33(_appstore),98(_lpadmin),100(_lpoperator),204(_developer),250(_analyticsusers),395(com.apple.access_ftp),398(com.apple.access_screensharing),399(com.apple.access_ssh),400(com.apple.access_remote_ae),701(com.apple.sharepoint.group.1)",
+  "stats": {
+    "models": {
+      "gemini-3.1-flash-lite": {
+        "api": {
+          "totalRequests": 1,
+          "totalErrors": 0,
+          "totalLatencyMs": 1423
+        },
+        "tokens": {
+          "input": 922,
+          "prompt": 922,
+          "candidates": 48,
+          "total": 1065,
+          "cached": 0,
+          "thoughts": 95,
+          "tool": 0
+        },
+        "roles": {
+          "utility_router": {
+            "totalRequests": 1,
+            "totalErrors": 0,
+            "totalLatencyMs": 1423,
+            "tokens": {
+              "input": 922,
+              "prompt": 922,
+              "candidates": 48,
+              "total": 1065,
+              "cached": 0,
+              "thoughts": 95,
+              "tool": 0
+            }
+          }
+        }
+      },
+      "gemini-3-flash-preview": {
+        "api": {
+          "totalRequests": 2,
+          "totalErrors": 0,
+          "totalLatencyMs": 27961
+        },
+        "tokens": {
+          "input": 17309,
+          "prompt": 30839,
+          "candidates": 187,
+          "total": 31223,
+          "cached": 13530,
+          "thoughts": 197,
+          "tool": 0
+        },
+        "roles": {
+          "main": {
+            "totalRequests": 2,
+            "totalErrors": 0,
+            "totalLatencyMs": 27961,
+            "tokens": {
+              "input": 17309,
+              "prompt": 30839,
+              "candidates": 187,
+              "total": 31223,
+              "cached": 13530,
+              "thoughts": 197,
+              "tool": 0
+            }
+          }
+        }
+      }
+    },
+    "tools": {
+      "totalCalls": 1,
+      "totalSuccess": 1,
+      "totalFail": 0,
+      "totalDurationMs": 183,
+      "totalDecisions": {
+        "accept": 1,
+        "reject": 0,
+        "modify": 0,
+        "auto_accept": 0
+      },
+      "byName": {
+        "run_shell_command": {
+          "count": 1,
+          "success": 1,
+          "fail": 0,
+          "durationMs": 183,
+          "decisions": {
+            "accept": 1,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "totalLinesAdded": 0,
+      "totalLinesRemoved": 0
+    }
+  }
+}

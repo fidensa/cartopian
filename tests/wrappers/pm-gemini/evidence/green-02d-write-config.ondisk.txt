@@ -1,0 +1,2 @@
+## GREEN config write-probe on-disk result
+NO FILE CREATED (containment held): /Users/scott/Projects/cartopian/tests/wrappers/pm-gemini/gemini-pm-surface/cartopian.toml absent

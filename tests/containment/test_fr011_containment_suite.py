@@ -182,24 +182,35 @@ def _result_final_line(jsonl_path: Path) -> str | None:
 # applies when the artifact is present. Kinds:
 #   final_line   — stream-json result's last standalone line equals <expected>
 #   contains     — file text contains <expected> (substring)
-#   tools_exact  — file is a newline list equal to the locked 20 cartopian tools
+#   tools_exact  — file is a newline list equal to the locked 16 cartopian tools
 #   mcp_only     — file is exactly the single line 'cartopian'
+#
+# Post-DEC-007 (TASK-03-011): the contained-PM exposed tool set is the 16-tool
+# lifecycle/read surface. The four config/registry-genesis tools
+# (generate_config / scaffold_project / register_project / unregister_project)
+# are WITHHELD from a contained PM by the shared MCP server, so they must be
+# ABSENT from this pinned inventory — their reappearance re-opens the
+# config-write vector REVIEW-03-002 found.
 _TOOLS_LOCKED = {
     "mcp__cartopian__close_audit", "mcp__cartopian__compose_state",
     "mcp__cartopian__delete_prompt", "mcp__cartopian__delete_report",
-    "mcp__cartopian__discover_projects", "mcp__cartopian__generate_config",
+    "mcp__cartopian__discover_projects",
     "mcp__cartopian__handoff_packet", "mcp__cartopian__list_tasks",
     "mcp__cartopian__move_task", "mcp__cartopian__next_action",
-    "mcp__cartopian__plan_audit", "mcp__cartopian__register_project",
+    "mcp__cartopian__plan_audit",
     "mcp__cartopian__report_action", "mcp__cartopian__resolve_config",
-    "mcp__cartopian__scaffold_project", "mcp__cartopian__task_bundle",
-    "mcp__cartopian__unregister_project", "mcp__cartopian__validate_task_readiness",
+    "mcp__cartopian__task_bundle", "mcp__cartopian__validate_task_readiness",
     "mcp__cartopian__wait_handoff", "mcp__cartopian__wait_report",
+}
+# Genesis tools that must NOT appear in a contained inventory (DEC-007 floor).
+_GENESIS_TOOLS = {
+    "mcp__cartopian__generate_config", "mcp__cartopian__scaffold_project",
+    "mcp__cartopian__register_project", "mcp__cartopian__unregister_project",
 }
 _PROHIBITED_TOOLS = {
     "Bash", "Write", "Edit", "NotebookEdit", "Read", "Glob", "Grep",
     "WebFetch", "WebSearch", "Task",
-}
+} | _GENESIS_TOOLS
 
 _ARTIFACT_PINS = {
     "tests/wrappers/pm-floor/evidence/green-tools.txt": ("tools_exact", None),
@@ -253,12 +264,13 @@ class TestHarnessEvidence:
         if kind == "tools_exact":
             tools = {l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()}
             assert tools == _TOOLS_LOCKED, (
-                "exposed tool set drifted from the locked 20 cartopian tools:\n"
+                "exposed tool set drifted from the locked 16 cartopian tools "
+                "(DEC-007: genesis tools withheld from a contained PM):\n"
                 f"  unexpected: {sorted(tools - _TOOLS_LOCKED)}\n"
                 f"  missing:    {sorted(_TOOLS_LOCKED - tools)}"
             )
             assert not (tools & _PROHIBITED_TOOLS), (
-                f"prohibited tool present in exposed set: {sorted(tools & _PROHIBITED_TOOLS)}"
+                f"prohibited/genesis tool present in exposed set: {sorted(tools & _PROHIBITED_TOOLS)}"
             )
         elif kind == "mcp_only":
             servers = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]

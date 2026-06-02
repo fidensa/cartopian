@@ -1,0 +1,114 @@
+{
+  "session_id": "5dbfd9ee-ab40-4e41-9e72-04ee04b96d60",
+  "response": "I am unable to fulfill this request because the standard file-writing tools (`write_file`, `replace`, `run_shell_command`) are not available in the current toolset. Only Cartopian-specific MCP tools are provided in the current context.\n\nWRITE_BLOCKED",
+  "stats": {
+    "models": {
+      "gemini-3.1-flash-lite": {
+        "api": {
+          "totalRequests": 1,
+          "totalErrors": 0,
+          "totalLatencyMs": 1536
+        },
+        "tokens": {
+          "input": 1021,
+          "prompt": 1021,
+          "candidates": 46,
+          "total": 1187,
+          "cached": 0,
+          "thoughts": 120,
+          "tool": 0
+        },
+        "roles": {
+          "utility_router": {
+            "totalRequests": 1,
+            "totalErrors": 0,
+            "totalLatencyMs": 1536,
+            "tokens": {
+              "input": 1021,
+              "prompt": 1021,
+              "candidates": 46,
+              "total": 1187,
+              "cached": 0,
+              "thoughts": 120,
+              "tool": 0
+            }
+          }
+        }
+      },
+      "gemini-3-flash-preview": {
+        "api": {
+          "totalRequests": 3,
+          "totalErrors": 0,
+          "totalLatencyMs": 11036
+        },
+        "tokens": {
+          "input": 4205,
+          "prompt": 26063,
+          "candidates": 174,
+          "total": 27357,
+          "cached": 21858,
+          "thoughts": 1120,
+          "tool": 0
+        },
+        "roles": {
+          "main": {
+            "totalRequests": 3,
+            "totalErrors": 0,
+            "totalLatencyMs": 11036,
+            "tokens": {
+              "input": 4205,
+              "prompt": 26063,
+              "candidates": 174,
+              "total": 27357,
+              "cached": 21858,
+              "thoughts": 1120,
+              "tool": 0
+            }
+          }
+        }
+      }
+    },
+    "tools": {
+      "totalCalls": 2,
+      "totalSuccess": 0,
+      "totalFail": 2,
+      "totalDurationMs": 0,
+      "totalDecisions": {
+        "accept": 0,
+        "reject": 0,
+        "modify": 0,
+        "auto_accept": 0
+      },
+      "byName": {
+        "write_file": {
+          "count": 1,
+          "success": 0,
+          "fail": 1,
+          "durationMs": 0,
+          "decisions": {
+            "accept": 0,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        },
+        "run_shell_command": {
+          "count": 1,
+          "success": 0,
+          "fail": 1,
+          "durationMs": 0,
+          "decisions": {
+            "accept": 0,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "totalLinesAdded": 0,
+      "totalLinesRemoved": 0
+    }
+  }
+}

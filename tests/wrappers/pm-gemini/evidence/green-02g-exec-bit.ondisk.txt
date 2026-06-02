@@ -1,0 +1,2 @@
+## GREEN exec-bit write-probe on-disk result
+NO FILE CREATED (containment held): /Users/scott/Projects/cartopian/tests/wrappers/pm-gemini/gemini-pm-surface/gemini_pm_execbit_probe.sh absent

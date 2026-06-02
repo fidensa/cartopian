@@ -24,6 +24,7 @@ only route a contained PM has. Standard library only (NF-001).
 """
 import argparse
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
@@ -50,6 +51,36 @@ from cli.main import (
 # wrapper as CARTOPIAN_TIMEOUT when the role block omits an explicit timeout.
 DEFAULT_TIMEOUT = "60m"
 
+# Agent-neutral, role-level reviewer live-evidence recapture signal (TASK-03-007,
+# FR-011). When the operator opts a reviewer handoff into recapture (`--recapture`)
+# AND the task declares live/harness evidence (`Evidence gate: required`), dispatch
+# exports this to the wrapper environment. Every shipped wrapper honors it
+# identically via the shared `cartopian_review_recapture_active` launch helper —
+# the env var carries NO agent name, so the capability attaches to the reviewer
+# role, not to any one agent. Default: never exported (opt-in).
+RECAPTURE_ENV = "CARTOPIAN_REVIEW_RECAPTURE"
+
+# Match the task-file header `Evidence gate: required | n/a` (case-insensitive
+# field; value compared case-insensitively). Mirrors templates/TASK.md and
+# cli/commands/validate_task_readiness.py.
+_EVIDENCE_GATE_RE = re.compile(r"(?im)^Evidence gate:\s*(\S+)\s*$")
+
+
+def _task_declares_live_evidence(task_path: Path) -> bool:
+    """True when the task file declares a live/harness evidence gate.
+
+    The structured, machine-readable declaration is the `Evidence gate: required`
+    header (templates/TASK.md). A task with `n/a` or no gate — the common shape of
+    research / ops / creative reviews — is NOT evidence-gated, so recapture must
+    never be enabled for it (the domain-neutral guard, F2 of REVIEW-03-007). Any
+    read error degrades to False (fail-closed: no recapture)."""
+    try:
+        text = task_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    m = _EVIDENCE_GATE_RE.search(text)
+    return bool(m) and m.group(1).strip().lower() == "required"
+
 
 def _stderr_work_root(msg: str) -> None:
     """Emit the fail-closed ``[work-root]`` stderr line the wrappers also use."""
@@ -75,12 +106,25 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Role identifier being dispatched (must have a [handoffs.<role>] block)",
     )
+    subparser.add_argument(
+        "--recapture",
+        action="store_true",
+        help=(
+            "Opt this reviewer handoff into agent-agnostic live-evidence recapture "
+            "(TASK-03-007): the assignee may re-run the task's probe harness to "
+            "reproduce the live evidence instead of trusting the pinned artifacts. "
+            "Only valid for a task that declares live/harness evidence "
+            "(Evidence gate: required); exports CARTOPIAN_REVIEW_RECAPTURE=1 so the "
+            "wrapper keeps the reviewed source read-only while granting probe egress."
+        ),
+    )
 
 
 def handler(args: argparse.Namespace) -> int:
     """Prepare the packet, validate fail-closed, launch the wrapper, emit NDJSON."""
     raw_path: str = args.task_path
     role: str = args.role
+    recapture: bool = getattr(args, "recapture", False)
 
     if not Path(raw_path).is_absolute():
         stderr_usage(f"task_path must be an absolute path; got: {raw_path}")
@@ -91,6 +135,19 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"task file not found: {raw_path}")
         return EXIT_FAIL
     task_path = task_path.resolve()
+
+    # --- Fail-closed: recapture is opt-in AND evidence-gated -----------------
+    # `--recapture` is only meaningful for a reviewer handoff on a task that
+    # declares live/harness evidence. Refuse it on a task with no such gate so a
+    # research / ops / creative review (Evidence gate: n/a or absent) can never
+    # be silently granted probe egress (domain-neutral guard, REVIEW-03-007 F2).
+    if recapture and not _task_declares_live_evidence(task_path):
+        stderr_guard(
+            "--recapture requires a task that declares live/harness evidence "
+            "(Evidence gate: required); this task does not, so recapture is "
+            "refused — dispatch it without --recapture"
+        )
+        return EXIT_FAIL
 
     project_root = handoff_packet._find_project_root(task_path)
     if project_root is None:
@@ -185,6 +242,15 @@ def handler(args: argparse.Namespace) -> int:
     # wait() — the PM observes completion via wait-handoff / wait-report.
     env = dict(os.environ)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
+    # Agent-neutral, opt-in, evidence-gated reviewer-recapture signal. Exported
+    # ONLY when both gates above held (recapture requested AND the task declares
+    # live/harness evidence); every wrapper honors it identically. A stale value
+    # inherited from the parent environment is cleared when recapture is off, so
+    # the signal reflects this dispatch alone.
+    if recapture:
+        env[RECAPTURE_ENV] = "1"
+    else:
+        env.pop(RECAPTURE_ENV, None)
     try:
         proc = subprocess.Popen(  # noqa: S603 — agent is operator-configured, not PM input
             [str(agent), str(prompt_path)],
@@ -211,6 +277,7 @@ def handler(args: argparse.Namespace) -> int:
         "timeout": timeout,
         "cwd": str(project_root),
         "work_roots": work_roots,
+        "recapture": recapture,
         "pid": proc.pid,
         "status": "dispatched",
     }

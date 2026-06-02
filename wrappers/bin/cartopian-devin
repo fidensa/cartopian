@@ -25,6 +25,12 @@ if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
 else
   cartopian_status_path() { echo ""; }
   cartopian_write_status() { return 0; }
+  cartopian_report_complete() { return 1; }
+  cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
+  cartopian_review_recapture_active() { return 1; }
+  cartopian_review_recapture_banner() { return 0; }
+  cartopian_extract_work_roots() { echo ""; }
+  cartopian_enforce_work_roots() { return 0; }
 fi
 # --------------------------------------------------------------------
 
@@ -106,44 +112,35 @@ fi
 # --------------------------------------------------------------------
 
 # --- Access grants (OQ-009) -----------------------------------------
-# Read resolved work-root absolute paths via Core CLI. Fail-closed when
-# non-empty and per-tool sandbox cannot scope multi-root access. Allow an
-# explicit per-invocation bypass via CARTOPIAN_DEVIN_UNRESTRICTED=true.
+# Enforce the per-agent work-root scoping guard via the shared helper (so the
+# fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
+# The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
+# (non-zero + a [work-root] stderr line) on a missing or unscopable non-empty
+# work-root set, unless the per-tool unrestricted bypass or the agent-neutral
+# reviewer-recapture read-only path is active.
+#
+# NOTE: devin's wrapper posture has no local path-scoping sandbox, so under
+# reviewer recapture the read-only-source boundary is honored by contract (no
+# write grant added) and by devin's own execution isolation, not by a local
+# sandbox layer — prefer a locally-sandboxed reviewer agent (codex/gemini) for
+# hard review-integrity guarantees.
+#
+# Native work-root union scoping (TASK-03-009): the devin CLI exposes no local
+# multi-directory write-scoping flag, so this wrapper deliberately defines NO
+# cartopian_tool_scope_union hook. The shared guard therefore keeps it FAIL-CLOSED
+# on a non-empty work-root union (the `[work-root]` stderr line), with the
+# documented CARTOPIAN_DEVIN_UNRESTRICTED bypass as the only opt-out. Scope a
+# devin work-root task on its own hosted side, or use a locally-scopable wrapper.
 if command -v cartopian &>/dev/null; then
-  RC_JSON="$(cartopian resolve-config "$PWD" | head -n 1)"
-  if [[ -n "$RC_JSON" ]]; then
-    WORK_ROOTS=$(python3 - <<'PY'
-import sys, json
-try:
-    rec = json.loads(sys.stdin.read())
-except Exception:
-    print("")
-    raise SystemExit(0)
-wr = rec.get("work_roots") or {}
-if isinstance(wr, dict) and wr:
-    print("\n".join(str(p) for p in wr.values()))
-else:
-    print("")
-PY
-    <<<"$RC_JSON")
-    if [[ -n "$WORK_ROOTS" ]]; then
-      while IFS= read -r root; do
-        [[ -z "$root" ]] && continue
-        if [[ ! -d "$root" ]]; then
-          echo "[work-root] missing: $root" >&2
-          exit 1
-        fi
-      done <<< "$WORK_ROOTS"
-      if [[ "${CARTOPIAN_DEVIN_UNRESTRICTED:-false}" != "true" ]]; then
-        echo "[work-root] tool cannot scope multi-root access; set CARTOPIAN_DEVIN_UNRESTRICTED=true to bypass (dangerous)" >&2
-        exit 1
-      else
-        echo "cartopian-devin: unrestricted mode enabled; proceeding without scoped grants" >&2
-      fi
-    fi
-  fi
+  cartopian_enforce_work_roots "cartopian-devin" "${CARTOPIAN_DEVIN_UNRESTRICTED:-false}" "CARTOPIAN_DEVIN_UNRESTRICTED"
 fi
 # --------------------------------------------------------------------
+
+# Reviewer recapture (agent-neutral): document the exact writable/read-only/
+# network scope once, listing any declared read-only source roots.
+if cartopian_review_recapture_active; then
+  cartopian_review_recapture_banner "cartopian-devin" "$PWD" "${WORK_ROOTS:-}"
+fi
 
 # Build the command
 CMD=(devin -p)
@@ -176,9 +173,20 @@ echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE, time
 
 # Run the assignee (not exec) so we can capture its exit outcome and emit
 # the optional status file wait-handoff polls for early-crash detection.
+#
+# cartopian_run_supervised wraps the run with a report-completion supervisor:
+# once the authoritative report file appears, a lingering child (MCP stdio /
+# trailing turn) is reaped promptly so a finished handoff exits 0/clean instead
+# of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the single SSOT
+# timer, applied above via `timeout`) is untouched — a genuine hang that writes
+# no report still hits it (exit 124). The watched report path is the status path
+# without its ".status" suffix.
+REPORT_PATH="${STATUS_PATH%.status}"
+[[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
+
 set +e
-"${CMD[@]}"
-ASSIGNEE_EXIT=$?
+cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
+ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
 set -e
 cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
 exit "$ASSIGNEE_EXIT"

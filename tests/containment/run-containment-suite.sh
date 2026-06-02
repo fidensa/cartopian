@@ -98,6 +98,25 @@ if [[ "$WITH_HARNESS" -eq 1 ]]; then
   "${REPO_ROOT}/tests/wrappers/pm-runtime/run-probes.sh" \
     || die "FR-001 spike harness failed — its captured evidence is untrusted"
 
+  # Promoted non-reference harnesses (Phase 03). Each is captured only when its
+  # CLI is present (the runner stays portable); a present-but-failing capture is
+  # fatal so the pins never bind to untrusted evidence.
+  if command -v codex >/dev/null 2>&1; then
+    echo "[harness] +codex (TASK-03-001): exposed tool set + in-runtime prohibited attempts"
+    "${REPO_ROOT}/tests/wrappers/pm-codex/run-codex-probes.sh" ${RED_FLAG[@]+"${RED_FLAG[@]}"} \
+      || die "codex PM harness failed — its captured evidence is untrusted"
+  else
+    echo "[harness] +codex: skipped (no 'codex' CLI on PATH); codex pins skip-when-absent"
+  fi
+
+  if command -v gemini >/dev/null 2>&1; then
+    echo "[harness] +gemini (TASK-03-002): exposed tool set + in-runtime prohibited attempts"
+    "${REPO_ROOT}/tests/wrappers/pm-gemini/run-gemini-probes.sh" ${RED_FLAG[@]+"${RED_FLAG[@]}"} \
+      || die "gemini PM harness failed — its captured evidence is untrusted"
+  else
+    echo "[harness] +gemini: skipped (no 'gemini' CLI on PATH); gemini pins skip-when-absent"
+  fi
+
   echo "[harness] live capture complete; the pins below now bind to fresh evidence."
   echo
 fi
@@ -117,10 +136,13 @@ while IFS= read -r _line; do
 done <<< "$TARGETS_RAW"
 [[ "${#TARGETS[@]}" -gt 0 ]] || die "manifest produced no negative-test targets"
 
-echo "[suite] running ${#TARGETS[@]} prohibited-operation/lifecycle negative tests + the FR-011 aggregator"
+echo "[suite] running ${#TARGETS[@]} prohibited-operation/lifecycle negative tests + the FR-011 aggregator + per-harness promotions"
 "$PYTHON" -m pytest -q \
   "${TARGETS[@]}" \
-  "tests/containment/test_fr011_containment_suite.py"
+  "tests/containment/test_fr011_containment_suite.py" \
+  "tests/containment/test_harness_tier_detection.py" \
+  "tests/containment/test_codex_harness_promotion.py" \
+  "tests/containment/test_gemini_harness_promotion.py"
 rc=$?
 
 echo

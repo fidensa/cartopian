@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -556,6 +557,73 @@ class TestStdioFraming(unittest.TestCase):
         note = {"jsonrpc": "2.0", "method": "notifications/initialized"}
         out = run_bytes(frame(note))
         self.assertEqual(out, b"")
+
+
+# ---------------------------------------------------------------------------
+# Contained-PM floor: config/registry-genesis tools are withheld (REVIEW-03-002 F1)
+# ---------------------------------------------------------------------------
+
+class TestContainmentToolFloor(unittest.TestCase):
+    """A contained PM (CARTOPIAN_PM_CONTAINED=1) must not reach the config /
+    registry-genesis tools. This is the SHARED floor for gemini, codex, and
+    Claude Code, since all three launch this server with the same env."""
+
+    GENESIS = ("generate_config", "scaffold_project", "register_project", "unregister_project")
+    # Day-to-day PM lifecycle/read tools that must REMAIN exposed under containment.
+    KEEP = ("discover_projects", "list_tasks", "next_action", "report_action",
+            "move_task", "compose_state", "write_task")
+
+    def _tool_names(self):
+        return {t["name"] for t in server.list_tools()}
+
+    def test_uncontained_exposes_full_toolset(self):
+        env = {k: v for k, v in os.environ.items() if k != "CARTOPIAN_PM_CONTAINED"}
+        with patch.dict(os.environ, env, clear=True):
+            names = self._tool_names()
+        for g in self.GENESIS:
+            self.assertIn(g, names, f"uncontained PM should still expose {g}")
+
+    def test_contained_withholds_genesis_tools_from_list(self):
+        with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+            names = self._tool_names()
+        for g in self.GENESIS:
+            self.assertNotIn(g, names, f"contained PM must NOT expose {g}")
+
+    def test_contained_keeps_lifecycle_and_read_tools(self):
+        with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+            names = self._tool_names()
+        for k in self.KEEP:
+            self.assertIn(k, names, f"contained PM must retain lifecycle/read tool {k}")
+
+    def test_contained_call_tool_refuses_genesis_tools(self):
+        with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+            for g in self.GENESIS:
+                with self.assertRaises(server.McpError) as ctx:
+                    server.call_tool(g, {})
+                self.assertEqual(ctx.exception.code, server.ERR_INVALID_PARAMS)
+                self.assertIn("withheld", ctx.exception.message)
+
+    def test_contained_genesis_call_writes_no_config_file(self):
+        # The F1 vector: generate_config must NOT create cartopian.toml when contained.
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "cartopian.toml"
+            with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+                with self.assertRaises(server.McpError):
+                    server.call_tool("generate_config",
+                                     {"project_path": d, "name": "Probe", "proj_id": "probe"})
+            self.assertFalse(target.exists(), "contained generate_config must leave no cartopian.toml")
+
+    def test_contained_lifecycle_tool_still_functions(self):
+        # discover_projects (a read tool) must still execute under containment.
+        with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+            res = server.call_tool("discover_projects", {})
+        self.assertIn("structuredContent", res)
+
+    def test_tools_call_over_rpc_errors_for_genesis_when_contained(self):
+        with patch.dict(os.environ, {"CARTOPIAN_PM_CONTAINED": "1"}):
+            resp = single("tools/call", {"name": "scaffold_project", "arguments": {"project_path": "/tmp/x"}})
+        self.assertIn("error", resp)
+        self.assertEqual(resp["error"]["code"], server.ERR_INVALID_PARAMS)
 
 
 # ---------------------------------------------------------------------------

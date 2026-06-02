@@ -374,6 +374,118 @@ class TestReportActionPathMismatch(unittest.TestCase):
         self.assertTrue(record["path_mismatch"])
 
 
+class TestReportActionVariantInference(unittest.TestCase):
+    def test_review_shaped_report_naming_task_id_infers_review(self) -> None:
+        """A review-completion report at the shared REPORT-NN-NNN.md name that
+        also cites the reviewed Task ID in its Identity block must infer
+        ``variant: review`` from content, not error ``ambiguous variant``."""
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            review_path = scaffold.write("reviews/REVIEW-01-010.md", "# REVIEW-01-010\n")
+            report_path = scaffold.write(
+                "reports/REPORT-01-010.md",
+                (
+                    "# REPORT-01-010\n\n"
+                    "Status: complete\n\n"
+                    "## Identity\n\n"
+                    "- Task ID: TASK-01-010\n"
+                    "- Review ID: REVIEW-01-010\n"
+                    f"- Prompt path: {scaffold.prompts / 'PROMPT-01-010.md'}\n"
+                    f"- Task path: {scaffold.project_root / 'tasks' / 'in-review' / 'TASK-01-010-demo.md'}\n"
+                    f"- Review file path: {review_path}\n\n"
+                    "## Evidence reviewed\n\n"
+                    "- routing fields\n\n"
+                    "## Verdict\n\n"
+                    "approve\n\n"
+                    "## Blocking findings\n\n"
+                    "none.\n"
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stderr, "")
+        record = _parse_single_record(result)
+        self.assertEqual(record["variant"], "review")
+        self.assertEqual(record["verdict"], "accepted")
+        self.assertEqual(record["review_verdict"], "approve")
+        self.assertEqual(record["review_path"], str(review_path.resolve()))
+
+    def test_genuine_variant_conflict_still_errors(self) -> None:
+        """A report carrying BOTH task structure (## Ready for review) and review
+        structure (## Verdict) is genuinely ambiguous and must still error."""
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            report_path = scaffold.write(
+                "reports/REPORT-01-011.md",
+                (
+                    "# REPORT-01-011\n\n"
+                    "Status: complete\n\n"
+                    "## Identity\n\n"
+                    "- Task ID: TASK-01-011\n"
+                    "- Review ID: REVIEW-01-011\n\n"
+                    "## Verdict\n\n"
+                    "approve\n\n"
+                    "## Ready for review\n\n"
+                    "yes\n"
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("[usage] ambiguous variant", result.stderr)
+
+
+class TestReportActionPathNormalization(unittest.TestCase):
+    def test_backtick_wrapped_task_path_is_not_a_false_mismatch(self) -> None:
+        """A cosmetic markdown backtick wrap around an otherwise-correct
+        ``Task path:`` must normalize away, not produce ``path_mismatch: true``."""
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-01-012-demo.md",
+                "# TASK-01-012: demo\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-01-012.md",
+                (
+                    "# REPORT-01-012\n\n"
+                    "Status: complete\n\n"
+                    "## Identity\n\n"
+                    "- Task ID: TASK-01-012\n"
+                    f"- Prompt path: {scaffold.prompts / 'PROMPT-01-012.md'}\n"
+                    f"- Task path: `{task_path}`\n"
+                    "- Work root: n/a\n\n"
+                    "## Files changed\n\n"
+                    "- cli/commands/report_action.py — added\n\n"
+                    "## Test evidence\n\n"
+                    "- Red test evidence: targeted red\n"
+                    "- Green test evidence: targeted green\n\n"
+                    "## Commit / PR\n\n"
+                    "- Commit SHA: n/a\n"
+                    "- PR URL: n/a\n\n"
+                    "## Remaining risks\n\n"
+                    "None.\n\n"
+                    "## Ready for review\n\n"
+                    "yes\n"
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "accepted")
+        self.assertFalse(record["path_mismatch"])
+        self.assertEqual(record["declared_report_task_path"], str(task_path.resolve()))
+
+
 class TestReportActionFailedToParse(unittest.TestCase):
     def test_incomplete_report_emits_failed_to_parse_record(self) -> None:
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:

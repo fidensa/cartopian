@@ -8,9 +8,9 @@
 # in the wrapper is caught here.
 #
 # GREEN assertions (always run — the anti-drift regression):
-#   G1. The exposed-tool inventory is EXACTLY the locked 20 mcp__cartopian__*
+#   G1. The exposed-tool inventory is EXACTLY the locked 16 mcp__cartopian__*
 #       tools — no more, no fewer. Fails if any prohibited or unexpected tool
-#       reappears.
+#       reappears. (Post-DEC-007: the four genesis tools are withheld — see G6.)
 #   G2. No prohibited tool is present: Bash/Write/Edit/NotebookEdit/Read/
 #       Glob/Grep/WebFetch/WebSearch/Task and the non-Cartopian (claude.ai)
 #       MCP tools.
@@ -20,12 +20,24 @@
 #       (no filesystem tool exists to reach them).
 #   G5. The wrapper REFUSES surface-reopening flags (--add-dir,
 #       --dangerously-skip-permissions, --permission-mode) and never launches.
+#   G6. DEC-007 genesis floor (TASK-03-011): the contained MCP inventory the
+#       wrapper's `--allowedTools "mcp__cartopian"` prefix grant offers EXCLUDES
+#       the four config/registry-genesis tools (generate_config /
+#       scaffold_project / register_project / unregister_project). Asserted both
+#       against the live claude system/init inventory (none present) and against
+#       the MCP server driven exactly as the wrapper launches it (_genesis_probe).
+#   G7. DEC-007 config-write vector CLOSED: a contained `generate_config` call
+#       via the Cartopian MCP surface is REFUSED (withheld) and leaves NO
+#       cartopian.toml on disk (probed against a scratch $TMPDIR path).
 #
 # RED baseline (opt-in with --with-red — the red-before-green evidence):
 #   R1. WITHOUT the floor (default tools + --dangerously-skip-permissions +
 #       --add-dir), the inventory DOES contain shell/raw-write/raw-read and
 #       broad reach. Asserts the prohibited tools are present (proving the
 #       floor is what removes them, not the environment).
+#   R2. DEC-007 genesis red: the SAME MCP server, driven WITHOUT the wrapper's
+#       CARTOPIAN_PM_CONTAINED signal, advertises the four genesis tools — the
+#       pre-floor exposure the prefix grant gave the contained claude PM.
 #
 # Re-runnable; each run overwrites prior evidence in ./evidence/. stdlib-only
 # (bash + python3), consistent with the spike harness under
@@ -49,28 +61,43 @@ WORK_ROOT="${REPO_ROOT}"                                    # tool-repo work roo
 WORK_ROOT_FILE="${REPO_ROOT}/REQUIREMENTS.md"
 [[ -f "$WORK_ROOT_FILE" ]] || WORK_ROOT_FILE="${REPO_ROOT}/README.md"
 
-# The locked green inventory — EXACTLY these 20 tools (DEC-001 §a).
+# The locked green inventory — EXACTLY these 16 tools.
+#
+# DEC-007 genesis-tool floor (TASK-03-011): the four config/registry-genesis
+# tools (generate_config / scaffold_project / register_project /
+# unregister_project) are WITHHELD from a contained PM by the shared MCP server
+# (mcp_server/server.py CONTAINED_DENIED_TOOLS), because the wrapper launches
+# that server with CARTOPIAN_PM_CONTAINED=1 (wrappers/etc/mcp-cartopian-only.json).
+# Pre-floor the `--allowedTools "mcp__cartopian"` prefix grant exposed all 20 of
+# the server's tools to the contained claude PM (the genesis red — see
+# GENESIS_TOOLS below and the --with-red genesis capture); post-floor the
+# contained inventory is exactly these 16.
 EXPECTED_TOOLS=(
   mcp__cartopian__close_audit
   mcp__cartopian__compose_state
   mcp__cartopian__delete_prompt
   mcp__cartopian__delete_report
   mcp__cartopian__discover_projects
-  mcp__cartopian__generate_config
   mcp__cartopian__handoff_packet
   mcp__cartopian__list_tasks
   mcp__cartopian__move_task
   mcp__cartopian__next_action
   mcp__cartopian__plan_audit
-  mcp__cartopian__register_project
   mcp__cartopian__report_action
   mcp__cartopian__resolve_config
-  mcp__cartopian__scaffold_project
   mcp__cartopian__task_bundle
-  mcp__cartopian__unregister_project
   mcp__cartopian__validate_task_readiness
   mcp__cartopian__wait_handoff
   mcp__cartopian__wait_report
+)
+# The genesis tools that the DEC-007 floor must keep OUT of the contained
+# inventory (anti-regression — their reappearance re-opens the config-write
+# vector REVIEW-03-002 found).
+GENESIS_TOOLS=(
+  mcp__cartopian__generate_config
+  mcp__cartopian__scaffold_project
+  mcp__cartopian__register_project
+  mcp__cartopian__unregister_project
 )
 # Tools that must NEVER appear in the contained PM session.
 PROHIBITED_TOOLS=(
@@ -185,10 +212,12 @@ echo
 EXPECTED_EVIDENCE=(
   green-inventory.jsonl green-tools.txt green-mcp.txt
   green-read-product.jsonl green-read-work.jsonl
+  green-genesis-inventory.txt green-genesis-config-write.txt
 )
 if [[ "${1:-}" == "--with-red" ]]; then
-  EXPECTED_EVIDENCE+=( red-inventory.jsonl red-tools.txt )
+  EXPECTED_EVIDENCE+=( red-inventory.jsonl red-tools.txt red-genesis-inventory.txt )
 fi
+GENESIS_PROBE="${TEST_DIR}/_genesis_probe.py"
 for f in "${EXPECTED_EVIDENCE[@]}"; do
   rm -f "$EVID/$f" 2>/dev/null || true
   [[ -e "$EVID/$f" ]] && die "could not clear stale evidence before run: $EVID/$f"
@@ -220,6 +249,27 @@ if [[ "${1:-}" == "--with-red" ]]; then
   done
   echo "  red inventory captured: $EVID/red-tools.txt ($(wc -l < "$EVID/red-tools.txt" | tr -d ' ') tools)"
   echo
+
+  # R2 — DEC-007 genesis red: the SAME Cartopian MCP server, driven WITHOUT the
+  # wrapper's CARTOPIAN_PM_CONTAINED signal, advertises the four genesis tools.
+  # This is the pre-floor exposure the `--allowedTools "mcp__cartopian"` prefix
+  # grant handed the contained claude PM (REVIEW-03-002 cross-harness vector).
+  echo "[RED] DEC-007 genesis baseline: uncontained MCP inventory"
+  if python3 "$GENESIS_PROBE" inventory --uncontained > "$EVID/red-genesis-inventory.txt" 2>/dev/null; then
+    [[ -s "$EVID/red-genesis-inventory.txt" ]] || die "uncontained genesis inventory came back empty"
+    rg2=0
+    for g in generate_config scaffold_project register_project unregister_project; do
+      if grep -qx "$g" "$EVID/red-genesis-inventory.txt"; then
+        ok "RED: genesis tool present without the floor: $g"
+      else
+        bad "RED: expected genesis tool '$g' present uncontained, but it was absent"; rg2=1
+      fi
+    done
+    [[ "$rg2" -eq 0 ]] || true
+  else
+    die "could not capture the uncontained genesis inventory via $GENESIS_PROBE"
+  fi
+  echo
 fi
 
 # ---------------------------------------------------------------------------
@@ -244,9 +294,9 @@ GREEN_CWD="$(init_field "$GREEN_OUT" cwd)"
 expected_sorted="$(printf '%s\n' "${EXPECTED_TOOLS[@]}" | sort)"
 actual_sorted="$(sort "$EVID/green-tools.txt")"
 if [[ "$expected_sorted" == "$actual_sorted" ]]; then
-  ok "G1 inventory is EXACTLY the locked 20 cartopian tools"
+  ok "G1 inventory is EXACTLY the locked 16 cartopian tools (genesis tools withheld by DEC-007)"
 else
-  bad "G1 inventory drifted from the locked 20-tool set:"
+  bad "G1 inventory drifted from the locked 16-tool set:"
   diff <(echo "$expected_sorted") <(echo "$actual_sorted") | sed 's/^/      /'
 fi
 
@@ -298,6 +348,48 @@ for badflag in --add-dir --dangerously-skip-permissions --permission-mode; do
   fi
 done
 [[ "$g5" -eq 0 ]] && ok "G5 wrapper refuses --add-dir / --dangerously-skip-permissions / --permission-mode"
+
+# G6 — DEC-007 genesis floor: the four config/registry-genesis tools are
+# withheld from the contained PM inventory. Checked two ways:
+#   G6a against the LIVE claude system/init inventory (none of the four present);
+#   G6b against the Cartopian MCP server driven exactly as the wrapper launches
+#       it (CARTOPIAN_PM_CONTAINED via mcp-cartopian-only.json) — the inventory
+#       the `--allowedTools "mcp__cartopian"` prefix grant actually offers.
+g6a=0
+for g in "${GENESIS_TOOLS[@]}"; do
+  if grep -qx "$g" "$EVID/green-tools.txt"; then
+    bad "G6a genesis tool present in LIVE contained inventory (config-write vector re-opened!): $g"; g6a=1
+  fi
+done
+[[ "$g6a" -eq 0 ]] && ok "G6a no genesis tool in the live contained inventory (generate_config/scaffold_project/register_project/unregister_project all withheld)"
+
+if python3 "$GENESIS_PROBE" inventory > "$EVID/green-genesis-inventory.txt" 2>/dev/null; then
+  [[ -s "$EVID/green-genesis-inventory.txt" ]] || die "contained genesis inventory came back empty"
+  g6b=0
+  for g in generate_config scaffold_project register_project unregister_project; do
+    if grep -qx "$g" "$EVID/green-genesis-inventory.txt"; then
+      bad "G6b genesis tool advertised by the contained MCP server: $g"; g6b=1
+    fi
+  done
+  [[ "$g6b" -eq 0 ]] && ok "G6b the contained MCP server (wrapper launch path) advertises NONE of the four genesis tools ($(wc -l < "$EVID/green-genesis-inventory.txt" | tr -d ' ') tools)"
+else
+  die "could not capture the contained genesis inventory via $GENESIS_PROBE"
+fi
+
+# G7 — DEC-007 config-write vector CLOSED: a contained generate_config call via
+# the Cartopian MCP surface is refused (withheld) and leaves no file on disk.
+# Probe against a SCRATCH path under $TMPDIR (never the source tree).
+G7_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/claude-genesis-probe.XXXXXX")"
+if python3 "$GENESIS_PROBE" config-write "$G7_SCRATCH" > "$EVID/green-genesis-config-write.txt" 2>/dev/null; then
+  if grep -q "VERDICT: CONFIG_WRITE_BLOCKED" "$EVID/green-genesis-config-write.txt"; then
+    ok "G7 contained generate_config refused (withheld) with NO cartopian.toml on disk — config-write vector CLOSED"
+  else
+    bad "G7 contained generate_config was NOT blocked (see $EVID/green-genesis-config-write.txt)"
+  fi
+else
+  bad "G7 contained generate_config probe failed / wrote a file (see $EVID/green-genesis-config-write.txt)"
+fi
+rm -rf "$G7_SCRATCH"
 
 echo
 echo "=== result: $PASS passed, $FAIL failed ==="

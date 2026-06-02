@@ -1,0 +1,2 @@
+## GREEN product-repo write-probe on-disk result
+NO FILE CREATED (containment held): /Users/scott/Projects/cartopian-manager/codex_pm_probe_artifact.txt absent

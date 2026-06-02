@@ -291,7 +291,7 @@ REQUIRED_PROHIBITED_OPERATIONS = frozenset({
 HARNESS_EVIDENCE: List[Dict[str, object]] = [
     {
         "key": "exposed-tool-set",
-        "description": "The PM runtime's exposed tool set is Cartopian-only (the locked 20 mcp__cartopian__* tools; no built-in/non-Cartopian tool).",
+        "description": "The PM runtime's exposed tool set is Cartopian-only (the locked 16 mcp__cartopian__* lifecycle/read tools; no built-in/non-Cartopian tool, and — post-DEC-007 — none of the four config/registry-genesis tools, which are withheld from a contained PM).",
         "artifacts": [
             "tests/wrappers/pm-floor/evidence/green-tools.txt",
             "tests/wrappers/pm-floor/evidence/green-mcp.txt",

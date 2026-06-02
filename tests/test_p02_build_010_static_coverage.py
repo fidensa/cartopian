@@ -138,22 +138,41 @@ def _is_pm_containment_wrapper(path: Path) -> bool:
 
 class WrappersStaticCoverageTest(unittest.TestCase):
     def test_wrappers_call_resolve_config_and_offer_unrestricted_bypass(self) -> None:
-        # Every blanket wrapper (bash and PowerShell) should reference
-        # `cartopian resolve-config` and expose a CARTOPIAN_*_UNRESTRICTED
-        # env-var bypass. PM-containment wrappers are excluded (DEC-001): they
-        # run MCP-only and must have NO bypass — see
-        # PmContainmentWrapperStaticCoverageTest for their inverse contract.
+        # Every blanket wrapper (bash and PowerShell) must wire up the work-root
+        # access guard (`cartopian resolve-config`) and expose a
+        # CARTOPIAN_*_UNRESTRICTED env-var bypass. The bash wrappers factor the
+        # resolve-config + fail-closed guard into the shared helper
+        # (_cartopian-status.sh :: cartopian_enforce_work_roots) so the guard
+        # cannot rot per-wrapper (TASK-03-008); they wire it by calling that
+        # helper. The PowerShell wrappers still inline `cartopian resolve-config`.
+        # PM-containment wrappers are excluded (DEC-001): they run MCP-only and
+        # must have NO bypass — see PmContainmentWrapperStaticCoverageTest for
+        # their inverse contract.
         wrappers = []
         wrappers.extend(sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")))
         wrappers.extend(sorted(WRAPPERS_PS1_DIR.glob("cartopian-*.ps1")))
         wrappers = [p for p in wrappers if not _is_pm_containment_wrapper(p)]
         self.assertTrue(wrappers, "expected wrapper scripts to exist")
 
+        # The factored guard's resolve-config call must genuinely exist in the
+        # shared helper the bash wrappers source.
+        helper_text = (WRAPPERS_BIN_DIR / "_cartopian-status.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "cartopian resolve-config", helper_text,
+            msg="shared helper _cartopian-status.sh must call `cartopian resolve-config`",
+        )
+
         missing_resolve = []
         missing_unrestricted = []
         for path in wrappers:
             text = path.read_text(encoding="utf-8")
-            if "cartopian resolve-config" not in text:
+            # A wrapper references the guard either inline (`cartopian
+            # resolve-config`, PowerShell) or by calling the shared-helper entry
+            # point that performs it (`cartopian_enforce_work_roots`, bash).
+            if (
+                "cartopian resolve-config" not in text
+                and "cartopian_enforce_work_roots" not in text
+            ):
                 missing_resolve.append(path)
             if not re.search(r"CARTOPIAN_[A-Z]+_UNRESTRICTED", text):
                 missing_unrestricted.append(path)
@@ -161,7 +180,8 @@ class WrappersStaticCoverageTest(unittest.TestCase):
             missing_resolve,
             [],
             msg=(
-                "wrappers missing `cartopian resolve-config` reference: "
+                "wrappers missing work-root guard wiring (`cartopian resolve-config` "
+                "or `cartopian_enforce_work_roots`): "
                 + ", ".join(str(p.relative_to(REPO_ROOT)) for p in missing_resolve)
             ),
         )

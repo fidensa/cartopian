@@ -132,6 +132,14 @@ The bash wrappers run `timeout <duration> <real-cli> ...` so the OS owns the dea
 
 The wrappers no longer `exec` into the CLI: they run it as a child, capture its exit code, write the [status file](#status-file-early-crash-detection) below, and then exit with the assignee's exit code (so signals/exit codes still reach the PM faithfully).
 
+### Clean exit on report-complete (handoff exit contract)
+
+Some assignee CLIs keep running after they have written the report — MCP stdio servers that are not torn down, an inherited open stdin, or a trailing turn leave the process alive with no work left to do. If the wrapper only waited for that process, a *finished* handoff would sit idle until `timeout` killed it (exit `124`, `reason=timeout`) — a success that always read as a deadline failure.
+
+The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one `wait-handoff` parses); once it appears complete — present, non-empty, carrying a top-level `Status: <complete|blocked|failed>` line — the supervisor grants the child a brief grace to exit on its own and then reaps it, so the wrapper exits `0` / `reason=clean` promptly.
+
+This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); no per-tool CLI timeout flag is introduced.
+
 ## Status file (early-crash detection)
 
 When the assignee process exits, every wrapper writes a small **status file** capturing the exit outcome. This is the optional early-crash-detection signal `cartopian wait-handoff` polls for: if the assignee dies before producing a report, wait-handoff can return `failed` immediately instead of blocking to the deadline.
@@ -246,6 +254,23 @@ A `CARTOPIAN_LAUNCH_CWD` value that does not point to an existing directory is a
 
 There is no `cartopian.toml` field for this. The launch cwd is treated as environment, not protocol: it varies per machine and per operator preference, and putting it in toml would invite drift between the recorded path and the actual filesystem.
 
+## Work-root union scoping
+
+When a task declares **work roots** (`protocol/CONVENTIONS.md` → Launch Directory / Work Roots), the wrapper must grant the assignee the **union** of the launch cwd (the Cartopian project root) and each resolved work-root absolute path — *nothing wider, nothing narrower*. The shared helper `cartopian_enforce_work_roots` (in `bin/_cartopian-status.sh`) resolves that union via `cartopian resolve-config` and, for a tool whose sandbox can scope a multi-directory union **natively**, grants it by injecting the tool's native multi-directory flags so the agent launches **scoped to the union** — no blanket bypass. The launch cwd is already each tool's primary writable scope, so only the declared roots are added.
+
+A wrapper opts into native scoping by defining a `cartopian_tool_scope_union` hook (the helper detects it with `declare -F` and calls it). A new wrapper inherits the whole mechanism by defining that one hook; a wrapper with no hook stays fail-closed-or-bypass. The resolved per-tool mechanisms:
+
+| Wrapper | Native mechanism | What it does |
+| --- | --- | --- |
+| `cartopian-claude` | `--add-dir <dir>` per declared root | "Additional directories to allow tool access to" — extends the tool-access scope to the union. (Claude's autonomous posture has no OS-level path sandbox, so this is a tool-layer grant, not a kernel sandbox.) |
+| `cartopian-codex` | `codex exec --add-dir <DIR>` per declared root | "Additional directories that should be writable alongside the primary workspace" — extends the `workspace-write` sandbox's writable roots to the union. Added only in the sandboxed branch; under `--dangerously-bypass-approvals-and-sandbox` the sandbox is off and the union is moot. |
+| `cartopian-gemini` | `--include-directories <dirs>` (comma-joined) | "Additional directories to include in the workspace" — extends gemini's workspace (the writable/in-context scope) to the union. |
+| `cartopian-devin` | _(none)_ | The devin CLI exposes no local multi-directory write-scoping flag, so this wrapper defines **no** scope hook and stays **fail-closed** on a non-empty work-root union (`[work-root]` stderr line), with the `CARTOPIAN_DEVIN_UNRESTRICTED` bypass as the only opt-out. Scope a devin work-root task on its hosted side, or use a locally-scopable wrapper. |
+
+**Fail-closed default is preserved.** A resolved root that is missing on disk fails closed (`[work-root] missing: <path>`), and a non-empty union a tool cannot scope natively fails closed (`[work-root] tool cannot scope multi-root access; set <VAR>=true to bypass (dangerous)`). The per-tool unrestricted bypass (`CARTOPIAN_<AGENT>_UNRESTRICTED=true`) remains the documented full-access opt-out and **takes precedence over native scoping** — set it only when you deliberately want unscoped access. The operator-visible launch prints one `scoped work root: <path>` line per granted root.
+
+**Reviewer-recapture is unchanged.** When `CARTOPIAN_REVIEW_RECAPTURE` is active the reviewed source work root stays **read-only**: the guard returns before native scoping runs, so no writable-scope flag is emitted for the source (the recapture writable scope stays exactly the launch cwd + `$TMPDIR`/`/tmp`, plus egress). Outside recapture, a work root is part of the general read/write union and *is* scoped writable — the read-only-source narrowing is a recapture-only property. See [Reviewer live-evidence recapture](#reviewer-live-evidence-recapture--exact-scope).
+
 ## Configuration
 
 ### Common (all wrappers)
@@ -253,8 +278,19 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline for the dispatched handoff. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). Set by the PM from the resolved `[handoffs.<role>].timeout`. When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
+| `CARTOPIAN_REVIEW_RECAPTURE` | _(unset)_ | Agent-neutral, opt-in, **reviewer live-evidence recapture** signal (TASK-03-007, FR-011). When truthy (`1`/`true`/`yes`/`on`), every wrapper treats the declared work roots as the **read-only source under review** (never added to the writable scope) and grants **network egress** so the reviewer can re-run the task's probe harness and reproduce the live evidence instead of trusting the assignee's pinned artifacts. The signal carries **no agent name** — it attaches to the reviewer role — so a new wrapper inherits the behavior by sourcing the shared helper. It is normally exported by `cartopian dispatch --recapture`, which only does so for a reviewer handoff on a task that declares `Evidence gate: required` (opt-in + evidence-gated); a review with no such gate is completely unaffected (no network, no scratch change). |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
+
+#### Reviewer live-evidence recapture — exact scope
+
+When `CARTOPIAN_REVIEW_RECAPTURE` is active the writable filesystem scope is **exactly the launch cwd plus `$TMPDIR`/`/tmp`** — the probe harness scratch where the relocated runtime home and the fresh evidence are written. The reviewed source work root stays **read-only**: it is never added to the writable scope, so a reviewer cannot edit the implementation it reviews. Network, when granted, **adds egress only** — it does not widen the writable filesystem scope.
+
+How each wrapper realizes the contract (the signal handling is identical via the shared `cartopian_review_recapture_active` / `cartopian_review_recapture_banner` helper in `_cartopian-status.sh`; the read-only-source *enforcement layer* depends on the tool):
+
+- **Codex** — `--sandbox workspace-write` roots writes at the launch cwd + `$TMPDIR`/`/tmp`, keeping the source work root read-only at the sandbox layer; recapture additionally sets `-c sandbox_workspace_write.network_access=true` for egress.
+- **Gemini** — recapture forces the OS sandbox (`--sandbox`) on, which roots writes at the launch cwd (+ temp) and keeps the source read-only while retaining egress.
+- **Claude / Devin** — honor the same signal and print the same scope banner, and never add a write grant for the source; their autonomous wrapper posture has no local path-scoping sandbox, so the read-only-source boundary is held by contract (and, for Devin, by its own execution isolation) rather than a local sandbox layer. Prefer a locally-sandboxed reviewer agent (codex/gemini) when a hard review-integrity guarantee at the sandbox layer is required.
 
 ### Codex
 

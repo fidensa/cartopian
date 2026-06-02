@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# cartopian-codex-pm — hard-coded codex PM containment launch profile (TASK-03-001).
+#
+# Implements the DEC-001 / FR-002 capability floor for the OpenAI Codex CLI:
+# launches the interactive `codex` PM session restricted to the fixed Cartopian
+# MCP toolset and NOTHING ELSE — no shell, no PTY exec, no web, no view-image,
+# no plugins / apps / skills / sub-agents, no non-Cartopian MCP servers — from an
+# isolated cwd with no extra directory grants, BENEATH codex's own native OS
+# sandbox driven to read-only (the FR-007 Tier-2 depth layer).
+#
+# This is the PM-facing sibling of `cartopian-codex` (the autonomous coder/
+# reviewer wrapper). It is NOT a drop-in replacement: `cartopian-codex` runs
+# `codex exec` with a workspace-write sandbox so an assignee can edit code; this
+# profile does the opposite and locks the surface down to the Cartopian protocol
+# tools only, like `cartopian-claude-pm` does for Claude Code.
+#
+# How the floor is built (codex's native mechanisms, no bundled sandbox — NF-001):
+#   * Tool removal (Tier-1) — an isolated CODEX_HOME holding a hard-coded floor
+#     config.toml that sets features.shell_tool=false + features.unified_exec=false
+#     (removes the shell / PTY exec tools), tools.web_search=false +
+#     tools.view_image=false, and disables plugins/apps/browser_use/computer_use/
+#     image_generation/multi_agent/hooks/goals/memories. The isolated CODEX_HOME
+#     also drops the user's broad project trust levels, globally-registered MCP
+#     servers, and on-disk skills/plugins (those load from CODEX_HOME).
+#   * MCP scoping (Tier-1) — the floor config registers ONLY the Cartopian MCP
+#     server (the same command as wrappers/etc/mcp-cartopian-only.json) so the
+#     PM's only tools are the Cartopian protocol tools.
+#   * Native sandbox depth (Tier-2) — `-s <sandbox_mode>` from the depth profile
+#     wrappers/etc/sandbox-codex-pm-depth.json drives codex's OWN Seatbelt
+#     (macOS) / Landlock+seccomp (Linux) sandbox to deny product-repo / work-root
+#     writes, process-exec effects, and network beneath the floor. approval_policy
+#     = never closes the escalation escape hatch (no un-sandboxed re-run).
+#
+# The floor is HARD-CODED and NOT overridable. This wrapper refuses the codex
+# flags that would re-open the surface (--dangerously-bypass-approvals-and-sandbox,
+# -s/--sandbox, --add-dir, -c/--config, --ignore-user-config, -p/--profile,
+# --enable, --dangerously-bypass-hook-trust) so the floor cannot be silently
+# weakened from the command line.
+#
+# Usage:
+#   cartopian-codex-pm                 # interactive contained PM session
+#   cartopian-codex-pm [extra codex flags...]   # extra non-surface-reopening flags
+#
+# Note on MCP under non-interactive `codex exec`: a documented upstream codex
+# limitation (openai/codex#16685) auto-cancels EVERY MCP tool call in `codex
+# exec` (non-interactive) with "user cancelled MCP tool call", independent of the
+# server or this floor. The contained PM is therefore an INTERACTIVE `codex`
+# session (this wrapper), exactly as cartopian-claude-pm launches interactive
+# `claude`; the Cartopian toolset resolves normally there.
+#
+# Exit codes:
+#   0   — codex completed successfully
+#   1   — wrapper error (missing CLI/config/auth, refused surface-reopening flag)
+#   *   — upstream codex exit code
+
+set -euo pipefail
+
+# --- Resolve locations ----------------------------------------------------
+_PM_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Tier-2 native-sandbox DEPTH profile (FR-007). The Cartopian source of truth
+# that names codex's sandbox_mode + denied roots; this wrapper reads sandbox_mode
+# from it and applies it via `-s`, and FAILS CLOSED if it is absent (so the
+# native-sandbox layer can never be silently dropped). Mirrors how
+# cartopian-claude-pm references wrappers/etc/sandbox-pm-depth.json.
+SANDBOX_PROFILE="${_PM_WRAPPER_DIR}/../etc/sandbox-codex-pm-depth.json"
+# The Cartopian-only MCP definition (shared with the Claude floor): the single
+# source of truth for the cartopian-mcp command the floor config registers.
+MCP_CONFIG="${_PM_WRAPPER_DIR}/../etc/mcp-cartopian-only.json"
+
+# Isolated PM surface = the launch cwd. Deliberately NOT the product repo and
+# NOT a work root: the contained PM operates on the project only through the
+# Cartopian MCP tools (which run out-of-process), never through a filesystem
+# tool — there is none in this profile. Override with CARTOPIAN_PM_SURFACE.
+PM_SURFACE="${CARTOPIAN_PM_SURFACE:-${_PM_WRAPPER_DIR}/../var/codex-pm-surface}"
+# Isolated CODEX_HOME for the contained PM: holds ONLY the generated floor
+# config.toml + a symlink to the user's auth (no credential is ever copied into
+# the repo). A dedicated home drops the user's trust levels, global MCP servers,
+# and on-disk skills/plugins. Override with CARTOPIAN_CODEX_PM_HOME.
+PM_CODEX_HOME="${CARTOPIAN_CODEX_PM_HOME:-${_PM_WRAPPER_DIR}/../var/codex-pm-home}"
+
+# --- Refuse surface-reopening flags from the command line -----------------
+# These are the knobs that would re-open the floor or the native sandbox. Reject
+# them (in both `--flag value` and `--flag=value` forms) so the floor is not
+# overridable by whatever invokes this wrapper.
+for arg in "$@"; do
+  case "$arg" in
+    --dangerously-bypass-approvals-and-sandbox \
+    | --dangerously-bypass-hook-trust \
+    | -s | --sandbox | --sandbox=* \
+    | --add-dir | --add-dir=* \
+    | -c | --config | --config=* \
+    | --ignore-user-config \
+    | -p | --profile | --profile=* \
+    | --enable | --enable=* \
+    | --disable | --disable=*)
+      echo "cartopian-codex-pm: refusing flag '$arg' — the PM containment floor (DEC-001/FR-002) and Tier-2 native-sandbox depth profile (FR-007) are not overridable." >&2
+      echo "cartopian-codex-pm: the floor (isolated CODEX_HOME with features.shell_tool=false + features.unified_exec=false, cartopian-only MCP, and -s read-only from the depth profile) is fixed; remove the flag." >&2
+      exit 1
+      ;;
+  esac
+done
+
+# --- Preconditions (fail closed) ------------------------------------------
+if ! command -v codex &>/dev/null; then
+  echo "cartopian-codex-pm: error: 'codex' not found in PATH" >&2
+  echo "Install: https://github.com/openai/codex" >&2
+  exit 1
+fi
+
+# Fail closed: the Tier-2 depth profile must be present, or the native-sandbox
+# layer would be silently absent. Never launch the PM without it.
+if [[ ! -f "$SANDBOX_PROFILE" ]]; then
+  echo "cartopian-codex-pm: error: native-sandbox depth profile not found: $SANDBOX_PROFILE" >&2
+  exit 1
+fi
+
+if [[ ! -f "$MCP_CONFIG" ]]; then
+  echo "cartopian-codex-pm: error: cartopian MCP config not found: $MCP_CONFIG" >&2
+  exit 1
+fi
+
+# Resolve the cartopian-mcp command from the shared MCP config (single source of
+# truth) and the sandbox_mode from the depth profile — both via python3 stdlib
+# (NF-001), the same json-in-bash pattern cartopian-codex already uses.
+CARTOPIAN_MCP_CMD="$(python3 - "$MCP_CONFIG" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+srv = (cfg.get("mcpServers") or {}).get("cartopian") or {}
+print(srv.get("command") or "")
+PY
+)"
+if [[ -z "$CARTOPIAN_MCP_CMD" || ! -x "$CARTOPIAN_MCP_CMD" ]]; then
+  echo "cartopian-codex-pm: error: cartopian-mcp command unresolved or not executable: '$CARTOPIAN_MCP_CMD'" >&2
+  exit 1
+fi
+
+SANDBOX_MODE="$(python3 - "$SANDBOX_PROFILE" <<'PY'
+import json, sys
+prof = json.load(open(sys.argv[1]))
+mode = prof.get("sandbox_mode") or (prof.get("codex_config") or {}).get("sandbox_mode") or ""
+# Fail closed on a profile that would not actually constrain writes/exec.
+if mode not in ("read-only", "workspace-write"):
+    sys.exit("unsafe-or-missing-sandbox-mode")
+print(mode)
+PY
+)" || { echo "cartopian-codex-pm: error: depth profile has no safe sandbox_mode (need read-only|workspace-write): $SANDBOX_PROFILE" >&2; exit 1; }
+
+# codex auth lives in the user's CODEX_HOME (default ~/.codex). We need it for the
+# session but must NOT copy the credential into the repo: symlink it into the
+# isolated home. --ignore-user-config keeps auth in CODEX_HOME; here we point a
+# clean CODEX_HOME at our floor config and link only auth.json.
+USER_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+USER_AUTH="${USER_CODEX_HOME}/auth.json"
+if [[ ! -f "$USER_AUTH" ]]; then
+  echo "cartopian-codex-pm: error: codex auth not found at $USER_AUTH — run 'codex login' first." >&2
+  exit 1
+fi
+
+# --- Build the isolated CODEX_HOME (hard-coded floor config) ---------------
+# Regenerated every launch so the floor cannot drift from a stale on-disk copy.
+mkdir -p "$PM_CODEX_HOME"
+chmod 700 "$PM_CODEX_HOME" 2>/dev/null || true
+# Link (not copy) auth so no credential ever lands in the repo tree.
+ln -sf "$USER_AUTH" "$PM_CODEX_HOME/auth.json"
+
+cat > "$PM_CODEX_HOME/config.toml" <<TOML
+# GENERATED by cartopian-codex-pm — the DEC-001/FR-002 PM containment floor.
+# Do not edit; regenerated on every launch. Tier-1 tool removal + cartopian-only
+# MCP; the Tier-2 native sandbox is applied via the -s flag below.
+approval_policy = "never"
+
+[features]
+shell_tool = false
+unified_exec = false
+plugins = false
+apps = false
+browser_use = false
+computer_use = false
+image_generation = false
+multi_agent = false
+hooks = false
+goals = false
+memories = false
+network_proxy = false
+
+[tools]
+view_image = false
+
+# Best-effort web_search disable using the CORRECT table form (WebSearchToolConfig
+# has a `disabled` field; a bare boolean `web_search = false` is a silently-ignored
+# type mismatch). WARNING — this is NOT a containment guarantee: codex's web_search
+# is a SERVER-SIDE Responses tool, so it still reaches the network and the native
+# OS sandbox / approval_policy cannot block it. This is a documented FORCING
+# RESIDUAL (web/browse + exfiltration surface) — see docs/COMPATIBILITY.md and the
+# captured evidence tests/wrappers/pm-codex/evidence/green-05-web. It is one reason
+# codex is recorded not-recommended-as-PM-host via codex-side assets alone.
+[tools.web_search]
+disabled = true
+
+[mcp_servers.cartopian]
+command = "${CARTOPIAN_MCP_CMD}"
+args = []
+default_tools_approval_mode = "auto"
+
+[mcp_servers.cartopian.env]
+CARTOPIAN_PM_CONTAINED = "1"
+TOML
+chmod 600 "$PM_CODEX_HOME/config.toml" 2>/dev/null || true
+
+# --- Containment signal (FR-013 fail-closed git guard) --------------------
+# Mark this PM as contained so resolve-config / next-action can fail closed on
+# git.pm_owns_product_branches=true under containment. Belt-and-suspenders with
+# the MCP server env above.
+export CARTOPIAN_PM_CONTAINED=1
+export CODEX_HOME="$PM_CODEX_HOME"
+
+mkdir -p "$PM_SURFACE"
+PM_SURFACE="$(cd "$PM_SURFACE" && pwd)"
+
+echo "cartopian-codex-pm: contained PM launch profile (DEC-001/FR-002 floor)" >&2
+echo "cartopian-codex-pm: cwd=$PM_SURFACE  codex_home=$PM_CODEX_HOME  tools=cartopian-only (shell_tool=false, unified_exec=false)" >&2
+echo "cartopian-codex-pm: native-sandbox depth (FR-007) = $SANDBOX_PROFILE  sandbox_mode=$SANDBOX_MODE" >&2
+
+# Launch the interactive contained PM session from the isolated surface. exec so
+# the PM session owns the terminal. The floor config lives in $CODEX_HOME; the
+# depth sandbox is -s $SANDBOX_MODE; cwd is the isolated surface; NO --add-dir,
+# NEVER --dangerously-bypass-approvals-and-sandbox.
+cd "$PM_SURFACE"
+exec codex -s "$SANDBOX_MODE" -C "$PM_SURFACE" "$@"

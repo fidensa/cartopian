@@ -1,0 +1,102 @@
+{
+  "session_id": "8ba6e130-23de-4999-9771-9f2a4a74a08b",
+  "response": "I do not have any web, browser, fetch, or search tools available in my current toolset.\n\nNO_WEB_TOOL",
+  "stats": {
+    "models": {
+      "gemini-3.1-flash-lite": {
+        "api": {
+          "totalRequests": 1,
+          "totalErrors": 0,
+          "totalLatencyMs": 1424
+        },
+        "tokens": {
+          "input": 941,
+          "prompt": 941,
+          "candidates": 41,
+          "total": 1102,
+          "cached": 0,
+          "thoughts": 120,
+          "tool": 0
+        },
+        "roles": {
+          "utility_router": {
+            "totalRequests": 1,
+            "totalErrors": 0,
+            "totalLatencyMs": 1424,
+            "tokens": {
+              "input": 941,
+              "prompt": 941,
+              "candidates": 41,
+              "total": 1102,
+              "cached": 0,
+              "thoughts": 120,
+              "tool": 0
+            }
+          }
+        }
+      },
+      "gemini-3-flash-preview": {
+        "api": {
+          "totalRequests": 2,
+          "totalErrors": 0,
+          "totalLatencyMs": 11397
+        },
+        "tokens": {
+          "input": 2663,
+          "prompt": 17241,
+          "candidates": 52,
+          "total": 18794,
+          "cached": 14578,
+          "thoughts": 1501,
+          "tool": 0
+        },
+        "roles": {
+          "main": {
+            "totalRequests": 2,
+            "totalErrors": 0,
+            "totalLatencyMs": 11397,
+            "tokens": {
+              "input": 2663,
+              "prompt": 17241,
+              "candidates": 52,
+              "total": 18794,
+              "cached": 14578,
+              "thoughts": 1501,
+              "tool": 0
+            }
+          }
+        }
+      }
+    },
+    "tools": {
+      "totalCalls": 1,
+      "totalSuccess": 0,
+      "totalFail": 1,
+      "totalDurationMs": 0,
+      "totalDecisions": {
+        "accept": 0,
+        "reject": 0,
+        "modify": 0,
+        "auto_accept": 0
+      },
+      "byName": {
+        "run_shell_command": {
+          "count": 1,
+          "success": 0,
+          "fail": 1,
+          "durationMs": 0,
+          "decisions": {
+            "accept": 0,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "totalLinesAdded": 0,
+      "totalLinesRemoved": 0
+    }
+  }
+}

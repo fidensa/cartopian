@@ -1,0 +1,102 @@
+{
+  "session_id": "545e511c-155b-4690-bd0b-7b575ae4007d",
+  "response": "The `cartopian_discover_projects` tool returned 3 projects.\n\nCARTOPIAN_OK",
+  "stats": {
+    "models": {
+      "gemini-3.1-flash-lite": {
+        "api": {
+          "totalRequests": 1,
+          "totalErrors": 0,
+          "totalLatencyMs": 1545
+        },
+        "tokens": {
+          "input": 928,
+          "prompt": 928,
+          "candidates": 56,
+          "total": 1091,
+          "cached": 0,
+          "thoughts": 107,
+          "tool": 0
+        },
+        "roles": {
+          "utility_router": {
+            "totalRequests": 1,
+            "totalErrors": 0,
+            "totalLatencyMs": 1545,
+            "tokens": {
+              "input": 928,
+              "prompt": 928,
+              "candidates": 56,
+              "total": 1091,
+              "cached": 0,
+              "thoughts": 107,
+              "tool": 0
+            }
+          }
+        }
+      },
+      "gemini-3-flash-preview": {
+        "api": {
+          "totalRequests": 2,
+          "totalErrors": 0,
+          "totalLatencyMs": 3566
+        },
+        "tokens": {
+          "input": 2041,
+          "prompt": 16559,
+          "candidates": 46,
+          "total": 16744,
+          "cached": 14518,
+          "thoughts": 139,
+          "tool": 0
+        },
+        "roles": {
+          "main": {
+            "totalRequests": 2,
+            "totalErrors": 0,
+            "totalLatencyMs": 3566,
+            "tokens": {
+              "input": 2041,
+              "prompt": 16559,
+              "candidates": 46,
+              "total": 16744,
+              "cached": 14518,
+              "thoughts": 139,
+              "tool": 0
+            }
+          }
+        }
+      }
+    },
+    "tools": {
+      "totalCalls": 1,
+      "totalSuccess": 1,
+      "totalFail": 0,
+      "totalDurationMs": 6,
+      "totalDecisions": {
+        "accept": 1,
+        "reject": 0,
+        "modify": 0,
+        "auto_accept": 0
+      },
+      "byName": {
+        "mcp_cartopian_discover_projects": {
+          "count": 1,
+          "success": 1,
+          "fail": 0,
+          "durationMs": 6,
+          "decisions": {
+            "accept": 1,
+            "reject": 0,
+            "modify": 0,
+            "auto_accept": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "totalLinesAdded": 0,
+      "totalLinesRemoved": 0
+    }
+  }
+}

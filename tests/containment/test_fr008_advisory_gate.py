@@ -256,8 +256,9 @@ class TestRevokedOrMismatchedReblocks(unittest.TestCase):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             # Acknowledge a *different* tier-3 harness, not the configured one.
+            # (devin is still tier-3; gemini was promoted to tier-1-2 in TASK-03-002.)
             res = sb.acknowledge(
-                "--harness", "gemini",
+                "--harness", "devin",
                 "--acknowledged-by", "operator",
                 "--rationale", "other harness",
                 "--acknowledged-on", "2026-06-01",

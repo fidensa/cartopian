@@ -1,0 +1,16 @@
+close_audit
+compose_state
+delete_prompt
+delete_report
+discover_projects
+handoff_packet
+list_tasks
+move_task
+next_action
+plan_audit
+report_action
+resolve_config
+task_bundle
+validate_task_readiness
+wait_handoff
+wait_report

@@ -1,0 +1,3 @@
+CARTOPIAN TOOLSET FUNCTIONAL (still-exposed surface under the floor): PASS
+cartopian tools invoked: mcp_cartopian_discover_projects
+model_final_line: 'CARTOPIAN_OK'

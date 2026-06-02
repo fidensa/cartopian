@@ -66,25 +66,47 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     )
 
 
+_VERDICT_SECTION_RE = re.compile(r"^##\s+Verdict\s*$", re.MULTILINE)
+_READY_SECTION_RE = re.compile(r"^##\s+Ready for review\s*$", re.MULTILINE)
+
+
 def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Optional[str]]:
-    """Return (variant, error_message). variant is None on conflict or unresolvable."""
+    """Return (variant, error_message). variant is None on conflict or unresolvable.
+
+    Task and task-review completion reports share the ``REPORT-NN-NNN.md`` name
+    (CONVENTIONS § Reports), so the filename alone cannot decide between them.
+    Resolve ``task`` vs ``review`` from report *content*: a review report carries
+    a ``Review ID:`` and a ``## Verdict`` section; a task report carries a
+    ``Task ID:`` and a ``## Ready for review`` section. A review report may
+    legitimately cite the reviewed ``Task ID:`` too, so the presence of both IDs
+    is not, by itself, a conflict — the distinguishing section decides. Only a
+    report that is shaped as *both* (a verdict *and* a ready-for-review section)
+    is genuinely ambiguous.
+    """
     filename_is_plan = report_path.name.startswith("REPORT-PLAN-")
     has_review_id = "Review ID:" in content
     has_task_id = "Task ID:" in content
+    review_shaped = has_review_id and bool(_VERDICT_SECTION_RE.search(content))
+    task_shaped = has_task_id and bool(_READY_SECTION_RE.search(content))
+
+    _ambiguous = (
+        "ambiguous variant: filename and content disagree; "
+        "pass --variant explicitly"
+    )
 
     if filename_is_plan:
         if has_task_id and not has_review_id:
-            return None, (
-                "ambiguous variant: filename and content disagree; "
-                "pass --variant explicitly"
-            )
+            return None, _ambiguous
         return "planning-review", None
 
+    if review_shaped and task_shaped:
+        return None, _ambiguous
+    if review_shaped:
+        return "review", None
+    if task_shaped:
+        return "task", None
     if has_review_id and has_task_id:
-        return None, (
-            "ambiguous variant: filename and content disagree; "
-            "pass --variant explicitly"
-        )
+        return None, _ambiguous
     if has_review_id:
         return "review", None
     if has_task_id:

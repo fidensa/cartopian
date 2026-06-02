@@ -1,0 +1,4 @@
+Warning: tools.exclude in settings.json is deprecated and will be removed in 1.0. Migrate to Policy Engine: https://geminicli.com/docs/core/policy-engine/YOLO mode is enabled. All tool calls will be automatically approved.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Ripgrep is not available. Falling back to GrepTool.
+Error executing tool run_shell_command: Tool "run_shell_command" not found. Did you mean one of: "mcp_cartopian_close_audit", "mcp_cartopian_move_task", "mcp_cartopian_plan_audit"?
