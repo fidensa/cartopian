@@ -218,7 +218,7 @@ if ! {
   echo "  the OS sandbox beneath a non-auto-approving floor, and (d) a non-overridable"
   echo "  settings-file injection path — at which point live in-runtime evidence could"
   echo "  be captured and the floor+depth assets honestly shipped. See FINDINGS.md for"
-  echo "  the cited sources and docs/COMPATIBILITY.md for the matrix entry."
+  echo "  the cited sources and the matrix rationale."
 } > "$TMP"; then
   echo "determine-devin-tier.sh: FATAL — failed to write evidence artifact to ${TMP}" >&2
   echo "  Refusing to report a capture without a successfully written artifact (fail-closed)." >&2

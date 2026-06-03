@@ -113,4 +113,4 @@ CONCLUSION: devin is recorded not-recommended-as-PM-host at tier-3
   the OS sandbox beneath a non-auto-approving floor, and (d) a non-overridable
   settings-file injection path — at which point live in-runtime evidence could
   be captured and the floor+depth assets honestly shipped. See FINDINGS.md for
-  the cited sources and docs/COMPATIBILITY.md for the matrix entry.
+  the cited sources and the matrix rationale.

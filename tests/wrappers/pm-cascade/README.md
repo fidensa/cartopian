@@ -26,4 +26,4 @@ first-party containable runtime (F-C1), no Tier-1 toolset-floor mechanism
 (F-C2), and no Tier-2 native sandbox (F-C3). No floor/depth assets are shipped,
 so `_harness_tier` honestly keeps cascade at `tier-3` with no classifier edit
 (TASK-02-001) and the suite's no-regression guarantee (NF-004) holds. See
-`../../../docs/COMPATIBILITY.md` for the matrix entry and the red-team notes.
+`FINDINGS.md` for the matrix rationale and the red-team notes.

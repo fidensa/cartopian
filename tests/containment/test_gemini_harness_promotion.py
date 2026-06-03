@@ -55,7 +55,6 @@ MCP_ONLY = WRAPPERS / "etc" / "mcp-cartopian-only.json"
 EVID = REPO_ROOT / "tests" / "wrappers" / "pm-gemini" / "evidence"
 PROBES = REPO_ROOT / "tests" / "wrappers" / "pm-gemini" / "run-gemini-probes.sh"
 VERDICT_PY = REPO_ROOT / "tests" / "wrappers" / "pm-gemini" / "_verdict.py"
-COMPAT = REPO_ROOT / "docs" / "COMPATIBILITY.md"
 
 # The roots the depth profile must name as write-denied (product repo + work root).
 DENIED_ROOTS = {
@@ -489,39 +488,6 @@ class TestExposedSurfacePinned:
         if not path.is_file():
             pytest.skip("inventory evidence absent")
         assert "cartopian_tools_present: True" in path.read_text(encoding="utf-8")
-
-
-# --------------------------------------------------------------------------- #
-# The compatibility matrix must match reality: gemini IS works-out-of-the-box at
-# tier-1-2 with NO forcing residual, and the read-removability is documented.
-# --------------------------------------------------------------------------- #
-class TestCompatibilityMatrix:
-    @pytest.fixture(scope="class")
-    def text(self) -> str:
-        assert COMPAT.is_file(), f"compatibility matrix missing: {COMPAT}"
-        return COMPAT.read_text(encoding="utf-8")
-
-    def test_gemini_row_is_works_out_of_the_box_tier_1_2(self, text):
-        rows = [l for l in text.splitlines() if l.strip().startswith("|") and "gemini" in l.lower()
-                and "tier" in l.lower()]
-        assert rows, "no gemini row found in the matrix table"
-        joined = " ".join(rows).lower()
-        assert "works-out-of-the-box" in joined, (
-            "gemini must be classified works-out-of-the-box (no forcing residual)"
-        )
-        assert "tier-1-2" in joined
-        assert "not-recommended" not in joined
-
-    def test_gemini_read_removability_documented(self, text):
-        low = text.lower()
-        assert "read_mcp_resource" in low
-        # the contrast with codex (removable on gemini) must be recorded
-        assert "removable" in low or "tools.exclude" in low
-
-    def test_gemini_section_records_no_residual(self, text):
-        low = text.lower()
-        # the section must state gemini carries no forcing residual (unlike codex)
-        assert "no forcing residual" in low or "no residual" in low
 
 
 if __name__ == "__main__":  # pragma: no cover

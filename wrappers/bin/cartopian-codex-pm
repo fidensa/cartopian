@@ -191,8 +191,8 @@ view_image = false
 # type mismatch). WARNING — this is NOT a containment guarantee: codex's web_search
 # is a SERVER-SIDE Responses tool, so it still reaches the network and the native
 # OS sandbox / approval_policy cannot block it. This is a documented FORCING
-# RESIDUAL (web/browse + exfiltration surface) — see docs/COMPATIBILITY.md and the
-# captured evidence tests/wrappers/pm-codex/evidence/green-05-web. It is one reason
+# RESIDUAL (web/browse + exfiltration surface) — see the captured evidence
+# tests/wrappers/pm-codex/evidence/green-05-web. It is one reason
 # codex is recorded not-recommended-as-PM-host via codex-side assets alone.
 [tools.web_search]
 disabled = true

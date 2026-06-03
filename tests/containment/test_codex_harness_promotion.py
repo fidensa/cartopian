@@ -32,8 +32,8 @@ Layout
 unit-tests the fail-closed verdict logic on SYNTHETIC transcripts (F2; no network)
 so a ``turn.failed`` filter error can never masquerade as containment.
 :class:`TestHarnessEvidence` pins the live capture (skip-when-absent, fail-closed on
-a stale/wrong marker when present), and :class:`TestExposedSurfacePinned` /
-:class:`TestCompatibilityMatrixHonest` pin the F3 surface and the F1 matrix entry.
+a stale/wrong marker when present), and :class:`TestExposedSurfacePinned`
+pins the F3 surface.
 
 The live, cost-bearing capture is ``tests/wrappers/pm-codex/run-codex-probes.sh``.
 """
@@ -58,7 +58,6 @@ MCP_ONLY = WRAPPERS / "etc" / "mcp-cartopian-only.json"
 EVID = REPO_ROOT / "tests" / "wrappers" / "pm-codex" / "evidence"
 PROBES = REPO_ROOT / "tests" / "wrappers" / "pm-codex" / "run-codex-probes.sh"
 VERDICT_PY = REPO_ROOT / "tests" / "wrappers" / "pm-codex" / "_verdict.py"
-COMPAT = REPO_ROOT / "docs" / "COMPATIBILITY.md"
 
 # The roots the depth profile must name as write-denied (product repo + work root).
 DENIED_ROOTS = {
@@ -489,51 +488,6 @@ class TestExposedSurfacePinned:
             "codex web probe should invoke the server-side web_search tool "
             f"(forcing residual); final={final!r}"
         )
-
-
-# --------------------------------------------------------------------------- #
-# F1 — the compatibility matrix must match reality: codex is NOT
-# works-out-of-the-box, and the read_mcp_resource residual is documented.
-# --------------------------------------------------------------------------- #
-class TestCompatibilityMatrixHonest:
-    @pytest.fixture(scope="class")
-    def text(self) -> str:
-        assert COMPAT.is_file(), f"compatibility matrix missing: {COMPAT}"
-        return COMPAT.read_text(encoding="utf-8")
-
-    def test_codex_not_claimed_works_out_of_the_box(self, text):
-        # Find the codex matrix row and assert it is not works-out-of-the-box.
-        rows = [l for l in text.splitlines() if l.strip().startswith("|") and "codex" in l.lower()
-                and "tier" in l.lower()]
-        assert rows, "no codex row found in the matrix table"
-        joined = " ".join(rows).lower()
-        assert "works-out-of-the-box" not in joined, (
-            "codex must NOT be classified works-out-of-the-box (F1 read residual)"
-        )
-        assert "not-recommended" in joined or "needs-manual-constraints" in joined
-
-    def test_read_residual_documented(self, text):
-        low = text.lower()
-        assert "read_mcp_resource" in low
-        assert "list_mcp_resources" in low
-        # the cross-project read surface must be called out
-        assert "cross-project" in low or "every registered project" in low
-
-    def test_web_residual_documented(self, text):
-        low = text.lower()
-        assert "web_search" in low
-        # the server-side nature (why the sandbox can't block it) must be recorded
-        assert "server-side" in low
-
-    def test_genesis_vector_closed_documented(self, text):
-        # TASK-03-010: the matrix must record the MCP genesis-tool config-write
-        # vector as CLOSED by the DEC-007 floor (no longer an open exposure).
-        low = text.lower()
-        assert "dec-007" in low
-        assert "genesis" in low
-        # the four withheld tools and the closed verdict must be named
-        assert "generate_config" in low and "scaffold_project" in low
-        assert "closed" in low and "no longer an open exposure" in low
 
 
 if __name__ == "__main__":  # pragma: no cover

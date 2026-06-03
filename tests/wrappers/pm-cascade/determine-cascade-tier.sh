@@ -166,7 +166,7 @@ if ! {
   echo "  (advisory). No floor/depth assets are shipped, so _harness_tier honestly"
   echo "  keeps cascade at tier-3 with NO classifier edit (TASK-02-001 contract) and"
   echo "  the suite's no-regression guarantee (NF-004) holds. See FINDINGS.md for the"
-  echo "  cited sources and docs/COMPATIBILITY.md for the matrix entry."
+  echo "  cited sources and the matrix rationale."
 } > "$TMP"; then
   echo "determine-cascade-tier.sh: FATAL — failed to write evidence artifact to ${TMP}" >&2
   echo "  Refusing to report a capture without a successfully written artifact (fail-closed)." >&2

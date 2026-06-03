@@ -39,5 +39,5 @@ non-overridable settings-file injection path (F-D4), and there is no contained
 local runtime to capture FR-011 in-runtime evidence (F-D5). No floor/depth assets
 are shipped, so `_harness_tier` honestly keeps devin at `tier-3` with no
 classifier edit (TASK-02-001) and the suite's no-regression guarantee (NF-004)
-holds. See `../../../docs/COMPATIBILITY.md` for the matrix entry and the red-team
+holds. See `FINDINGS.md` for the matrix rationale and the red-team
 notes.

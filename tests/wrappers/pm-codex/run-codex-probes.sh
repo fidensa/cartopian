@@ -6,8 +6,8 @@
 #
 #   RED   — no floor: default codex tool set under a workspace-write sandbox.
 #           The shell tool exists (`id` runs) and apply_patch writes succeed.
-#   GREEN — the EXACT documented floor (see ../../../docs/COMPATIBILITY.md and
-#           cartopian-codex-pm) applied: an isolated CODEX_HOME whose hard-coded
+#   GREEN — the EXACT documented floor (see cartopian-codex-pm) applied: an
+#           isolated CODEX_HOME whose hard-coded
 #           config sets features.shell_tool=false + features.unified_exec=false
 #           (shell/exec removed), tools.web_search=false + tools.view_image=false,
 #           plugins/apps/etc. disabled, ONLY the Cartopian MCP server registered;
@@ -31,8 +31,9 @@
 # contained codex PM can read every registered project's Cartopian-mediated
 # REQUIREMENTS / STATE / IMPLEMENTATION_PLAN resource (a cross-project read
 # surface). The read probe below captures this; it is the reason codex is
-# recorded `not-recommended-as-PM-host` via codex-side assets alone in
-# docs/COMPATIBILITY.md. (The work-root *filesystem* is NOT reachable —
+# recorded `not-recommended-as-PM-host` via codex-side assets alone (forcing
+# residual captured in the green-03-read evidence below). (The work-root
+# *filesystem* is NOT reachable —
 # read_mcp_resource reads mediated resources, not arbitrary files.)
 #
 # FAIL-CLOSED ON turn.failed (the F2 finding). A `turn.failed` transcript (e.g. an
@@ -229,7 +230,7 @@ view_image = false
 # has a `disabled` field; the boolean `web_search = false` is a silently-ignored
 # type mismatch). NOTE: this is NOT reliably honored — codex's web_search is a
 # SERVER-SIDE Responses tool, so it still reaches the network (forcing residual,
-# captured in green-05-web; see docs/COMPATIBILITY.md).
+# captured in green-05-web).
 [tools.web_search]
 disabled = true
 [mcp_servers.cartopian]
@@ -466,7 +467,7 @@ if [[ "$WITH_RED" -eq 1 ]]; then
 fi
 
 echo
-echo "FORCING RESIDUALS (why codex is NOT works-out-of-the-box; see docs/COMPATIBILITY.md):"
+echo "FORCING RESIDUALS (why codex is NOT works-out-of-the-box; see the green-03-read / green-05-web evidence):"
 echo "  F1  read  — codex retains the built-in read_mcp_resource / list_mcp_resources"
 echo "              tools (no codex-side toggle); a contained codex PM reads every"
 echo "              registered project's Cartopian resources (green-03-read)."

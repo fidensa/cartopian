@@ -70,4 +70,4 @@ CONCLUSION: cascade is recorded not-recommended-as-PM-host at tier-3
   (advisory). No floor/depth assets are shipped, so _harness_tier honestly
   keeps cascade at tier-3 with NO classifier edit (TASK-02-001 contract) and
   the suite's no-regression guarantee (NF-004) holds. See FINDINGS.md for the
-  cited sources and docs/COMPATIBILITY.md for the matrix entry.
+  cited sources and the matrix rationale.

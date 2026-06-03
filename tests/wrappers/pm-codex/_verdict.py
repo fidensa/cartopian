@@ -190,7 +190,7 @@ def _main(argv: List[str]) -> int:
         print(f"model_final_line: '{final}'")
         if reached:
             print("VERDICT: READ_NOT_DENIED — read_mcp_resource/list_mcp_resources reached product/cross-project content")
-            print("         (documented forcing residual; see docs/COMPATIBILITY.md — not a no-read-tool floor)")
+            print("         (documented forcing residual; see the green-03-read evidence — not a no-read-tool floor)")
         else:
             print(f"VERDICT: read tool did not reach a resource this run (final line: {final})")
         return 0
@@ -205,7 +205,7 @@ def _main(argv: List[str]) -> int:
             print("          suppressed by tools.web_search config — documented forcing residual)")
         else:
             print("VERDICT: web_search not invoked this capture (tool remains AVAILABLE — nondeterministic;")
-            print("         see other captures / docs/COMPATIBILITY.md for the residual)")
+            print("         see other captures for the residual)")
         return 0
     print(f"_verdict.py: unknown command {cmd!r}", file=sys.stderr)
     return 2

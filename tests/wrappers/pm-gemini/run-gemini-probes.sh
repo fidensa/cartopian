@@ -6,8 +6,8 @@
 #
 #   RED   — no floor: default gemini tool set. The shell tool exists (`id` runs)
 #           and write_file writes succeed.
-#   GREEN — the EXACT documented floor (see ../../../docs/COMPATIBILITY.md and
-#           cartopian-gemini-pm) applied: an isolated SYSTEM settings file
+#   GREEN — the EXACT documented floor (see cartopian-gemini-pm) applied: an
+#           isolated SYSTEM settings file
 #           (GEMINI_CLI_SYSTEM_SETTINGS_PATH) whose hard-coded config sets
 #           tools.exclude to the full built-in tool list (shell / file r-w-edit /
 #           grep / glob / ls / web_fetch / google_web_search / save_memory /
@@ -438,7 +438,7 @@ if [[ "$WITH_RED" -eq 1 ]]; then
 fi
 
 echo
-echo "GEMINI vs codex (why gemini IS works-out-of-the-box — see docs/COMPATIBILITY.md):"
+echo "GEMINI vs codex (why gemini IS works-out-of-the-box — see the green-03-read evidence):"
 echo "  read — gemini's built-in list_mcp_resources/read_mcp_resource ARE removable via"
 echo "         tools.exclude (green-03-read -> NO_READ_TOOL; green-03b baseline shows the"
 echo "         tool reaching a resource when NOT excluded). No codex-style F1 read residual."

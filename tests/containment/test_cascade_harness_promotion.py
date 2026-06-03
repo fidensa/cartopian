@@ -49,7 +49,6 @@ PM_CASCADE = REPO_ROOT / "tests" / "wrappers" / "pm-cascade"
 DETERMINE = PM_CASCADE / "determine-cascade-tier.sh"
 FINDINGS = PM_CASCADE / "FINDINGS.md"
 ARTIFACT = PM_CASCADE / "evidence" / "cascade-tier-determination.txt"
-COMPAT = REPO_ROOT / "docs" / "COMPATIBILITY.md"
 
 
 # --------------------------------------------------------------------------- #
@@ -261,50 +260,6 @@ class TestForcingEvidence:
         assert stale.read_text(encoding="utf-8") == "STALE-SENTINEL-DO-NOT-OVERWRITE\n", (
             "stale evidence artifact was modified despite the write failure"
         )
-
-
-# --------------------------------------------------------------------------- #
-# The compatibility matrix must match the determination: cascade IS
-# not-recommended-as-PM-host at tier-3 with the evidence pointer.
-# --------------------------------------------------------------------------- #
-class TestCompatibilityMatrix:
-    @pytest.fixture(scope="class")
-    def text(self) -> str:
-        assert COMPAT.is_file(), f"compatibility matrix missing: {COMPAT}"
-        return COMPAT.read_text(encoding="utf-8")
-
-    def test_cascade_row_is_not_recommended_tier_3(self, text):
-        rows = [l for l in text.splitlines()
-                if l.strip().startswith("|") and "cascade" in l.lower() and "tier" in l.lower()]
-        assert rows, "no cascade row found in the matrix table"
-        joined = " ".join(rows).lower()
-        assert "not-recommended" in joined, "cascade must be classified not-recommended-as-PM-host"
-        assert "tier-3" in joined
-        assert "works-out-of-the-box" not in joined
-        assert "not-yet-classified" not in joined, (
-            "cascade row must be resolved (not 'not-yet-classified') by this task"
-        )
-
-    def test_cascade_row_points_at_the_evidence(self, text):
-        rows = [l for l in text.splitlines()
-                if l.strip().startswith("|") and "cascade" in l.lower() and "tier" in l.lower()]
-        joined = " ".join(rows)
-        assert "pm-cascade" in joined, "cascade row must point at the forcing evidence"
-
-    def test_cascade_section_records_forcing_reasons(self, text):
-        low = text.lower()
-        # the cascade section must record the architecture-level forcing reasons
-        assert "electron" in low
-        assert "no native sandbox" in low or "not a native os sandbox" in low \
-            or "not an os sandbox" in low or "no os-level sandbox" in low
-        assert "devin for terminal" in low  # cascade is not the devin terminal CLI
-
-    def test_cascade_not_promotable_distinguished_from_codex(self, text):
-        # codex is not-recommended but tier-1-2-DETECTED (assets exist); cascade is
-        # not-recommended AND tier-3 (no assets) — the matrix must not conflate them.
-        low = text.lower()
-        assert "unpromotable" in low or "no floor" in low or "no genuine mechanism" in low \
-            or "no contained" in low or "no first-party" in low
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -64,7 +64,6 @@ PM_DEVIN = REPO_ROOT / "tests" / "wrappers" / "pm-devin"
 DETERMINE = PM_DEVIN / "determine-devin-tier.sh"
 FINDINGS = PM_DEVIN / "FINDINGS.md"
 ARTIFACT = PM_DEVIN / "evidence" / "devin-tier-determination.txt"
-COMPAT = REPO_ROOT / "docs" / "COMPATIBILITY.md"
 
 FACETS = ("F-D1", "F-D2", "F-D3", "F-D4", "F-D5")
 
@@ -281,51 +280,6 @@ class TestForcingEvidence:
         assert stale.read_text(encoding="utf-8") == "STALE-SENTINEL-DO-NOT-OVERWRITE\n", (
             "stale evidence artifact was modified despite the write failure"
         )
-
-
-# --------------------------------------------------------------------------- #
-# The compatibility matrix must match the determination: devin IS
-# not-recommended-as-PM-host at tier-3 with the evidence pointer.
-# --------------------------------------------------------------------------- #
-class TestCompatibilityMatrix:
-    @pytest.fixture(scope="class")
-    def text(self) -> str:
-        assert COMPAT.is_file(), f"compatibility matrix missing: {COMPAT}"
-        return COMPAT.read_text(encoding="utf-8")
-
-    def test_devin_row_is_not_recommended_tier_3(self, text):
-        rows = [l for l in text.splitlines()
-                if l.strip().startswith("|") and "devin" in l.lower() and "tier" in l.lower()]
-        assert rows, "no devin row found in the matrix table"
-        joined = " ".join(rows).lower()
-        assert "not-recommended" in joined, "devin must be classified not-recommended-as-PM-host"
-        assert "tier-3" in joined
-        assert "works-out-of-the-box" not in joined
-        assert "not-yet-classified" not in joined, (
-            "devin row must be resolved (not 'not-yet-classified') by this task"
-        )
-
-    def test_devin_row_points_at_the_evidence(self, text):
-        rows = [l for l in text.splitlines()
-                if l.strip().startswith("|") and "devin" in l.lower() and "tier" in l.lower()]
-        joined = " ".join(rows)
-        assert "pm-devin" in joined, "devin row must point at the forcing evidence"
-
-    def test_devin_section_records_forcing_reasons(self, text):
-        low = text.lower()
-        # the devin section must record the architecture-level forcing reasons
-        assert "/handoff" in low or "cloud handoff" in low      # F-D1 cloud escape
-        assert "autonomous" in low                              # F-D3 sandbox coupling
-        assert "devin for terminal" in low                     # the first-party CLI
-        assert "cascade" in low                                 # distinguished from cascade
-
-    def test_devin_not_promotable_distinguished_from_codex_and_cascade(self, text):
-        # codex is not-recommended but tier-1-2-DETECTED (assets exist); cascade is
-        # not-recommended AND tier-3 (NO mechanism at all); devin is not-recommended
-        # AND tier-3 but for the "partial mechanisms that can't be combined" reason.
-        low = text.lower()
-        assert "partial" in low or "cannot be combined" in low \
-            or "cannot be layered" in low or "mutually exclusive" in low
 
 
 if __name__ == "__main__":  # pragma: no cover
