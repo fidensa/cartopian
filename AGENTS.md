@@ -4,7 +4,7 @@ This file is for contributors (human or agent) working **on Cartopian itself** â
 
 ## Project Overview
 
-Cartopian is a filesystem-first project governance protocol for AI-native development. It tracks phases, tasks, specs, decisions, and reviews using plain markdown files and directory-as-status conventions. No database, no SaaS dependency, no mandatory tooling. This repository contains the protocol specification, default templates, the Core CLI, the MCP server, agent wrappers, and skills.
+Cartopian is a filesystem-first project governance protocol for AI-native development. It tracks phases, tasks, specs, decisions, and reviews using plain markdown files and directory-as-status conventions. No database, no SaaS dependency, no third-party packages â€” Cartopian is self-contained and runs on the Python standard library alone. This repository contains the protocol specification, default templates, the Core CLI, the MCP server, agent wrappers, and skills.
 
 ## Tech Stack
 

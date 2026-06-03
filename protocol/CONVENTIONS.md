@@ -4,7 +4,7 @@ Rules for keeping a project coherent over many sessions. This file defines durab
 
 ## Core Principle
 
-Cartopian is filesystem-first. Directories and filenames carry the project's state, so the protocol can work without a database, SaaS control plane, or mandatory runtime.
+Cartopian is filesystem-first. Directories and filenames carry the project's state, so the protocol can work without a database, SaaS control plane, or external services. Cartopian is self-contained — the agent is the software — and runs on the Python standard library alone with no third-party dependencies. Because it is a security tool that governs other systems, containment is security-first: dependencies are attack surface, so Cartopian adds none.
 
 Git is optional. When git versioning is enabled, it records the same filesystem state; it is not the source of protocol authority.
 

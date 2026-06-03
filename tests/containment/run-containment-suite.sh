@@ -141,6 +141,7 @@ echo "[suite] running ${#TARGETS[@]} prohibited-operation/lifecycle negative tes
   "${TARGETS[@]}" \
   "tests/containment/test_fr011_containment_suite.py" \
   "tests/containment/test_harness_tier_detection.py" \
+  "tests/containment/test_fr009_enforcement_matrix_consistency.py" \
   "tests/containment/test_codex_harness_promotion.py" \
   "tests/containment/test_gemini_harness_promotion.py" \
   "tests/containment/test_cascade_harness_promotion.py" \
