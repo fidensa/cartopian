@@ -30,13 +30,12 @@ refreshed in place; operator-owned files are preserved.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import platform
 import shutil
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 EXIT_OK = 0
 EXIT_FAIL = 1

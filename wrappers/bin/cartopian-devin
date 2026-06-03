@@ -35,23 +35,61 @@ fi
 # --------------------------------------------------------------------
 
 # --- Configuration ---------------------------------------------------
-# Permission mode (per current `devin --help`): "auto" | "dangerous"
-#   auto       — ask before write/execute operations
-#   dangerous  — auto-approve all tool calls (full autonomy)
-# Default is "dangerous" so devin runs non-interactively, matching the
-# autonomy posture of cartopian-codex (workspace-write sandbox),
-# cartopian-claude (--dangerously-skip-permissions), and
-# cartopian-gemini (--approval-mode yolo). The PM→assignee handoff
-# contract requires the assignee to complete without TTY interaction;
-# if autonomy is not desired for a given role, do not run that role in
-# auto mode.
-# Legacy values are accepted for backward compatibility:
-#   normal -> auto
-#   bypass -> dangerous
-DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-dangerous}"
+# CARTOPIAN_DEVIN_PERMISSION selects the permission posture. It maps onto
+# the CURRENT documented "Devin for Terminal" CLI surface (cli.devin.ai/docs;
+# captured in tests/wrappers/pm-devin/FINDINGS.md). The earlier
+# `--permission-mode auto|dangerous` spelling this wrapper passed is NOT a
+# valid value on that surface — `--permission-mode` takes one of four modes,
+# and OS isolation is engaged with the separate `--sandbox` flag:
+#
+#   normal        --permission-mode normal
+#                 reads auto-approved; writes/shell PROMPT for approval
+#                 (blocks in a non-interactive handoff)
+#   accept-edits  --permission-mode accept-edits
+#                 in-workspace edits auto-approved; shell + out-of-workspace
+#                 writes still PROMPT (blocks on shell in a handoff)
+#   bypass        --permission-mode bypass
+#                 all tool calls auto-approved; NO OS sandbox (unbounded)
+#   autonomous    --sandbox --permission-mode autonomous
+#                 all tool calls auto-approved, but the OS sandbox bounds the
+#                 filesystem/network and fails closed. Devin auto-selects (and
+#                 only permits) `autonomous` under `--sandbox`; the mode is
+#                 unavailable without it. Devin documents `--sandbox` Unstable.
+#
+# DEFAULT = "autonomous": the most-restrictive sensible mode that still lets
+# the PM→assignee handoff complete with NO human in the loop. It is the direct
+# analogue of cartopian-codex defaulting to the `workspace-write` *sandbox*
+# (OS-bounded autonomy) rather than `danger-full-access`: same auto-approval as
+# `bypass`, but OS-enforced filesystem/network bounds on top. `normal` and
+# `accept-edits` are NOT defaults because they block waiting for TTY approval
+# on the first write/shell call and would burn to the CARTOPIAN_TIMEOUT
+# deadline (exit 124). If `--sandbox` cannot initialise on a host, autonomous
+# fails closed; an operator who must run unsandboxed sets
+# CARTOPIAN_DEVIN_PERMISSION=bypass (explicitly accepting the unbounded risk).
+#
+# REMINDER (FINDINGS.md): devin is tier-3 not-recommended-as-PM-host. The local
+# OS `--sandbox` does NOT extend to devin's cloud `/handoff` / cloud subagents.
+# This wrapper only corrects the flags it passes; it does not (and cannot)
+# change that containment posture or devin's tier.
+#
+# Legacy CARTOPIAN_DEVIN_PERMISSION values stay accepted and are mapped onto
+# the real surface so existing configs keep working:
+#   auto      -> normal   (old "ask before write/execute")
+#   dangerous -> bypass   (old "auto-approve all tool calls")
+DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-autonomous}"
 case "$DEVIN_PERMISSION_MODE" in
-  normal) DEVIN_PERMISSION_MODE="auto" ;;
-  bypass) DEVIN_PERMISSION_MODE="dangerous" ;;
+  auto)      DEVIN_PERMISSION_MODE="normal" ;;
+  dangerous) DEVIN_PERMISSION_MODE="bypass" ;;
+esac
+# Validate against the documented surface; reject anything else fail-closed
+# rather than passing a flag value devin would reject at launch.
+case "$DEVIN_PERMISSION_MODE" in
+  normal|accept-edits|bypass|autonomous) ;;
+  *)
+    echo "cartopian-devin: error: unknown CARTOPIAN_DEVIN_PERMISSION='$DEVIN_PERMISSION_MODE'" >&2
+    echo "  valid: normal | accept-edits | bypass | autonomous (legacy: auto->normal, dangerous->bypass)" >&2
+    exit 1
+    ;;
 esac
 # ------------------------------------------------------------------
 
@@ -142,9 +180,16 @@ if cartopian_review_recapture_active; then
   cartopian_review_recapture_banner "cartopian-devin" "$PWD" "${WORK_ROOTS:-}"
 fi
 
-# Build the command
+# Build the command. `autonomous` requires the OS sandbox (devin: the mode is
+# unavailable without `--sandbox`, and `--sandbox` only permits autonomous), so
+# pass both — matching the documented example `devin --sandbox --permission-mode
+# autonomous`. The other three modes pass `--permission-mode <mode>` alone.
 CMD=(devin -p)
-CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
+if [[ "$DEVIN_PERMISSION_MODE" == "autonomous" ]]; then
+  CMD+=(--sandbox --permission-mode autonomous)
+else
+  CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
+fi
 CMD+=(--prompt-file "$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

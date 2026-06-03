@@ -25,8 +25,8 @@ promotion phase lands (FR-010).
 | claude (reference) | works-out-of-the-box | tier-1-2 | Phase 01 (genesis re-verified TASK-03-011) | `tests/wrappers/pm-floor` (incl. `green-genesis-*`), `pm-sandbox`, `pm-runtime` |
 | **codex** | **not-recommended-as-PM-host** (read residual; see below) | tier-1-2 *(asset-detected)* | **Phase 03 (TASK-03-001)** | `tests/wrappers/pm-codex/evidence` |
 | **gemini** | **works-out-of-the-box** (no forcing residual) | tier-1-2 | **Phase 03 (TASK-03-002)** | `tests/wrappers/pm-gemini/evidence` |
-| cascade | not-yet-classified | tier-3 | Phase 03 (TASK-03-003) | — (not yet promoted) |
-| devin | not-yet-classified | tier-3 | Phase 03 (TASK-03-004) | — (not yet promoted) |
+| **cascade** | **not-recommended-as-PM-host** (unpromotable; no floor/depth mechanism — see below) | tier-3 *(advisory; no assets)* | **Phase 03 (TASK-03-003)** | `tests/wrappers/pm-cascade/` (`FINDINGS.md`, `evidence/cascade-tier-determination.txt`) |
+| **devin** | **not-recommended-as-PM-host** (partial mechanisms; cannot be combined into a verifiable Tier-1+2 — see below) | tier-3 *(advisory; no assets)* | **Phase 03 (TASK-03-004)** | `tests/wrappers/pm-devin/` (`FINDINGS.md`, `evidence/devin-tier-determination.txt`) |
 
 > **claude (reference) — genesis-tool config-write vector CLOSED by DEC-007
 > (TASK-03-011).** Claude Code stays **works-out-of-the-box / tier-1-2** under
@@ -325,3 +325,187 @@ fail-closed on a stale marker).
 - **Platform.** Native-sandbox evidence is captured on macOS Seatbelt. Linux
   parity (gemini's Docker/Podman/gVisor sandbox) is deferred to a Linux CI lane
   (same posture as the Claude and codex depth evidence).
+
+---
+
+## cascade
+
+- **harness:** cascade (the Windsurf agent; vendor Codeium, now Cognition/Devin).
+- **classification:** **not-recommended-as-PM-host** — cascade proves
+  **unpromotable**. Unlike codex (not-recommended but `tier-1-2`-*detected*
+  because its floor + depth assets exist and the floor genuinely denies most
+  capabilities, with only the read/web residuals leaking), cascade has **no floor
+  or depth mechanism at all**: Cartopian cannot build a genuine Tier-1 capability
+  floor or a Tier-2 native-sandbox depth profile for it. No assets are shipped, so
+  cascade stays at `tier-3`.
+- **enforceable tier:** `_harness_tier.classify_harness_tier("cascade")` reports
+  `tier-3` (advisory) **by asset absence** — no `cartopian-cascade-pm` floor and
+  no `sandbox-cascade-pm-depth.json` exist, and none can be honestly built (no
+  classifier edit — TASK-02-001 contract; this is the existing archetypal
+  unconstrainable harness, so the classification is also NF-004 no-regression).
+- **floor asset (Tier-1):** none — *unbuildable* (see F-C2 below).
+- **depth asset (Tier-2):** none — *unbuildable* (see F-C3 below).
+- **native sandbox mechanism:** **none.** Cascade has no native OS sandbox
+  (no seatbelt/sandbox-exec, no Landlock, no container). Its only command-control
+  is an application-layer **allow/deny-list** command-string matcher; cascade and
+  its MCP servers run with the **full permissions of the launching process**.
+
+### Forcing evidence (FR-011, unpromotable branch)
+
+Captured by `tests/wrappers/pm-cascade/determine-cascade-tier.sh` →
+`evidence/cascade-tier-determination.txt`; full writeup with cited sources in
+`tests/wrappers/pm-cascade/FINDINGS.md`. Pinned by
+`tests/containment/test_cascade_harness_promotion.py`.
+
+| FR-011 facet | cascade result |
+| --- | --- |
+| exposed tool set | **unbounded** — no mechanism withholds cascade's built-in edit/write/shell tools or scopes to the Cartopian MCP set (F-C2) |
+| reachable filesystem | **unbounded** — full user-privilege reach incl. the work root + product repo; no floor removes the write tools, no native sandbox denies the paths (F-C3) |
+| in-runtime prohibited attempts | **not exercisable as "blocked"** — there is no contained cascade runtime to run them against (F-C1); uncontained they all succeed. The negative test has no profile to exercise — itself the forcing evidence. |
+| still-functional | n/a — no contained runtime |
+
+### Why cascade is unpromotable
+
+- **F-C1 — no first-party containable runtime.** Cascade is the agent embedded in
+  the Windsurf **Electron IDE**. There is no first-party, scriptable cascade
+  binary to wrap with a hard-coded floor launch profile (the `exec <harness>
+  <floor flags>` shape `cartopian-claude-pm` / `-codex-pm` / `-gemini-pm` use).
+  The only headless options are **third-party** and barred by **NF-001**:
+  `staronelabs/windsurf-cli` (`wsc`, an AppleScript GUI bridge to the
+  full-capability agent, macOS-only) and `pfcoperez/windsurfinabox` (a Docker
+  image — a *bundled sandbox*). The official first-party Windsurf terminal CLI is
+  **Devin for Terminal**, which is the **separate `devin` harness** (TASK-03-004),
+  not cascade.
+- **F-C2 — no Tier-1 floor mechanism.** Cascade exposes no launch-time flag, env
+  var, or config that removes its built-in edit/write/shell tools and scopes the
+  agent to a single MCP server (the analogue of claude `--tools ""`, codex
+  `features.shell_tool=false`, gemini `tools.exclude`). Per-tool toggling is an
+  interactive **GUI panel** and filters only *MCP-server* tools.
+- **F-C3 — no Tier-2 native sandbox.** Cascade's allow/deny-list +
+  auto-execution-level model (Disabled / Allowlist / Auto / Turbo) is
+  command-**string matching**, **not an OS sandbox** — there is nothing for FR-007
+  to drive. There is no documented filesystem write boundary or workspace
+  restriction (product repo / work roots fully reachable), and the control is not
+  fail-closed (Auto mode defers to the model's own judgement; a string-prefix
+  denylist is bypassable).
+- **No sham assets.** Shipping a placeholder floor + depth would make the
+  asset-driven `_harness_tier` falsely report `tier-1-2` — a containment guarantee
+  that does not exist — and would break the no-regression pins (`cascade → tier-3`
+  in `test_harness_tier_detection.py` and `test_gemini_harness_promotion.py`). So
+  none is shipped.
+
+### Operator guidance
+
+A cascade-hosted PM cannot be constrained; it must run under the FR-008 Tier-3
+advisory gate (explicit, recorded operator acknowledgment of the unconstrained
+risk) — or, preferred, a different harness should host the PM. The project's
+effective `[handoffs.pm].agent` is `claude` (works-out-of-the-box, `tier-1-2`),
+so this finding does not block the current configuration; it governs any future
+move to cascade as the PM host.
+
+- **Platform.** The finding is architecture-level, not platform-specific: cascade
+  lacks a containable runtime and a native sandbox on every platform. The
+  determination harness is deterministic and environment-independent.
+
+---
+
+## devin
+
+- **harness:** devin ("Devin for Terminal", Cognition) — a **local-first /
+  cloud-hybrid** coding CLI. (Distinct from `cascade`, the Windsurf agent; cascade's
+  F-C1 explicitly names "Devin for Terminal" as this *separate* harness.)
+- **classification:** **not-recommended-as-PM-host** — a *more nuanced* finding
+  than cascade. cascade has **no** containment mechanism at all; devin ships
+  **partial** local mechanisms (a config `permissions` allow/deny/ask system and a
+  fail-closed OS-level `--sandbox`) that **cannot be combined into a genuine,
+  verifiable, non-escapable, layered Tier-1+2**. Five forcing facets (F-D1..F-D5,
+  below) each independently block the `floor beneath native sandbox` shape every
+  promoted harness uses, and there is **no offline contained runtime** to capture
+  the FR-011 in-runtime evidence the codex/gemini tier-1-2 promotions were gated
+  on. So **no floor/depth assets are shipped** and devin stays `tier-3`.
+- **enforceable tier:** `_harness_tier.classify_harness_tier("devin")` reports
+  `tier-3` (advisory) **by asset absence** — no `cartopian-devin-pm` floor and no
+  `sandbox-devin-pm-depth.json` exist, and none can be honestly built/verified (no
+  classifier edit — TASK-02-001 contract; devin stays `tier-3`, NF-004
+  no-regression).
+- **floor asset (Tier-1):** none — *not honestly shippable* (F-D2/F-D3/F-D4).
+- **depth asset (Tier-2):** none — *not honestly shippable* (F-D3/F-D5).
+- **native sandbox mechanism:** devin DOES have one — a fail-closed OS-level
+  `--sandbox` enforcing Read/Write scopes (Apple Seatbelt / Landlock class), with
+  a `sandbox` config block (`allowed_domains`/`denied_domains`/`network_mode`,
+  documented **Unstable**). But it auto-selects the `autonomous` permission mode
+  and so cannot be layered beneath a capability floor (F-D3), and it does not
+  constrain the cloud-handoff path (F-D1).
+
+### Forcing evidence (FR-011, unpromotable branch)
+
+Captured by `tests/wrappers/pm-devin/determine-devin-tier.sh` →
+`evidence/devin-tier-determination.txt`; full writeup with cited sources in
+`tests/wrappers/pm-devin/FINDINGS.md`. Pinned by
+`tests/containment/test_devin_harness_promotion.py`.
+
+| FR-011 facet | devin result |
+| --- | --- |
+| exposed tool set | **unbounded at the floor** — built-in edit/write/shell/read tools cannot be removed and the agent cannot be scoped to the Cartopian MCP set; only deny rules + the (mutually-exclusive) OS sandbox gate them (F-D2) |
+| reachable filesystem | **not verifiably bounded for a contained PM** — local `--sandbox` cannot be layered beneath the floor (F-D3), cannot be injected non-overridably (F-D4), and is bypassed by the cloud handoff/subagents (F-D1); no contained runtime demonstrates a bound (F-D5) |
+| in-runtime prohibited attempts | **not exercisable as "blocked"** for a contained devin PM — no offline contained runtime to run them against (F-D5), and the cloud-handoff path escapes any local boundary regardless (F-D1). The negative test has no genuine, verifiable contained profile to exercise — itself the forcing evidence. |
+| still-functional | n/a — no contained runtime |
+
+### Why devin is not-recommended (forcing facets)
+
+- **F-D1 — cloud `/handoff` + cloud subagents escape (dominant residual).** The
+  local Devin terminal agent's `/handoff` command packages the conversation
+  context + current git branch and **creates a cloud Devin session "with its own
+  computer"** that runs "in its own sandbox, not yours" — outside the local OS
+  `--sandbox` and outside the local `permissions` floor; a subagent/delegation
+  surface runs work foreground/background likewise. No documented config key
+  disables it. This is a config-irremovable, OS-unsandboxable execution +
+  data-exfiltration surface, broader than codex's server-side `web_search`
+  residual (F1b): a full cloud machine, not just web search.
+- **F-D2 — no capability-floor mechanism.** devin's only Tier-1 control is the
+  config `permissions` allow/deny/ask system (tool-level pattern matching). There
+  is no analogue of claude `--tools ""`, gemini `tools.exclude`, or codex
+  `features.shell_tool=false` that REMOVES built-in edit/write/shell/read tools,
+  and no key to restrict to a single MCP server. The floor is an approval gate
+  over an unbounded surface, not a capability floor.
+- **F-D3 — Tier-1 floor and Tier-2 sandbox are mutually exclusive.** `--sandbox`
+  auto-selects (and only permits) the `autonomous` permission mode, which
+  auto-approves tool calls and "run[s] any shell command within an OS-level
+  sandbox." So the deny-shell/deny-write approval floor cannot be layered BENEATH
+  the OS sandbox the way claude layers `--tools ""` beneath seatbelt. Neither
+  posture is a genuine floor+depth (approval-only is bypassable & not OS-enforced;
+  sandbox-only auto-approves shell in the box AND leaves F-D1 open). `--sandbox` is
+  itself documented Unstable.
+- **F-D4 — no non-overridable injection path.** devin exposes no
+  `--config`/`--settings` flag or highest-precedence settings env var (unlike
+  claude `--settings`, gemini `GEMINI_CLI_SYSTEM_SETTINGS_PATH`, codex
+  `CODEX_HOME`). Config precedence is `.devin/config.local.json` >
+  `.devin/config.json` > `~/.config/devin/config.json`, and `read_config_from`
+  imports cursor/windsurf/claude configs unless disabled. A hard-coded,
+  non-overridable floor cannot be guaranteed — it is only as fixed as the launch cwd.
+- **F-D5 — no contained local runtime to capture FR-011 evidence.** Devin for
+  Terminal is cloud-authenticated (model + handoff/subagents run in Cognition's
+  cloud), so there is no offline locally-contained devin PM runtime to run the
+  in-runtime prohibited-attempt probes against and prove fail-closed refusals.
+  Shipping floor+depth assets would flip `_harness_tier` to `tier-1-2` with zero
+  guaranteeing evidence — the sham the cascade precedent forbids.
+
+### Operator guidance
+
+A devin-hosted PM cannot be verifiably constrained today; it must run under the
+FR-008 Tier-3 advisory gate (explicit, recorded operator acknowledgment of the
+unconstrained risk) — or, preferred, a different harness should host the PM. The
+project's effective `[handoffs.pm].agent` is `claude` (works-out-of-the-box,
+`tier-1-2`), so this finding does not block the current configuration; it governs
+any future move to devin as the PM host.
+
+- **What would change this.** devin is not-recommended *via devin-side assets
+  alone*, not permanently unbuildable like cascade. Promotion would become honest
+  with upstream devin controls to (a) hard-disable cloud `/handoff` + cloud
+  subagents, (b) remove built-in tools / scope to one MCP server, (c) layer the OS
+  sandbox beneath a non-auto-approving floor, and (d) a non-overridable
+  settings-file injection path — at which point live in-runtime evidence could be
+  captured and the floor+depth assets honestly shipped. See `tests/wrappers/pm-devin/FINDINGS.md`.
+- **Platform.** The finding is architecture-level (cloud-hybrid escape + missing
+  floor/injection mechanisms), not platform-specific. The determination harness is
+  deterministic and environment-independent.

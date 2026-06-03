@@ -33,18 +33,32 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 }
 
 # --- Configuration ---------------------------------------------------
-# Permission mode (per current `devin --help`): 'auto' | 'dangerous'.
-# Default is 'dangerous' so devin runs non-interactively, matching the
-# autonomy posture of cartopian-codex, cartopian-claude, and
-# cartopian-gemini. If autonomy is not desired for a given role, do
-# not run that role in auto mode.
-# Legacy values are accepted for backward compatibility:
-#   normal -> auto
-#   bypass -> dangerous
-$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'dangerous' }
+# CARTOPIAN_DEVIN_PERMISSION maps onto the CURRENT documented "Devin for
+# Terminal" CLI surface (cli.devin.ai/docs; see tests/wrappers/pm-devin/
+# FINDINGS.md). `--permission-mode` takes one of four modes; OS isolation is
+# engaged with the separate `--sandbox` flag. The earlier
+# `--permission-mode auto|dangerous` spelling was not a valid value:
+#   normal        --permission-mode normal        (writes/shell PROMPT — blocks headless)
+#   accept-edits  --permission-mode accept-edits   (shell still PROMPTs — blocks headless)
+#   bypass        --permission-mode bypass         (auto-approve all; NO OS sandbox)
+#   autonomous    --sandbox --permission-mode autonomous
+#                 (auto-approve all, OS sandbox bounds fs/net, fail-closed;
+#                  devin auto-selects/only permits autonomous under --sandbox;
+#                  --sandbox is documented Unstable)
+# DEFAULT = 'autonomous': most-restrictive sensible mode that still completes
+# the handoff with no human in the loop — the analogue of cartopian-codex's
+# `workspace-write` sandbox default (OS-bounded autonomy, not full bypass).
+# devin stays tier-3 not-recommended; the local --sandbox does not extend to
+# devin's cloud /handoff. Legacy values are mapped onto the real surface:
+#   auto -> normal ;  dangerous -> bypass
+$PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'autonomous' }
 switch ($PermissionMode) {
-    'normal' { $PermissionMode = 'auto' }
-    'bypass' { $PermissionMode = 'dangerous' }
+    'auto'      { $PermissionMode = 'normal' }
+    'dangerous' { $PermissionMode = 'bypass' }
+}
+if ($PermissionMode -notin @('normal', 'accept-edits', 'bypass', 'autonomous')) {
+    Write-Error "cartopian-devin: unknown CARTOPIAN_DEVIN_PERMISSION='$PermissionMode' (valid: normal | accept-edits | bypass | autonomous; legacy auto->normal, dangerous->bypass)"
+    exit 1
 }
 # ------------------------------------------------------------------
 
@@ -136,7 +150,14 @@ if ($WorkRootsJson) {
 }
 # --------------------------------------------------------------------
 
-$Args = @('-p', '--permission-mode', $PermissionMode, '--prompt-file', $PromptPathAbs)
+# `autonomous` requires the OS sandbox (the mode is unavailable without
+# --sandbox, and --sandbox only permits autonomous), so pass both — matching
+# `devin --sandbox --permission-mode autonomous`. Other modes pass the mode alone.
+if ($PermissionMode -eq 'autonomous') {
+    $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous', '--prompt-file', $PromptPathAbs)
+} else {
+    $Args = @('-p', '--permission-mode', $PermissionMode, '--prompt-file', $PromptPathAbs)
+}
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically

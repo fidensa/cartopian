@@ -12,7 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "install.py"
@@ -287,20 +288,23 @@ class InstallRootPlatformTests(unittest.TestCase):
                 os.environ["HOME"] = old_home
 
     def test_windows_install_root_uses_userprofile(self) -> None:
-        if os.name != "nt":
-            self.skipTest("native Windows branch")
-        old = os.environ.get("USERPROFILE")
-        try:
-            os.environ["USERPROFILE"] = r"C:\Users\fake"
+        # Environment-independent (was skipped on every non-Windows run). Patch
+        # ``os.name`` to ``"nt"`` so the native-Windows branch of
+        # ``default_install_root()`` runs on any host. ``pathlib`` forbids
+        # instantiating a concrete ``WindowsPath`` on POSIX, so we also swap the
+        # module's ``Path`` for the host-independent ``PureWindowsPath`` flavour:
+        # the real branch logic still runs — base read from ``%USERPROFILE%`` and
+        # joined with ``.cartopian`` using Windows separators — only the concrete
+        # filesystem flavour is replaced, which is exactly the part that cannot
+        # exist on POSIX. Asserts the contract: the nt branch roots the install at
+        # ``%USERPROFILE%``, not ``$HOME``.
+        with mock.patch.object(os, "name", "nt"), mock.patch.dict(
+            os.environ, {"USERPROFILE": r"C:\Users\fake"}, clear=False
+        ), mock.patch.object(install_mod, "Path", PureWindowsPath):
             self.assertEqual(
                 install_mod.default_install_root(),
-                Path(r"C:\Users\fake\.cartopian"),
+                PureWindowsPath(r"C:\Users\fake\.cartopian"),
             )
-        finally:
-            if old is None:
-                os.environ.pop("USERPROFILE", None)
-            else:
-                os.environ["USERPROFILE"] = old
 
 
 if __name__ == "__main__":

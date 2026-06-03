@@ -1,0 +1,73 @@
+CASCADE HARNESS TIER DETERMINATION (TASK-03-003 — captured forcing evidence)
+captured-by: tests/wrappers/pm-cascade/determine-cascade-tier.sh
+harness:     cascade (Windsurf agent; vendor Codeium → Cognition/Devin)
+
+VERDICT: NOT_PROMOTABLE — classification = not-recommended-as-PM-host
+ENFORCEABLE TIER: tier-3 (advisory)   [asset-driven: tier-3|constrained=False|floor=False|depth=False]
+
+ASSET STATE (TASK-02-001 asset-driven detection contract):
+  Tier-1 floor launch profile  /Users/scott/Projects/cartopian/wrappers/bin/cartopian-cascade-pm
+    present: no   (expected: no — no genuine mechanism to ship)
+  Tier-2 native-sandbox depth  /Users/scott/Projects/cartopian/wrappers/etc/sandbox-cascade-pm-depth.json
+    present: no   (expected: no — cascade has no native sandbox)
+
+FIRST-PARTY HEADLESS RUNTIME ON PATH (informational; verdict is architectural):
+  cascade  : absent
+  windsurf : absent
+
+FORCING FACETS (harness-level evidence; FR-011) — each is a structural
+reason cascade cannot reach the Tier-1+2 the promotion model requires:
+
+  F-C1  NO FIRST-PARTY CONTAINABLE RUNTIME.
+        Cascade is the agent embedded in the Windsurf Electron IDE. There is
+        no first-party, scriptable cascade binary Cartopian can wrap with a
+        hard-coded, non-overridable floor launch profile (the 'exec <harness>
+        <floor flags>' shape cartopian-claude-pm / -codex-pm / -gemini-pm all
+        use). The only headless options are THIRD-PARTY and barred by NF-001:
+          * staronelabs/windsurf-cli ('wsc') — drives the Windsurf GUI via
+            AppleScript (macOS-only); a bridge to the FULL-capability agent,
+            not a containment surface.
+          * pfcoperez/windsurfinabox — packages Windsurf in a Docker image;
+            a BUNDLED sandbox, explicitly disallowed by NF-001.
+        The official first-party Windsurf terminal CLI is 'Devin for Terminal'
+        — that is the SEPARATE 'devin' harness (TASK-03-004), not cascade.
+
+  F-C2  NO TIER-1 FLOOR MECHANISM (cannot scope the toolset / deny shell+write).
+        Cascade exposes no launch-time flag, env var, or config file that
+        removes its built-in file-edit and shell tools and restricts the agent
+        to a single MCP server — the analogue of claude '--tools ""', codex
+        features.shell_tool=false, or gemini system-settings tools.exclude.
+        Per-tool toggling exists ONLY as an interactive GUI panel and only
+        filters MCP-SERVER tools; it cannot remove cascade's built-in
+        edit/write/shell tools. The DEC-001/FR-002 capability floor therefore
+        cannot be hard-coded for cascade.
+
+  F-C3  NO TIER-2 NATIVE SANDBOX (FR-007 has no mechanism to drive).
+        Cascade's only command-execution control is the allow/deny-list +
+        auto-execution-level model (Disabled / Allowlist / Auto / Turbo) —
+        application-layer command-STRING matching, NOT an OS sandbox. There is
+        no seatbelt/sandbox-exec, Landlock, or container layer to drive.
+        Cascade and its MCP servers run with the FULL PERMISSIONS of the
+        launching process; there is no documented filesystem write boundary or
+        workspace restriction, so the product repo and work roots are fully
+        reachable. The control is not fail-closed: 'Auto' mode defers to the
+        model's own safety judgement (the advisory posture Tier-1/2 replaces),
+        and a string-prefix denylist is bypassable (quoting, path indirection,
+        alternate binaries).
+
+REACHABLE FILESYSTEM (FR-011 facet): UNBOUNDED — full user-privilege reach,
+  including /Users/scott/Projects/cartopian (work root) and the product repo. No floor removes
+  the write tools; no native sandbox denies the paths.
+EXPOSED TOOL SET (FR-011 facet): UNBOUNDED — built-in edit/write/shell tools
+  cannot be withheld; the Cartopian-only scoping every other floor enforces
+  has no cascade mechanism.
+IN-RUNTIME PROHIBITED ATTEMPTS (FR-011 facet): NOT EXERCISABLE as 'blocked' —
+  there is no contained cascade runtime to run them against (facet F-C1), and
+  uncontained they would all SUCCEED (no floor, no sandbox). That absence is
+  itself the forcing evidence: the negative test has no profile to exercise.
+
+CONCLUSION: cascade is recorded not-recommended-as-PM-host at tier-3
+  (advisory). No floor/depth assets are shipped, so _harness_tier honestly
+  keeps cascade at tier-3 with NO classifier edit (TASK-02-001 contract) and
+  the suite's no-regression guarantee (NF-004) holds. See FINDINGS.md for the
+  cited sources and docs/COMPATIBILITY.md for the matrix entry.

@@ -5,7 +5,6 @@ destination, writes only through the SPEC-01-002 primitive, emits one FR-014
 NDJSON record, validates its structured inputs, and delegates destination
 refusals to the SPEC-01-002 guards (no re-implemented write safety).
 """
-import argparse
 import io
 import json
 import os

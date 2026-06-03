@@ -108,7 +108,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | Codex (OpenAI) | `cartopian-codex` | `codex exec --sandbox workspace-write ...` |
 | Claude Code | `cartopian-claude` | `claude -p --dangerously-skip-permissions ...` |
 | Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
-| Devin | `cartopian-devin` | `devin -p --permission-mode dangerous --prompt-file <abs path>` |
+| Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode autonomous --prompt-file <abs path>` |
 
 By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired for a given role, the simple solution is not to run that role in auto mode (e.g. assign the role to `human` in `cartopian.toml`, or set `auto_start = false` on the handoff). Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
@@ -324,7 +324,7 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_DEVIN_PERMISSION` | `dangerous` | Permission mode: `auto`, `dangerous` (per current `devin --help`). Default `dangerous` auto-approves all tool calls so devin runs non-interactively. Legacy values `normal` and `bypass` are accepted for backward compatibility and mapped to `auto` and `dangerous` respectively. |
+| `CARTOPIAN_DEVIN_PERMISSION` | `autonomous` | Permission mode on the current documented Devin CLI surface: `normal` (`--permission-mode normal`; writes/shell prompt — blocks a headless handoff), `accept-edits` (`--permission-mode accept-edits`; shell still prompts), `bypass` (`--permission-mode bypass`; auto-approve all, **no** OS sandbox), `autonomous` (`--sandbox --permission-mode autonomous`; auto-approve all but OS-sandbox-bounded, fail-closed — devin's `--sandbox` is documented Unstable). Default `autonomous` is the most-restrictive sensible mode that still completes the handoff with no human in the loop — the analogue of Codex's `workspace-write` sandbox default rather than full bypass. Set `bypass` to run unsandboxed (accepting the unbounded risk). Legacy values are mapped onto the real surface: `auto` → `normal`, `dangerous` → `bypass`. Devin remains **tier-3 not-recommended-as-PM-host** (`tests/wrappers/pm-devin/FINDINGS.md`); the local `--sandbox` does not extend to its cloud `/handoff`. |
 
 ## Alternative installation
 

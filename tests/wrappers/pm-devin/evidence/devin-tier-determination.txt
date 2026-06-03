@@ -1,0 +1,116 @@
+DEVIN HARNESS TIER DETERMINATION (TASK-03-004 — captured forcing evidence)
+captured-by: tests/wrappers/pm-devin/determine-devin-tier.sh
+harness:     devin ('Devin for Terminal', Cognition — local-first/cloud-hybrid CLI)
+
+VERDICT: NOT_PROMOTABLE — classification = not-recommended-as-PM-host
+ENFORCEABLE TIER: tier-3 (advisory)   [asset-driven: tier-3|constrained=False|floor=False|depth=False]
+
+ASSET STATE (TASK-02-001 asset-driven detection contract):
+  Tier-1 floor launch profile  /Users/scott/Projects/cartopian/wrappers/bin/cartopian-devin-pm
+    present: no   (expected: no — no genuine/verifiable mechanism to ship)
+  Tier-2 native-sandbox depth  /Users/scott/Projects/cartopian/wrappers/etc/sandbox-devin-pm-depth.json
+    present: no   (expected: no — see F-D3/F-D5)
+
+FIRST-PARTY HEADLESS RUNTIME ON PATH (informational; verdict is architectural):
+  devin : present:/Users/scott/.local/bin/devin
+  NOTE: devin DOES ship a first-party headless CLI ('devin -p'), so unlike
+  cascade the finding is NOT 'no runtime exists'. devin even ships PARTIAL
+  containment mechanisms (a config 'permissions' allow/deny/ask system and a
+  fail-closed OS-level '--sandbox'). It is recorded not-recommended because
+  those PARTIAL mechanisms cannot be combined into a genuine, verifiable,
+  non-escapable, LAYERED Tier-1+2 — for the five forcing reasons below.
+
+FORCING FACETS (harness-level evidence; FR-011) — each independently blocks
+the layered 'floor beneath native sandbox' shape claude/codex/gemini use:
+
+  F-D1  CLOUD HANDOFF + CLOUD SUBAGENTS ESCAPE (the dominant residual).
+        The local Devin terminal agent exposes a '/handoff' command that
+        packages the conversation context + current git branch and CREATES A
+        CLOUD DEVIN SESSION 'with its own computer' that picks up the work —
+        and a subagent/delegation surface that runs work in foreground/
+        background. The cloud session runs 'in its own sandbox, not yours':
+        OUTSIDE the local OS '--sandbox' and OUTSIDE the local 'permissions'
+        floor. No documented config key disables /handoff or cloud delegation.
+        The local '--sandbox' OS-enforced limits on 'what files and domains
+        the agent can touch' DO NOT extend to that cloud computer. This is a
+        config-irremovable, OS-unsandboxable execution + data-exfiltration
+        surface — analogous to (and broader than) codex's server-side
+        web_search residual (F1b): a full cloud machine with shell/write/net,
+        not just web search.
+
+  F-D2  NO CAPABILITY-FLOOR MECHANISM (cannot remove built-in tools / scope MCP).
+        devin's ONLY Tier-1 control is the config 'permissions' allow/deny/ask
+        system — tool-level PATTERN MATCHING (Read()/Write()/Exec()/
+        mcp__server__tool). There is NO analogue of claude '--tools ""',
+        gemini system-settings 'tools.exclude', or codex
+        'features.shell_tool=false' that REMOVES devin's built-in
+        edit/write/shell/read tools from the model surface, and NO key that
+        restricts the agent to a single MCP server or disables built-in tools.
+        The floor is therefore an APPROVAL GATE over an unbounded tool surface,
+        not a capability floor — it cannot reach the Cartopian-only /
+        no-shell-tool surface DEC-001/FR-002 requires.
+
+  F-D3  TIER-1 FLOOR AND TIER-2 SANDBOX ARE MUTUALLY EXCLUSIVE (cannot layer).
+        '--sandbox' auto-selects — and ONLY permits — the 'autonomous'
+        permission mode, which auto-approves tool calls and grants 'the
+        ability to run ANY shell command within an OS-level sandbox'. So a
+        deny-shell / deny-write APPROVAL floor cannot be layered BENEATH the
+        native OS sandbox the way claude layers '--tools ""' beneath seatbelt
+        (or codex layers features-off beneath '-s read-only'). Enabling the OS
+        sandbox REPLACES the approval floor with 'auto-approve within the box'.
+        Neither single posture is a genuine floor+depth: approval-only is
+        bypassable and NOT OS-enforced; sandbox-only auto-approves shell
+        WITHIN the box AND still leaves F-D1 (cloud handoff) wide open. (The
+        '--sandbox' feature is itself documented UNSTABLE.)
+
+  F-D4  NO NON-OVERRIDABLE INJECTION PATH (no settings-file flag).
+        devin exposes NO '--config'/'--settings' flag and no highest-precedence
+        settings env var — unlike claude '--settings <file>', gemini
+        GEMINI_CLI_SYSTEM_SETTINGS_PATH, or codex CODEX_HOME. Config is read
+        only from ~/.config/devin/config.json, .devin/config.json, and
+        .devin/config.local.json (precedence local > project > user). The only
+        'highest precedence' is the cwd-local .devin/config.local.json, and
+        'read_config_from' will IMPORT permissive cursor/windsurf/claude
+        configs unless each is explicitly disabled. A hard-coded,
+        non-overridable floor launch profile therefore cannot be guaranteed —
+        the floor is only as fixed as the launch cwd, which the invoker controls.
+
+  F-D5  NO CONTAINED LOCAL RUNTIME TO CAPTURE FR-011 IN-RUNTIME EVIDENCE.
+        Devin for Terminal is a CLOUD-AUTHENTICATED hybrid agent: its model
+        runs in Cognition's cloud, and /handoff + subagents execute in the
+        cloud. There is no offline, locally-contained devin PM runtime to run
+        the FR-011 in-runtime prohibited-attempt probes against (product-repo /
+        work-root / non-allowlisted write, ../symlink escape, shell spawn,
+        exec, exec-bit set, config write) and PROVE fail-closed refusals. The
+        codex and gemini tier-1-2 promotions were each GATED on captured LIVE
+        in-runtime evidence; devin cannot meet that gate here. Shipping
+        floor+depth assets would flip _harness_tier to tier-1-2 with ZERO
+        guaranteeing evidence — exactly the sham the cascade precedent forbids.
+
+REACHABLE FILESYSTEM (FR-011 facet): NOT VERIFIABLY BOUNDED for a contained PM.
+  Locally, '--sandbox' (autonomous) can OS-deny writes outside the workspace,
+  but it cannot be layered beneath the capability floor (F-D3), cannot be
+  injected non-overridably (F-D4), and is bypassed entirely by the cloud
+  handoff/subagents (F-D1) whose filesystem is a cloud machine outside any
+  Cartopian control. There is no contained runtime to demonstrate the bound
+  (F-D5).
+EXPOSED TOOL SET (FR-011 facet): UNBOUNDED at the floor — built-in
+  edit/write/shell/read tools cannot be REMOVED and the agent cannot be scoped
+  to the Cartopian MCP set; only deny rules + the (mutually-exclusive) OS
+  sandbox gate them (F-D2).
+IN-RUNTIME PROHIBITED ATTEMPTS (FR-011 facet): NOT EXERCISABLE as 'blocked' for
+  a CONTAINED devin PM — there is no offline contained runtime to run them
+  against (F-D5), and the cloud-handoff path escapes any local boundary
+  regardless (F-D1). That absence is itself the forcing evidence: the negative
+  test has no genuine, verifiable contained profile to exercise.
+
+CONCLUSION: devin is recorded not-recommended-as-PM-host at tier-3
+  (advisory). No floor/depth assets are shipped, so _harness_tier honestly
+  keeps devin at tier-3 with NO classifier edit (TASK-02-001 contract) and the
+  suite's no-regression guarantee (NF-004) holds. WHAT WOULD CHANGE THIS: an
+  upstream devin capability to (a) hard-disable cloud /handoff + cloud
+  subagents, (b) remove built-in tools / scope to a single MCP server, (c) layer
+  the OS sandbox beneath a non-auto-approving floor, and (d) a non-overridable
+  settings-file injection path — at which point live in-runtime evidence could
+  be captured and the floor+depth assets honestly shipped. See FINDINGS.md for
+  the cited sources and docs/COMPATIBILITY.md for the matrix entry.
