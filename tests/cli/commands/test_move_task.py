@@ -55,12 +55,6 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _seed_prompt(project: Path, nn_nnn: str) -> Path:
-    p = project / "prompts" / f"PROMPT-{nn_nnn}.md"
-    _write(p, f"# PROMPT-{nn_nnn}\n")
-    return p
-
-
 def _seed_coder_report(project: Path, nn_nnn: str, task_id: str) -> Path:
     p = project / "reports" / f"REPORT-{nn_nnn}.md"
     _write(p, (
@@ -127,7 +121,6 @@ class TestMoveTaskHappyPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "open")
-            _seed_prompt(tmp_path / "project", "01-007")
             proc = _run(str(task_path), "in-progress", home=tmp_path)
             self._assert_success(proc, task_path, "in-progress")
 
@@ -230,28 +223,24 @@ class TestMoveTaskGuards(unittest.TestCase):
 
 
 class TestMoveTaskLifecycleGuards(unittest.TestCase):
-    """Lifecycle artifact guards: missing artifacts block transitions."""
+    """Lifecycle artifact guards: missing artifacts block guarded transitions.
+
+    `open -> in-progress` is deliberately unguarded — see the success cases
+    below; prompt existence is enforced at the dispatch boundary instead.
+    """
 
     def _expect_guard(self, proc):
         self.assertEqual(proc.returncode, 1, msg=f"stderr={proc.stderr!r}")
         self.assertEqual(proc.stdout, "")
         self.assertTrue(proc.stderr.startswith("[guard]"), msg=proc.stderr)
 
-    def test_open_to_in_progress_missing_prompt(self):
+    def test_open_to_in_progress_without_prompt_succeeds(self):
+        """The move precedes prompt authoring; prompt existence is enforced
+        fail-closed at dispatch time, not here."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "open")
             # no prompt seeded
-            proc = _run(str(task_path), "in-progress", home=tmp_path)
-            self._expect_guard(proc)
-            self.assertIn("missing prompt", proc.stderr)
-            self.assertTrue(task_path.is_file())
-
-    def test_open_to_in_progress_with_prompt_succeeds(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            task_path = _seed_task(tmp_path, "open")
-            _seed_prompt(tmp_path / "project", "01-007")
             proc = _run(str(task_path), "in-progress", home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
 
@@ -355,13 +344,26 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
             tasks_dir = tmp_path / "tasks"
             for s in STATUSES:
                 (tasks_dir / s).mkdir(parents=True, exist_ok=True)
-            task = tasks_dir / "open" / "TASK-01-007-demo.md"
+            task = tasks_dir / "in-progress" / "TASK-01-007-demo.md"
             task.write_text("# task\n", encoding="utf-8")
-            proc = _run(str(task), "in-progress", home=tmp_path)
+            proc = _run(str(task), "in-review", home=tmp_path)
             self.assertEqual(proc.returncode, 1)
             self.assertTrue(proc.stderr.startswith("[guard]"), msg=proc.stderr)
             self.assertIn("project root not found", proc.stderr)
             self.assertTrue(task.is_file())
+
+    def test_no_project_root_unguarded_transition_succeeds(self):
+        """open -> in-progress is unguarded, so no project root is required."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tasks_dir = tmp_path / "tasks"
+            for s in STATUSES:
+                (tasks_dir / s).mkdir(parents=True, exist_ok=True)
+            task = tasks_dir / "open" / "TASK-01-007-demo.md"
+            task.write_text("# task\n", encoding="utf-8")
+            proc = _run(str(task), "in-progress", home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            self.assertTrue((tasks_dir / "in-progress" / task.name).is_file())
 
     def test_non_canonical_name_no_guard(self):
         """Tasks with non-canonical names (no NN-NNN) skip lifecycle guards."""
@@ -371,9 +373,9 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
             tasks_dir = tmp_path / "tasks"
             for s in STATUSES:
                 (tasks_dir / s).mkdir(parents=True, exist_ok=True)
-            task = tasks_dir / "open" / "TASK-admin-cleanup.md"
+            task = tasks_dir / "in-progress" / "TASK-admin-cleanup.md"
             task.write_text("# task\n", encoding="utf-8")
-            proc = _run(str(task), "in-progress", home=tmp_path)
+            proc = _run(str(task), "in-review", home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
 
 
@@ -430,7 +432,6 @@ class TestMoveTaskMissingAndCollision(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "open")
-            _seed_prompt(tmp_path / "project", "01-007")
             dest = task_path.parent.parent / "in-progress" / task_path.name
             dest.write_text("preexisting\n", encoding="utf-8")
             original_dest_bytes = dest.read_bytes()

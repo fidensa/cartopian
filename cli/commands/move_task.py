@@ -48,13 +48,6 @@ def _find_project_root(task_path: Path) -> Optional[Path]:
     return None
 
 
-def _guard_prompt(project_root: Path, nn_nnn: str, _task_id: str) -> Optional[str]:
-    prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
-    if not prompt.is_file():
-        return f"missing prompt: {prompt}"
-    return None
-
-
 def _guard_coder_report(project_root: Path, nn_nnn: str, task_id: str) -> Optional[str]:
     report = project_root / "reports" / f"REPORT-{nn_nnn}.md"
     if not report.is_file():
@@ -92,8 +85,10 @@ def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[
 
 # Transitions that require lifecycle artifact checks.
 # Guard fn signature: (project_root, nn_nnn, task_id) -> error_str or None
+# `open -> in-progress` is deliberately unguarded: the PM moves the task first,
+# then writes the prompt against the in-progress path; prompt existence is
+# enforced fail-closed at the handoff boundary (`cartopian dispatch`).
 _GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str]]] = {
-    ("open", "in-progress"): _guard_prompt,
     ("in-progress", "in-review"): _guard_coder_report,
     ("in-review", "done"): _guard_review_verdict("approve"),
     ("in-review", "in-progress"): _guard_review_verdict("request-changes"),

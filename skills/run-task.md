@@ -28,7 +28,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit) and performs the lifecycle audit `cartopian plan-audit` would, so neither needs to be invoked separately to orient the session.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
 
 Surface the disagreement and blocker fields to the operator before proposing any action:
 
@@ -63,7 +63,17 @@ Resolve blockers with the operator before proceeding to Stage 1.
 
 ## Stage 2 - Prepare Assignment Prompt
 
-First, assemble the prompt-input bundle with a single Core CLI call:
+First, move the task to `tasks/in-progress/` using the Core CLI:
+
+```
+cartopian move-task <task-path> in-progress
+```
+
+The move precedes prompt authoring so the prompt, completion report, and review all name the `tasks/in-progress/` task path — writing the prompt against the `tasks/open/` path and moving afterwards leaves a stale path in the prompt that the assignee echoes into the report, which `report-action` flags as `path_mismatch`. Use the emitted `task_path_after` as the task path for every subsequent step and stage.
+
+If the session is interrupted between this move and the prompt write, the task sits in `tasks/in-progress/` with no prompt, and `cartopian plan-audit` reports it as a `missing-prompt` blocker at the next session start. Recover by resuming this stage: author the prompt against the in-progress task path. Do not try to move the task back to `open` — the CLI disallows that transition outside a review verdict.
+
+Then assemble the prompt-input bundle with a single Core CLI call against the moved task path:
 
 ```
 cartopian handoff-packet <task-path> --role <role>
@@ -113,13 +123,7 @@ For manual assignment, present the prompt path and expected report path to the o
 
 For configured agent handoff, follow the resolved `auto_start` value and automation policy.
 
-Move the task to `tasks/in-progress/` using the Core CLI only after assignment/start is confirmed or after an auto-start handoff is launched:
-
-```
-cartopian move-task <task-path> in-progress
-```
-
-The CLI verifies that `prompts/PROMPT-NN-NNN.md` exists before executing this rename. The prompt written in Stage 2 satisfies this check.
+The task is already in `tasks/in-progress/` from Stage 2. Prompt existence is enforced fail-closed at the handoff boundary: `cartopian dispatch` refuses to launch when `prompts/PROMPT-NN-NNN.md` is missing. The prompt written in Stage 2 satisfies this check.
 
 If the operator returns later with completion evidence even though assignment was never recorded, fast-forward to the evidence-supported state instead of leaving completed work in `open/`.
 

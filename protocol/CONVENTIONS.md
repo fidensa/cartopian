@@ -116,15 +116,16 @@ Guarded transitions and their prerequisites:
 
 | Transition | Required artifact | Validation |
 | --- | --- | --- |
-| `open → in-progress` | `prompts/PROMPT-NN-NNN.md` | file must exist |
 | `in-progress → in-review` | `reports/REPORT-NN-NNN.md` | must reference this task's `Task ID:`; `Status: complete` |
 | `in-review → done` | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
 | `in-review → in-progress` | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
 | `in-review → open` | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
 
+`open → in-progress` carries no artifact guard: the PM moves the task first, then authors `prompts/PROMPT-NN-NNN.md` against the `tasks/in-progress/` path, so prompt, report, and review paths agree. Prompt existence is enforced fail-closed at the mediated handoff boundary instead — `cartopian dispatch` refuses to launch when the prompt is missing. Manual (operator-performed) assignment paths do not pass through `dispatch`; there the operator is handed the prompt path directly, and `cartopian plan-audit` reports any in-progress task without a matching prompt as a blocker.
+
 Fast-forward transitions (e.g., `open → done`) carry no artifact guard and remain available for operator-initiated cleanup and administrative movement.
 
-Guards apply only to task files whose names match the canonical `TASK-NN-NNN` prefix. Tasks with non-canonical names skip artifact checks. A canonical task file with no findable project root is a hard block; the CLI cannot verify prerequisites and will not execute the rename.
+Guards apply only to task files whose names match the canonical `TASK-NN-NNN` prefix. Tasks with non-canonical names skip artifact checks. On guarded transitions, a canonical task file with no findable project root is a hard block; the CLI cannot verify prerequisites and will not execute the rename. Unguarded transitions carry no prerequisites to verify, so they execute without requiring a project root.
 
 `cartopian plan-audit <project-path>` is a companion audit that surfaces provenance gaps across the whole project:
 

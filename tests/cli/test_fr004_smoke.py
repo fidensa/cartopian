@@ -184,9 +184,8 @@ class TestFr004Smoke(unittest.TestCase):
             self.assertEqual(parse_rec["verdict"], "accepted")
             self.assertEqual(parse_rec["variant"], "task")
 
-            # move-task — open → in-progress (prompt required by lifecycle guard)
-            prompt_path = project / "prompts" / "PROMPT-99-999.md"
-            prompt_path.write_text("# prompt\n", encoding="utf-8")
+            # move-task — open → in-progress (unguarded; prompt existence is
+            # enforced at dispatch time, not here)
             move = _run_cli(
                 "move-task", str(task_path), "in-progress", home=home,
             )
