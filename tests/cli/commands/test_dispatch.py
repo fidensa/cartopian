@@ -85,6 +85,7 @@ if capture:
             {
                 "argv": sys.argv,
                 "timeout": os.environ.get("CARTOPIAN_TIMEOUT"),
+                "model": os.environ.get("CARTOPIAN_MODEL"),
                 "cwd": os.getcwd(),
             },
             fh,
@@ -114,8 +115,9 @@ def _make_stub(dir_path: Path) -> Path:
     return stub
 
 
-def _toml(agent: str, *, work_roots: str = "", timeout: str = "30m") -> str:
+def _toml(agent: str, *, work_roots: str = "", timeout: str = "30m", model: str = "") -> str:
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
+    model_line = f'model = "{model}"\n' if model else ""
     return (
         "[project]\n"
         'id = "dispatch-proj"\n'
@@ -128,6 +130,7 @@ def _toml(agent: str, *, work_roots: str = "", timeout: str = "30m") -> str:
         "\n"
         "[handoffs.coder]\n"
         f'agent = "{agent}"\n'
+        f"{model_line}"
         "auto_start = true\n"
         f'timeout = "{timeout}"\n'
     )
@@ -176,7 +179,10 @@ class TestDispatchPositive(unittest.TestCase):
 
             work_root = scaffold.project_root / "tool-repo"
             work_root.mkdir()
-            scaffold.write("cartopian.toml", _toml(str(stub), work_roots='"tool-repo"'))
+            scaffold.write(
+                "cartopian.toml",
+                _toml(str(stub), work_roots='"tool-repo"', model="stub-model-x"),
+            )
             scaffold.write(
                 "cartopian.local.toml",
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
@@ -210,6 +216,7 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(rec["status"], "dispatched")
             self.assertEqual(rec["role"], "coder")
             self.assertEqual(rec["handoff_target"], str(stub))
+            self.assertEqual(rec["model"], "stub-model-x")
             self.assertEqual(rec["prompt_path"], str(prompt_path))
             self.assertEqual(rec["timeout"], "30m")
             self.assertEqual(rec["cwd"], str(project_root))
@@ -242,7 +249,46 @@ class TestDispatchPositive(unittest.TestCase):
             cap = json.loads(capture.read_text(encoding="utf-8"))
             self.assertEqual(cap["argv"], [str(stub), str(prompt_path)])
             self.assertEqual(cap["timeout"], "30m")
+            self.assertEqual(cap["model"], "stub-model-x")
             self.assertEqual(cap["cwd"], str(project_root))
+
+    def test_clears_stale_model_when_handoff_has_no_model(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+
+            # No model in [handoffs.coder] — a stale CARTOPIAN_MODEL inherited
+            # from the parent environment must NOT leak into the wrapper.
+            scaffold.write("cartopian.toml", _toml(str(stub)))
+            task_path = _write_task_and_prompt(scaffold)
+
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "STUB_NO_REPORT": "1",
+                "CARTOPIAN_MODEL": "stale-model",
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertIsNone(rec["model"])
+
+            # dispatch is non-blocking; poll briefly for the detached stub's capture.
+            cap = None
+            deadline = time.monotonic() + 5.0
+            while cap is None and time.monotonic() < deadline:
+                try:
+                    cap = json.loads(capture.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.05)
+            self.assertIsNotNone(cap, "stub wrapper did not run")
+            self.assertIsNone(cap["model"])
 
 
 class TestDispatchFailClosed(unittest.TestCase):
@@ -320,6 +366,31 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
             self.assertIn("[handoffs.coder]", stderr)
+
+    def test_empty_model_fails_closed(self) -> None:
+        # A set-but-empty model would diverge the record from the export
+        # (record reports "", nothing exported) — refuse to launch instead.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            toml = _toml(str(stub)).replace(
+                "auto_start = true\n", 'model = ""\nauto_start = true\n'
+            )
+            scaffold.write("cartopian.toml", toml)
+            task_path = _write_task_and_prompt(scaffold)
+
+            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("[handoffs.coder].model", stderr)
+            self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_missing_prompt_fails_closed(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \

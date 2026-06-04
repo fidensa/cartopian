@@ -44,7 +44,7 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
-First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `auto_start`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `auto_start`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
 
 ```
 cartopian handoff-packet <task-path> --role <role>
@@ -53,7 +53,7 @@ cartopian handoff-packet <task-path> --role <role>
 Read from the emitted record:
 
 - `role_description` — the one-line description for the role being assigned.
-- `handoff_target`, `auto_start`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2.
+- `handoff_target`, `model`, `auto_start`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model` is the resolved `[handoffs.<role>].model`, serialized as `null` when unset.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries the assignee will receive read/write access to. Use these absolute paths verbatim when composing the prompt; do not re-derive them.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `branch_strategy`, `auto_commit`, `auto_push` for the assignee's git boundary, when `git_versioning` is true.
@@ -100,7 +100,7 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
   cartopian dispatch <task-path> --role <role>
   ```
 
-  `dispatch` is the FR-006 mediated launch (TASK-01-004). On the PM's behalf it composes the same `handoff-packet` / `resolve-config` data, fails closed on a missing `[handoffs.<role>]` block, an unmapped or non-existent work root, or a missing prompt, exports `CARTOPIAN_TIMEOUT` from the resolved `[handoffs.<role>].timeout` (the protocol default of `60m` applies when unset), and launches the operator-configured `[handoffs.<role>].agent` with the single absolute-prompt-path argv from the cartopian project-root cwd. There is no caller-supplied executable argument, so the contained PM cannot turn dispatch into a raw exec primitive.
+  `dispatch` is the FR-006 mediated launch (TASK-01-004). On the PM's behalf it composes the same `handoff-packet` / `resolve-config` data, fails closed on a missing `[handoffs.<role>]` block, an unmapped or non-existent work root, or a missing prompt, exports `CARTOPIAN_TIMEOUT` from the resolved `[handoffs.<role>].timeout` (the protocol default of `60m` applies when unset), exports `CARTOPIAN_MODEL` from the resolved `[handoffs.<role>].model` (no variable is exported when unset; the wrapper translates it into the tool-specific model flag), and launches the operator-configured `[handoffs.<role>].agent` with the single absolute-prompt-path argv from the cartopian project-root cwd. There is no caller-supplied executable argument, so the contained PM cannot turn dispatch into a raw exec primitive.
 
 - **Agent role with `auto_start = true`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *operator-performed*: `dispatch` is keyed on a task path, so there is no mediated auto-launch for a task-less handoff. Present the command for the operator to run, exactly as in the `auto_start = false` case.
 

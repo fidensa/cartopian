@@ -31,6 +31,7 @@ _TOML = (
     "\n"
     "[handoffs.coder]\n"
     'agent = "cartopian-claude"\n'
+    'model = "claude-opus-4-8"\n'
     "auto_start = true\n"
     'timeout = "30m"\n'
 )
@@ -124,6 +125,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 "role",
                 "role_description",
                 "handoff_target",
+                "model",
                 "auto_start",
                 "timeout",
                 "work_roots",
@@ -139,6 +141,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["role"], "coder")
             self.assertEqual(rec["role_description"], "Implements tasks per spec.")
             self.assertEqual(rec["handoff_target"], "cartopian-claude")
+            self.assertEqual(rec["model"], "claude-opus-4-8")
             self.assertTrue(rec["auto_start"])
             self.assertEqual(rec["timeout"], "30m")
             self.assertEqual(
@@ -190,12 +193,14 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             # not omitted from the record.
             raw = stdout.strip()
             self.assertIn('"role_description":null', raw)
+            self.assertIn('"model":null', raw)
             self.assertIn('"auto_start":null', raw)
             self.assertIn('"timeout":null', raw)
             self.assertIn('"git_policy":null', raw)
 
             self.assertIsNone(rec["role_description"])
             self.assertEqual(rec["handoff_target"], "cartopian-claude")
+            self.assertIsNone(rec["model"])
             self.assertIsNone(rec["auto_start"])
             self.assertIsNone(rec["timeout"])
             self.assertEqual(rec["work_roots"], [])

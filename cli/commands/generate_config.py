@@ -63,6 +63,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable role definition")
     subparser.add_argument("--handoff", action="append", default=[], metavar="ROLE=WRAPPER",
                            help="Repeatable handoff agent assignment")
+    subparser.add_argument("--handoff-model", action="append", default=[],
+                           metavar="ROLE=MODEL", help="Repeatable handoff model")
     subparser.add_argument("--handoff-auto-start", action="append", default=[],
                            metavar="ROLE=BOOL", help="Repeatable handoff auto_start")
     subparser.add_argument("--handoff-timeout", action="append", default=[],
@@ -166,13 +168,17 @@ def _collect_handoff_field(
 
 
 def _build_handoffs(
-    handoff_args: List[str], auto_args: List[str], timeout_args: List[str],
-    declared_roles: Dict[str, str],
+    handoff_args: List[str], model_args: List[str], auto_args: List[str],
+    timeout_args: List[str], declared_roles: Dict[str, str],
 ) -> Dict[str, Dict[str, Any]]:
-    seen = {"agent": set(), "auto_start": set(), "timeout": set()}
+    seen = {"agent": set(), "model": set(), "auto_start": set(), "timeout": set()}
     agents = _collect_handoff_field(
         handoff_args, "--handoff", declared_roles, seen, "agent",
         lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: wrapper must be non-empty")),
+    )
+    models = _collect_handoff_field(
+        model_args, "--handoff-model", declared_roles, seen, "model",
+        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: model must be non-empty")),
     )
     auto_starts = _collect_handoff_field(
         auto_args, "--handoff-auto-start", declared_roles, seen, "auto_start",
@@ -187,6 +193,8 @@ def _build_handoffs(
         block: Dict[str, Any] = {}
         if role in agents:
             block["agent"] = agents[role]
+        if role in models:
+            block["model"] = models[role]
         if role in auto_starts:
             block["auto_start"] = auto_starts[role]
         if role in timeouts:
@@ -206,7 +214,8 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
     roles = _collect_roles(args.role)
 
     handoffs = _build_handoffs(
-        args.handoff, args.handoff_auto_start, args.handoff_timeout, roles
+        args.handoff, args.handoff_model, args.handoff_auto_start,
+        args.handoff_timeout, roles
     )
 
     project_block: Dict[str, Any] = {

@@ -210,6 +210,7 @@ def handler(args: argparse.Namespace) -> int:
         "role": role,
         "role_description": roles.get(role),
         "handoff_target": role_handoff.get("agent"),
+        "model": role_handoff.get("model"),
         "auto_start": role_handoff.get("auto_start"),
         "timeout": role_handoff.get("timeout"),
         "work_roots": work_roots,

@@ -120,6 +120,7 @@ def _resolve_handoffs(
             block.update(p[role])
         merged[role] = {
             "agent": block.get("agent"),
+            "model": block.get("model"),
             "auto_start": block.get("auto_start"),
             "timeout": block.get("timeout"),
         }

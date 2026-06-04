@@ -154,10 +154,17 @@ if ($WorkRootsJson) {
 # --sandbox, and --sandbox only permits autonomous), so pass both — matching
 # `devin --sandbox --permission-mode autonomous`. Other modes pass the mode alone.
 if ($PermissionMode -eq 'autonomous') {
-    $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous', '--prompt-file', $PromptPathAbs)
+    $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous')
 } else {
-    $Args = @('-p', '--permission-mode', $PermissionMode, '--prompt-file', $PromptPathAbs)
+    $Args = @('-p', '--permission-mode', $PermissionMode)
 }
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into devin's --model flag.
+# Unset means devin's own default model.
+if ($env:CARTOPIAN_MODEL) {
+    $Args += @('--model', $env:CARTOPIAN_MODEL)
+}
+$Args += @('--prompt-file', $PromptPathAbs)
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically

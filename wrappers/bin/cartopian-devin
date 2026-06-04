@@ -190,6 +190,12 @@ if [[ "$DEVIN_PERMISSION_MODE" == "autonomous" ]]; then
 else
   CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
 fi
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into devin's --model flag.
+# Unset means devin's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
 CMD+=(--prompt-file "$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

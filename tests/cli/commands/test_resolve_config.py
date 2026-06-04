@@ -102,7 +102,7 @@ class TestHappyPath(unittest.TestCase):
         self.assertEqual(record["roles"]["coder"], "Writes code.")
         self.assertEqual(
             record["handoffs"]["coder"],
-            {"agent": "claude", "auto_start": True, "timeout": "60m"},
+            {"agent": "claude", "model": None, "auto_start": True, "timeout": "60m"},
         )
         self.assertEqual(
             record["automation"],

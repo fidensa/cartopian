@@ -247,6 +247,7 @@ Use `[handoffs.<role>]` only for agent roles that need a named target:
 ```toml
 [handoffs.coder]
 agent = "codex"
+model = "gpt-5-codex"
 auto_start = true
 timeout = "60m"
 
@@ -259,6 +260,7 @@ timeout = "30m"
 Handoff fields are:
 
 - `agent`: executable name.
+- `model`: optional model identifier for the assigned agent. The launcher exports it to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`. The PM delegates deadline enforcement to the wrapper (which kills the upstream process at the deadline) and observes completion through the wait primitives described in [Waiting For Completion](#waiting-for-completion) rather than watchdogging the running process; it does not impose a separate PM-side deadline.
 

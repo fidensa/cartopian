@@ -138,6 +138,12 @@ if ($WorkRootsJson) {
 }
 
 $Args = @('exec', '--skip-git-repo-check')
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into codex's --model flag.
+# Unset means codex's own default model.
+if ($env:CARTOPIAN_MODEL) {
+    $Args += @('--model', $env:CARTOPIAN_MODEL)
+}
 if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'
 } elseif ($Sandbox) {

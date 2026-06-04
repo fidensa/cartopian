@@ -181,6 +181,13 @@ if [[ "$CLAUDE_SKIP_PERMISSIONS" == "true" ]]; then
   CMD+=(--dangerously-skip-permissions)
 fi
 
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into claude's --model flag.
+# Unset means claude's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
+
 CMD+=("$PROMPT_CONTENT")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

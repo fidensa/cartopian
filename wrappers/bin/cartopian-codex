@@ -170,6 +170,13 @@ fi
 
 CMD=(codex exec --skip-git-repo-check)
 
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into codex's --model flag.
+# Unset means codex's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
+
 if [[ "$CODEX_BYPASS" == "true" ]]; then
   CMD+=(--dangerously-bypass-approvals-and-sandbox)
 elif [[ -n "$CODEX_SANDBOX" ]]; then

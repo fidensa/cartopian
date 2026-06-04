@@ -111,6 +111,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--role", "coder=Writes code",
                 "--handoff", "pm=claude-vscode",
                 "--handoff", "coder=cartopian-claude",
+                "--handoff-model", "coder=claude-opus-4-8",
                 "--handoff-auto-start", "pm=true",
                 "--handoff-auto-start", "coder=false",
                 "--handoff-timeout", "pm=60m",
@@ -139,7 +140,12 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             )
             self.assertEqual(
                 data["handoffs"]["coder"],
-                {"agent": "cartopian-claude", "auto_start": False, "timeout": "30m"},
+                {
+                    "agent": "cartopian-claude",
+                    "model": "claude-opus-4-8",
+                    "auto_start": False,
+                    "timeout": "30m",
+                },
             )
             self.assertEqual(
                 data["automation"],

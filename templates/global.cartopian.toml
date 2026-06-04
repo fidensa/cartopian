@@ -103,6 +103,10 @@
 #
 # Keys:
 #   agent       — the wrapper script name the PM invokes (e.g. "cartopian-claude").
+#   model       — optional model identifier for the assigned agent (e.g.
+#                 "gpt-5-codex"). Dispatch exports it to the wrapper as
+#                 CARTOPIAN_MODEL; the wrapper translates it into the
+#                 tool-specific model flag. Unset means the tool's own default.
 #   auto_start  — if true, the wrapper launches without operator confirmation
 #                 (subject to [automation] confirmation policy above).
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
@@ -118,6 +122,7 @@
 
 # [handoffs.coder]
 # agent = "cartopian-claude"
+# model = "claude-opus-4-8"
 # auto_start = false
 # timeout = "60m"
 

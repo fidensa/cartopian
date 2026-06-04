@@ -168,6 +168,13 @@ if [[ "$GEMINI_SANDBOX" == "true" ]]; then
   CMD+=(--sandbox)
 fi
 
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved [handoffs.<role>].model; translate it into gemini's --model flag.
+# Unset means gemini's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
+
 # Native work-root union scoping: add the declared roots to the workspace. Placed
 # before -p so the prompt is unambiguously -p's value.
 CMD+=(${CARTOPIAN_SCOPE_ARGS[@]+"${CARTOPIAN_SCOPE_ARGS[@]}"})

@@ -133,11 +133,14 @@ Add a `[handoffs.<role>]` block and the PM can launch the work itself:
 ```toml
 [handoffs.coder]
 agent = "cartopian-codex"
+model = "gpt-5-codex"
 auto_start = true
 timeout = "60m"
 ```
 
 Cartopian ships cross-platform wrappers for **Codex, Claude Code, Gemini, and Devin** under `wrappers/`. They handle non-interactive flags, set the right working directory, and conform to the simple `<agent> <prompt-path>` contract. Bring-your-own works too — anything that fits the contract is a valid agent.
+
+The optional `model` key pins the assigned agent to a specific model. Dispatch exports it to the wrapper as the agent-neutral `CARTOPIAN_MODEL` environment variable; all four shipped wrappers translate it into the tool's `--model` flag. When unset, no variable is exported and the tool's own default model applies.
 
 Confirmation is per-handoff by default. Bounded unattended runs are available when you want them. Manual handoff is always supported; automation is opt-in.
 

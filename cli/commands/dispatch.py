@@ -6,7 +6,8 @@ command performs the launch on the PM's behalf as *per-invocation* Cartopian cod
 (no daemon, no broker — NF-002): it composes the existing ``handoff-packet`` /
 ``resolve-config`` aggregators to prepare the packet, fails closed on unmapped or
 missing work roots / a missing ``[handoffs.<role>]`` block / a missing prompt,
-exports ``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout``, and
+exports ``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout`` and
+``CARTOPIAN_MODEL`` from the resolved ``[handoffs.<role>].model`` (when set), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
 cartopian project-root cwd (the launch contract fixed by
 ``protocol/CONVENTIONS.md`` § Handoffs / Launch Directory).
@@ -59,6 +60,12 @@ DEFAULT_TIMEOUT = "60m"
 # the env var carries NO agent name, so the capability attaches to the reviewer
 # role, not to any one agent. Default: never exported (opt-in).
 RECAPTURE_ENV = "CARTOPIAN_REVIEW_RECAPTURE"
+
+# Agent-neutral model selection. Exported from the resolved
+# ``[handoffs.<role>].model`` so the wrapper can translate it into the
+# tool-specific model flag; never exported when the handoff sets no model
+# (the tool's own default model applies).
+MODEL_ENV = "CARTOPIAN_MODEL"
 
 # Match the task-file header `Evidence gate: required | n/a` (case-insensitive
 # field; value compared case-insensitively). Mirrors templates/TASK.md and
@@ -193,6 +200,16 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     timeout = role_handoff.get("timeout") or DEFAULT_TIMEOUT
+    model = role_handoff.get("model")
+    # Fail closed on a set-but-falsy model ("" / 0 / false): it would be
+    # reported in the record below yet never exported, silently launching the
+    # tool's default model while the record claims otherwise.
+    if model is not None and not model:
+        stderr_guard(
+            f"[handoffs.{role}].model is set but empty — set a model "
+            f"identifier or remove the key"
+        )
+        return EXIT_FAIL
 
     # --- Fail-closed: every declared work root must map and exist on disk ----
     # resolve-config raises a `[work-root]` _CliError on an unmapped or
@@ -242,6 +259,13 @@ def handler(args: argparse.Namespace) -> int:
     # wait() — the PM observes completion via wait-handoff / wait-report.
     env = dict(os.environ)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
+    # Agent-neutral model selection from the resolved [handoffs.<role>].model.
+    # A stale value inherited from the parent environment is cleared when the
+    # handoff sets no model, so the signal reflects this dispatch alone.
+    if model:
+        env[MODEL_ENV] = str(model)
+    else:
+        env.pop(MODEL_ENV, None)
     # Agent-neutral, opt-in, evidence-gated reviewer-recapture signal. Exported
     # ONLY when both gates above held (recapture requested AND the task declares
     # live/harness evidence); every wrapper honors it identically. A stale value
@@ -272,6 +296,7 @@ def handler(args: argparse.Namespace) -> int:
         "task_id": task_id,
         "role": role,
         "handoff_target": agent,
+        "model": model,
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),
         "timeout": timeout,
