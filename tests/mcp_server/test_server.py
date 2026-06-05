@@ -194,6 +194,9 @@ class TestPromptSurface(unittest.TestCase):
         self.assertIn("start_session", text)
         self.assertIn("init_project", text)
         self.assertIn("cartopian://protocol/CONVENTIONS", text)
+        # Startup prefers the narrow protocol slice; the full CONVENTIONS doc
+        # stays referenced as the authoritative fallback (asserted above).
+        self.assertIn("cartopian://protocol/CONVENTIONS/startup", text)
 
     def test_skill_prompt_returns_skill_body(self):
         response = single("prompts/get", {"name": "start_session"})
@@ -338,6 +341,106 @@ class TestResourceSurface(unittest.TestCase):
                 )
                 text = read_response["result"]["contents"][0]["text"]
                 self.assertIn("# STATE", text)
+
+
+# ---------------------------------------------------------------------------
+# Section-scoped protocol resources (additive narrower surface)
+# ---------------------------------------------------------------------------
+
+class TestProtocolSectionResources(unittest.TestCase):
+    """`cartopian://protocol/<doc>/<section-slug>` and the curated
+    `cartopian://protocol/CONVENTIONS/startup` slice are additive: whole-file
+    protocol reads must stay byte-identical to the file on disk."""
+
+    CONVENTIONS = REPO_ROOT / "protocol" / "CONVENTIONS.md"
+
+    def setUp(self):
+        if not self.CONVENTIONS.exists():
+            self.skipTest("protocol/CONVENTIONS.md not present in this checkout")
+
+    def _read(self, uri: str) -> Dict[str, Any]:
+        return single("resources/read", {"uri": uri})
+
+    def test_listing_includes_startup_and_section_resources(self):
+        response = single("resources/list")
+        uris = {r["uri"] for r in response["result"]["resources"]}
+        # Whole-file resource is still listed (existing surface unchanged).
+        self.assertIn("cartopian://protocol/CONVENTIONS", uris)
+        self.assertIn("cartopian://protocol/CONVENTIONS/startup", uris)
+        self.assertIn("cartopian://protocol/CONVENTIONS/lifecycle-authority", uris)
+        self.assertIn(
+            "cartopian://protocol/CONVENTIONS/session-startup-and-project-selection",
+            uris,
+        )
+
+    def test_startup_slice_reads_and_is_smaller_than_full_doc(self):
+        full = self._read("cartopian://protocol/CONVENTIONS")
+        startup = self._read("cartopian://protocol/CONVENTIONS/startup")
+        self.assertNotIn("error", startup)
+        text = startup["result"]["contents"][0]["text"]
+        self.assertEqual(startup["result"]["contents"][0]["mimeType"], "text/markdown")
+        # Curated startup sections are present...
+        self.assertIn("## Session Startup And Project Selection", text)
+        self.assertIn("## Lifecycle Authority", text)
+        self.assertIn("## Session State", text)
+        # ...deeper lifecycle sections are not...
+        self.assertNotIn("## Handoffs", text)
+        self.assertNotIn("## Plan Lifecycle", text)
+        # ...the authoritative full resource is named...
+        self.assertIn("cartopian://protocol/CONVENTIONS", text)
+        # ...and the slice meaningfully reduces the startup read.
+        self.assertLess(len(text), len(full["result"]["contents"][0]["text"]) // 2)
+
+    def test_single_section_read_returns_only_that_section(self):
+        response = self._read("cartopian://protocol/CONVENTIONS/naming")
+        self.assertNotIn("error", response)
+        text = response["result"]["contents"][0]["text"]
+        self.assertTrue(text.startswith("## Naming"), msg=f"got: {text[:80]!r}")
+        # H3 subsections stay inside their parent H2 section.
+        self.assertIn("### Trace Chain", text)
+        # The next H2 section is excluded.
+        self.assertNotIn("## Status Through Directory", text)
+
+    def test_whole_file_read_is_unchanged_by_section_surface(self):
+        response = self._read("cartopian://protocol/CONVENTIONS")
+        text = response["result"]["contents"][0]["text"]
+        self.assertEqual(text, self.CONVENTIONS.read_text(encoding="utf-8"))
+
+    def test_unknown_section_returns_invalid_params(self):
+        response = self._read("cartopian://protocol/CONVENTIONS/does-not-exist")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_section_traversal_blocked(self):
+        for uri in (
+            "cartopian://protocol/CONVENTIONS/../startup",
+            "cartopian://protocol/../CONVENTIONS/startup",
+            "cartopian://protocol/CONVENTIONS/startup/extra",
+        ):
+            with self.subTest(uri=uri):
+                response = self._read(uri)
+                self.assertIn("error", response)
+                self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_unknown_doc_section_returns_invalid_params(self):
+        response = self._read("cartopian://protocol/NOPE/startup")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_startup_slice_fails_closed_on_heading_drift(self):
+        # If a curated heading vanishes from CONVENTIONS.md, the startup read
+        # must error loudly rather than silently drop a guardrail.
+        with patch.object(server, "STARTUP_SECTIONS", ("Section That Does Not Exist",)):
+            response = self._read("cartopian://protocol/CONVENTIONS/startup")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+
+    def test_oversize_doc_rejected_for_section_read(self):
+        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
+            response = self._read("cartopian://protocol/CONVENTIONS/startup")
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
+        self.assertIn("size limit", response["error"]["message"])
 
 
 # ---------------------------------------------------------------------------

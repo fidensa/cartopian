@@ -12,11 +12,11 @@ Use this skill when the operator gives a project-agnostic startup direction such
 
 - **PM scope** — Cartopian assigns PMs per project, plus there may be a protocol-level PM named in the root cartopian.toml. If a protocol-level PM is named, they have authority over all projects in the protocol. If no protocol-level PM is named, the project-level PM is the default and you should assume you will act as the PM for at least one project during this session.
 
-- **Protocol reference** — Before proceeding, read `protocol/CONVENTIONS.md` and follow it for all lifecycle actions.
+- **Protocol reference** — Before proceeding, read the startup slice `cartopian://protocol/CONVENTIONS/startup` if not already loaded. The full `protocol/CONVENTIONS.md` (`cartopian://protocol/CONVENTIONS`) remains the authoritative contract for all lifecycle actions; read its broader sections when a later lifecycle action needs them.
 
 ## Stage 0 - Select Project
 
-Project selection is registry-only. The registry is authoritative — do not consult cwd or local config files (`cartopian.toml`, `AGENTS.md`, `CLAUDE.md`, `README.md`) to confirm, override, or filter the registry result. A registered project whose `path` differs from cwd is still the correct selection; cwd mismatch is not a reason to skip it or offer alternatives.
+Project selection is registry-only. The registry is authoritative — do not consult cwd or local config files (`cartopian.toml`, `AGENTS.md`, `CLAUDE.md`, `README.md`) to confirm, override, or filter the registry result; a path/cwd mismatch is not a reason to skip a registered project or offer alternatives.
 
 Use the Core CLI to enumerate and resolve the target project:
 

@@ -261,11 +261,11 @@ timeout = "30m"
 Handoff fields are:
 
 - `agent`: executable name.
-- `model`: optional model identifier for the assigned agent. The launcher exports it to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
+- `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
-- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`. The PM delegates deadline enforcement to the wrapper (which kills the upstream process at the deadline) and observes completion through the wait primitives described in [Waiting For Completion](#waiting-for-completion) rather than watchdogging the running process; it does not impose a separate PM-side deadline.
+- `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
-`[handoffs.<role>].timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). Every other timer is removed or inherits this value — no per-tool CLI timeout flag (for example `claude -p --timeout`) is set independently, and the PM runs no concurrent timer and does not watchdog the process — so no second timer can kill a legitimate long-running handoff before the SSOT deadline.
+`[handoffs.<role>].timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
 
 Every automated handoff follows this argument contract:
 
@@ -279,32 +279,27 @@ Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin) are in `w
 
 ### Launch Directory
 
-Assignee CLIs run with cwd set to the **cartopian project root** — the absolute path recorded for the selected project in the registry (FR-003). The shipped wrappers resolve and `cd` to that path automatically; the prompt path passed to the wrapper carries the project root in its prefix (`<project-root>/prompts/PROMPT-NN-NNN.md`) so derivation is unambiguous.
+Assignee CLIs run with cwd set to the **cartopian project root** — the absolute path recorded for the selected project in the registry (FR-003). The shipped wrappers resolve and `cd` to that path automatically; the prompt path passed to the wrapper carries the project root in its prefix (`<project-root>/prompts/PROMPT-NN-NNN.md`) so derivation is unambiguous. No "parent" or "shared workspace" directory is involved in the launch contract.
 
-The cartopian project root is the home for every artifact the assignee must read or produce in the cartopian protocol surface — the task file, spec file, prompt, and the report path the assignee writes back to `<project-root>/reports/`. No "parent" or "shared workspace" directory is involved in the launch contract.
-
-When a task needs to read or write outside the cartopian project root (for example, a sibling product repo), the additional locations are declared as **work roots**: the project's `cartopian.toml` carries a `[project].work_roots` name set; the per-machine `<project-root>/cartopian.local.toml` maps each name to a platform-native absolute path on this operator's machine; and the task file's `Work root:` field names the subset of work roots the task touches. The launcher consumes the resolved, absolute path set emitted by `cartopian resolve-config <project>` and grants the agent read/write access to the **union of**:
+Locations outside the cartopian project root are declared as **work roots** (see [Work Roots](#work-roots) below). The launcher consumes the resolved, absolute path set emitted by `cartopian resolve-config <project>` and grants the agent read/write access to the **union of**:
 
 - the cartopian project root (also the launch cwd); and
 - every absolute path resolved from the task's `Work root:` names.
 
-Nothing wider, nothing narrower. The access model is documented in [Work Roots](#work-roots) below.
+Nothing wider, nothing narrower.
 
 **Fail-closed default.** The wrapper does not launch the agent if any of the following hold: a declared work-root name has no per-machine path mapping (`resolve-config` exits non-zero); a resolved absolute path does not exist on disk; or the target tool's sandbox cannot scope the full union natively. The wrapper exits non-zero with a `[work-root]` stderr line naming the failure. The operator must fix the mapping, declare the missing root, remove the bogus declaration, or opt in to the per-tool unrestricted mode (per-invocation env var; see the wrapper-layer documentation).
 
-**Note for custom wrapper authors.** The launch cwd is the cartopian project root, which is a regular directory the operator chose at registration time and is not automatically a git repository. Tools that refuse to run outside a git repo (e.g. Codex's `--skip-git-repo-check`) must be told to skip that check; the sandbox/permission model lives at the wrapper layer, not at the "is-this-a-git-repo" layer. Wrappers shipped with Cartopian apply this flag unconditionally for tools that need it.
+**Note for custom wrapper authors.** The cartopian project root is not automatically a git repository. Tools that refuse to run outside a git repo must be told to skip that check (the shipped wrappers do so unconditionally); the sandbox/permission model lives at the wrapper layer.
 
 ### Work Roots
 
-Work roots are the protocol mechanism that lets a cartopian project reference filesystem locations outside its own root — typically a sibling product repository, a design repo, a docs repo, or any external location the project's tasks need to read or write.
+Work roots are the protocol mechanism that lets a cartopian project reference filesystem locations outside its own root — typically a sibling product repository or any external location the project's tasks need to read or write.
 
-The committed `<project-root>/cartopian.toml` declares a **name set** under `[project].work_roots`: an inline list of operator-chosen identifiers (e.g., `["product", "design"]`). Names are platform-independent and portable across operators. The committed file carries no paths; this keeps multi-operator and multi-machine use viable.
-
-The per-machine `<project-root>/cartopian.local.toml` carries the **name → absolute-path mapping** for the current operator's machine, under a `[work_roots]` table. The file is gitignored by `cartopian scaffold-project` and is never committed. Two operators on two machines author their own `cartopian.local.toml` with their own absolute paths; the committed `cartopian.toml` remains identical for both.
-
-`cartopian resolve-config <project>` merges the committed and per-machine files, validates that every declared name has a path mapping, and emits the resolved absolute paths as the single canonical form. Skills, wrappers, and launchers consume the resolved output; they never read the raw committed name set or the raw per-machine file. Unmapped names exit non-zero with a `[work-root]` stderr line.
-
-Tasks reference work roots by **name** in the `Work root:` task-file field (see `templates/TASK.md`). The field is optional, comma-separated multi-valued, and rejects absolute paths, project-relative paths, and `<owner>/<repo>` slugs. Names that are absent from `[project].work_roots` cause `cartopian validate-task-readiness` to block the task.
+- The committed `<project-root>/cartopian.toml` declares a **name set** under `[project].work_roots`: an inline list of operator-chosen, platform-independent identifiers (e.g., `["product", "design"]`). The committed file carries no paths, keeping multi-operator and multi-machine use viable.
+- The per-machine `<project-root>/cartopian.local.toml` carries the **name → absolute-path mapping** for the current operator's machine, under a `[work_roots]` table. It is gitignored by `cartopian scaffold-project` and never committed.
+- `cartopian resolve-config <project>` merges the two files, validates that every declared name has a path mapping, and emits the resolved absolute paths as the single canonical form. Skills, wrappers, and launchers consume only the resolved output. Unmapped names exit non-zero with a `[work-root]` stderr line.
+- Tasks reference work roots by **name** in the `Work root:` task-file field (see `templates/TASK.md`). The field is optional, comma-separated multi-valued, and rejects absolute paths, project-relative paths, and `<owner>/<repo>` slugs. Names absent from `[project].work_roots` cause `cartopian validate-task-readiness` to block the task.
 
 Optional automation policy:
 
@@ -323,22 +318,20 @@ Defaults are `confirmation = "each-handoff"` and `max_handoffs_per_run = 1`.
 
 Handoffs are sequential. Concurrent child agents are out of scope.
 
-A timeout, hard process stop, missing report, late report, or invalid report is not successful completion evidence.
-
 ### Waiting For Completion
 
-The PM detects handoff completion by observing the filesystem, not by hand-rolled timing loops, repeated manual report reads on a fixed cadence, manual "tell me when it's done" prompts, or PM-side watchdog timers. Two read-only wait primitives own this step and replace all ad-hoc polling:
+The PM detects handoff completion by observing the filesystem through two canonical read-only wait primitives, which replace all ad-hoc polling, hand-rolled timing loops, manual "tell me when it's done" prompts, and PM-side watchdog timers:
 
-- `cartopian wait-handoff <task-path> --role <role> --max-block <duration>` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path (the same path `cartopian handoff-packet` derives) and honors the role's configured `[handoffs.<role>].timeout` as the absolute ceiling.
+- `cartopian wait-handoff <task-path> --role <role> --max-block <duration>` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the role's configured `[handoffs.<role>].timeout` as the absolute ceiling.
 - `cartopian wait-report <report-path> --max-block <duration>` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file.
 
 The completion contract is:
 
-- **The report file is the authoritative completion signal.** A handoff is complete only when its expected report file is present and parses. The optional `<report-path>.status` wrapper file is enrichment for early crash detection only; when it is absent, the wait commands degrade to report-only observation. The `<report-path>.status` file is transient and has a fixed lifecycle: every shipped wrapper writes it on assignee exit (clean, error, and timeout exits alike, and regardless of whether `resolve-config` succeeds), `wait-handoff` consumes it during the wait, and the PM removes it through `cartopian delete-report <report-path>` at report-clear and through `cartopian delete-report <report-path> --status-only` at task close — so it never outlives the handoff it describes. Reports may linger in `reports/` after a task reaches `done/`; the companion `.status` file must not. Both commands are read-only — they never write to the project tree, move tasks, or launch processes.
+- **The report file is the authoritative completion signal.** A handoff is complete only when its expected report file is present and parses. The optional `<report-path>.status` wrapper file is secondary enrichment for early crash detection only; when it is absent, the wait commands degrade to report-only observation. The `.status` file is transient: wrappers write it on assignee exit and the PM removes it through `cartopian delete-report`, so it never outlives the handoff it describes (cleanup procedure in `skills/run-handoff.md`). Both wait commands are read-only — they never write to the project tree, move tasks, or launch processes.
 - **Terminal observations** are `done` (report present and parses; the PM reads the report verdict for lifecycle action), `failed-to-parse` (report present but invalid), `failed` (the wrapper status file reports a crash and no valid report appeared), and `timeout` (the configured handoff ceiling elapsed first). A `timeout`, hard process stop, crash, or missing/late/invalid report is not successful completion evidence.
 - **`still-running` is the yield-and-resume signal.** When the `--max-block` budget elapses before the configured timeout, the assignee may still be working. The PM yields control back to the operator or host harness and re-calls the same wait command on resume. The filesystem observation survives the yield, so stopping and resuming loses no progress and starts no second handoff.
 
-The wrapper still enforces the wall-clock deadline at the OS level (see the `timeout` field above); the wait commands observe the result. The PM does not impose a separate PM-side deadline or watchdog.
+The wrapper enforces the wall-clock deadline at the OS level (see the `timeout` field above); the wait commands observe the result rather than imposing a separate PM-side deadline.
 
 ## Dependencies
 

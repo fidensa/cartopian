@@ -27,22 +27,22 @@ Do not call any other Cartopian tool during this step.
 
 ## Step 1 — Discover projects
 
-Your first and only action in this step is to call the `discover_projects` MCP tool. `discover_projects` *is* the status check — do not precede it with `cartopian status`, `cartopian next-action`, `cartopian resolve-config`, or any other shell command intended to "check Cartopian status" against cwd. Those commands require a project path and will fail noisily in a workspace or non-project directory. Project context comes **only** from the registry. Do not look at the current working directory, do not read any local `AGENTS.md` / `CLAUDE.md` / `README.md` / `cartopian.toml`, and do not list or scan the filesystem to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage (it is often the Cartopian repo itself, or an unrelated repo the operator happened to open).
+Your first and only action in this step is to call the `discover_projects` MCP tool — it *is* the status check. Project context comes **only** from the registry: do not run any other tool or command first (`next_action`, `resolve_config`, shell status checks — these require a project path and fail noisily against cwd), and do not read or scan local files (`AGENTS.md`, `CLAUDE.md`, `README.md`, `cartopian.toml`) to "verify" or "supplement" the registry result. The cwd is almost always unrelated to the project you will manage.
 
 Based on the result, take exactly one of these actions and then proceed to Step 2:
 
-- **One project registered** — select it. Name it to the operator and proceed. A mismatch between the project's path and cwd is **not** a reason to skip it, scan cwd, or offer alternatives — the registry is authoritative. If the operator wants a different project, they will say so after you name it.
+- **One project registered** — select it and name it to the operator. A mismatch between the project's path and cwd is **not** a reason to skip it, scan cwd, or offer alternatives — the registry is authoritative. If the operator wants a different project, they will say so after you name it.
 - **Multiple projects registered** — list them by `id` and ask the operator which to use; pause until they choose. Do not pre-filter the list by cwd.
 - **No projects registered** — stop and run the `init_project` skill to scaffold and register a project first. Only in this case may you consider cwd, and only as a candidate location to propose to the operator.
 
-Do not call `resolve_config`, `generate_config`, `next_action`, or any other tool against cwd-derived paths in this step. The only tool you call here is `discover_projects`.
-
-## Step 2 — Load the lifecycle contract and runbook
+## Step 2 — Load the startup contract and runbook
 
 Once a project is selected, and before any mutating action, read:
 
-- `cartopian://protocol/CONVENTIONS` — the authoritative contract for task movement, review verdicts, session state, and git behavior.
+- `cartopian://protocol/CONVENTIONS/startup` — the startup-scoped slice of the protocol contract (project selection, lifecycle authority, roles, session state).
 - `cartopian://skills/start_session` — your active runbook for the rest of startup.
+
+The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it eagerly. When a later lifecycle action needs rules beyond the startup slice — task movement guards, handoffs, reviews, plan lifecycle, git — read the relevant section via `cartopian://protocol/CONVENTIONS/<section-slug>` (or the full document).
 
 ## Step 3 — Continue from `start_session` Stage 1
 

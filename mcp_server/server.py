@@ -14,7 +14,9 @@ MCP) is configured to launch ``cartopian-mcp``, the operator can say
   invokes its handler in-process with stdout/stderr captured, parses
   NDJSON output back into structured records, and surfaces stderr
   prefixes verbatim so the FR-014 error contract is preserved.
-- Resources — ``cartopian://skills/<name>``, ``cartopian://protocol/<name>``,
+- Resources — ``cartopian://skills/<name>``, ``cartopian://protocol/<name>``
+  (plus narrower ``cartopian://protocol/<name>/<section-slug>`` per-H2-section
+  reads and the curated ``cartopian://protocol/CONVENTIONS/startup`` slice),
   ``cartopian://templates/<name>``, and ``cartopian://project/<id>/<file>``
   for registered projects.
 
@@ -621,6 +623,142 @@ def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # Resource surface
 # ---------------------------------------------------------------------------
 
+# --- Section-scoped protocol resources (additive; whole-file URIs unchanged) -
+#
+# `cartopian://protocol/<doc>/<section-slug>` reads one H2 section of an
+# allowlisted protocol doc, and `cartopian://protocol/CONVENTIONS/startup`
+# reads a curated startup slice, so the PM can load only the slice of
+# CONVENTIONS.md a given moment needs instead of the whole file. The full
+# `cartopian://protocol/<doc>` resources remain available and authoritative.
+
+# H2 heading line in a protocol markdown doc (H3+ stays inside its parent H2).
+_H2_RE = re.compile(r"^## (.+?)\s*$")
+
+# Reserved slug for the curated startup slice of CONVENTIONS.md. No H2 in the
+# doc slugifies to a bare "startup", so the reservation cannot shadow a section.
+STARTUP_SLUG = "startup"
+
+# H2 headings concatenated (in document order) into
+# `cartopian://protocol/CONVENTIONS/startup` — the sections a PM needs through
+# session startup: project selection, role resolution, state read, and the
+# next-action proposal. Fail-closed: if any heading disappears from
+# CONVENTIONS.md the startup read errors instead of silently dropping a
+# guardrail.
+STARTUP_SECTIONS = (
+    "Core Principle",
+    "Protocol And Skills",
+    "Project Scope",
+    "Session Startup And Project Selection",
+    "Status Through Directory",
+    "Lifecycle Authority",
+    "Roles",
+    "Session State",
+)
+
+STARTUP_PREAMBLE = (
+    "# Cartopian Protocol Conventions — startup slice\n\n"
+    "Startup-scoped excerpt of `protocol/CONVENTIONS.md`: the sections a PM "
+    "needs through session startup (project selection, role resolution, state "
+    "read, next-action proposal). The full `cartopian://protocol/CONVENTIONS` "
+    "remains the authoritative contract. When a later lifecycle action needs "
+    "rules beyond this slice (task movement guards, handoffs, reviews, plan "
+    "lifecycle, git), read the relevant section via "
+    "`cartopian://protocol/CONVENTIONS/<section-slug>` (H2 title lowercased, "
+    "spaces as hyphens — e.g. `lifecycle-cli-guards`) or the full document.\n"
+)
+
+
+def _section_slug(heading: str) -> str:
+    """``Session Startup And Project Selection`` → ``session-startup-and-project-selection``."""
+    return re.sub(r"[^a-z0-9]+", "-", heading.lower()).strip("-")
+
+
+def _split_h2_sections(text: str) -> Dict[str, Tuple[str, str]]:
+    """Split a markdown doc into H2 sections: {slug: (heading, body)}.
+
+    Each body runs from its ``## Heading`` line up to (excluding) the next H2,
+    so H3 subsections stay inside their parent section. Insertion order follows
+    document order (dicts preserve it).
+    """
+    sections: Dict[str, Tuple[str, str]] = {}
+    current_slug: Optional[str] = None
+    current_heading = ""
+    current_lines: List[str] = []
+
+    def flush() -> None:
+        if current_slug is not None:
+            sections[current_slug] = (
+                current_heading,
+                "\n".join(current_lines).rstrip() + "\n",
+            )
+
+    for line in text.splitlines():
+        match = _H2_RE.match(line)
+        if match:
+            flush()
+            current_heading = match.group(1)
+            current_slug = _section_slug(current_heading)
+            current_lines = [line]
+        elif current_slug is not None:
+            current_lines.append(line)
+    flush()
+    return sections
+
+
+def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
+    """Assemble the curated startup slice; fail closed on heading drift."""
+    parts = [STARTUP_PREAMBLE]
+    for heading in STARTUP_SECTIONS:
+        entry = sections.get(_section_slug(heading))
+        if entry is None:
+            # A curated heading vanished from CONVENTIONS.md — surface loudly
+            # rather than serving a slice that silently lost a guardrail.
+            raise McpError(ERR_INTERNAL, f"startup section missing from protocol doc: {uri}")
+        parts.append(entry[1])
+    return "\n".join(parts)
+
+
+def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
+    """Bounded read of one H2 section (or the startup slice) of a protocol doc.
+
+    Same allowlist shape and size discipline as the whole-file branch: the only
+    path ever constructed is ``protocol/<doc>.md`` under the protocol root, and
+    the file is size-capped before being loaded. Malformed names, unknown docs,
+    and unknown sections are all invalid-params (fail-closed).
+    """
+    if not _safe_segment(doc) or not _safe_segment(slug):
+        raise McpError(ERR_INVALID_PARAMS, f"invalid protocol section uri: {uri}")
+    candidate = ROOT / "protocol" / f"{doc}.md"
+    resolved = _bounded_path(candidate, ROOT / "protocol")
+    if resolved is None:
+        raise McpError(ERR_INVALID_PARAMS, f"resource not found: {uri}")
+    try:
+        size = resolved.stat().st_size
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+    if size > MAX_RESOURCE_BYTES:
+        raise McpError(ERR_INTERNAL, f"resource exceeds size limit: {uri}")
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except OSError:
+        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+    sections = _split_h2_sections(text)
+    if doc == "CONVENTIONS" and slug == STARTUP_SLUG:
+        body = _startup_slice_text(sections, uri)
+    else:
+        entry = sections.get(slug)
+        if entry is None:
+            raise McpError(ERR_INVALID_PARAMS, f"unknown protocol section: {uri}")
+        body = entry[1]
+    return {
+        "contents": [{
+            "uri": uri,
+            "mimeType": "text/markdown",
+            "text": body,
+        }]
+    }
+
+
 def _registry_entries() -> List[Dict[str, Any]]:
     try:
         sys.path.insert(0, str(ROOT))
@@ -653,7 +791,9 @@ def list_resources() -> List[Dict[str, Any]]:
             "mimeType": "text/markdown",
         })
 
-    # Protocol
+    # Protocol — whole-file resource plus the additive narrower surface:
+    # the curated startup slice (CONVENTIONS only) and one resource per H2
+    # section, so agents can read only the slice they need.
     protocol_dir = ROOT / "protocol"
     if protocol_dir.is_dir():
         for path in sorted(protocol_dir.glob("*.md")):
@@ -663,6 +803,29 @@ def list_resources() -> List[Dict[str, Any]]:
                 "description": _first_line_summary(path),
                 "mimeType": "text/markdown",
             })
+            try:
+                if path.stat().st_size > MAX_RESOURCE_BYTES:
+                    continue
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue  # whole-file entry stays listed; sections degrade
+            if path.stem == "CONVENTIONS":
+                resources.append({
+                    "uri": f"{URI_SCHEME}://protocol/{path.stem}/{STARTUP_SLUG}",
+                    "name": f"protocol: {path.stem} § startup slice",
+                    "description": (
+                        "Startup-scoped slice of CONVENTIONS.md — the smallest "
+                        "sufficient protocol read for session startup."
+                    ),
+                    "mimeType": "text/markdown",
+                })
+            for slug, (heading, _body) in _split_h2_sections(text).items():
+                resources.append({
+                    "uri": f"{URI_SCHEME}://protocol/{path.stem}/{slug}",
+                    "name": f"protocol: {path.stem} § {heading}",
+                    "description": f"Single section `## {heading}` of {path.stem}.md.",
+                    "mimeType": "text/markdown",
+                })
 
     # Templates
     template_dir = ROOT / "templates"
@@ -708,6 +871,11 @@ def read_resource(uri: str) -> Dict[str, Any]:
                 resolved_path = path
                 break
     elif namespace == "protocol":
+        if len(tail) == 2:
+            # Additive section-scoped surface: `protocol/<doc>/<section-slug>`
+            # plus the curated `CONVENTIONS/startup` slice. Whole-file reads
+            # below are unchanged.
+            return _read_protocol_section(tail[0], tail[1], uri)
         if not _safe_segment(tail[0]):
             raise McpError(ERR_INVALID_PARAMS, f"invalid protocol name: {uri}")
         candidate = ROOT / "protocol" / f"{tail[0]}.md"
