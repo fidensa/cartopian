@@ -139,6 +139,18 @@ if [[ -z "$CARTOPIAN_MCP_CMD" || ! -x "$CARTOPIAN_MCP_CMD" ]]; then
   exit 1
 fi
 
+# --- PM toolchain pinning / identity audit (BL-007 / REVIEW-03-006) --------
+# Print the resolved toolchain identity (command, root, VERSION) and FAIL
+# CLOSED if it resolves into an editable (git) checkout — the work-root tree
+# assignees mutate. CARTOPIAN_PM_TOOLCHAIN_DEV=1 is the loud dev-only opt-out.
+if [[ ! -f "${_PM_WRAPPER_DIR}/_cartopian-toolchain.sh" ]]; then
+  echo "cartopian-gemini-pm: error: toolchain audit helper not found: ${_PM_WRAPPER_DIR}/_cartopian-toolchain.sh" >&2
+  exit 1
+fi
+# shellcheck source=_cartopian-toolchain.sh
+source "${_PM_WRAPPER_DIR}/_cartopian-toolchain.sh"
+cartopian_pm_toolchain_audit "cartopian-gemini-pm" "$MCP_CONFIG" "$CARTOPIAN_MCP_CMD"
+
 # Read the depth-layer sandbox controls. Fail closed if toolSandboxing is not
 # enabled (the depth layer would not actually constrain a reappeared tool).
 DEPTH_TOOL_SANDBOX="$(python3 - "$SANDBOX_PROFILE" <<'PY'

@@ -34,6 +34,7 @@ TASK_ID_RE = re.compile(r"^TASK-\d{2}-\d{3}$")
 SPEC_ID_RE = re.compile(r"^SPEC-\d{2}-\d{3}$")
 PHASE_ID_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
 DEC_ID_RE = re.compile(r"^DEC-\d{3}$")
+BL_ID_RE = re.compile(r"^BL-\d{3}$")
 PROMPT_ID_RE = re.compile(
     r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)$"
 )

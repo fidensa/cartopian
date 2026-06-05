@@ -108,7 +108,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | Codex (OpenAI) | `cartopian-codex` | `codex exec --sandbox workspace-write ...` |
 | Claude Code | `cartopian-claude` | `claude -p --dangerously-skip-permissions ...` |
 | Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
-| Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode autonomous --prompt-file <abs path>` |
+| Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode <autonomous\|dangerous> --prompt-file <abs path>` (mode spelling depends on the installed CLI's detected permission surface — see [Devin](#devin)) |
 
 By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired for a given role, the simple solution is not to run that role in auto mode (e.g. assign the role to `human` in `cartopian.toml`, or set `auto_start = false` on the handoff). Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
@@ -139,6 +139,8 @@ Some assignee CLIs keep running after they have written the report — MCP stdio
 The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one `wait-handoff` parses); once it appears complete — present, non-empty, carrying a top-level `Status: <complete|blocked|failed>` line — the supervisor grants the child a brief grace to exit on its own and then reaps it, so the wrapper exits `0` / `reason=clean` promptly.
 
 This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); no per-tool CLI timeout flag is introduced.
+
+The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedRun` / `Test-CartopianReportComplete` in `ps1/CartopianStatus.ps1` (BL-006 parity). There is no external `timeout` binary on that path, so the supervisor itself is the single `CARTOPIAN_TIMEOUT` enforcer: the deadline is computed once and never extended, the report watch reuses the same wait loop, stdin is redirected to immediate EOF, and a complete report is authoritative (exit `0`/`reason=clean`) while a genuine hang still exits `124`/`reason=timeout`. Static + behavioral parity is pinned by `tests/wrappers/test_ps1_handoff_exit_contract.py` (behavioral cases run where `pwsh` is available; Windows-host execution evidence is tracked separately).
 
 ## Status file (early-crash detection)
 
@@ -325,7 +327,17 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_DEVIN_PERMISSION` | `autonomous` | Permission mode on the current documented Devin CLI surface: `normal` (`--permission-mode normal`; writes/shell prompt — blocks a headless handoff), `accept-edits` (`--permission-mode accept-edits`; shell still prompts), `bypass` (`--permission-mode bypass`; auto-approve all, **no** OS sandbox), `autonomous` (`--sandbox --permission-mode autonomous`; auto-approve all but OS-sandbox-bounded, fail-closed — devin's `--sandbox` is documented Unstable). Default `autonomous` is the most-restrictive sensible mode that still completes the handoff with no human in the loop — the analogue of Codex's `workspace-write` sandbox default rather than full bypass. Set `bypass` to run unsandboxed (accepting the unbounded risk). Legacy values are mapped onto the real surface: `auto` → `normal`, `dangerous` → `bypass`. Devin remains **tier-3 not-recommended-as-PM-host** (`tests/wrappers/pm-devin/FINDINGS.md`); the local `--sandbox` does not extend to its cloud `/handoff`. |
+| `CARTOPIAN_DEVIN_PERMISSION` | `autonomous` | **Abstract** permission mode, mapped at launch onto whichever permission surface the installed `devin` binary exposes (the wrapper probes the binary's **parser acceptance** of `--permission-mode autonomous`, bounded by a 10s timeout — exit 0 → four-mode, anything else → two-mode; see `tests/wrappers/pm-devin/FINDINGS.md` § Live-binary re-probe). On the newer **four-mode** surface: `normal` → `--permission-mode normal` (writes/shell prompt — blocks a headless handoff), `accept-edits` → `--permission-mode accept-edits` (shell still prompts), `bypass` → `--permission-mode bypass` (auto-approve all, **no** OS sandbox), `autonomous` → `--sandbox --permission-mode autonomous` (auto-approve all but OS-sandbox-bounded). On the live-verified **two-mode** surface (`devin 2026.5.26-3`: only `normal`/`dangerous` + aliases are valid): `normal` and `bypass` compose unchanged (both are valid spellings there), `autonomous` → `--sandbox --permission-mode dangerous` (the same posture: auto-approval bounded by devin's own OS sandbox), and `accept-edits` **fails closed** before launch (no equivalent exists). Default `autonomous` is the most-restrictive sensible mode that still completes the handoff with no human in the loop — the analogue of Codex's `workspace-write` sandbox default rather than full bypass. Set `bypass` to run unsandboxed (accepting the unbounded risk). Legacy values map onto the abstract modes: `auto` → `normal`, `dangerous` → `bypass`. Devin remains **tier-3 not-recommended-as-PM-host** (`tests/wrappers/pm-devin/FINDINGS.md`); the local `--sandbox` does not extend to its cloud `/handoff`. |
+
+## PM containment wrappers — toolchain pinning
+
+The `cartopian-*-pm` containment wrappers (`bin/cartopian-claude-pm`, `-codex-pm`, `-gemini-pm`) launch a **contained PM**, not an assignee. Beyond their hard-coded capability floor, they enforce a **pinned toolchain** contract at launch (BL-007):
+
+- The Cartopian MCP command is resolved from `etc/mcp-cartopian-only.json` and its identity — command path, toolchain root, `VERSION` — is printed to stderr, so "which code did the PM run?" is explicit and auditable.
+- If the resolved toolchain root is a **git work tree** (an editable checkout — the tree assignees mutate during handoffs), the wrapper **fails closed** before launching the harness. The supported toolchain is the file-copy install produced by `scripts/install.py` (e.g. `~/.cartopian`).
+- `CARTOPIAN_PM_TOOLCHAIN_DEV=1` is a loud, per-invocation development-only opt-out; it prints a warning that coder edits to `cli/`/`mcp_server/` can alter the PM mid-session.
+
+The installed `bin/cartopian` / `bin/cartopian-mcp` entrypoint shims pin `sys.path` to their own install root, so work-root edits never change the installed toolchain's resolution (pinned by `tests/wrappers/test_pm_toolchain_insulation.py`).
 
 ## Alternative installation
 

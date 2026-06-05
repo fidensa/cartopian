@@ -202,3 +202,55 @@ devin as the PM host.
 - cascade (the separate Windsurf harness) is **not** devin; "Devin for Terminal"
   is the distinct first-party CLI — cross-referenced from
   `../pm-cascade/FINDINGS.md` (TASK-03-003).
+
+## Live-binary re-probe addendum (2026-06-04)
+
+A direct probe of the **installed** binary — `devin 2026.5.26-3 (e4037a74)` at
+`/Users/scott/.local/bin/devin` — shows the live CLI surface **diverges from
+the documented surface captured above (2026-06-02)**:
+
+- `--permission-mode` on the live binary accepts ONLY `normal` (alias `auto`)
+  and `dangerous` (aliases `yolo`, `bypass`). The probe
+  `devin --permission-mode autonomous --help` exits 2 with
+  `Invalid permission mode: autonomous. Valid options: normal (auto),
+  dangerous (yolo, bypass)`; `accept-edits` is likewise rejected. The
+  four-mode `normal|accept-edits|bypass|autonomous` surface the docs describe
+  is **not** what this binary parses — it appears to belong to a newer release
+  than the installed one. The default is `auto` (env `DEVIN_PERMISSION_MODE`).
+- `--sandbox` exists ("[Research Preview] Sandbox exec-tool processes (macOS
+  seatbelt / Linux bwrap+seccomp)... enforces the active Read/Write permission
+  scopes at the OS level"; env `DEVIN_SANDBOX`) and parses in combination with
+  any of the live binary's valid modes — no autonomous-only coupling at argv
+  parse on this version.
+- **F-D4 drift (dated observation, not a resolution):** the live binary DOES
+  expose a `--config <PATH>` flag ("Override the default user config file")
+  and an `--agent-config <FILE>` flag ("Declarative agent configuration file
+  (JSON or YAML)... system instructions, tool visibility, and permissions...
+  strict parsing"). F-D4's "no `--config`/`--settings` flag" claim is stale
+  for this binary. This *weakens* F-D4 but does not resolve it: `--config`
+  precedence vs the cwd-local `.devin/config.local.json` is unverified, and
+  `--agent-config` tool-visibility semantics are unverified — no in-runtime
+  evidence (F-D5) was captured.
+
+**Wrapper consequence.** The TASK-03-012 wrapper alignment composed
+`--sandbox --permission-mode autonomous` as the default — a flag value the
+live installed binary rejects at launch (a latent launch failure, the same
+class of bug TASK-03-012 set out to fix, inverted). The wrappers
+(`wrappers/bin/cartopian-devin`, `wrappers/ps1/cartopian-devin.ps1`) now probe
+the installed binary's **argv parser** at launch — `devin --permission-mode
+autonomous --help`, keying off the exit code (0 → four-mode; anything else,
+including a probe killed at its 10s bound, → two-mode), immune to help-text
+wording drift — and map the abstract
+`CARTOPIAN_DEVIN_PERMISSION` modes onto the **detected** surface (two-mode:
+`autonomous` → `--sandbox --permission-mode dangerous`, `accept-edits` →
+fail-closed refusal; four-mode: unchanged composition). Composition-level
+assertions cover both surfaces (`tests/wrappers/test_devin_permission_surface.py`);
+no live `devin` launch was performed.
+
+**Classification impact: none.** F-D1 (cloud `/handoff` + cloud subagents
+escape) is untouched by any of this, F-D5 (no in-runtime evidence) still
+holds, and the F-D2/F-D3 mechanisms remain unverified on the live binary.
+devin remains **not-recommended-as-PM-host, tier-3 (advisory)**. Re-evaluation
+of F-D3/F-D4 against `--agent-config` on a newer binary is possible future
+work, gated on captured in-runtime evidence per the "What would change this"
+section — not on help-text presence.

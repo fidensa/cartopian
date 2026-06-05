@@ -19,6 +19,67 @@ _ASSIGNEE_RE = re.compile(r"^Assignee:\s*(.+)$", re.MULTILINE)
 _VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
 
+# --- Infrastructure-artifact scope guard (BL-002) ---------------------------
+# Assignees must not add `.github`, CI, or other infrastructure artifacts to a
+# work root unless the task explicitly authorizes them (CONVENTIONS § PM Scope
+# / Lifecycle CLI Guards). Detection is by changed-file path: a path equal to
+# or under one of these top-level infra markers counts. The list names the
+# common per-repo CI/infra entrypoints; it is a closed, documented set —
+# mechanism over policy prose.
+_INFRA_MARKERS: Tuple[str, ...] = (
+    ".github",
+    ".gitlab",
+    ".gitlab-ci.yml",
+    ".circleci",
+    ".buildkite",
+    ".travis.yml",
+    ".drone.yml",
+    "azure-pipelines.yml",
+    "bitbucket-pipelines.yml",
+    "Jenkinsfile",
+)
+# A task authorizes infra artifacts ONLY via the explicit opt-in task-file
+# field `Infra authorized: <value>`. The value is either a comma-separated
+# list of the markers the task authorizes (e.g. `Infra authorized: .github`)
+# or the blanket `yes`/`all`. Prose mentions are deliberately NOT
+# authorization: substring matching would fail open on incidental mentions
+# ("deployed to myapp.github.io") and even prohibitions ("do NOT touch
+# .github"), defeating the guard. Prefer the marker-scoped form — the blanket
+# `yes` authorizes every marker for that work root and should be rare.
+_INFRA_AUTHORIZED_RE = re.compile(r"^Infra authorized:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+
+
+def _infra_hits(changed: List[str]) -> Dict[str, List[str]]:
+    """Map infra marker -> changed file paths under it (empty when none)."""
+    hits: Dict[str, List[str]] = {}
+    for path in changed:
+        normalized = path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        top = normalized.split("/", 1)[0]
+        for marker in _INFRA_MARKERS:
+            if top == marker:
+                hits.setdefault(marker, []).append(path)
+                break
+    return hits
+
+
+def _task_authorizes_infra(task_content: str, marker: str) -> bool:
+    """True iff the task's `Infra authorized:` field covers `marker`.
+
+    Explicit-field-only by design (no prose/substring inference). The field
+    value is `yes`/`all` (blanket) or a comma-separated marker list checked
+    against the specific marker.
+    """
+    for m in _INFRA_AUTHORIZED_RE.finditer(task_content):
+        value = m.group(1).strip()
+        if value.lower() in ("yes", "all"):
+            return True
+        tokens = [t.strip() for t in value.split(",") if t.strip()]
+        if marker in tokens:
+            return True
+    return False
+
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
@@ -103,10 +164,15 @@ def _read_assignee(task_content: str) -> Optional[str]:
     return value
 
 
-def _find_last_assignee(project_path: Path, work_root_name: str) -> Optional[Dict[str, str]]:
-    """Find the most-recently-modified task naming this work_root and return
-    {task_id, assignee, status} or None if no attribution can be made."""
-    candidates: List[Tuple[float, str, str, str]] = []
+def _load_task_index(project_path: Path) -> List[Dict[str, Any]]:
+    """Read every canonical task file ONCE and return an in-memory index.
+
+    Each entry: ``{task_id, status, mtime, content, work_roots}``. The three
+    audit passes that need task contents (provenance attribution, last-assignee
+    lookup, infra authorization) all consume this single index instead of each
+    re-walking the task tree and re-reading every file.
+    """
+    index: List[Dict[str, Any]] = []
     for status_dir in _ALL_TASK_DIRS:
         tasks_dir = project_path / "tasks" / status_dir
         if not tasks_dir.is_dir():
@@ -121,16 +187,35 @@ def _find_last_assignee(project_path: Path, work_root_name: str) -> Optional[Dic
                 content = task_file.read_text(encoding="utf-8")
             except OSError:
                 continue
-            if work_root_name not in _read_work_root_names(content):
-                continue
-            assignee = _read_assignee(content)
-            if not assignee:
-                continue
             try:
                 mtime = task_file.stat().st_mtime
             except OSError:
-                continue
-            candidates.append((mtime, f"TASK-{m.group(1)}", assignee, status_dir))
+                mtime = 0.0
+            index.append({
+                "task_id": f"TASK-{m.group(1)}",
+                "status": status_dir,
+                "mtime": mtime,
+                "content": content,
+                "work_roots": _read_work_root_names(content),
+            })
+    return index
+
+
+def _find_last_assignee(
+    task_index: List[Dict[str, Any]], work_root_name: str
+) -> Optional[Dict[str, str]]:
+    """Find the most-recently-modified task naming this work_root and return
+    {task_id, assignee, status} or None if no attribution can be made."""
+    candidates: List[Tuple[float, str, str, str]] = []
+    for entry in task_index:
+        if work_root_name not in entry["work_roots"]:
+            continue
+        assignee = _read_assignee(entry["content"])
+        if not assignee:
+            continue
+        candidates.append(
+            (entry["mtime"], entry["task_id"], assignee, entry["status"])
+        )
     if not candidates:
         return None
     candidates.sort(key=lambda c: c[0], reverse=True)
@@ -231,6 +316,8 @@ def _check_work_root_provenance(
     project_path: Path,
     work_roots: Dict[str, str],
     pm_owns_product_branches: bool,
+    task_index: List[Dict[str, Any]],
+    changed_by_root: Dict[str, Optional[List[str]]],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Inspect dirty work_roots and return (warnings, attributions).
 
@@ -248,29 +335,19 @@ def _check_work_root_provenance(
         return [], []
 
     # Build a map: work_root_name -> list of task_ids currently assigned
+    # (from the shared task index — no second task-tree walk).
     active_assignments: Dict[str, List[str]] = {name: [] for name in work_roots}
-    for status_dir in _STATUS_DIRS:
-        tasks_dir = project_path / "tasks" / status_dir
-        if not tasks_dir.is_dir():
+    for entry in task_index:
+        if entry["status"] not in _STATUS_DIRS:
             continue
-        for task_file in tasks_dir.iterdir():
-            if not task_file.is_file() or task_file.suffix != ".md":
-                continue
-            m = _TASK_ID_RE.match(task_file.stem)
-            if not m:
-                continue
-            try:
-                content = task_file.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            for root_name in _read_work_root_names(content):
-                if root_name in active_assignments:
-                    active_assignments[root_name].append(f"TASK-{m.group(1)}")
+        for root_name in entry["work_roots"]:
+            if root_name in active_assignments:
+                active_assignments[root_name].append(entry["task_id"])
 
     warnings: List[Dict[str, Any]] = []
     attributions: List[Dict[str, Any]] = []
     for name, abs_path in work_roots.items():
-        changed = _git_changed_files(abs_path)
+        changed = changed_by_root.get(name)
         if changed is None or not changed:
             continue
         assigned_tasks = active_assignments.get(name, [])
@@ -284,7 +361,7 @@ def _check_work_root_provenance(
             continue
 
         if not pm_owns_product_branches:
-            attribution = _find_last_assignee(project_path, name)
+            attribution = _find_last_assignee(task_index, name)
             entry: Dict[str, Any] = {
                 "kind": "work-root-attribution",
                 "work_root": name,
@@ -335,6 +412,67 @@ def _check_work_root_provenance(
     return warnings, attributions
 
 
+def _check_infra_artifacts(
+    work_roots: Dict[str, str],
+    task_index: List[Dict[str, Any]],
+    changed_by_root: Dict[str, Optional[List[str]]],
+) -> List[Dict[str, Any]]:
+    """BL-002: surface assignee-created infrastructure artifacts.
+
+    For every dirty work root, changed files under a top-level infra marker
+    (``.github``, CI configs — see :data:`_INFRA_MARKERS`) emit an
+    ``unauthorized-infra-artifacts`` warning unless some task naming that work
+    root explicitly authorizes them via the ``Infra authorized:`` field
+    (marker-scoped list, or the blanket ``yes``/``all``). Prose mentions are
+    not authorization, and attribution alone is NOT authorization: an assignee
+    staying in scope never needs infra artifacts the task did not call for. A
+    warning, not a blocker — the operator decides; lifecycle movement is not
+    blocked by itself (CONVENTIONS § Lifecycle CLI Guards).
+    """
+    warnings: List[Dict[str, Any]] = []
+    for name, abs_path in work_roots.items():
+        changed = changed_by_root.get(name)
+        if not changed:
+            continue
+        hits = _infra_hits(changed)
+        if not hits:
+            continue
+
+        # Candidate authorizing tasks: every task (any status) naming this
+        # work root — from the shared task index, no re-read. A completed task
+        # that authorized the artifact keeps authorizing it while the change
+        # sits uncommitted.
+        task_texts: Dict[str, str] = {
+            entry["task_id"]: entry["content"]
+            for entry in task_index
+            if name in entry["work_roots"]
+        }
+
+        for marker, files in sorted(hits.items()):
+            if any(
+                _task_authorizes_infra(text, marker)
+                for _tid, text in sorted(task_texts.items())
+            ):
+                continue
+            shown = ", ".join(files[:5]) + ("..." if len(files) > 5 else "")
+            warnings.append({
+                "kind": "unauthorized-infra-artifacts",
+                "work_root": name,
+                "work_root_path": abs_path,
+                "marker": marker,
+                "files": files,
+                "tasks_checked": sorted(task_texts),
+                "detail": (
+                    f"infrastructure artifact(s) under '{marker}' changed in "
+                    f"work root '{name}' ({abs_path}) with no task "
+                    f"authorization (no task naming this work root carries "
+                    f"`Infra authorized: {marker}` or `Infra authorized: yes`): "
+                    f"{shown}"
+                ),
+            })
+    return warnings
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
@@ -362,9 +500,19 @@ def handler(args: argparse.Namespace) -> int:
 
     work_roots = _load_work_roots(project_path)
     pm_owns_product_branches = _resolve_pm_owns_product_branches(project_path)
+    # Shared inputs, computed ONCE per audit run: the git changed-files map
+    # (one `git status` subprocess per work root) and the task-content index
+    # (one read per task file) feed both the provenance and infra checks.
+    changed_by_root: Dict[str, Optional[List[str]]] = {
+        name: _git_changed_files(abs_path) for name, abs_path in work_roots.items()
+    }
+    task_index = _load_task_index(project_path) if work_roots else []
     warnings, attributions = _check_work_root_provenance(
-        project_path, work_roots, pm_owns_product_branches
+        project_path, work_roots, pm_owns_product_branches, task_index, changed_by_root
     )
+    # BL-002: assignee scope boundary — infra artifacts require explicit task
+    # authorization regardless of attribution.
+    warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
 
     clean = len(blockers) == 0 and len(warnings) == 0
     record: Dict[str, Any] = {

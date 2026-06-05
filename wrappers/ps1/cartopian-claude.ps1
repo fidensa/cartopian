@@ -30,6 +30,19 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 } else {
     function Get-CartopianStatusPath { param([string]$PromptPath) return $null }
     function Write-CartopianStatus { param([string]$StatusPath, [int]$ExitCode, [bool]$TimedOut) }
+    # Helper absent: degrade to the historical unsupervised run (deadline only;
+    # no report path to watch without the helper's derivation).
+    function Get-CartopianReportPath { param([string]$StatusPath) return $null }
+    function Invoke-CartopianSupervisedRun {
+        param([AllowEmptyString()][AllowNull()][string]$ReportPath,
+              [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
+        $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru -ErrorAction Stop
+        if ($proc.WaitForExit($TimeoutSec * 1000)) {
+            return @{ ExitCode = $proc.ExitCode; TimedOut = $false }
+        }
+        try { $proc.Kill() } catch {}
+        return @{ ExitCode = 124; TimedOut = $true }
+    }
 }
 
 # --- Configuration ---------------------------------------------------
@@ -177,13 +190,19 @@ $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 $TraceTools = if ($AllowedTools) { $AllowedTools } else { 'default' }
 Write-Host "cartopian-claude: running claude -p (tools=$TraceTools, skip-perms=$SkipPermissions, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
-$proc = Start-Process -FilePath claude -ArgumentList $Args -NoNewWindow -PassThru -ErrorAction Stop
-if ($proc.WaitForExit($TimeoutSec * 1000)) {
-    Write-CartopianStatus -StatusPath $StatusPath -ExitCode $proc.ExitCode -TimedOut $false
-    exit $proc.ExitCode
-} else {
-    try { $proc.Kill() } catch {}
+# Run under the report-completion supervisor (BL-006 parity with the bash
+# cartopian_run_supervised): once the authoritative report file appears, a
+# lingering child is reaped promptly so a finished handoff exits 0/clean
+# instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
+# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# hang that writes no report still hits it (exit 124). The watched report path
+# is the status path without its ".status" suffix (shared derivation —
+# Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
+$ReportPath = Get-CartopianReportPath $StatusPath
+
+$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath claude -ArgumentList $Args -TimeoutSec $TimeoutSec
+if ($run.TimedOut) {
     Write-Host "cartopian-claude: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
-    Write-CartopianStatus -StatusPath $StatusPath -ExitCode 124 -TimedOut $true
-    exit 124
 }
+Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
+exit $run.ExitCode

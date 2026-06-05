@@ -42,6 +42,8 @@ SUBCOMMANDS: List[str] = [
     "write-prompt",
     "write-decision",
     "write-state",
+    # BL-002: durable CLI-supported home for PM/reviewer follow-up notes
+    "write-backlog",
     "reset-plan",
     # FR-014 aggregator
     "next-action",
@@ -122,6 +124,7 @@ def _real_handlers():
         validate_task_readiness as vtr,
         wait_handoff,
         wait_report,
+        write_backlog,
         write_conventions,
         write_decision,
         write_phase,
@@ -157,6 +160,7 @@ def _real_handlers():
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
         "wait-report": (wait_report.configure_parser, wait_report.handler),
+        "write-backlog": (write_backlog.configure_parser, write_backlog.handler),
         "write-conventions": (write_conventions.configure_parser, write_conventions.handler),
         "write-decision": (write_decision.configure_parser, write_decision.handler),
         "write-phase": (write_phase.configure_parser, write_phase.handler),

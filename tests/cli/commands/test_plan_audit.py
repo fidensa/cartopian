@@ -377,5 +377,156 @@ class TestPlanAuditOutput(unittest.TestCase):
             self.assertIn("[audit]", proc.stderr)
 
 
+@unittest.skipUnless(shutil.which("git"), "git required")
+class TestPlanAuditInfraArtifacts(unittest.TestCase):
+    """BL-002: assignee-created `.github`/CI/infra artifacts in a work root
+    emit an `unauthorized-infra-artifacts` warning unless a task naming that
+    work root explicitly authorizes them. A warning, never a blocker."""
+
+    def _project_with_work_root(self, tmp_path: Path):
+        project = _make_project(tmp_path)
+        (project / "cartopian.toml").write_text(
+            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+            encoding="utf-8",
+        )
+        work_root = tmp_path / "tool-repo"
+        work_root.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "init"], cwd=str(work_root),
+            capture_output=True, text=True, check=True,
+        )
+        (project / "cartopian.local.toml").write_text(
+            f"[work_roots]\ntool-repo = \"{work_root}\"\n",
+            encoding="utf-8",
+        )
+        return project, work_root
+
+    def test_unauthorized_github_artifact_warns_but_does_not_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                project / "tasks" / "done" / "TASK-01-001-build.md",
+                "# task\n\nWork root: tool-repo\nAssignee: coder\n\nDo the thing.\n",
+            )
+            _write(work_root / ".github" / "workflows" / "ci.yml", "name: ci\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)  # warning, not blocker
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            self.assertEqual(record["blockers"], [])
+            infra = [w for w in record["warnings"]
+                     if w["kind"] == "unauthorized-infra-artifacts"]
+            self.assertEqual(len(infra), 1, record["warnings"])
+            self.assertEqual(infra[0]["marker"], ".github")
+            self.assertEqual(infra[0]["work_root"], "tool-repo")
+            self.assertIn(".github/workflows/ci.yml", infra[0]["files"])
+            self.assertIn("TASK-01-001", infra[0]["tasks_checked"])
+            self.assertIn("[warning]", proc.stderr)
+
+    def test_explicit_infra_authorized_field_suppresses_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                project / "tasks" / "done" / "TASK-01-001-build.md",
+                "# task\n\nWork root: tool-repo\nAssignee: coder\n"
+                "Infra authorized: yes\n",
+            )
+            _write(work_root / ".github" / "workflows" / "ci.yml", "name: ci\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            infra = [w for w in record["warnings"]
+                     if w["kind"] == "unauthorized-infra-artifacts"]
+            self.assertEqual(infra, [], record["warnings"])
+
+    def test_marker_scoped_field_authorizes_that_marker_only(self):
+        """`Infra authorized: .github` authorizes .github artifacts — and ONLY
+        .github: an unrelated Jenkinsfile still warns (review finding: the
+        blanket form over-authorized across markers)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                project / "tasks" / "in-progress" / "TASK-01-002-ci.md",
+                "# task\n\nWork root: tool-repo\nAssignee: coder\n"
+                "Infra authorized: .github\n\n"
+                "Add the release workflow under .github/workflows/.\n",
+            )
+            _write(project / "prompts" / "PROMPT-01-002.md", "prompt\n")
+            _write(work_root / ".github" / "workflows" / "release.yml", "name: r\n")
+            _write(work_root / "Jenkinsfile", "pipeline {}\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            infra = [w for w in record["warnings"]
+                     if w["kind"] == "unauthorized-infra-artifacts"]
+            self.assertEqual(len(infra), 1, record["warnings"])
+            self.assertEqual(infra[0]["marker"], "Jenkinsfile")
+
+    def test_prose_mention_of_marker_does_not_authorize(self):
+        """Authorization is the explicit field only: an incidental mention
+        (`myapp.github.io`) or even a prohibition (`do NOT touch .github`)
+        must not suppress the warning (review finding: substring matching
+        failed open)."""
+        for prose in (
+            "Deployed docs to myapp.github.io for preview.",
+            "Scope boundary: do NOT touch .github or CI config.",
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                project, work_root = self._project_with_work_root(tmp_path)
+                _write(
+                    project / "tasks" / "done" / "TASK-01-001-build.md",
+                    f"# task\n\nWork root: tool-repo\nAssignee: coder\n\n{prose}\n",
+                )
+                _write(work_root / ".github" / "workflows" / "ci.yml", "name: ci\n")
+
+                proc = _run(str(project), home=tmp_path)
+
+                record = json.loads(proc.stdout.strip())
+                infra = [w for w in record["warnings"]
+                         if w["kind"] == "unauthorized-infra-artifacts"]
+                self.assertEqual(
+                    len(infra), 1,
+                    f"prose {prose!r} must not authorize: {record['warnings']}",
+                )
+                self.assertEqual(infra[0]["marker"], ".github")
+
+    def test_top_level_jenkinsfile_warns_nested_path_does_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(work_root / "Jenkinsfile", "pipeline {}\n")
+            _write(work_root / "src" / "Jenkinsfile", "nested — not a repo entrypoint\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            infra = [w for w in record["warnings"]
+                     if w["kind"] == "unauthorized-infra-artifacts"]
+            self.assertEqual(len(infra), 1, record["warnings"])
+            self.assertEqual(infra[0]["marker"], "Jenkinsfile")
+            self.assertEqual(infra[0]["files"], ["Jenkinsfile"])
+
+    def test_non_infra_dirty_files_emit_no_infra_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(work_root / "src" / "main.py", "print('x')\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            infra = [w for w in record["warnings"]
+                     if w["kind"] == "unauthorized-infra-artifacts"]
+            self.assertEqual(infra, [], record["warnings"])
+
+
 if __name__ == "__main__":
     unittest.main()

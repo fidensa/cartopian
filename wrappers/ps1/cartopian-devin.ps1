@@ -30,26 +30,46 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 } else {
     function Get-CartopianStatusPath { param([string]$PromptPath) return $null }
     function Write-CartopianStatus { param([string]$StatusPath, [int]$ExitCode, [bool]$TimedOut) }
+    # Helper absent: degrade to the historical unsupervised run (deadline only;
+    # no report path to watch without the helper's derivation).
+    function Get-CartopianReportPath { param([string]$StatusPath) return $null }
+    function Invoke-CartopianSupervisedRun {
+        param([AllowEmptyString()][AllowNull()][string]$ReportPath,
+              [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
+        $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru -ErrorAction Stop
+        if ($proc.WaitForExit($TimeoutSec * 1000)) {
+            return @{ ExitCode = $proc.ExitCode; TimedOut = $false }
+        }
+        try { $proc.Kill() } catch {}
+        return @{ ExitCode = 124; TimedOut = $true }
+    }
 }
 
 # --- Configuration ---------------------------------------------------
-# CARTOPIAN_DEVIN_PERMISSION maps onto the CURRENT documented "Devin for
-# Terminal" CLI surface (cli.devin.ai/docs; see tests/wrappers/pm-devin/
-# FINDINGS.md). `--permission-mode` takes one of four modes; OS isolation is
-# engaged with the separate `--sandbox` flag. The earlier
-# `--permission-mode auto|dangerous` spelling was not a valid value:
-#   normal        --permission-mode normal        (writes/shell PROMPT — blocks headless)
-#   accept-edits  --permission-mode accept-edits   (shell still PROMPTs — blocks headless)
-#   bypass        --permission-mode bypass         (auto-approve all; NO OS sandbox)
-#   autonomous    --sandbox --permission-mode autonomous
-#                 (auto-approve all, OS sandbox bounds fs/net, fail-closed;
-#                  devin auto-selects/only permits autonomous under --sandbox;
-#                  --sandbox is documented Unstable)
+# CARTOPIAN_DEVIN_PERMISSION selects an ABSTRACT permission posture, mapped
+# onto whichever surface the INSTALLED devin binary exposes (probed via
+# parser acceptance after the CLI check below; see tests/wrappers/pm-devin/
+# FINDINGS.md and the bash wrapper for the full rationale):
+#  * FOUR-MODE surface (cli.devin.ai docs, captured 2026-06-02):
+#    `--permission-mode normal|accept-edits|bypass|autonomous` + `--sandbox`.
+#  * TWO-MODE surface (live `devin 2026.5.26-3`, probed 2026-06-04): only
+#    `normal` (alias auto) and `dangerous` (aliases yolo, bypass) are valid;
+#    `autonomous`/`accept-edits` are REJECTED at argv parse. `--sandbox`
+#    exists independently.
+# Abstract mode -> composition:
+#   normal        both surfaces: --permission-mode normal
+#   accept-edits  four-mode: --permission-mode accept-edits
+#                 two-mode:  NO equivalent — FAIL CLOSED before launch
+#   bypass        both surfaces: --permission-mode bypass (two-mode alias of
+#                 `dangerous`; auto-approve all, NO OS sandbox)
+#   autonomous    four-mode: --sandbox --permission-mode autonomous
+#                 two-mode:  --sandbox --permission-mode dangerous
+#                 (same posture: auto-approve-all bounded by the OS sandbox)
 # DEFAULT = 'autonomous': most-restrictive sensible mode that still completes
 # the handoff with no human in the loop — the analogue of cartopian-codex's
 # `workspace-write` sandbox default (OS-bounded autonomy, not full bypass).
 # devin stays tier-3 not-recommended; the local --sandbox does not extend to
-# devin's cloud /handoff. Legacy values are mapped onto the real surface:
+# devin's cloud /handoff. Legacy values are mapped onto the abstract modes:
 #   auto -> normal ;  dangerous -> bypass
 $PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'autonomous' }
 switch ($PermissionMode) {
@@ -70,6 +90,39 @@ if (-not (Test-Path $PromptPath)) {
 if (-not (Get-Command devin -ErrorAction SilentlyContinue)) {
     Write-Error "cartopian-devin: 'devin' not found in PATH. Install: https://docs.devin.ai/"
     exit 1
+}
+
+# --- Permission-surface detection ------------------------------------
+# Probe the installed binary's ARGV PARSER, not its help prose: a parser that
+# ACCEPTS `--permission-mode autonomous` (exit 0 with --help appended) is the
+# four-mode surface; one that rejects it at parse (exit 2 — the live
+# `devin 2026.5.26-3` behavior) is the two-mode surface, immune to help-text
+# wording drift. Any probe failure — non-zero exit, a spawn that throws, or
+# a probe that exceeds the 10s bound (killed; a hanging probe must not stall
+# the wrapper outside the supervisor's SSOT deadline) — degrades to two-mode,
+# the live-verified surface, never to a guessed flag value the binary would
+# reject at launch. Mirrors wrappers/bin/cartopian-devin.
+$DevinSurface = 'two-mode'
+$ProbeOut = $null
+$ProbeErr = $null
+try {
+    $ProbeOut = [System.IO.Path]::GetTempFileName()
+    $ProbeErr = [System.IO.Path]::GetTempFileName()
+    $probe = Start-Process -FilePath devin `
+        -ArgumentList @('--permission-mode', 'autonomous', '--help') `
+        -NoNewWindow -PassThru -ErrorAction Stop `
+        -RedirectStandardOutput $ProbeOut -RedirectStandardError $ProbeErr
+    if ($probe.WaitForExit(10000)) {
+        if ($probe.ExitCode -eq 0) { $DevinSurface = 'four-mode' }
+    } else {
+        try { $probe.Kill() } catch {}
+    }
+} catch {
+    $DevinSurface = 'two-mode'
+} finally {
+    foreach ($f in @($ProbeOut, $ProbeErr)) {
+        if ($f) { try { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } catch {} }
+    }
 }
 
 $PromptPathAbs = (Resolve-Path $PromptPath).Path
@@ -150,11 +203,25 @@ if ($WorkRootsJson) {
 }
 # --------------------------------------------------------------------
 
-# `autonomous` requires the OS sandbox (the mode is unavailable without
-# --sandbox, and --sandbox only permits autonomous), so pass both — matching
-# `devin --sandbox --permission-mode autonomous`. Other modes pass the mode alone.
+# Map the abstract mode onto the DETECTED surface (see Configuration). On the
+# four-mode surface `autonomous` requires the OS sandbox; on the two-mode
+# surface the same posture is spelled `--sandbox --permission-mode dangerous`.
+# `accept-edits` has no two-mode equivalent and FAILS CLOSED rather than
+# passing a value devin rejects. `normal`/`bypass` are valid on both surfaces.
 if ($PermissionMode -eq 'autonomous') {
-    $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous')
+    if ($DevinSurface -eq 'four-mode') {
+        $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous')
+    } else {
+        $Args = @('-p', '--sandbox', '--permission-mode', 'dangerous')
+    }
+} elseif ($PermissionMode -eq 'accept-edits') {
+    if ($DevinSurface -eq 'four-mode') {
+        $Args = @('-p', '--permission-mode', 'accept-edits')
+    } else {
+        [Console]::Error.WriteLine("cartopian-devin: error: the installed devin CLI exposes no 'accept-edits' permission mode (two-mode surface: normal|dangerous)")
+        [Console]::Error.WriteLine("  choose CARTOPIAN_DEVIN_PERMISSION=normal | bypass | autonomous, or update the devin CLI")
+        exit 1
+    }
 } else {
     $Args = @('-p', '--permission-mode', $PermissionMode)
 }
@@ -190,15 +257,21 @@ $TimeoutSpec = if ($env:CARTOPIAN_TIMEOUT) { $env:CARTOPIAN_TIMEOUT } else { '60
 $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 # --------------------------------------------------------------------
 
-Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
+Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, surface=$DevinSurface, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
-$proc = Start-Process -FilePath devin -ArgumentList $Args -NoNewWindow -PassThru -ErrorAction Stop
-if ($proc.WaitForExit($TimeoutSec * 1000)) {
-    Write-CartopianStatus -StatusPath $StatusPath -ExitCode $proc.ExitCode -TimedOut $false
-    exit $proc.ExitCode
-} else {
-    try { $proc.Kill() } catch {}
+# Run under the report-completion supervisor (BL-006 parity with the bash
+# cartopian_run_supervised): once the authoritative report file appears, a
+# lingering child is reaped promptly so a finished handoff exits 0/clean
+# instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
+# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# hang that writes no report still hits it (exit 124). The watched report path
+# is the status path without its ".status" suffix (shared derivation —
+# Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
+$ReportPath = Get-CartopianReportPath $StatusPath
+
+$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath devin -ArgumentList $Args -TimeoutSec $TimeoutSec
+if ($run.TimedOut) {
     Write-Host "cartopian-devin: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
-    Write-CartopianStatus -StatusPath $StatusPath -ExitCode 124 -TimedOut $true
-    exit 124
 }
+Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
+exit $run.ExitCode

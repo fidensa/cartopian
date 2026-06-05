@@ -1,0 +1,212 @@
+"""Tests for `cartopian write-backlog` (BL-002).
+
+The durable, CLI-supported home for PM/reviewer follow-up notes: one
+``## BL-NNN — <title>`` section per entry in the project-root ``BACKLOG.md``,
+written exclusively through the SPEC-01-002 mediated-write primitive
+(``backlog`` dest_kind → the allowlisted root file). Re-issuing an id revises
+its entry in place; the hand-authored preamble survives; ``STATE.md`` is never
+touched.
+"""
+import io
+import json
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+
+from cli.main import SUBCOMMANDS, build_parser
+from tests.scaffold import project_scaffold
+
+_TOML = (
+    "[project]\n"
+    'id = "demo"\n'
+    'name = "Demo Project"\n'
+    'protocol_version = "v0.3.0"\n'
+)
+
+
+def run_cli(*argv):
+    parser = build_parser()
+    out, err = io.StringIO(), io.StringIO()
+    code = 0
+    with redirect_stdout(out), redirect_stderr(err):
+        try:
+            args = parser.parse_args(list(argv))
+            handler = getattr(args, "_handler", None)
+            code = handler(args) if handler is not None else 2
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 2
+    records = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
+    return code, records, err.getvalue()
+
+
+class _Fixture(unittest.TestCase):
+    def setUp(self):
+        self.scaffold = project_scaffold(cartopian_toml=_TOML)
+        self.addCleanup(self.scaffold.cleanup)
+        self.root = str(self.scaffold.project_root)
+        self.backlog = Path(self.root) / "BACKLOG.md"
+
+
+class TestRegistration(unittest.TestCase):
+    def test_registered_on_cli_surface(self):
+        self.assertIn("write-backlog", SUBCOMMANDS)
+
+    def test_exposed_on_mcp_tool_surface(self):
+        from mcp_server import server
+        names = {t["name"] for t in server.list_tools()}
+        self.assertIn("write_backlog", names)
+
+
+class TestWriteBacklog(_Fixture):
+    def test_creates_file_with_seed_preamble_and_entry(self):
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "Harden the thing", "--content", "Surfaced: 2026-06-04.\n\nBody.",
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("# Backlog", text)
+        self.assertIn("should not live in `STATE.md`", text)
+        self.assertIn("## BL-001 — Harden the thing", text)
+        self.assertIn("Surfaced: 2026-06-04.", text)
+        details = records[0]["details"]
+        self.assertEqual(details["bl_id"], "BL-001")
+        self.assertFalse(details["entry_replaced"])
+        self.assertEqual(details["entries"], 1)
+
+    def test_appends_new_entry_and_preserves_existing_preamble(self):
+        self.backlog.write_text(
+            "# Demo — Backlog\n\nHand-authored context paragraph.\n\n"
+            "## BL-001 — Existing\n\nOld body.\n",
+            encoding="utf-8",
+        )
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-002",
+            "--title", "Second", "--content", "Body two.",
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("Hand-authored context paragraph.", text)
+        self.assertIn("## BL-001 — Existing", text)
+        self.assertIn("Old body.", text)
+        self.assertIn("## BL-002 — Second", text)
+        self.assertLess(text.index("BL-001"), text.index("BL-002"))
+
+    def test_reissuing_an_id_replaces_its_section_in_place(self):
+        for bl_id, title in (("BL-001", "First"), ("BL-002", "Second")):
+            run_cli("write-backlog", self.root, "--bl-id", bl_id,
+                    "--title", title, "--content", f"{title} body.")
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "First (revised)", "--content", "New body.",
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("## BL-001 — First (revised)", text)
+        self.assertIn("New body.", text)
+        self.assertNotIn("First body.", text)
+        self.assertIn("## BL-002 — Second", text)  # untouched sibling
+        self.assertTrue(records[0]["details"]["entry_replaced"])
+        self.assertEqual(records[0]["details"]["entries"], 2)
+
+    def test_invalid_bl_id_is_usage_error(self):
+        for bad in ("BL-1", "bl-001", "BL-0001", "TASK-01-001"):
+            code, _records, err = run_cli(
+                "write-backlog", self.root, "--bl-id", bad,
+                "--title", "t", "--content", "b",
+            )
+            self.assertEqual(code, 2, f"{bad}: {err}")
+            self.assertIn("[usage]", err)
+
+    def test_multiline_title_is_collapsed_to_one_heading_line(self):
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-003",
+            "--title", "line one\nline two", "--content", "b",
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("## BL-003 — line one line two", text)
+
+    def test_state_md_is_never_touched(self):
+        state = Path(self.root) / "STATE.md"
+        state.write_text("# State\n\ncomposed state only\n", encoding="utf-8")
+        before = state.read_text(encoding="utf-8")
+        run_cli("write-backlog", self.root, "--bl-id", "BL-001",
+                "--title", "t", "--content", "b")
+        self.assertEqual(state.read_text(encoding="utf-8"), before)
+
+    def test_fenced_heading_in_body_round_trips_intact(self):
+        """A `## BL-NNN` line inside a fenced code block is body content, not a
+        section boundary: later writes must not shear the entry or register a
+        phantom section (review finding: corruption reproduced pre-fix)."""
+        body = (
+            "Intro.\n\n```md\n## BL-099 example\nsome body text\n```\n\n"
+            "More normal text."
+        )
+        run_cli("write-backlog", self.root, "--bl-id", "BL-001",
+                "--title", "First", "--content", body)
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-002",
+            "--title", "Second", "--content", "Body two.",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["details"]["entries"], 2)  # no phantom BL-099
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn(body, text)  # BL-001 body intact, byte-for-byte
+        # Re-issuing BL-001 must replace the WHOLE entry, orphaning nothing.
+        run_cli("write-backlog", self.root, "--bl-id", "BL-001",
+                "--title", "First (revised)", "--content", "Short now.")
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertNotIn("BL-099", text)
+        self.assertNotIn("More normal text.", text)
+        self.assertIn("## BL-002 — Second", text)
+
+    def test_body_content_is_preserved_byte_for_byte(self):
+        """Bodies with consecutive blank lines or lines beginning `## BL-` must
+        round-trip unaltered — the write is content-preserving (review finding:
+        blank-line collapse and injected blanks reproduced pre-fix)."""
+        body = (
+            "```text\nline1\n\n\nline2\n```\n\n"
+            "as discussed below:\n## BL-9 ref continued"
+        )
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "t", "--content", body,
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn(body, text)
+        self.assertIn("line1\n\n\nline2", text)          # no blank-line collapse
+        self.assertIn("below:\n## BL-9 ref", text)        # no injected blank line
+
+    def test_unclosed_fence_degrades_without_shearing(self):
+        """An unclosed fence in a body must not corrupt the file: everything
+        after it stays in that entry (conservative), nothing is sheared."""
+        run_cli("write-backlog", self.root, "--bl-id", "BL-001",
+                "--title", "First", "--content", "```\nunclosed fence\n## BL-099 quoted")
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-002",
+            "--title", "Second", "--content", "Body two.",
+        )
+        self.assertEqual(code, 0, err)
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("unclosed fence", text)
+        self.assertIn("## BL-002 — Second", text)
+
+    def test_writes_go_through_the_mediated_primitive(self):
+        """A symlinked BACKLOG.md must be refused by the primitive's no-follow
+        guard — proof the writer carries no raw-write bypass."""
+        target = Path(self.root) / "elsewhere.md"
+        target.write_text("x", encoding="utf-8")
+        self.backlog.symlink_to(target)
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "t", "--content", "b",
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("[guard]", err)
+        self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

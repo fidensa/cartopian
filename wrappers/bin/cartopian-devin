@@ -35,26 +35,36 @@ fi
 # --------------------------------------------------------------------
 
 # --- Configuration ---------------------------------------------------
-# CARTOPIAN_DEVIN_PERMISSION selects the permission posture. It maps onto
-# the CURRENT documented "Devin for Terminal" CLI surface (cli.devin.ai/docs;
-# captured in tests/wrappers/pm-devin/FINDINGS.md). The earlier
-# `--permission-mode auto|dangerous` spelling this wrapper passed is NOT a
-# valid value on that surface — `--permission-mode` takes one of four modes,
-# and OS isolation is engaged with the separate `--sandbox` flag:
+# CARTOPIAN_DEVIN_PERMISSION selects an ABSTRACT permission posture, which is
+# mapped onto whichever permission surface the INSTALLED devin binary actually
+# exposes (probed via parser acceptance at launch — see "surface detection"
+# below). Two surfaces are known (tests/wrappers/pm-devin/FINDINGS.md):
 #
-#   normal        --permission-mode normal
+#  * the FOUR-MODE surface (cli.devin.ai docs, captured 2026-06-02):
+#    `--permission-mode normal|accept-edits|bypass|autonomous`, OS isolation
+#    via the separate `--sandbox` flag (which couples to `autonomous`);
+#  * the TWO-MODE surface (live binary `devin 2026.5.26-3`, probed 2026-06-04):
+#    `--permission-mode` accepts ONLY `normal` (alias `auto`) and `dangerous`
+#    (aliases `yolo`, `bypass`); `autonomous`/`accept-edits` are REJECTED at
+#    argv parse (exit 2). `--sandbox` exists independently and "enforces the
+#    active Read/Write permission scopes at the OS level".
+#
+# Abstract modes and their per-surface composition:
+#
+#   normal        four-mode: --permission-mode normal
+#                 two-mode:  --permission-mode normal   (valid on both)
 #                 reads auto-approved; writes/shell PROMPT for approval
 #                 (blocks in a non-interactive handoff)
-#   accept-edits  --permission-mode accept-edits
-#                 in-workspace edits auto-approved; shell + out-of-workspace
-#                 writes still PROMPT (blocks on shell in a handoff)
-#   bypass        --permission-mode bypass
+#   accept-edits  four-mode: --permission-mode accept-edits
+#                 two-mode:  NO equivalent — FAIL CLOSED before launch
+#   bypass        four-mode: --permission-mode bypass
+#                 two-mode:  --permission-mode bypass   (alias of `dangerous`)
 #                 all tool calls auto-approved; NO OS sandbox (unbounded)
-#   autonomous    --sandbox --permission-mode autonomous
+#   autonomous    four-mode: --sandbox --permission-mode autonomous
+#                 two-mode:  --sandbox --permission-mode dangerous
 #                 all tool calls auto-approved, but the OS sandbox bounds the
-#                 filesystem/network and fails closed. Devin auto-selects (and
-#                 only permits) `autonomous` under `--sandbox`; the mode is
-#                 unavailable without it. Devin documents `--sandbox` Unstable.
+#                 filesystem/network. Same containment posture on both
+#                 surfaces: auto-approval bounded by devin's own OS sandbox.
 #
 # DEFAULT = "autonomous": the most-restrictive sensible mode that still lets
 # the PM→assignee handoff complete with NO human in the loop. It is the direct
@@ -73,7 +83,7 @@ fi
 # change that containment posture or devin's tier.
 #
 # Legacy CARTOPIAN_DEVIN_PERMISSION values stay accepted and are mapped onto
-# the real surface so existing configs keep working:
+# the abstract modes so existing configs keep working:
 #   auto      -> normal   (old "ask before write/execute")
 #   dangerous -> bypass   (old "auto-approve all tool calls")
 DEVIN_PERMISSION_MODE="${CARTOPIAN_DEVIN_PERMISSION:-autonomous}"
@@ -110,6 +120,32 @@ if ! command -v devin &>/dev/null; then
   echo "cartopian-devin: error: 'devin' not found in PATH" >&2
   echo "Install: https://docs.devin.ai/" >&2
   exit 1
+fi
+
+# --- Permission-surface detection ------------------------------------
+# The installed devin binary determines which `--permission-mode` values are
+# valid (see the Configuration block above). Probe the binary's ARGV PARSER,
+# not its help prose: a parser that ACCEPTS `--permission-mode autonomous`
+# (exit 0 with --help appended) is the four-mode surface; one that rejects it
+# at parse (exit 2 — the live `devin 2026.5.26-3` behavior) is the two-mode
+# surface. Parser acceptance cannot be fooled by help-text wording drift (a
+# deprecation note that merely *mentions* "autonomous" would misclassify a
+# token grep). Any probe failure — non-zero exit for any reason, including a
+# probe killed at the 10s bound — degrades to two-mode, the live-verified
+# surface, never to a guessed flag value the binary would reject at launch.
+# The probe is wrapped in `timeout` when available so a hanging `devin --help`
+# (cloud auth check at startup, broken install) cannot stall the wrapper
+# outside the CARTOPIAN_TIMEOUT SSOT deadline, which only covers the launch.
+DEVIN_PROBE=(devin --permission-mode autonomous --help)
+if command -v timeout &>/dev/null; then
+  DEVIN_PROBE=(timeout 10s "${DEVIN_PROBE[@]}")
+elif command -v gtimeout &>/dev/null; then
+  DEVIN_PROBE=(gtimeout 10s "${DEVIN_PROBE[@]}")
+fi
+if "${DEVIN_PROBE[@]}" >/dev/null 2>&1; then
+  DEVIN_SURFACE="four-mode"
+else
+  DEVIN_SURFACE="two-mode"
 fi
 
 PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
@@ -180,16 +216,38 @@ if cartopian_review_recapture_active; then
   cartopian_review_recapture_banner "cartopian-devin" "$PWD" "${WORK_ROOTS:-}"
 fi
 
-# Build the command. `autonomous` requires the OS sandbox (devin: the mode is
-# unavailable without `--sandbox`, and `--sandbox` only permits autonomous), so
-# pass both — matching the documented example `devin --sandbox --permission-mode
-# autonomous`. The other three modes pass `--permission-mode <mode>` alone.
+# Build the command, mapping the abstract mode onto the DETECTED surface (see
+# the Configuration block). On the four-mode surface `autonomous` requires the
+# OS sandbox (the mode is unavailable without `--sandbox`, and `--sandbox` only
+# permits autonomous), so pass both — matching the documented example
+# `devin --sandbox --permission-mode autonomous`. On the two-mode surface the
+# same posture (auto-approve-all bounded by devin's own OS sandbox) is spelled
+# `--sandbox --permission-mode dangerous`; `accept-edits` has no two-mode
+# equivalent and FAILS CLOSED rather than passing a value devin rejects.
 CMD=(devin -p)
-if [[ "$DEVIN_PERMISSION_MODE" == "autonomous" ]]; then
-  CMD+=(--sandbox --permission-mode autonomous)
-else
-  CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
-fi
+case "$DEVIN_PERMISSION_MODE" in
+  autonomous)
+    if [[ "$DEVIN_SURFACE" == "four-mode" ]]; then
+      CMD+=(--sandbox --permission-mode autonomous)
+    else
+      CMD+=(--sandbox --permission-mode dangerous)
+    fi
+    ;;
+  accept-edits)
+    if [[ "$DEVIN_SURFACE" == "four-mode" ]]; then
+      CMD+=(--permission-mode accept-edits)
+    else
+      echo "cartopian-devin: error: the installed devin CLI exposes no 'accept-edits' permission mode (two-mode surface: normal|dangerous)" >&2
+      echo "  choose CARTOPIAN_DEVIN_PERMISSION=normal | bypass | autonomous, or update the devin CLI" >&2
+      exit 1
+    fi
+    ;;
+  normal|bypass)
+    # Valid spellings on BOTH surfaces (two-mode accepts `normal` as the alias
+    # of `auto` and `bypass` as an alias of `dangerous`).
+    CMD+=(--permission-mode "$DEVIN_PERMISSION_MODE")
+    ;;
+esac
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
 # resolved [handoffs.<role>].model; translate it into devin's --model flag.
 # Unset means devin's own default model.
@@ -220,7 +278,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE, timeout=$TIMEOUT_DURATION)" >&2
+echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE, surface=$DEVIN_SURFACE, timeout=$TIMEOUT_DURATION)" >&2
 
 # Run the assignee (not exec) so we can capture its exit outcome and emit
 # the optional status file wait-handoff polls for early-crash detection.
