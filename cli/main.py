@@ -44,6 +44,7 @@ SUBCOMMANDS: List[str] = [
     "write-state",
     # BL-002: durable CLI-supported home for PM/reviewer follow-up notes
     "write-backlog",
+    "delete-backlog",
     "reset-plan",
     # FR-014 aggregator
     "next-action",
@@ -104,6 +105,7 @@ def _real_handlers():
     from cli.commands import (
         close_audit,
         compose_state,
+        delete_backlog,
         delete_prompt,
         delete_report,
         dispatch,
@@ -140,6 +142,7 @@ def _real_handlers():
     return {
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
+        "delete-backlog": (delete_backlog.configure_parser, delete_backlog.handler),
         "delete-prompt": (delete_prompt.configure_parser, delete_prompt.handler),
         "delete-report": (delete_report.configure_parser, delete_report.handler),
         "dispatch": (dispatch.configure_parser, dispatch.handler),

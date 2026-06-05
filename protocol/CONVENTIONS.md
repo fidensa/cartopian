@@ -419,7 +419,7 @@ A decision that changes a prior decision creates a new file with `Supersedes: DE
 
 `BACKLOG.md` at the project root is the durable home for PM/reviewer follow-up notes — actionable tech debt, process debt, and protocol-hardening items that are not yet promoted into a task or roadmap entry. Follow-up notes belong here, never in `STATE.md`, which stays canonical composed state under its 5KB ceiling.
 
-Entries are written through `cartopian write-backlog` (one section per `BL-NNN` id; re-issuing an id revises its entry in place). The file survives plan closeout and is input to the next planning cycle.
+Entries are written through `cartopian write-backlog` (one section per `BL-NNN` id; re-issuing an id revises its entry in place) and removed through `cartopian delete-backlog <project-root> --bl-id BL-NNN` (which removes only that entry's section; the preamble and every other entry round-trip byte-for-byte). Both paths are mediated writes — hand-edits to `BACKLOG.md` remain out of band, the same as any other mediated artifact. The file survives plan closeout and is input to the next planning cycle.
 
 ## Sizing
 

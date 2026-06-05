@@ -96,6 +96,25 @@ def _render_entry(bl_id: str, title: str, body: str) -> str:
     return f"## {bl_id} — {title}\n\n{body}\n"
 
 
+def _assemble(preamble: str, sections: List[Tuple[str, str]]) -> str:
+    """Render ``(preamble, sections)`` back to file text.
+
+    Assemble structurally: exactly one blank line between the preamble and the
+    first entry, and between entries. Only the EDGES of each block are
+    normalized (trailing newlines trimmed before the join); the interior of
+    every section — author-controlled body text — is preserved byte-for-byte,
+    so the mediated write is content-preserving. No whole-document regex or
+    replace passes run over body content. Both ``write-backlog`` (revise) and
+    ``delete-backlog`` (remove) round-trip through this single assembler, so an
+    entry removal leaves every surviving entry byte-identical.
+    """
+    parts: List[str] = []
+    if preamble.strip():
+        parts.append(preamble.rstrip("\n"))
+    parts.extend(section.rstrip("\n") for _sid, section in sections)
+    return "\n\n".join(parts) + "\n"
+
+
 def _sanitize_title(value: str) -> str:
     """Keep the heading on one line."""
     return " ".join(value.replace("\r", " ").replace("\n", " ").split()).strip()
@@ -148,17 +167,7 @@ def handler(args: argparse.Namespace) -> int:
     if not replaced:
         sections.append((bl_id, new_section))
 
-    # Assemble structurally: exactly one blank line between the preamble and
-    # the first entry, and between entries. Only the EDGES of each block are
-    # normalized (trailing newlines trimmed before the join); the interior of
-    # every section — author-controlled body text — is preserved byte-for-byte,
-    # so the mediated write is content-preserving. No whole-document regex or
-    # replace passes run over body content.
-    parts: List[str] = []
-    if preamble.strip():
-        parts.append(preamble.rstrip("\n"))
-    parts.extend(section.rstrip("\n") for _sid, section in sections)
-    rendered = "\n\n".join(parts) + "\n"
+    rendered = _assemble(preamble, sections)
 
     try:
         result = mediated_write(root, "backlog", "BACKLOG.md", rendered)
