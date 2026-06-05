@@ -9,6 +9,15 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 **Output:** A fully planned project with `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an up-to-date `STATE.md`.
 
+**Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
+
+- `cartopian://protocol/CONVENTIONS/roles` — role declaration and reviewer resolution (Stage 0).
+- `cartopian://protocol/CONVENTIONS/reviews` — review artifact rules behind the checkpoints.
+- `cartopian://protocol/CONVENTIONS/plan-lifecycle` — the plan, phase, task, and spec generation contract (Stages 2-4).
+- `cartopian://protocol/CONVENTIONS/session-state` — `STATE.md` rules (Stage 5).
+
+The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
+
 ---
 
 ## Prerequisites

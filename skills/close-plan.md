@@ -6,6 +6,15 @@ This workflow is the boundary between one active plan and the next. It does not 
 
 **Output:** A reset project directory ready for `plan project`, plus an optional `archive/PLAN-NNN-slug/` snapshot when the operator requests one.
 
+**Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
+
+- `cartopian://protocol/CONVENTIONS/plan-lifecycle` — plan completion and closeout contract (Stages 0-1).
+- `cartopian://protocol/CONVENTIONS/plan-archives` — archive naming and contents (Stage 3).
+- `cartopian://protocol/CONVENTIONS/session-state` — post-closeout `STATE.md` rules (Stage 5).
+- `cartopian://protocol/CONVENTIONS/git` — session-close git behavior, when versioning is enabled.
+
+The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
+
 ---
 
 ## Prerequisites

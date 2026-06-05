@@ -6,6 +6,8 @@ Use this skill when another Cartopian skill needs to hand work to a human or con
 
 **Output:** A prepared prompt handoff, an accepted or blocked report outcome, and no lifecycle movement beyond what the caller explicitly owns.
 
+**Protocol reference:** The protocol contract for this workflow is `cartopian://protocol/CONVENTIONS/handoffs` — read that section, not the whole protocol document, when handoff rules beyond this skill are needed. Role declaration rules live in `cartopian://protocol/CONVENTIONS/roles`. The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for a handoff.
+
 ---
 
 ## Prerequisites

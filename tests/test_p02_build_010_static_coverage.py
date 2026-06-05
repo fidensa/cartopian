@@ -554,5 +554,139 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         self._assert_no_adhoc_polling("CONVENTIONS.md § Handoffs", section)
 
 
+class SectionUriStaticCoverageTest(unittest.TestCase):
+    """Benchmark-critical skills read section-scoped CONVENTIONS URIs.
+
+    The MCP server exposes `cartopian://protocol/CONVENTIONS/<section-slug>`
+    (one H2 section per resource) plus the curated `/startup` slice so the PM
+    loads only the protocol slice a given moment needs. These assertions pin
+    the narrower reads in the benchmark-critical lifecycle skills:
+
+    - each skill names the section URIs its stages depend on;
+    - the startup path uses the curated startup slice;
+    - no whole-doc protocol read sneaks back in (the only allowed whole-doc
+      mention is the "remains the authoritative contract" disclaimer);
+    - every referenced section slug resolves to a real H2 section of
+      CONVENTIONS.md, so a protocol heading rename cannot silently break a
+      skill's reference.
+    """
+
+    # Skills in the benchmark-critical lifecycle loop and the section URIs
+    # each must reference.
+    REQUIRED_SECTION_URIS = {
+        "run-task.md": (
+            "cartopian://protocol/CONVENTIONS/status-through-directory",
+            "cartopian://protocol/CONVENTIONS/lifecycle-authority",
+            "cartopian://protocol/CONVENTIONS/lifecycle-cli-guards",
+            "cartopian://protocol/CONVENTIONS/handoffs",
+            "cartopian://protocol/CONVENTIONS/evidence-gate-discipline",
+            "cartopian://protocol/CONVENTIONS/git",
+        ),
+        "run-handoff.md": (
+            "cartopian://protocol/CONVENTIONS/handoffs",
+            "cartopian://protocol/CONVENTIONS/roles",
+        ),
+        "plan-project.md": (
+            "cartopian://protocol/CONVENTIONS/roles",
+            "cartopian://protocol/CONVENTIONS/reviews",
+            "cartopian://protocol/CONVENTIONS/plan-lifecycle",
+            "cartopian://protocol/CONVENTIONS/session-state",
+        ),
+        "close-plan.md": (
+            "cartopian://protocol/CONVENTIONS/plan-lifecycle",
+            "cartopian://protocol/CONVENTIONS/plan-archives",
+            "cartopian://protocol/CONVENTIONS/session-state",
+            "cartopian://protocol/CONVENTIONS/git",
+        ),
+    }
+
+    # The startup path reads the curated slice, not the whole document.
+    STARTUP_SKILLS = ("use-cartopian.md", "start-session.md")
+    STARTUP_URI = "cartopian://protocol/CONVENTIONS/startup"
+
+    # A concrete section reference: URI followed by a literal slug (the
+    # `<section-slug>` placeholder in prose intentionally does not match).
+    _SECTION_REF_RE = re.compile(r"cartopian://protocol/CONVENTIONS/([a-z0-9-]+)")
+    # A whole-doc mention: the bare URI not followed by a section path, or the
+    # raw file-path spelling.
+    _WHOLE_DOC_RE = re.compile(
+        r"cartopian://protocol/CONVENTIONS(?![/a-z0-9-])|protocol/CONVENTIONS\.md"
+    )
+
+    def _read_skill(self, name: str) -> str:
+        return (SKILLS_DIR / name).read_text(encoding="utf-8")
+
+    @staticmethod
+    def _conventions_slugs() -> set:
+        """H2 section slugs of CONVENTIONS.md, slugified as the server does."""
+        text = (PROTOCOL_DIR / "CONVENTIONS.md").read_text(encoding="utf-8")
+        slugs = set()
+        for match in re.finditer(r"^## (.+?)\s*$", text, re.MULTILINE):
+            slugs.add(re.sub(r"[^a-z0-9]+", "-", match.group(1).lower()).strip("-"))
+        return slugs
+
+    def test_lifecycle_skills_reference_required_section_uris(self) -> None:
+        for skill, uris in self.REQUIRED_SECTION_URIS.items():
+            text = self._read_skill(skill)
+            for uri in uris:
+                self.assertIn(
+                    uri, text,
+                    msg=f"{skill} must reference the section-scoped read `{uri}`",
+                )
+
+    def test_startup_path_uses_startup_slice(self) -> None:
+        for skill in self.STARTUP_SKILLS:
+            self.assertIn(
+                self.STARTUP_URI,
+                self._read_skill(skill),
+                msg=f"{skill} must read the curated startup slice `{self.STARTUP_URI}`",
+            )
+
+    def test_no_whole_doc_protocol_reads_in_benchmark_skills(self) -> None:
+        # A whole-doc CONVENTIONS mention is allowed only as the standing
+        # "remains the authoritative contract" disclaimer — never as a read
+        # instruction. Any other whole-doc mention is a token-burn backslide.
+        for skill in self.REQUIRED_SECTION_URIS:
+            text = self._read_skill(skill)
+            offending = [
+                line.strip()
+                for line in text.splitlines()
+                if self._WHOLE_DOC_RE.search(line)
+                and "authoritative" not in line.lower()
+            ]
+            self.assertEqual(
+                offending,
+                [],
+                msg=(
+                    f"{skill} re-introduces a whole-doc CONVENTIONS read; cite a "
+                    f"section via cartopian://protocol/CONVENTIONS/<section-slug> "
+                    f"instead: {offending}"
+                ),
+            )
+
+    def test_referenced_section_slugs_resolve(self) -> None:
+        # Every concrete section slug cited by any skill must be a real H2
+        # section of CONVENTIONS.md (or the reserved `startup` slice), so a
+        # protocol heading rename cannot silently orphan a skill reference.
+        valid = self._conventions_slugs() | {"startup"}
+        for path in sorted(SKILLS_DIR.glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            unknown = sorted(
+                {
+                    slug
+                    for slug in self._SECTION_REF_RE.findall(text)
+                    if slug not in valid
+                }
+            )
+            self.assertEqual(
+                unknown,
+                [],
+                msg=(
+                    f"{path.name} references CONVENTIONS section slugs that do "
+                    f"not resolve to an H2 heading: {unknown}"
+                ),
+            )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

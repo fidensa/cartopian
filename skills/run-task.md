@@ -8,6 +8,17 @@ For vague session-start requests that do not name a project or target task, use 
 
 **Output:** The task is moved to the lifecycle state supported by the evidence; prompts, reports, reviews, decisions, and `STATE.md` are left consistent with that state.
 
+**Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
+
+- `cartopian://protocol/CONVENTIONS/status-through-directory` — directory-as-status semantics behind every task move.
+- `cartopian://protocol/CONVENTIONS/lifecycle-authority` — who may move tasks and author protocol files.
+- `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` — `move-task` artifact guards and the plan-audit blocker contract (Stages 0, 4, 6).
+- `cartopian://protocol/CONVENTIONS/handoffs` — the handoff contract behind Stages 3-6.
+- `cartopian://protocol/CONVENTIONS/evidence-gate-discipline` — `required` vs `n/a` evidence gates.
+- `cartopian://protocol/CONVENTIONS/git` — git policy keys behind the PM-owned product-repo steps and session-close behavior.
+
+The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
+
 ---
 
 ## Prerequisites
@@ -28,7 +39,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
 
 Surface the disagreement and blocker fields to the operator before proposing any action:
 
@@ -289,7 +300,7 @@ Failed reviews do not create replacement tasks. Continue with the original task.
    cartopian delete-report <report-path> --status-only
    ```
 
-   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. See `wrappers/README.md` and `protocol/CONVENTIONS.md` § Handoffs.
+   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. See `wrappers/README.md` and `cartopian://protocol/CONVENTIONS/handoffs`.
 
 Do not treat reports as durable substitutes for task, review, or decision records.
 
