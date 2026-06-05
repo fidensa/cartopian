@@ -46,34 +46,6 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | cartopian-mc
 
 The first command exits 0 with the CLI subcommand list. The second emits a single JSON-RPC line containing `"name":"cartopian"` (the `initialize` response's server info). On native Windows the installer ships `bin/cartopian.cmd` and `bin/cartopian-mcp.cmd` shims so both commands resolve in PowerShell and `cmd.exe` once `bin/` is on PATH (open a new shell first). The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
 
-**Contributors:** if you want a working clone (symlink mode, edit-in-place), use the manual flow:
-
-```bash
-git clone https://github.com/fidensa/cartopian.git
-python3 cartopian/scripts/install.py
-```
-
-This symlinks `~/.cartopian/` back to your clone so edits take effect without re-installing. The agent-driven installer also patches your PATH; under the manual flow you do that yourself. Add both `bin/` and the platform wrapper directory to your user PATH — `bin/` exposes `cartopian` and `cartopian-mcp`, while the wrapper directory (`wrappers/bin` on Unix, `wrappers\ps1` on Windows) exposes the `cartopian-codex`/`cartopian-claude`/… handoff wrappers as bare commands:
-
-```bash
-# zsh
-echo 'export PATH="$HOME/.cartopian/bin:$HOME/.cartopian/wrappers/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
-
-# bash
-echo 'export PATH="$HOME/.cartopian/bin:$HOME/.cartopian/wrappers/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-```
-
-```powershell
-# Windows PowerShell (user-scope PATH; open a new shell after)
-$current = [Environment]::GetEnvironmentVariable("Path", "User")
-foreach ($dir in "$HOME\.cartopian\bin", "$HOME\.cartopian\wrappers\ps1") {
-  if (($current -split ";") -notcontains $dir) { $current = "$dir;$current" }
-}
-[Environment]::SetEnvironmentVariable("Path", $current, "User")
-```
-
-On native Windows, symlink mode requires Developer Mode or an elevated shell — otherwise pass `--mode copy` to `scripts/install.py`.
-
 ## Entry point
 
 Registration installs a small **trigger bridge** for each agent that maps an entry trigger onto the MCP server's `use_cartopian` prompt. Use it from any directory - it loads the prompt, puts the agent in PM mode, and routes to the first useful action (`start session` if you have a project registered, `init project` if not).
@@ -170,4 +142,4 @@ Skills don't make the agent reason through bookkeeping. The deterministic parts 
 
 ## License
 
-MIT. See `LICENSE`.
+This project is distributed under a custom license. See `LICENSE` for the full terms.
