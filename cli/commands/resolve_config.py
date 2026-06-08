@@ -265,12 +265,11 @@ def handler(args: argparse.Namespace) -> int:
 
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
 
-        # FR-008 advisory-tier gate (P02-BUILD-001): when the PM harness cannot
-        # be constrained to Tier 1/2 (TASK-02-001 → tier-3) and no valid
-        # operator acknowledgment exists for (harness, project), refuse launch /
-        # lifecycle entry fail-closed before any config is emitted. With a valid
-        # acknowledgment, proceed under a persistent per-session advisory banner
-        # and do not re-prompt. Tier-1/2 (or no configured harness) is unaffected.
+        # FR-008 advisory-tier surface (P02-BUILD-001): when the PM harness
+        # cannot be proven constrained to Tier 1/2 (TASK-02-001 -> tier-3),
+        # lifecycle orientation still proceeds and emits a visible advisory.
+        # A recorded acknowledgment can annotate the advisory, but is not a
+        # prerequisite for non-technical operators to open the project.
         advisory = evaluate_advisory_gate(project_path, project_id)
         if advisory.blocked:
             raise _CliError(EXIT_FAIL, "guard", advisory.detail)

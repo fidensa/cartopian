@@ -373,11 +373,9 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(guard_msg)
         return EXIT_FAIL
 
-    # FR-008 advisory-tier gate (P02-BUILD-001): refuse a tier-3 (unconstrainable)
-    # PM harness with no valid operator acknowledgment fail-closed before any
-    # orientation is emitted; with a valid acknowledgment, proceed under a
-    # persistent advisory banner and do not re-prompt. The sibling of the FR-013
-    # guard above, generalized to the whole "harness cannot be constrained" case.
+    # FR-008 advisory-tier surface (P02-BUILD-001): a tier-3 PM harness emits a
+    # visible advisory but does not block orientation. The sibling FR-013 guard
+    # above remains the fail-closed unsupported-combination check.
     advisory = evaluate_advisory_gate(project_path, project_id)
     if advisory.blocked:
         stderr_guard(advisory.detail)

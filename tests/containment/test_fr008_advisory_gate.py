@@ -1,11 +1,12 @@
-"""FR-008 advisory-tier gate, acknowledgment & persisted decision (TASK-02-002).
+"""FR-008 advisory-tier notice, acknowledgment & persisted decision (TASK-02-002).
 
-The fail-closed runtime behavior on top of TASK-02-001 detection: a PM harness
-that classifies **tier-3** (Cartopian cannot constrain it to Tier 1/2) must not
-launch silently. It blocks at lifecycle entry until the operator records an
-explicit acknowledgment of the unconstrained risk; once recorded, launch
-proceeds under a persistent advisory banner with no re-prompt; a revoked or
-mismatched record re-blocks. Tier-1/2 (or no configured harness) is unaffected.
+The lifecycle behavior on top of TASK-02-001 detection: a PM harness that
+classifies **tier-3** (Cartopian cannot prove it can constrain it to Tier 1/2)
+must not proceed silently, but it also must not make project orientation
+dependent on a terminal-only operator acknowledgment. Lifecycle entry proceeds
+under a visible advisory banner. A recorded acknowledgment is optional audit
+trail that annotates the banner; revoked or mismatched records are treated as no
+record. Tier-1/2 (or no configured harness) is unaffected.
 
 Red-before-green
 ----------------
@@ -18,10 +19,10 @@ So *without* this gate a tier-3 PM reaches lifecycle entry with **no block**
 assert the gate closes exactly that hole. This is the documented in-module red
 baseline (naive / pre-guard / fail-closed framing) for the manifest.
 
-The gate is exercised at both lifecycle-entry surfaces a PM reaches through the
-Cartopian toolset — ``resolve-config`` and ``next-action`` — via the real
-``bin/cartopian`` entrypoint, and the acknowledgment is recorded through the
-real operator-only command (``python -m cli.commands.acknowledge_harness``).
+The advisory is exercised at both lifecycle-entry surfaces a PM reaches through
+the Cartopian toolset — ``resolve-config`` and ``next-action`` — via the real
+``bin/cartopian`` entrypoint, and the optional acknowledgment command remains
+tested separately as an audit helper.
 """
 import json
 import os
@@ -159,7 +160,8 @@ class TestRedNoAdvisoryGateBaseline(unittest.TestCase):
             self.assertEqual(tier.tier, "tier-3")
             self.assertEqual(tier.harness, "cascade")
             # The pre-task FR-013 guard does NOT fire here (not the pm-owns combo,
-            # not contained): naive/pre-guard launch would proceed unconstrained.
+            # not contained): lifecycle orientation must therefore rely on the
+            # advisory surface rather than a hard block.
             self.assertIsNone(
                 contained_pm_owned_git_block_message(
                     resolve_pm_owns_from_paths(sb.project, home=sb.home),
@@ -169,35 +171,44 @@ class TestRedNoAdvisoryGateBaseline(unittest.TestCase):
             )
 
 
-class TestTier3BlockedNoRecord(unittest.TestCase):
-    """GREEN gate (1): tier-3 + no record → fail-closed block, no lifecycle action."""
+class TestTier3NoRecordProceedsWithAdvisory(unittest.TestCase):
+    """GREEN gate (1): tier-3 + no record → lifecycle proceeds with advisory."""
 
-    def _assert_guard_names_essentials(self, result):
-        self.assertIn("cascade", result.stderr, msg="guard must name the harness")
+    def _assert_advisory_names_essentials(self, result, harness=TIER3_HARNESS):
+        self.assertIn("[advisory]", result.stderr,
+                      msg=f"stderr missing [advisory]: {result.stderr!r}")
+        self.assertIn(harness, result.stderr, msg="advisory must name the harness")
         # Names the missing assets (the floor / depth profile paths from detection).
         self.assertIn("profile", result.stderr,
-                      msg=f"guard must name the missing assets: {result.stderr!r}")
-        # Tells the operator how to acknowledge or switch harness.
-        self.assertIn("acknowledge", result.stderr.lower(),
-                      msg=f"guard must say how to acknowledge: {result.stderr!r}")
+                      msg=f"advisory must name the missing assets: {result.stderr!r}")
+        self.assertIn("Continuing lifecycle entry", result.stderr)
+        self.assertNotIn("python", result.stderr.lower())
+        self.assertNotIn("[guard]", result.stderr)
 
-    def test_resolve_config_blocks(self):
+    def test_resolve_config_proceeds(self):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             result = sb.run("resolve-config")
-        _assert_blocked(self, result)
-        self._assert_guard_names_essentials(result)
+        _assert_proceeds(self, result)
+        self._assert_advisory_names_essentials(result)
 
-    def test_next_action_blocks(self):
+    def test_next_action_proceeds(self):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             result = sb.run("next-action")
-        _assert_blocked(self, result)
-        self._assert_guard_names_essentials(result)
+        _assert_proceeds(self, result)
+        self._assert_advisory_names_essentials(result)
+
+    def test_arbitrary_agent_value_proceeds(self):
+        with _Sandbox() as sb:
+            sb.write_project(agent="agent")
+            result = sb.run("next-action")
+        _assert_proceeds(self, result)
+        self._assert_advisory_names_essentials(result, harness="agent")
 
 
 class TestAcknowledgedProceeds(unittest.TestCase):
-    """GREEN gate (2): tier-3 + valid record → launch proceeds + advisory, no re-prompt."""
+    """GREEN gate (2): tier-3 + valid record → lifecycle proceeds + advisory."""
 
     def _assert_advisory(self, result):
         self.assertIn("[advisory]", result.stderr,
@@ -239,19 +250,25 @@ class TestAcknowledgedProceeds(unittest.TestCase):
                          msg="the gate must not mutate the record on launch")
 
 
-class TestRevokedOrMismatchedReblocks(unittest.TestCase):
+class TestRevokedOrMismatchedRecordsProceed(unittest.TestCase):
     """GREEN gate (2, negative): revoked / mismatched record is treated as no record."""
 
-    def test_revoked_record_reblocks(self):
+    def _assert_unrecorded_advisory(self, result):
+        _assert_proceeds(self, result)
+        self.assertIn("[advisory]", result.stderr)
+        self.assertIn("Continuing lifecycle entry", result.stderr)
+        self.assertNotIn("[guard]", result.stderr)
+
+    def test_revoked_record_proceeds_with_unrecorded_advisory(self):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             _ack_valid(sb)
             rev = sb.acknowledge("--harness", TIER3_HARNESS, "--revoke")
             self.assertEqual(rev.returncode, 0, msg=rev.stderr)
             result = sb.run("resolve-config")
-        _assert_blocked(self, result)
+        self._assert_unrecorded_advisory(result)
 
-    def test_mismatched_harness_reblocks(self):
+    def test_mismatched_harness_proceeds_with_unrecorded_advisory(self):
         """A record for a different harness does not satisfy the gate."""
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
@@ -265,9 +282,9 @@ class TestRevokedOrMismatchedReblocks(unittest.TestCase):
             )
             self.assertEqual(res.returncode, 0, msg=res.stderr)
             result = sb.run("resolve-config")
-        _assert_blocked(self, result)
+        self._assert_unrecorded_advisory(result)
 
-    def test_mismatched_project_reblocks(self):
+    def test_mismatched_project_proceeds_with_unrecorded_advisory(self):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             res = sb.acknowledge(
@@ -279,7 +296,7 @@ class TestRevokedOrMismatchedReblocks(unittest.TestCase):
             )
             self.assertEqual(res.returncode, 0, msg=res.stderr)
             result = sb.run("resolve-config")
-        _assert_blocked(self, result)
+        self._assert_unrecorded_advisory(result)
 
 
 class TestNoRegressionTier12(unittest.TestCase):

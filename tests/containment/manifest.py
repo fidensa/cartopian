@@ -213,15 +213,15 @@ PROHIBITED_OPERATIONS: List[Dict[str, object]] = [
     },
     # --- FR-008 advisory tier (Phase 02, TASK-02-002) — the FR-008 phase gate. ---
     {
-        "key": "advisory-tier-unacknowledged-launch",
+        "key": "advisory-tier-unrecorded-launch",
         "description": (
             "Enter the lifecycle with a tier-3 (unconstrainable) PM harness and no "
-            "operator acknowledgment record (fail-closed block; no silent-continue)."
+            "operator acknowledgment record (visible advisory; lifecycle proceeds)."
         ),
         "negative_tests": [
             "tests/containment/test_fr008_advisory_gate.py::TestRedNoAdvisoryGateBaseline",
-            "tests/containment/test_fr008_advisory_gate.py::TestTier3BlockedNoRecord",
-            "tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedReblocks",
+            "tests/containment/test_fr008_advisory_gate.py::TestTier3NoRecordProceedsWithAdvisory",
+            "tests/containment/test_fr008_advisory_gate.py::TestRevokedOrMismatchedRecordsProceed",
         ],
         "red_baseline": "inmodule:tests/containment/test_fr008_advisory_gate.py",
         "harness_evidence": [],
@@ -229,8 +229,8 @@ PROHIBITED_OPERATIONS: List[Dict[str, object]] = [
     {
         "key": "advisory-tier-acknowledged-launch",
         "description": (
-            "A valid recorded acknowledgment permits the tier-3 launch under a "
-            "persistent advisory banner with no re-prompt; tier-1/2 unaffected (NF-004)."
+            "A valid recorded acknowledgment annotates the tier-3 advisory banner; "
+            "tier-1/2 remains unaffected (NF-004)."
         ),
         "negative_tests": [
             "tests/containment/test_fr008_advisory_gate.py::TestAcknowledgedProceeds",

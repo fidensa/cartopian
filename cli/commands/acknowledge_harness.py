@@ -1,27 +1,21 @@
 """Operator-only acknowledgment of a Tier-3 (unconstrainable) PM harness (FR-008, TASK-02-002).
 
-This is the *one* explicit, separate action that converts the FR-008 launch
-block (an unacknowledged Tier-3 harness — :mod:`cli.commands._advisory_gate`)
-into a permitted advisory launch. It records the operator's acceptance of the
+This optional, separate action records the operator's acceptance of the
 unconstrained risk for a ``(harness, project)`` pair into the project-root
 ledger ``COMPATIBILITY.md`` (SPEC-02-002 OQ-A), written through the FR-003
-mediated writer — the only path that may author that file.
+mediated writer — the only path that may author that file. Lifecycle entry does
+not require this record; unrecorded Tier-3 harnesses proceed with an advisory.
 
 **Operator-owned, NOT a PM tool — and deliberately not a registered subcommand.**
 The Cartopian MCP server auto-exposes every ``cli.main.SUBCOMMANDS`` entry as a
 tool on the contained PM's surface (``mcp_server.server._tool_registry`` builds
 tools from the CLI subparsers). Registering this command there would let the
-*contained PM acknowledge its own unconstrained risk*, making the FR-008 gate
-operator-bypassable by the very actor it constrains. So — exactly as TASK-02-001
-added no subcommand for the same reason, and mirroring the internal
+*contained PM acknowledge its own unconstrained risk*, corrupting the operator
+audit trail. So — exactly as TASK-02-001 added no subcommand for the same
+reason, and mirroring the internal
 ``cli.mediated_write`` shim — this command is **not** in ``SUBCOMMANDS`` /
-``_real_handlers`` and is invoked out-of-band by the operator:
-
-    python3 -m cli.commands.acknowledge_harness <project-root> \\
-        --harness <harness> --acknowledged-by <operator> --rationale <why>
-
-    python3 -m cli.commands.acknowledge_harness <project-root> \\
-        --harness <harness> --revoke
+``_real_handlers``. It is maintenance/audit plumbing, not an end-user recovery
+step.
 
 It still honors the FR-014 machine contract: an NDJSON record on stdout for a
 success, ``[error]`` / ``[guard]`` / ``[usage]`` stderr prefixes for failures,

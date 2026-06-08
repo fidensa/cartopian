@@ -1,13 +1,13 @@
 """Advisory-acknowledgment ledger schema + parser (FR-008 persistence, TASK-02-002).
 
-The FR-008 advisory gate (:mod:`cli.commands._advisory_gate`) blocks a Tier-3 PM
-harness from launching unless the operator has recorded an explicit
+The FR-008 advisory surface (:mod:`cli.commands._advisory_gate`) emits a visible
+Tier-3 PM notice and may annotate it when the operator records an explicit
 acknowledgment of the unconstrained risk for that ``(harness, project)`` pair.
-This module owns the *persisted record*: a markdown-first ledger written to the
+This module owns that optional *persisted record*: a markdown-first ledger written to the
 project-root file ``COMPATIBILITY.md`` (SPEC-02-002 OQ-A) through the FR-003
 mediated writer, with one fixed-schema entry per ``(harness, project_id)``.
 
-It is the source of truth the launch gate reads and that the Phase 04 FR-009
+It is the source of truth the advisory surface reads and that the Phase 04 FR-009
 compatibility matrix later consolidates. The fields are exactly the SPEC-02-002
 Interface table:
 
@@ -15,8 +15,8 @@ Interface table:
     acknowledged_on, rationale, revoked
 
 A record whose ``harness``/``project_id`` does not match the current launch, or
-that is ``revoked``, is not a valid acknowledgment — the gate then re-blocks
-fail-closed.
+that is ``revoked``, is not a valid acknowledgment, so lifecycle entry proceeds
+with the unrecorded Tier-3 advisory.
 
 Import-cycle-free and stdlib-only (NF-001): this module knows only how to
 parse/render/match the ledger. Harness canonicalization is done by callers (the
@@ -167,8 +167,8 @@ def render_ledger(records: List[AckRecord]) -> str:
         "unconstrained at Tier-3 for a project. One entry per (harness,",
         "project_id). Written only by the operator-only acknowledgment command",
         "through the FR-003 mediated writer. A `revoked: true` entry, or no",
-        "entry, re-blocks PM launch fail-closed. Do not hand-edit during a live",
-        "PM session.",
+        "entry, returns PM launch to the unrecorded Tier-3 advisory. Do not",
+        "hand-edit during a live PM session.",
         "",
     ]
     for rec in records:
@@ -201,8 +201,9 @@ def find_valid_record(
 ) -> Optional[AckRecord]:
     """Return a *valid* (matching, non-revoked) acknowledgment, else ``None``.
 
-    This is the single predicate the launch gate consults: a missing,
-    mismatched, or revoked record all yield ``None`` → re-block fail-closed.
+    This is the single predicate the advisory surface consults: missing,
+    mismatched, or revoked records all yield ``None`` and callers fall back to
+    the unrecorded Tier-3 advisory.
     """
     rec = find_record(records, harness, project_id)
     if rec is None or rec.revoked:
