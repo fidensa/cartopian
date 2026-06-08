@@ -1,8 +1,9 @@
 ---
-description: Enter Cartopian PM mode — delegates to the cartopian MCP server's use_cartopian prompt.
+name: use-cartopian
+description: Enter Cartopian PM mode. Use when the operator says "use cartopian" or asks to start, resume, or manage a Cartopian-governed project session.
 ---
 
-# /use-cartopian
+# Use Cartopian
 
 Enter **Cartopian PM mode** now.
 

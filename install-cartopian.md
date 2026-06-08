@@ -202,7 +202,7 @@ Print:
 - PATH entries added (or "already present") — `bin/` plus the wrappers directory.
 - `cartopian --help` exit status and MCP `initialize` probe result (from Step 9).
 - MCP server registered with, and trigger bridge installed for: <agents the operator chose in Step 10>.
-- **Entry point**: tell the operator, in plain language, how to enter Cartopian PM mode from each agent they configured — say "use cartopian" in Claude Code and Devin for Terminal, or type `/use-cartopian` in Codex, Gemini, and Windsurf (Claude Code also accepts the slash form). From any directory, that loads the `use_cartopian` prompt, which briefs the agent on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
+- **Entry point**: tell the operator, in plain language, how to enter Cartopian PM mode from each agent they configured — say "use cartopian" in Claude Code, Codex, and Devin for Terminal (or type `/use-cartopian` or `$use-cartopian` in Codex, Gemini, and Windsurf). From any directory, that loads the `use_cartopian` prompt, which briefs the agent on the available skills and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
 - Next-step suggestion if the operator wants to proceed in this same conversation: `init workspace` if `$install_root/cartopian.toml` is a freshly-seeded default; otherwise `init project`.
 
 ---

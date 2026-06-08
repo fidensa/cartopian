@@ -135,23 +135,23 @@ codex mcp add cartopian -- "$installRoot\bin\cartopian-mcp.cmd"
 
 Verify with `codex mcp list`. The entry must show `cartopian` pointing at the install root's `bin/cartopian-mcp` (Unix) or `bin\cartopian-mcp.cmd` (Windows). Codex reads `~/.codex/config.toml` at launch; existing Codex sessions need to be restarted before the new server is available.
 
-**Part B — install the trigger bridge.** Copy the custom-prompt file into Codex's global prompts directory (only top-level `.md` files are scanned — do not nest it in a subdirectory):
+**Part B — install the trigger bridge.** Codex CLI uses the modern **Skills** framework. Copy the bridge skill into Codex's global skills directory:
 
 ```bash
-mkdir -p ~/.codex/prompts
-cp "$install_root/templates/clients/codex/use-cartopian.md" \
-   ~/.codex/prompts/use-cartopian.md
+mkdir -p ~/.codex/skills/use-cartopian
+cp "$install_root/templates/clients/codex/skills/use-cartopian/SKILL.md" \
+   ~/.codex/skills/use-cartopian/SKILL.md
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codex\prompts" | Out-Null
-Copy-Item "$installRoot\templates\clients\codex\use-cartopian.md" `
-  "$env:USERPROFILE\.codex\prompts\use-cartopian.md" -Force
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codex\skills\use-cartopian" | Out-Null
+Copy-Item "$installRoot\templates\clients\codex\skills\use-cartopian\SKILL.md" `
+  "$env:USERPROFILE\.codex\skills\use-cartopian\SKILL.md" -Force
 ```
 
-After a restart the operator types `/use-cartopian` to enter PM mode. (Codex now marks custom prompts as deprecated in favor of its newer "skills" mechanism, but prompts still work; if a future Codex drops them, move this bridge to `~/.codex/skills/`.)
+After a restart, the operator can enter PM mode by saying "use cartopian" (triggering description matching) or typing `$use-cartopian` (or `/use-cartopian` if integrated in the slash auto-complete).
 
 ### Gemini
 
@@ -352,7 +352,7 @@ Report, per agent the operator selected:
   | Agent | Entry phrase / command |
   | --- | --- |
   | Claude Code | say "use cartopian" (skill) or `/use-cartopian` |
-  | Codex | `/use-cartopian` |
+  | Codex | say "use cartopian" (skill) or `/use-cartopian` / `$use-cartopian` |
   | Gemini | `/use-cartopian` |
   | Devin for Terminal | say "use cartopian" (skill trigger) or `/use-cartopian` |
   | Windsurf | `/use-cartopian` |
