@@ -1,12 +1,12 @@
-"""FR-008 advisory-tier lifecycle advisory (TASK-02-002).
+"""Advisory-tier lifecycle advisory.
 
-The FR-013 sibling guard (:mod:`cli.commands._containment`) fails closed on one
-specific unsupported combination (a contained PM that owns product-repo git).
-This module is the broader FR-008 advisory surface: it detects when Cartopian
-cannot prove that the configured PM harness can be constrained to Tier 1/2 and
-emits explicit guidance without blocking lifecycle orientation.
+The containment sibling guard (:mod:`cli.commands._containment`) fails closed on
+one specific unsupported combination (a contained PM that owns product-repo git).
+This module is the broader advisory surface: it detects when Cartopian cannot
+prove that the configured PM harness can be constrained to Tier 1/2 and emits
+explicit guidance without blocking lifecycle orientation.
 
-The advisory decides solely from TASK-02-001 detection
+The advisory decides solely from harness-tier detection
 (:mod:`cli.commands._harness_tier`) plus the persisted acknowledgment ledger
 (:mod:`cli.commands._compatibility`). It does not re-implement detection and
 never prompts. A recorded decision is optional audit trail; lack of one must not
@@ -107,11 +107,11 @@ def evaluate_advisory_gate(
     wrappers_dir: Optional[Path] = None,
     ledger_text: Optional[str] = None,
 ) -> AdvisoryGateOutcome:
-    """Decide the FR-008 advisory outcome for a lifecycle-entry call.
+    """Decide the advisory outcome for a lifecycle-entry call.
 
-    Pure function of TASK-02-001 detection + the persisted ledger. ``ledger_text``
-    may be supplied for testing; otherwise the project-root ``COMPATIBILITY.md``
-    is read.
+    Pure function of harness-tier detection plus the persisted ledger.
+    ``ledger_text`` may be supplied for testing; otherwise the project-root
+    ``COMPATIBILITY.md`` is read.
     """
     tier_result = classify_pm_tier_from_paths(
         project_path,

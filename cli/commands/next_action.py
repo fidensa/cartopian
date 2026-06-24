@@ -1,4 +1,4 @@
-"""`cartopian next-action <project-path>` aggregator (FR-014, DECISION-001).
+"""`cartopian next-action <project-path>` aggregator.
 
 Emits a single flat NDJSON record with all orientation data a PM needs to
 start or resume a session: active task, next open task, phase, PM role,
@@ -334,7 +334,7 @@ def handler(args: argparse.Namespace) -> int:
     """Handle next-action command.
 
     Reads the Cartopian project at the given path and emits a single NDJSON
-    record with orientation fields per DECISION-001.
+    record with orientation fields.
     """
     raw_path: str = args.project_path
     if not Path(raw_path).is_absolute():
@@ -363,9 +363,9 @@ def handler(args: argparse.Namespace) -> int:
             stderr_error(err.message)
         return err.exit_code
 
-    # FR-013 fail-closed guard (P01-BUILD-006): refuse a contained PM whose
+    # Fail-closed guard: refuse a contained PM whose
     # effective git.pm_owns_product_branches=true — it cannot run git/gh and
-    # mediated-git is deferred (RM-004). Block before any orientation is emitted.
+    # mediated-git is deferred. Block before any orientation is emitted.
     guard_msg = contained_pm_owned_git_block_message(
         resolve_pm_owns_from_paths(project_path), pm_is_contained()
     )
@@ -373,9 +373,9 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(guard_msg)
         return EXIT_FAIL
 
-    # FR-008 advisory-tier surface (P02-BUILD-001): a tier-3 PM harness emits a
-    # visible advisory but does not block orientation. The sibling FR-013 guard
-    # above remains the fail-closed unsupported-combination check.
+    # Advisory-tier surface: a tier-3 PM harness emits a visible advisory but
+    # does not block orientation. The sibling fail-closed guard above remains
+    # the unsupported-combination check.
     advisory = evaluate_advisory_gate(project_path, project_id)
     if advisory.blocked:
         stderr_guard(advisory.detail)

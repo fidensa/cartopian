@@ -1,4 +1,4 @@
-"""`cartopian write-backlog <project-root> --bl-id BL-NNN --title ...` (BL-002, FR-005-family).
+"""`cartopian write-backlog <project-root> --bl-id BL-NNN --title ...`.
 
 Structured writer giving PM/reviewer follow-up notes a **durable,
 CLI-supported home** — the project-root ``BACKLOG.md`` — so they are never
@@ -9,11 +9,11 @@ parked in ``STATE.md`` (which stays canonical composed state only, under its
 - the entry body (``--content`` / ``--content-file``).
 
 Re-issuing the same ``--bl-id`` replaces that entry's section in place;
-a new id appends. The whole file is rendered back through the SPEC-01-002
-mediated-write primitive (``backlog`` dest_kind → the allowlisted root file
-``BACKLOG.md``) — no raw edit, no second bypass surface. An existing
-``BACKLOG.md`` keeps its preamble (everything before the first entry
-heading); a missing one is seeded with a minimal header.
+a new id appends. The whole file is rendered back through the mediated-write
+primitive (``backlog`` dest_kind → the allowlisted root file ``BACKLOG.md``)
+— no raw edit, no second bypass surface. An existing ``BACKLOG.md`` keeps its
+preamble (everything before the first entry heading); a missing one is seeded
+with a minimal header.
 """
 import argparse
 import re
@@ -43,7 +43,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--bl-id",
         required=True,
-        help="Backlog entry id, e.g. BL-001 (grammar BL-NNN)",
+        help="Backlog entry id matching the BL-NNN grammar",
     )
     subparser.add_argument(
         "--title",

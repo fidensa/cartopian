@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cartopian-claude-pm — hard-coded Claude Code PM containment launch profile.
 #
-# Implements the DEC-001 / FR-002 capability floor: launches `claude` with the
+# Implements the hard-coded capability floor: launches `claude` with the
 # fixed Cartopian MCP toolset and NOTHING ELSE — no shell, no raw file
 # write/edit, no raw read/glob/grep, no web, no sub-agents, no non-Cartopian
 # MCP servers — from an isolated cwd with no extra directory grants.
@@ -16,8 +16,8 @@
 #   cartopian-claude-pm                 # interactive contained PM session
 #   cartopian-claude-pm [extra claude flags...]   # e.g. --print for probes
 #
-# The floor flags below are HARD-CODED and NOT overridable. Per DEC-001, any
-# launch that omits `--tools ""` / `--strict-mcp-config`, or that adds
+# The floor flags below are HARD-CODED and NOT overridable. Any launch that
+# omits `--tools ""` / `--strict-mcp-config`, or that adds
 # `--dangerously-skip-permissions` / `--add-dir` / a permissive
 # `--permission-mode`, re-opens the surface. This wrapper therefore *refuses*
 # those flags if passed through, so the floor cannot be silently weakened from
@@ -35,7 +35,7 @@ _PM_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # MCP config that exposes ONLY the Cartopian server (no globally-registered
 # servers reach the session, because --strict-mcp-config is also applied).
 MCP_CONFIG="${_PM_WRAPPER_DIR}/../etc/mcp-cartopian-only.json"
-# Tier-2 native-sandbox DEPTH profile (FR-007 / TASK-01-005). A Claude Code
+# Tier-2 native-sandbox DEPTH profile. A Claude Code
 # settings file that drives Claude Code's OWN native OS sandbox
 # (sandbox-exec/seatbelt on macOS, bubblewrap on Linux) to deny the product
 # repo / work roots and raw write/exec. It sits BENEATH the tool-removal floor:
@@ -51,16 +51,16 @@ SANDBOX_PROFILE="${_PM_WRAPPER_DIR}/../etc/sandbox-pm-depth.json"
 # CARTOPIAN_PM_SURFACE if you need a different isolated, content-free dir.
 PM_SURFACE="${CARTOPIAN_PM_SURFACE:-${_PM_WRAPPER_DIR}/../var/pm-surface}"
 
-# --- The DEC-001 floor (hard-coded, authoritative) ------------------------
+# --- The hard-coded PM containment floor (authoritative) -----------------
 #   --tools ""               remove ALL built-in tools (Bash/Read/Write/Edit/
 #                            Glob/Grep/WebFetch/Task/NotebookEdit/...).
 #   --strict-mcp-config      ignore every globally-registered MCP server.
 #   --mcp-config <cfg>       expose ONLY the Cartopian MCP server.
 #   --allowedTools mcp__...  grant the fixed Cartopian toolset so the PM works.
 #   --disable-slash-commands defense-in-depth: no skill/prompt expansions.
-#   --settings <depth>       Tier-2 (FR-007): drive Claude Code's native OS
-#                            sandbox to deny product-repo/work-root paths and
-#                            raw write/exec BENEATH the floor (defense-in-depth).
+#   --settings <depth>       Tier-2: drive Claude Code's native OS sandbox to
+#                            deny product-repo/work-root paths and raw
+#                            write/exec BENEATH the floor (defense-in-depth).
 # cwd = isolated PM surface; NO --add-dir; NEVER --dangerously-skip-permissions.
 readonly FLOOR=(
   --tools ""
@@ -72,8 +72,8 @@ readonly FLOOR=(
 )
 
 # --- Refuse surface-reopening flags from the command line -----------------
-# These are the exact knobs DEC-001 names as re-opening the surface. Reject
-# them (in both `--flag value` and `--flag=value` forms) so the floor is not
+# These are the exact knobs that re-open the containment surface. Reject them
+# (in both `--flag value` and `--flag=value` forms) so the floor is not
 # overridable by whatever invokes this wrapper.
 for arg in "$@"; do
   case "$arg" in
@@ -86,7 +86,7 @@ for arg in "$@"; do
     | --permission-mode | --permission-mode=* \
     | --settings | --settings=* \
     | --setting-sources | --setting-sources=*)
-      echo "cartopian-claude-pm: refusing flag '$arg' — the PM containment floor (DEC-001/FR-002) and Tier-2 native-sandbox depth profile (FR-007) are not overridable." >&2
+      echo "cartopian-claude-pm: refusing flag '$arg' — the PM containment floor and Tier-2 native-sandbox depth profile are not overridable." >&2
       echo "cartopian-claude-pm: the floor (--tools \"\" --strict-mcp-config --mcp-config <cartopian-only> --allowedTools \"mcp__cartopian\" --disable-slash-commands --settings <sandbox-depth>) is fixed; remove the flag." >&2
       exit 1
       ;;
@@ -112,7 +112,7 @@ if [[ ! -f "$SANDBOX_PROFILE" ]]; then
   exit 1
 fi
 
-# --- PM toolchain pinning / identity audit (BL-007 / REVIEW-03-006) --------
+# --- PM toolchain pinning / identity audit --------------------------------
 # Resolve the toolchain the MCP config binds this PM to, print its identity
 # (command, root, VERSION) so "which code did the PM run?" is explicit at
 # launch, and FAIL CLOSED if it resolves into an editable (git) checkout — the
@@ -127,7 +127,7 @@ fi
 source "${_PM_WRAPPER_DIR}/_cartopian-toolchain.sh"
 cartopian_pm_toolchain_audit "cartopian-claude-pm" "$MCP_CONFIG"
 
-# --- Containment signal (FR-013 fail-closed git guard) --------------------
+# --- Containment signal (fail-closed git guard) ---------------------------
 # Mark this PM as contained so the config-resolution / lifecycle-entry surface
 # (resolve-config / next-action) can fail closed on the unsupported combination
 # git.pm_owns_product_branches=true under containment (no shell for git/gh;
@@ -139,9 +139,9 @@ export CARTOPIAN_PM_CONTAINED=1
 mkdir -p "$PM_SURFACE"
 PM_SURFACE="$(cd "$PM_SURFACE" && pwd)"
 
-echo "cartopian-claude-pm: contained PM launch profile (DEC-001/FR-002 floor)" >&2
+echo "cartopian-claude-pm: contained PM launch profile" >&2
 echo "cartopian-claude-pm: cwd=$PM_SURFACE  mcp-config=$MCP_CONFIG  tools=cartopian-only" >&2
-echo "cartopian-claude-pm: native-sandbox depth profile (FR-007) = $SANDBOX_PROFILE" >&2
+echo "cartopian-claude-pm: native-sandbox depth profile = $SANDBOX_PROFILE" >&2
 
 # Launch from the isolated surface. exec so the PM session owns the terminal.
 cd "$PM_SURFACE"

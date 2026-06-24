@@ -1,10 +1,10 @@
-"""`cartopian scaffold-project <project-path>` (FR-004 #8, FR-014, SPEC-01-001).
+"""`cartopian scaffold-project <project-path>`.
 
 Creates the Cartopian project directory tree and seed files at an absolute
-path. Maintains `.gitignore` per DEC-003 sub-decision 4. Enforces the
-FR-004 #8 rerun policy: empty/missing target → scaffold (exit 0); already
-well-formed scaffold → no-op (exit 0); non-empty target that does not
-match the layout → guarded refusal (exit 1).
+path. Maintains `.gitignore` (gitignores `cartopian.local.toml`). Enforces the
+rerun policy: empty/missing target → scaffold (exit 0); already well-formed
+scaffold → no-op (exit 0); non-empty target that does not match the layout →
+guarded refusal (exit 1).
 """
 import argparse
 import sys

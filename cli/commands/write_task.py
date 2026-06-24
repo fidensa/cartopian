@@ -1,4 +1,4 @@
-"""`cartopian write-task <project-root> --task-id TASK-NN-NNN --slug ...` (G5, FR-005, SPEC-01-003).
+"""`cartopian write-task <project-root> --task-id TASK-NN-NNN --slug ...`.
 
 Structured writer for task files. New tasks land in ``tasks/open/`` —
 ``TASK-NN-NNN-slug.md`` — matching the lifecycle entry point (``move-task``
@@ -15,7 +15,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--task-id",
         required=True,
-        help="Task id, e.g. TASK-01-001 (grammar TASK-NN-NNN)",
+        help="Task id, e.g. TASK-NN-NNN",
     )
     subparser.add_argument(
         "--slug",

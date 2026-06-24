@@ -1,7 +1,7 @@
-"""Cartopian Core CLI dispatcher (FR-014 contract).
+"""Cartopian Core CLI dispatcher.
 
 Defines the exit-code contract, stderr-prefix helpers, and the argparse
-surface every Phase-01 subcommand binds into. Every entry of
+surface every subcommand binds into. Every entry of
 ``SUBCOMMANDS`` is wired to a real handler in :func:`_real_handlers`.
 """
 import argparse
@@ -14,7 +14,6 @@ EXIT_USAGE = 2
 EXIT_ENV = 3
 
 SUBCOMMANDS: List[str] = [
-    # FR-004
     "discover-projects",
     "generate-config",
     "move-task",
@@ -27,13 +26,12 @@ SUBCOMMANDS: List[str] = [
     "validate-task-readiness",
     # Deidentified spec rendering for coder handoffs
     "render-spec",
-    # FR-005
     "close-audit",
     "compose-state",
     "delete-prompt",
     "delete-report",
     "list-tasks",
-    # FR-005 structured PM authoring commands (SPEC-01-003)
+    # Structured PM authoring commands
     "write-requirements",
     "write-plan",
     "write-standards",
@@ -44,18 +42,18 @@ SUBCOMMANDS: List[str] = [
     "write-prompt",
     "write-decision",
     "write-state",
-    # BL-002: durable CLI-supported home for PM/reviewer follow-up notes
+    # Durable CLI-supported home for PM/reviewer follow-up notes
     "write-backlog",
     "delete-backlog",
     "reset-plan",
-    # FR-014 aggregator
+    # Aggregator: next action to take
     "next-action",
-    # FR-014 stdio wait primitives
+    # stdio wait primitives
     "wait-report",
     "wait-handoff",
-    # FR-003 aggregator
+    # Handoff packet aggregator
     "handoff-packet",
-    # FR-006 mediated handoff dispatch (G20)
+    # Mediated handoff dispatch
     "dispatch",
     # lifecycle + provenance audit
     "plan-audit",

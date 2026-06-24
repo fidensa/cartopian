@@ -81,7 +81,7 @@ PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -102,7 +102,7 @@ else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
-  # FR-012 launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  # launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
   if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
     cd "$PROJECT_DIR"
     echo "cartopian-gemini: cwd=$PROJECT_DIR" >&2
@@ -112,7 +112,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
+# --- Access grants -----------------------------------------
 # Enforce the per-agent work-root scoping guard via the shared helper (so the
 # fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
 # The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
@@ -122,7 +122,7 @@ fi
 # sandbox (forced on below) roots writes at the launch cwd + temp, keeping the
 # source work root read-only.
 #
-# Native work-root union scoping (TASK-03-009): gemini scopes a multi-directory
+# Native work-root union scoping: gemini scopes a multi-directory
 # union via `--include-directories <dirs>` ("additional directories to include in
 # the workspace", comma-separated). The launch cwd ($1) is the primary workspace
 # dir; add each declared work root ($2..) so the workspace is the union (launch

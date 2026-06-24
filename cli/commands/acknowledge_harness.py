@@ -1,25 +1,23 @@
-"""Operator-only acknowledgment of a Tier-3 (unconstrainable) PM harness (FR-008, TASK-02-002).
+"""Operator-only acknowledgment of a Tier-3 (unconstrainable) PM harness.
 
 This optional, separate action records the operator's acceptance of the
 unconstrained risk for a ``(harness, project)`` pair into the project-root
-ledger ``COMPATIBILITY.md`` (SPEC-02-002 OQ-A), written through the FR-003
-mediated writer — the only path that may author that file. Lifecycle entry does
-not require this record; unrecorded Tier-3 harnesses proceed with an advisory.
+ledger ``COMPATIBILITY.md``, written through the mediated writer — the only
+path that may author that file. Lifecycle entry does not require this record;
+unrecorded Tier-3 harnesses proceed with an advisory.
 
 **Operator-owned, NOT a PM tool — and deliberately not a registered subcommand.**
 The Cartopian MCP server auto-exposes every ``cli.main.SUBCOMMANDS`` entry as a
 tool on the contained PM's surface (``mcp_server.server._tool_registry`` builds
 tools from the CLI subparsers). Registering this command there would let the
 *contained PM acknowledge its own unconstrained risk*, corrupting the operator
-audit trail. So — exactly as TASK-02-001 added no subcommand for the same
-reason, and mirroring the internal
-``cli.mediated_write`` shim — this command is **not** in ``SUBCOMMANDS`` /
-``_real_handlers``. It is maintenance/audit plumbing, not an end-user recovery
+audit trail. This command is therefore **not** in ``SUBCOMMANDS`` /
+``_real_handlers`` — it is maintenance/audit plumbing, not an end-user recovery
 step.
 
-It still honors the FR-014 machine contract: an NDJSON record on stdout for a
-success, ``[error]`` / ``[guard]`` / ``[usage]`` stderr prefixes for failures,
-and the documented exit codes. Stdlib-only (NF-001).
+It emits an NDJSON record on stdout for a success, and ``[error]`` /
+``[guard]`` / ``[usage]`` stderr prefixes for failures, with the documented
+exit codes. Stdlib-only.
 """
 from __future__ import annotations
 
@@ -56,7 +54,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="cartopian-internal acknowledge-harness",
         description=(
             "OPERATOR-ONLY: record/revoke acknowledgment that a Tier-3 PM "
-            "harness runs unconstrained for a project (FR-008). Not a PM tool."
+            "harness runs unconstrained for a project. Not a PM tool."
         ),
         add_help=True,
     )
@@ -131,7 +129,7 @@ def _validate_date(raw: str) -> Optional[str]:
 
 
 def _write_ledger(root: Path, records, action: str, detail: dict) -> int:
-    """Render + mediated-write the ledger, then emit the FR-014 success record."""
+    """Render + mediated-write the ledger, then emit the NDJSON success record."""
     body = _compatibility.render_ledger(records)
     try:
         result = mediated_write(

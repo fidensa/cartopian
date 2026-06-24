@@ -102,7 +102,13 @@ class TestHappyPath(unittest.TestCase):
         self.assertEqual(record["roles"]["coder"], "Writes code.")
         self.assertEqual(
             record["handoffs"]["coder"],
-            {"agent": "claude", "model": None, "auto_start": True, "timeout": "60m"},
+            {
+                "agent": "claude",
+                "model": None,
+                "auto_start": True,
+                "timeout": "60m",
+                "code_comments": None,
+            },
         )
         self.assertEqual(
             record["automation"],
@@ -294,7 +300,7 @@ class TestRelativeWorkRootMappingRejected(unittest.TestCase):
         self.assertEqual(
             result.stderr.rstrip("\n"),
             '[work-root] non-absolute path: site = "relative/path" — '
-            "cartopian.local.toml must use absolute paths (DEC-003)",
+            "cartopian.local.toml must use absolute paths",
         )
 
 

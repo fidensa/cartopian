@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# _cartopian-toolchain.sh — PM toolchain pinning / identity audit (BL-007).
+# _cartopian-toolchain.sh — PM toolchain pinning / identity audit.
 #
 # Named with a leading underscore so it reads as a *library* sourced by the
 # cartopian-*-pm containment wrappers, not a wrapper itself. Stdlib-only
 # (bash + python3 json) — NF-001.
 #
-# THE GAP THIS CLOSES (REVIEW-03-006 isolation finding): the Cartopian CLI/MCP
+# THE GAP THIS CLOSES: the Cartopian CLI/MCP
 # the PM runs on can resolve to the editable work-root source tree — the very
 # tree coders mutate during handoffs — so a coder edit to cli/ or mcp_server/
 # lands directly on the PM's own toolchain path. Whether the PM then runs the
@@ -77,7 +77,7 @@ PY
         ;;
       *)
         echo "${wrapper}: error: PM toolchain resolves to an EDITABLE checkout: ${root}" >&2
-        echo "${wrapper}: a contained PM must run a pinned/installed toolchain, not the work root assignees mutate (BL-007 / REVIEW-03-006)." >&2
+        echo "${wrapper}: a contained PM must run a pinned/installed toolchain, not the work root assignees mutate." >&2
         echo "${wrapper}: fix: point ${mcp_config} at the installed root (scripts/install.py, e.g. ~/.cartopian/bin/cartopian-mcp)," >&2
         echo "${wrapper}: or set CARTOPIAN_PM_TOOLCHAIN_DEV=1 to opt in for development (dangerous)." >&2
         exit 1

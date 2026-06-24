@@ -5,12 +5,12 @@ Branch: <branch or n/a>
 
 ## Paths
 
-- **Project root**: <absolute path to the cartopian project directory; the assignee CLI's launch cwd>
+- **Project root**: <absolute path to the governing cartopian project directory; NOT in the assignee's scope except the report target below>
 - **Work root paths**: <comma-separated absolute paths resolved from `Work root:`, or n/a>
 - **Report path**: <absolute path to the expected completion report>
 - **Report template path**: <absolute path to templates/REPORT.md>
 
-The assignee CLI is launched with cwd set to **Project root** (the registered absolute path from the cartopian project registry). Any locations this work touches outside the cartopian project root are declared as work-root names in `Work root:` above; the launcher resolves each name to an absolute path via `cartopian resolve-config` (which merges `<project-root>/cartopian.toml` and the per-machine `<project-root>/cartopian.local.toml`) and grants the agent read/write access to the union of the project root and the resolved work-root paths. The launcher fails closed if any name is unmapped.
+The assignee CLI is launched with cwd set to the **primary work root** (the first name in `Work root:`), not the governing project (DEC-011). Its filesystem scope is the union of the resolved work-root paths plus only the directory of the **Report path** above — so the governing project's PM artifacts (requirements, decisions, tasks, backlog, STATE, sibling prompts/reports) are out of scope. The launcher (`cartopian dispatch`) resolves each work-root name to an absolute path via `cartopian resolve-config` (merging `<project-root>/cartopian.toml` and the per-machine `<project-root>/cartopian.local.toml`) and passes the scope set to the wrapper; it fails closed if any name is unmapped. The prompt is self-contained — paste the deidentified spec and the relevant report-template variant inline rather than pointing the assignee at protocol files; the assignee's only interaction with the governing project is writing its completion report to the report target.
 
 ## Pull request
 

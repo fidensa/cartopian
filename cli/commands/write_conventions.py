@@ -1,8 +1,8 @@
-"""`cartopian write-conventions <project-root>` (G15 partner, FR-005, SPEC-01-003).
+"""`cartopian write-conventions <project-root>`.
 
 Structured writer for the project ``CONVENTIONS.md``. Front-end over the
-SPEC-01-002 mediated-write primitive; destination implied by the verb. Pairs
-with ``reset-plan``'s conditional conventions reseed at close.
+mediated-write primitive; destination implied by the verb. Pairs with
+``reset-plan``'s conditional conventions reseed at close.
 """
 import argparse
 

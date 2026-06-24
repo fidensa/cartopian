@@ -1,4 +1,4 @@
-"""`cartopian compose-state <project-path>` aggregator (FR-006, DECISION-002)."""
+"""`cartopian compose-state <project-path>` aggregator."""
 import argparse
 import re
 from pathlib import Path

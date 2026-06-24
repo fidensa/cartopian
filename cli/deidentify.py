@@ -45,7 +45,7 @@ _ID = (
 )
 
 # A leading ``\b`` and a trailing ``(?![-\w])`` stop substring matches:
-# ``TASK-01-0024`` and ``xFR-001`` never match.
+# ``TASK-NN-MMMM`` (too many digits) and ``xFR-NNN`` (non-word prefix) never match.
 IDENTIFIER_RE = re.compile(r"\b" + _ID + r"(?![-\w])")
 
 # Inline reference forms, removed whole so no dangling "(see )" / "per ," remains.
@@ -61,7 +61,7 @@ _PHRASE_REF_RE = re.compile(
     r"\b(?:see|per|cf\.?|ref\.?)\s+" + _ID + r"(?:\s*,\s*" + _ID + r")*",
     re.IGNORECASE,
 )
-# A leading "ID:" label after a bullet / numbered marker, e.g. "- FR-003: ...".
+# A leading "ID:" label after a bullet / numbered marker, e.g. "- FR-NNN: ...".
 _LABEL_RE = re.compile(r"^(\s*(?:[-*]|\d+\.)\s+)" + _ID + r"\s*:\s*")
 
 _TITLE_RE = re.compile(r"^#\s+(.*)$")

@@ -1,10 +1,10 @@
-"""Shared registry primitives for FR-003 registry CLI commands.
+"""Shared registry primitives for registry CLI commands.
 
 Centralizes:
-- ``~/.cartopian/projects.json`` path resolution (DEC-009).
-- Kebab-case id grammar (FR-003).
-- Per-entry registry schema validation (SPEC-01-001 ``discover-projects``
-  + FR-003 minimum schema).
+- ``~/.cartopian/projects.json`` path resolution.
+- Kebab-case id grammar.
+- Per-entry registry schema validation for the ``discover-projects``
+  minimum schema.
 - Read / write primitives with atomic temp-file rename.
 
 Used by ``discover_projects``, ``register_project``, ``unregister_project``.
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-# FR-003 kebab-case id grammar:
+# Kebab-case id grammar:
 #   lowercase ASCII letters, digits, hyphens; must start with a letter;
 #   no leading/trailing/consecutive hyphens.
 _KEBAB_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
@@ -33,7 +33,7 @@ def is_kebab_case(value: Any) -> bool:
 
 
 class MalformedRegistry(Exception):
-    """Registry file or entry violates DEC-009 / FR-003 / SPEC-01-001 schema."""
+    """Registry file or entry violates the expected schema."""
 
     def __init__(self, path: Path, detail: str = "") -> None:
         self.path = path
@@ -74,7 +74,7 @@ def _validate_entry(entry: Any, path: Path) -> None:
 def read_registry(path: Path) -> List[Dict[str, Any]]:
     """Read and validate the registry file.
 
-    Missing or empty file → empty list (DEC-009).
+    Missing or empty file → empty list.
     Corrupt JSON / non-array root / invalid entry → MalformedRegistry.
     """
     if not path.exists():

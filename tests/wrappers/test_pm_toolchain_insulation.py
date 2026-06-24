@@ -98,7 +98,7 @@ class TestToolchainAuditHelper:
         proc = _run_audit(cfg)
         assert proc.returncode == 1, proc.stderr
         assert "EDITABLE checkout" in proc.stderr
-        assert "BL-007" in proc.stderr
+        assert "pinned/installed toolchain" in proc.stderr
 
     def test_editable_checkout_dev_optin_proceeds_loudly(self, tmp_path):
         cmd = _make_toolchain_root(tmp_path / "dev", editable=True, version=None)

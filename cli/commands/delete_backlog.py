@@ -1,12 +1,12 @@
-"""`cartopian delete-backlog <project-root> --bl-id BL-NNN` (BL-002, FR-005-family).
+"""`cartopian delete-backlog <project-root> --bl-id BL-NNN`.
 
 Mediated removal of a single backlog entry — the counterpart to
 ``write-backlog``. Trimming the project-root ``BACKLOG.md`` no longer requires
 an operator hand-edit (which would bypass the mediated-write discipline the
 backlog was built for): this command removes exactly the ``## BL-NNN — <title>``
 section named by ``--bl-id`` and re-renders the whole file back through the
-SPEC-01-002 mediated-write primitive (``backlog`` dest_kind → the allowlisted
-root file ``BACKLOG.md``).
+mediated-write primitive (``backlog`` dest_kind → the allowlisted root file
+``BACKLOG.md``).
 
 Removal is section-exact. The file preamble and every surviving entry round-trip
 byte-for-byte: this reuses ``write-backlog``'s fence-aware section parser (a
@@ -30,7 +30,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--bl-id",
         required=True,
-        help="Backlog entry id to remove, e.g. BL-001 (grammar BL-NNN)",
+        help="Backlog entry id to remove (grammar BL-NNN)",
     )
 
 

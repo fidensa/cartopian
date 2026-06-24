@@ -1,12 +1,12 @@
-"""Validated mediated-write primitive (FR-003, SPEC-01-002).
+"""Validated mediated-write primitive.
 
 The single audited *sole writer* every structured PM-authoring command
-(SPEC-01-003) calls. It is an **internal** tool-layer function: it is NOT
+calls. It is an **internal** tool-layer function: it is NOT
 registered in :data:`cli.main.SUBCOMMANDS` and therefore never appears on the
-PM's tool surface (CLI or MCP). Structured per-artifact commands (TASK-01-003)
+PM's tool surface (CLI or MCP). Structured per-artifact commands
 wrap it; the PM never calls it with a free-form destination.
 
-Design (per SPEC-01-002 Interface), stdlib-only (NF-001):
+Design, stdlib-only:
 
 - **Fixed-allowlist destinations.** ``(dest_kind, relative_target)`` maps to an
   absolute path under the cartopian project root. ``dest_kind`` is a member of a
@@ -33,7 +33,7 @@ Design (per SPEC-01-002 Interface), stdlib-only (NF-001):
 Refusals raise :class:`GuardRefusal` (``.rule`` names the violated rule). The
 internal CLI shim :func:`main` surfaces success as an NDJSON record on stdout
 and a refusal as a ``[guard] <rule>: <detail>`` stderr line with a non-zero exit
-code (FR-014). No file content is ever echoed in errors.
+code. No file content is ever echoed in errors.
 """
 import binascii
 import os
@@ -56,7 +56,7 @@ EXIT_USAGE = 2
 # Each ``dest_kind`` maps to a subtree *relative to the project root*. ``""``
 # means the project root itself (single-file root artifacts such as STATE.md);
 # those rely on the config-file guard to refuse cartopian.toml / dotfiles. The
-# concrete per-artifact set is owned by SPEC-01-003 — this is the closed,
+# concrete per-artifact set is the closed,
 # enumerable category set the primitive enforces. Nothing outside it is
 # writable.
 # ---------------------------------------------------------------------------
@@ -75,11 +75,11 @@ DEST_KINDS: Dict[str, str] = {
     "state": "",
     "roadmap": "",
     "backlog": "",
-    # FR-008 / TASK-02-002: the persisted advisory-acknowledgment ledger. This
-    # is the single new entry extending the named-root-files allowlist (see
-    # ROOT_FILES) — no directory entry, no other root file. The operator-only
-    # acknowledgment command (cli.commands.acknowledge_harness) is the sole
-    # caller; it writes the fixed basename COMPATIBILITY.md and nothing else.
+    # The persisted advisory-acknowledgment ledger. This is the single new
+    # entry extending the named-root-files allowlist (see ROOT_FILES) — no
+    # directory entry, no other root file. The operator-only acknowledgment
+    # command (cli.commands.acknowledge_harness) is the sole caller; it writes
+    # the fixed basename COMPATIBILITY.md and nothing else.
     "compatibility": "",
 }
 
@@ -87,13 +87,13 @@ DEST_KINDS: Dict[str, str] = {
 # Fixed named-root-files allowlist.
 #
 # A root destination (a ``dest_kind`` whose subtree is ``""``) maps to exactly
-# one permitted basename at the project root — the FR-003 "fixed set of named
-# project-root files". The primitive refuses any other basename for a root
+# one permitted basename at the project root — the fixed set of named
+# project-root files. The primitive refuses any other basename for a root
 # kind, so a root ``dest_kind`` cannot be repurposed to author an arbitrary
 # (non-config, non-dotfile) file at the project root. This binding is the
-# writer-enforced form of FR-003's allowlist; it is strictly *tightening*
+# writer-enforced allowlist; it is strictly *tightening*
 # (every existing root writer already passes its bound basename) and adds no
-# new permission beyond the single COMPATIBILITY.md entry (NF-004 additive).
+# new permission beyond the single COMPATIBILITY.md entry.
 # ---------------------------------------------------------------------------
 ROOT_FILES: Dict[str, str] = {
     "requirements": "REQUIREMENTS.md",
@@ -103,7 +103,7 @@ ROOT_FILES: Dict[str, str] = {
     "state": "STATE.md",
     "roadmap": "ROADMAP.md",
     "backlog": "BACKLOG.md",
-    # The single FR-008 / TASK-02-002 extension. Net-new writable root file.
+    # The single advisory-acknowledgment extension. Net-new writable root file.
     "compatibility": "COMPATIBILITY.md",
 }
 
@@ -123,7 +123,7 @@ _concurrent_swap_hook: Optional[Callable[[], None]] = None
 class GuardRefusal(Exception):
     """A write was refused fail-closed. ``rule`` names the violated rule.
 
-    Carrying a structured ``rule`` lets callers emit the FR-014 ``[guard]``
+    Carrying a structured ``rule`` lets callers emit the ``[guard]``
     line without re-parsing the message. No file content is included.
     """
 
@@ -303,7 +303,7 @@ def mediated_write(
             "config-file", f"destination is a protected config file: {final_name}"
         )
 
-    # 9b. Named-root-files allowlist (FR-003). A root destination (subtree "")
+    # 9b. Named-root-files allowlist. A root destination (subtree "")
     #     may write only the single fixed basename bound to its dest_kind. This
     #     refuses any non-allowlisted root file — a root kind cannot be turned
     #     into a free-form root-file writer. Directory kinds are unaffected.
@@ -392,10 +392,10 @@ def mediated_write(
             os.fsync(dir_fd)
         except OSError:
             pass  # directory fsync is best-effort; the replace already landed
-        # FR-005 raw-edit detection floor: record mediated-writer provenance so
-        # an out-of-band change to this artifact is later distinguishable from a
-        # write that passed through here. Best-effort and fail-open for the write
-        # (a missed record degrades to an advisory at audit, never a false guard).
+        # Record mediated-writer provenance so an out-of-band change to this
+        # artifact is later distinguishable from a write that passed through here.
+        # Best-effort and fail-open for the write (a missed record degrades to an
+        # advisory at audit, never a false guard).
         record_provenance(real_root, candidate, data, action="mediated-write")
     except GuardRefusal:
         if tmp_created:
@@ -424,7 +424,7 @@ def _silent_unlink(name: str, dir_fd: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Internal CLI shim (FR-014 machine contract).
+# Internal CLI shim.
 #
 # Provided for evidence/testing and for in-process use by structured commands.
 # Deliberately NOT registered in cli.main.SUBCOMMANDS: it must never reach the

@@ -1,4 +1,4 @@
-"""`cartopian write-phase <project-root> --phase-id PHASE-NN-slug` (G4, FR-005, SPEC-01-003).
+"""`cartopian write-phase <project-root> --phase-id PHASE-NN-slug`.
 
 Structured writer for phase files ``phases/PHASE-NN-slug.md``. The filename
 is derived from the validated ``--phase-id`` (the PM supplies an id, not a
@@ -14,7 +14,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--phase-id",
         required=True,
-        help="Phase id, e.g. PHASE-01-foundation (grammar PHASE-NN-slug)",
+        help="Phase id matching the grammar PHASE-NN-slug, e.g. PHASE-foundation",
     )
 
 

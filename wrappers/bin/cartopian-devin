@@ -31,6 +31,7 @@ else
   cartopian_review_recapture_banner() { return 0; }
   cartopian_extract_work_roots() { echo ""; }
   cartopian_enforce_work_roots() { return 0; }
+  cartopian_comment_directive() { echo ""; }
 fi
 # --------------------------------------------------------------------
 
@@ -155,7 +156,7 @@ PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PA
 STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -175,7 +176,7 @@ if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
 else
   PROMPTS_DIR="$(dirname "$PROMPT_PATH_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
-  # FR-012 launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  # Launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
   if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
     cd "$PROJECT_DIR"
     echo "cartopian-devin: cwd=$PROJECT_DIR" >&2
@@ -185,7 +186,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
+# --- Access grants ---------------------------------------------------
 # Enforce the per-agent work-root scoping guard via the shared helper (so the
 # fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
 # The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
@@ -199,7 +200,7 @@ fi
 # sandbox layer — prefer a locally-sandboxed reviewer agent (codex/gemini) for
 # hard review-integrity guarantees.
 #
-# Native work-root union scoping (TASK-03-009): the devin CLI exposes no local
+# Native work-root union scoping: the devin CLI exposes no local
 # multi-directory write-scoping flag, so this wrapper deliberately defines NO
 # cartopian_tool_scope_union hook. The shared guard therefore keeps it FAIL-CLOSED
 # on a non-empty work-root union (the `[work-root]` stderr line), with the
@@ -254,7 +255,19 @@ esac
 if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
-CMD+=(--prompt-file "$PROMPT_PATH_ABS")
+# devin takes the prompt by file path, not content, so the comment-volume
+# directive + always-on management-id ban are prepended into a temp prompt file
+# (the original is the operator's and is never mutated). Status/report-path
+# derivation still uses the original PROMPT_PATH, so this only changes what devin
+# reads. Falls back to the original file when no directive level is set.
+EFFECTIVE_PROMPT_PATH="$PROMPT_PATH_ABS"
+if [[ -n "${CARTOPIAN_CODE_COMMENTS:-}" ]]; then
+  _CART_TMP_PROMPT="$(mktemp "${TMPDIR:-/tmp}/cartopian-devin-prompt.XXXXXX")"
+  trap 'rm -f "$_CART_TMP_PROMPT"' EXIT
+  { cartopian_comment_directive "$CARTOPIAN_CODE_COMMENTS"; printf '\n\n'; cat "$PROMPT_PATH_ABS"; } > "$_CART_TMP_PROMPT"
+  EFFECTIVE_PROMPT_PATH="$_CART_TMP_PROMPT"
+fi
+CMD+=(--prompt-file "$EFFECTIVE_PROMPT_PATH")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

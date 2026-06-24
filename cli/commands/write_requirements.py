@@ -1,9 +1,9 @@
-"""`cartopian write-requirements <project-root>` (G1, FR-005, SPEC-01-003).
+"""`cartopian write-requirements <project-root>`.
 
 Structured writer for the project ``REQUIREMENTS.md`` root artifact. A thin
-front-end over the SPEC-01-002 mediated-write primitive — the destination is
-implied by the verb (``requirements`` dest_kind → project root), never a
-free-form path. Re-issuing overwrites in place.
+front-end over the mediated-write primitive — the destination is implied by
+the verb (``requirements`` dest_kind → project root), never a free-form path.
+Re-issuing overwrites in place.
 """
 import argparse
 

@@ -1,4 +1,4 @@
-"""`cartopian parse-report <report-path>` (FR-014, SPEC-01-001)."""
+"""`cartopian parse-report <report-path>`."""
 import argparse
 import re
 from pathlib import Path

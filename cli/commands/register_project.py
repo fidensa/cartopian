@@ -1,8 +1,8 @@
-"""`cartopian register-project <project-path> [--label STR]` (FR-003, SPEC-01-001).
+"""`cartopian register-project <project-path> [--label STR]`.
 
-Appends an entry ``{id, path, label}`` to ``~/.cartopian/projects.json`` (DEC-009)
+Appends an entry ``{id, path, label}`` to ``~/.cartopian/projects.json``
 and emits one NDJSON confirmation record. Id is derived exclusively from the
-project's ``cartopian.toml`` ``[project] id`` and must be kebab-case per FR-003.
+project's ``cartopian.toml`` ``[project] id`` and must be kebab-case.
 
 Guard precedence: path-collision check fires before duplicate-id check.
 """

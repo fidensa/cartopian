@@ -36,6 +36,7 @@ def _toml(agent: str, *, role: str = "reviewer") -> str:
         'id = "recap-proj"\n'
         'name = "Recapture Project"\n'
         'protocol_version = "v0.3.0"\n'
+        'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles]\n"
         f'{role} = "Reviews per acceptance evidence."\n'
@@ -65,6 +66,14 @@ def _write_task_and_prompt(scaffold, evidence_gate: str, nn_nnn: str = "03-007")
         f"# PROMPT-{nn_nnn}\n\n## Your task\n\nReview.\n",
     )
     return task_path
+
+
+def _map_work_root(scaffold) -> None:
+    """Declare + map the `tool-repo` work root so dispatch (which now fails closed
+    on no work root) can resolve a contained launch cwd."""
+    wr = scaffold.project_root / "tool-repo"
+    wr.mkdir(exist_ok=True)
+    scaffold.write("cartopian.local.toml", f'[work_roots]\ntool-repo = "{wr}"\n')
 
 
 class _FakeProc:
@@ -102,6 +111,7 @@ class TestRecaptureDispatch(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             scaffold.write("cartopian.toml", _toml("/bin/true"))
+            _map_work_root(scaffold)
             task_path = _write_task_and_prompt(scaffold, "required")
 
             rc, out, err, env = _dispatch_capturing_env(
@@ -118,6 +128,7 @@ class TestRecaptureDispatch(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             scaffold.write("cartopian.toml", _toml("/bin/true"))
+            _map_work_root(scaffold)
             task_path = _write_task_and_prompt(scaffold, "n/a")
 
             rc, out, err, env = _dispatch_capturing_env(
@@ -135,6 +146,7 @@ class TestRecaptureDispatch(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             scaffold.write("cartopian.toml", _toml("/bin/true"))
+            _map_work_root(scaffold)
             task_path = _write_task_and_prompt(scaffold, "")  # no Evidence gate line
 
             rc, out, err, env = _dispatch_capturing_env(
@@ -149,6 +161,7 @@ class TestRecaptureDispatch(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             scaffold.write("cartopian.toml", _toml("/bin/true"))
+            _map_work_root(scaffold)
             # Even an evidence-gated task gets no signal unless explicitly opted in.
             task_path = _write_task_and_prompt(scaffold, "required")
 
@@ -166,6 +179,7 @@ class TestRecaptureDispatch(unittest.TestCase):
                 tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             scaffold.write("cartopian.toml", _toml("/bin/true"))
+            _map_work_root(scaffold)
             task_path = _write_task_and_prompt(scaffold, "required")
 
             with mock.patch.dict("os.environ", {RECAPTURE_ENV: "1"}, clear=False):

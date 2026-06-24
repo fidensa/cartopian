@@ -1,4 +1,4 @@
-"""`cartopian delete-report <report-path>` (FR-005, SPEC-01-001).
+"""`cartopian delete-report <report-path>`.
 
 Deletes a report file that lives under a registered project's ``reports/``
 directory and emits one NDJSON confirmation record. Filename must match the

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# cartopian-gemini-pm — hard-coded gemini PM containment launch profile (TASK-03-002).
+# cartopian-gemini-pm — hard-coded gemini PM containment launch profile.
 #
-# Implements the DEC-001 / FR-002 capability floor for the Google Gemini CLI:
+# Implements the capability floor for the Google Gemini CLI:
 # launches the interactive `gemini` PM session restricted to the fixed Cartopian
 # MCP toolset and NOTHING ELSE — no shell, no file read/write/edit, no grep/glob/
 # ls, no web fetch/search, no MCP-resource read tools, no skills/sub-agents/
 # background processes, no non-Cartopian MCP servers — from an isolated cwd with
 # no extra directory grants, BENEATH gemini's own native OS sandbox driven to
-# per-tool isolation (the FR-007 Tier-2 depth layer).
+# per-tool isolation (the Tier-2 depth layer).
 #
 # This is the PM-facing sibling of `cartopian-gemini` (the autonomous coder/
 # reviewer wrapper). It is NOT a drop-in replacement: `cartopian-gemini` runs
@@ -15,7 +15,7 @@
 # shells; this profile does the opposite and locks the surface down to the
 # Cartopian protocol tools only, like `cartopian-claude-pm` does for Claude Code.
 #
-# How the floor is built (gemini's native mechanisms, no bundled sandbox — NF-001):
+# How the floor is built (gemini's native mechanisms, no bundled sandbox):
 #   * Tool removal (Tier-1) — a generated, isolated SYSTEM settings file
 #     (GEMINI_CLI_SYSTEM_SETTINGS_PATH, gemini's highest-precedence settings
 #     layer) that sets tools.exclude to the full built-in tool list — removing
@@ -60,7 +60,7 @@ set -euo pipefail
 
 # --- Resolve locations ----------------------------------------------------
 _PM_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Tier-2 native-sandbox DEPTH profile (FR-007). The Cartopian source of truth
+# Tier-2 native-sandbox depth profile. The Cartopian source of truth
 # that names gemini's per-tool sandbox toggle + SEATBELT_PROFILE + denied roots;
 # this wrapper reads them from it and applies them, and FAILS CLOSED if it is
 # absent (so the native-sandbox layer can never be silently dropped). Mirrors how
@@ -97,7 +97,7 @@ for arg in "$@"; do
     | --approval-mode | --approval-mode=* \
     | -y | --yolo \
     | --skip-trust)
-      echo "cartopian-gemini-pm: refusing flag '$arg' — the PM containment floor (DEC-001/FR-002) and Tier-2 native-sandbox depth profile (FR-007) are not overridable." >&2
+      echo "cartopian-gemini-pm: refusing flag '$arg' — the PM containment floor and Tier-2 native-sandbox depth profile are not overridable." >&2
       echo "cartopian-gemini-pm: the floor (isolated system settings with tools.exclude of all built-ins, cartopian-only MCP, and security.toolSandboxing from the depth profile) is fixed; remove the flag." >&2
       exit 1
       ;;
@@ -139,7 +139,7 @@ if [[ -z "$CARTOPIAN_MCP_CMD" || ! -x "$CARTOPIAN_MCP_CMD" ]]; then
   exit 1
 fi
 
-# --- PM toolchain pinning / identity audit (BL-007 / REVIEW-03-006) --------
+# --- PM toolchain pinning / identity audit --------
 # Print the resolved toolchain identity (command, root, VERSION) and FAIL
 # CLOSED if it resolves into an editable (git) checkout — the work-root tree
 # assignees mutate. CARTOPIAN_PM_TOOLCHAIN_DEV=1 is the loud dev-only opt-out.
@@ -183,7 +183,7 @@ GEMINI_SYSTEM_SETTINGS="$PM_GEMINI_HOME/system-settings.json"
 python3 - "$GEMINI_SYSTEM_SETTINGS" "$CARTOPIAN_MCP_CMD" <<'PY'
 import json, sys
 out_path, mcp_cmd = sys.argv[1], sys.argv[2]
-# The DEC-001/FR-002 floor: remove EVERY built-in tool (gemini self-reports a
+# The containment floor: remove EVERY built-in tool (gemini self-reports a
 # catalog superset; tools.exclude removes them from the enforced surface), allow
 # ONLY the cartopian MCP server, and enable the Tier-2 per-tool sandbox.
 settings = {
@@ -215,7 +215,7 @@ with open(out_path, "w") as f:
 PY
 chmod 600 "$GEMINI_SYSTEM_SETTINGS" 2>/dev/null || true
 
-# --- Containment signal (FR-013 fail-closed git guard) --------------------
+# --- Containment signal (fail-closed git guard) --------------------
 # Mark this PM as contained so resolve-config / next-action can fail closed on
 # git.pm_owns_product_branches=true under containment. Belt-and-suspenders with
 # the MCP server env above.
@@ -227,9 +227,9 @@ export SEATBELT_PROFILE="$DEPTH_SEATBELT"
 mkdir -p "$PM_SURFACE"
 PM_SURFACE="$(cd "$PM_SURFACE" && pwd)"
 
-echo "cartopian-gemini-pm: contained PM launch profile (DEC-001/FR-002 floor)" >&2
+echo "cartopian-gemini-pm: contained PM launch profile (capability floor)" >&2
 echo "cartopian-gemini-pm: cwd=$PM_SURFACE  system-settings=$GEMINI_SYSTEM_SETTINGS  tools=cartopian-only (all built-ins excluded)" >&2
-echo "cartopian-gemini-pm: native-sandbox depth (FR-007) = $SANDBOX_PROFILE  toolSandboxing=true  SEATBELT_PROFILE=$DEPTH_SEATBELT" >&2
+echo "cartopian-gemini-pm: native-sandbox depth = $SANDBOX_PROFILE  toolSandboxing=true  SEATBELT_PROFILE=$DEPTH_SEATBELT" >&2
 
 # Launch the interactive contained PM session from the isolated surface. exec so
 # the PM session owns the terminal. The floor lives in the system settings file;

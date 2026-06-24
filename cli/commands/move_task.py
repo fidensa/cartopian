@@ -1,4 +1,4 @@
-"""`cartopian move-task <task-path> <to-status>` (FR-004 #4, SPEC-01-001)."""
+"""`cartopian move-task <task-path> <to-status>`."""
 import argparse
 import os
 import re
@@ -171,7 +171,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("error", f"rename failed: {exc}")
         return EXIT_FAIL
 
-    # FR-005: a task lifecycle transition is a mediated write (STANDARDS §
+    # A task lifecycle transition is a mediated write (STANDARDS §
     # Project Artifact Standards). The relocation preserves content but lands a
     # new project-relative path, so carry provenance to that path — otherwise a
     # subsequent raw edit to the moved file would read as untracked (advisory)

@@ -1,7 +1,7 @@
-"""`cartopian reset-plan <project-root>` (G13, G14, G15, FR-005, SPEC-01-003).
+"""`cartopian reset-plan <project-root>` (G13, G14, G15).
 
 The mediated close-surface reset. Folds the close-plan Stage 4 directory ops
-into one structured command (OQ-003: directory create/remove lives in
+into one structured command (directory create/remove lives in
 ``reset-plan``/``archive-plan``, never a generic PM-exposed directory verb).
 In one fail-closed pass it:
 
@@ -13,7 +13,7 @@ In one fail-closed pass it:
 - **G14 — recreates the empty lifecycle directories** (including ``prompts/``
   and ``reports/``).
 - **G15 — conditionally reseeds** ``STANDARDS.md`` / ``CONVENTIONS.md`` per the
-  carry-forward flags. Reseed writes go through the SPEC-01-002 primitive
+  carry-forward flags. Reseed writes go through the mediated-write primitive
   (``standards`` / ``conventions`` dest_kinds); carry-forward leaves the file
   untouched.
 
@@ -27,7 +27,7 @@ The preflight (``_preflight``) validates the *entire* plan before the first
 destructive operation: the removable live artifacts, the lifecycle directory
 (re)creations, **and** the default reseed destinations whenever a reseed will
 occur (no carry-forward). Reseed destinations are checked with the same
-fail-closed guards the SPEC-01-002 mediated-write primitive would apply
+fail-closed guards the mediated-write primitive would apply
 (final-component symlink, escape-from-root, protected config file, pre-existing
 non-regular file or hardlink), so the destructive phase never begins when a
 later reseed write would be refused. A guard violation anywhere in the plan
@@ -213,8 +213,8 @@ def _preflight_ensure_dir(real_root: str, root: Path, rel: str) -> None:
 def _preflight_reseed_dest(real_root: str, target: str) -> None:
     """Validate a default reseed destination (``STANDARDS.md`` / ``CONVENTIONS.md``).
 
-    Mirrors the fail-closed guards the SPEC-01-002 mediated-write primitive
-    applies to a root-level (``dest_kind`` subtree ``""``) destination, so the
+    Mirrors the fail-closed guards the mediated-write primitive applies to a
+    root-level (``dest_kind`` subtree ``""``) destination, so the
     destructive phase never starts when the later reseed write would be refused:
     final-component symlink, escape-from-root, protected config file or dotfile,
     and a pre-existing non-regular file or hardlink (``st_nlink > 1``).

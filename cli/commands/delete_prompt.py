@@ -1,4 +1,4 @@
-"""`cartopian delete-prompt <prompt-path>` (FR-005, SPEC-01-001).
+"""`cartopian delete-prompt <prompt-path>`.
 
 Deletes a prompt file that lives under a registered project's ``prompts/``
 directory and emits one NDJSON confirmation record. Filename must match the

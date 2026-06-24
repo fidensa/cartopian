@@ -1,4 +1,4 @@
-"""`cartopian close-audit <project-path>` aggregator (FR-005)."""
+"""`cartopian close-audit <project-path>` aggregator."""
 import argparse
 import re
 from pathlib import Path

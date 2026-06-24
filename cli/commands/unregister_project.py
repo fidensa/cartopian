@@ -1,6 +1,6 @@
-"""`cartopian unregister-project <id-or-path>` (FR-003, SPEC-01-001).
+"""`cartopian unregister-project <id-or-path>`.
 
-Removes a single entry from ``~/.cartopian/projects.json`` (DEC-009) and emits
+Removes a single entry from ``~/.cartopian/projects.json`` and emits
 one NDJSON confirmation record. Does not touch the project's filesystem.
 
 Path/id discriminator: the positional is treated as a **path** if it contains

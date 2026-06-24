@@ -1,4 +1,4 @@
-"""`cartopian write-prompt <project-root> --prompt-id PROMPT-...` (G7, FR-005, SPEC-01-003).
+"""`cartopian write-prompt <project-root> --prompt-id PROMPT-...`.
 
 Structured writer for prompt files ``prompts/PROMPT-*.md``, covering both
 variants:
@@ -22,8 +22,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--prompt-id",
         required=True,
         help=(
-            "Prompt id without extension, e.g. PROMPT-01-001 (task) or "
-            "PROMPT-PLAN-001-some-slug (planning checkpoint)"
+            "Prompt id without extension, e.g. PROMPT-NN-NNN (task) or "
+            "PROMPT-PLAN-NNN-some-slug (planning checkpoint)"
         ),
     )
 

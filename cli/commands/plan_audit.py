@@ -20,7 +20,7 @@ _ASSIGNEE_RE = re.compile(r"^Assignee:\s*(.+)$", re.MULTILINE)
 _VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
 
-# --- Infrastructure-artifact scope guard (BL-002) ---------------------------
+# --- Infrastructure-artifact scope guard ------------------------------------
 # Assignees must not add `.github`, CI, or other infrastructure artifacts to a
 # work root unless the task explicitly authorizes them (CONVENTIONS § PM Scope
 # / Lifecycle CLI Guards). Detection is by changed-file path: a path equal to
@@ -418,7 +418,7 @@ def _check_infra_artifacts(
     task_index: List[Dict[str, Any]],
     changed_by_root: Dict[str, Optional[List[str]]],
 ) -> List[Dict[str, Any]]:
-    """BL-002: surface assignee-created infrastructure artifacts.
+    """Surface assignee-created infrastructure artifacts.
 
     For every dirty work root, changed files under a top-level infra marker
     (``.github``, CI configs — see :data:`_INFRA_MARKERS`) emit an
@@ -511,16 +511,16 @@ def handler(args: argparse.Namespace) -> int:
     warnings, attributions = _check_work_root_provenance(
         project_path, work_roots, pm_owns_product_branches, task_index, changed_by_root
     )
-    # BL-002: assignee scope boundary — infra artifacts require explicit task
+    # Assignee scope boundary — infra artifacts require explicit task
     # authorization regardless of attribution.
     warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
 
-    # FR-005 universal raw-edit detection floor (P01-01). Runs as part of this
-    # ordinary CLI command — no harness interception — so it is the portable
-    # floor: it stands alone on any harness. `guard` entries are detected raw
-    # edits to governed artifacts (a hard detection that fails the audit);
-    # `advisory` entries are governed artifacts whose provenance cannot be
-    # established (an honest notice that does not fail).
+    # Universal raw-edit detection floor. Runs as part of this ordinary CLI
+    # command — no harness interception — so it is the portable floor: it
+    # stands alone on any harness. `guard` entries are detected raw edits to
+    # governed artifacts (a hard detection that fails the audit); `advisory`
+    # entries are governed artifacts whose provenance cannot be established
+    # (an honest notice that does not fail).
     provenance = audit_provenance(project_path)
     prov_guards: List[Dict[str, Any]] = provenance["guard"]
     prov_advisories: List[Dict[str, Any]] = provenance["advisory"]

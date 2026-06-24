@@ -1,4 +1,4 @@
-"""`cartopian handoff-packet <task-path> --role <role>` aggregator (FR-003).
+"""`cartopian handoff-packet <task-path> --role <role>` aggregator.
 
 Folds the handoff-packet assembly chain (resolved roles, handoff block,
 work-root absolute paths, expected report path, git policy) into a single
@@ -114,7 +114,7 @@ def _expected_report_path(project_root: Path, task_id: str) -> Path:
 
 
 def _build_git_policy(git_block: Dict[str, Any]) -> Dict[str, Any]:
-    """Project the resolved git block down to the FR-003 git_policy shape."""
+    """Project the resolved git block down to the git_policy shape."""
     return {
         "branch_strategy": git_block.get("branch_strategy"),
         "auto_commit": git_block.get("auto_commit"),

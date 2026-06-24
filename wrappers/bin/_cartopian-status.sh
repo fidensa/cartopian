@@ -2,8 +2,8 @@
 # _cartopian-status.sh — shared status-file helper for the Bash agent wrappers.
 #
 # Named with a leading underscore so it reads as a *library* sourced by the
-# cartopian-* wrappers, not a wrapper itself (it carries no FR-012 launch-cwd
-# or OQ-009 access-grant logic). Mirrors ps1/CartopianStatus.ps1.
+# cartopian-* wrappers, not a wrapper itself (it carries no launch-cwd
+# or access-grant logic). Mirrors ps1/CartopianStatus.ps1.
 #
 # Sourced by every cartopian-* wrapper. Emits the optional early-crash
 # detection signal that `cartopian wait-handoff` consumes: a status file at
@@ -169,7 +169,7 @@ cartopian_run_supervised() {
   return 0
 }
 
-# --- Reviewer live-evidence re-capture (TASK-03-007) ------------------------
+# --- Reviewer live-evidence re-capture ------------------------------------
 # Agent-agnostic, opt-in, evidence-gated reviewer-role launch contract. The
 # recapture capability attaches to the REVIEWER ROLE via a role-level signal
 # with NO agent name in it: CARTOPIAN_REVIEW_RECAPTURE. Every shipped wrapper
@@ -223,7 +223,7 @@ cartopian_review_recapture_banner() {
   fi
 }
 
-# --- Work-root access guard (OQ-009 / FR-002 / NF-002) ----------------------
+# --- Work-root access guard -----------------------------------------------
 # The per-agent work-root scoping guard, factored HERE (not inlined per wrapper)
 # so it cannot rot in one wrapper and a newly added wrapper inherits it by
 # sourcing this helper and calling cartopian_enforce_work_roots. Stdlib-only.
@@ -259,13 +259,13 @@ else:
 PY
 }
 
-# Per-tool native union scoping (TASK-03-009 / P03-FIX-005) --------------------
-# The fail-closed guard above (TASK-03-008) refused to launch whenever any work
-# root was declared. That is correct ONLY for a tool whose sandbox cannot scope a
+# Per-tool native union scoping -------------------------------------------
+# The fail-closed guard above refused to launch whenever any work root was
+# declared. That is correct ONLY for a tool whose sandbox cannot scope a
 # multi-directory union; for a tool that CAN (Claude Code --add-dir, codex exec
 # --add-dir, gemini --include-directories), the guard should instead GRANT the
 # resolved union (launch cwd + declared work-root absolute paths) to the tool
-# natively and launch scoped — no blanket UNRESTRICTED bypass (DEC-006).
+# natively and launch scoped — no blanket UNRESTRICTED bypass.
 #
 # The native mechanism differs per tool and does NOT transfer, so each is
 # expressed as a per-tool HOOK the wrapper defines: a function named
@@ -290,7 +290,7 @@ PY
 #   * No resolved work roots             -> return 0 (nothing to scope).
 #   * A declared root is missing on disk -> "[work-root] missing: <p>" + exit 1.
 #   * Reviewer-recapture active          -> return 0. The roots are the READ-ONLY
-#     source under review (TASK-03-007); the documented bypass. The guard does
+#     source under review; the documented bypass. The guard does
 #     NOT fail closed and does NOT widen writable scope (the wrapper's banner
 #     documents the contract).
 #   * Per-tool unrestricted bypass=true  -> proceed with an operator-visible note
@@ -309,9 +309,27 @@ cartopian_enforce_work_roots() {
   local wrapper="$1" unrestricted="$2" var_name="$3"
   CARTOPIAN_SCOPE_ARGS=()
   local rc_json
-  rc_json="$(cartopian resolve-config "$PWD" | head -n 1)"
-  WORK_ROOTS="$(cartopian_extract_work_roots "$rc_json")"
-  [ -n "$WORK_ROOTS" ] || return 0
+  # When the mediated launcher (`cartopian dispatch`) provides the scope set
+  # explicitly via CARTOPIAN_SCOPE_DIRS, use it verbatim. Once the launch cwd is
+  # the work root (not the management project), the wrapper can no longer
+  # re-derive the right scope from `resolve-config "$PWD"` — that would resolve
+  # whatever project owns the cwd. CARTOPIAN_SCOPE_DIRS is the resolved work
+  # roots only; the management project root is deliberately absent, so its
+  # management artifacts stay out of scope.
+  if [ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]; then
+    WORK_ROOTS="$CARTOPIAN_SCOPE_DIRS"
+  else
+    rc_json="$(cartopian resolve-config "$PWD" | head -n 1)"
+    WORK_ROOTS="$(cartopian_extract_work_roots "$rc_json")"
+  fi
+
+  # The report-target dir (when the mediated launcher provides one) is always a
+  # writable grant — the assignee must write its completion report there — and is
+  # granted even under reviewer recapture, when the work roots are withheld as
+  # read-only source. It is the only management-project path ever granted.
+  local report_dir="${CARTOPIAN_REPORT_DIR:-}"
+
+  [ -n "$WORK_ROOTS" ] || [ -n "$report_dir" ] || return 0
 
   local root
   local -a roots=()
@@ -325,9 +343,13 @@ cartopian_enforce_work_roots() {
   done <<< "$WORK_ROOTS"
 
   if cartopian_review_recapture_active; then
-    # Reviewer recapture: declared roots are the read-only source under review.
-    # Do NOT fail closed and do NOT widen writable scope (no scope args added);
-    # the wrapper's banner documents the scope contract.
+    # Reviewer recapture: the declared work roots are the READ-ONLY source under
+    # review and are NOT granted writable scope. Only the report dir is granted
+    # (writable) so a sandboxed reviewer can still write its completion report.
+    if [ -n "$report_dir" ] && declare -F cartopian_tool_scope_union >/dev/null 2>&1; then
+      cartopian_tool_scope_union "$PWD" "$report_dir" || true
+      echo "${wrapper}: recapture — report dir granted writable; work roots read-only" >&2
+    fi
     return 0
   fi
 
@@ -338,14 +360,20 @@ cartopian_enforce_work_roots() {
   fi
 
   # Native union scoping: if the wrapper provides a per-tool scoping hook, grant
-  # the resolved union (launch cwd + declared roots) to the tool natively and
-  # launch scoped — no bypass needed.
+  # the union (launch cwd + declared work roots + the report dir) to the tool
+  # natively and launch scoped — no bypass needed.
   if declare -F cartopian_tool_scope_union >/dev/null 2>&1; then
-    if cartopian_tool_scope_union "$PWD" "${roots[@]}"; then
-      echo "${wrapper}: work-root union scoped natively (launch cwd + ${#roots[@]} declared work root(s)); writes confined to the union, outside-union writes refused" >&2
-      for root in "${roots[@]}"; do
-        echo "  scoped work root: $root" >&2
-      done
+    local -a grant=()
+    [ ${#roots[@]} -gt 0 ] && grant+=("${roots[@]}")
+    [ -n "$report_dir" ] && grant+=("$report_dir")
+    if [ ${#grant[@]} -gt 0 ] && cartopian_tool_scope_union "$PWD" "${grant[@]}"; then
+      echo "${wrapper}: work-root union scoped natively (launch cwd + ${#roots[@]} work root(s) + report dir); writes confined to the union, outside-union writes refused" >&2
+      if [ ${#roots[@]} -gt 0 ]; then
+        for root in "${roots[@]}"; do
+          echo "  scoped work root: $root" >&2
+        done
+      fi
+      [ -n "$report_dir" ] && echo "  scoped report dir: $report_dir" >&2
       return 0
     fi
     # Hook declined (the tool cannot scope this particular union): fall through
@@ -354,6 +382,28 @@ cartopian_enforce_work_roots() {
 
   echo "[work-root] tool cannot scope multi-root access; set ${var_name}=true to bypass (dangerous)" >&2
   exit 1
+}
+
+# --- Comment-volume directive ----------------------------------------------
+# Echo the one-paragraph coding directive a wrapper prepends to the prompt when
+# the mediated launcher exports CARTOPIAN_CODE_COMMENTS. The comment *volume* is
+# operator config; the management-identifier ban is always present, at every
+# level, so product code never carries planning identifiers. Agent-neutral:
+# every wrapper composes the same text. Args: $1 = level (none|minimal|verbose;
+# unknown values fall closed to minimal).
+cartopian_comment_directive() {
+  local level
+  level="$(printf '%s' "${1:-minimal}" | tr '[:upper:]' '[:lower:]')"
+  local volume
+  case "$level" in
+    none)    volume="Write NO comments in the code you produce." ;;
+    verbose) volume="Explanatory comments are welcome where they aid understanding." ;;
+    *)       level="minimal"  # normalize unknown values so the label is honest
+             volume="Comment only genuinely non-obvious intent; no narration of what the code plainly does." ;;
+  esac
+  printf '%s %s\n' \
+    "Code comments: ${level} — ${volume}" \
+    "Never write Cartopian project-management identifiers (FR-/DEC-/TASK-/BL-/OQ-/REVIEW- references, phase or plan ids) anywhere in product code or comments."
 }
 
 # Write the status file capturing the assignee exit outcome. A best-effort,

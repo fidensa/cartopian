@@ -1,9 +1,9 @@
-"""`cartopian dispatch <task-path> --role <role>` — mediated handoff launch (FR-006, G20).
+"""`cartopian dispatch <task-path> --role <role>` — mediated handoff launch.
 
-The delegation counterpart to the mediated writer. A contained PM (FR-002) has no
+The delegation counterpart to the mediated writer. A contained PM has no
 shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
 command performs the launch on the PM's behalf as *per-invocation* Cartopian code
-(no daemon, no broker — NF-002): it composes the existing ``handoff-packet`` /
+(no daemon, no broker): it composes the existing ``handoff-packet`` /
 ``resolve-config`` aggregators to prepare the packet, fails closed on unmapped or
 missing work roots / a missing ``[handoffs.<role>]`` block / a missing prompt,
 exports ``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout`` and
@@ -52,8 +52,8 @@ from cli.main import (
 # wrapper as CARTOPIAN_TIMEOUT when the role block omits an explicit timeout.
 DEFAULT_TIMEOUT = "60m"
 
-# Agent-neutral, role-level reviewer live-evidence recapture signal (TASK-03-007,
-# FR-011). When the operator opts a reviewer handoff into recapture (`--recapture`)
+# Agent-neutral, role-level reviewer live-evidence recapture signal.
+# When the operator opts a reviewer handoff into recapture (`--recapture`)
 # AND the task declares live/harness evidence (`Evidence gate: required`), dispatch
 # exports this to the wrapper environment. Every shipped wrapper honors it
 # identically via the shared `cartopian_review_recapture_active` launch helper —
@@ -79,8 +79,8 @@ def _task_declares_live_evidence(task_path: Path) -> bool:
     The structured, machine-readable declaration is the `Evidence gate: required`
     header (templates/TASK.md). A task with `n/a` or no gate — the common shape of
     research / ops / creative reviews — is NOT evidence-gated, so recapture must
-    never be enabled for it (the domain-neutral guard, F2 of REVIEW-03-007). Any
-    read error degrades to False (fail-closed: no recapture)."""
+    never be enabled for it (the domain-neutral guard). Any read error degrades to
+    False (fail-closed: no recapture)."""
     try:
         text = task_path.read_text(encoding="utf-8")
     except OSError:
@@ -102,7 +102,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     Deliberately minimal: a task path and a role. The executable launched is
     sourced exclusively from ``[handoffs.<role>].agent`` in config — there is
     intentionally no flag to supply an arbitrary command, so the PM cannot turn
-    dispatch into a raw exec primitive (FR-002 containment).
+    dispatch into a raw exec primitive (containment invariant).
     """
     subparser.add_argument(
         "task_path",
@@ -117,8 +117,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--recapture",
         action="store_true",
         help=(
-            "Opt this reviewer handoff into agent-agnostic live-evidence recapture "
-            "(TASK-03-007): the assignee may re-run the task's probe harness to "
+            "Opt this reviewer handoff into agent-agnostic live-evidence recapture: "
+            "the assignee may re-run the task's probe harness to "
             "reproduce the live evidence instead of trusting the pinned artifacts. "
             "Only valid for a task that declares live/harness evidence "
             "(Evidence gate: required); exports CARTOPIAN_REVIEW_RECAPTURE=1 so the "
@@ -147,7 +147,7 @@ def handler(args: argparse.Namespace) -> int:
     # `--recapture` is only meaningful for a reviewer handoff on a task that
     # declares live/harness evidence. Refuse it on a task with no such gate so a
     # research / ops / creative review (Evidence gate: n/a or absent) can never
-    # be silently granted probe egress (domain-neutral guard, REVIEW-03-007 F2).
+    # be silently granted probe egress (domain-neutral guard).
     if recapture and not _task_declares_live_evidence(task_path):
         stderr_guard(
             "--recapture requires a task that declares live/harness evidence "
@@ -251,14 +251,84 @@ def handler(args: argparse.Namespace) -> int:
 
     expected_report_path = handoff_packet._expected_report_path(project_root, task_id)
 
+    # --- Assignee launch scope excludes the governing project ---------------
+    # The assignee's filesystem world is the work root, not this management
+    # project, so it cannot read management artifacts (requirements, decisions,
+    # tasks, backlog, state). Launch cwd = the primary (first declared) work
+    # root; the scoped union is the resolved work roots plus only the
+    # report-target directory. This launcher computes the scope and passes it to
+    # the wrapper explicitly via CARTOPIAN_SCOPE_DIRS — once cwd is the work root
+    # the wrapper can no longer re-derive the right scope from its own cwd. The
+    # report still lands at the explicit absolute report path the prompt names;
+    # only the browse scope narrows (the report dir is the lone in-scope path
+    # inside the management project).
+    report_dir = str(Path(expected_report_path).parent)
+    work_root_dirs = [wr["absolute_path"] for wr in work_roots]
+    primary_work_root = work_root_dirs[0] if work_root_dirs else None
+
+    # Fail closed: an assignee must run inside a work root, never the governing
+    # project. With no resolved work root there is no contained workspace, so we
+    # refuse rather than launch in the project root and expose its PM artifacts.
+    if primary_work_root is None:
+        stderr_guard(
+            "no work root resolved for this dispatch — an assignee must run "
+            "inside a work root, not the governing project. Declare "
+            "[project].work_roots and map them in cartopian.local.toml, or "
+            "dispatch this role manually."
+        )
+        return EXIT_FAIL
+
+    # Defense in depth: refuse if any granted work root is the governing project
+    # root or an ancestor of it. A work root misconfigured to the project (or a
+    # parent) would make the project's management artifacts readable. The report
+    # dir is a descendant of the project root, not an ancestor, so it never trips.
+    proj_real = os.path.realpath(str(project_root))
+    for d in work_root_dirs:
+        d_real = os.path.realpath(str(d))
+        if d_real == proj_real or proj_real.startswith(d_real + os.sep):
+            _stderr_work_root(
+                f"work root {d_real} is the governing project root, or an "
+                f"ancestor of it — that would expose the project's management "
+                f"artifacts. Point the work root at the product tree instead."
+            )
+            return EXIT_FAIL
+
+    launch_cwd = primary_work_root
+    # The report dir is the assignee's output target; ensure it exists so the
+    # wrapper's fail-closed on-disk scope check does not refuse a first report.
+    try:
+        Path(report_dir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+    # The effective writable grant the wrapper applies: the work roots plus the
+    # report dir (recorded for the NDJSON; the env split below keeps the report
+    # dir separable so recapture can withhold the work roots yet still grant it).
+    grant_dirs = list(work_root_dirs)
+    if report_dir not in grant_dirs:
+        grant_dirs.append(report_dir)
+
     # --- Launch (per-invocation; non-blocking) -------------------------------
-    # The launch contract (CONVENTIONS.md § Handoffs): `<agent> <absolute prompt
-    # path>` as a single argv argument, cwd = the cartopian project root,
-    # CARTOPIAN_TIMEOUT exported. `start_new_session` detaches the wrapper so it
-    # runs in the background and survives this short-lived invocation; we never
-    # wait() — the PM observes completion via wait-handoff / wait-report.
+    # The launch contract: `<agent> <absolute prompt path>` as a single argv
+    # argument, cwd = the primary work root, CARTOPIAN_TIMEOUT exported.
+    # `start_new_session` detaches the wrapper so it runs in the background and
+    # survives this short-lived invocation; we never wait() — the PM observes
+    # completion via wait-handoff / wait-report.
     env = dict(os.environ)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
+    # The work roots are the assignee's primary scope; the report dir is exported
+    # separately so it stays writable even when the work roots are withheld as
+    # read-only source under reviewer recapture.
+    env["CARTOPIAN_LAUNCH_CWD"] = launch_cwd
+    env["CARTOPIAN_SCOPE_DIRS"] = "\n".join(work_root_dirs)
+    env["CARTOPIAN_REPORT_DIR"] = report_dir
+    # Comment-volume directive: the resolved level (default `minimal`) is
+    # exported so the wrapper injects it — plus the always-on management-id ban
+    # — into the prompt at coding time.
+    code_comments = role_handoff.get("code_comments") or "minimal"
+    if str(code_comments).strip().lower() not in {"none", "minimal", "verbose"}:
+        code_comments = "minimal"  # unknown value fails closed to minimal
+    env["CARTOPIAN_CODE_COMMENTS"] = str(code_comments)
     # Agent-neutral model selection from the resolved [handoffs.<role>].model.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.
@@ -278,7 +348,7 @@ def handler(args: argparse.Namespace) -> int:
     try:
         proc = subprocess.Popen(  # noqa: S603 — agent is operator-configured, not PM input
             [str(agent), str(prompt_path)],
-            cwd=str(project_root),
+            cwd=launch_cwd,
             env=env,
             start_new_session=True,
         )
@@ -300,7 +370,10 @@ def handler(args: argparse.Namespace) -> int:
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),
         "timeout": timeout,
-        "cwd": str(project_root),
+        "cwd": launch_cwd,
+        "scope_dirs": grant_dirs,
+        "report_dir": report_dir,
+        "code_comments": str(code_comments),
         "work_roots": work_roots,
         "recapture": recapture,
         "pid": proc.pid,

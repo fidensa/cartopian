@@ -1,7 +1,7 @@
-"""`cartopian write-plan <project-root>` (G2, FR-005, SPEC-01-003).
+"""`cartopian write-plan <project-root>` (G2).
 
 Structured writer for ``IMPLEMENTATION_PLAN.md``. Front-end over the
-SPEC-01-002 mediated-write primitive; destination implied by the verb.
+mediated-write primitive; destination implied by the verb.
 """
 import argparse
 

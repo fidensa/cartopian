@@ -1,4 +1,4 @@
-"""`cartopian write-state <project-root> --content ...` (G11, FR-005, SPEC-01-003).
+"""`cartopian write-state <project-root> --content ...`.
 
 Structured writer for ``STATE.md``. ``compose-state`` stays the renderer —
 this is the missing *writer* that persists its ``rendered_body`` (or a

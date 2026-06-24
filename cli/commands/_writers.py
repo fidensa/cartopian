@@ -1,13 +1,13 @@
-"""Shared scaffolding for the FR-005 structured artifact-writer commands (SPEC-01-003).
+"""Shared scaffolding for the structured artifact-writer commands.
 
 Every PM-facing writer (``write-requirements``, ``write-plan``, ``write-task``,
-…) is a thin typed front-end over the SPEC-01-002 mediated-write primitive
+…) is a thin typed front-end over the mediated-write primitive
 (:mod:`cli.mediated_write`). This module factors out the surface they share:
 
 - project-root validation (absolute, real directory),
 - artifact-body acquisition (``--content`` / ``--content-file``),
 - the single :func:`cli.mediated_write.mediated_write` call,
-- the FR-014 NDJSON success record,
+- the NDJSON success record,
 - ``GuardRefusal`` → ``[guard] <rule>: <detail>`` stderr translation.
 
 The PM never supplies a free-form destination: each command resolves its own
@@ -27,7 +27,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.mediated_write import GuardRefusal, mediated_write
 
-# Shared id / slug grammars (kept in sync with the existing FR-004 commands:
+# Shared id / slug grammars (kept in sync with the existing lifecycle commands:
 # move_task, delete_prompt, compose_state).
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TASK_ID_RE = re.compile(r"^TASK-\d{2}-\d{3}$")
@@ -108,7 +108,7 @@ def perform_write(
     content: Optional[Union[str, bytes]] = None,
     extra_details: Optional[dict] = None,
 ) -> int:
-    """Validate, write through the primitive, and emit the FR-014 record.
+    """Validate, write through the primitive, and emit the NDJSON success record.
 
     ``content`` may be supplied by the caller (e.g. an index re-render); when
     ``None`` it is taken from ``--content`` / ``--content-file``. Returns the

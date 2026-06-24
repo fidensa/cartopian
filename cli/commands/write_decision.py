@@ -1,4 +1,4 @@
-"""`cartopian write-decision <project-root> --dec-id DEC-NNN --slug ... --title ...` (G9 + G10, FR-005, SPEC-01-003).
+"""`cartopian write-decision <project-root> --dec-id DEC-NNN --slug ... --title ...`.
 
 Structured writer that records a decision **and** updates its index in one
 invocation:
@@ -8,7 +8,7 @@ invocation:
 - updates ``decisions/INDEX.md`` — appending the matching table row, or
   replacing the existing row for the same ``DEC-NNN`` on re-issue.
 
-Both writes go through the SPEC-01-002 mediated-write primitive (``decision``
+Both writes go through the mediated-write primitive (``decision``
 dest_kind). The INDEX update is a read-modify-write of the full file rendered
 back through the primitive — no raw edit, no second bypass surface. The DEC
 file is written first; if it refuses, the index is left untouched.
@@ -32,7 +32,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--dec-id",
         required=True,
-        help="Decision id, e.g. DEC-001 (grammar DEC-NNN)",
+        help="Decision id in DEC-NNN format (three-digit number)",
     )
     subparser.add_argument(
         "--slug",

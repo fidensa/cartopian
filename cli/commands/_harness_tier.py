@@ -1,18 +1,18 @@
-"""Asset-driven harness containment-tier detection (FR-008 detection half, TASK-02-001).
+"""Asset-driven harness containment-tier detection.
 
 The boolean :func:`cli.commands._containment.pm_is_contained` answers a *runtime*
 question — "is *this* process running under the containment floor?" — and gives
 the same answer regardless of which PM harness is configured. This module answers
-the *pre-launch, per-harness* question the FR-008 launch gate needs: "what is the
+the *pre-launch, per-harness* question the launch gate needs: "what is the
 highest containment tier Cartopian can actually **enforce** on this harness?"
 
 The classification is a pure function of the resolved config (which harness is the
 PM) plus the on-disk containment assets, with two outcomes:
 
 * ``tier-1-2`` (constrained) — the harness ships **both** a hard-coded floor
-  launch profile (the DEC-001/FR-002 capability-floor wrapper) **and** a
-  native-sandbox depth profile (the FR-007 Tier-2 settings file). Both removed
-  capabilities are in place, so Cartopian can hold the PM at Tier 1/2.
+  launch profile (the capability-floor wrapper) **and** a native-sandbox depth
+  profile (the Tier-2 settings file). Both removed capabilities are in place, so
+  Cartopian can hold the PM at Tier 1/2.
 * ``tier-3`` (advisory / unconstrainable) — one or both assets are absent (or no
   harness resolves at all), so Cartopian cannot enforce containment and the PM
   runs under advisory rules only.
@@ -34,9 +34,8 @@ recorded in :data:`_DEPTH_PROFILE_OVERRIDES` so detection matches the real asset
 
 This module is import-cycle-free (stdlib + sibling ``_containment`` only, which
 itself imports nothing from the command modules) so ``resolve_config`` /
-``next_action`` / the future FR-008 launch gate can all consume it. Stdlib only
-(NF-001). It performs **detection only** — no launch gate, acknowledgment, or
-persistence (those are TASK-02-002).
+``next_action`` / the launch gate can all consume it. Stdlib only. It performs
+**detection only** — no launch gate, acknowledgment, or persistence.
 """
 from __future__ import annotations
 
@@ -46,8 +45,7 @@ from typing import Any, Dict, Optional
 
 from cli.commands._containment import _safe_load_toml
 
-# Tier labels (stable strings — consumed by the launch gate, the Phase 03
-# per-harness promotions, and the Phase 04 compatibility matrix).
+# Tier labels (stable strings — consumed by the launch gate and per-harness assets).
 TIER_CONSTRAINED = "tier-1-2"
 TIER_ADVISORY = "tier-3"
 
@@ -110,7 +108,7 @@ class HarnessTier:
     reason: str
 
     def as_record(self) -> Dict[str, Any]:
-        """Flat, JSON-serialisable record (FR-014-ready for any future CLI surface)."""
+        """Flat, JSON-serialisable record for any CLI surface."""
         return {
             "tier": self.tier,
             "constrained": self.constrained,
@@ -236,7 +234,7 @@ def classify_pm_tier_from_paths(
     launch_target: Optional[str] = None,
     wrappers_dir: Optional[Path] = None,
 ) -> HarnessTier:
-    """Classify the PM-harness tier from on-disk configs (FR-011 resolution chain).
+    """Classify the PM-harness tier from on-disk configs.
 
     Mirrors ``_containment.resolve_pm_owns_from_paths``: loads the project and
     global ``cartopian.toml`` fail-soft (unreadable/malformed -> ``{}``; those

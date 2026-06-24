@@ -1,9 +1,9 @@
-"""`cartopian discover-projects` (FR-003, FR-004 #5, SPEC-01-001).
+"""`cartopian discover-projects`.
 
-Reads the registry at ``~/.cartopian/projects.json`` (DEC-009) and emits one
+Reads the registry at ``~/.cartopian/projects.json`` and emits one
 NDJSON record per entry on stdout in registry-insertion order. Empty or
-missing registry emits nothing and exits 0. Corrupt registry exits 3 per
-FR-014 (environment error).
+missing registry emits nothing and exits 0. Corrupt registry exits 3
+(environment error).
 """
 import argparse
 import sys
@@ -22,7 +22,7 @@ def _stderr(prefix: str, msg: str) -> None:
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:  # noqa: ARG001
-    # No flags. No positional args. Per FR-004 #5 V1 takes no filter flags.
+    # No flags. No positional args. V1 takes no filter flags.
     return None
 
 

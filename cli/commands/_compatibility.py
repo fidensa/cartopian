@@ -1,15 +1,13 @@
-"""Advisory-acknowledgment ledger schema + parser (FR-008 persistence, TASK-02-002).
+"""Advisory-acknowledgment ledger schema + parser.
 
-The FR-008 advisory surface (:mod:`cli.commands._advisory_gate`) emits a visible
+The advisory surface (:mod:`cli.commands._advisory_gate`) emits a visible
 Tier-3 PM notice and may annotate it when the operator records an explicit
 acknowledgment of the unconstrained risk for that ``(harness, project)`` pair.
 This module owns that optional *persisted record*: a markdown-first ledger written to the
-project-root file ``COMPATIBILITY.md`` (SPEC-02-002 OQ-A) through the FR-003
-mediated writer, with one fixed-schema entry per ``(harness, project_id)``.
+project-root file ``COMPATIBILITY.md`` through the mediated writer, with one
+fixed-schema entry per ``(harness, project_id)``.
 
-It is the source of truth the advisory surface reads and that the Phase 04 FR-009
-compatibility matrix later consolidates. The fields are exactly the SPEC-02-002
-Interface table:
+It is the source of truth the advisory surface reads. The fields are:
 
     harness, project_id, tier, missing_assets, acknowledged_by,
     acknowledged_on, rationale, revoked
@@ -30,18 +28,17 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Optional, Union
 
-# The dedicated, mutable, revocable project-root ledger (SPEC-02-002 OQ-A).
+# The dedicated, mutable, revocable project-root ledger.
 LEDGER_FILENAME = "COMPATIBILITY.md"
 
-# The mediated-writer dest_kind that addresses LEDGER_FILENAME (see
-# cli.mediated_write.ROOT_FILES — the single allowlist extension this task adds).
+# The mediated-writer dest_kind that addresses LEDGER_FILENAME.
 LEDGER_DEST_KIND = "compatibility"
 
 # Marker line so the ledger is self-identifying and future readers/writers can
 # detect the schema version.
 LEDGER_VERSION_MARKER = "<!-- cartopian-compatibility-ledger: v1 -->"
 
-# The ordered, fixed schema (SPEC-02-002 Interface table).
+# The ordered, fixed schema.
 FIELD_ORDER = (
     "harness",
     "project_id",
@@ -163,12 +160,11 @@ def render_ledger(records: List[AckRecord]) -> str:
         "",
         LEDGER_VERSION_MARKER,
         "",
-        "FR-008 / SPEC-02-002 operator acknowledgments that a PM harness runs",
-        "unconstrained at Tier-3 for a project. One entry per (harness,",
-        "project_id). Written only by the operator-only acknowledgment command",
-        "through the FR-003 mediated writer. A `revoked: true` entry, or no",
-        "entry, returns PM launch to the unrecorded Tier-3 advisory. Do not",
-        "hand-edit during a live PM session.",
+        "Operator acknowledgments that a PM harness runs unconstrained at Tier-3",
+        "for a project. One entry per (harness, project_id). Written only by the",
+        "operator-only acknowledgment command through the mediated writer. A",
+        "`revoked: true` entry, or no entry, returns PM launch to the unrecorded",
+        "Tier-3 advisory. Do not hand-edit during a live PM session.",
         "",
     ]
     for rec in records:
@@ -250,7 +246,7 @@ def read_ledger_text(project_root: Union[str, Path]) -> str:
 
     Reading is unprivileged context (the operator command runs uncontained, and
     the gate only needs to *read* the record). The *write* path is the guarded
-    one — it goes exclusively through the FR-003 mediated writer.
+    one — it goes exclusively through the mediated writer.
     """
     path = Path(project_root) / LEDGER_FILENAME
     try:

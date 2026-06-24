@@ -1,4 +1,4 @@
-"""`cartopian validate-task-readiness <task-path>` (FR-004 #3, SPEC-01-001)."""
+"""`cartopian validate-task-readiness <task-path>`."""
 import argparse
 import re
 import sys

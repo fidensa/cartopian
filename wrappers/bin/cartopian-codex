@@ -45,6 +45,7 @@ else
   cartopian_review_recapture_banner() { return 0; }
   cartopian_extract_work_roots() { echo ""; }
   cartopian_enforce_work_roots() { return 0; }
+  cartopian_comment_directive() { echo ""; }
 fi
 # --------------------------------------------------------------------
 
@@ -68,7 +69,7 @@ CODEX_BYPASS="${CARTOPIAN_CODEX_BYPASS:-false}"
 # `cartopian_review_recapture_active` sourced above, so every wrapper honors it
 # identically. codex realizes it below via the workspace-write sandbox
 # (writes rooted at the launch cwd + $TMPDIR; the source work root read-only)
-# plus a network-access grant for live probe re-capture (TASK-03-007).
+# plus a network-access grant for live probe re-capture.
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -92,12 +93,18 @@ fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
+# Prepend the operator-configured comment-volume directive plus the always-on
+# management-identifier ban when the mediated launcher set the level.
+if [[ -n "${CARTOPIAN_CODE_COMMENTS:-}" ]]; then
+  PROMPT_CONTENT="$(cartopian_comment_directive "$CARTOPIAN_CODE_COMMENTS")"$'\n\n'"$PROMPT_CONTENT"
+fi
+
 # Derive the optional status-file path now, before any cd, so a relative
 # prompt path still resolves. Empty when the prompt is outside a project.
 STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -118,7 +125,7 @@ else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
-  # FR-012 launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  # Launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
   if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
     cd "$PROJECT_DIR"
     echo "cartopian-codex: cwd=$PROJECT_DIR" >&2
@@ -128,7 +135,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
+# --- Access grants --------------------------------------------------
 # Enforce the per-agent work-root scoping guard via the shared helper (so the
 # fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
 # The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
@@ -138,7 +145,7 @@ fi
 # workspace-write sandbox keeps writes rooted at the launch cwd + $TMPDIR, so the
 # source work root stays read-only at the sandbox layer.
 #
-# Native work-root union scoping (TASK-03-009): codex's workspace-write sandbox
+# Native work-root union scoping: codex's workspace-write sandbox
 # scopes a multi-directory union via `codex exec --add-dir <DIR>` ("additional
 # directories that should be writable alongside the primary workspace"). The
 # launch cwd ($1) is the primary writable workspace; add each declared work root
@@ -157,7 +164,7 @@ cartopian_tool_scope_union() {
 }
 
 CARTOPIAN_SCOPE_ARGS=()
-if command -v cartopian &>/dev/null; then
+if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
   cartopian_enforce_work_roots "cartopian-codex" "${CARTOPIAN_CODEX_UNRESTRICTED:-false}" "CARTOPIAN_CODEX_UNRESTRICTED"
 fi
 # --------------------------------------------------------------------

@@ -13,7 +13,7 @@ MCP) is configured to launch ``cartopian-mcp``, the operator can say
 - Tools — one per CLI subcommand in ``cli.main.SUBCOMMANDS``. Each tool
   invokes its handler in-process with stdout/stderr captured, parses
   NDJSON output back into structured records, and surfaces stderr
-  prefixes verbatim so the FR-014 error contract is preserved.
+  prefixes verbatim so the error contract is preserved.
 - Resources — ``cartopian://skills/<name>``, ``cartopian://protocol/<name>``
   (plus narrower ``cartopian://protocol/<name>/<section-slug>`` per-H2-section
   reads and the curated ``cartopian://protocol/CONVENTIONS/startup`` slice),
@@ -75,10 +75,10 @@ SUMMARY_HEAD_BYTES = 4096
 # user-controlled `kind` from constructing arbitrary paths under a project root.
 PROJECT_KINDS = ("STATE", "REQUIREMENTS", "IMPLEMENTATION_PLAN")
 
-# Tools a CONTAINED PM must NOT reach (REVIEW-03-002 F1). These create or mutate
-# project *config* / the project *registry*: generate_config and scaffold_project
-# write `cartopian.toml` to an arbitrary `project_path` — a filesystem-write escape
-# PAST the DEC-001 capability floor (the MCP server runs OUT of the per-tool native
+# Tools a CONTAINED PM must NOT reach. These create or mutate project *config* /
+# the project *registry*: generate_config and scaffold_project write
+# `cartopian.toml` to an arbitrary `project_path` — a filesystem-write escape
+# past the capability floor (the MCP server runs OUT of the per-tool native
 # sandbox, so the depth profile's deny_write_roots cannot stop it), and
 # register/unregister_project mutate the global registry. A contained PM operates an
 # already-selected project through read + lifecycle tools only; project/config
@@ -97,7 +97,7 @@ CONTAINED_DENIED_TOOLS = frozenset({
 
 
 def _pm_is_contained() -> bool:
-    """True iff this server runs under the DEC-001 containment launch profile.
+    """True iff this server runs under the containment launch profile.
 
     Reuses ``cli.commands._containment.pm_is_contained`` (the single source of
     truth for the ``CARTOPIAN_PM_CONTAINED`` signal) when importable, and falls
@@ -519,7 +519,7 @@ def _invoke_cli(subcommand: str, argv: List[str]) -> Dict[str, Any]:
     Returns ``{exit_code, records, stderr_lines, stdout_raw}``. ``records``
     is the list of NDJSON dicts parsed from stdout; ``stderr_lines`` is the
     list of stderr lines (each typically prefixed with ``[usage]`` /
-    ``[error]`` / ``[guard]`` per FR-014).
+    ``[error]`` / ``[guard]``).
     """
     parser = _import_cli_parser()
     full_argv = [subcommand, *argv]

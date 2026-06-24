@@ -1,4 +1,4 @@
-"""`cartopian wait-report <report-path> --max-block <duration>` (FR-014, P01-BUILD-002).
+"""`cartopian wait-report <report-path> --max-block <duration>`.
 
 Filesystem-polls until a handoff report file exists and reaches an
 ``accepted`` outcome under the ``report-action`` aggregator's verdict

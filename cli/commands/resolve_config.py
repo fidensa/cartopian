@@ -1,4 +1,4 @@
-"""`cartopian resolve-config <project-path>` implementation (FR-011, SPEC-01-001)."""
+"""`cartopian resolve-config <project-path>` implementation."""
 import argparse
 import sys
 import tomllib
@@ -123,6 +123,7 @@ def _resolve_handoffs(
             "model": block.get("model"),
             "auto_start": block.get("auto_start"),
             "timeout": block.get("timeout"),
+            "code_comments": block.get("code_comments"),
         }
     return merged
 
@@ -213,7 +214,7 @@ def _resolve_work_roots(
                 "work-root",
                 (
                     f'non-absolute path: {name} = "{raw_value}" — '
-                    f"cartopian.local.toml must use absolute paths (DEC-003)"
+                    f"cartopian.local.toml must use absolute paths"
                 ),
             )
         resolved[name] = str(candidate)
@@ -253,9 +254,9 @@ def handler(args: argparse.Namespace) -> int:
         global_toml = Path.home() / ".cartopian" / "cartopian.toml"
         global_cfg = _load_toml(global_toml, "global config") or {}
 
-        # FR-013 fail-closed guard (P01-BUILD-006): a contained PM cannot honor
-        # git.pm_owns_product_branches=true (no shell for git/gh; mediated-git
-        # deferred, RM-004). Refuse before any lifecycle data is resolved/emitted.
+        # Fail-closed guard: a contained PM cannot honor
+        # git.pm_owns_product_branches=true (no shell for git/gh). Refuse
+        # before any lifecycle data is resolved/emitted.
         guard_msg = contained_pm_owned_git_block_message(
             resolve_pm_owns_product_branches(global_cfg, project_cfg),
             pm_is_contained(),
@@ -265,11 +266,11 @@ def handler(args: argparse.Namespace) -> int:
 
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
 
-        # FR-008 advisory-tier surface (P02-BUILD-001): when the PM harness
-        # cannot be proven constrained to Tier 1/2 (TASK-02-001 -> tier-3),
-        # lifecycle orientation still proceeds and emits a visible advisory.
-        # A recorded acknowledgment can annotate the advisory, but is not a
-        # prerequisite for non-technical operators to open the project.
+        # Advisory-tier surface: when the PM harness cannot be proven
+        # constrained to a lower trust tier, lifecycle orientation still
+        # proceeds and emits a visible advisory. A recorded acknowledgment
+        # can annotate the advisory, but is not a prerequisite for
+        # non-technical operators to open the project.
         advisory = evaluate_advisory_gate(project_path, project_id)
         if advisory.blocked:
             raise _CliError(EXIT_FAIL, "guard", advisory.detail)

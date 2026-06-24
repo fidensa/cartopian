@@ -1,10 +1,10 @@
-"""`cartopian generate-config <project-path>` (FR-004 #9, FR-011, FR-013, FR-014, SPEC-01-001).
+"""`cartopian generate-config <project-path>`.
 
 Writes ``<project-path>/cartopian.toml`` from the supplied flags. Always stamps
 ``[project] protocol_version`` to the current protocol version (the topmost
 ``### vX.Y.Z`` entry under ``## Entries`` in ``protocol/CHANGELOG.md``).
 
-Omitted optional flags MUST NOT write protocol defaults — the FR-011 resolution
+Omitted optional flags MUST NOT write protocol defaults — the resolution
 chain applies defaults at consumption time via ``resolve-config``.
 """
 import argparse
@@ -39,8 +39,8 @@ class _Usage(Exception):
 class _SingleValuedAction(argparse.Action):
     """Store action that rejects a repeated occurrence with `[usage]` exit 2.
 
-    SPEC-01-001 marks `--name`, `--id`, `--automation-confirmation`,
-    `--automation-max-handoffs`, and `--git-versioning` as single-valued.
+    The flags `--name`, `--id`, `--automation-confirmation`,
+    `--automation-max-handoffs`, and `--git-versioning` are single-valued.
     Choices validation runs before ``__call__`` so enum flags still reject
     bad values first; a second occurrence of any single-valued flag fails
     here regardless of value.
@@ -116,7 +116,7 @@ def _parse_bool(value: str, ctx: str) -> bool:
 def _parse_git_key_value(raw: str) -> Any:
     """Parse a --git-key value as a TOML primitive.
 
-    Rule (locked in source per SPEC-01-001 §generate-config flag surface):
+    Rule (locked in source):
       - ``true`` / ``false`` → bool
       - integer literal (optionally signed) → int
       - otherwise → string, stripping optional surrounding double quotes

@@ -1,4 +1,4 @@
-"""Universal raw-edit detection floor (FR-005, DEC-005 §4, P01-01).
+"""Universal raw-edit detection floor.
 
 Cartopian's own tooling must detect any change to a *governed artifact* that did
 not pass through a mediated writer — on every harness, with **zero harness
@@ -7,7 +7,7 @@ cooperation**. This module is that portable floor. It has two halves:
 1. **Provenance recording.** Every successful mediated write appends one line to
    an append-only NDJSON *write log* (:data:`LOG_RELPATH`) recording the
    destination's project-relative path and the SHA-256 of the bytes that were
-   written. The single FR-003 mediated-write chokepoint
+   written. The mediated-write chokepoint
    (:func:`cli.mediated_write.mediated_write`) calls :func:`record_write`, as
    does the one content-preserving lifecycle relocation that does not go through
    that chokepoint (``move-task``). The PM tool surface never touches the log
@@ -47,16 +47,16 @@ and the log. No PreToolUse hook, no harness interception, no privileged daemon.
 That is what makes this the *portable* floor: it stands alone on a harness with
 no native interception point.
 
-Stdlib-only (NF-001). The governed-artifact set is the closed, documented set
-named by the P01-01 task (plans, phases, tasks, decisions, specs, STATE,
-backlog); it is extended only by editing :data:`GOVERNED_ROOT_FILES` /
-:data:`GOVERNED_DIRS`.
+Stdlib-only. The governed-artifact set is the closed, documented set
+(plans, phases, tasks, decisions, specs, STATE, backlog); it is extended only
+by editing :data:`GOVERNED_ROOT_FILES` / :data:`GOVERNED_DIRS`.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
@@ -76,8 +76,8 @@ LOG_RELPATH = f"{PROVENANCE_DIRNAME}/{LOG_BASENAME}"
 _HASH_PREFIX = "sha256:"
 
 # ---------------------------------------------------------------------------
-# The governed-artifact set (P01-01 scope: plans, phases, tasks, decisions,
-# specs, STATE, backlog).
+# The governed-artifact set (plans, phases, tasks, decisions, specs, STATE,
+# backlog).
 #
 # Root files: a fixed set of project-root basenames. Directory artifacts: every
 # ``*.md`` at any depth under the named top-level directory (tasks/ has the
@@ -100,6 +100,57 @@ GOVERNED_DIRS: Set[str] = {
 def hash_bytes(data: bytes) -> str:
     """Return the prefixed SHA-256 digest (``sha256:<hex>``) of ``data``."""
     return _HASH_PREFIX + hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Management-identifier scan.
+#
+# The always-on hygiene rule: product code must never carry planning
+# identifiers — a requirement, decision, task, backlog, open-question, review,
+# phase, prompt, report, or spec id, or a plan-build reference. Assignees were
+# storing these in code comments as if annotating a ticket — leakage of the
+# managing project plus token burn. This is a deterministic fail-safe behind the
+# structural launch-scope fix and the injected coding directive: a single regex
+# over the bytes of changed work-root files, with no model round-trip.
+# ---------------------------------------------------------------------------
+# The optional ``(?:[A-Z]+-)?`` segment catches word-segment id forms the
+# project actually uses — ``PROMPT-PLAN-NNN``, ``REVIEW-PLAN-NNN`` — which a
+# plain ``PREFIX-<digits>`` pattern would miss. Digit segments stay two-to-three
+# wide so a four-digit year-like suffix does not false-match.
+PM_IDENTIFIER_RE = re.compile(
+    r"\b(?:FR|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC)-(?:[A-Z]+-)?\d{2,3}(?:-\d{2,3})?\b"
+    r"|\bP\d{2}-(?:[A-Z]+-)?\d{2,3}\b"
+)
+
+
+def scan_pm_identifiers(
+    paths: List[Union[str, os.PathLike]],
+) -> List[Dict[str, object]]:
+    """Flag managing-project planning identifiers in the given product files.
+
+    Pure and cheap: reads each path and matches :data:`PM_IDENTIFIER_RE` line by
+    line, returning a list of ``{path, line, match, text}`` hits. ``paths`` is
+    the set of changed work-root files a caller (a review pass, a CI step, or a
+    work-root-scoped audit) supplies; this function neither resolves work roots
+    nor shells out to git, so it stays trivially testable and side-effect free.
+    Unreadable or non-text files are skipped, never raised on.
+    """
+    hits: List[Dict[str, object]] = []
+    for raw in paths:
+        path = Path(raw)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for match in PM_IDENTIFIER_RE.finditer(line):
+                hits.append({
+                    "path": str(path),
+                    "line": lineno,
+                    "match": match.group(0),
+                    "text": line.strip(),
+                })
+    return hits
 
 
 def _relpath_in_root(project_root: Path, abs_path: Path) -> Optional[str]:

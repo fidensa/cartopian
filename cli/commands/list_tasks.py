@@ -1,12 +1,11 @@
-"""`cartopian list-tasks --project <id-or-path>` (FR-005, SPEC-01-001).
+"""`cartopian list-tasks --project <id-or-path>`.
 
 Enumerates task files under a project's ``tasks/<status>/`` directories and
 emits one NDJSON record per task. Required ``--project`` resolves via the
-registry (DEC-009) by id or accepts an absolute project root path.
+registry by id or accepts an absolute project root path.
 
 Filter flags ``--phase`` and ``--status`` are single-valued and may not be
-repeated. Filters AND-combine. Empty match set emits no records and exits 0
-(DEC-008 zero-records pattern).
+repeated. Filters AND-combine. Empty match set emits no records and exits 0.
 """
 import argparse
 import os
@@ -60,7 +59,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--phase",
         default=None,
         action=_SeenOnceAction,
-        help="Canonical phase id, e.g. PHASE-01-substrate-build (full form only)",
+        help="Canonical phase id in full form (e.g. PHASE-NN-slug)",
     )
     subparser.add_argument(
         "--status",

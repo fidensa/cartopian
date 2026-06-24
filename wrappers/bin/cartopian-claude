@@ -31,6 +31,7 @@ else
   cartopian_review_recapture_banner() { return 0; }
   cartopian_extract_work_roots() { echo ""; }
   cartopian_enforce_work_roots() { return 0; }
+  cartopian_comment_directive() { echo ""; }
 fi
 # --------------------------------------------------------------------
 
@@ -80,13 +81,20 @@ fi
 
 PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
 
+# Prepend the operator-configured comment-volume directive plus the always-on
+# management-identifier ban when the mediated launcher set the level. Keeps the
+# policy out of the prompt file and applies it at coding time.
+if [[ -n "${CARTOPIAN_CODE_COMMENTS:-}" ]]; then
+  PROMPT_CONTENT="$(cartopian_comment_directive "$CARTOPIAN_CODE_COMMENTS")"$'\n\n'"$PROMPT_CONTENT"
+fi
+
 # Derive the optional status-file path now, before any cd, so a relative
 # prompt path still resolves. Empty when the prompt is outside a project.
 STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
-# (the registered project path). Prompts always live at
+# Assignee CLIs run with cwd set to the Cartopian project root (the
+# registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
 #
@@ -106,7 +114,7 @@ else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
   PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
-  # FR-012 launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  # Launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
   if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
     cd "$PROJECT_DIR"
     echo "cartopian-claude: cwd=$PROJECT_DIR" >&2
@@ -116,7 +124,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
+# --- Access grants ---------------------------------------------------
 # Enforce the per-agent work-root scoping guard via the shared helper (so the
 # fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
 # The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
@@ -131,12 +139,12 @@ fi
 # is not enforced at a sandbox layer the way codex/gemini do — prefer a sandboxed
 # reviewer agent for hard review-integrity guarantees.
 #
-# Native work-root union scoping (TASK-03-009): claude scopes a multi-directory
-# union via `--add-dir <dir>` ("additional directories to allow tool access to").
-# The launch cwd ($1) is already in scope; add each declared work root ($2..) so
-# the agent is scoped to the union (launch cwd ∪ declared work roots). The shared
-# guard cartopian_enforce_work_roots calls this hook and appends the flags to
-# CARTOPIAN_SCOPE_ARGS, which is injected into the claude command below.
+# Native work-root union scoping: claude scopes a multi-directory union via
+# `--add-dir <dir>` ("additional directories to allow tool access to"). The
+# launch cwd ($1) is already in scope; add each declared work root ($2..) so
+# the agent is scoped to the union (launch cwd ∪ declared work roots). The
+# shared guard cartopian_enforce_work_roots calls this hook and appends the
+# flags to CARTOPIAN_SCOPE_ARGS, which is injected into the claude command below.
 cartopian_tool_scope_union() {
   shift  # launch cwd is already the primary scope
   local _d
@@ -147,7 +155,7 @@ cartopian_tool_scope_union() {
 }
 
 CARTOPIAN_SCOPE_ARGS=()
-if command -v cartopian &>/dev/null; then
+if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
   cartopian_enforce_work_roots "cartopian-claude" "${CARTOPIAN_CLAUDE_UNRESTRICTED:-false}" "CARTOPIAN_CLAUDE_UNRESTRICTED"
 fi
 # --------------------------------------------------------------------

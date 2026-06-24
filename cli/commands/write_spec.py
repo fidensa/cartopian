@@ -1,4 +1,4 @@
-"""`cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug ...` (G6, FR-005, SPEC-01-003).
+"""`cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug ...`.
 
 Structured writer for spec files ``specs/SPEC-NN-NNN-slug.md``. The PM
 supplies the id + slug, not a path; the destination subtree is the
@@ -14,7 +14,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--spec-id",
         required=True,
-        help="Spec id, e.g. SPEC-01-001 (grammar SPEC-NN-NNN)",
+        help="Spec id, e.g. SPEC-NN-NNN",
     )
     subparser.add_argument(
         "--slug",

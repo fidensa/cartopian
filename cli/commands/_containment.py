@@ -1,17 +1,16 @@
-"""Containment detection + the FR-013 fail-closed git guard (P01-BUILD-006).
+"""Containment detection + fail-closed git guard.
 
-A contained PM runs under the DEC-001 capability floor: no shell, no raw
-file write/edit, no process exec, no product-repo / work-root reach — it
+A contained PM runs under the capability floor: no shell, no raw file
+write/edit, no process exec, no product-repo / work-root reach — it
 touches the project only through the fixed Cartopian MCP toolset. The
 protocol setting ``git.pm_owns_product_branches = true`` promises the PM owns
 product-repo git plumbing (branch / stage / commit / push / ``gh pr ...``),
 which requires exactly the shell + product-repo access the floor removes.
 
-Until mediated-git commands exist (RM-004, deferred), that combination is an
-UNSUPPORTED contradiction. Per FR-013 / FR-008 and REVIEW-PLAN-002 F1 the
-selected behavior is to **fail closed**: refuse PM launch / lifecycle entry
-with a structured ``[guard]`` line and a non-zero exit, so the PM is never
-silently left running a setting it cannot honor.
+Until mediated-git commands exist, that combination is an UNSUPPORTED
+contradiction. The selected behavior is to **fail closed**: refuse PM launch /
+lifecycle entry with a structured ``[guard]`` line and a non-zero exit, so the
+PM is never silently left running a setting it cannot honor.
 
 This module is import-cycle-free (stdlib + nothing from the command modules)
 so the config-resolution surface (``resolve_config``) and the orientation
@@ -84,12 +83,12 @@ def unsupported_combination_message() -> str:
     """The structured, deterministic guard message (no ``[guard]`` prefix)."""
     return (
         "unsupported-combination: git.pm_owns_product_branches=true under a "
-        "contained PM. The DEC-001 capability floor gives the contained PM no "
-        "shell to run git/gh, and mediated-git is deferred (FR-013 / RM-004), "
-        "so the PM cannot perform the product-repo git plumbing this setting "
-        "promises. Refusing PM launch fail-closed (FR-008) — no lifecycle "
-        "action proceeds. Resolve by setting git.pm_owns_product_branches=false "
-        "or launching the PM uncontained until mediated-git lands."
+        "contained PM. The capability floor gives the contained PM no shell to "
+        "run git/gh, and mediated-git is not yet implemented, so the PM cannot "
+        "perform the product-repo git plumbing this setting promises. Refusing "
+        "PM launch fail-closed — no lifecycle action proceeds. Resolve by "
+        "setting git.pm_owns_product_branches=false or launching the PM "
+        "uncontained until mediated-git lands."
     )
 
 

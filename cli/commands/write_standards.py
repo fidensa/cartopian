@@ -1,6 +1,6 @@
-"""`cartopian write-standards <project-root>` (G3, FR-005, SPEC-01-003).
+"""`cartopian write-standards <project-root>`.
 
-Structured writer for ``STANDARDS.md``. Front-end over the SPEC-01-002
+Structured writer for ``STANDARDS.md``. Front-end over the
 mediated-write primitive; destination implied by the verb.
 """
 import argparse

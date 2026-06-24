@@ -1,4 +1,4 @@
-"""`cartopian wait-handoff <task-path> --role <role> --max-block <duration>` (FR-014, P01-BUILD-003).
+"""`cartopian wait-handoff <task-path> --role <role> --max-block <duration>`.
 
 Read-only observer that monitors one handoff. It resolves the expected report
 path from the task file (the same task-derived ``reports/REPORT-NN-NNN.md``
@@ -26,7 +26,7 @@ The effective block budget is ``min(--max-block, configured timeout)``; the
 configured timeout from ``[handoffs.<role>] timeout`` (protocol default ``60m``)
 is honored as the maximum absolute ceiling. Read-only: never writes to the
 project tree, never moves tasks, never launches processes. Standard library
-only (FR-014, STANDARDS.md § Wait Command Standards).
+only (see STANDARDS.md § Wait Command Standards).
 """
 import argparse
 import re
@@ -55,7 +55,7 @@ DEFAULT_TIMEOUT = "60m"
 DEFAULT_TIMEOUT_SECONDS = 3600
 DEFAULT_POLL_SECONDS = 5.0
 
-# Exit-code contract per status flag (FR-014). ``done`` and ``still-running``
+# Exit-code contract per status flag. ``done`` and ``still-running``
 # are benign observations; the rest are logical failures the PM must handle.
 _EXIT_FOR_STATUS = {
     "done": EXIT_OK,

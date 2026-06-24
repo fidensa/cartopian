@@ -1,4 +1,4 @@
-"""`cartopian report-action <report-path>` aggregator (FR-004, DECISION-003)."""
+"""`cartopian report-action <report-path>` aggregator."""
 import argparse
 import re
 from pathlib import Path

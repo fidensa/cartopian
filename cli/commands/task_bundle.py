@@ -1,4 +1,4 @@
-"""`cartopian task-bundle <task-path>` aggregator (FR-002)."""
+"""`cartopian task-bundle <task-path>` aggregator."""
 import argparse
 import re
 from pathlib import Path
