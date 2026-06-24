@@ -8,6 +8,7 @@ from typing import Callable, Dict, Optional, Tuple
 
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
+from cli.provenance import record_write as record_provenance
 
 STATUSES = ("open", "in-progress", "in-review", "done")
 
@@ -169,6 +170,18 @@ def handler(args: argparse.Namespace) -> int:
     except OSError as exc:
         _stderr("error", f"rename failed: {exc}")
         return EXIT_FAIL
+
+    # FR-005: a task lifecycle transition is a mediated write (STANDARDS §
+    # Project Artifact Standards). The relocation preserves content but lands a
+    # new project-relative path, so carry provenance to that path — otherwise a
+    # subsequent raw edit to the moved file would read as untracked (advisory)
+    # rather than the drift (guard) it is. project root = tasks/<status>/file ->
+    # parents[2]. Best-effort: a missed record degrades to advisory, not error.
+    project_root = task_path.parents[2]
+    try:
+        record_provenance(project_root, dest, dest.read_bytes(), action="move-task")
+    except OSError:
+        pass
 
     record = {
         "action": "move-task",

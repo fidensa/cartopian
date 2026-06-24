@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
+from cli.provenance import audit_provenance
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
@@ -514,7 +515,21 @@ def handler(args: argparse.Namespace) -> int:
     # authorization regardless of attribution.
     warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
 
-    clean = len(blockers) == 0 and len(warnings) == 0
+    # FR-005 universal raw-edit detection floor (P01-01). Runs as part of this
+    # ordinary CLI command — no harness interception — so it is the portable
+    # floor: it stands alone on any harness. `guard` entries are detected raw
+    # edits to governed artifacts (a hard detection that fails the audit);
+    # `advisory` entries are governed artifacts whose provenance cannot be
+    # established (an honest notice that does not fail).
+    provenance = audit_provenance(project_path)
+    prov_guards: List[Dict[str, Any]] = provenance["guard"]
+    prov_advisories: List[Dict[str, Any]] = provenance["advisory"]
+
+    clean = (
+        len(blockers) == 0
+        and len(warnings) == 0
+        and len(prov_guards) == 0
+    )
     record: Dict[str, Any] = {
         "action": "plan-audit",
         "project_path": str(project_path),
@@ -522,8 +537,18 @@ def handler(args: argparse.Namespace) -> int:
         "blockers": blockers,
         "warnings": warnings,
         "attributions": attributions,
+        "provenance": provenance,
     }
     emit_record(record)
+
+    # Provenance findings surface on their own machine-contract prefixes
+    # (STANDARDS § Code Standards: `[guard]` for a detected violation,
+    # `[advisory]` for an honest-tier notice) regardless of the lifecycle
+    # blocker outcome below.
+    for g in prov_guards:
+        _stderr("guard", g["detail"])
+    for adv in prov_advisories:
+        _stderr("advisory", adv["detail"])
 
     if blockers:
         for b in blockers:
@@ -533,4 +558,8 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("warning", w["detail"])
     for a in attributions:
         _stderr("info", a["detail"])
+    # A detected raw edit is a fail-closed detection: exit non-zero so the floor
+    # is assertable on a no-interception path even when no lifecycle blocker fired.
+    if prov_guards:
+        return EXIT_FAIL
     return EXIT_OK

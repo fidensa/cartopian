@@ -42,6 +42,7 @@ import sys
 from typing import Callable, Dict, Optional, Union
 
 from cli.emit import emit_record
+from cli.provenance import record_write as record_provenance
 
 # Exit codes mirror cli.main (kept local to avoid importing the PM dispatcher,
 # which would risk coupling this internal primitive to the exposed surface).
@@ -391,6 +392,11 @@ def mediated_write(
             os.fsync(dir_fd)
         except OSError:
             pass  # directory fsync is best-effort; the replace already landed
+        # FR-005 raw-edit detection floor: record mediated-writer provenance so
+        # an out-of-band change to this artifact is later distinguishable from a
+        # write that passed through here. Best-effort and fail-open for the write
+        # (a missed record degrades to an advisory at audit, never a false guard).
+        record_provenance(real_root, candidate, data, action="mediated-write")
     except GuardRefusal:
         if tmp_created:
             _silent_unlink(tmp_name, dir_fd)
