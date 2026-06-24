@@ -100,18 +100,15 @@ Then author the assignment prompt. This is a **PM-performed** write; the contain
 cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
 ```
 
-The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
+The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The coder handoff is **deidentified**: name the work by its title and address every resource by file path. Do **not** put project-management identifiers (the task id, plan ref, spec id, `FR-`/`NF-` requirement refs, decision refs) anywhere in the prompt body — they map to nothing once PM data is archived and are exactly what leaks into product code. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
 
-- Absolute prompt path.
 - Absolute project root.
 - Declared `Work root:` names from the task header (comma-separated), or `n/a`.
 - Absolute path(s) for the declared work root(s) (from the record's `work_roots[].absolute_path`); use `n/a` when none are declared.
-- Absolute task path.
-- Absolute spec path, or `n/a`.
+- When the task names a spec, the **deidentified** spec body, inlined into the prompt's `## Specification` section. Obtain it by running `cartopian render-spec <spec-path>` (the `spec_path` comes from the `task-bundle` record) and using the `deidentified_spec` field. Do **not** put the raw spec path in the prompt or otherwise direct the assignee to read `specs/` — the raw spec carries PM identifiers that would leak into product code.
 - Absolute expected report path (from the record's `expected_report_path`).
-- Absolute expected review path, when applicable.
 - Absolute report template path.
-- Task goal, context, acceptance criteria, scope boundaries, and test gate.
+- The goal, context, acceptance criteria, scope boundaries, and test gate — written as self-contained prose, not as references to PM artifacts.
 - A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When `git.pm_owns_product_branches = true` and the task declares one or more `Work root:` names, a reminder that assignees do not stage, commit, push, branch, open PRs, merge, or otherwise perform product-repo git plumbing.
@@ -178,7 +175,7 @@ If the verdict is `accepted` with `Ready for review: yes`, apply the lifecycle m
 cartopian move-task <task-path> in-review
 ```
 
-The CLI verifies that `reports/REPORT-NN-NNN.md` exists, references this task's ID, and has `Status: complete` before executing this rename. The parsed completion report already on disk satisfies this check. Capture any evidence the reviewer will need from the completion report and proceed to reviewer assignment.
+The CLI verifies that `reports/REPORT-NN-NNN.md` exists (the filename is the task link) and has `Status: complete` before executing this rename. The parsed completion report already on disk satisfies this check. Capture any evidence the reviewer will need from the completion report and proceed to reviewer assignment.
 
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
 

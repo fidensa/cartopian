@@ -253,16 +253,34 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
             self.assertIn("missing coder report", proc.stderr)
             self.assertTrue(task_path.is_file())
 
-    def test_in_progress_to_in_review_report_wrong_task_id(self):
+    def _assert_moved(self, proc, task_path, to_status):
+        expected_after = task_path.parent.parent / to_status / task_path.name
+        self.assertEqual(proc.returncode, 0, msg=f"stderr={proc.stderr!r}")
+        self.assertTrue(expected_after.is_file())
+        self.assertFalse(task_path.exists())
+
+    def test_in_progress_to_in_review_report_body_id_ignored(self):
+        # The coder handoff is deidentified: the report filename REPORT-01-007.md
+        # is the task link, so a stray/legacy `Task ID:` in the body is ignored.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "in-progress")
-            # Report references wrong task ID
             _seed_coder_report(tmp_path / "project", "01-007", "TASK-99-999")
             proc = _run(str(task_path), "in-review", home=tmp_path)
-            self._expect_guard(proc)
-            self.assertIn("does not reference", proc.stderr)
-            self.assertTrue(task_path.is_file())
+            self._assert_moved(proc, task_path, "in-review")
+
+    def test_in_progress_to_in_review_deidentified_report(self):
+        # A report carrying no identifier at all still satisfies the guard.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            task_path = _seed_task(tmp_path, "in-progress")
+            p = tmp_path / "project" / "reports" / "REPORT-01-007.md"
+            _write(p, (
+                "# REPORT-01-007\n\nStatus: complete\n\n"
+                "## Identity\n\n- Work root: n/a\n"
+            ))
+            proc = _run(str(task_path), "in-review", home=tmp_path)
+            self._assert_moved(proc, task_path, "in-review")
 
     def test_in_progress_to_in_review_report_not_complete(self):
         with tempfile.TemporaryDirectory() as tmp:

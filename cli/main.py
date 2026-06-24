@@ -25,6 +25,8 @@ SUBCOMMANDS: List[str] = [
     "task-bundle",
     "unregister-project",
     "validate-task-readiness",
+    # Deidentified spec rendering for coder handoffs
+    "render-spec",
     # FR-005
     "close-audit",
     "compose-state",
@@ -118,6 +120,7 @@ def _real_handlers():
         plan_audit,
         report_action,
         register_project,
+        render_spec,
         reset_plan,
         resolve_config,
         scaffold_project,
@@ -155,6 +158,7 @@ def _real_handlers():
         "plan-audit": (plan_audit.configure_parser, plan_audit.handler),
         "report-action": (report_action.configure_parser, report_action.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
+        "render-spec": (render_spec.configure_parser, render_spec.handler),
         "reset-plan": (reset_plan.configure_parser, reset_plan.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),

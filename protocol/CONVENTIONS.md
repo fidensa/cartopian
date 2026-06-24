@@ -116,7 +116,7 @@ Guarded transitions and their prerequisites:
 
 | Transition | Required artifact | Validation |
 | --- | --- | --- |
-| `in-progress → in-review` | `reports/REPORT-NN-NNN.md` | must reference this task's `Task ID:`; `Status: complete` |
+| `in-progress → in-review` | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
 | `in-review → done` | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
 | `in-review → in-progress` | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
 | `in-review → open` | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
@@ -159,6 +159,8 @@ A spec may carry `Status: draft | locked`. `locked` means the current contract h
 
 Approved specs change in place after the project's required review or approval. Version-suffixed spec files (`-v1`, `-v2`) and spec supersession chains are not part of the protocol.
 
+A spec is surfaced to an assignee **deidentified**, never as the raw file. The canonical spec keeps its full traceability (the `SPEC-NN-NNN` title, `Plan refs:`, and the `## References` section) for the PM; `cartopian render-spec <spec-path>` produces the assignee-facing rendering, which strips that scaffolding and any inline identifier while preserving the work-contract prose. The PM inlines that rendering into the coder prompt's `## Specification` section, so PM identifiers stay inside PM artifacts and never reach product code via the spec the coder reads.
+
 ## Reviews
 
 Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review file per task, overwritten on re-review. There is no round suffix and no closure sign-off section.
@@ -175,11 +177,13 @@ Review verdicts are:
 
 ## Prompts
 
-Prompts are temporary, assignee-directed handoff artifacts in `prompts/`. They restate the task, spec, context, output expectations, scope boundaries, done criteria, and completion report requirements.
+Prompts are temporary, assignee-directed handoff artifacts in `prompts/`. They restate the requirements, acceptance criteria, context, output expectations, scope boundaries, done criteria, and completion report requirements.
 
 Prompt files follow the canonical field schema in `templates/PROMPT.md`.
 
 Prompts must include complete absolute paths for every resource the assignee is expected to use or produce. They must not rely on relative path interpretation, current working directory assumptions, or vague instructions such as "read the PM system."
+
+Coder (task) handoffs are **deidentified**. Project-management identifiers — `TASK-NN-NNN`, `SPEC-NN-NNN`, plan refs `PNN-KIND-NNN`, requirement refs (`FR-`/`NF-`), decision refs (`DEC-`), and the like — exist only inside PM artifacts; they are not surfaced to the assignee. A coder prompt names the work by its title and addresses every resource by file path, and the coder writes its report to the given report path without recording any identifier. Cartopian links the report back to its task by the report *filename* (`REPORT-NN-NNN.md`), so the assignee never needs — and is never given — a task identifier to copy into product code.
 
 Task prompts are deleted when the task reaches `done/` or when the prompt is superseded before assignment. Planning-checkpoint prompts are deleted when the checkpoint is approved or superseded. Prompts are never archived as durable records.
 

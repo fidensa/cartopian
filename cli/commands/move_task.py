@@ -48,7 +48,10 @@ def _find_project_root(task_path: Path) -> Optional[Path]:
     return None
 
 
-def _guard_coder_report(project_root: Path, nn_nnn: str, task_id: str) -> Optional[str]:
+def _guard_coder_report(project_root: Path, nn_nnn: str, _task_id: str) -> Optional[str]:
+    # The coder (task) handoff is deidentified: the report records no task id.
+    # The report *filename* `REPORT-NN-NNN.md` (matched to this task's NN-NNN) is
+    # the task link, so existence + `Status: complete` is the whole guard.
     report = project_root / "reports" / f"REPORT-{nn_nnn}.md"
     if not report.is_file():
         return f"missing coder report: {report}"
@@ -56,8 +59,6 @@ def _guard_coder_report(project_root: Path, nn_nnn: str, task_id: str) -> Option
         content = report.read_text(encoding="utf-8")
     except OSError:
         return f"report unreadable: {report}"
-    if f"Task ID: {task_id}" not in content:
-        return f"report does not reference {task_id}: {report}"
     m = _STATUS_RE.search(content)
     if not m or m.group(1).strip() != "complete":
         return f"report Status is not 'complete': {report}"

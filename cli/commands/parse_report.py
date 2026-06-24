@@ -46,8 +46,13 @@ REQUIRED_SECTIONS = {
     ),
 }
 
+# Identity keys a report must carry to validate. Coder (task) handoffs are
+# deidentified: the task report records no PM identifiers — Cartopian links it
+# to its task by the report *filename* (`REPORT-NN-NNN.md`), so no Identity key
+# is required. Review handoffs go to a reviewer that works with PM artifacts and
+# keep their identity fields.
 REQUIRED_IDENTITY_KEYS = {
-    "task": ("Task ID:", "Prompt path:", "Task path:"),
+    "task": (),
     "review": ("Review ID:", "Prompt path:", "Review file path:"),
     "planning-review": ("Review ID:", "Prompt path:", "Review file path:"),
 }
@@ -77,17 +82,18 @@ def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Opti
     (CONVENTIONS § Reports), so the filename alone cannot decide between them.
     Resolve ``task`` vs ``review`` from report *content*: a review report carries
     a ``Review ID:`` and a ``## Verdict`` section; a task report carries a
-    ``Task ID:`` and a ``## Ready for review`` section. A review report may
-    legitimately cite the reviewed ``Task ID:`` too, so the presence of both IDs
-    is not, by itself, a conflict — the distinguishing section decides. Only a
-    report that is shaped as *both* (a verdict *and* a ready-for-review section)
-    is genuinely ambiguous.
+    ``## Ready for review`` section. The coder (task) handoff is deidentified, so
+    a task report carries no ``Task ID:`` — its ``## Ready for review`` section is
+    the distinguishing signal. A review report may legitimately cite a reviewed
+    ``Task ID:``, so that string never marks a report as a task report. Only a
+    report shaped as *both* (a verdict *and* a ready-for-review section) is
+    genuinely ambiguous.
     """
     filename_is_plan = report_path.name.startswith("REPORT-PLAN-")
     has_review_id = "Review ID:" in content
     has_task_id = "Task ID:" in content
     review_shaped = has_review_id and bool(_VERDICT_SECTION_RE.search(content))
-    task_shaped = has_task_id and bool(_READY_SECTION_RE.search(content))
+    task_shaped = bool(_READY_SECTION_RE.search(content))
 
     _ambiguous = (
         "ambiguous variant: filename and content disagree; "

@@ -226,16 +226,27 @@ def _task_path_mismatch(
     expected_task_path: Optional[Path],
     expected_task_id: Optional[str],
 ) -> bool:
+    """Whether a task report's filename fails to resolve to a real task.
+
+    The coder (task) handoff is deidentified: the report carries no Identity
+    ids/paths, and the report *filename* (`REPORT-NN-NNN.md`) is the source of
+    truth for the task link. So the only hard requirement is that a task on disk
+    matches that filename. Any Identity id/path a legacy report still declares is
+    cross-checked when present (a stale or wrong value is a mismatch) but is
+    never required.
+    """
+    if expected_task_path is None:
+        return True  # no task on disk matches this report's filename
     declared_prompt_path = _path_from_identity(identity, "Prompt path")
+    if declared_prompt_path is not None and declared_prompt_path != expected_prompt_path:
+        return True
     declared_task_path = _path_from_identity(identity, "Task path")
+    if declared_task_path is not None and declared_task_path != expected_task_path:
+        return True
     declared_task_id = identity.get("Task ID")
-    if declared_prompt_path != expected_prompt_path:
+    if declared_task_id is not None and declared_task_id != expected_task_id:
         return True
-    if expected_task_path is None or declared_task_path != expected_task_path:
-        return True
-    if declared_task_id != expected_task_id:
-        return True
-    return not declared_task_path.exists()
+    return False
 
 
 def _review_path_mismatch(
@@ -430,11 +441,13 @@ def handler(args: argparse.Namespace) -> int:
                 requires_pr_step = verdict == "accepted"
 
     target_task_status = _target_task_status(variant, verdict, ready_for_review)
+    # Use the filename-derived prompt path: the deidentified task report no
+    # longer declares a `Prompt path:`, and the expected path is authoritative.
     prompt_to_overwrite = _prompt_to_overwrite(
         variant,
         verdict,
         ready_for_review,
-        _path_from_identity(identity, "Prompt path"),
+        expected_prompt_path,
     )
     review_path = _review_path_output(
         variant,
