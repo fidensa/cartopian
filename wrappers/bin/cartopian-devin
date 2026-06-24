@@ -206,7 +206,7 @@ fi
 # on a non-empty work-root union (the `[work-root]` stderr line), with the
 # documented CARTOPIAN_DEVIN_UNRESTRICTED bypass as the only opt-out. Scope a
 # devin work-root task on its own hosted side, or use a locally-scopable wrapper.
-if command -v cartopian &>/dev/null; then
+if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
   cartopian_enforce_work_roots "cartopian-devin" "${CARTOPIAN_DEVIN_UNRESTRICTED:-false}" "CARTOPIAN_DEVIN_UNRESTRICTED"
 fi
 # --------------------------------------------------------------------

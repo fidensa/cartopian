@@ -213,6 +213,37 @@ def test_unscopable_tool_unrestricted_bypass_still_works(tmp_path, wrapper, tool
     assert "unrestricted mode enabled" in proc.stderr
 
 
+def test_devin_scoped_dispatch_without_cartopian_fails_closed(tmp_path):
+    """Regression: a mediated dispatch exports CARTOPIAN_SCOPE_DIRS. An unscopable
+    wrapper (devin) must honor it and FAIL CLOSED even when `cartopian` is not on
+    PATH — gating only on `command -v cartopian` would silently launch unscoped."""
+    prompt = _make_project(tmp_path)
+    work_root = tmp_path / "product"
+    work_root.mkdir()
+    # devin present on PATH, but deliberately NO cartopian shim.
+    fakebin = prompt.parent.parent.parent / "fakebin"
+    _shim(fakebin, "devin", "exit 0")
+
+    env = {
+        "PATH": os.pathsep.join([str(fakebin), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "CARTOPIAN_TIMEOUT": "60m",
+        "CARTOPIAN_LAUNCH_CWD": str(work_root),
+        "CARTOPIAN_SCOPE_DIRS": str(work_root),
+        "CARTOPIAN_REPORT_DIR": str(tmp_path / "reports"),
+    }
+    proc = subprocess.run(
+        ["bash", str(BIN_DIR / "cartopian-devin"), str(prompt)],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+
+    assert proc.returncode != 0, (
+        f"devin did not fail closed under a scoped dispatch with no cartopian on PATH"
+        f"\nstderr:\n{proc.stderr}"
+    )
+    assert "[work-root] tool cannot scope multi-root access" in proc.stderr
+
+
 # --- A scopable tool's bypass and recapture paths are preserved unchanged -----
 
 
@@ -255,4 +286,37 @@ def test_scopable_tool_recapture_stays_readonly(tmp_path, wrapper, tool, flag, c
     # The source root is NOT granted as a writable scope under recapture.
     assert flag not in argv, (
         f"{wrapper}: recapture widened writable scope with {flag}\nargv:\n{argv}"
+    )
+
+
+@pytest.mark.parametrize("wrapper,tool,flag,comma_join", SCOPABLE)
+def test_scopable_tool_recapture_grants_report_dir(tmp_path, wrapper, tool, flag, comma_join):
+    """Under recapture the report-target dir IS still granted writable — the
+    reviewer must write its completion report — even though the source work roots
+    are withheld read-only. Regression guard for the separate report-dir grant."""
+    prompt = _make_project(tmp_path)
+    product = tmp_path / "product"
+    product.mkdir()
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    argv_file = tmp_path / "argv.txt"
+
+    proc = _run(
+        wrapper, tool, prompt, {"product": str(product), "design": str(product)},
+        argv_file=argv_file,
+        extra_env={
+            "CARTOPIAN_REVIEW_RECAPTURE": "1",
+            "CARTOPIAN_REPORT_DIR": str(report_dir),
+        },
+    )
+
+    assert proc.returncode == 0, f"{wrapper}: recapture+report-dir regressed\nstderr:\n{proc.stderr}"
+    argv = argv_file.read_text(encoding="utf-8").splitlines() if argv_file.exists() else []
+    # The report dir IS granted writable under recapture...
+    assert str(report_dir) in argv, (
+        f"{wrapper}: report dir not granted under recapture\nargv:\n{argv}"
+    )
+    # ...but the read-only source work root is still NOT.
+    assert str(product) not in argv, (
+        f"{wrapper}: recapture widened writable scope to the source root\nargv:\n{argv}"
     )
