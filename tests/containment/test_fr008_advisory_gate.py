@@ -1,21 +1,20 @@
-"""FR-008 advisory-tier notice, acknowledgment & persisted decision (TASK-02-002).
+"""Advisory-tier notice, acknowledgment & persisted decision.
 
-The lifecycle behavior on top of TASK-02-001 detection: a PM harness that
-classifies **tier-3** (Cartopian cannot prove it can constrain it to Tier 1/2)
-must not proceed silently, but it also must not make project orientation
-dependent on a terminal-only operator acknowledgment. Lifecycle entry proceeds
-under a visible advisory banner. A recorded acknowledgment is optional audit
-trail that annotates the banner; revoked or mismatched records are treated as no
-record. Tier-1/2 (or no configured harness) is unaffected.
+A PM harness that classifies **tier-3** (Cartopian cannot prove it can constrain
+it to Tier 1/2) must not proceed silently, but it also must not make project
+orientation dependent on a terminal-only operator acknowledgment. Lifecycle
+entry proceeds under a visible advisory banner. A recorded acknowledgment is
+optional audit trail that annotates the banner; revoked or mismatched records
+are treated as no record. Tier-1/2 (or no configured harness) is unaffected.
 
 Red-before-green
 ----------------
-:class:`TestRedNoAdvisoryGateBaseline` pins the pre-task baseline: detection
+:class:`TestRedNoAdvisoryGateBaseline` pins the pre-gate baseline: detection
 alone proves the harness is unconstrainable (tier-3), yet the only launch block
-that existed before this task — the FR-013 contained-PM git guard — does not
-fire for a tier-3 harness whose config has no ``pm_owns_product_branches`` combo.
-So *without* this gate a tier-3 PM reaches lifecycle entry with **no block**
-(the silent-unconstrained-continue FR-008 forbids). The green classes then
+that existed before this gate — the contained-PM git guard — does not fire for
+a tier-3 harness whose config has no ``pm_owns_product_branches`` combo. So
+*without* this gate a tier-3 PM reaches lifecycle entry with **no block** (the
+silent-unconstrained-continue the advisory forbids). The green classes then
 assert the gate closes exactly that hole. This is the documented in-module red
 baseline (naive / pre-guard / fail-closed framing) for the manifest.
 
@@ -139,12 +138,13 @@ def _assert_proceeds(tc, result):
 
 
 class TestRedNoAdvisoryGateBaseline(unittest.TestCase):
-    """RED baseline: detection proves tier-3, but no pre-task block covers it.
+    """RED baseline: detection proves tier-3, but no pre-gate block covers it.
 
-    Documents the silent-unconstrained-continue hole this task closes. We assert
-    the unconstrainable condition is real (detection → tier-3) and that the only
-    prior launch block (FR-013) yields no guard for this config — i.e. before the
-    FR-008 gate a tier-3 PM had nothing stopping it at lifecycle entry.
+    Documents the silent-unconstrained-continue hole the advisory gate closes.
+    We assert the unconstrainable condition is real (detection → tier-3) and
+    that the only prior launch block (the contained-PM git guard) yields no
+    guard for this config — i.e. before the advisory gate a tier-3 PM had
+    nothing stopping it at lifecycle entry.
     """
 
     def test_detection_classifies_tier3_but_fr013_does_not_block(self):
@@ -159,15 +159,15 @@ class TestRedNoAdvisoryGateBaseline(unittest.TestCase):
             # The unconstrainable condition is real.
             self.assertEqual(tier.tier, "tier-3")
             self.assertEqual(tier.harness, "cascade")
-            # The pre-task FR-013 guard does NOT fire here (not the pm-owns combo,
-            # not contained): lifecycle orientation must therefore rely on the
-            # advisory surface rather than a hard block.
+            # The pre-gate contained-PM git guard does NOT fire here (not the
+            # pm-owns combo, not contained): lifecycle orientation must therefore
+            # rely on the advisory surface rather than a hard block.
             self.assertIsNone(
                 contained_pm_owned_git_block_message(
                     resolve_pm_owns_from_paths(sb.project, home=sb.home),
                     contained=False,
                 ),
-                msg="red: before FR-008 nothing blocked a tier-3 PM at lifecycle entry",
+                msg="red: before the advisory gate nothing blocked a tier-3 PM at lifecycle entry",
             )
 
 
@@ -273,7 +273,7 @@ class TestRevokedOrMismatchedRecordsProceed(unittest.TestCase):
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             # Acknowledge a *different* tier-3 harness, not the configured one.
-            # (devin is still tier-3; gemini was promoted to tier-1-2 in TASK-03-002.)
+            # (devin is still tier-3; gemini was promoted to tier-1-2.)
             res = sb.acknowledge(
                 "--harness", "devin",
                 "--acknowledged-by", "operator",
@@ -323,7 +323,7 @@ class TestNoRegressionTier12(unittest.TestCase):
         self.assertNotIn("[guard]", rc.stderr)
 
     def test_fr013_guard_still_fires(self):
-        """The FR-013 contained-PM git guard is unchanged (no regression)."""
+        """The contained-PM git guard is unchanged (no regression)."""
         with _Sandbox() as sb:
             sb.write_project(agent=TIER12_AGENT, pm_owns=True)
             result = sb.run("resolve-config", contained=True)
@@ -332,17 +332,17 @@ class TestNoRegressionTier12(unittest.TestCase):
 
 
 class TestAcknowledgmentCommand(unittest.TestCase):
-    """The operator-only command: schema-complete record, tier-3 only, FR-014 surface."""
+    """The operator-only command: schema-complete record, tier-3 only."""
 
     def test_records_schema_complete_entry(self):
         from cli.commands import _compatibility
         with _Sandbox() as sb:
             sb.write_project(agent=TIER3_HARNESS)
             res = _ack_valid(sb)
-            # FR-014: a single NDJSON record on stdout.
+            # A single NDJSON record on stdout.
             record = json.loads(res.stdout.strip())
             self.assertEqual(record["action"], "acknowledge-harness")
-            # The persisted ledger entry carries every SPEC-02-002 field.
+            # The persisted ledger entry carries every required field.
             recs = _compatibility.parse_ledger(sb.read_ledger())
             self.assertEqual(len(recs), 1)
             r = recs[0]
@@ -385,8 +385,9 @@ class TestAcknowledgmentNotOnPmSurface(unittest.TestCase):
 
     The MCP server auto-exposes every cli.main.SUBCOMMANDS entry as a tool; if
     this command were registered there the contained PM could acknowledge its own
-    unconstrained risk, making the FR-008 gate self-bypassable. It is therefore
-    deliberately unregistered (operator-only), mirroring the mediated-write shim.
+    unconstrained risk, making the advisory gate self-bypassable. It is
+    therefore deliberately unregistered (operator-only), mirroring the
+    mediated-write shim.
     """
 
     def test_absent_from_cli_subcommands(self):

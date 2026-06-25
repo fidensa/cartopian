@@ -1,4 +1,4 @@
-"""Tests for `cartopian validate-task-readiness` (SPEC-01-001, FR-004 #3)."""
+"""Tests for `cartopian validate-task-readiness`."""
 import json
 import os
 import subprocess

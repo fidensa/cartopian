@@ -1,9 +1,9 @@
-"""Tests for `cartopian delete-backlog` (BL-002).
+"""Tests for `cartopian delete-backlog`.
 
 The mediated removal counterpart to ``write-backlog``: it strips exactly the
 ``## BL-NNN — <title>`` section named by ``--bl-id`` from the project-root
-``BACKLOG.md`` and re-renders the file back through the SPEC-01-002
-mediated-write primitive. Removal is section-exact — the preamble and every
+``BACKLOG.md`` and re-renders the file back through the mediated-write
+primitive. Removal is section-exact — the preamble and every
 surviving entry round-trip byte-for-byte — and reuses ``write-backlog``'s
 fence-aware parser, so a ``## BL-NNN`` heading quoted inside a code fence is
 never mistaken for a boundary. Removing an absent id, or a missing
@@ -124,8 +124,8 @@ class TestDeleteBacklog(_Fixture):
         self.assertIn(body, text)                       # fenced quote intact
         self.assertNotIn("## BL-002 — Second", text)     # real BL-002 gone
         self.assertEqual(records[0]["details"]["entries"], 1)
-        # BL-001's section (preamble + heading + fenced body) is unchanged from
-        # before the delete — only the trailing BL-002 block was removed.
+        # The first entry's section (preamble + heading + fenced body) is unchanged from
+        # before the delete — only the trailing second block was removed.
         self.assertTrue(text_before.startswith(text.rstrip("\n")))
 
     def test_missing_id_fails_cleanly(self):

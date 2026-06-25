@@ -1,6 +1,6 @@
-"""PM containment floor — static + behavioral regression (TASK-01-001 / FR-002).
+"""PM containment floor — static + behavioral regression.
 
-Locks the DEC-001 launch-profile floor for the contained Claude Code PM so it
+Locks the launch-profile floor for the contained Claude Code PM so it
 cannot silently weaken. Two complementary layers:
 
 * **Static parity** — the shipping wrapper ``wrappers/bin/cartopian-claude-pm``
@@ -16,11 +16,11 @@ cannot silently weaken. Two complementary layers:
   assert it is EXACTLY the locked 16 ``mcp__cartopian__*`` tools with no
   prohibited tool. Skipped when no evidence is present (the live, network- and
   cost-bearing capture is the shell harness's job; this just pins its result).
-* **Genesis floor (DEC-007 / TASK-03-011)** — the contained inventory must
-  EXCLUDE the four config/registry-genesis tools (generate_config /
-  scaffold_project / register_project / unregister_project). The wrapper grants
-  the Cartopian toolset by the ``--allowedTools "mcp__cartopian"`` PREFIX, so the
-  shared MCP server's withholding (``CARTOPIAN_PM_CONTAINED=1`` via
+* **Genesis floor** — the contained inventory must EXCLUDE the four
+  config/registry-genesis tools (generate_config / scaffold_project /
+  register_project / unregister_project). The wrapper grants the Cartopian
+  toolset by the ``--allowedTools "mcp__cartopian"`` PREFIX, so the shared MCP
+  server's withholding (``CARTOPIAN_PM_CONTAINED=1`` via
   ``mcp-cartopian-only.json``) is what keeps them out — pinned here from the
   shell harness's ``green-genesis-*`` captures, with the pre-floor 20-tool
   exposure as the red baseline.
@@ -43,8 +43,8 @@ GREEN_GENESIS_INV = EVIDENCE / "green-genesis-inventory.txt"
 GREEN_GENESIS_CFG = EVIDENCE / "green-genesis-config-write.txt"
 RED_GENESIS_INV = EVIDENCE / "red-genesis-inventory.txt"
 
-# The locked green inventory — exactly these 16 tools. Post-DEC-007 (TASK-03-011)
-# the four config/registry-genesis tools are WITHHELD from a contained PM, so the
+# The locked green inventory — exactly these 16 tools. The four
+# config/registry-genesis tools are WITHHELD from a contained PM, so the
 # contained claude inventory is the day-to-day lifecycle/read surface only.
 EXPECTED_TOOLS = {
     "mcp__cartopian__close_audit",
@@ -64,9 +64,9 @@ EXPECTED_TOOLS = {
     "mcp__cartopian__wait_handoff",
     "mcp__cartopian__wait_report",
 }
-# The four genesis tools the DEC-007 floor withholds from a contained PM. Their
-# reappearance in the contained inventory re-opens the config-write vector
-# (REVIEW-03-002 F1) — assert they are absent from the live inventory.
+# The four genesis tools the floor withholds from a contained PM. Their
+# reappearance in the contained inventory re-opens the config-write vector —
+# assert they are absent from the live inventory.
 GENESIS_TOOLS = {
     "mcp__cartopian__generate_config",
     "mcp__cartopian__scaffold_project",
@@ -99,7 +99,7 @@ def test_wrapper_is_executable():
     ['--tools ""', "--strict-mcp-config", "--mcp-config", '--allowedTools "mcp__cartopian"', "--disable-slash-commands"],
 )
 def test_floor_flag_present(wrapper_src, flag):
-    """Every DEC-001 floor flag is hard-coded in the wrapper."""
+    """Every floor flag is hard-coded in the wrapper."""
     assert flag in wrapper_src, f"floor flag '{flag}' missing from {WRAPPER}"
 
 
@@ -158,7 +158,7 @@ def test_green_inventory_locked_if_evidence_present():
 
 
 def test_live_inventory_excludes_genesis_tools_if_evidence_present():
-    """DEC-007: the live contained claude inventory must carry NONE of the four
+    """The live contained claude inventory must carry NONE of the four
     genesis tools (config-write vector closed; their return is a regression)."""
     if not GREEN_TOOLS.is_file():
         pytest.skip(f"no captured green inventory ({GREEN_TOOLS}); run pm-floor/run-floor-test.sh")
@@ -178,7 +178,7 @@ def test_contained_mcp_inventory_excludes_genesis_if_evidence_present():
 
 
 def test_config_write_vector_closed_if_evidence_present():
-    """DEC-007: a contained generate_config attempt is refused and leaves no file."""
+    """A contained generate_config attempt is refused and leaves no file."""
     if not GREEN_GENESIS_CFG.is_file():
         pytest.skip(f"no config-write evidence ({GREEN_GENESIS_CFG}); run pm-floor/run-floor-test.sh")
     text = GREEN_GENESIS_CFG.read_text()

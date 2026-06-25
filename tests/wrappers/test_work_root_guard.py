@@ -1,4 +1,4 @@
-"""Tests for the per-agent work-root scoping guard (TASK-03-008, P03-FIX-004).
+"""Tests for the per-agent work-root scoping guard.
 
 Every cartopian-* wrapper must FAIL CLOSED when the tool cannot scope the agent
 to a non-empty resolved work-root set (protocol/CONVENTIONS.md § Work Roots;
@@ -15,7 +15,7 @@ and the guard never fired. These tests pin both halves of the fix:
   data on separate channels) so WORK_ROOTS is populated; and
 - end-to-end, each wrapper fails closed on an unscopable work-root set, while
   honoring the two documented bypasses (the per-tool unrestricted bypass and the
-  agent-neutral reviewer-recapture read-only-source path from TASK-03-007).
+  agent-neutral reviewer-recapture read-only-source path).
 
 No live model is needed: a fake ``cartopian`` shim stubs ``resolve-config`` and a
 fake assignee binary stubs the upstream CLI, both on a restricted PATH.
@@ -40,13 +40,13 @@ WRAPPERS = [
     ("cartopian-devin", "devin", "CARTOPIAN_DEVIN_UNRESTRICTED"),
 ]
 
-# TASK-03-009 (P03-FIX-005): tools whose sandbox can scope a multi-directory union
-# natively no longer fail closed on a non-empty work-root set — they launch SCOPED
-# to the union (see test_work_root_scoping.py). Only a tool with no local
-# path-scoping mechanism (Devin) stays fail-closed-or-bypass, so the "guard fires
-# fail-closed on an unscopable set" assertion is now scoped to that tool. The
-# missing-root, unrestricted-bypass, and reviewer-recapture paths below are
-# unchanged and still exercised across every wrapper.
+# Tools whose sandbox can scope a multi-directory union natively no longer fail
+# closed on a non-empty work-root set — they launch SCOPED to the union (see
+# test_work_root_scoping.py). Only a tool with no local path-scoping mechanism
+# (Devin) stays fail-closed-or-bypass, so the "guard fires fail-closed on an
+# unscopable set" assertion is now scoped to that tool. The missing-root,
+# unrestricted-bypass, and reviewer-recapture paths below are unchanged and
+# still exercised across every wrapper.
 SCOPABLE = {"cartopian-claude", "cartopian-codex", "cartopian-gemini"}
 UNSCOPABLE_WRAPPERS = [w for w in WRAPPERS if w[0] not in SCOPABLE]
 
@@ -207,7 +207,7 @@ def test_unrestricted_bypass_proceeds(tmp_path, wrapper, tool, var):
     assert "unrestricted mode enabled" in proc.stderr
 
 
-# --- documented bypass 2: reviewer-recapture read-only source (TASK-03-007) --
+# --- documented bypass 2: reviewer-recapture read-only source ----------------
 
 
 @pytest.mark.parametrize("wrapper,tool,_var", WRAPPERS)

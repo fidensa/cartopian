@@ -1,4 +1,4 @@
-"""Tests for `cartopian list-tasks` (SPEC-01-001, FR-005, FR-014)."""
+"""Tests for `cartopian list-tasks`."""
 import json
 import os
 import subprocess

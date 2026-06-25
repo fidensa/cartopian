@@ -1,6 +1,6 @@
-"""Negative-test suite for the mediated-write primitive (SPEC-01-002, P01-BUILD-002).
+"""Negative-test suite for the mediated-write primitive.
 
-Every SPEC-01-002 test vector is covered red→green and fail-closed:
+Every test vector is covered red→green and fail-closed:
 
 - **RED** — each prohibited case first drives a *naive sole writer*
   (``_naive_write``: a plain ``open(path, "w")``, i.e. what an uncontained PM
@@ -12,8 +12,8 @@ Every SPEC-01-002 test vector is covered red→green and fail-closed:
   must raise :class:`GuardRefusal` naming the violated rule and write nothing.
 
 The internal CLI shim (``python -m cli.mediated_write``) is exercised for the
-FR-014 surface: non-zero exit + ``[guard]`` stderr on refusal, NDJSON stdout on
-success. A separate test asserts the primitive is absent from the PM tool
+machine contract: non-zero exit + ``[guard]`` stderr on refusal, NDJSON stdout
+on success. A separate test asserts the primitive is absent from the PM tool
 surface (CLI ``SUBCOMMANDS`` and the MCP ``list_tools`` registry).
 """
 import json
@@ -279,7 +279,7 @@ class TestNonRegularDestination(_ProjectFixture):
 
 
 # --------------------------------------------------------------------------
-# FR-014 machine contract via the internal CLI shim, and surface-exclusion.
+# Machine contract via the internal CLI shim, and surface-exclusion.
 # --------------------------------------------------------------------------
 class TestCliShimContract(_ProjectFixture):
     def _run(self, *args):

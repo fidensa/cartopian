@@ -10,7 +10,7 @@
     Absolute path to the Cartopian prompt file.
 
 .EXAMPLE
-    .\cartopian-claude.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-01-001.md
+    .\cartopian-claude.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
 #>
 
 param(
@@ -33,6 +33,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
+    function Get-CartopianScopeArgs { return @() }
+    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -70,12 +72,18 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
+# Prepend the operator-configured comment-volume directive plus the always-on
+# management-identifier ban when the mediated launcher set the level.
+if ($env:CARTOPIAN_CODE_COMMENTS) {
+    $PromptContent = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + $PromptContent
+}
+
 # Derive the optional status-file path now, before any Set-Location, so a
 # relative prompt path still resolves. $null when outside a project layout.
 $StatusPath = Get-CartopianStatusPath $PromptPath
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -105,44 +113,16 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-$WorkRootsJson = ''
-try {
-    $ResolveOut = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
-    if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
-} catch { $WorkRootsJson = '' }
-if ($WorkRootsJson) {
-    # Parse tolerance ONLY: a missing/non-zero/non-JSON resolve-config (cartopian
-    # absent, project not registered, ad-hoc/test layout) leaves $rec null so the
-    # security guards below are skipped and the <report>.status file is still
-    # emitted deterministically. The guards themselves live OUTSIDE this catch:
-    # with $ErrorActionPreference = 'Stop' a guard Write-Error is a *terminating*
-    # error that a surrounding empty catch would swallow before exit 1 ran,
-    # defeating the fail-closed [work-root] contract (protocol/CONVENTIONS.md).
-    # We therefore write the guard message to stderr explicitly and exit 1, which
-    # no catch can intercept.
-    $rec = $null
-    try { $rec = $WorkRootsJson | ConvertFrom-Json } catch { $rec = $null }
-    if ($rec) {
-        $roots = @()
-        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
-        if ($roots.Count -gt 0) {
-            foreach ($r in $roots) {
-                if (-not (Test-Path -PathType Container $r)) {
-                    [Console]::Error.WriteLine("[work-root] missing: $r")
-                    exit 1
-                }
-            }
-            if ($env:CARTOPIAN_CLAUDE_UNRESTRICTED -ne 'true') {
-                [Console]::Error.WriteLine("[work-root] tool cannot scope multi-root access; set CARTOPIAN_CLAUDE_UNRESTRICTED=true to bypass (dangerous)")
-                exit 1
-            } else {
-                Write-Host "cartopian-claude: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
-            }
-        }
-    }
-}
+# Native work-root union scoping (launch cwd + declared work roots + report dir,
+# via claude's --add-dir). The shared helper reads the mediated launcher's
+# explicit CARTOPIAN_SCOPE_DIRS / CARTOPIAN_REPORT_DIR (or falls back to
+# resolve-config for standalone use), validates the dirs, and fails closed on a
+# missing root. claude scopes natively, so it never fails closed on a present
+# multi-root union — it carries the union via --add-dir.
+$ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-claude' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CLAUDE_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CLAUDE_UNRESTRICTED'
 
 $Args = @('-p')
+if ($ScopeArgs.Count -gt 0) { $Args += $ScopeArgs }
 if ($AllowedTools) {
     $Args += @('--allowedTools', $AllowedTools)
 }
@@ -190,7 +170,7 @@ $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 $TraceTools = if ($AllowedTools) { $AllowedTools } else { 'default' }
 Write-Host "cartopian-claude: running claude -p (tools=$TraceTools, skip-perms=$SkipPermissions, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
-# Run under the report-completion supervisor (BL-006 parity with the bash
+# Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the

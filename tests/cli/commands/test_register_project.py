@@ -1,4 +1,4 @@
-"""Tests for `cartopian register-project` (SPEC-01-001, FR-003, FR-014)."""
+"""Tests for `cartopian register-project`."""
 import json
 import os
 import subprocess
@@ -253,7 +253,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
         self.assertEqual(rec["details"]["label"], "Override")
 
     def test_non_kebab_project_id_rejected(self):
-        # F3: FR-003 kebab-case grammar must be enforced when reading
+        # Kebab-case grammar must be enforced when reading
         # [project] id from cartopian.toml.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -292,8 +292,8 @@ class TestRegisterProjectGuards(unittest.TestCase):
 
     def test_path_collision(self):
         # Re-registering the same path with a *different* id must report
-        # path-collision (FR-003 path-collision diagnostic wins over the
-        # duplicate-id check). Path-collision check runs first.
+        # path-collision diagnostic wins over the duplicate-id check.
+        # Path-collision check runs first.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             home = tmp_path / "home"
@@ -337,7 +337,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
 
 class TestRegisterProjectMalformedRegistry(unittest.TestCase):
     def test_malformed_registry_exits_three(self):
-        # F1: corrupt registry is FR-014 environment error (exit 3).
+        # Corrupt registry is an environment error (exit 3).
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             home = tmp_path / "home"

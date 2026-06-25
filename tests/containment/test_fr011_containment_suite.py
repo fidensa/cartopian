@@ -1,9 +1,9 @@
-"""FR-011 containment verification-suite foundation — the always-on aggregator (P01-BUILD-007).
+"""Containment verification-suite foundation — the always-on aggregator.
 
 This module is the always-on, stdlib-only (NF-001) half of the consolidated
-FR-011 containment suite. It does not re-test the enforcement (the per-feature
-negative tests named in :mod:`tests.containment.manifest` do that); it guarantees
-the *aggregation* stays honest:
+containment suite. It does not re-test the enforcement (the per-feature negative
+tests named in :mod:`tests.containment.manifest` do that); it guarantees the
+*aggregation* stays honest:
 
 * **Coverage completeness** — every prohibited operation the task enumerates is
   in the manifest (no silent omission), and each maps to ≥1 negative test whose
@@ -22,7 +22,7 @@ the *aggregation* stays honest:
   → skipped with the documented reproduction entrypoint (fail-closed: a present
   artifact can never pass on a stale/wrong marker).
 * **Lifecycle-under-containment** — the plan→assign→review→close tests exist.
-* **Deferrals noted** — the out-of-Phase-01 FR-011 items are enumerated, not
+* **Deferrals noted** — the out-of-Phase-01 deferred items are enumerated, not
   silently omitted.
 * **Entrypoint present** — the single documented run exists and is executable.
 
@@ -91,7 +91,7 @@ class TestCoverageCompleteness:
         keys = {e["key"] for e in manifest.PROHIBITED_OPERATIONS}
         missing = manifest.REQUIRED_PROHIBITED_OPERATIONS - keys
         assert not missing, (
-            "the FR-011 manifest dropped required prohibited operation(s) "
+            "the manifest dropped required prohibited operation(s) "
             f"(silent omission): {sorted(missing)}"
         )
 
@@ -158,8 +158,8 @@ class TestRedBaselinesRecorded:
 
 
 # --------------------------------------------------------------------------- #
-# Harness-level evidence pins (FR-011 standard) — pin when present, skip when
-# absent. A present artifact can never pass on the wrong marker (fail-closed).
+# Harness-level evidence pins — pin when present, skip when absent.
+# A present artifact can never pass on the wrong marker (fail-closed).
 # --------------------------------------------------------------------------- #
 def _result_final_line(jsonl_path: Path) -> str | None:
     """Final standalone line of a stream-json transcript's result text."""
@@ -185,12 +185,11 @@ def _result_final_line(jsonl_path: Path) -> str | None:
 #   tools_exact  — file is a newline list equal to the locked 16 cartopian tools
 #   mcp_only     — file is exactly the single line 'cartopian'
 #
-# Post-DEC-007 (TASK-03-011): the contained-PM exposed tool set is the 16-tool
-# lifecycle/read surface. The four config/registry-genesis tools
-# (generate_config / scaffold_project / register_project / unregister_project)
-# are WITHHELD from a contained PM by the shared MCP server, so they must be
-# ABSENT from this pinned inventory — their reappearance re-opens the
-# config-write vector REVIEW-03-002 found.
+# The contained-PM exposed tool set is the 16-tool lifecycle/read surface.
+# The four config/registry-genesis tools (generate_config / scaffold_project /
+# register_project / unregister_project) are WITHHELD from a contained PM by
+# the shared MCP server, so they must be ABSENT from this pinned inventory —
+# their reappearance re-opens the config-write vector.
 _TOOLS_LOCKED = {
     "mcp__cartopian__close_audit", "mcp__cartopian__compose_state",
     "mcp__cartopian__delete_prompt", "mcp__cartopian__delete_report",
@@ -202,7 +201,7 @@ _TOOLS_LOCKED = {
     "mcp__cartopian__task_bundle", "mcp__cartopian__validate_task_readiness",
     "mcp__cartopian__wait_handoff", "mcp__cartopian__wait_report",
 }
-# Genesis tools that must NOT appear in a contained inventory (DEC-007 floor).
+# Genesis tools that must NOT appear in a contained inventory (floor withholds them).
 _GENESIS_TOOLS = {
     "mcp__cartopian__generate_config", "mcp__cartopian__scaffold_project",
     "mcp__cartopian__register_project", "mcp__cartopian__unregister_project",
@@ -240,7 +239,7 @@ class TestHarnessEvidence:
         keys = {f["key"] for f in manifest.HARNESS_EVIDENCE}
         for required in ("exposed-tool-set", "reachable-filesystem",
                          "in-runtime-prohibited-attempts", "still-functional"):
-            assert required in keys, f"FR-011 harness facet missing from manifest: {required}"
+            assert required in keys, f"harness facet missing from manifest: {required}"
 
     def test_every_artifact_has_a_pin_rule(self):
         """No artifact may be referenced without a content predicate — otherwise
@@ -265,7 +264,7 @@ class TestHarnessEvidence:
             tools = {l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()}
             assert tools == _TOOLS_LOCKED, (
                 "exposed tool set drifted from the locked 16 cartopian tools "
-                "(DEC-007: genesis tools withheld from a contained PM):\n"
+                "(genesis tools withheld from a contained PM):\n"
                 f"  unexpected: {sorted(tools - _TOOLS_LOCKED)}\n"
                 f"  missing:    {sorted(_TOOLS_LOCKED - tools)}"
             )
@@ -310,7 +309,7 @@ class TestLifecycleUnderContainment:
 
 class TestDeferralsNoted:
     def test_deferred_items_enumerated(self):
-        assert manifest.DEFERRED_FR011, "out-of-Phase-01 FR-011 items must be noted, not omitted"
+        assert manifest.DEFERRED_FR011, "out-of-Phase-01 deferred items must be noted, not omitted"
         for item in manifest.DEFERRED_FR011:
             assert item.get("key"), f"deferred item missing key: {item}"
             assert item.get("note"), f"deferred item {item.get('key')} missing a note"

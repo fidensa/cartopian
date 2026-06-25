@@ -1,4 +1,4 @@
-"""PM toolchain pinning / insulation — BL-007 (REVIEW-03-006 isolation finding).
+"""PM toolchain pinning / insulation.
 
 The gap: the Cartopian CLI/MCP the PM runs on could resolve to the **editable
 work-root source tree** — the same tree coders mutate during handoffs — so a
@@ -14,12 +14,12 @@ The contract pinned here:
   is a git work tree (an editable checkout), unless the operator loudly opts
   in with ``CARTOPIAN_PM_TOOLCHAIN_DEV=1``. Helper:
   ``wrappers/bin/_cartopian-toolchain.sh :: cartopian_pm_toolchain_audit``.
-* **Entrypoint insulation (the BL-007 evidence scenario).** The installed
-  ``bin/cartopian`` / ``bin/cartopian-mcp`` shims pin ``sys.path`` to their
-  OWN install root, so coder edits to a work-root ``cli/`` tree never change
-  the installed toolchain's behavior — demonstrated by mutating a work-root
-  ``cli`` package mid-test and observing the installed entrypoint's output
-  unchanged, even with the work root as cwd.
+* **Entrypoint insulation.** The installed ``bin/cartopian`` /
+  ``bin/cartopian-mcp`` shims pin ``sys.path`` to their OWN install root, so
+  coder edits to a work-root ``cli/`` tree never change the installed
+  toolchain's behavior — demonstrated by mutating a work-root ``cli`` package
+  mid-test and observing the installed entrypoint's output unchanged, even with
+  the work root as cwd.
 
 Stdlib-only; no live agent CLI is launched (a fake ``claude`` records argv).
 """
@@ -201,7 +201,7 @@ class TestClaudePmLaunchAudit:
         )
 
 
-# --- entrypoint insulation: the BL-007 evidence scenario --------------------
+# --- entrypoint insulation evidence scenario ---------------------------------
 
 
 _INSTALL_CLI = textwrap.dedent(
@@ -256,9 +256,9 @@ class TestEntrypointInsulation:
         assert "WORKROOT" not in proc.stdout
 
     def test_coder_edit_to_work_root_cli_does_not_change_installed_behavior(self, tmp_path):
-        """The BL-007 evidence gate: mutate the work-root cli/ mid-'session'
-        (between two invocations) and observe the installed toolchain's
-        behavior unchanged."""
+        """Entrypoint insulation evidence gate: mutate the work-root cli/
+        mid-'session' (between two invocations) and observe the installed
+        toolchain's behavior unchanged."""
         inst, work = _stage_entrypoint(tmp_path)
         before = _run_entrypoint(inst, cwd=work)
         # The coder handoff lands an edit on the work-root cli/ tree.

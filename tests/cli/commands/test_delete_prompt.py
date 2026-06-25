@@ -1,4 +1,4 @@
-"""Tests for `cartopian delete-prompt` (SPEC-01-001, FR-005, FR-014)."""
+"""Tests for `cartopian delete-prompt`."""
 import json
 import os
 import subprocess

@@ -1,4 +1,4 @@
-"""Fail-closed verdict helpers for the gemini containment probe harness (TASK-03-002).
+"""Fail-closed verdict helpers for the gemini containment probe harness.
 
 Single source of truth shared by ``run-gemini-probes.sh`` (which shells out to the
 CLI below to write the human-readable ``*.sentinel.txt`` check files and set its
@@ -118,7 +118,7 @@ _TRAILING_PUNCT = " \t.,;:!"
 
 def matches_sentinel(line: str, sentinel: str) -> bool:
     """True iff ``line`` is the standalone ``sentinel`` token, tolerating trailing
-    punctuation / whitespace the model may append (REVIEW-03-002 F2: a genuine
+    punctuation / whitespace the model may append (a genuine
     ``NO_WEB_TOOL.`` must pass). The line must STILL be only the token plus trailing
     punctuation — a sentence that merely ends with the token does NOT match (e.g.
     ``the answer is NO_WEB_TOOL`` stays a FAIL), so this does not weaken the check.

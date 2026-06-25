@@ -1,4 +1,4 @@
-"""Tests for `cartopian wait-report` (P01-BUILD-002, FR-014).
+"""Tests for `cartopian wait-report`.
 
 `wait-report` filesystem-polls until a handoff report exists and reaches an
 `accepted` outcome under the `report-action` aggregator's verdict semantics,

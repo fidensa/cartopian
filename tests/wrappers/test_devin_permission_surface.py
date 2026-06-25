@@ -1,5 +1,5 @@
-"""Devin wrapper permission-surface composition tests — TASK-03-012 / P03-FIX-008,
-re-baselined after the 2026-06-04 live-binary re-probe (BACKLOG follow-up).
+"""Devin wrapper permission-surface composition tests,
+re-baselined after the 2026-06-04 live-binary re-probe.
 
 Two devin permission surfaces are known (`tests/wrappers/pm-devin/FINDINGS.md`):
 

@@ -1,8 +1,8 @@
-"""gemini harness promotion to Tier 1+2 — asset + harness-level evidence (TASK-03-002).
+"""gemini harness promotion to Tier 1+2 — asset + harness-level evidence.
 
-This is the gemini slice of FR-010 all-harness coverage and the always-on,
-stdlib-only (NF-001) anti-drift guard for the gemini promotion. It does NOT edit
-the asset-driven classifier (TASK-02-001 contract): gemini reaches ``tier-1-2``
+This is the gemini slice of all-harness coverage and the always-on, stdlib-only
+(NF-001) anti-drift guard for the gemini promotion. It does NOT edit the
+asset-driven classifier: gemini reaches ``tier-1-2``
 purely because both of its assets exist on disk — the Tier-1 floor launch profile
 ``wrappers/bin/cartopian-gemini-pm`` and the Tier-2 native-sandbox depth profile
 ``wrappers/etc/sandbox-gemini-pm-depth.json``.
@@ -311,7 +311,7 @@ class TestFailClosedVerdicts:
         reached, _ = v.read_reached(p)
         assert reached is True
 
-    # --- REVIEW-03-002 F2: trailing-punctuation tolerance on the sentinel line --- #
+    # --- trailing-punctuation tolerance on the sentinel line --- #
     def test_sentinel_tolerates_trailing_period(self, v, tmp_path):
         # A genuine no-web reply that ends 'NO_WEB_TOOL.' must PASS (the F2 fix).
         js = json.dumps({"response": "I have no web/fetch/search tool.\n\nNO_WEB_TOOL.",
@@ -339,7 +339,7 @@ class TestFailClosedVerdicts:
 
 
 # --------------------------------------------------------------------------- #
-# Harness-level evidence (FR-011) — pinned when present, skipped when absent.
+# Harness-level evidence — pinned when present, skipped when absent.
 # A present artifact can never pass on a stale/wrong marker (fail-closed).
 # --------------------------------------------------------------------------- #
 def _response_final_line(jsonf: Path) -> str | None:
@@ -411,7 +411,7 @@ class TestHarnessEvidence:
         if kind == "final_line":
             last = _response_final_line(path)
             # Tolerate trailing punctuation/whitespace on an otherwise-standalone
-            # token (REVIEW-03-002 F2), using the SAME matcher the live harness uses.
+            # token (trailing-punctuation tolerance), using the SAME matcher the live harness uses.
             assert _load_verdict().matches_sentinel(last or "", expected), (
                 f"{artifact}: expected final agent line {expected!r}, got {last!r}"
             )

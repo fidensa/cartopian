@@ -1,4 +1,4 @@
-"""FR-011 containment verification-suite manifest — the single source of truth (P01-BUILD-007).
+"""Containment verification-suite manifest — the single source of truth.
 
 This module is the aggregation point for Phase 01's containment guarantees. It
 does **not** reimplement any enforcement; it *names* — once, machine-readably —
@@ -9,17 +9,17 @@ the captured Claude Code harness-level evidence that backs the structural claim.
 Three views, all stdlib-only data (NF-001):
 
 * :data:`PROHIBITED_OPERATIONS` — every prohibited operation the contained PM
-  (DEC-001 / FR-002 floor + FR-007 native-sandbox depth + the FR-005/FR-006
-  mediated commands) must be unable to perform, each mapped to its existing
-  red→green negative test(s), its red baseline, and any captured harness
-  evidence. :data:`REQUIRED_PROHIBITED_OPERATIONS` pins the enumerated set the
-  task requires so a future edit cannot silently drop coverage.
-* :data:`HARNESS_EVIDENCE` — the FR-011 harness-level facets (exposed tool set,
+  (containment floor + native-sandbox depth + mediated commands) must be unable
+  to perform, each mapped to its existing red→green negative test(s), its red
+  baseline, and any captured harness evidence.
+  :data:`REQUIRED_PROHIBITED_OPERATIONS` pins the enumerated set so a future
+  edit cannot silently drop coverage.
+* :data:`HARNESS_EVIDENCE` — the harness-level facets (exposed tool set,
   reachable filesystem, in-runtime prohibited attempts, still-functional) and
   the captured artifacts + reproduction entrypoint for each.
 * :data:`LIFECYCLE_UNDER_CONTAINMENT` — the plan→assign→review→close evidence
   that the full lifecycle runs under containment with no deadlock.
-* :data:`DEFERRED_FR011` — FR-011 negative-suite items that Phase 01 enforcement
+* :data:`DEFERRED_FR011` — negative-suite items that Phase 01 enforcement
   does not cover (deferred to later phases); noted here, not silently omitted.
 
 The consolidated entrypoint ``tests/containment/run-containment-suite.sh`` runs
@@ -211,7 +211,7 @@ PROHIBITED_OPERATIONS: List[Dict[str, object]] = [
         "red_baseline": "inmodule:tests/cli/test_p01_build_002_mediated_write.py",
         "harness_evidence": [],
     },
-    # --- FR-008 advisory tier (Phase 02, TASK-02-002) — the FR-008 phase gate. ---
+    # --- advisory tier (Phase 02) — the advisory-gate phase gate. ---
     {
         "key": "advisory-tier-unrecorded-launch",
         "description": (
@@ -244,7 +244,7 @@ PROHIBITED_OPERATIONS: List[Dict[str, object]] = [
     {
         "key": "compatibility-allowlist-extension",
         "description": (
-            "FR-003 mediated-writer named-root-files allowlist gains exactly "
+            "Mediated-writer named-root-files allowlist gains exactly "
             "COMPATIBILITY.md; every other root-file refusal still holds fail-closed."
         ),
         "negative_tests": [
@@ -281,7 +281,7 @@ REQUIRED_PROHIBITED_OPERATIONS = frozenset({
 
 
 # --------------------------------------------------------------------------- #
-# Harness-level evidence facets (FR-011 standard, extending the FR-001 spike).
+# Harness-level evidence facets.
 #
 # Each facet names the captured artifact(s) proving it, a content marker the
 # aggregator pins when the artifact is present, and the documented entrypoint
@@ -291,7 +291,7 @@ REQUIRED_PROHIBITED_OPERATIONS = frozenset({
 HARNESS_EVIDENCE: List[Dict[str, object]] = [
     {
         "key": "exposed-tool-set",
-        "description": "The PM runtime's exposed tool set is Cartopian-only (the locked 16 mcp__cartopian__* lifecycle/read tools; no built-in/non-Cartopian tool, and — post-DEC-007 — none of the four config/registry-genesis tools, which are withheld from a contained PM).",
+        "description": "The PM runtime's exposed tool set is Cartopian-only (the locked 16 mcp__cartopian__* lifecycle/read tools; no built-in/non-Cartopian tool, and none of the four config/registry-genesis tools, which are withheld from a contained PM).",
         "artifacts": [
             "tests/wrappers/pm-floor/evidence/green-tools.txt",
             "tests/wrappers/pm-floor/evidence/green-mcp.txt",
@@ -332,13 +332,12 @@ HARNESS_EVIDENCE: List[Dict[str, object]] = [
 
 # --------------------------------------------------------------------------- #
 # Full-lifecycle-under-containment evidence (plan → assign → review → close,
-# no deadlock, via the FR-005 mediated commands + the TASK-01-009 rewired
-# skills' mediated path).
+# no deadlock, via the mediated commands and the rewired skills' mediated path).
 # --------------------------------------------------------------------------- #
 LIFECYCLE_UNDER_CONTAINMENT: List[Dict[str, object]] = [
     {
         "key": "lifecycle-completes-mediated-only",
-        "description": "A scripted contained PM drives plan→assign→review→close to completion using only Cartopian commands; the pre-FR-005 surface deadlocks at the first authoring step (red).",
+        "description": "A scripted contained PM drives plan→assign→review→close to completion using only Cartopian commands; the pre-mediated-command surface deadlocks at the first authoring step (red).",
         "negative_tests": [
             "tests/cli/test_p01_build_003_lifecycle_completeness.py::TestGreenLifecycleCompletes",
             "tests/cli/test_p01_build_003_lifecycle_completeness.py::TestRedMissingCommandDeadlock",
@@ -358,7 +357,7 @@ LIFECYCLE_UNDER_CONTAINMENT: List[Dict[str, object]] = [
 
 
 # --------------------------------------------------------------------------- #
-# Out-of-Phase-01 FR-011 negative-suite items — noted, not silently omitted.
+# Out-of-Phase-01 negative-suite items — noted, not silently omitted.
 # Phase 01 enforcement does not cover these; they are deferred to later phases.
 # --------------------------------------------------------------------------- #
 DEFERRED_FR011: List[Dict[str, str]] = [

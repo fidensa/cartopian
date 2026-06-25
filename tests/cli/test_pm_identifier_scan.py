@@ -1,4 +1,4 @@
-"""DEC-011 §6: the PM-identifier scan over product-code files.
+"""The PM-identifier scan over product-code files.
 
 The always-on hygiene fail-safe — product code must not carry Cartopian planning
 identifiers. Pure regex, no model round-trip; these tests pin both the positive

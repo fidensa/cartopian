@@ -1,9 +1,9 @@
-"""cascade harness promotion determination — not-recommended-as-PM-host (TASK-03-003).
+"""cascade harness promotion determination — not-recommended-as-PM-host.
 
-The cascade slice of FR-010 all-harness coverage and the always-on, stdlib-only
+The cascade slice of all-harness coverage and the always-on, stdlib-only
 (NF-001) anti-drift guard for the cascade determination. It does NOT edit the
-asset-driven classifier (TASK-02-001 contract): cascade stays ``tier-3`` purely
-because NO floor + depth assets exist for it on disk.
+asset-driven classifier: cascade stays ``tier-3`` purely because NO floor +
+depth assets exist for it on disk.
 
 Resolved classification: not-recommended-as-PM-host
 ---------------------------------------------------
@@ -112,7 +112,7 @@ class TestNoRegression:
 
 
 # --------------------------------------------------------------------------- #
-# Captured forcing evidence (FR-011, unpromotable branch) — pinned when present,
+# Captured forcing evidence (unpromotable branch) — pinned when present,
 # skipped (with a reproduction pointer) when absent. A present artifact can never
 # pass on a stale/wrong marker (fail-closed).
 # --------------------------------------------------------------------------- #
@@ -134,7 +134,7 @@ class TestForcingEvidence:
         assert "no os-level sandbox" in low or "not an os sandbox" in low \
             or "not a native os sandbox" in low or "no native sandbox" in low
         assert "nf-001" in low                            # third-party / bundled-sandbox bar
-        assert "devin for terminal" in low                # cascade != devin (TASK-03-004)
+        assert "devin for terminal" in low                # cascade != devin
 
     def test_captured_artifact_pins_not_promotable_when_present(self):
         if not ARTIFACT.is_file():

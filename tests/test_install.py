@@ -1,9 +1,9 @@
-"""Tests for the install/upgrade flow (TASK-01-016, FR-002, DEC-009, DEC-012).
+"""Tests for the install/upgrade flow.
 
-End-to-end install on a clean home dir produces the FR-002 minimum
-layout; simulated upgrade preserves the operator-authored
-``cartopian.toml`` and a registered ``projects.json``. Tests cover both
-symlink (canonical per DEC-012) and copy modes.
+End-to-end install on a clean home dir produces the minimum layout;
+simulated upgrade preserves the operator-authored ``cartopian.toml`` and
+a registered ``projects.json``. Tests cover both symlink (canonical) and
+copy modes.
 """
 import importlib.util
 import json
@@ -74,7 +74,7 @@ class InstallSymlinkTests(_InstallTestBase):
             (REPO_ROOT / "bin" / "cartopian").resolve(),
         )
 
-        # cli symlink covers the _vendor/tomli_w.py file required by DEC-001.
+        # cli symlink covers the _vendor/tomli_w.py file.
         vendor = self.install_root / "cli" / "_vendor" / "tomli_w.py"
         self.assertTrue(vendor.exists(), "cli/_vendor/tomli_w.py must resolve via symlink")
 
@@ -88,7 +88,7 @@ class InstallSymlinkTests(_InstallTestBase):
         template_toml = (REPO_ROOT / "templates" / "global.cartopian.toml").read_text()
         self.assertEqual(installed_toml, template_toml)
 
-        # Registry seeded as the empty top-level array per DEC-009.
+        # Registry seeded as the empty top-level array.
         registry_text = (self.install_root / "projects.json").read_text()
         self.assertEqual(registry_text, "[]\n")
         self.assertEqual(json.loads(registry_text), [])
@@ -179,7 +179,7 @@ class InstallCopyTests(_InstallTestBase):
                 f"{target_rel} must be a real copy in copy mode",
             )
 
-        # cli/_vendor/tomli_w.py copied into place per DEC-001.
+        # cli/_vendor/tomli_w.py copied into place.
         vendor = self.install_root / "cli" / "_vendor" / "tomli_w.py"
         self.assertTrue(vendor.is_file())
         self.assertFalse(vendor.is_symlink())
@@ -232,7 +232,7 @@ class InstallScriptInvocationTests(_InstallTestBase):
 
         install_root = fake_home / ".cartopian"
         self.assertTrue(install_root.is_dir())
-        # FR-002 minimum layout — every path under ~/.cartopian/ named in the
+        # Minimum layout — every path under ~/.cartopian/ named in the
         # standards-table is present.
         for target_rel in TOOL_SHIPPED_TARGETS:
             self.assertTrue(

@@ -1,8 +1,8 @@
-"""Tests for FR-008 / TASK-01-017 cartopian-manager self-registration.
+"""Tests for cartopian-manager self-registration.
 
-Exercises the register → discover round-trip and the FR-003 duplicate-id
-rejection using the real `projects/cartopian-manager/` cartopian.toml as
-the registration target. HOME is redirected to a tempdir so the operator's
+Exercises the register → discover round-trip and the duplicate-id rejection
+using the real `projects/cartopian-manager/` cartopian.toml as the
+registration target. HOME is redirected to a tempdir so the operator's
 real `~/.cartopian/projects.json` is never touched.
 """
 import os

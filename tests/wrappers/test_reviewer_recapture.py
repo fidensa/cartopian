@@ -1,4 +1,4 @@
-"""Reviewer live-evidence recapture launch contract (TASK-03-007, FR-011).
+"""Reviewer live-evidence recapture launch contract.
 
 Agent-agnostic, opt-in, evidence-gated reviewer-role launch contract honored by
 EVERY shipped wrapper via the shared launch helper
@@ -14,10 +14,10 @@ Red-before-green
   task's probe harness against a declared source work root, WITHOUT the recapture
   opt-in, gets neither the egress grant nor the read-only-source contract — so the
   model-backed probe's egress gate stays closed and NO fresh evidence is produced,
-  and no recapture banner is printed. (Since TASK-03-009 the codex sandbox scopes
-  the work-root union natively, so the agent now launches *scoped* rather than
-  failing closed on the guard; the recapture RED state is the absence of egress,
-  which is what gates the probe.) The bare probe harness likewise refuses without
+  and no recapture banner is printed. (The codex sandbox scopes the work-root
+  union natively, so the agent now launches *scoped* rather than failing closed
+  on the guard; the recapture RED state is the absence of egress, which is what
+  gates the probe.) The bare probe harness likewise refuses without
   egress.
 * GREEN (``TestRecaptureGreen*``): the SAME reviewer dispatch, opted in via the
   agent-neutral signal, for TWO different reviewer agents (codex and gemini via
@@ -69,8 +69,8 @@ if probe and os.environ.get("RECAPTURE_BASELINE"):
 '''
 
 # A fake `cartopian` whose `resolve-config` emits a work_roots map (so the
-# wrapper's OQ-009 access-grant block sees a declared source work root). Any
-# other subcommand prints nothing.
+# wrapper's access-grant block sees a declared source work root). Any other
+# subcommand prints nothing.
 _FAKE_CARTOPIAN = r'''#!/usr/bin/env python3
 import json, os, sys
 if len(sys.argv) >= 2 and sys.argv[1] == "resolve-config":
@@ -233,7 +233,7 @@ class TestRecaptureRedState:
         )
         # No recapture opt-in → no banner and no egress grant, so the model-backed
         # probe's egress gate stays closed and produces NO fresh evidence. This is
-        # the red state recapture (TASK-03-007) exists to clear.
+        # the red state the recapture contract exists to clear.
         assert "recapture mode" not in proc.stderr
         assert not (scratch / "fresh-evidence.txt").exists(), "no egress → no fresh evidence"
         cap = json.loads(capture.read_text(encoding="utf-8"))
@@ -241,10 +241,10 @@ class TestRecaptureRedState:
         assert "sandbox_workspace_write.network_access=true" not in cap["argv"], (
             "egress must NOT be granted without the recapture opt-in"
         )
-        # Native work-root union scoping (TASK-03-009): outside recapture the source
-        # work root is part of the general read/write union, so it IS added to the
-        # writable scope here. The read-only-source narrowing is a recapture-ONLY
-        # property (asserted in the green tests, where str(src) is absent from argv).
+        # Native work-root union scoping: outside recapture the source work root
+        # is part of the general read/write union, so it IS added to the writable
+        # scope here. The read-only-source narrowing is a recapture-ONLY property
+        # (asserted in the green tests, where str(src) is absent from argv).
         assert "--add-dir" in cap["argv"] and str(src) in cap["argv"], (
             "outside recapture the work-root union (incl. source) should be scoped read/write"
         )

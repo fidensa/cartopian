@@ -1,4 +1,4 @@
-"""Tests for the wrapper status file (TASK-01-007, P01-BUILD-006).
+"""Tests for the wrapper status file.
 
 The agent wrappers emit an optional early-crash signal — a status file at
 ``<report-path>.status`` — that ``cartopian wait-handoff`` consumes. These

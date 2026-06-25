@@ -1,4 +1,4 @@
-"""TASK-01-008: delete-report companion status-file cleanup.
+"""Tests for delete-report companion status-file cleanup.
 
 Red-before-green coverage for the two acceptance assertions:
 

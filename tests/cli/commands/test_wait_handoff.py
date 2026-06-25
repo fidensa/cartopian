@@ -1,4 +1,4 @@
-"""Tests for `cartopian wait-handoff` (FR-014, P01-BUILD-003).
+"""Tests for `cartopian wait-handoff`.
 
 Exercises the read-only polling state machine with an injected clock: the
 report file is the authoritative completion signal, the optional

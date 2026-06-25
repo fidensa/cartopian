@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genesis-tool floor probe for the contained Claude Code PM (TASK-03-011).
+"""Genesis-tool floor probe for the contained Claude Code PM.
 
 The contained `claude` PM is granted the Cartopian MCP toolset via the
 `--allowedTools "mcp__cartopian"` PREFIX grant in `cartopian-claude-pm`. That
@@ -17,7 +17,7 @@ Modes (stdlib-only, NF-001):
                                 (CARTOPIAN_PM_CONTAINED=1 from the MCP config);
                                 --uncontained drops that env to capture the RED
                                 baseline (the genesis tools the prefix grant
-                                exposed before the DEC-007 floor).
+                                exposed before the genesis floor).
   config-write <scratch_dir>    attempt the genesis tool `generate_config`
                                 against <scratch_dir> under the contained launch
                                 env; print a VERDICT line and whether a

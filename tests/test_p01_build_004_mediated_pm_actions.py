@@ -1,13 +1,13 @@
-"""P01-BUILD-004 residual-raw-op check for the rewired lifecycle skills (TASK-01-009).
+"""Residual-raw-op check for the rewired lifecycle skills.
 
 Phase 01 exit criterion: "the full lifecycle runs under containment with no
-deadlock." A *contained* PM (DEC-001 / FR-002) has no shell and no raw
-``Write``/``Edit`` tool, so every **PM-performed** lifecycle action must route
-through a mediated Cartopian command:
+deadlock." A *contained* PM has no shell and no raw ``Write``/``Edit`` tool,
+so every **PM-performed** lifecycle action must route through a mediated
+Cartopian command:
 
-- launches → ``cartopian dispatch`` (FR-006, TASK-01-004);
-- artifact authoring → ``cartopian write-*`` (FR-005, TASK-01-003);
-- close-surface reset / reseed → ``cartopian reset-plan`` (FR-005);
+- launches → ``cartopian dispatch``;
+- artifact authoring → ``cartopian write-*``;
+- close-surface reset / reseed → ``cartopian reset-plan``;
 - the already-mediated ``move-task`` / ``delete-prompt`` / ``delete-report`` /
   ``compose-state`` family.
 

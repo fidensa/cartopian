@@ -1,7 +1,7 @@
-"""FR-004 base test-suite consolidation gate (TASK-01-012, P01-BUILD-012).
+"""Base test-suite consolidation gate.
 
-Asserts that every FR-004 command listed in SPEC-01-001 carries, in its
-per-command test module under ``tests/cli/commands/``:
+Asserts that every command carries, in its per-command test module under
+``tests/cli/commands/``:
 
 1. at least one happy-path test class (class name contains ``Happy``);
 2. at least one guard- or failure-mode test class whose name signals
@@ -13,7 +13,7 @@ to the per-command suites themselves. The gate's job is to make
 "this command lost its happy-path or its guard test" a loud failure
 rather than a silent regression.
 
-If you add an FR-004 command (or rename a guard class), update either
+If you add a command (or rename a guard class), update either
 ``FR004_COMMANDS`` or ``GUARD_PATTERN`` so the gate keeps matching.
 """
 import re
@@ -30,7 +30,7 @@ FR004_COMMANDS = (
     "unregister_project",
     "scaffold_project",
     "generate_config",
-    # FR-005 stretch commands retained by DEC-010.
+    # Stretch commands added to the surface.
     "list_tasks",
     "delete_prompt",
     "delete_report",

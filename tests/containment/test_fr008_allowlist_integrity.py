@@ -1,7 +1,7 @@
-"""FR-008 / FR-003 allowlist-integrity after the COMPATIBILITY.md extension (TASK-02-002).
+"""Allowlist-integrity after the COMPATIBILITY.md extension.
 
-SPEC-02-002 extends the mediated writer's fixed named-root-files allowlist by
-**exactly one** entry — ``COMPATIBILITY.md`` — and relaxes no existing guard.
+The mediated writer's fixed named-root-files allowlist was extended by
+**exactly one** entry — ``COMPATIBILITY.md`` — and no existing guard relaxed.
 This suite proves the extension is surgical: the writer now permits that one new
 destination, and *every other* fail-closed refusal still holds — a non-allowlisted
 root file, ``cartopian.toml`` / a ``*.local.toml``, a symlinked
@@ -28,7 +28,7 @@ from cli.mediated_write import (
     mediated_write,
 )
 
-# The FR-003 named project-root files that existed *before* this task. The
+# The named project-root files that existed before the allowlist extension. The
 # allowlist-integrity contract is: exactly one new entry, COMPATIBILITY.md.
 _FR003_ORIGINAL_ROOT_FILES = frozenset({
     "REQUIREMENTS.md",

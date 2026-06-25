@@ -1,4 +1,4 @@
-"""Tests for cli/emit.py NDJSON helper (DEC-008)."""
+"""Tests for cli/emit.py NDJSON helper."""
 import io
 import json
 import os

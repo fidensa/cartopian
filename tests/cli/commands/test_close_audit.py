@@ -1,4 +1,4 @@
-"""Tests for `cartopian close-audit` (FR-005)."""
+"""Tests for `cartopian close-audit`."""
 import argparse
 import unittest
 from unittest import mock

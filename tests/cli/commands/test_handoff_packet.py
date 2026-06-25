@@ -1,9 +1,7 @@
-"""Tests for `cartopian handoff-packet` (FR-003).
+"""Tests for `cartopian handoff-packet`.
 
-The happy-path test landed with TASK-01-003 as the evidence-gate proof for
-the FR-014 NDJSON contract. The remaining cases (no-plan project, missing
-config → EXIT_ENV, missing [handoffs.<role>] guard, read-only invariant)
-are added under TASK-01-006.
+Covers the happy path (NDJSON contract), no-plan project, missing
+config → EXIT_ENV, missing [handoffs.<role>] guard, and read-only invariant.
 """
 import argparse
 import contextlib
@@ -40,8 +38,8 @@ _TOML = (
 def _invoke(task_path: str, role: str):
     """Invoke handler and capture serialized stdout+stderr; return (stdout, stderr, exit_code).
 
-    Captures real stdout bytes so assertions verify the FR-014 NDJSON
-    machine surface rather than handler-internal Python objects. Patches
+    Captures real stdout bytes so assertions verify the NDJSON machine surface
+    rather than handler-internal Python objects. Patches
     ``pathlib.Path.home`` to a missing directory so the user's real
     ``~/.cartopian/cartopian.toml`` cannot leak into the test record.
     """
@@ -159,8 +157,8 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
 
 class TestHandoffPacketNoPlanState(unittest.TestCase):
     """No IMPLEMENTATION_PLAN.md and no role/git/automation extras — every
-    nullable FR-003 field must be serialized as JSON ``null`` rather than
-    elided. The PM relies on a stable field set across project shapes.
+    nullable field must be serialized as JSON ``null`` rather than elided.
+    The PM relies on a stable field set across project shapes.
     """
 
     _MIN_TOML = (
@@ -189,7 +187,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             self.assertEqual(rc, EXIT_OK)
             rec = json.loads(stdout.strip())
 
-            # FR-003 nullable fields must be present and explicitly null,
+            # Nullable fields must be present and explicitly null,
             # not omitted from the record.
             raw = stdout.strip()
             self.assertIn('"role_description":null', raw)
@@ -219,8 +217,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
 
 class TestHandoffPacketMissingConfig(unittest.TestCase):
     """No ancestor ``cartopian.toml`` exists → EXIT_ENV (3) with an
-    ``[error]`` stderr line. Tests the environment-failure contract from
-    FR-014.
+    ``[error]`` stderr line. Tests the environment-failure contract.
     """
 
     def test_exits_env_when_no_cartopian_toml(self) -> None:

@@ -1,4 +1,4 @@
-"""Tests for the universal raw-edit detection floor (FR-005, DEC-005 §4, P01-01).
+"""Tests for the universal raw-edit detection floor.
 
 The floor must detect any change to a governed artifact that did not pass
 through a mediated writer, on a harness with **no native interception** — here

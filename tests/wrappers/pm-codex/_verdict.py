@@ -1,4 +1,4 @@
-"""Fail-closed verdict helpers for the codex containment probe harness (TASK-03-001).
+"""Fail-closed verdict helpers for the codex containment probe harness.
 
 Single source of truth shared by ``run-codex-probes.sh`` (which shells out to the
 CLI below to write the human-readable ``*.sentinel.txt`` check files and set its

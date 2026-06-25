@@ -1,4 +1,4 @@
-"""Tests for `cartopian generate-config` (SPEC-01-001 §generate-config, FR-004 #9, FR-011, FR-013, FR-014)."""
+"""Tests for `cartopian generate-config`."""
 import json
 import os
 import re
@@ -55,7 +55,7 @@ class TestGenerateConfigHelp(unittest.TestCase):
         self.assertIn("--work-root", proc.stdout)
         self.assertIn("--git-versioning", proc.stdout)
         self.assertIn("--git-key", proc.stdout)
-        # No `--kind` flag (DEC-007)
+        # No `--kind` flag
         self.assertNotIn("--kind", proc.stdout)
 
 
@@ -388,7 +388,7 @@ class TestGenerateConfigUsage(unittest.TestCase):
 
 
 class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
-    """SPEC-01-001: repeated non-repeatable flags must exit 2 with `[usage]`."""
+    """Repeated non-repeatable flags must exit 2 with `[usage]`."""
 
     def _assert_rejected(self, proc, proj, flag):
         self.assertEqual(proc.returncode, 2, msg=f"stdout={proc.stdout!r} stderr={proc.stderr!r}")

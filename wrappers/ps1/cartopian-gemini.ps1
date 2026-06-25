@@ -14,7 +14,7 @@
     Absolute path to the Cartopian prompt file.
 
 .EXAMPLE
-    .\cartopian-gemini.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-01-001.md
+    .\cartopian-gemini.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
 #>
 
 param(
@@ -78,7 +78,7 @@ $PromptContent = Get-Content -Path $PromptPath -Raw
 $StatusPath = Get-CartopianStatusPath $PromptPath
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -108,7 +108,7 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
+# --- Access grants ---------------------------------------------------
 # Read resolved work-root absolute paths via Core CLI. Fail-closed when
 # non-empty and per-tool sandbox cannot scope multi-root access. Allow an
 # explicit per-invocation bypass via CARTOPIAN_GEMINI_UNRESTRICTED=true.
@@ -202,7 +202,7 @@ if ($ApprovalMode) {
     Write-Host "cartopian-gemini: running gemini -p (yolo=$AutoYes, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 }
 
-# Run under the report-completion supervisor (BL-006 parity with the bash
+# Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the

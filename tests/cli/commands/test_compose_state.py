@@ -1,4 +1,4 @@
-"""Tests for `cartopian compose-state` (FR-006, DECISION-002)."""
+"""Tests for `cartopian compose-state`."""
 import argparse
 import unittest
 

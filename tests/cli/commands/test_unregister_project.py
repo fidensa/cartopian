@@ -1,4 +1,4 @@
-"""Tests for `cartopian unregister-project` (SPEC-01-001, FR-003, FR-014)."""
+"""Tests for `cartopian unregister-project`."""
 import json
 import os
 import subprocess
@@ -166,7 +166,7 @@ class TestUnregisterProjectUsage(unittest.TestCase):
 
 class TestUnregisterProjectMalformedRegistry(unittest.TestCase):
     def test_malformed_registry_exits_three(self):
-        # F1: corrupt registry is FR-014 environment error (exit 3).
+        # Corrupt registry is an environment error (exit 3).
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             home = tmp_path / "home"

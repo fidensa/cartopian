@@ -1,4 +1,4 @@
-"""Timeout single-source-of-truth (SSOT) contract tests — TASK-01-006 / FR-002.
+"""Timeout single-source-of-truth (SSOT) contract tests.
 
 These tests lock the invariant RM-003 is about: the handoff timeout has exactly
 one source of truth (`[handoffs.<role>].timeout`, resolved project -> global),
@@ -19,7 +19,7 @@ Two halves, matching the evidence gate:
 The wrapper-side tests exercise the *real* Bash wrappers against fake CLIs, so a
 reintroduced competing timer (e.g. a hardcoded `--timeout`) fails here.
 
-This file is independent of TASK-01-007's status-file tests; both must stay green.
+This file is independent of the status-file tests; both must stay green.
 """
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def _read_status(status_path: Path) -> dict:
     return out
 
 
-# --- launcher side (FR-002): single canonical timeout, exported once ------
+# --- launcher side: single canonical timeout, exported once ---------------
 
 def _handoff_packet_project(tmp_path: Path, toml_body: str, task_id: str):
     """Scaffold a minimal handoff-packet-resolvable project and return (root, task)."""

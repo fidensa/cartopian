@@ -1,4 +1,4 @@
-"""P02-BUILD-011 acceptance scaffold helper coverage.
+"""Acceptance scaffold helper coverage.
 
 Exercises ``tests.scaffold.project_scaffold`` as a minimal sample-skill
 walkthrough: a per-test temp directory shaped like a Cartopian project,

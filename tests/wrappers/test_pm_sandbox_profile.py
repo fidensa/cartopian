@@ -1,7 +1,7 @@
-"""PM native-sandbox depth profile — static + behavioral regression (TASK-01-005 / FR-007).
+"""PM native-sandbox depth profile — static + behavioral regression.
 
 Locks the Tier-2 native-sandbox DEPTH profile that the contained Claude Code PM
-launch path applies BENEATH the DEC-001 tool-removal floor, so the depth layer
+launch path applies beneath the tool-removal floor, so the depth layer
 cannot silently weaken or disappear. Three complementary layers (same posture as
 ``test_pm_floor_profile.py``):
 

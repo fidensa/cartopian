@@ -1,10 +1,9 @@
-"""codex harness promotion to Tier 1+2 — asset + harness-level evidence (TASK-03-001).
+"""codex harness promotion to Tier 1+2 — asset + harness-level evidence.
 
-This is the codex slice of FR-010 all-harness coverage and the always-on,
-stdlib-only (NF-001) anti-drift guard for the codex promotion attempt. It does
-NOT edit the asset-driven classifier (TASK-02-001 contract): codex reaches
-``tier-1-2`` *for detection purposes* purely because both of its assets exist on
-disk — the Tier-1 floor launch profile ``wrappers/bin/cartopian-codex-pm`` and
+This is the codex slice of all-harness coverage and the always-on, stdlib-only
+(NF-001) anti-drift guard for the codex promotion attempt. It does NOT edit the
+asset-driven classifier: codex reaches ``tier-1-2`` *for detection purposes*
+purely because both of its assets exist on disk — the Tier-1 floor launch profile ``wrappers/bin/cartopian-codex-pm`` and
 the Tier-2 native-sandbox depth profile
 ``wrappers/etc/sandbox-codex-pm-depth.json``.
 
@@ -121,7 +120,7 @@ class TestAssetDrivenDetection:
 
     def test_no_regression_to_other_classifications(self):
         assert ht.classify_harness_tier("cartopian-claude-pm").tier == "tier-1-2"
-        # gemini was promoted to tier-1-2 in TASK-03-002 (its own assets shipped);
+        # gemini was promoted to tier-1-2 (its own assets shipped);
         # cascade/devin remain tier-3 (unpromoted). codex's promotion regressed none.
         assert ht.classify_harness_tier("gemini").tier == "tier-1-2"
         assert ht.classify_harness_tier("cascade").tier == "tier-3"
@@ -306,7 +305,7 @@ class TestFailClosedVerdicts:
 
 
 # --------------------------------------------------------------------------- #
-# Harness-level evidence (FR-011) — pinned when present, skipped when absent.
+# Harness-level evidence — pinned when present, skipped when absent.
 # A present artifact can never pass on a stale/wrong marker (fail-closed).
 # --------------------------------------------------------------------------- #
 def _agent_final_line(jsonl: Path) -> str | None:
@@ -455,17 +454,17 @@ class TestExposedSurfacePinned:
             pytest.skip("inventory evidence absent")
         assert "cartopian_tools_present: True" in path.read_text(encoding="utf-8")
 
-    # The four config/registry-genesis tools the DEC-007 floor withholds from a
-    # contained PM. The shared CONTAINED_DENIED_TOOLS floor is unit-tested
-    # server-level in tests/mcp_server/test_server.py::TestContainmentToolFloor;
-    # this pins it at the codex harness level (TASK-03-010 re-verification).
+    # The four config/registry-genesis tools the floor withholds from a contained
+    # PM. The shared CONTAINED_DENIED_TOOLS floor is unit-tested server-level in
+    # tests/mcp_server/test_server.py::TestContainmentToolFloor; this pins it at
+    # the codex harness level.
     _GENESIS_TOOLS = ("generate_config", "scaffold_project",
                       "register_project", "unregister_project")
 
     def test_genesis_tools_withheld_from_contained_inventory(self):
-        # Post-DEC-007-floor: the contained codex PM's tool surface must NOT
-        # advertise any config/registry-genesis tool. The pre-floor evidence
-        # (TASK-03-001) listed all four; this pins the vector closed.
+        # The contained codex PM's tool surface must NOT advertise any
+        # config/registry-genesis tool. The pre-floor evidence listed all four;
+        # this pins the vector closed.
         path = EVID / "green-04-inventory.check.txt"
         if not path.is_file():
             pytest.skip(f"inventory evidence absent; capture via {PROBES.relative_to(REPO_ROOT)}")
@@ -473,7 +472,7 @@ class TestExposedSurfacePinned:
         present = [t for t in self._GENESIS_TOOLS if t in text]
         assert not present, (
             "contained codex PM inventory still advertises genesis tools "
-            f"{present} — the DEC-007 floor should withhold them"
+            f"{present} — the floor should withhold them"
         )
 
     def test_web_browse_residual_when_present(self):

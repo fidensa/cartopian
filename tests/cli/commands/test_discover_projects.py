@@ -1,4 +1,4 @@
-"""Tests for `cartopian discover-projects` (SPEC-01-001, FR-003, FR-014)."""
+"""Tests for `cartopian discover-projects`."""
 import json
 import os
 import subprocess
@@ -127,7 +127,7 @@ class TestDiscoverProjectsMalformed(unittest.TestCase):
 
 
 class TestDiscoverProjectsPerEntrySchema(unittest.TestCase):
-    """Per-entry registry-schema validation (SPEC-01-001 + FR-003)."""
+    """Per-entry registry-schema validation."""
 
     def _assert_corrupt(self, proc):
         self.assertEqual(proc.returncode, 3)

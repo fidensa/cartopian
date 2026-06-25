@@ -1,4 +1,4 @@
-"""Handoff exit-contract tests (TASK-03-005, P03-FIX-001).
+"""Handoff exit-contract tests.
 
 Regression coverage for the broken handoff completion signal: across a whole
 session every PM-launched ``cartopian-claude`` / ``cartopian-codex`` handoff

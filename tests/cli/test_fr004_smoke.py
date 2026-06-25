@@ -1,6 +1,6 @@
-"""FR-004 cross-platform smoke (TASK-01-012, NFR-005, P01-BUILD-012).
+"""Cross-platform smoke tests.
 
-Exercises each FR-004 command at least once. The module is intentionally
+Exercises each command at least once. The module is intentionally
 cross-platform-safe so the same source runs unchanged on macOS, Linux,
 native Windows PowerShell, and WSL:
 
@@ -13,9 +13,9 @@ native Windows PowerShell, and WSL:
   default temp root); no hard-coded ``/tmp``.
 - Assertions cover exit code, NDJSON record presence, and the expected
   ``action`` for write commands. They do not assert any path-byte
-  identity across platforms (per SPEC-01-001 NFR-005 — record schema
-  is identical across platforms, path strings render in platform-native
-  form, byte-equality is not required).
+  identity across platforms (record schema is identical across platforms,
+  path strings render in platform-native form, byte-equality is not
+  required).
 """
 import json
 import os
@@ -55,9 +55,9 @@ def _run_cli(*cli_args, home: Path) -> subprocess.CompletedProcess:
 
 
 class TestFr004Smoke(unittest.TestCase):
-    """One smoke invocation per FR-004 command.
+    """One smoke invocation per command.
 
-    The suite walks the full FR-004 surface in a realistic order:
+    The suite walks the command surface in a realistic order:
 
     - scaffold-project / generate-config / register-project /
       discover-projects / resolve-config (project bring-up);

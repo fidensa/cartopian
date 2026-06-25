@@ -1,4 +1,4 @@
-"""PowerShell handoff exit-contract parity — BL-006 (mirrors TASK-03-005 / P03-FIX-001).
+"""PowerShell handoff exit-contract parity.
 
 The bash wrappers route every launch through ``cartopian_run_supervised``
 (``bin/_cartopian-status.sh``) so a *finished* assignee — one that has written
@@ -23,8 +23,8 @@ Two layers (the project's standing posture for PS1 coverage — see
   ``.ps1`` wrappers against a fake assignee: report-then-linger exits clean
   before the deadline; a genuine hang still times out (124); the status-file
   bytes feed back through the real consumer. **Windows-host execution evidence
-  remains open** (coordinates with BL-003) — running these on a genuine
-  Windows host is the remaining BL-006 evidence gate.
+  remains open** — running these on a genuine Windows host is the
+  remaining behavioral evidence gate.
 """
 from __future__ import annotations
 
@@ -215,8 +215,8 @@ class TestWrapperRouting:
 
 pwsh_required = pytest.mark.skipif(
     PWSH is None,
-    reason="pwsh not available on this host (BL-006 behavioral parity runs on "
-    "pwsh hosts; Windows-host evidence tracked via BL-003/BL-006)",
+    reason="pwsh not available on this host (behavioral parity runs on "
+    "pwsh hosts; Windows-host evidence gate)",
 )
 
 

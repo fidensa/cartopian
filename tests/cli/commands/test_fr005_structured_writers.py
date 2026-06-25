@@ -1,9 +1,9 @@
-"""Unit tests for the FR-005 structured PM authoring commands (SPEC-01-003).
+"""Unit tests for the structured PM authoring commands.
 
-Covers the per-artifact writers G1–G11: each resolves an allowlisted
-destination, writes only through the SPEC-01-002 primitive, emits one FR-014
-NDJSON record, validates its structured inputs, and delegates destination
-refusals to the SPEC-01-002 guards (no re-implemented write safety).
+Covers the per-artifact writers: each resolves an allowlisted destination,
+writes only through the mediated-write primitive, emits one NDJSON record,
+validates its structured inputs, and delegates destination refusals to the
+primitive's guards (no re-implemented write safety).
 """
 import io
 import json
@@ -180,7 +180,7 @@ class TestContentValidation(_Fixture):
 
 
 class TestDestinationRefusalDelegation(_Fixture):
-    """Destination refusals must delegate to the SPEC-01-002 guards verbatim."""
+    """Destination refusals must delegate to the mediated-write guards verbatim."""
 
     def test_symlink_final_component_refused_via_primitive(self):
         # Pre-place a symlink where write-task would land; the primitive's

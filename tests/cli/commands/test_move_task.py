@@ -1,4 +1,4 @@
-"""Tests for `cartopian move-task` (SPEC-01-001, FR-004, FR-014)."""
+"""Tests for `cartopian move-task`."""
 import json
 import os
 import subprocess
@@ -260,7 +260,7 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
         self.assertFalse(task_path.exists())
 
     def test_in_progress_to_in_review_report_body_id_ignored(self):
-        # The coder handoff is deidentified: the report filename REPORT-01-007.md
+        # The coder handoff is deidentified: the report filename
         # is the task link, so a stray/legacy `Task ID:` in the body is ignored.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

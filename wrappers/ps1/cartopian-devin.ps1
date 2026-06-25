@@ -10,7 +10,7 @@
     Absolute path to the Cartopian prompt file.
 
 .EXAMPLE
-    .\cartopian-devin.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-01-001.md
+    .\cartopian-devin.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
 #>
 
 param(
@@ -33,6 +33,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
+    function Get-CartopianScopeArgs { return @() }
+    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -132,7 +134,7 @@ $PromptPathAbs = (Resolve-Path $PromptPath).Path
 $StatusPath = Get-CartopianStatusPath $PromptPath
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -156,51 +158,15 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-# --- Access grants (OQ-009) -----------------------------------------
-# Read resolved work-root absolute paths via Core CLI. Fail-closed when
-# non-empty and per-tool sandbox cannot scope multi-root access. Allow an
-# explicit per-invocation bypass via CARTOPIAN_DEVIN_UNRESTRICTED=true.
-# Tolerate a missing/non-zero resolve-config (cartopian absent, project not
-# registered, ad-hoc/test layout) the same way the bash wrappers and the
-# claude/codex PS1 wrappers do, so emission of the <report>.status file is
-# deterministic across every wrapper. Fail-closed is still enforced below for
-# the security-critical case: a resolved work-root directory that is missing.
-$WorkRootsJson = ''
-try {
-    $ResolveOut = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
-    if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
-} catch { $WorkRootsJson = '' }
-if ($WorkRootsJson) {
-    # Parse tolerance ONLY: a missing/non-zero/non-JSON resolve-config (cartopian
-    # absent, project not registered, ad-hoc/test layout) leaves $rec null so the
-    # security guards below are skipped and the <report>.status file is still
-    # emitted deterministically. The guards themselves live OUTSIDE this catch:
-    # with $ErrorActionPreference = 'Stop' a guard Write-Error is a *terminating*
-    # error that a surrounding empty catch would swallow before exit 1 ran,
-    # defeating the fail-closed [work-root] contract (protocol/CONVENTIONS.md).
-    # We therefore write the guard message to stderr explicitly and exit 1, which
-    # no catch can intercept.
-    $rec = $null
-    try { $rec = $WorkRootsJson | ConvertFrom-Json } catch { $rec = $null }
-    if ($rec) {
-        $roots = @()
-        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
-        if ($roots.Count -gt 0) {
-            foreach ($r in $roots) {
-                if (-not (Test-Path -PathType Container $r)) {
-                    [Console]::Error.WriteLine("[work-root] missing: $r")
-                    exit 1
-                }
-            }
-            if ($env:CARTOPIAN_DEVIN_UNRESTRICTED -ne 'true') {
-                [Console]::Error.WriteLine("[work-root] tool cannot scope multi-root access; set CARTOPIAN_DEVIN_UNRESTRICTED=true to bypass (dangerous)")
-                exit 1
-            } else {
-                Write-Host "cartopian-devin: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
-            }
-        }
-    }
-}
+# --- Access grants ---------------------------------------------------
+# devin exposes no native multi-directory write-scoping flag, so the shared
+# helper fails closed on a non-empty work-root scope (the [work-root] stderr
+# line) unless CARTOPIAN_DEVIN_UNRESTRICTED=true. It honors the mediated
+# launcher's explicit CARTOPIAN_SCOPE_DIRS even when cartopian is absent from
+# PATH, so a scoped dispatch never silently launches unscoped. Passing an empty
+# scope flag selects the no-native-scoping (fail-closed) path; devin injects no
+# scope args into its own command.
+$null = Get-CartopianScopeArgs -Wrapper 'cartopian-devin' -ScopeFlag '' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_DEVIN_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_DEVIN_UNRESTRICTED'
 # --------------------------------------------------------------------
 
 # Map the abstract mode onto the DETECTED surface (see Configuration). On the
@@ -231,7 +197,18 @@ if ($PermissionMode -eq 'autonomous') {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-$Args += @('--prompt-file', $PromptPathAbs)
+# devin takes the prompt by file, not content, so the comment-volume directive
+# plus the always-on management-identifier ban are prepended into a temp prompt
+# file (the operator's original is never mutated). Status/report-path derivation
+# still uses the original prompt path, so this only changes what devin reads.
+$EffectivePromptPath = $PromptPathAbs
+if ($env:CARTOPIAN_CODE_COMMENTS) {
+    $tmpPrompt = [System.IO.Path]::GetTempFileName()
+    $body = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + (Get-Content -Path $PromptPathAbs -Raw)
+    Set-Content -LiteralPath $tmpPrompt -Value $body -NoNewline -Encoding utf8
+    $EffectivePromptPath = $tmpPrompt
+}
+$Args += @('--prompt-file', $EffectivePromptPath)
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -259,7 +236,7 @@ $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 
 Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, surface=$DevinSurface, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
-# Run under the report-completion supervisor (BL-006 parity with the bash
+# Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
@@ -274,4 +251,8 @@ if ($run.TimedOut) {
     Write-Host "cartopian-devin: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
+# Remove the directive-enriched temp prompt (parity with the bash wrapper's trap).
+if ($EffectivePromptPath -ne $PromptPathAbs) {
+    Remove-Item -LiteralPath $EffectivePromptPath -Force -ErrorAction SilentlyContinue
+}
 exit $run.ExitCode

@@ -1,4 +1,4 @@
-"""Tests for bin/cartopian entrypoint dispatcher (FR-014 contract)."""
+"""Tests for bin/cartopian entrypoint dispatcher."""
 import os
 import subprocess
 import sys
@@ -63,7 +63,7 @@ class TestUsageGuards(unittest.TestCase):
 class TestInvalidChoiceMessageRouting(unittest.TestCase):
     """Shared `_UsageParser.error` must distinguish top-level subcommand
     `invalid choice` errors from per-command positional `invalid choice`
-    errors (TASK-01-019)."""
+    errors."""
 
     def test_top_level_unknown_subcommand_locked_phrasing(self):
         result = _run("bogus-cmd")

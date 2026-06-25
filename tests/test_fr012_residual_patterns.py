@@ -1,23 +1,20 @@
-"""FR-012 residual-pattern grep (TASK-01-018, P01-BUILD-018).
+"""Residual-pattern grep for the source-of-truth rewrite.
 
-Asserts that the FR-012 source-of-truth rewrite (``protocol/CONVENTIONS.md``
+Asserts that the rewrite (``protocol/CONVENTIONS.md``
 and ``templates/*.md``) carries none of the retired-model vocabulary, and
-that the renamed ``Work root:`` field (DEC-006) is present in
-``templates/TASK.md``.
+that the renamed ``Work root:`` field is present in ``templates/TASK.md``.
 
 Scope: ``protocol/CONVENTIONS.md`` plus every ``templates/*.md`` file.
-``protocol/CHANGELOG.md`` is explicitly excluded — per FR-013 its
-breakage descriptions and migration steps must spell the retired terms
-verbatim.
+``protocol/CHANGELOG.md`` is explicitly excluded — its breakage
+descriptions and migration steps must spell the retired terms verbatim.
 
 Retired patterns:
 - ``parent-of-workspace-root`` / ``parent of the workspace root`` —
-  the old launch-cwd rule retired by FR-012 in favor of the cartopian
-  project root.
+  the old launch-cwd rule retired in favor of the cartopian project root.
 - ``Repo subpath:`` — the retired task-file header renamed to
-  ``Work root:`` by DEC-006.
+  ``Work root:``.
 - The legacy ``projects/`` directory-scan project-selection model
-  retired by FR-012 / AR-11 in favor of registry-only selection.
+  retired in favor of registry-only selection.
   Tells: a session-startup step that lists or scans child directories
   under ``projects/``, or a working-directory rule that resolves a
   project by being inside ``projects/<project-id>/``.
@@ -60,7 +57,7 @@ _RETIRED_PATTERNS: dict[str, re.Pattern[str]] = {
 
 
 class ResidualPatternGrepTest(unittest.TestCase):
-    """No retired FR-012 vocabulary survives in the rewrite scope."""
+    """No retired vocabulary survives in the rewrite scope."""
 
     def test_no_retired_patterns_in_scope(self) -> None:
         hits: list[tuple[str, Path, int, str]] = []
@@ -77,7 +74,7 @@ class ResidualPatternGrepTest(unittest.TestCase):
                 for label, path, line_no, line in hits
             )
             self.fail(
-                "Residual retired-FR-012 patterns found in rewrite scope:\n"
+                "Residual retired patterns found in rewrite scope:\n"
                 + rendered
             )
 
@@ -88,7 +85,7 @@ class ResidualPatternGrepTest(unittest.TestCase):
 
 
 class WorkRootVocabularyTest(unittest.TestCase):
-    """DEC-006 vocabulary swap — ``Work root:`` is the canonical field name."""
+    """``Work root:`` is the canonical field name."""
 
     def test_task_template_uses_work_root_header(self) -> None:
         text = (TEMPLATES_DIR / "TASK.md").read_text(encoding="utf-8")

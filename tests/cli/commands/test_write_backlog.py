@@ -1,8 +1,8 @@
-"""Tests for `cartopian write-backlog` (BL-002).
+"""Tests for `cartopian write-backlog`.
 
 The durable, CLI-supported home for PM/reviewer follow-up notes: one
 ``## BL-NNN — <title>`` section per entry in the project-root ``BACKLOG.md``,
-written exclusively through the SPEC-01-002 mediated-write primitive
+written exclusively through the mediated-write primitive
 (``backlog`` dest_kind → the allowlisted root file). Re-issuing an id revises
 its entry in place; the hand-authored preamble survives; ``STATE.md`` is never
 touched.
@@ -152,8 +152,8 @@ class TestWriteBacklog(_Fixture):
         self.assertEqual(code, 0, err)
         self.assertEqual(records[0]["details"]["entries"], 2)  # no phantom BL-099
         text = self.backlog.read_text(encoding="utf-8")
-        self.assertIn(body, text)  # BL-001 body intact, byte-for-byte
-        # Re-issuing BL-001 must replace the WHOLE entry, orphaning nothing.
+        self.assertIn(body, text)  # first entry's body intact, byte-for-byte
+        # Re-issuing an existing entry must replace the WHOLE entry, orphaning nothing.
         run_cli("write-backlog", self.root, "--bl-id", "BL-001",
                 "--title", "First (revised)", "--content", "Short now.")
         text = self.backlog.read_text(encoding="utf-8")

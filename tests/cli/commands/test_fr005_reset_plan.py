@@ -1,4 +1,4 @@
-"""Unit tests for `cartopian reset-plan` (G13, G14, G15, SPEC-01-003).
+"""Unit tests for `cartopian reset-plan`.
 
 The destructive close-surface reset: removes live plan artifacts, recreates
 the empty lifecycle directories, and conditionally reseeds STANDARDS.md /

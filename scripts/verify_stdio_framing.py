@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real-transport verification for MCP server stdio dual framing (TASK-01-005).
+"""Real-transport verification for MCP server stdio dual framing.
 
 Unlike ``tests/mcp_server/test_server.py`` — which drives ``server.run()`` over
 in-memory ``BytesIO`` streams — this harness launches the real ``bin/cartopian-mcp``

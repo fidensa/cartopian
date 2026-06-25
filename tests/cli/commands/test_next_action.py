@@ -1,4 +1,4 @@
-"""Tests for `cartopian next-action` (FR-014, DECISION-001)."""
+"""Tests for `cartopian next-action`."""
 import argparse
 import unittest
 
@@ -56,11 +56,11 @@ class TestNextActionRequiredFields(unittest.TestCase):
 
 
 class TestNextActionHappyPath(unittest.TestCase):
-    """Happy-path test: valid project fixture → all FR-001 fields populated."""
+    """Happy-path test: valid project fixture → all required fields populated."""
 
     def test_all_fr001_fields_populated(self) -> None:
         # Use a constrained (tier-1/2) PM harness: this test exercises field
-        # population, which is orthogonal to the FR-008 advisory gate. A tier-3
+        # population, which is orthogonal to the advisory gate. A tier-3
         # placeholder agent would (correctly) be blocked by that gate.
         toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n\n[handoffs.pm]\nagent = "cartopian-claude-pm"\n'
         state_md = (
@@ -210,7 +210,7 @@ class TestNextActionDispatchKind(unittest.TestCase):
 
     def test_automated_when_handoff_pm_configured(self) -> None:
         # A constrained (tier-1/2) harness keeps the dispatch-kind assertion
-        # (configured PM agent → automated) independent of the FR-008 gate.
+        # (configured PM agent → automated) independent of the advisory gate.
         toml = _TOML_BASE + "\n[handoffs.pm]\nagent = \"cartopian-claude-pm\"\n"
         with project_scaffold(cartopian_toml=toml) as scaffold:
             records, rc = _invoke(str(scaffold.project_root))
@@ -322,7 +322,7 @@ class TestNextActionBlockers(unittest.TestCase):
             self.assertEqual(records[0]["blockers"], [])
 
     def test_blocker_missing_phase_when_tasks_present(self) -> None:
-        """Blocker reported when tasks exist but no phase is detected (FR-001)."""
+        """Blocker reported when tasks exist but no phase is detected."""
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write("tasks/open/TASK-01-001-demo.md", "# TASK-01-001: demo\n")
             records, rc = _invoke(str(scaffold.project_root))
@@ -336,7 +336,7 @@ class TestNextActionBlockers(unittest.TestCase):
             )
 
     def test_blocker_unresolved_open_question_in_state_md(self) -> None:
-        """Blocker reported for each open question listed in STATE.md (FR-001)."""
+        """Blocker reported for each open question listed in STATE.md."""
         state_with_oqs = (
             "# test-proj — State\n\n"
             "## Current phase\n\nPhase 01\n\n"

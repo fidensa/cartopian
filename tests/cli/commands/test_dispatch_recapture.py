@@ -1,6 +1,6 @@
 """`cartopian dispatch --recapture` — opt-in, evidence-gated reviewer recapture.
 
-The agent-neutral launch policy half of TASK-03-007 (the wrapper-enforcement half
+The agent-neutral launch policy half of reviewer recapture (the wrapper-enforcement half
 lives in tests/wrappers/test_reviewer_recapture.py). dispatch is the mediated,
 role-from-config launcher; it exports the agent-neutral role-level signal
 ``CARTOPIAN_REVIEW_RECAPTURE=1`` to the wrapper ONLY when recapture is opted in

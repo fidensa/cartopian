@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cartopian install / upgrade script (FR-002, DEC-001, DEC-009, DEC-012).
+"""Cartopian install / upgrade script.
 
 Installs or upgrades a Cartopian tree at ``~/.cartopian/`` (or
 ``%USERPROFILE%\\.cartopian`` on native Windows) from a cloned source repo.
@@ -18,10 +18,10 @@ the extensionless ``bin/cartopian`` Python entrypoint via the system
 ``.cmd`` files are not in ``PATHEXT``); the install root is single-tree
 across platforms and tests assume the shim is present.
 
-DEC-012 locks the canonical V1 install path to manual ``git clone +
-symlink``; this script is a zero-extra-dependency helper that performs
-that flow uniformly across platforms. It runs on the DEC-001 Python
-3.11+ baseline and invokes no package managers or ``pip install``.
+The canonical V1 install path is a manual ``git clone + symlink``; this
+script is a zero-extra-dependency helper that performs that flow uniformly
+across platforms. It requires Python 3.11+ and invokes no package managers
+or ``pip install``.
 
 Re-running the script after ``git pull`` in the source repo is the
 upgrade flow: symlink targets resolve automatically; copies are
@@ -69,7 +69,7 @@ COPY_ALWAYS = frozenset({"CHANGELOG.md"})
 OPERATOR_TOML = "cartopian.toml"
 OPERATOR_REGISTRY = "projects.json"
 GLOBAL_TOML_TEMPLATE = "templates/global.cartopian.toml"
-EMPTY_REGISTRY = "[]\n"  # DEC-009 sub-decision 4: empty registry as `[]\n`.
+EMPTY_REGISTRY = "[]\n"  # empty registry initialised as a JSON empty array.
 
 MIN_PYTHON = (3, 11)
 
@@ -226,7 +226,7 @@ def _check_optional_coreutils() -> Optional[str]:
     and runs unbounded, which is functional but means a hung assignee
     will not be killed at the configured deadline. We intentionally do
     not run ``brew`` — this installer is zero-extra-dependency by
-    design (DEC-012). Return ``None`` when no recommendation is needed.
+    design. Return ``None`` when no recommendation is needed.
     """
     if platform.system() != "Darwin":
         return None

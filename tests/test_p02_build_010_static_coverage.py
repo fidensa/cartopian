@@ -1,10 +1,10 @@
-"""P02-BUILD-010 static-coverage harness for rewritten skills and wrappers.
+"""Static-coverage harness for rewritten skills and wrappers.
 
 Checks that:
 - Rewritten skills reference the expected Core CLI commands.
 - Rewritten skills adopt Work root semantics (no residual Repo subpath usage in scoped files).
-- Wrappers implement FR-012 (project-root launch) and reference OQ-009 access-grant mechanics.
-- Wrappers README documents FR-012 launch-cwd and OQ-009 access model.
+- Wrappers implement project-root launch and reference work-root access-grant mechanics.
+- Wrappers README documents launch-cwd and access model.
 """
 from __future__ import annotations
 
@@ -104,10 +104,10 @@ class SkillsStaticCoverageTest(unittest.TestCase):
         # Do not assert Repo subpath absence here; legacy mention may persist until its own task.
 
 
-# --- PM-containment wrapper class (DEC-001 / FR-002) -----------------------
+# --- PM-containment wrapper class -------------------------------------------
 # The contained Claude Code PM wrapper (`cartopian-claude-pm`) is NOT a blanket
-# Cartopian launcher. By DEC-001 it exposes ONLY the fixed Cartopian MCP toolset
-# and DELIBERATELY OMITS the two blanket-wrapper properties asserted by
+# Cartopian launcher. It exposes ONLY the fixed Cartopian MCP toolset and
+# DELIBERATELY OMITS the two blanket-wrapper properties asserted by
 # WrappersStaticCoverageTest below:
 #   * it has NO `CARTOPIAN_*_UNRESTRICTED` bypass — a bypass is a containment
 #     hole, forbidden by the floor; and
@@ -123,7 +123,7 @@ PM_CONTAINMENT_MARKER = "PM containment"  # in-file self-identification
 
 
 def _is_pm_containment_wrapper(path: Path) -> bool:
-    """True for the DEC-001 PM-containment wrapper class.
+    """True for the PM-containment wrapper class.
 
     Recognized by BOTH a `-pm` filename suffix (`cartopian-*-pm`, optionally
     `.ps1`) AND an in-file containment marker, so a plain launcher cannot be
@@ -143,11 +143,11 @@ class WrappersStaticCoverageTest(unittest.TestCase):
         # CARTOPIAN_*_UNRESTRICTED env-var bypass. The bash wrappers factor the
         # resolve-config + fail-closed guard into the shared helper
         # (_cartopian-status.sh :: cartopian_enforce_work_roots) so the guard
-        # cannot rot per-wrapper (TASK-03-008); they wire it by calling that
-        # helper. The PowerShell wrappers still inline `cartopian resolve-config`.
-        # PM-containment wrappers are excluded (DEC-001): they run MCP-only and
-        # must have NO bypass — see PmContainmentWrapperStaticCoverageTest for
-        # their inverse contract.
+        # cannot rot per-wrapper; they wire it by calling that helper. The
+        # PowerShell wrappers still inline `cartopian resolve-config`.
+        # PM-containment wrappers are excluded: they run MCP-only and must have
+        # NO bypass — see PmContainmentWrapperStaticCoverageTest for their
+        # inverse contract.
         wrappers = []
         wrappers.extend(sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")))
         wrappers.extend(sorted(WRAPPERS_PS1_DIR.glob("cartopian-*.ps1")))
@@ -155,11 +155,17 @@ class WrappersStaticCoverageTest(unittest.TestCase):
         self.assertTrue(wrappers, "expected wrapper scripts to exist")
 
         # The factored guard's resolve-config call must genuinely exist in the
-        # shared helper the bash wrappers source.
+        # shared helper each shell sources: bash's _cartopian-status.sh and
+        # PowerShell's CartopianStatus.ps1.
         helper_text = (WRAPPERS_BIN_DIR / "_cartopian-status.sh").read_text(encoding="utf-8")
         self.assertIn(
             "cartopian resolve-config", helper_text,
             msg="shared helper _cartopian-status.sh must call `cartopian resolve-config`",
+        )
+        ps1_helper_text = (WRAPPERS_PS1_DIR / "CartopianStatus.ps1").read_text(encoding="utf-8")
+        self.assertIn(
+            "cartopian resolve-config", ps1_helper_text,
+            msg="shared helper CartopianStatus.ps1 must call `cartopian resolve-config`",
         )
 
         missing_resolve = []
@@ -167,11 +173,14 @@ class WrappersStaticCoverageTest(unittest.TestCase):
         for path in wrappers:
             text = path.read_text(encoding="utf-8")
             # A wrapper references the guard either inline (`cartopian
-            # resolve-config`, PowerShell) or by calling the shared-helper entry
-            # point that performs it (`cartopian_enforce_work_roots`, bash).
+            # resolve-config`, the gemini PS1 wrapper) or by calling the
+            # shared-helper entry point that performs it
+            # (`cartopian_enforce_work_roots` in bash, `Get-CartopianScopeArgs`
+            # in PowerShell).
             if (
                 "cartopian resolve-config" not in text
                 and "cartopian_enforce_work_roots" not in text
+                and "Get-CartopianScopeArgs" not in text
             ):
                 missing_resolve.append(path)
             if not re.search(r"CARTOPIAN_[A-Z]+_UNRESTRICTED", text):
@@ -196,9 +205,9 @@ class WrappersStaticCoverageTest(unittest.TestCase):
 
     def test_wrappers_implement_project_root_launch_detection(self) -> None:
         # Check for the prompts-directory launch-cwd detection in both shells.
-        # PM-containment wrappers are excluded (DEC-001): they launch from an
-        # isolated `pm-surface` cwd, NOT the project root — that isolated launch
-        # is positively enforced by PmContainmentWrapperStaticCoverageTest.
+        # PM-containment wrappers are excluded: they launch from an isolated
+        # `pm-surface` cwd, NOT the project root — that isolated launch is
+        # positively enforced by PmContainmentWrapperStaticCoverageTest.
         bash_hits = []
         for path in sorted(WRAPPERS_BIN_DIR.glob("cartopian-*")):
             if _is_pm_containment_wrapper(path):
@@ -219,7 +228,7 @@ class WrappersStaticCoverageTest(unittest.TestCase):
             bash_hits,
             [],
             msg=(
-                "bash wrappers missing prompts-directory FR-012 launch-cwd detection: "
+                "bash wrappers missing prompts-directory launch-cwd detection: "
                 + ", ".join(str(p.relative_to(REPO_ROOT)) for p in bash_hits)
             ),
         )
@@ -227,7 +236,7 @@ class WrappersStaticCoverageTest(unittest.TestCase):
             ps1_hits,
             [],
             msg=(
-                "ps1 wrappers missing prompts-directory FR-012 launch-cwd detection: "
+                "ps1 wrappers missing prompts-directory launch-cwd detection: "
                 + ", ".join(str(p.relative_to(REPO_ROOT)) for p in ps1_hits)
             ),
         )
@@ -244,13 +253,13 @@ class WrappersStaticCoverageTest(unittest.TestCase):
 
 
 class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
-    """Inverse-guarantee contract for the DEC-001 PM-containment wrapper class.
+    """Inverse-guarantee contract for the PM-containment wrapper class.
 
     WrappersStaticCoverageTest EXCLUDES these wrappers from the blanket
     `offer-unrestricted-bypass` and `project-root launch` assertions because, by
-    DEC-001/FR-002 design, a contained PM wrapper intentionally lacks both. This
-    class enforces the *opposite* contract so the exclusion can never silently
-    mask a floor regression: a PM-containment wrapper MUST NOT grow a bypass or a
+    design, a contained PM wrapper intentionally lacks both. This class enforces
+    the *opposite* contract so the exclusion can never silently mask a floor
+    regression: a PM-containment wrapper MUST NOT grow a bypass or a
     surface-reopening flag (`--add-dir`/`--dangerously-skip-permissions`), and
     MUST launch from its isolated surface rather than the project root.
     """
@@ -272,7 +281,7 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
     # Prompts-dir launch DETECTION used to choose the cwd, e.g.
     # `[[ $(basename "$PROMPTS_DIR") == "prompts" ]]` (bash) or
     # `(Split-Path -Leaf $PromptsDir) -eq 'prompts'` (PowerShell). This is the
-    # FR-012 blanket-launcher trigger that a contained PM must never perform.
+    # Prompts-dir launch-detection trigger that a contained PM must never perform.
     _PROMPTS_DETECT_RE = re.compile(
         r"""(?:==|-eq)\s*["']?prompts["']?""",
         re.IGNORECASE,
@@ -352,7 +361,7 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
         )
 
     def test_pm_wrappers_have_no_unrestricted_bypass(self) -> None:
-        # DEC-001: a CARTOPIAN_*_UNRESTRICTED bypass is a containment hole and
+        # A CARTOPIAN_*_UNRESTRICTED bypass is a containment hole and
         # must not exist in the contained PM profile.
         offenders = []
         for path in self._pm_wrappers():
@@ -368,8 +377,8 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
         )
 
     def test_pm_wrappers_do_not_add_surface_reopening_flags(self) -> None:
-        # DEC-001: --add-dir / --dangerously-skip-permissions re-open the
-        # surface. The wrapper may name them only to refuse them.
+        # --add-dir / --dangerously-skip-permissions re-open the surface.
+        # The wrapper may name them only to refuse them.
         for path in self._pm_wrappers():
             text = path.read_text(encoding="utf-8")
             for flag in ("--add-dir", "--dangerously-skip-permissions"):
@@ -384,9 +393,9 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
                 )
 
     def test_pm_wrappers_launch_from_isolated_surface(self) -> None:
-        # DEC-001: the contained PM launches from an isolated, content-free
-        # surface and must NOT derive its launch cwd from the project root, a
-        # work root, or the prompts dir. Two halves: (1) positively require the
+        # The contained PM launches from an isolated, content-free surface and
+        # must NOT derive its launch cwd from the project root, a work root, or
+        # the prompts dir. Two halves: (1) positively require the
         # launch-from-$PM_SURFACE path, and (2) reject ANY executable
         # project-root/prompts-dir launch path via `_offending_launch_lines`,
         # not just the single old static `== "prompts"` regex.
@@ -454,7 +463,7 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
             "bare-project-root": 'cd "$PROJECT_DIR"\n',
             # Launch-cwd override derivation.
             "launch-cwd-override": 'LAUNCH_CWD="$CARTOPIAN_LAUNCH_CWD"; cd "$LAUNCH_CWD"\n',
-            # Deriving the prompts-dir parent (the FR-012 blanket pattern).
+            # Deriving the prompts-dir parent (the blanket-launcher pattern).
             "prompts-dir-parent": 'PROJECT_DIR="$(dirname "$PROMPTS_DIR")"\n',
             # PowerShell prompts-dir detection.
             "ps1-prompts-detect": "if ((Split-Path -Leaf $PromptsDir) -eq 'prompts') { Set-Location $ProjectDir }\n",
@@ -480,7 +489,7 @@ class PmContainmentWrapperStaticCoverageTest(unittest.TestCase):
 
 
 class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
-    """P01-BUILD-004: wait-primitive integration into skills and § Handoffs.
+    """Wait-primitive integration into skills and § Handoffs.
 
     The wait commands (`cartopian wait-handoff` / `cartopian wait-report`) must
     replace ad-hoc sleep loops, manual "wait for the operator to tell you"

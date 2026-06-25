@@ -1,13 +1,13 @@
-"""Keystone acceptance for FR-005 / SPEC-01-003: lifecycle completeness.
+"""Keystone acceptance for lifecycle completeness.
 
-The load-bearing acceptance from SPEC-01-003: a scripted *contained* PM run of
-**plan → assign → review → close** completes using only Cartopian commands —
-the new FR-005 structured authoring commands plus the pre-existing tool
-surface — with **zero** steps requiring a raw write / dir-op / exec.
+A scripted *contained* PM run of **plan → assign → review → close** completes
+using only Cartopian commands — the structured authoring commands plus the
+pre-existing tool surface — with **zero** steps requiring a raw write /
+dir-op / exec.
 
-Fail-closed red→green in one module (mirroring the SPEC-01-002 suite):
+Fail-closed red→green in one module:
 
-- **RED** — the identical lifecycle is driven against the *pre-FR-005* tool
+- **RED** — the identical lifecycle is driven against the *pre-extension* tool
   surface (the new verbs pruned from the dispatcher). The very first authoring
   step (``write-requirements``) hits an unknown-subcommand wall: the contained
   PM, lacking raw ``Write``, deadlocks. This proves the gap is real, so green
@@ -29,8 +29,8 @@ from unittest import mock
 
 import cli.main as cli_main
 
-# The FR-005 verbs this task introduces. Pruning them reproduces the
-# pre-FR-005 contained-PM surface for the red capture.
+# The new structured-authoring verbs. Pruning them reproduces the
+# pre-extension contained-PM surface for the red capture.
 NEW_VERBS = (
     "write-requirements", "write-plan", "write-standards", "write-conventions",
     "write-phase", "write-task", "write-spec", "write-prompt", "write-decision",
@@ -54,7 +54,7 @@ def _drive(parser, verb, *args):
 
 
 def _pruned_parser():
-    """Build a dispatcher with the FR-005 verbs removed (pre-FR-005 surface)."""
+    """Build a dispatcher with the new verbs removed (pre-extension surface)."""
     original = cli_main.SUBCOMMANDS
     cli_main.SUBCOMMANDS = [v for v in original if v not in NEW_VERBS]
     try:
@@ -136,7 +136,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         task_path = proj / "tasks" / "in-progress" / "TASK-01-001-do-thing.md"
         self.assertTrue(task_path.is_file())
 
-        # Dispatched coder produces the report (G20 / FR-006, out of scope):
+        # Dispatched coder produces the report (out of scope here):
         # NOT a PM operation — stands in for the assignee agent.
         (proj / "reports" / "REPORT-01-001.md").write_text(
             "# REPORT-01-001\n\nStatus: complete\n\n## Identity\n\n"

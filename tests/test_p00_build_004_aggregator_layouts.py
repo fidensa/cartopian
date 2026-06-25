@@ -1,4 +1,4 @@
-"""P00-BUILD-004 acceptance: aggregator-scenario scaffold helpers.
+"""Acceptance tests: aggregator-scenario scaffold helpers.
 
 Verifies that four helper functions in tests.scaffold create the expected
 filesystem layouts for aggregator test scenarios:

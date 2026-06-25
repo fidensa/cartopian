@@ -379,7 +379,7 @@ class TestPlanAuditOutput(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git"), "git required")
 class TestPlanAuditInfraArtifacts(unittest.TestCase):
-    """BL-002: assignee-created `.github`/CI/infra artifacts in a work root
+    """Assignee-created `.github`/CI/infra artifacts in a work root
     emit an `unauthorized-infra-artifacts` warning unless a task naming that
     work root explicitly authorizes them. A warning, never a blocker."""
 

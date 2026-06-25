@@ -1,9 +1,9 @@
-"""devin harness promotion determination — not-recommended-as-PM-host (TASK-03-004).
+"""devin harness promotion determination — not-recommended-as-PM-host.
 
-The devin slice of FR-010 all-harness coverage and the always-on, stdlib-only
-(NF-001) anti-drift guard for the devin determination; resolves OQ-004 for devin.
-It does NOT edit the asset-driven classifier (TASK-02-001 contract): devin stays
-``tier-3`` purely because NO floor + depth assets exist for it on disk.
+The devin slice of all-harness coverage and the always-on, stdlib-only (NF-001)
+anti-drift guard for the devin determination.
+It does NOT edit the asset-driven classifier: devin stays ``tier-3`` purely
+because NO floor + depth assets exist for it on disk.
 
 Resolved classification: not-recommended-as-PM-host
 ---------------------------------------------------
@@ -27,7 +27,7 @@ Tier-1+2. Five forcing facets each independently block it:
 * F-D4 — no ``--config``/``--settings`` flag or highest-precedence settings env
   var, so a non-overridable floor cannot be guaranteed;
 * F-D5 — devin is cloud-authenticated (model + handoff/subagents run in the
-  cloud), so there is NO offline locally-contained runtime to capture the FR-011
+  cloud), so there is NO offline locally-contained runtime to capture the
   in-runtime evidence the tier-1-2 promotions of codex/gemini were gated on.
 
 Shipping sham assets would make ``_harness_tier`` falsely claim ``tier-1-2`` AND
@@ -130,7 +130,7 @@ class TestNoRegression:
 
 
 # --------------------------------------------------------------------------- #
-# Captured forcing evidence (FR-011, unpromotable branch) — pinned when present,
+# Captured forcing evidence (unpromotable branch) — pinned when present,
 # skipped (with a reproduction pointer) when absent. A present artifact can never
 # pass on a stale/wrong marker (fail-closed).
 # --------------------------------------------------------------------------- #

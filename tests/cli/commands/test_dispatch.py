@@ -1,10 +1,10 @@
-"""Tests for `cartopian dispatch` — mediated handoff launch (FR-006, G20, TASK-01-004).
+"""Tests for `cartopian dispatch` — mediated handoff launch.
 
 Evidence gate (red-before-green):
 
-- RED (captured in REPORT-01-004): before this command existed,
-  ``cartopian dispatch ...`` was an unknown subcommand — a contained PM (no
-  shell / process-exec tool, FR-002) had no route at all to launch a wrapper.
+- RED: before this command existed, ``cartopian dispatch ...`` was an unknown
+  subcommand — a contained PM (no shell / process-exec tool) had no route at
+  all to launch a wrapper.
 - GREEN (``TestDispatchPositive``): the mediated command launches a *stub*
   wrapper with the single absolute-prompt-path argv, ``CARTOPIAN_TIMEOUT``
   exported from the resolved ``[handoffs.<role>].timeout``, and cwd = the
@@ -228,7 +228,7 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(rec["model"], "stub-model-x")
             self.assertEqual(rec["prompt_path"], str(prompt_path))
             self.assertEqual(rec["timeout"], "30m")
-            # DEC-011: cwd is the primary work root, never the governing project.
+            # cwd is the primary work root, never the governing project.
             self.assertEqual(rec["cwd"], rec["work_roots"][0]["absolute_path"])
             self.assertEqual(Path(rec["cwd"]).name, "tool-repo")
             self.assertNotEqual(Path(rec["cwd"]).resolve(), project_root)
@@ -267,7 +267,7 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(cap["argv"], [str(stub), str(prompt_path)])
             self.assertEqual(cap["timeout"], "30m")
             self.assertEqual(cap["model"], "stub-model-x")
-            # DEC-011: the wrapper actually ran with cwd = the work root.
+            # The wrapper actually ran with cwd = the work root.
             self.assertEqual(Path(cap["cwd"]).name, "tool-repo")
             self.assertNotEqual(os.path.realpath(cap["cwd"]), str(project_root))
 
@@ -317,7 +317,7 @@ class TestDispatchPositive(unittest.TestCase):
 
 
     def test_code_comments_resolves_and_fails_closed_to_minimal(self) -> None:
-        # DEC-011 §4: the resolved code_comments level is emitted and exported;
+        # The resolved code_comments level is emitted and exported;
         # an unknown value fails closed to `minimal`, a valid one is honored.
         for configured, expected in (("none", "none"), ("bogus", "minimal"), ("", "minimal")):
             with self.subTest(configured=configured), \
@@ -503,7 +503,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             scaffold.write("cartopian.toml", _toml(str(stub)))
-            # Task present, but no prompts/PROMPT-01-004.md written.
+            # Task present, but no matching prompt file written.
             task_path = scaffold.write(
                 "tasks/in-progress/TASK-01-004-mediated.md",
                 "# TASK-01-004: Mediated\n\nWork root: n/a\n",
@@ -527,8 +527,8 @@ class TestDispatchNoRawExec(unittest.TestCase):
 
     RED framing: before containment a PM with a shell could run the wrapper
     directly (`subprocess.Popen([wrapper, prompt])` — a raw exec path). Under
-    the FR-002 floor that capability is removed, so the only reachable launch
-    is `dispatch`, whose executable is sourced from operator config and which
+    containment that capability is removed, so the only reachable launch is
+    `dispatch`, whose executable is sourced from operator config and which
     exposes no argument for injecting an arbitrary command.
     """
 

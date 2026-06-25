@@ -79,8 +79,8 @@ function Test-CartopianReportComplete {
 # Run the assignee command under the SSOT deadline, supervising for the
 # authoritative report-completion signal so a *finished* assignee exits
 # promptly instead of lingering until the deadline. Mirrors
-# bin/_cartopian-status.sh :: cartopian_run_supervised (TASK-03-005 /
-# P03-FIX-001; BL-006 PowerShell parity).
+# bin/_cartopian-status.sh :: cartopian_run_supervised (PowerShell
+# parity).
 #
 # ROOT CAUSE this addresses: assignee CLIs can keep running after they have
 # written the report — MCP stdio servers not torn down, an inherited open
@@ -249,4 +249,111 @@ function Write-CartopianStatus {
     } catch {
         # Fail-open: status file is an optional optimization, never required.
     }
+}
+
+# Compose the coding directive a wrapper prepends to the prompt when the mediated
+# launcher exports CARTOPIAN_CODE_COMMENTS. The comment *volume* is operator
+# config; the management-identifier ban is always present, at every level, so
+# product code never carries planning identifiers. Mirrors the Bash
+# cartopian_comment_directive byte-for-byte. $Level = none|minimal|verbose
+# (unknown values fall closed to minimal).
+function Get-CartopianCommentDirective {
+    param([string]$Level)
+    $lvl = if ($Level) { $Level.ToLower() } else { 'minimal' }
+    switch ($lvl) {
+        'none'    { $volume = 'Write NO comments in the code you produce.' }
+        'verbose' { $volume = 'Explanatory comments are welcome where they aid understanding.' }
+        default   { $lvl = 'minimal'; $volume = 'Comment only genuinely non-obvious intent; no narration of what the code plainly does.' }
+    }
+    return "Code comments: $lvl - $volume Never write Cartopian project-management identifiers (FR-/DEC-/TASK-/BL-/OQ-/REVIEW- references, phase or plan ids) anywhere in product code or comments."
+}
+
+# Compute the native work-root scope flags a wrapper injects into its command.
+# Mirrors the Bash cartopian_enforce_work_roots: when the mediated launcher
+# provides CARTOPIAN_SCOPE_DIRS, use it verbatim (the launch cwd is the work
+# root, so resolve-config from cwd would resolve the wrong project); otherwise
+# fall back to resolve-config for standalone use. The report-target dir
+# (CARTOPIAN_REPORT_DIR) is always a writable grant — granted even under reviewer
+# recapture, when the work roots are withheld read-only — and is the only
+# management-project path ever granted. Fail-closed (exit 1) for a tool with no
+# native multi-directory scoping ($ScopeFlag empty), unless the per-tool
+# UNRESTRICTED bypass is set. Returns the array of flags to inject (possibly
+# empty); never returns on a fail-closed path.
+#   $ScopeFlag : the tool's native flag (e.g. --add-dir), or '' if it cannot scope.
+#   $CommaJoin : $true when the tool takes one flag with comma-joined dirs (gemini).
+function Get-CartopianScopeArgs {
+    param(
+        [string]$Wrapper,
+        [string]$ScopeFlag,
+        [bool]$CommaJoin,
+        [bool]$Unrestricted,
+        [string]$VarName
+    )
+    $workRootsRaw = $env:CARTOPIAN_SCOPE_DIRS
+    if (-not $workRootsRaw) {
+        try {
+            $rc = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
+            if ($rc) {
+                $rec = $null
+                try { $rec = $rc | ConvertFrom-Json } catch { $rec = $null }
+                if ($rec -and $rec.work_roots) {
+                    $workRootsRaw = ($rec.work_roots.PSObject.Properties.Value) -join "`n"
+                }
+            }
+        } catch { $workRootsRaw = '' }
+    }
+    $reportDir = $env:CARTOPIAN_REPORT_DIR
+
+    $roots = @()
+    if ($workRootsRaw) { $roots = @($workRootsRaw -split "`n" | Where-Object { $_ }) }
+    if ($roots.Count -eq 0 -and -not $reportDir) { return @() }
+
+    foreach ($r in $roots) {
+        if (-not (Test-Path -PathType Container $r)) {
+            [Console]::Error.WriteLine("[work-root] missing: $r")
+            exit 1
+        }
+    }
+
+    $recapture = $false
+    if ($env:CARTOPIAN_REVIEW_RECAPTURE) {
+        $recapture = @('1', 'true', 'yes', 'on') -contains $env:CARTOPIAN_REVIEW_RECAPTURE.ToLower()
+    }
+
+    if ($recapture) {
+        # Work roots are the read-only source under review; grant ONLY the report
+        # dir (writable) so a sandboxed reviewer can still write its report.
+        if ($reportDir -and $ScopeFlag) {
+            Write-Host "$Wrapper: recapture - report dir granted writable; work roots read-only" -ForegroundColor DarkGray
+            return @($ScopeFlag, $reportDir)
+        }
+        return @()
+    }
+
+    if ($Unrestricted) {
+        Write-Host "$Wrapper: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
+        return @()
+    }
+
+    $grant = @()
+    if ($roots.Count -gt 0) { $grant += $roots }
+    if ($reportDir) { $grant += $reportDir }
+    if ($grant.Count -eq 0) { return @() }
+
+    if (-not $ScopeFlag) {
+        # No native multi-directory scoping (e.g. devin): fail closed.
+        [Console]::Error.WriteLine("[work-root] tool cannot scope multi-root access; set $VarName=true to bypass (dangerous)")
+        exit 1
+    }
+
+    $argsOut = @()
+    if ($CommaJoin) {
+        $argsOut += @($ScopeFlag, ($grant -join ','))
+    } else {
+        foreach ($g in $grant) { $argsOut += @($ScopeFlag, $g) }
+    }
+    Write-Host "$Wrapper: work-root union scoped natively (launch cwd + $($roots.Count) work root(s) + report dir)" -ForegroundColor DarkGray
+    foreach ($g in $roots) { Write-Host "  scoped work root: $g" -ForegroundColor DarkGray }
+    if ($reportDir) { Write-Host "  scoped report dir: $reportDir" -ForegroundColor DarkGray }
+    return $argsOut
 }

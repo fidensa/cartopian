@@ -7,7 +7,7 @@ Covers:
   skill prompt body includes the skill markdown).
 - Tool surface (every cli.main.SUBCOMMANDS entry registers; argv rebuild
   preserves required arg semantics; tool execution captures NDJSON +
-  stderr; FR-014 stderr prefixes survive round-trip).
+  stderr; stderr prefixes survive round-trip).
 - Resource surface (skills, protocol, templates, per-project artifacts;
   underscore identifier shape is consistent with prompt names).
 - Subprocess-level smoke (bin/cartopian-mcp boots and responds).
@@ -663,7 +663,7 @@ class TestStdioFraming(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Contained-PM floor: config/registry-genesis tools are withheld (REVIEW-03-002 F1)
+# Contained-PM floor: config/registry-genesis tools are withheld
 # ---------------------------------------------------------------------------
 
 class TestContainmentToolFloor(unittest.TestCase):

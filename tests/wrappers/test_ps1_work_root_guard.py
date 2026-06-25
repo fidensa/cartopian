@@ -1,7 +1,7 @@
 """Regression: PS1 work-root guards must fail closed, not be swallowed.
 
-Background (TASK-01-008 rework, REVIEW-01-008 F1)
-------------------------------------------------
+Background
+----------
 The PowerShell wrappers read resolved work-root paths via
 ``cartopian resolve-config`` and enforce two security-critical guards before
 launching the assignee:
@@ -39,6 +39,22 @@ PS1_WRAPPERS = [
     "cartopian-gemini.ps1",
     "cartopian-devin.ps1",
 ]
+
+
+def _effective_text(wrapper: str) -> str:
+    """The wrapper's source plus the shared helper it dot-sources at runtime.
+
+    The work-root guards (resolve-config fallback, missing-root and
+    cannot-scope fail-closed exits, ConvertFrom-Json parse tolerance) are
+    factored into ``CartopianStatus.ps1 :: Get-CartopianScopeArgs`` for the
+    wrappers that delegate to it, so the static guard assertions must read the
+    effective source (wrapper + helper), not the wrapper file alone. A wrapper
+    that still inlines the guard keeps its own copy first in the concatenation.
+    """
+    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    helper = (PS1_DIR / "CartopianStatus.ps1").read_text(encoding="utf-8")
+    return text + "\n" + helper
+
 
 # The two security-critical guard messages every wrapper must fail closed on.
 MISSING_GUARD = "[work-root] missing:"
@@ -98,7 +114,7 @@ def _is_swallowed(text: str, marker: str) -> bool:
 
 @pytest.mark.parametrize("wrapper", PS1_WRAPPERS)
 def test_missing_work_root_guard_not_swallowed(wrapper):
-    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    text = _effective_text(wrapper)
     assert not _is_swallowed(text, MISSING_GUARD), (
         f"{wrapper}: resolved-work-root-missing guard is inside a try block whose "
         f"catch is empty; the terminating Write-Error would be swallowed before "
@@ -108,7 +124,7 @@ def test_missing_work_root_guard_not_swallowed(wrapper):
 
 @pytest.mark.parametrize("wrapper", PS1_WRAPPERS)
 def test_unrestricted_required_guard_not_swallowed(wrapper):
-    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    text = _effective_text(wrapper)
     assert not _is_swallowed(text, UNRESTRICTED_GUARD), (
         f"{wrapper}: unrestricted-required guard is inside a try block whose "
         f"catch is empty; the terminating Write-Error would be swallowed before "
@@ -119,7 +135,7 @@ def test_unrestricted_required_guard_not_swallowed(wrapper):
 @pytest.mark.parametrize("wrapper", PS1_WRAPPERS)
 def test_guard_exit_paths_present(wrapper):
     """Both guards still exist and still fail closed with exit 1."""
-    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    text = _effective_text(wrapper)
     for marker in (MISSING_GUARD, UNRESTRICTED_GUARD):
         idx = text.find(marker)
         assert idx != -1, f"{wrapper}: missing guard {marker!r}"
@@ -138,7 +154,7 @@ def test_resolve_config_parse_tolerance_preserved(wrapper):
     or returns non-JSON. That tolerance must remain — only the security guards
     must escape the catch.
     """
-    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    text = _effective_text(wrapper)
     assert "ConvertFrom-Json" in text
     # ConvertFrom-Json must sit inside a try (so malformed config is tolerated).
     cfj = text.find("ConvertFrom-Json")

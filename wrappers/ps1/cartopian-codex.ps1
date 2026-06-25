@@ -22,7 +22,7 @@
     Absolute path to the Cartopian prompt file.
 
 .EXAMPLE
-    .\cartopian-codex.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-01-001.md
+    .\cartopian-codex.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
 #>
 
 param(
@@ -45,6 +45,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
+    function Get-CartopianScopeArgs { return @() }
+    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -78,12 +80,18 @@ if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
 
 $PromptContent = Get-Content -Path $PromptPath -Raw
 
+# Prepend the operator-configured comment-volume directive plus the always-on
+# management-identifier ban when the mediated launcher set the level.
+if ($env:CARTOPIAN_CODE_COMMENTS) {
+    $PromptContent = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + $PromptContent
+}
+
 # Derive the optional status-file path now, before any Set-Location, so a
 # relative prompt path still resolves. $null when outside a project layout.
 $StatusPath = Get-CartopianStatusPath $PromptPath
 
 # --- Launch directory ------------------------------------------------
-# FR-012: assignee CLIs run with cwd set to the Cartopian project root
+# Assignee CLIs run with cwd set to the Cartopian project root
 # (the registered project path). Prompts always live at
 # <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
 # root is derivable from the prompt path alone.
@@ -113,42 +121,12 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-$WorkRootsJson = ''
-try {
-    $ResolveOut = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
-    if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
-} catch { $WorkRootsJson = '' }
-if ($WorkRootsJson) {
-    # Parse tolerance ONLY: a missing/non-zero/non-JSON resolve-config (cartopian
-    # absent, project not registered, ad-hoc/test layout) leaves $rec null so the
-    # security guards below are skipped and the <report>.status file is still
-    # emitted deterministically. The guards themselves live OUTSIDE this catch:
-    # with $ErrorActionPreference = 'Stop' a guard Write-Error is a *terminating*
-    # error that a surrounding empty catch would swallow before exit 1 ran,
-    # defeating the fail-closed [work-root] contract (protocol/CONVENTIONS.md).
-    # We therefore write the guard message to stderr explicitly and exit 1, which
-    # no catch can intercept.
-    $rec = $null
-    try { $rec = $WorkRootsJson | ConvertFrom-Json } catch { $rec = $null }
-    if ($rec) {
-        $roots = @()
-        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
-        if ($roots.Count -gt 0) {
-            foreach ($r in $roots) {
-                if (-not (Test-Path -PathType Container $r)) {
-                    [Console]::Error.WriteLine("[work-root] missing: $r")
-                    exit 1
-                }
-            }
-            if ($env:CARTOPIAN_CODEX_UNRESTRICTED -ne 'true') {
-                [Console]::Error.WriteLine("[work-root] tool cannot scope multi-root access; set CARTOPIAN_CODEX_UNRESTRICTED=true to bypass (dangerous)")
-                exit 1
-            } else {
-                Write-Host "cartopian-codex: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
-            }
-        }
-    }
-}
+# Native work-root union scoping via codex's workspace-write --add-dir. The
+# shared helper reads the mediated launcher's explicit CARTOPIAN_SCOPE_DIRS /
+# CARTOPIAN_REPORT_DIR (or falls back to resolve-config standalone), validates
+# the dirs, fails closed on a missing root, and carries the union (launch cwd +
+# work roots + report dir) into the workspace-write sandbox.
+$ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-codex' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CODEX_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CODEX_UNRESTRICTED'
 
 $Args = @('exec', '--skip-git-repo-check')
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
@@ -161,6 +139,18 @@ if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'
 } elseif ($Sandbox) {
     $Args += @('--sandbox', $Sandbox)
+}
+if ($ScopeArgs.Count -gt 0) { $Args += $ScopeArgs }
+# Reviewer recapture: enable shell network for the workspace-write sandbox so the
+# probe harness can call the real codex. Network only; it does NOT widen the
+# writable filesystem scope (the work-root source stays read-only). No effect
+# under read-only / danger-full-access or a full bypass. Parity with the bash wrapper.
+$RecaptureActive = $false
+if ($env:CARTOPIAN_REVIEW_RECAPTURE) {
+    $RecaptureActive = @('1', 'true', 'yes', 'on') -contains $env:CARTOPIAN_REVIEW_RECAPTURE.ToLower()
+}
+if ($RecaptureActive -and -not $Bypass -and $Sandbox -eq 'workspace-write') {
+    $Args += @('-c', 'sandbox_workspace_write.network_access=true')
 }
 $Args += $PromptContent
 
@@ -194,7 +184,7 @@ if ($Bypass) {
     Write-Host "cartopian-codex: running codex exec (sandbox=$Sandbox, skip-git-repo-check=on, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 }
 
-# Run under the report-completion supervisor (BL-006 parity with the bash
+# Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the

@@ -1,14 +1,13 @@
-"""Harness containment-tier detection — asset-driven classifier (TASK-02-001, FR-008).
+"""Harness containment-tier detection — asset-driven classifier.
 
-This is the *detection* half of FR-008: given a PM harness, classify the highest
-containment tier Cartopian can actually enforce on it, **pre-launch and purely
-from on-disk assets** —
+Given a PM harness, classify the highest containment tier Cartopian can
+actually enforce on it, **pre-launch and purely from on-disk assets** —
 
 * ``tier-1-2`` (constrained) — a hard-coded floor launch profile *and* a
   native-sandbox depth profile both exist for the harness.
 * ``tier-3`` (advisory / unconstrainable) — one or both are absent.
 
-It does NOT implement the launch gate / acknowledgment / persistence (TASK-02-002).
+It does NOT implement the launch gate / acknowledgment / persistence.
 
 Red-before-green
 ----------------
@@ -207,7 +206,7 @@ class TestCanonicalisation(unittest.TestCase):
 
 
 class TestRecordShape(unittest.TestCase):
-    """as_record() yields a flat, JSON-serialisable dict (FR-014-ready)."""
+    """as_record() yields a flat, JSON-serialisable dict."""
 
     def test_record_is_json_serialisable_dict(self):
         import json

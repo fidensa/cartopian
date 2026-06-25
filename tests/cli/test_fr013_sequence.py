@@ -1,4 +1,4 @@
-"""FR-013 protocol-version sequence test (TASK-01-012, P01-BUILD-012).
+"""Protocol-version sequence test.
 
 Asserts the scaffold-project → generate-config sequence produces a
 project ``cartopian.toml`` whose ``[project] protocol_version`` matches

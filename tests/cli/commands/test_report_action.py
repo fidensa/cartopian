@@ -1,4 +1,4 @@
-"""Tests for `cartopian report-action` (FR-004, DECISION-003)."""
+"""Tests for `cartopian report-action`."""
 import hashlib
 import json
 import os

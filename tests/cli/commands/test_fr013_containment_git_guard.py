@@ -1,9 +1,9 @@
-"""Fail-closed harness: contained PM + git.pm_owns_product_branches=true (FR-013, P01-BUILD-006).
+"""Fail-closed harness: contained PM + git.pm_owns_product_branches=true.
 
-A contained PM (DEC-001 capability floor — no shell, no git/gh) with
+A contained PM (no shell, no git/gh) with
 ``git.pm_owns_product_branches = true`` is an UNSUPPORTED combination until
-mediated-git lands (RM-004 deferred). Per REVIEW-PLAN-002 F1 the selected
-behavior is **fail-closed block**: at config-resolution / lifecycle entry the
+mediated-git lands. The selected behavior is **fail-closed block**: at
+config-resolution / lifecycle entry the
 PM is refused with a structured ``[guard]`` line naming the unsupported
 combination and a non-zero exit; no lifecycle record is emitted.
 

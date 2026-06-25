@@ -1,11 +1,11 @@
-"""Native per-tool work-root union scoping in the wrappers (TASK-03-009, P03-FIX-005).
+"""Native per-tool work-root union scoping in the wrappers.
 
-TASK-03-008 made the work-root guard *fire* (fail closed on a non-empty resolved
-work-root set). This task makes it *scope*: a tool whose sandbox can scope a
-multi-directory union natively is launched **scoped to the union** (launch cwd +
-each declared work-root absolute path) instead of failing closed — so a normal
-coder work-root task no longer needs the blanket ``CARTOPIAN_<AGENT>_UNRESTRICTED``
-bypass (DEC-006). A tool that genuinely cannot scope still fails closed.
+The work-root guard fires fail-closed on a non-empty resolved work-root set; a
+tool whose sandbox can scope a multi-directory union natively is launched
+**scoped to the union** (launch cwd + each declared work-root absolute path)
+instead of failing closed — so a normal coder work-root task no longer needs
+the blanket ``CARTOPIAN_<AGENT>_UNRESTRICTED`` bypass. A tool that genuinely
+cannot scope still fails closed.
 
 The scoping is driven by the shared helper (``cartopian_enforce_work_roots``):
 each wrapper opts in by defining a ``cartopian_tool_scope_union`` hook that maps

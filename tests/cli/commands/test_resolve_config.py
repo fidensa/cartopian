@@ -1,4 +1,4 @@
-"""Tests for `cartopian resolve-config` (SPEC-01-001, FR-011)."""
+"""Tests for `cartopian resolve-config`."""
 import json
 import os
 import subprocess

@@ -1,4 +1,4 @@
-"""Tests for `cartopian scaffold-project` (SPEC-01-001 §scaffold-project, FR-004 #8, FR-013, FR-014)."""
+"""Tests for `cartopian scaffold-project`."""
 import hashlib
 import json
 import os
@@ -398,7 +398,7 @@ class TestScaffoldProjectUsage(unittest.TestCase):
 
 
 class TestScaffoldProjectDec013WellFormedTomlVariants(unittest.TestCase):
-    """DEC-013: cartopian.toml and cartopian.local.toml are tolerated at the
+    """cartopian.toml and cartopian.local.toml are tolerated at the
     project root by the no-op check (present optional; absence is not a
     partial-scaffold guard). Unknown top-level files remain drift."""
 
@@ -499,7 +499,7 @@ class TestScaffoldProjectDec013WellFormedTomlVariants(unittest.TestCase):
 
 
 class TestScaffoldGenerateConfigIntegration(unittest.TestCase):
-    """FR-013: scaffold + generate-config in sequence yields a well-formed
+    """scaffold + generate-config in sequence yields a well-formed
     cartopian.toml whose [project] protocol_version matches the current
     protocol version read from protocol/CHANGELOG.md."""
 
@@ -521,10 +521,10 @@ class TestScaffoldGenerateConfigIntegration(unittest.TestCase):
             self.assertEqual(data["project"]["protocol_version"], version)
             self.assertEqual(data["project"]["name"], "Demo")
             self.assertEqual(data["project"]["id"], "demo")
-            # Per DEC-013, cartopian.toml is tolerated at the project root by
-            # the no-op check; re-running scaffold-project after generate-config
-            # therefore yields a no-op success (exit 0, one NDJSON record, no
-            # files touched).
+            # cartopian.toml is tolerated at the project root by the no-op
+            # check; re-running scaffold-project after generate-config therefore
+            # yields a no-op success (exit 0, one NDJSON record, no files
+            # touched).
             before = _hash_tree(proj)
             time.sleep(0.05)
             rerun = _run(str(proj), home=tmp_path)
