@@ -171,3 +171,29 @@ def test_resolve_config_parse_tolerance_preserved(wrapper):
         f"{wrapper}: ConvertFrom-Json is no longer guarded; a malformed "
         f"resolve-config would crash before the .status file is emitted."
     )
+
+
+# PowerShell scope/namespace qualifiers that legitimately follow `$name:`.
+_PS_SCOPES = {
+    "env", "global", "script", "local", "using", "private", "variable",
+    "function", "workflow",
+}
+_VAR_COLON_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*):")
+
+
+def test_no_unguarded_variable_colon_in_ps1():
+    """`"$Name:..."` parses `Name:` as a scope/drive qualifier in PowerShell, not
+    `$Name` + literal `:` — a parse error that breaks dot-sourcing of the file
+    (and every wrapper that sources it). The fix is `"${Name}:..."`. This static
+    guard catches the class because `pwsh` is unavailable on this host to parse
+    the scripts directly. (Found in the wild on a Windows acceptance run.)"""
+    offenders = []
+    for path in sorted(PS1_DIR.glob("*.ps1")):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for m in _VAR_COLON_RE.finditer(line):
+                if m.group(1).lower() not in _PS_SCOPES:
+                    offenders.append(f"{path.name}:{i}: {line.strip()}")
+    assert not offenders, (
+        "Unguarded `$Name:` — PowerShell reads `Name:` as a scope qualifier; "
+        "use `${Name}:` instead:\n" + "\n".join(offenders)
+    )

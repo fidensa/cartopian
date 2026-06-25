@@ -324,14 +324,14 @@ function Get-CartopianScopeArgs {
         # Work roots are the read-only source under review; grant ONLY the report
         # dir (writable) so a sandboxed reviewer can still write its report.
         if ($reportDir -and $ScopeFlag) {
-            Write-Host "$Wrapper: recapture - report dir granted writable; work roots read-only" -ForegroundColor DarkGray
+            Write-Host "${Wrapper}: recapture - report dir granted writable; work roots read-only" -ForegroundColor DarkGray
             return @($ScopeFlag, $reportDir)
         }
         return @()
     }
 
     if ($Unrestricted) {
-        Write-Host "$Wrapper: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
+        Write-Host "${Wrapper}: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
         return @()
     }
 
@@ -352,7 +352,7 @@ function Get-CartopianScopeArgs {
     } else {
         foreach ($g in $grant) { $argsOut += @($ScopeFlag, $g) }
     }
-    Write-Host "$Wrapper: work-root union scoped natively (launch cwd + $($roots.Count) work root(s) + report dir)" -ForegroundColor DarkGray
+    Write-Host "${Wrapper}: work-root union scoped natively (launch cwd + $($roots.Count) work root(s) + report dir)" -ForegroundColor DarkGray
     foreach ($g in $roots) { Write-Host "  scoped work root: $g" -ForegroundColor DarkGray }
     if ($reportDir) { Write-Host "  scoped report dir: $reportDir" -ForegroundColor DarkGray }
     return $argsOut
