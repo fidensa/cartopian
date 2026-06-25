@@ -14,11 +14,11 @@ Execute the steps below in order.
 
 The MCP prelude above this skill carries an **install context** block naming the install root and the installed version (e.g. `v1.2.6`, or the literal `main` for branch installs). Use those values — do not re-derive them by scanning the filesystem.
 
-If the installed version is a release tag (starts with `v`), GET `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name` from the JSON response.
+If the installed version is a release tag (starts with `v`), issue a plain **unauthenticated** GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name`. Do not use `gh api` (it needs `gh auth login`) or the WebFetch tool (often blocked); a direct call works without credentials — `curl -s <url>` on Unix, `Invoke-RestMethod -Uri <url> -UseBasicParsing` on Windows PowerShell.
 
 - On HTTP 200, compare `tag_name` to the installed version.
   - If they match, say nothing about updates and proceed to Step 1.
-  - If they differ, tell the operator a newer release is available (`<installed>` → `<latest>`) and ask whether to run the `check_for_updates` skill now. If yes, invoke it and resume here when it returns. If no or "later", proceed to Step 1.
+  - If they differ, tell the operator a newer release is available (`<installed>` → `<latest>`) and ask whether to run the `check_for_updates` skill now. If yes, invoke it — Cartopian skills are MCP **prompts/resources**, not native `Skill()` calls, so run the `check_for_updates` MCP prompt (or read `cartopian://skills/check_for_updates` and follow it) — and resume here when it returns. If no or "later", proceed to Step 1.
 - On HTTP 404 (no releases tagged upstream), or any network/timeout error, **skip silently** and proceed. Offline sessions and intentionally-pinned installs must not be blocked.
 
 If the installed version is `main` or `unknown`, skip the comparison and proceed — the `check_for_updates` skill handles those cases when the operator runs it explicitly.

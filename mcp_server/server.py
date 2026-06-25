@@ -302,6 +302,32 @@ def _install_context_block() -> str:
     )
 
 
+def _server_instructions() -> str:
+    """Server-level guidance returned in the ``initialize`` response's
+    ``instructions`` field — the MCP mechanism a server uses to add context to
+    the model (clients MAY add it to the system prompt).
+
+    Without this, the install root + version are only visible if the agent first
+    invokes the ``use_cartopian`` prompt; many clients never do, so the version
+    appeared "missing" at session start. Surfacing it here makes it available at
+    connect time, no prompt invocation required.
+    """
+    version = _server_version()
+    return (
+        "Cartopian — a filesystem-first project-governance protocol, served over "
+        "MCP.\n\n"
+        "**Cartopian install context** (authoritative — do not re-derive by "
+        "scanning the filesystem):\n"
+        f"- Install root: `{ROOT}`\n"
+        f"- Installed version: `{version}`\n"
+        "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
+        "`cartopian://skills/check_for_updates`\n\n"
+        "To act as a Cartopian project manager (e.g. when the operator says "
+        "\"use cartopian\"), invoke the `use_cartopian` MCP prompt. Cartopian "
+        "skills are MCP prompts/resources, not native client skills."
+    )
+
+
 def _use_cartopian_messages() -> List[Dict[str, Any]]:
     skill_path = SKILL_DIR / "use-cartopian.md"
     context = _install_context_block()
@@ -916,6 +942,14 @@ def read_resource(uri: str) -> Dict[str, Any]:
         text = resolved_path.read_text(encoding="utf-8")
     except OSError:
         raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+    # The use_cartopian entry-point skill must carry the install-context block on
+    # EVERY delivery path. The prompt path (`_use_cartopian_messages`) prepends
+    # it; a client that enters PM mode by READING the resource
+    # (`cartopian://skills/use_cartopian`) rather than invoking the prompt would
+    # otherwise get the runbook without the block its Step 0 depends on — so the
+    # version appears "missing" and the update check is skipped.
+    if namespace == "skills" and _skill_name(resolved_path) == "use_cartopian":
+        text = _install_context_block() + text
     return {
         "contents": [{
             "uri": uri,
@@ -947,6 +981,7 @@ def handle_request(method: str, params: Dict[str, Any]) -> Any:
             "protocolVersion": PROTOCOL_VERSION,
             "serverInfo": _server_info(),
             "capabilities": _capabilities(),
+            "instructions": _server_instructions(),
         }
     if method == "ping":
         return {}

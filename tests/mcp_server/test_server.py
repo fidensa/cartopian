@@ -113,6 +113,17 @@ class TestInitializeHandshake(unittest.TestCase):
         self.assertIn("tools", result["capabilities"])
         self.assertIn("resources", result["capabilities"])
 
+    def test_initialize_instructions_carry_install_context(self):
+        # The install context (root + version) must reach the model at connect
+        # time via the MCP `instructions` field — not only when the agent
+        # explicitly invokes the use_cartopian prompt. Regression for the
+        # "version context block missing at session start" report.
+        result = single("initialize")["result"]
+        instructions = result.get("instructions", "")
+        self.assertIn(server._server_version(), instructions)
+        self.assertIn("install context", instructions.lower())
+        self.assertIn("use_cartopian", instructions)
+
 
 class TestServerVersionResolution(unittest.TestCase):
     def test_version_marker_is_preferred_when_present(self):
@@ -301,6 +312,18 @@ class TestResourceSurface(unittest.TestCase):
         text = response["result"]["contents"][0]["text"]
         self.assertIn("# Skill: Start Session", text)
         self.assertEqual(response["result"]["contents"][0]["mimeType"], "text/markdown")
+
+    def test_use_cartopian_resource_carries_install_context(self):
+        # The /use-cartopian command falls back to READING this resource (a model
+        # cannot invoke an MCP prompt), so the resource read — not only the
+        # prompt — must carry the install-context block (root + version). Without
+        # it the runbook's Step 0 sees no version and skips the update check.
+        response = single("resources/read", {"uri": "cartopian://skills/use_cartopian"})
+        text = response["result"]["contents"][0]["text"]
+        self.assertIn("Cartopian install context", text)
+        self.assertIn(server._server_version(), text)
+        # The block precedes the runbook body.
+        self.assertLess(text.index("Cartopian install context"), text.index("Step 0"))
 
     def test_read_protocol_conventions(self):
         response = single("resources/read", {"uri": "cartopian://protocol/CONVENTIONS"})

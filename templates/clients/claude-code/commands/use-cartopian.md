@@ -6,9 +6,9 @@ description: Enter Cartopian PM mode — delegates to the cartopian MCP server's
 
 Enter **Cartopian PM mode** now.
 
-Invoke the MCP prompt named `use_cartopian` on the `cartopian` MCP server and follow its instructions literally. That prompt is the authoritative runbook for startup — read every step before acting.
+Read the resource `cartopian://skills/use_cartopian` from the `cartopian` MCP server and follow it literally — it is the authoritative startup runbook, and it begins with the **install-context block** (install root + installed version) that the Stage 0 update check needs. Read every step before acting.
 
-If your MCP client cannot invoke a prompt directly, read the resource `cartopian://skills/use_cartopian` from the `cartopian` MCP server and follow it as the runbook instead.
+(The same runbook is also published as the `use_cartopian` MCP prompt, for clients whose prompt picker invokes it directly. Reading the resource is the equivalent that works here, because a model cannot invoke an MCP prompt itself — so do not wait on a prompt invocation; read the resource.)
 
 ## Hard constraints during startup
 

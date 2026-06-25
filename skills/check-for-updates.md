@@ -4,12 +4,16 @@ Check whether a newer Cartopian release is available and, on operator approval, 
 
 **Output:** Either confirmation that Cartopian is current, or a refreshed install at the latest release with operator-owned files (`cartopian.toml`, `projects.json`) preserved.
 
+**How this skill is invoked.** Cartopian skills are **not** native Claude Code skills — `Skill("check_for_updates")` returns *Unknown skill*. They are served by the Cartopian MCP server as a **prompt** (`check_for_updates`) and a **resource** (`cartopian://skills/check_for_updates`). Invoke the MCP prompt, or read the resource and follow it. The installed version is available without any lookup: the `use_cartopian` MCP prompt prepends an authoritative install-context block (install root + installed version + this upgrade skill), so you do not need to scan the filesystem to learn the running version.
+
+**Corporate / proxied networks.** This skill is designed to work where `raw.githubusercontent.com`, `codeload.github.com`, and the WebFetch tool are blocked (e.g. a Cisco Umbrella gateway). Every step uses only `api.github.com` (unauthenticated) and MCP-shipped content — no raw-content hosts, no `gh` auth, no WebFetch.
+
 ---
 
 ## Prerequisites
 
 - Cartopian is installed at the operator's install root (default: `~/.cartopian/` on Unix, `%USERPROFILE%\.cartopian\` on native Windows; otherwise the path the operator originally passed via `--prefix` to `scripts/install.py`).
-- Network access to `api.github.com` and `raw.githubusercontent.com`.
+- Network access to `api.github.com` (an unauthenticated GET — see Step 3). `raw.githubusercontent.com` is **not** required: the install runbook is read from the MCP resource (Step 5). On a proxied network that blocks raw-content hosts, this skill still completes.
 - Python 3.11+ on PATH (same prerequisite as `install-cartopian`).
 
 ---
@@ -35,7 +39,12 @@ Read `$install_root/VERSION`. It contains a single line: the git ref the install
 
 ### Step 3 — Fetch the latest release tag
 
-GET `https://api.github.com/repos/fidensa/cartopian/releases/latest`. Parse the JSON response and extract `tag_name`.
+Issue a plain **unauthenticated** HTTP GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and extract `tag_name`. Do **not** use `gh api` — it requires `gh auth login`, which is often unconfigured, and the unauthenticated REST call needs no credentials:
+
+- Unix: `curl -s https://api.github.com/repos/fidensa/cartopian/releases/latest`
+- Windows (PowerShell): `Invoke-RestMethod -Uri https://api.github.com/repos/fidensa/cartopian/releases/latest -UseBasicParsing`
+
+Parse the JSON response and extract `tag_name`.
 
 - If the API returns 404, no releases have been published yet. Report "no releases tagged upstream; latest tracked branch is `main`" and proceed to Step 5 with `latest_ref = "main"`.
 - If the request fails for any other reason, report the error and stop. Do not offer to upgrade on a failed lookup.
@@ -54,7 +63,7 @@ GET `https://api.github.com/repos/fidensa/cartopian/releases/latest`. Parse the 
 
 Ask the operator whether to upgrade now. If no, stop.
 
-If yes, run the install skill against the latest ref by fetching and following `https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md`. That runbook resolves the latest release, copies the tree into `$install_root` via `scripts/install.py --mode copy`, refreshes tool-shipped paths, and writes the new `VERSION`. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved by the installer.
+If yes, run the install skill against the latest ref. **Read the install runbook from the MCP resource `cartopian://skills/install_cartopian`** — the MCP server already ships it, so no external fetch is needed (and `raw.githubusercontent.com` is commonly proxy-blocked). Only if the MCP resource is genuinely unavailable, fall back to `https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md`. That runbook resolves the latest release, downloads the tree via the `api.github.com` tarball endpoint (no raw-content or `codeload` host required; on Windows it uses `Invoke-WebRequest`), copies it into `$install_root` via `scripts/install.py --mode copy`, refreshes tool-shipped paths, and writes the new `VERSION`. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved by the installer.
 
 **Scope: Steps 1–9 only.** Run the install runbook through Step 9 (verify) and **stop before Step 10** (Register the MCP server). Agent registration is a user-config write — for Codex it mutates `~/.codex/config.toml`, for Claude Desktop / Cursor / Windsurf it edits their JSON configs — and an update should not silently re-touch those files. Registration is handled explicitly in Step 6 below so the operator decides per-agent.
 
