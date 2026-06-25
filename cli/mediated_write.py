@@ -119,6 +119,22 @@ _CONFIG_BASENAMES = frozenset({"cartopian.toml", "cartopian.local.toml"})
 # cannot be used to bypass a check. Production never sets it.
 _concurrent_swap_hook: Optional[Callable[[], None]] = None
 
+# Whether this platform supports directory file descriptors / openat-style I/O
+# (POSIX). Native Windows does not: it has no O_DIRECTORY, cannot os.open a
+# directory, and os.supports_dir_fd is empty (no openat/renameat/unlinkat). The
+# writer pins the parent dir by fd where this holds, and falls back to a
+# path-based atomic write where it does not.
+# NB: os.supports_dir_fd lists os.rename (the renameat proxy os.replace rides
+# on), not os.replace itself, so the rename capability is probed via os.rename.
+_DIR_FD_SUPPORTED = (
+    hasattr(os, "O_DIRECTORY")
+    and {os.open, os.rename, os.unlink}.issubset(os.supports_dir_fd)
+)
+
+# Test-only seam: force the path-based fallback even on a dir-fd platform, so the
+# Windows write path gets coverage on POSIX CI. Production never sets it.
+_force_path_based: bool = False
+
 
 class GuardRefusal(Exception):
     """A write was refused fail-closed. ``rule`` names the violated rule.
@@ -339,7 +355,69 @@ def mediated_write(
     if _concurrent_swap_hook is not None:  # test-only injection seam
         _concurrent_swap_hook()
 
-    open_dir_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    if isinstance(content, str):
+        data = content.encode("utf-8")
+    elif isinstance(content, (bytes, bytearray)):
+        data = bytes(content)
+    else:
+        raise GuardRefusal("bad-content", "content must be str or bytes")
+
+    safe_mode = (mode & 0o777) & ~0o111  # never executable
+    tmp_name = f"{final_name}.cartmp.{os.getpid()}.{binascii.hexlify(os.urandom(8)).decode()}"
+
+    # Atomic, TOCTOU-re-verified write. Where the platform has directory file
+    # descriptors (POSIX), pin the parent dir and route every step through an
+    # openat-style fd so a path swap after canonicalization cannot redirect the
+    # write. Where it does not (native Windows: no O_DIRECTORY / openat / dir_fd),
+    # fall back to a path-based atomic write that keeps every guard above plus
+    # os.replace atomicity, but cannot pin the dir fd (a documented degradation
+    # of the anti-swap depth on those platforms).
+    if _DIR_FD_SUPPORTED and not _force_path_based:
+        _atomic_write_via_dir_fd(
+            canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+        )
+    else:
+        _atomic_write_via_path(
+            canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+        )
+
+    # Record mediated-writer provenance so an out-of-band change to this artifact
+    # is later distinguishable from a write that passed through here. Best-effort
+    # and fail-open (a missed record degrades to an advisory at audit).
+    record_provenance(real_root, candidate, data, action="mediated-write")
+
+    return {
+        "dest_kind": dest_kind,
+        "path": candidate,
+        "bytes": len(data),
+        "mode": safe_mode,
+    }
+
+
+def _silent_unlink(name: str, dir_fd: int) -> None:
+    try:
+        os.unlink(name, dir_fd=dir_fd)
+    except OSError:
+        pass
+
+
+def _silent_unlink_path(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _atomic_write_via_dir_fd(
+    canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+) -> None:
+    """POSIX write: pin the parent directory by an ``O_NOFOLLOW | O_DIRECTORY``
+    fd and route the temp create, write, and rename through it (openat/renameat),
+    so a path swap after canonicalization cannot redirect the write. Raises
+    :class:`GuardRefusal` on a TOCTOU mismatch or write failure."""
+    open_dir_flags = (
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
     try:
         dir_fd = os.open(canonical_parent, open_dir_flags)
     except OSError as exc:
@@ -348,17 +426,6 @@ def mediated_write(
         raise GuardRefusal(
             "toctou", f"parent directory could not be opened no-follow: {exc.strerror}"
         )
-
-    if isinstance(content, str):
-        data = content.encode("utf-8")
-    elif isinstance(content, (bytes, bytearray)):
-        data = bytes(content)
-    else:
-        os.close(dir_fd)
-        raise GuardRefusal("bad-content", "content must be str or bytes")
-
-    safe_mode = (mode & 0o777) & ~0o111  # never executable
-    tmp_name = f"{final_name}.cartmp.{os.getpid()}.{binascii.hexlify(os.urandom(8)).decode()}"
     tmp_created = False
     try:
         # Re-verify the chain still matches before we trust the pinned fd, and
@@ -392,11 +459,6 @@ def mediated_write(
             os.fsync(dir_fd)
         except OSError:
             pass  # directory fsync is best-effort; the replace already landed
-        # Record mediated-writer provenance so an out-of-band change to this
-        # artifact is later distinguishable from a write that passed through here.
-        # Best-effort and fail-open for the write (a missed record degrades to an
-        # advisory at audit, never a false guard).
-        record_provenance(real_root, candidate, data, action="mediated-write")
     except GuardRefusal:
         if tmp_created:
             _silent_unlink(tmp_name, dir_fd)
@@ -408,19 +470,51 @@ def mediated_write(
     finally:
         os.close(dir_fd)
 
-    return {
-        "dest_kind": dest_kind,
-        "path": candidate,
-        "bytes": len(data),
-        "mode": safe_mode,
-    }
 
-
-def _silent_unlink(name: str, dir_fd: int) -> None:
+def _atomic_write_via_path(
+    canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+) -> None:
+    """Fallback write for platforms without directory file descriptors / openat
+    (native Windows). Keeps every platform-agnostic guard plus ``os.replace``
+    atomicity and a final TOCTOU re-verification, but cannot pin the parent dir
+    by fd — a documented degradation of the anti-swap depth on those platforms.
+    Raises :class:`GuardRefusal` on a TOCTOU mismatch or write failure."""
+    tmp_path = os.path.join(canonical_parent, tmp_name)
+    final_path = os.path.join(canonical_parent, final_name)
+    # O_BINARY (Windows) stops the low-level write from translating LF->CRLF in
+    # text mode; it is 0 on POSIX. O_NOFOLLOW / O_EXCL guard the temp create.
+    open_flags = (
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
+    tmp_created = False
     try:
-        os.unlink(name, dir_fd=dir_fd)
-    except OSError:
-        pass
+        _reverify_chain(snapshot)
+        fd = os.open(tmp_path, open_flags, safe_mode)
+        tmp_created = True
+        try:
+            if hasattr(os, "fchmod"):
+                try:
+                    os.fchmod(fd, safe_mode)
+                except OSError:
+                    pass  # best-effort; the open mode already applied
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+        # Final TOCTOU re-verify immediately before the atomic swap.
+        _reverify_chain(snapshot)
+        os.replace(tmp_path, final_path)
+        tmp_created = False
+    except GuardRefusal:
+        if tmp_created:
+            _silent_unlink_path(tmp_path)
+        raise
+    except OSError as exc:
+        if tmp_created:
+            _silent_unlink_path(tmp_path)
+        raise GuardRefusal("write-failed", f"atomic write failed: {exc.strerror}")
 
 
 # ---------------------------------------------------------------------------
