@@ -98,7 +98,7 @@ Proceed only after operator confirmation.
 
 ## Stage 3 — Generate IMPLEMENTATION_PLAN.md
 
-Authoring `IMPLEMENTATION_PLAN.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body following the structure in `templates/IMPLEMENTATION_PLAN.md` and write it through the mediated writer:
+Authoring `IMPLEMENTATION_PLAN.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body following the structure in `cartopian://templates/IMPLEMENTATION_PLAN.md` and write it through the mediated writer:
 
 ```
 cartopian write-plan <project-root> --content-file <body-path>
@@ -108,7 +108,7 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Architecture rules:** Derive from any constraints stated in the external plan or the requirements source. Note the origin of each rule.
 
-**Repo topology:** Identify which repos are involved. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `templates/TASK.md`.
+**Repo topology:** Identify which repos are involved. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
 
@@ -157,7 +157,7 @@ If a reviewer is configured, run review checkpoint `003 phases`.
 
 Generate task files only for the **first active phase** (lowest-numbered phase with open work). Do not generate tasks for future phases — later phases may change as earlier work completes.
 
-For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `templates/TASK.md` (a **PM-performed** write):
+For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server (`cartopian://templates/<FILE>`), not files on your filesystem, so do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
 
 ```
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
@@ -173,7 +173,7 @@ Populate all fields:
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
 - `Evidence gate:` use judgment — `required` for code-producing tasks; `n/a` for research, documentation, or configuration tasks
 
-For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `templates/SPEC.md`:
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md`:
 
 ```
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>

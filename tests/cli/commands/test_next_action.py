@@ -47,6 +47,8 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "phase_id",
                 "active_task",
                 "next_open_task",
+                "next_unstarted_phase",
+                "plan_complete",
                 "pm_role",
                 "pm_dispatch_kind",
                 "blockers",
@@ -367,6 +369,79 @@ class TestNextActionBlockers(unittest.TestCase):
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["blockers"], [])
+
+
+class TestNextUnstartedPhaseHelper(unittest.TestCase):
+    """Pure logic of `_next_unstarted_phase` (FR-012)."""
+
+    _STEMS = ["PHASE-00-rulings", "PHASE-01-foundation", "PHASE-02-build"]
+
+    def test_picks_first_phase_after_last_with_tasks(self):
+        self.assertEqual(
+            next_action._next_unstarted_phase(self._STEMS, {
+                "PHASE-00-rulings": True,
+                "PHASE-01-foundation": True,
+                "PHASE-02-build": False,
+            }),
+            "PHASE-02-build",
+        )
+
+    def test_skips_earlier_task_less_phase(self):
+        # Phase 00 task-less (a completed rulings phase) is behind us, not "next".
+        self.assertEqual(
+            next_action._next_unstarted_phase(self._STEMS, {
+                "PHASE-00-rulings": False,
+                "PHASE-01-foundation": True,
+                "PHASE-02-build": False,
+            }),
+            "PHASE-02-build",
+        )
+
+    def test_none_when_every_phase_has_tasks(self):
+        self.assertIsNone(next_action._next_unstarted_phase(self._STEMS, {
+            "PHASE-00-rulings": True,
+            "PHASE-01-foundation": True,
+            "PHASE-02-build": True,
+        }))
+
+    def test_none_when_no_phases(self):
+        self.assertIsNone(next_action._next_unstarted_phase([], {}))
+
+
+class TestPlanCompletionTruth(unittest.TestCase):
+    """FR-012: a finished phase with a later un-generated phase is NOT plan
+    completion — `next_unstarted_phase` is surfaced and `plan_complete` is False,
+    so orientation proposes generating the next phase rather than closeout."""
+
+    def test_phase_done_next_phase_ungenerated_is_not_complete(self):
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-02-build.md", "# Phase 02\n")
+            # Phase 01's only task is DONE; Phase 02 exists but has no tasks yet.
+            scaffold.write(
+                "tasks/done/TASK-01-001-build.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+            )
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertIsNone(rec["active_task"])
+            self.assertIsNone(rec["next_open_task"])
+            self.assertEqual(rec["next_unstarted_phase"], "PHASE-02-build")
+            self.assertFalse(rec["plan_complete"])
+
+    def test_all_phases_done_is_complete(self):
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write(
+                "tasks/done/TASK-01-001-build.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+            )
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertIsNone(rec["next_unstarted_phase"])
+            self.assertTrue(rec["plan_complete"])
 
 
 if __name__ == "__main__":  # pragma: no cover

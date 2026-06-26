@@ -330,6 +330,56 @@ def _detect_disagreement(project_path: Path) -> Optional[str]:
     return "; ".join(disagreements) if disagreements else None
 
 
+def _phase_task_presence(project_path: Path) -> Dict[str, bool]:
+    """Map each phase stem → whether any task file (any status) references it.
+
+    A phase with no task files is *unstarted* — it exists in the plan but its
+    tasks have not been generated yet. This is the distinction `phase_id` /
+    `next_open_task` miss: both only see phases that already carry tasks.
+    """
+    phase_stems = _collect_phase_stems(project_path / "phases")
+    stem_set = set(phase_stems)
+    has_task = {stem: False for stem in phase_stems}
+    tasks_dir = project_path / "tasks"
+    for status in _ALL_STATUSES:
+        status_dir = tasks_dir / status
+        if not status_dir.is_dir():
+            continue
+        for entry in status_dir.iterdir():
+            if not (entry.is_file() and _TASK_FILENAME_RE.match(entry.name)):
+                continue
+            try:
+                content = entry.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            phase = _parse_phase_header(content)
+            if phase in stem_set:
+                has_task[phase] = True
+    return has_task
+
+
+def _next_unstarted_phase(phase_stems: List[str], has_task: Dict[str, bool]) -> Optional[str]:
+    """The next phase to generate tasks for: the earliest phase *after the last
+    phase that already has tasks* whose tasks have not been generated yet.
+
+    Searching after the last task-bearing phase means earlier task-less phases
+    (e.g. a completed rulings/contract phase) are treated as behind us, not
+    "next". Returns None only when every phase from there on already has tasks —
+    i.e. nothing is left to generate, so an empty open queue genuinely means the
+    plan is finished rather than merely un-generated.
+    """
+    if not phase_stems:
+        return None
+    last_with_tasks = -1
+    for index, stem in enumerate(phase_stems):
+        if has_task.get(stem):
+            last_with_tasks = index
+    for index in range(last_with_tasks + 1, len(phase_stems)):
+        if not has_task.get(phase_stems[index]):
+            return phase_stems[index]
+    return None
+
+
 def handler(args: argparse.Namespace) -> int:
     """Handle next-action command.
 
@@ -391,13 +441,32 @@ def handler(args: argparse.Namespace) -> int:
 
     tasks_dir = project_path / "tasks"
     phase_id = _find_phase_id(project_path)
+    active_task = _find_active_task(tasks_dir)
+    next_open_task = _find_next_open_task(project_path)
+
+    # Phase-aware completion truth (FR-012): an empty open queue does NOT imply
+    # the plan is done if later phases exist whose tasks were never generated.
+    phase_stems = _collect_phase_stems(project_path / "phases")
+    has_task = _phase_task_presence(project_path)
+    next_unstarted_phase = _next_unstarted_phase(phase_stems, has_task)
+    # The plan is complete only when there is nothing active, nothing open, no
+    # phase left to generate tasks for, AND at least one phase actually had
+    # tasks (an all-empty plan is un-started, not complete).
+    plan_complete = (
+        active_task is None
+        and next_open_task is None
+        and next_unstarted_phase is None
+        and any(has_task.values())
+    )
 
     record: Dict[str, Any] = {
         "project_id": project_id,
         "project_path": str(project_path),
         "phase_id": phase_id,
-        "active_task": _find_active_task(tasks_dir),
-        "next_open_task": _find_next_open_task(project_path),
+        "active_task": active_task,
+        "next_open_task": next_open_task,
+        "next_unstarted_phase": next_unstarted_phase,
+        "plan_complete": plan_complete,
         "pm_role": pm_role,
         "pm_dispatch_kind": pm_dispatch_kind,
         "blockers": _detect_blockers(project_path, phase_id, tasks_dir),

@@ -142,7 +142,7 @@ archive/PLAN-NNN-slug/
 
 ### 3.2 Write closeout summary
 
-Create `archive/PLAN-NNN-slug/CLOSEOUT.md` using `templates/PLAN_CLOSEOUT.md` as the starting structure.
+Create `archive/PLAN-NNN-slug/CLOSEOUT.md` using `cartopian://templates/PLAN_CLOSEOUT.md` as the starting structure.
 
 The closeout summary records:
 

@@ -16,7 +16,7 @@ Use this skill when another Cartopian skill needs to hand work to a human or con
 - The caller knows the role being assigned.
 - The caller knows the absolute prompt path to create or reuse.
 - The caller knows the expected absolute report path.
-- The caller knows the expected report variant from `templates/REPORT.md`.
+- The caller knows the expected report variant from `cartopian://templates/REPORT.md`.
 - The caller knows which lifecycle action, if any, is allowed after the report is accepted.
 - The absolute project path is known (selected from `cartopian discover-projects`) so `cartopian resolve-config <project-path>` can be run.
 
@@ -150,7 +150,7 @@ Return a blocked outcome when the wait reports `failed`, `failed-to-parse`, or `
 
 ## Stage 4 - Parse The Report
 
-Use the Core CLI to parse the report at the expected absolute report path and validate it against the applicable variant in `templates/REPORT.md`:
+Use the Core CLI to parse the report at the expected absolute report path and validate it against the applicable variant in `cartopian://templates/REPORT.md`:
 
 ```
 cartopian report-action <report-path>

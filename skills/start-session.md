@@ -48,7 +48,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
 
 Present a short summary to the operator from the returned record:
 
@@ -73,7 +73,8 @@ Convert the `next-action` record's `active_task` and `next_open_task` fields int
 - If `active_task` is non-null and its status is `in-progress`, ask whether to continue it with `run task`.
 - If `active_task` is non-null and its status is `in-review`, ask whether to process the review path with `run task`.
 - If `phase_id` is null and no plan exists for the project, ask whether to begin planning with `plan project`.
-- If the current plan is complete (no `active_task`, no `next_open_task`, and `phase_id` resolved), ask whether to close it with `close plan`.
+- If `next_unstarted_phase` is non-null — the open queue is empty but a later phase exists whose tasks have **not** been generated yet — the plan is **not** complete. Name that phase to the operator and ask whether to generate its tasks now (the planning skill's task-generation stage). Do **not** offer to close the plan in this case; an empty open queue with a later un-generated phase means "generate the next phase," not "plan done."
+- If `plan_complete` is true (no `active_task`, no `next_open_task`, no `next_unstarted_phase`, and the plan actually had tasks), the plan is genuinely finished — ask whether to close it with `close plan`.
 - If `active_task` is null and `next_open_task` is non-null, ask whether to start that task with `run task`.
 - If `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact, ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
 

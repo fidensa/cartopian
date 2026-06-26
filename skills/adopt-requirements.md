@@ -91,7 +91,7 @@ If working from a JIRA story, subtasks often map directly to functional requirem
 
 ## Step 3 — Generate REQUIREMENTS.md
 
-Authoring `REQUIREMENTS.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body using the template in `templates/REQUIREMENTS.md` as a structural guide — adapt sections to fit the actual project — and write it through the mediated writer:
+Authoring `REQUIREMENTS.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body using the template in `cartopian://templates/REQUIREMENTS.md` as a structural guide — adapt sections to fit the actual project — and write it through the mediated writer:
 
 ```
 cartopian write-requirements <project-root> --content-file <body-path>

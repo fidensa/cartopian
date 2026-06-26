@@ -129,7 +129,7 @@ If a reviewer is configured:
 
 1. Read the locked `REQUIREMENTS.md`.
 2. Read the current-cycle `STANDARDS.md` as technical constraints.
-3. Read the templates in `templates/IMPLEMENTATION_PLAN.md` for structural guidance.
+3. Read the templates in `cartopian://templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md
 
@@ -209,7 +209,7 @@ Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if start
 
 ### 4.2 Generate task files
 
-Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `templates/TASK.md`:
+Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md`. Read that template from the MCP resource — Cartopian templates are served by the MCP server (`cartopian://templates/<FILE>`), not files on your filesystem, so do **not** open `templates/...` as a path and do **not** infer the format by reading an existing task or report; read the template resource and follow it.
 
 ```
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
@@ -219,7 +219,7 @@ New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advance
 
 ### 4.3 Generate spec files
 
-For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `templates/SPEC.md` (a **PM-performed** write):
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md` (a **PM-performed** write):
 
 ```
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
@@ -285,14 +285,14 @@ The standard checkpoint sequence is:
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `templates/REPORT.md`.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`.
 2. Call `skills/run-handoff.md` with:
    - Role: `reviewer`
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`
    - Absolute report path: `<project>/reports/REPORT-PLAN-NNN-slug.md`
    - Expected report variant: planning-review completion
    - Allowed lifecycle action: return outcome to this skill
-3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `templates/REVIEW.md`.
+3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
 Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:
