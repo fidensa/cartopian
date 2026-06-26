@@ -209,7 +209,7 @@ Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if start
 
 ### 4.2 Generate task files
 
-Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md`. Read that template from the MCP resource — Cartopian templates are served by the MCP server (`cartopian://templates/<FILE>`), not files on your filesystem, so do **not** open `templates/...` as a path and do **not** infer the format by reading an existing task or report; read the template resource and follow it.
+Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md`. Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format by reading an existing task or report; read the template resource and follow it.
 
 ```
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>

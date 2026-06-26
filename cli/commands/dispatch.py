@@ -26,9 +26,10 @@ only route a contained PM has. Standard library only (NF-001).
 import argparse
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from cli.commands import handoff_packet
 from cli.commands.resolve_config import (
@@ -94,6 +95,20 @@ def _stderr_work_root(msg: str) -> None:
     import sys
 
     sys.stderr.write(f"[work-root] {msg}\n")
+
+
+def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) -> List[str]:
+    """Argv to launch the resolved agent with the prompt path.
+
+    A native-Windows ``.cmd``/``.bat`` is not a PE executable, so CreateProcess
+    (which backs ``subprocess.Popen`` on Windows) cannot run it directly — route
+    it through the command interpreter (``COMSPEC``). POSIX wrappers are
+    executable scripts and launch directly.
+    """
+    if is_windows and resolved_agent.lower().endswith((".cmd", ".bat")):
+        comspec = os.environ.get("COMSPEC", "cmd.exe")
+        return [comspec, "/c", resolved_agent, prompt_path]
+    return [resolved_agent, prompt_path]
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -345,9 +360,24 @@ def handler(args: argparse.Namespace) -> int:
         env[RECAPTURE_ENV] = "1"
     else:
         env.pop(RECAPTURE_ENV, None)
+    # Resolve the agent to a full path before launching. `subprocess.Popen` with
+    # a bare name uses CreateProcess on native Windows, which resolves only
+    # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
+    # ignores PATHEXT). `shutil.which` DOES honor PATHEXT, so it finds the `.cmd`
+    # on Windows and the extensionless wrapper script on POSIX. An absolute
+    # `[handoffs.<role>].agent` resolves through `shutil.which` unchanged.
+    resolved_agent = shutil.which(str(agent))
+    if resolved_agent is None:
+        stderr_error(
+            f"handoff agent not found on PATH: {agent} — install the wrapper "
+            f"(on native Windows the `.cmd` shim in wrappers/ps1 must be on PATH), "
+            f"or set [handoffs.{role}].agent to an absolute path"
+        )
+        return EXIT_FAIL
+    launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), os.name == "nt")
     try:
         proc = subprocess.Popen(  # noqa: S603 — agent is operator-configured, not PM input
-            [str(agent), str(prompt_path)],
+            launch_argv,
             cwd=launch_cwd,
             env=env,
             start_new_session=True,

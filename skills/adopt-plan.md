@@ -157,7 +157,7 @@ If a reviewer is configured, run review checkpoint `003 phases`.
 
 Generate task files only for the **first active phase** (lowest-numbered phase with open work). Do not generate tasks for future phases — later phases may change as earlier work completes.
 
-For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server (`cartopian://templates/<FILE>`), not files on your filesystem, so do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
+For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
 
 ```
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>

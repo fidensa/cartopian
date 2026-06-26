@@ -94,6 +94,7 @@ def _dispatch_capturing_env(task_path: str, role: str, recapture: bool, fake_hom
 
     out, err = io.StringIO(), io.StringIO()
     with mock.patch("cli.commands.dispatch.subprocess.Popen", side_effect=fake_popen), \
+            mock.patch("cli.commands.dispatch.shutil.which", side_effect=lambda cmd: cmd), \
             mock.patch("cli.commands.dispatch.Path.home", return_value=fake_home):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = dispatch.handler(args)

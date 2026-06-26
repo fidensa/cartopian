@@ -596,5 +596,55 @@ class TestDispatchNoRawExec(unittest.TestCase):
         self.assertIn('agent = role_handoff.get("agent")', dispatch_src)
 
 
+class TestDispatchAgentResolution(unittest.TestCase):
+    """The agent is resolved to a full path via `shutil.which` before launch, so
+    a Windows `.cmd` shim (which CreateProcess cannot find via a bare name) is
+    located, and an un-resolvable agent fails closed rather than dying with a
+    cryptic FileNotFoundError at Popen time."""
+
+    def test_agent_not_on_path_fails_closed(self):
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            work_root = scaffold.project_root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.toml",
+                _toml("cartopian-claude-does-not-exist-xyz", work_roots='"tool-repo"'),
+            )
+            scaffold.write(
+                "cartopian.local.toml", f'[work_roots]\ntool-repo = "{work_root}"\n'
+            )
+            task_path = _write_task_and_prompt(scaffold)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("handoff agent not found on PATH", stderr)
+
+    def test_build_launch_argv_windows_cmd_routes_through_comspec(self):
+        cmd = r"C:\cartopian\wrappers\ps1\cartopian-claude.cmd"
+        prompt = r"C:\proj\prompts\PROMPT-01-001.md"
+        with mock.patch.dict(
+            "cli.commands.dispatch.os.environ",
+            {"COMSPEC": r"C:\Windows\System32\cmd.exe"},
+            clear=False,
+        ):
+            argv = dispatch._build_launch_argv(cmd, prompt, is_windows=True)
+        self.assertEqual(argv, [r"C:\Windows\System32\cmd.exe", "/c", cmd, prompt])
+
+    def test_build_launch_argv_posix_launches_directly(self):
+        argv = dispatch._build_launch_argv(
+            "/usr/local/bin/cartopian-claude", "/proj/prompts/PROMPT-01-001.md", is_windows=False
+        )
+        self.assertEqual(argv, ["/usr/local/bin/cartopian-claude", "/proj/prompts/PROMPT-01-001.md"])
+
+    def test_build_launch_argv_windows_non_cmd_launches_directly(self):
+        # A resolved `.exe` (or anything not .cmd/.bat) runs directly even on Windows.
+        argv = dispatch._build_launch_argv(r"C:\tools\agent.exe", r"C:\p\PROMPT-01-001.md", is_windows=True)
+        self.assertEqual(argv, [r"C:\tools\agent.exe", r"C:\p\PROMPT-01-001.md"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
