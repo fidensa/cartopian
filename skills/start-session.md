@@ -22,8 +22,8 @@ Use the Core CLI to enumerate and resolve the target project:
 
 1. Enumerate registered projects via `cartopian discover-projects`. This emits NDJSON records with `id`, `path`, and `label`.
 2. If the operator named a registered `id` or absolute `path`, select that project.
-3. If exactly one project is registered, select it and name it to the operator.
-4. If more than one project is registered and none was selected, list the registered IDs and ask the operator to choose one; pause until a choice is made.
+3. If exactly one project is registered, name it to the operator and ask whether to open it or start a new project (`init project`) instead; pause until they choose, and select it only on explicit confirmation — do not auto-enter it. (A path/cwd mismatch is still not a reason to skip or filter it: the registry is authoritative; you are confirming the operator's choice, not second-guessing the registry.)
+4. If more than one project is registered and none was selected, list the registered IDs and ask the operator to choose one (or to start a new project with `init project`); pause until a choice is made.
 5. If no projects are registered, stop and run `init project` to scaffold, generate config, and register a project. Only in this case may cwd be proposed as a candidate scaffold location.
 
 Do not read or mutate project-specific lifecycle artifacts, and do not call `next-action` or any other lifecycle command, until a registered project is selected.

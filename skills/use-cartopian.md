@@ -31,7 +31,7 @@ Your first and only action in this step is to call the `discover_projects` MCP t
 
 Based on the result, take exactly one of these actions and then proceed to Step 2:
 
-- **One project registered** — select it and name it to the operator. A mismatch between the project's path and cwd is **not** a reason to skip it, scan cwd, or offer alternatives — the registry is authoritative. If the operator wants a different project, they will say so after you name it.
+- **One project registered** — name it to the operator and ask whether to open it or start a new project (`init_project`) instead; pause until they choose, and select it only on explicit confirmation — do not auto-enter it. A mismatch between the project's path and cwd is **not** a reason to skip it or scan cwd — the registry is authoritative; you are confirming the operator's choice, not second-guessing the registry.
 - **Multiple projects registered** — list them by `id` and ask the operator which to use; pause until they choose. Do not pre-filter the list by cwd.
 - **No projects registered** — stop and run the `init_project` skill to scaffold and register a project first. Only in this case may you consider cwd, and only as a candidate location to propose to the operator.
 
