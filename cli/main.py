@@ -5,6 +5,7 @@ surface every subcommand binds into. Every entry of
 ``SUBCOMMANDS`` is wired to a real handler in :func:`_real_handlers`.
 """
 import argparse
+import os
 import sys
 from typing import List, Optional, Sequence
 
@@ -185,6 +186,11 @@ def build_parser() -> _UsageParser:
         description="Cartopian Core CLI",
         add_help=True,
     )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="print the installed Cartopian version and exit",
+    )
     subparsers = parser.add_subparsers(dest="cmd", metavar="<subcommand>")
     real = _real_handlers()
     for name in SUBCOMMANDS:
@@ -195,11 +201,43 @@ def build_parser() -> _UsageParser:
     return parser
 
 
+def _resolve_version() -> str:
+    """The installed Cartopian ref. Read from the install root's ``VERSION`` file
+    (written by the installer); fall back to ``git describe`` in a dev checkout,
+    then to ``"unknown"``. Resolved lazily so it never runs git on a normal
+    command — only when ``--version`` is requested."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        with open(os.path.join(root, "VERSION"), encoding="utf-8") as fh:
+            ref = fh.read().strip()
+        if ref:
+            return ref
+    except OSError:
+        pass
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["git", "-C", root, "describe", "--tags", "--always", "--dirty"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # noqa: BLE001 — best-effort; any failure degrades to "unknown"
+        pass
+    return "unknown"
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(list(argv))
+    if getattr(args, "version", False):
+        print(f"cartopian {_resolve_version()}")
+        return EXIT_OK
     if not getattr(args, "cmd", None):
         stderr_usage("no subcommand given; try 'cartopian --help'")
         return EXIT_USAGE

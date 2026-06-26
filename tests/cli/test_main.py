@@ -42,6 +42,21 @@ class TestHelp(unittest.TestCase):
             self.assertIn(name, result.stdout, msg=f"missing subcommand {name} in --help")
 
 
+class TestVersion(unittest.TestCase):
+    def test_version_flag_prints_and_exits_zero(self):
+        result = _run("--version")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stderr, "")
+        # `cartopian <ref>` — the ref is the VERSION file (install) or a git
+        # describe / "unknown" (dev checkout); never an argparse error.
+        self.assertTrue(
+            result.stdout.startswith("cartopian "),
+            msg=f"expected 'cartopian <ref>', got: {result.stdout!r}",
+        )
+        self.assertNotIn("unrecognized arguments", result.stdout + result.stderr)
+        self.assertTrue(result.stdout.strip().split(" ", 1)[1], "version ref is empty")
+
+
 class TestUsageGuards(unittest.TestCase):
     def test_unknown_subcommand_exits_two_usage(self):
         result = _run("not-a-command")

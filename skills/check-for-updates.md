@@ -61,7 +61,7 @@ Parse the JSON response and extract `tag_name`.
 
 ### Step 5 — Offer upgrade
 
-Ask the operator whether to upgrade now. If no, stop.
+If you were invoked with the operator's upgrade **already approved** — e.g. from the `use_cartopian` Stage 0 update check, which already showed the version delta and got a "yes" — do **not** re-ask; proceed directly to the upgrade below. Otherwise (this skill was run standalone), ask the operator whether to upgrade now, and if no, stop.
 
 If yes, run the install skill against the latest ref. **Read the install runbook from the MCP resource `cartopian://skills/install_cartopian`** — the MCP server already ships it, so no external fetch is needed (and `raw.githubusercontent.com` is commonly proxy-blocked). Only if the MCP resource is genuinely unavailable, fall back to `https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md`. That runbook resolves the latest release, downloads the tree via the `api.github.com` tarball endpoint (no raw-content or `codeload` host required; on Windows it uses `Invoke-WebRequest`), copies it into `$install_root` via `scripts/install.py --mode copy`, refreshes tool-shipped paths, and writes the new `VERSION`. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved by the installer.
 
