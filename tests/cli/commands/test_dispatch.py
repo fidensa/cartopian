@@ -634,6 +634,36 @@ class TestDispatchAgentResolution(unittest.TestCase):
             argv = dispatch._build_launch_argv(cmd, prompt, is_windows=True)
         self.assertEqual(argv, [r"C:\Windows\System32\cmd.exe", "/c", cmd, prompt])
 
+    def test_build_launch_argv_windows_cmd_absent_comspec_uses_system_root(self):
+        # A curated process environment (e.g. the MCP server the harness spawns,
+        # in which dispatch runs in-process) can drop COMSPEC. The interpreter
+        # must still resolve to an absolute cmd.exe via %SystemRoot% rather than
+        # a fragile bare name.
+        cmd = r"C:\cartopian\wrappers\ps1\cartopian-claude.cmd"
+        prompt = r"C:\proj\prompts\PROMPT-01-001.md"
+        with mock.patch.dict(
+            "cli.commands.dispatch.os.environ",
+            {"SystemRoot": r"C:\Windows"},
+            clear=True,
+        ), mock.patch("cli.commands.dispatch.os.path.isfile", return_value=True):
+            argv = dispatch._build_launch_argv(cmd, prompt, is_windows=True)
+        expected_comspec = os.path.join(r"C:\Windows", "System32", "cmd.exe")
+        self.assertEqual(argv, [expected_comspec, "/c", cmd, prompt])
+
+    def test_resolve_comspec_prefers_comspec_then_system_root_then_which(self):
+        # COMSPEC wins when set.
+        with mock.patch.dict(
+            "cli.commands.dispatch.os.environ",
+            {"COMSPEC": r"C:\Windows\System32\cmd.exe"},
+            clear=True,
+        ):
+            self.assertEqual(dispatch._resolve_comspec(), r"C:\Windows\System32\cmd.exe")
+        # No COMSPEC, no SystemRoot, no PATH hit → last-resort bare name.
+        with mock.patch.dict("cli.commands.dispatch.os.environ", {}, clear=True), mock.patch(
+            "cli.commands.dispatch.shutil.which", return_value=None
+        ):
+            self.assertEqual(dispatch._resolve_comspec(), "cmd.exe")
+
     def test_build_launch_argv_posix_launches_directly(self):
         argv = dispatch._build_launch_argv(
             "/usr/local/bin/cartopian-claude", "/proj/prompts/PROMPT-01-001.md", is_windows=False

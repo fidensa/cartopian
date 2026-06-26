@@ -97,17 +97,42 @@ def _stderr_work_root(msg: str) -> None:
     sys.stderr.write(f"[work-root] {msg}\n")
 
 
+def _resolve_comspec() -> str:
+    """Absolute path to the Windows command interpreter (``cmd.exe``).
+
+    ``COMSPEC`` is the canonical source, but it is *not* guaranteed to be set:
+    a curated environment — e.g. the MCP server process the harness spawns, in
+    which ``dispatch`` runs in-process — can drop it. A bare ``"cmd.exe"`` then
+    rides on the executable search succeeding, which is fragile when a custom
+    ``env`` is handed to ``CreateProcess``. Resolve to an absolute path instead,
+    falling back through ``%SystemRoot%`` (set by the kernel for essentially
+    every process) and finally a PATH lookup before a last-resort bare name.
+    """
+    comspec = os.environ.get("COMSPEC")
+    if comspec:
+        return comspec
+    system_root = os.environ.get("SystemRoot") or os.environ.get("windir")
+    if system_root:
+        candidate = os.path.join(system_root, "System32", "cmd.exe")
+        if os.path.isfile(candidate):
+            return candidate
+    which = shutil.which("cmd.exe")
+    if which:
+        return which
+    return "cmd.exe"
+
+
 def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) -> List[str]:
     """Argv to launch the resolved agent with the prompt path.
 
     A native-Windows ``.cmd``/``.bat`` is not a PE executable, so CreateProcess
     (which backs ``subprocess.Popen`` on Windows) cannot run it directly — route
-    it through the command interpreter (``COMSPEC``). POSIX wrappers are
+    it through the command interpreter (``cmd.exe``), resolved to an absolute
+    path so an absent ``COMSPEC`` cannot strand the launch. POSIX wrappers are
     executable scripts and launch directly.
     """
     if is_windows and resolved_agent.lower().endswith((".cmd", ".bat")):
-        comspec = os.environ.get("COMSPEC", "cmd.exe")
-        return [comspec, "/c", resolved_agent, prompt_path]
+        return [_resolve_comspec(), "/c", resolved_agent, prompt_path]
     return [resolved_agent, prompt_path]
 
 
@@ -382,10 +407,17 @@ def handler(args: argparse.Namespace) -> int:
             env=env,
             start_new_session=True,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        # `which` already resolved the agent, so a FileNotFoundError here points
+        # at the *launch chain*, not the agent: most often the Windows command
+        # interpreter (an absent COMSPEC / unreachable cmd.exe) when routing a
+        # `.cmd` shim. Surface the missing file so the cause is unambiguous.
+        missing = getattr(exc, "filename", None) or launch_argv[0]
         stderr_error(
-            f"handoff agent not found: {agent} — install the wrapper on PATH or "
-            f"correct [handoffs.{role}].agent"
+            f"failed to launch handoff agent {agent}: could not start "
+            f"{missing!r} (resolved agent: {resolved_agent}). On native Windows "
+            f"this is usually the command interpreter — ensure cmd.exe is "
+            f"reachable; otherwise correct [handoffs.{role}].agent"
         )
         return EXIT_FAIL
     except OSError as exc:
