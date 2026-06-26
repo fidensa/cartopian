@@ -197,3 +197,18 @@ def test_no_unguarded_variable_colon_in_ps1():
         "Unguarded `$Name:` — PowerShell reads `Name:` as a scope qualifier; "
         "use `${Name}:` instead:\n" + "\n".join(offenders)
     )
+
+
+@pytest.mark.parametrize("wrapper", PS1_WRAPPERS)
+def test_ps1_wrapper_has_windows_cmd_shim(wrapper):
+    """Each PowerShell assignee wrapper needs a sibling `.cmd` shim so it
+    resolves as a bare command on Windows: `.PS1` is not in PATHEXT, and
+    `cartopian dispatch` launches the agent via CreateProcess, which cannot run
+    a `.ps1` directly. (Found in the wild: `cartopian-claude` was not on PATH on
+    a Windows install — only the `.ps1` shipped.)"""
+    cmd = PS1_DIR / (wrapper[: -len(".ps1")] + ".cmd")
+    assert cmd.exists(), f"missing Windows shim {cmd.name} for {wrapper}"
+    text = cmd.read_text(encoding="utf-8")
+    assert wrapper in text, f"{cmd.name} must invoke {wrapper}"
+    # Launches via PowerShell with -File (so args pass through verbatim).
+    assert "-File" in text and ("pwsh" in text or "powershell" in text)
