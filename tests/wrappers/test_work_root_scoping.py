@@ -112,6 +112,20 @@ def _run(wrapper, tool, prompt, roots, *, argv_file=None, extra_env=None):
     )
 
 
+def _granted_dirs(argv, flag, comma_join):
+    """Resolved directories carried by the wrapper's native scope flag.
+
+    ``--add-dir`` repeats once per dir; ``--include-directories`` is one flag with
+    a comma-joined value. Returns realpaths so comparisons are symlink-stable.
+    """
+    out = []
+    for i, a in enumerate(argv):
+        if a == flag and i + 1 < len(argv):
+            parts = argv[i + 1].split(",") if comma_join else [argv[i + 1]]
+            out.extend(os.path.realpath(p) for p in parts)
+    return out
+
+
 # --- GREEN: a scopable tool launches scoped to the union, with NO bypass ------
 
 
@@ -268,7 +282,8 @@ def test_scopable_tool_bypass_still_takes_precedence(tmp_path, wrapper, tool, fl
 @pytest.mark.parametrize("wrapper,tool,flag,comma_join", SCOPABLE)
 def test_scopable_tool_recapture_stays_readonly(tmp_path, wrapper, tool, flag, comma_join):
     """Under reviewer recapture the source work root stays READ-ONLY: scoping must
-    NOT widen it — no native writable-scope flag is emitted for the source root."""
+    NOT grant it writable. The prompt's own dir is still granted so the reviewer
+    can read its assigned prompt; the reviewed source root is not."""
     prompt = _make_project(tmp_path)
     product = tmp_path / "product"
     product.mkdir()
@@ -283,9 +298,14 @@ def test_scopable_tool_recapture_stays_readonly(tmp_path, wrapper, tool, flag, c
     assert proc.returncode == 0, f"{wrapper}: recapture path regressed\nstderr:\n{proc.stderr}"
     assert "read-only source work root:" in proc.stderr
     argv = argv_file.read_text(encoding="utf-8").splitlines() if argv_file.exists() else []
-    # The source root is NOT granted as a writable scope under recapture.
-    assert flag not in argv, (
-        f"{wrapper}: recapture widened writable scope with {flag}\nargv:\n{argv}"
+    granted = _granted_dirs(argv, flag, comma_join)
+    # The reviewed source root is NOT granted writable under recapture.
+    assert os.path.realpath(str(product)) not in granted, (
+        f"{wrapper}: recapture widened writable scope to the source root\nargv:\n{argv}"
+    )
+    # The prompt's own dir IS granted, so the reviewer can open its assigned prompt.
+    assert os.path.realpath(str(Path(prompt).parent)) in granted, (
+        f"{wrapper}: prompt dir not granted; agent cannot read its prompt\nargv:\n{argv}"
     )
 
 
@@ -312,11 +332,12 @@ def test_scopable_tool_recapture_grants_report_dir(tmp_path, wrapper, tool, flag
 
     assert proc.returncode == 0, f"{wrapper}: recapture+report-dir regressed\nstderr:\n{proc.stderr}"
     argv = argv_file.read_text(encoding="utf-8").splitlines() if argv_file.exists() else []
+    granted = _granted_dirs(argv, flag, comma_join)
     # The report dir IS granted writable under recapture...
-    assert str(report_dir) in argv, (
+    assert os.path.realpath(str(report_dir)) in granted, (
         f"{wrapper}: report dir not granted under recapture\nargv:\n{argv}"
     )
     # ...but the read-only source work root is still NOT.
-    assert str(product) not in argv, (
+    assert os.path.realpath(str(product)) not in granted, (
         f"{wrapper}: recapture widened writable scope to the source root\nargv:\n{argv}"
     )

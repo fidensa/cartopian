@@ -16,14 +16,14 @@
                 NON-ZERO `exit_code` as the crash signal (status `failed`)
                 and ignores every other key. A zero exit_code is NOT a crash.
       - Absence is valid: wait-handoff falls back to the report-only path, so
-        this helper NEVER fails the wrapper — all errors degrade to a no-op.
+        this helper NEVER fails the wrapper -- all errors degrade to a no-op.
 
     Fields written (mirrors wrappers/bin/_cartopian-status.sh exactly):
       state=exited           always, once the assignee process has exited
       exit_code=<int>        the assignee exit code (124 for a timeout kill)
       reason=clean|error|timeout
 
-    No secrets or environment data are ever written — only the three fields
+    No secrets or environment data are ever written -- only the three fields
     above, all derived from the exit outcome.
 #>
 
@@ -52,11 +52,11 @@ function Get-CartopianStatusPath {
 
 # Return $true when the file at -ReportPath looks like a *complete* handoff
 # report: present, non-empty, and carrying a top-level
-# `Status: <complete|blocked|failed>` line — the authoritative completion
+# `Status: <complete|blocked|failed>` line -- the authoritative completion
 # signal `wait-handoff` keys off (it parses the same report). This is the
 # producer-side proxy the wrappers use to decide a handoff is done; it
 # deliberately accepts blocked/failed reports (a written report is a finished
-# handoff regardless of verdict — the PM reads the verdict). The `<` of the
+# handoff regardless of verdict -- the PM reads the verdict). The `<` of the
 # template placeholder (`Status: <complete | ...>`) does NOT match, so an
 # unfilled template is not mistaken for a finished report. Pure, no side
 # effects; any error degrades to "not complete" ($false). Mirrors
@@ -83,22 +83,22 @@ function Test-CartopianReportComplete {
 # parity).
 #
 # ROOT CAUSE this addresses: assignee CLIs can keep running after they have
-# written the report — MCP stdio servers not torn down, an inherited open
+# written the report -- MCP stdio servers not torn down, an inherited open
 # stdin, or a trailing turn leave the process alive with no more work to do.
 # The wrapper used to only WaitForExit on that process, so a finished handoff
-# sat idle until the deadline killed it (exit 124, reason=timeout) — a success
+# sat idle until the deadline killed it (exit 124, reason=timeout) -- a success
 # that always read as a deadline failure.
 #
 # The fix is event-driven, NOT a second timer. On the bash side coreutils
 # `timeout` enforces the single CARTOPIAN_TIMEOUT deadline; in PowerShell this
-# function IS that single enforcer — the deadline is computed ONCE from
+# function IS that single enforcer -- the deadline is computed ONCE from
 # -TimeoutSec and never extended, and the report watch merely wakes the same
 # wait loop in poll-sized slices (it imposes no clock of its own). Once the
 # report is complete the child gets a brief grace to exit on its own and is
 # then reaped, so the wrapper exits 0/clean promptly. A genuine hang never
 # writes a report, is never reaped early, and still hits the deadline (124).
 #
-# stdin is redirected from an empty temp file (immediate EOF — the PowerShell
+# stdin is redirected from an empty temp file (immediate EOF -- the PowerShell
 # equivalent of </dev/null) so the child can never block waiting on inherited
 # terminal input (one of the lingering modes).
 #
@@ -108,7 +108,7 @@ function Test-CartopianReportComplete {
 #          -ArgumentList its argv
 #          -TimeoutSec   the CARTOPIAN_TIMEOUT deadline in seconds (SSOT)
 # Returns: @{ ExitCode = <int>; TimedOut = <bool> }
-#          ExitCode 0 whenever the report is complete (report authoritative —
+#          ExitCode 0 whenever the report is complete (report authoritative --
 #          a reaped lingering child is a SUCCESS, not a kill); 124 on a
 #          genuine deadline kill; else the assignee's own exit code.
 # Tunables (env): CARTOPIAN_REPORT_POLL (seconds between polls; default 2)
@@ -145,7 +145,7 @@ function Invoke-CartopianSupervisedRun {
     }
     if ($stdinFile) { $startArgs['RedirectStandardInput'] = $stdinFile }
 
-    # The single SSOT deadline — computed once, never extended.
+    # The single SSOT deadline -- computed once, never extended.
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSec)
     $timedOut = $false
     try {
@@ -188,7 +188,7 @@ function Invoke-CartopianSupervisedRun {
 
     # The report file is authoritative: if it is complete, the handoff
     # succeeded regardless of how the lingering child was ultimately reaped
-    # (and even if the reap raced the deadline) — mirroring the bash helper.
+    # (and even if the reap raced the deadline) -- mirroring the bash helper.
     if (Test-CartopianReportComplete $ReportPath) {
         return @{ ExitCode = 0; TimedOut = $false }
     }
@@ -240,7 +240,7 @@ function Write-CartopianStatus {
         if ($dir -and -not (Test-Path -LiteralPath $dir)) {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
         }
-        # Newline-delimited key=value; "`n" only — the consumer's splitlines()
+        # Newline-delimited key=value; "`n" only -- the consumer's splitlines()
         # accepts LF and the format must match the Bash producer byte-for-byte.
         $content = "state=exited`nexit_code=$code`nreason=$reason`n"
         $tmp = "$StatusPath.tmp"
@@ -251,30 +251,13 @@ function Write-CartopianStatus {
     }
 }
 
-# Compose the coding directive a wrapper prepends to the prompt when the mediated
-# launcher exports CARTOPIAN_CODE_COMMENTS. The comment *volume* is operator
-# config; the management-identifier ban is always present, at every level, so
-# product code never carries planning identifiers. Mirrors the Bash
-# cartopian_comment_directive byte-for-byte. $Level = none|minimal|verbose
-# (unknown values fall closed to minimal).
-function Get-CartopianCommentDirective {
-    param([string]$Level)
-    $lvl = if ($Level) { $Level.ToLower() } else { 'minimal' }
-    switch ($lvl) {
-        'none'    { $volume = 'Write NO comments in the code you produce.' }
-        'verbose' { $volume = 'Explanatory comments are welcome where they aid understanding.' }
-        default   { $lvl = 'minimal'; $volume = 'Comment only genuinely non-obvious intent; no narration of what the code plainly does.' }
-    }
-    return "Code comments: $lvl - $volume Never write Cartopian project-management identifiers (FR-/DEC-/TASK-/BL-/OQ-/REVIEW- references, phase or plan ids) anywhere in product code or comments."
-}
-
 # Compute the native work-root scope flags a wrapper injects into its command.
 # Mirrors the Bash cartopian_enforce_work_roots: when the mediated launcher
 # provides CARTOPIAN_SCOPE_DIRS, use it verbatim (the launch cwd is the work
 # root, so resolve-config from cwd would resolve the wrong project); otherwise
 # fall back to resolve-config for standalone use. The report-target dir
-# (CARTOPIAN_REPORT_DIR) is always a writable grant — granted even under reviewer
-# recapture, when the work roots are withheld read-only — and is the only
+# (CARTOPIAN_REPORT_DIR) is always a writable grant -- granted even under reviewer
+# recapture, when the work roots are withheld read-only -- and is the only
 # management-project path ever granted. Fail-closed (exit 1) for a tool with no
 # native multi-directory scoping ($ScopeFlag empty), unless the per-tool
 # UNRESTRICTED bypass is set. Returns the array of flags to inject (possibly

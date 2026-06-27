@@ -74,7 +74,10 @@ if ! command -v gemini &>/dev/null; then
   exit 1
 fi
 
-PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
+# markdown body as a command-line argument is brittle across shells (it mangles
+# under PowerShell on the Windows wrapper); the agent opens the file itself.
+PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
 
 # Derive the optional status-file path now, before any cd, so a relative
 # prompt path still resolves. Empty when the prompt is outside a project.
@@ -143,6 +146,20 @@ CARTOPIAN_SCOPE_ARGS=()
 if command -v cartopian &>/dev/null; then
   cartopian_enforce_work_roots "cartopian-gemini" "${CARTOPIAN_GEMINI_UNRESTRICTED:-false}" "CARTOPIAN_GEMINI_UNRESTRICTED"
 fi
+# Grant the prompt file's directory (DEC-011: the project's PM artifacts stay out
+# of the workspace) so the agent can open the prompt path it was handed. Merge it
+# into the comma-separated --include-directories the guard built; add a fresh flag
+# if the guard emitted none. Anything else it needs is referenced inside the prompt.
+_cart_prompt_dir="$(dirname "$PROMPT_PATH_ABS")"
+_cart_merged=0
+for _i in "${!CARTOPIAN_SCOPE_ARGS[@]}"; do
+  if [[ "${CARTOPIAN_SCOPE_ARGS[$_i]}" == "--include-directories" ]]; then
+    CARTOPIAN_SCOPE_ARGS[$((_i+1))]="${CARTOPIAN_SCOPE_ARGS[$((_i+1))]},${_cart_prompt_dir}"
+    _cart_merged=1
+    break
+  fi
+done
+[ "$_cart_merged" -eq 0 ] && CARTOPIAN_SCOPE_ARGS+=(--include-directories "$_cart_prompt_dir")
 # --------------------------------------------------------------------
 
 # Reviewer recapture (agent-neutral): force gemini's OS sandbox ON so writes are
@@ -179,7 +196,7 @@ fi
 # before -p so the prompt is unambiguously -p's value.
 CMD+=(${CARTOPIAN_SCOPE_ARGS[@]+"${CARTOPIAN_SCOPE_ARGS[@]}"})
 
-CMD+=(-p "$PROMPT_CONTENT")
+CMD+=(-p "$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

@@ -31,7 +31,6 @@ else
   cartopian_review_recapture_banner() { return 0; }
   cartopian_extract_work_roots() { echo ""; }
   cartopian_enforce_work_roots() { return 0; }
-  cartopian_comment_directive() { echo ""; }
 fi
 # --------------------------------------------------------------------
 
@@ -79,14 +78,11 @@ if ! command -v claude &>/dev/null; then
   exit 1
 fi
 
-PROMPT_CONTENT="$(cat "$PROMPT_PATH")"
-
-# Prepend the operator-configured comment-volume directive plus the always-on
-# management-identifier ban when the mediated launcher set the level. Keeps the
-# policy out of the prompt file and applies it at coding time.
-if [[ -n "${CARTOPIAN_CODE_COMMENTS:-}" ]]; then
-  PROMPT_CONTENT="$(cartopian_comment_directive "$CARTOPIAN_CODE_COMMENTS")"$'\n\n'"$PROMPT_CONTENT"
-fi
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
+# markdown body as a command-line argument is brittle across shells (it mangles
+# under PowerShell on the Windows wrapper); the agent opens the file itself (its
+# directory is granted read access in the scope args below).
+PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
 
 # Derive the optional status-file path now, before any cd, so a relative
 # prompt path still resolves. Empty when the prompt is outside a project.
@@ -158,6 +154,10 @@ CARTOPIAN_SCOPE_ARGS=()
 if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
   cartopian_enforce_work_roots "cartopian-claude" "${CARTOPIAN_CLAUDE_UNRESTRICTED:-false}" "CARTOPIAN_CLAUDE_UNRESTRICTED"
 fi
+# Grant the prompt file's directory ONLY (DEC-011: the project's PM artifacts
+# stay out of scope) so the agent can open the prompt path it was handed.
+# Anything else it needs is referenced (by path/URI) inside the prompt.
+CARTOPIAN_SCOPE_ARGS+=(--add-dir "$(dirname "$PROMPT_PATH_ABS")")
 # --------------------------------------------------------------------
 
 # Reviewer recapture (agent-neutral): document the exact writable/read-only/
@@ -196,7 +196,7 @@ if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
 
-CMD+=("$PROMPT_CONTENT")
+CMD+=("$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

@@ -362,13 +362,6 @@ def handler(args: argparse.Namespace) -> int:
     env["CARTOPIAN_LAUNCH_CWD"] = launch_cwd
     env["CARTOPIAN_SCOPE_DIRS"] = "\n".join(work_root_dirs)
     env["CARTOPIAN_REPORT_DIR"] = report_dir
-    # Comment-volume directive: the resolved level (default `minimal`) is
-    # exported so the wrapper injects it — plus the always-on management-id ban
-    # — into the prompt at coding time.
-    code_comments = role_handoff.get("code_comments") or "minimal"
-    if str(code_comments).strip().lower() not in {"none", "minimal", "verbose"}:
-        code_comments = "minimal"  # unknown value fails closed to minimal
-    env["CARTOPIAN_CODE_COMMENTS"] = str(code_comments)
     # Agent-neutral model selection from the resolved [handoffs.<role>].model.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.
@@ -435,7 +428,6 @@ def handler(args: argparse.Namespace) -> int:
         "cwd": launch_cwd,
         "scope_dirs": grant_dirs,
         "report_dir": report_dir,
-        "code_comments": str(code_comments),
         "work_roots": work_roots,
         "recapture": recapture,
         "pid": proc.pid,

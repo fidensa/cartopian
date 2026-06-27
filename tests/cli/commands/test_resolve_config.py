@@ -107,7 +107,6 @@ class TestHappyPath(unittest.TestCase):
                 "model": None,
                 "auto_start": True,
                 "timeout": "60m",
-                "code_comments": None,
             },
         )
         self.assertEqual(

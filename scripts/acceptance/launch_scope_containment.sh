@@ -14,8 +14,8 @@
 #      governing project root is ABSENT.
 #   3. The wrapper actually ran claude in the work root and passed --add-dir
 #      flags matching that scope (work root + report dir, never the project).
-#   4. The comment-volume directive + management-id ban were injected into the
-#      prompt the agent received.
+#   4. The prompt was handed over as a FILE PATH (not embedded text), and the
+#      prompt's directory was granted so the agent can open it.
 #   5. The completion report still landed in the governing project's reports/.
 #
 # A SEPARATE manual step (printed at the end) covers the real-agent tool-scope
@@ -66,7 +66,6 @@ coder = "Implements tasks per spec."
 agent = "$WRAPPER"
 auto_start = true
 timeout = "5m"
-code_comments = "minimal"
 TOML
 
 cat > "$PROJ/cartopian.local.toml" <<TOML
@@ -90,9 +89,10 @@ MD
 
 # --- fake claude shim: record cwd + argv, write a minimal complete report ----
 # Stands in for `claude` on PATH. The wrapper invokes it as
-#   claude -p [--add-dir D ...] --dangerously-skip-permissions [--model M] "<prompt>"
-# so the prompt content is the final argument. The shim records everything it
-# was handed, then writes the completion report the wrapper supervises for.
+#   claude -p [--add-dir D ...] --dangerously-skip-permissions [--model M] "<prompt-path>"
+# so the final argument is the prompt FILE PATH (not its text). Like a real
+# agent, the shim reads the file at that path to obtain the prompt content, then
+# writes the completion report the wrapper supervises for.
 cat > "$SHIMBIN/claude" <<SHIM
 #!/usr/bin/env bash
 PROBE_CAPTURE="$CAP" python3 - "\$@" <<'PY'
@@ -100,7 +100,7 @@ import json, os, sys
 json.dump({"cwd": os.getcwd(), "argv": sys.argv[1:]},
           open(os.environ["PROBE_CAPTURE"], "w"))
 PY
-prompt="\${@: -1}"
+prompt="\$(cat "\${@: -1}")"
 rp="\$(printf '%s\n' "\$prompt" | sed -n 's/^Report path:[[:space:]]*//p' | head -1)"
 if [ -n "\$rp" ]; then
   mkdir -p "\$(dirname "\$rp")"
@@ -146,7 +146,6 @@ sd = [os.path.realpath(d) for d in rec.get("scope_dirs", [])]
 check(wr in sd, "scope includes the work root")
 check(reports in sd, "scope includes the report dir")
 check(proj not in sd, "scope EXCLUDES the governing project root")
-check(rec.get("code_comments") == "minimal", "code_comments resolved to minimal")
 
 # (3,4) wrapper + agent actuals, from the shim capture ----------------------
 cap_path = os.environ["CAP"]
@@ -161,10 +160,13 @@ else:
     check(wr in adds, "claude --add-dir includes the work root")
     check(reports in adds, "claude --add-dir includes the report dir")
     check(proj not in adds, "claude --add-dir EXCLUDES the governing project root")
-    prompt = argv[-1] if argv else ""
-    check(prompt.startswith("Code comments:"), "comment-volume directive injected into prompt")
-    check("Never write" in prompt and "identifiers" in prompt,
-          "management-identifier ban injected into prompt")
+    # New contract: the prompt is handed over as a FILE PATH (its dir is granted
+    # read access so the agent can open it), NOT as embedded prompt text.
+    prompt_path = os.path.realpath(os.path.join(proj, "prompts", "PROMPT-01-001.md"))
+    prompt_dir = os.path.dirname(prompt_path)
+    last_arg = os.path.realpath(argv[-1]) if argv else ""
+    check(last_arg == prompt_path, "prompt passed as the prompt FILE PATH (not text)")
+    check(prompt_dir in adds, "claude --add-dir includes the prompt dir (so it is readable)")
 
 # (5) report landed ---------------------------------------------------------
 check(os.path.isfile(os.environ["REPORT"]),

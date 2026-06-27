@@ -71,7 +71,10 @@ if (-not (Get-Command gemini -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$PromptContent = Get-Content -Path $PromptPath -Raw
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a
+# multi-KB markdown body as a command-line argument mangles under PowerShell
+# argument parsing; the agent opens the file itself.
+$PromptPathAbs = (Resolve-Path -LiteralPath $PromptPath).Path
 
 # Derive the optional status-file path now, before any Set-Location, so a
 # relative prompt path still resolves. $null when outside a project layout.
@@ -170,7 +173,7 @@ if ($Sandbox) {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-$Args += @('-p', $PromptContent)
+$Args += @('-p', $PromptPathAbs)
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -206,15 +209,15 @@ if ($ApprovalMode) {
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
-# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# single SSOT timer, enforced inside the supervisor) is untouched -- a genuine
 # hang that writes no report still hits it (exit 124). The watched report path
-# is the status path without its ".status" suffix (shared derivation —
+# is the status path without its ".status" suffix (shared derivation --
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
 $run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath gemini -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
-    Write-Host "cartopian-gemini: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
+    Write-Host "cartopian-gemini: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
 exit $run.ExitCode

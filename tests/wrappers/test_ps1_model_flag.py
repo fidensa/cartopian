@@ -29,10 +29,10 @@ MODEL_APPEND = "$Args += @('--model', $env:CARTOPIAN_MODEL)"
 # Each wrapper -> the trailing append that must come AFTER the model block so
 # the underlying CLI receives `--model <value>` before its positional/prompt.
 PS1_TAIL_APPEND = {
-    "cartopian-claude.ps1": "$Args += $PromptContent",
-    "cartopian-codex.ps1": "$Args += $PromptContent",
-    "cartopian-gemini.ps1": "$Args += @('-p', $PromptContent)",
-    "cartopian-devin.ps1": "$Args += @('--prompt-file', $EffectivePromptPath)",
+    "cartopian-claude.ps1": "$Args += $PromptPathAbs",
+    "cartopian-codex.ps1": "$Args += $PromptPathAbs",
+    "cartopian-gemini.ps1": "$Args += @('-p', $PromptPathAbs)",
+    "cartopian-devin.ps1": "$Args += @('--prompt-file', $PromptPathAbs)",
 }
 
 

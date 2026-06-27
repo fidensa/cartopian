@@ -34,7 +34,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
     function Get-CartopianScopeArgs { return @() }
-    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -70,13 +69,11 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$PromptContent = Get-Content -Path $PromptPath -Raw
-
-# Prepend the operator-configured comment-volume directive plus the always-on
-# management-identifier ban when the mediated launcher set the level.
-if ($env:CARTOPIAN_CODE_COMMENTS) {
-    $PromptContent = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + $PromptContent
-}
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a
+# multi-KB markdown body as a command-line argument mangles under PowerShell
+# argument parsing; the agent opens the file itself (its directory is granted
+# read access in the scope args below).
+$PromptPathAbs = (Resolve-Path -LiteralPath $PromptPath).Path
 
 # Derive the optional status-file path now, before any Set-Location, so a
 # relative prompt path still resolves. $null when outside a project layout.
@@ -118,8 +115,15 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 # explicit CARTOPIAN_SCOPE_DIRS / CARTOPIAN_REPORT_DIR (or falls back to
 # resolve-config for standalone use), validates the dirs, and fails closed on a
 # missing root. claude scopes natively, so it never fails closed on a present
-# multi-root union — it carries the union via --add-dir.
+# multi-root union -- it carries the union via --add-dir.
 $ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-claude' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CLAUDE_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CLAUDE_UNRESTRICTED'
+
+# The prompt file lives under the governing project, outside the work-root and
+# report scope (DEC-011). Grant its directory ONLY -- the PM artifacts
+# (requirements/decisions/tasks/backlog/state) stay out of scope -- so the agent
+# can open the prompt path it was handed. Anything else the agent needs is
+# referenced (by path/URI) inside the prompt the PM authored.
+$ScopeArgs += @('--add-dir', (Split-Path -Parent $PromptPathAbs))
 
 $Args = @('-p')
 if ($ScopeArgs.Count -gt 0) { $Args += $ScopeArgs }
@@ -141,7 +145,7 @@ if ($SkipPermissions) {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-$Args += $PromptContent
+$Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -174,15 +178,15 @@ Write-Host "cartopian-claude: running claude -p (tools=$TraceTools, skip-perms=$
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
-# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# single SSOT timer, enforced inside the supervisor) is untouched -- a genuine
 # hang that writes no report still hits it (exit 124). The watched report path
-# is the status path without its ".status" suffix (shared derivation —
+# is the status path without its ".status" suffix (shared derivation --
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
 $run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath claude -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
-    Write-Host "cartopian-claude: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
+    Write-Host "cartopian-claude: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
 exit $run.ExitCode

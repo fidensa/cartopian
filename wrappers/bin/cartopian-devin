@@ -31,7 +31,6 @@ else
   cartopian_review_recapture_banner() { return 0; }
   cartopian_extract_work_roots() { echo ""; }
   cartopian_enforce_work_roots() { return 0; }
-  cartopian_comment_directive() { echo ""; }
 fi
 # --------------------------------------------------------------------
 
@@ -255,19 +254,10 @@ esac
 if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
-# devin takes the prompt by file path, not content, so the comment-volume
-# directive + always-on management-id ban are prepended into a temp prompt file
-# (the original is the operator's and is never mutated). Status/report-path
-# derivation still uses the original PROMPT_PATH, so this only changes what devin
-# reads. Falls back to the original file when no directive level is set.
-EFFECTIVE_PROMPT_PATH="$PROMPT_PATH_ABS"
-if [[ -n "${CARTOPIAN_CODE_COMMENTS:-}" ]]; then
-  _CART_TMP_PROMPT="$(mktemp "${TMPDIR:-/tmp}/cartopian-devin-prompt.XXXXXX")"
-  trap 'rm -f "$_CART_TMP_PROMPT"' EXIT
-  { cartopian_comment_directive "$CARTOPIAN_CODE_COMMENTS"; printf '\n\n'; cat "$PROMPT_PATH_ABS"; } > "$_CART_TMP_PROMPT"
-  EFFECTIVE_PROMPT_PATH="$_CART_TMP_PROMPT"
-fi
-CMD+=(--prompt-file "$EFFECTIVE_PROMPT_PATH")
+# devin takes the prompt by file path (--prompt-file): pass the operator's
+# original prompt file directly. The CLI loads it, so no prompt body reaches the
+# command line (and the original is never mutated).
+CMD+=(--prompt-file "$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

@@ -384,28 +384,6 @@ cartopian_enforce_work_roots() {
   exit 1
 }
 
-# --- Comment-volume directive ----------------------------------------------
-# Echo the one-paragraph coding directive a wrapper prepends to the prompt when
-# the mediated launcher exports CARTOPIAN_CODE_COMMENTS. The comment *volume* is
-# operator config; the management-identifier ban is always present, at every
-# level, so product code never carries planning identifiers. Agent-neutral:
-# every wrapper composes the same text. Args: $1 = level (none|minimal|verbose;
-# unknown values fall closed to minimal).
-cartopian_comment_directive() {
-  local level
-  level="$(printf '%s' "${1:-minimal}" | tr '[:upper:]' '[:lower:]')"
-  local volume
-  case "$level" in
-    none)    volume="Write NO comments in the code you produce." ;;
-    verbose) volume="Explanatory comments are welcome where they aid understanding." ;;
-    *)       level="minimal"  # normalize unknown values so the label is honest
-             volume="Comment only genuinely non-obvious intent; no narration of what the code plainly does." ;;
-  esac
-  printf '%s %s\n' \
-    "Code comments: ${level} — ${volume}" \
-    "Never write Cartopian project-management identifiers (FR-/DEC-/TASK-/BL-/OQ-/REVIEW- references, phase or plan ids) anywhere in product code or comments."
-}
-
 # Write the status file capturing the assignee exit outcome. A best-effort,
 # fail-open producer: any error (unwritable dir, missing path) degrades to a
 # no-op so the wrapper's own exit code is never disturbed.

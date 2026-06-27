@@ -46,7 +46,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
     function Get-CartopianScopeArgs { return @() }
-    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -78,13 +77,11 @@ if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$PromptContent = Get-Content -Path $PromptPath -Raw
-
-# Prepend the operator-configured comment-volume directive plus the always-on
-# management-identifier ban when the mediated launcher set the level.
-if ($env:CARTOPIAN_CODE_COMMENTS) {
-    $PromptContent = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + $PromptContent
-}
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a
+# multi-KB markdown body as a command-line argument mangles under PowerShell
+# argument parsing; the agent opens the file itself (its directory is granted
+# read access in the scope args below).
+$PromptPathAbs = (Resolve-Path -LiteralPath $PromptPath).Path
 
 # Derive the optional status-file path now, before any Set-Location, so a
 # relative prompt path still resolves. $null when outside a project layout.
@@ -128,6 +125,11 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 # work roots + report dir) into the workspace-write sandbox.
 $ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-codex' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CODEX_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CODEX_UNRESTRICTED'
 
+# Grant the prompt file's directory ONLY (DEC-011: the project's PM artifacts
+# stay out of scope) so the agent can open the prompt path it was handed.
+# Anything else it needs is referenced (by path/URI) inside the prompt.
+$ScopeArgs += @('--add-dir', (Split-Path -Parent $PromptPathAbs))
+
 $Args = @('exec', '--skip-git-repo-check')
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
 # resolved [handoffs.<role>].model; translate it into codex's --model flag.
@@ -152,7 +154,7 @@ if ($env:CARTOPIAN_REVIEW_RECAPTURE) {
 if ($RecaptureActive -and -not $Bypass -and $Sandbox -eq 'workspace-write') {
     $Args += @('-c', 'sandbox_workspace_write.network_access=true')
 }
-$Args += $PromptContent
+$Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -188,15 +190,15 @@ if ($Bypass) {
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
-# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# single SSOT timer, enforced inside the supervisor) is untouched -- a genuine
 # hang that writes no report still hits it (exit 124). The watched report path
-# is the status path without its ".status" suffix (shared derivation —
+# is the status path without its ".status" suffix (shared derivation --
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
 $run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath codex -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
-    Write-Host "cartopian-codex: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
+    Write-Host "cartopian-codex: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
 exit $run.ExitCode

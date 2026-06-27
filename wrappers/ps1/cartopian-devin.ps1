@@ -34,7 +34,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
     function Get-CartopianScopeArgs { return @() }
-    function Get-CartopianCommentDirective { param([string]$Level) return '' }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -61,14 +60,14 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # Abstract mode -> composition:
 #   normal        both surfaces: --permission-mode normal
 #   accept-edits  four-mode: --permission-mode accept-edits
-#                 two-mode:  NO equivalent — FAIL CLOSED before launch
+#                 two-mode:  NO equivalent -- FAIL CLOSED before launch
 #   bypass        both surfaces: --permission-mode bypass (two-mode alias of
 #                 `dangerous`; auto-approve all, NO OS sandbox)
 #   autonomous    four-mode: --sandbox --permission-mode autonomous
 #                 two-mode:  --sandbox --permission-mode dangerous
 #                 (same posture: auto-approve-all bounded by the OS sandbox)
 # DEFAULT = 'autonomous': most-restrictive sensible mode that still completes
-# the handoff with no human in the loop — the analogue of cartopian-codex's
+# the handoff with no human in the loop -- the analogue of cartopian-codex's
 # `workspace-write` sandbox default (OS-bounded autonomy, not full bypass).
 # devin stays tier-3 not-recommended; the local --sandbox does not extend to
 # devin's cloud /handoff. Legacy values are mapped onto the abstract modes:
@@ -97,11 +96,11 @@ if (-not (Get-Command devin -ErrorAction SilentlyContinue)) {
 # --- Permission-surface detection ------------------------------------
 # Probe the installed binary's ARGV PARSER, not its help prose: a parser that
 # ACCEPTS `--permission-mode autonomous` (exit 0 with --help appended) is the
-# four-mode surface; one that rejects it at parse (exit 2 — the live
+# four-mode surface; one that rejects it at parse (exit 2 -- the live
 # `devin 2026.5.26-3` behavior) is the two-mode surface, immune to help-text
-# wording drift. Any probe failure — non-zero exit, a spawn that throws, or
+# wording drift. Any probe failure -- non-zero exit, a spawn that throws, or
 # a probe that exceeds the 10s bound (killed; a hanging probe must not stall
-# the wrapper outside the supervisor's SSOT deadline) — degrades to two-mode,
+# the wrapper outside the supervisor's SSOT deadline) -- degrades to two-mode,
 # the live-verified surface, never to a guessed flag value the binary would
 # reject at launch. Mirrors wrappers/bin/cartopian-devin.
 $DevinSurface = 'two-mode'
@@ -197,18 +196,10 @@ if ($PermissionMode -eq 'autonomous') {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-# devin takes the prompt by file, not content, so the comment-volume directive
-# plus the always-on management-identifier ban are prepended into a temp prompt
-# file (the operator's original is never mutated). Status/report-path derivation
-# still uses the original prompt path, so this only changes what devin reads.
-$EffectivePromptPath = $PromptPathAbs
-if ($env:CARTOPIAN_CODE_COMMENTS) {
-    $tmpPrompt = [System.IO.Path]::GetTempFileName()
-    $body = (Get-CartopianCommentDirective $env:CARTOPIAN_CODE_COMMENTS) + "`n`n" + (Get-Content -Path $PromptPathAbs -Raw)
-    Set-Content -LiteralPath $tmpPrompt -Value $body -NoNewline -Encoding utf8
-    $EffectivePromptPath = $tmpPrompt
-}
-$Args += @('--prompt-file', $EffectivePromptPath)
+# devin takes the prompt by file path (--prompt-file): pass the operator's
+# original prompt file directly. The CLI loads it, so no prompt body reaches the
+# command line (and the original is never mutated).
+$Args += @('--prompt-file', $PromptPathAbs)
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -240,19 +231,15 @@ Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, surfa
 # cartopian_run_supervised): once the authoritative report file appears, a
 # lingering child is reaped promptly so a finished handoff exits 0/clean
 # instead of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the
-# single SSOT timer, enforced inside the supervisor) is untouched — a genuine
+# single SSOT timer, enforced inside the supervisor) is untouched -- a genuine
 # hang that writes no report still hits it (exit 124). The watched report path
-# is the status path without its ".status" suffix (shared derivation —
+# is the status path without its ".status" suffix (shared derivation --
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
 $run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath devin -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
-    Write-Host "cartopian-devin: timeout after $TimeoutSpec — process killed (exit 124)" -ForegroundColor DarkYellow
+    Write-Host "cartopian-devin: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
-# Remove the directive-enriched temp prompt (parity with the bash wrapper's trap).
-if ($EffectivePromptPath -ne $PromptPathAbs) {
-    Remove-Item -LiteralPath $EffectivePromptPath -Force -ErrorAction SilentlyContinue
-}
 exit $run.ExitCode

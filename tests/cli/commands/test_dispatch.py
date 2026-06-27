@@ -121,11 +121,9 @@ def _toml(
     work_roots: str = "",
     timeout: str = "30m",
     model: str = "",
-    code_comments: str = "",
 ) -> str:
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
-    cc_line = f'code_comments = "{code_comments}"\n' if code_comments else ""
     return (
         "[project]\n"
         'id = "dispatch-proj"\n'
@@ -139,7 +137,6 @@ def _toml(
         "[handoffs.coder]\n"
         f'agent = "{agent}"\n'
         f"{model_line}"
-        f"{cc_line}"
         "auto_start = true\n"
         f'timeout = "{timeout}"\n'
     )
@@ -237,7 +234,6 @@ class TestDispatchPositive(unittest.TestCase):
             scope_resolved = [str(Path(d).resolve()) for d in rec["scope_dirs"]]
             self.assertIn(str((project_root / "reports").resolve()), scope_resolved)
             self.assertNotIn(str(project_root), scope_resolved)
-            self.assertEqual(rec["code_comments"], "minimal")
 
             # Non-blocking: dispatch returned well before the stub's 0.6s sleep.
             self.assertLess(
@@ -314,38 +310,6 @@ class TestDispatchPositive(unittest.TestCase):
                     time.sleep(0.05)
             self.assertIsNotNone(cap, "stub wrapper did not run")
             self.assertIsNone(cap["model"])
-
-
-    def test_code_comments_resolves_and_fails_closed_to_minimal(self) -> None:
-        # The resolved code_comments level is emitted and exported;
-        # an unknown value fails closed to `minimal`, a valid one is honored.
-        for configured, expected in (("none", "none"), ("bogus", "minimal"), ("", "minimal")):
-            with self.subTest(configured=configured), \
-                    project_scaffold(cartopian_toml="") as scaffold, \
-                    tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
-                tmp_path = Path(tmp)
-                stub = _make_stub(tmp_path)
-                work_root = scaffold.project_root / "tool-repo"
-                work_root.mkdir()
-                scaffold.write(
-                    "cartopian.toml",
-                    _toml(str(stub), work_roots='"tool-repo"', code_comments=configured),
-                )
-                scaffold.write(
-                    "cartopian.local.toml",
-                    f'[work_roots]\ntool-repo = "{work_root}"\n',
-                )
-                task_path = _write_task_and_prompt(scaffold)
-                fake_home = tmp_path / "home"
-                fake_home.mkdir()
-
-                env = {"STUB_CAPTURE": str(tmp_path / "capture.json"), "STUB_NO_REPORT": "1"}
-                with mock.patch.dict(os.environ, env, clear=False):
-                    stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
-
-                self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
-                rec = json.loads(stdout.strip())
-                self.assertEqual(rec["code_comments"], expected)
 
 
 class TestDispatchFailClosed(unittest.TestCase):
