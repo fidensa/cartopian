@@ -1,4 +1,0 @@
-expected_sentinel: NO_SHELL_TOOL
-transcript_state: OK
-result_final_line: 'NO_SHELL_TOOL'
-MATCH (standalone trailing line): PASS

@@ -283,18 +283,13 @@ Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin) are in `w
 
 ### Launch Directory
 
-Assignee CLIs run with cwd set to the **cartopian project root** — the absolute path recorded for the selected project in the registry (FR-003). The shipped wrappers resolve and `cd` to that path automatically; the prompt path passed to the wrapper carries the project root in its prefix (`<project-root>/prompts/PROMPT-NN-NNN.md`) so derivation is unambiguous. No "parent" or "shared workspace" directory is involved in the launch contract.
+Assignee CLIs run with cwd set to the **cartopian project root** — the absolute path recorded for the selected project in the registry (FR-003). The shipped wrappers resolve and `cd` to that path automatically; the prompt path passed to the wrapper carries the project root in its prefix (`<project-root>/prompts/PROMPT-NN-NNN.md`) so derivation is unambiguous. `cartopian dispatch` sets `CARTOPIAN_LAUNCH_CWD` to the same project root. No "parent" or "shared workspace" directory is involved in the launch contract.
 
-Locations outside the cartopian project root are declared as **work roots** (see [Work Roots](#work-roots) below). The launcher consumes the resolved, absolute path set emitted by `cartopian resolve-config <project>` and grants the agent read/write access to the **union of**:
+**Wrappers are neutral launchers.** A wrapper translates env → CLI flags, sets the cwd, runs the agent **autonomously** (so the unattended handoff completes), enforces the `CARTOPIAN_TIMEOUT` deadline, and emits the status signal. It does **not** scope, sandbox, or gate the agent's filesystem access, and it cannot assume the agent's role — the same wrapper may back any operator-defined role. Locations outside the project root that a task needs (declared as **work roots**, below) are referenced by absolute path/URI inside the prompt the PM authors; the wrapper does not grant or confine them.
 
-- the cartopian project root (also the launch cwd); and
-- every absolute path resolved from the task's `Work root:` names.
+Capability-based gating of what an agent may read or mutate is the **harness's** responsibility, not the launcher's. If approval-in-the-loop behavior is wanted for a role, run it on the manual path (`auto_start = false`) rather than through the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
 
-Nothing wider, nothing narrower.
-
-**Fail-closed default.** The wrapper does not launch the agent if any of the following hold: a declared work-root name has no per-machine path mapping (`resolve-config` exits non-zero); a resolved absolute path does not exist on disk; or the target tool's sandbox cannot scope the full union natively. The wrapper exits non-zero with a `[work-root]` stderr line naming the failure. The operator must fix the mapping, declare the missing root, remove the bogus declaration, or opt in to the per-tool unrestricted mode (per-invocation env var; see the wrapper-layer documentation).
-
-**Note for custom wrapper authors.** The cartopian project root is not automatically a git repository. Tools that refuse to run outside a git repo must be told to skip that check (the shipped wrappers do so unconditionally); the sandbox/permission model lives at the wrapper layer.
+**Note for custom wrapper authors.** The cartopian project root is not automatically a git repository. Tools that refuse to run outside a git repo must be told to skip that check (the shipped wrappers do so unconditionally). The autonomy/permission flags a wrapper passes live at the wrapper layer; capability gating lives in the harness.
 
 ### Work Roots
 
@@ -302,7 +297,7 @@ Work roots are the protocol mechanism that lets a cartopian project reference fi
 
 - The committed `<project-root>/cartopian.toml` declares a **name set** under `[project].work_roots`: an inline list of operator-chosen, platform-independent identifiers (e.g., `["product", "design"]`). The committed file carries no paths, keeping multi-operator and multi-machine use viable.
 - The per-machine `<project-root>/cartopian.local.toml` carries the **name → absolute-path mapping** for the current operator's machine, under a `[work_roots]` table. It is gitignored by `cartopian scaffold-project` and never committed.
-- `cartopian resolve-config <project>` merges the two files, validates that every declared name has a path mapping, and emits the resolved absolute paths as the single canonical form. Skills, wrappers, and launchers consume only the resolved output. Unmapped names exit non-zero with a `[work-root]` stderr line.
+- `cartopian resolve-config <project>` merges the two files, validates that every declared name has a path mapping, and emits the resolved absolute paths as the single canonical form. Skills and the PM consume the resolved output (e.g. to reference a work root by absolute path in the prompt they author). Unmapped names exit non-zero with a `[work-root]` stderr line.
 - Tasks reference work roots by **name** in the `Work root:` task-file field (see `templates/TASK.md`). The field is optional, comma-separated multi-valued, and rejects absolute paths, project-relative paths, and `<owner>/<repo>` slugs. Names absent from `[project].work_roots` cause `cartopian validate-task-readiness` to block the task.
 
 Optional automation policy:

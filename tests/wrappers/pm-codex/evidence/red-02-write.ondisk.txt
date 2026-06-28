@@ -1,4 +1,0 @@
-## RED surface write-probe on-disk result
-FILE EXISTS (capability present):
--rw-r--r--  1 scott  staff  20 Jun  1 14:40 /Users/scott/Projects/cartopian/tests/wrappers/pm-codex/codex-pm-surface/probe_write_artifact.txt
-RAW_WRITE_SUCCEEDED

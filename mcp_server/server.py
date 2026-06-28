@@ -75,48 +75,6 @@ SUMMARY_HEAD_BYTES = 4096
 # user-controlled `kind` from constructing arbitrary paths under a project root.
 PROJECT_KINDS = ("STATE", "REQUIREMENTS", "IMPLEMENTATION_PLAN")
 
-# Tools a CONTAINED PM must NOT reach. These create or mutate project *config* /
-# the project *registry*: generate_config and scaffold_project write
-# `cartopian.toml` to an arbitrary `project_path` — a filesystem-write escape
-# past the capability floor (the MCP server runs OUT of the per-tool native
-# sandbox, so the depth profile's deny_write_roots cannot stop it), and
-# register/unregister_project mutate the global registry. A contained PM operates an
-# already-selected project through read + lifecycle tools only; project/config
-# genesis is an uncontained setup operation. This is the SHARED floor: every *-pm
-# wrapper launches this server with CARTOPIAN_PM_CONTAINED=1
-# (wrappers/etc/mcp-cartopian-only.json), so withholding here covers gemini, codex,
-# AND Claude Code uniformly — no harness-specific allowlist needed. Absent the env
-# (operator shell / uncontained PM) the full toolset is exposed, so legacy behavior
-# is unchanged (NF-004).
-CONTAINED_DENIED_TOOLS = frozenset({
-    "generate_config",
-    "scaffold_project",
-    "register_project",
-    "unregister_project",
-})
-
-
-def _pm_is_contained() -> bool:
-    """True iff this server runs under the containment launch profile.
-
-    Reuses ``cli.commands._containment.pm_is_contained`` (the single source of
-    truth for the ``CARTOPIAN_PM_CONTAINED`` signal) when importable, and falls
-    back to reading the same env var directly so the gate is never silently
-    dropped if that import surface changes. Read per-request (not cached) so the
-    gate honors the process environment the launch wrapper set.
-    """
-    try:
-        root_str = str(ROOT)
-        if root_str not in sys.path:
-            sys.path.insert(0, root_str)
-        from cli.commands._containment import pm_is_contained  # noqa: WPS433
-        return pm_is_contained()
-    except Exception:  # pragma: no cover — defensive; never let import shape drop the gate
-        return os.environ.get("CARTOPIAN_PM_CONTAINED", "").strip().lower() in {
-            "1", "true", "yes", "on",
-        }
-
-
 class McpError(Exception):
     def __init__(self, code: int, message: str, data: Any = None) -> None:
         self.code = code
@@ -492,11 +450,8 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
 
 
 def list_tools() -> List[Dict[str, Any]]:
-    contained = _pm_is_contained()
     items: List[Dict[str, Any]] = []
     for tool_name, entry in sorted(_tool_registry().items()):
-        if contained and tool_name in CONTAINED_DENIED_TOOLS:
-            continue  # config/registry-genesis tools are withheld from a contained PM
         items.append({
             "name": tool_name,
             "description": f"Run `cartopian {entry['subcommand']}`.",
@@ -607,15 +562,6 @@ def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     registry = _tool_registry()
     if name not in registry:
         raise McpError(ERR_INVALID_PARAMS, f"unknown tool: {name}")
-    # Defense in depth: even if a contained PM names a withheld genesis tool
-    # directly (bypassing the filtered tools/list), refuse it fail-closed.
-    if name in CONTAINED_DENIED_TOOLS and _pm_is_contained():
-        raise McpError(
-            ERR_INVALID_PARAMS,
-            f"tool '{name}' is withheld under PM containment "
-            f"(CARTOPIAN_PM_CONTAINED): config/registry-genesis tools are not "
-            f"available to a contained PM.",
-        )
     entry = registry[name]
     argv = _kwargs_to_argv(entry["actions"], arguments or {})
     result = _invoke_cli(entry["subcommand"], argv)

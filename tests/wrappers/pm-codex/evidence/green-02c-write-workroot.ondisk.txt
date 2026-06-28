@@ -1,2 +1,0 @@
-## GREEN work-root write-probe on-disk result
-NO FILE CREATED (containment held): /Users/scott/Projects/cartopian/codex_pm_probe_artifact.txt absent

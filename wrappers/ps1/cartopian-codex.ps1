@@ -45,7 +45,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
-    function Get-CartopianScopeArgs { return @() }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -118,18 +117,6 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-# Native work-root union scoping via codex's workspace-write --add-dir. The
-# shared helper reads the mediated launcher's explicit CARTOPIAN_SCOPE_DIRS /
-# CARTOPIAN_REPORT_DIR (or falls back to resolve-config standalone), validates
-# the dirs, fails closed on a missing root, and carries the union (launch cwd +
-# work roots + report dir) into the workspace-write sandbox.
-$ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-codex' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CODEX_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CODEX_UNRESTRICTED'
-
-# Grant the prompt file's directory ONLY (DEC-011: the project's PM artifacts
-# stay out of scope) so the agent can open the prompt path it was handed.
-# Anything else it needs is referenced (by path/URI) inside the prompt.
-$ScopeArgs += @('--add-dir', (Split-Path -Parent $PromptPathAbs))
-
 $Args = @('exec', '--skip-git-repo-check')
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
 # resolved [handoffs.<role>].model; translate it into codex's --model flag.
@@ -141,18 +128,6 @@ if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'
 } elseif ($Sandbox) {
     $Args += @('--sandbox', $Sandbox)
-}
-if ($ScopeArgs.Count -gt 0) { $Args += $ScopeArgs }
-# Reviewer recapture: enable shell network for the workspace-write sandbox so the
-# probe harness can call the real codex. Network only; it does NOT widen the
-# writable filesystem scope (the work-root source stays read-only). No effect
-# under read-only / danger-full-access or a full bypass. Parity with the bash wrapper.
-$RecaptureActive = $false
-if ($env:CARTOPIAN_REVIEW_RECAPTURE) {
-    $RecaptureActive = @('1', 'true', 'yes', 'on') -contains $env:CARTOPIAN_REVIEW_RECAPTURE.ToLower()
-}
-if ($RecaptureActive -and -not $Bypass -and $Sandbox -eq 'workspace-write') {
-    $Args += @('-c', 'sandbox_workspace_write.network_access=true')
 }
 $Args += $PromptPathAbs
 

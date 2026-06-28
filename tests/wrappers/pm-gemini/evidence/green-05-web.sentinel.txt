@@ -1,4 +1,0 @@
-expected_sentinel: NO_WEB_TOOL
-transcript_state: OK
-result_final_line: 'NO_WEB_TOOL'
-MATCH (standalone trailing line): PASS

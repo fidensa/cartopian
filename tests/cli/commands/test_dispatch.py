@@ -225,15 +225,14 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(rec["model"], "stub-model-x")
             self.assertEqual(rec["prompt_path"], str(prompt_path))
             self.assertEqual(rec["timeout"], "30m")
-            # cwd is the primary work root, never the governing project.
-            self.assertEqual(rec["cwd"], rec["work_roots"][0]["absolute_path"])
-            self.assertEqual(Path(rec["cwd"]).name, "tool-repo")
-            self.assertNotEqual(Path(rec["cwd"]).resolve(), project_root)
+            # Neutral launcher: cwd is the cartopian project root (the agent
+            # opens the prompt it is handed). The wrapper is not the security
+            # boundary, so dispatch applies no work-root scoping.
+            self.assertEqual(Path(rec["cwd"]).resolve(), project_root)
             self.assertTrue(rec["expected_report_path"].endswith("/reports/REPORT-01-004.md"))
-            # Scope = work roots + only the report dir; the project root is absent.
-            scope_resolved = [str(Path(d).resolve()) for d in rec["scope_dirs"]]
-            self.assertIn(str((project_root / "reports").resolve()), scope_resolved)
-            self.assertNotIn(str(project_root), scope_resolved)
+            self.assertNotIn("scope_dirs", rec)
+            self.assertNotIn("work_roots", rec)
+            self.assertNotIn("recapture", rec)
 
             # Non-blocking: dispatch returned well before the stub's 0.6s sleep.
             self.assertLess(
@@ -263,9 +262,8 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(cap["argv"], [str(stub), str(prompt_path)])
             self.assertEqual(cap["timeout"], "30m")
             self.assertEqual(cap["model"], "stub-model-x")
-            # The wrapper actually ran with cwd = the work root.
-            self.assertEqual(Path(cap["cwd"]).name, "tool-repo")
-            self.assertNotEqual(os.path.realpath(cap["cwd"]), str(project_root))
+            # The wrapper actually ran with cwd = the cartopian project root.
+            self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
 
     def test_clears_stale_model_when_handoff_has_no_model(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
@@ -319,97 +317,6 @@ class TestDispatchFailClosed(unittest.TestCase):
         home = tmp_path / "home"
         home.mkdir()
         return home
-
-    def test_unmapped_work_root_fails_closed(self) -> None:
-        with project_scaffold(cartopian_toml="") as scaffold, \
-                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
-            tmp_path = Path(tmp)
-            stub = _make_stub(tmp_path)
-            capture = tmp_path / "capture.json"
-            # Declare a work root but provide NO cartopian.local.toml mapping.
-            scaffold.write("cartopian.toml", _toml(str(stub), work_roots='"tool-repo"'))
-            task_path = _write_task_and_prompt(scaffold)
-
-            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
-                stdout, stderr, rc = _dispatch(
-                    str(task_path), "coder", self._fake_home(tmp_path)
-                )
-
-            self.assertEqual(rc, EXIT_FAIL)
-            self.assertEqual(stdout, "")
-            self.assertIn("[work-root]", stderr)
-            self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
-
-    def test_missing_work_root_path_fails_closed(self) -> None:
-        with project_scaffold(cartopian_toml="") as scaffold, \
-                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
-            tmp_path = Path(tmp)
-            stub = _make_stub(tmp_path)
-            capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub), work_roots='"tool-repo"'))
-            # Map the work root to a path that does not exist on disk.
-            scaffold.write(
-                "cartopian.local.toml",
-                f'[work_roots]\ntool-repo = "{tmp_path / "nope"}"\n',
-            )
-            task_path = _write_task_and_prompt(scaffold)
-
-            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
-                stdout, stderr, rc = _dispatch(
-                    str(task_path), "coder", self._fake_home(tmp_path)
-                )
-
-            self.assertEqual(rc, EXIT_FAIL)
-            self.assertIn("[work-root]", stderr)
-            self.assertIn("does not exist", stderr)
-            self.assertFalse(capture.exists())
-
-    def test_no_work_root_declared_fails_closed(self) -> None:
-        # An assignee must run inside a work root, never the governing project.
-        # A project that declares no work root is refused, not launched in the
-        # project root (which would expose its management artifacts).
-        with project_scaffold(cartopian_toml="") as scaffold, \
-                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
-            tmp_path = Path(tmp)
-            stub = _make_stub(tmp_path)
-            capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub)))  # no work_roots
-            task_path = _write_task_and_prompt(scaffold)
-
-            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
-                stdout, stderr, rc = _dispatch(
-                    str(task_path), "coder", self._fake_home(tmp_path)
-                )
-
-            self.assertEqual(rc, EXIT_FAIL)
-            self.assertEqual(stdout, "")
-            self.assertIn("no work root", stderr)
-            self.assertFalse(capture.exists(), "wrapper launched despite no work root")
-
-    def test_work_root_equal_to_project_root_fails_closed(self) -> None:
-        # Defense in depth: a work root mapped onto the governing project root
-        # (or an ancestor) would expose the project's management artifacts.
-        with project_scaffold(cartopian_toml="") as scaffold, \
-                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
-            tmp_path = Path(tmp)
-            stub = _make_stub(tmp_path)
-            capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub), work_roots='"tool-repo"'))
-            scaffold.write(
-                "cartopian.local.toml",
-                f'[work_roots]\ntool-repo = "{scaffold.project_root}"\n',
-            )
-            task_path = _write_task_and_prompt(scaffold)
-
-            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
-                stdout, stderr, rc = _dispatch(
-                    str(task_path), "coder", self._fake_home(tmp_path)
-                )
-
-            self.assertEqual(rc, EXIT_FAIL)
-            self.assertIn("[work-root]", stderr)
-            self.assertIn("governing project root", stderr)
-            self.assertFalse(capture.exists())
 
     def test_missing_role_block_fails_closed(self) -> None:
         _TOML_NO_BLOCK = (

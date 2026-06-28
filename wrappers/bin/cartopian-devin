@@ -27,10 +27,6 @@ else
   cartopian_write_status() { return 0; }
   cartopian_report_complete() { return 1; }
   cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
-  cartopian_review_recapture_active() { return 1; }
-  cartopian_review_recapture_banner() { return 0; }
-  cartopian_extract_work_roots() { echo ""; }
-  cartopian_enforce_work_roots() { return 0; }
 fi
 # --------------------------------------------------------------------
 
@@ -77,10 +73,8 @@ fi
 # fails closed; an operator who must run unsandboxed sets
 # CARTOPIAN_DEVIN_PERMISSION=bypass (explicitly accepting the unbounded risk).
 #
-# REMINDER (FINDINGS.md): devin is tier-3 not-recommended-as-PM-host. The local
-# OS `--sandbox` does NOT extend to devin's cloud `/handoff` / cloud subagents.
-# This wrapper only corrects the flags it passes; it does not (and cannot)
-# change that containment posture or devin's tier.
+# NOTE: devin's local OS `--sandbox` does NOT extend to devin's cloud
+# `/handoff` / cloud subagents; this wrapper only sets the flags it passes.
 #
 # Legacy CARTOPIAN_DEVIN_PERMISSION values stay accepted and are mapped onto
 # the abstract modes so existing configs keep working:
@@ -184,37 +178,6 @@ else
   fi
 fi
 # --------------------------------------------------------------------
-
-# --- Access grants ---------------------------------------------------
-# Enforce the per-agent work-root scoping guard via the shared helper (so the
-# fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
-# The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
-# (non-zero + a [work-root] stderr line) on a missing or unscopable non-empty
-# work-root set, unless the per-tool unrestricted bypass or the agent-neutral
-# reviewer-recapture read-only path is active.
-#
-# NOTE: devin's wrapper posture has no local path-scoping sandbox, so under
-# reviewer recapture the read-only-source boundary is honored by contract (no
-# write grant added) and by devin's own execution isolation, not by a local
-# sandbox layer — prefer a locally-sandboxed reviewer agent (codex/gemini) for
-# hard review-integrity guarantees.
-#
-# Native work-root union scoping: the devin CLI exposes no local
-# multi-directory write-scoping flag, so this wrapper deliberately defines NO
-# cartopian_tool_scope_union hook. The shared guard therefore keeps it FAIL-CLOSED
-# on a non-empty work-root union (the `[work-root]` stderr line), with the
-# documented CARTOPIAN_DEVIN_UNRESTRICTED bypass as the only opt-out. Scope a
-# devin work-root task on its own hosted side, or use a locally-scopable wrapper.
-if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
-  cartopian_enforce_work_roots "cartopian-devin" "${CARTOPIAN_DEVIN_UNRESTRICTED:-false}" "CARTOPIAN_DEVIN_UNRESTRICTED"
-fi
-# --------------------------------------------------------------------
-
-# Reviewer recapture (agent-neutral): document the exact writable/read-only/
-# network scope once, listing any declared read-only source roots.
-if cartopian_review_recapture_active; then
-  cartopian_review_recapture_banner "cartopian-devin" "$PWD" "${WORK_ROOTS:-}"
-fi
 
 # Build the command, mapping the abstract mode onto the DETECTED surface (see
 # the Configuration block). On the four-mode surface `autonomous` requires the

@@ -33,7 +33,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
-    function Get-CartopianScopeArgs { return @() }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -155,17 +154,6 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
         Write-Host "cartopian-devin: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
     }
 }
-# --------------------------------------------------------------------
-
-# --- Access grants ---------------------------------------------------
-# devin exposes no native multi-directory write-scoping flag, so the shared
-# helper fails closed on a non-empty work-root scope (the [work-root] stderr
-# line) unless CARTOPIAN_DEVIN_UNRESTRICTED=true. It honors the mediated
-# launcher's explicit CARTOPIAN_SCOPE_DIRS even when cartopian is absent from
-# PATH, so a scoped dispatch never silently launches unscoped. Passing an empty
-# scope flag selects the no-native-scoping (fail-closed) path; devin injects no
-# scope args into its own command.
-$null = Get-CartopianScopeArgs -Wrapper 'cartopian-devin' -ScopeFlag '' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_DEVIN_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_DEVIN_UNRESTRICTED'
 # --------------------------------------------------------------------
 
 # Map the abstract mode onto the DETECTED surface (see Configuration). On the

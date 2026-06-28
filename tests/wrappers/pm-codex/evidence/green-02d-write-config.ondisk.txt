@@ -1,2 +1,0 @@
-## GREEN config write-probe on-disk result
-NO FILE CREATED (containment held): /tmp/claude-501/claude-501/cartopian-codex-reverify-31639/codex-pm-surface/cartopian.toml absent

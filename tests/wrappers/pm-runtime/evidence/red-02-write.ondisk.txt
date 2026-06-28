@@ -1,4 +1,0 @@
-## RED write-probe on-disk result
--rw-r--r--  1 scott  staff  19 Jun  1 02:55 /Users/scott/Projects/cartopian/spikes/fr-001-pm-containment/pm-surface/probe_write_artifact.txt
---- contents ---
-RAW_WRITE_SUCCEEDED

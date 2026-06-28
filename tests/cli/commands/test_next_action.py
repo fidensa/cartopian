@@ -61,10 +61,8 @@ class TestNextActionHappyPath(unittest.TestCase):
     """Happy-path test: valid project fixture → all required fields populated."""
 
     def test_all_fr001_fields_populated(self) -> None:
-        # Use a constrained (tier-1/2) PM harness: this test exercises field
-        # population, which is orthogonal to the advisory gate. A tier-3
-        # placeholder agent would (correctly) be blocked by that gate.
-        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n\n[handoffs.pm]\nagent = "cartopian-claude-pm"\n'
+        # This test exercises field population with a PM handoff configured.
+        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n\n[handoffs.pm]\nagent = "cartopian-claude"\n'
         state_md = (
             "# test-proj — State\n\n"
             "## Current phase\n\nPHASE-01-foundation\n\n"
@@ -211,9 +209,8 @@ class TestNextActionDispatchKind(unittest.TestCase):
             self.assertEqual(records[0]["pm_dispatch_kind"], "manual")
 
     def test_automated_when_handoff_pm_configured(self) -> None:
-        # A constrained (tier-1/2) harness keeps the dispatch-kind assertion
-        # (configured PM agent → automated) independent of the advisory gate.
-        toml = _TOML_BASE + "\n[handoffs.pm]\nagent = \"cartopian-claude-pm\"\n"
+        # A configured PM agent makes the dispatch kind "automated".
+        toml = _TOML_BASE + "\n[handoffs.pm]\nagent = \"cartopian-claude\"\n"
         with project_scaffold(cartopian_toml=toml) as scaffold:
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)

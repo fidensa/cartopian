@@ -5,12 +5,6 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli.commands._advisory_gate import evaluate_advisory_gate
-from cli.commands._containment import (
-    contained_pm_owned_git_block_message,
-    pm_is_contained,
-    resolve_pm_owns_product_branches,
-)
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
@@ -253,28 +247,7 @@ def handler(args: argparse.Namespace) -> int:
         global_toml = Path.home() / ".cartopian" / "cartopian.toml"
         global_cfg = _load_toml(global_toml, "global config") or {}
 
-        # Fail-closed guard: a contained PM cannot honor
-        # git.pm_owns_product_branches=true (no shell for git/gh). Refuse
-        # before any lifecycle data is resolved/emitted.
-        guard_msg = contained_pm_owned_git_block_message(
-            resolve_pm_owns_product_branches(global_cfg, project_cfg),
-            pm_is_contained(),
-        )
-        if guard_msg is not None:
-            raise _CliError(EXIT_FAIL, "guard", guard_msg)
-
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
-
-        # Advisory-tier surface: when the PM harness cannot be proven
-        # constrained to a lower trust tier, lifecycle orientation still
-        # proceeds and emits a visible advisory. A recorded acknowledgment
-        # can annotate the advisory, but is not a prerequisite for
-        # non-technical operators to open the project.
-        advisory = evaluate_advisory_gate(project_path, project_id)
-        if advisory.blocked:
-            raise _CliError(EXIT_FAIL, "guard", advisory.detail)
-        if advisory.advisory:
-            _stderr("advisory", advisory.advisory)
 
         roles = _resolve_roles(global_cfg, project_cfg)
         handoffs = _resolve_handoffs(global_cfg, project_cfg)

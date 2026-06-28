@@ -1,4 +1,0 @@
-READ DENIED (no-read-tool floor — the codex F1 residual is NOT present on gemini):
-read tool absent + no resource read this run: True
-model_final_line: 'NO_READ_TOOL'
-VERDICT: READ_DENIED — list_mcp_resources/read_mcp_resource removed at the floor (NO_READ_TOOL)

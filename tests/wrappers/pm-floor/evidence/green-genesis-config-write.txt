@@ -1,4 +1,0 @@
-scratch_dir: /tmp/claude-501/claude-501/claude-genesis-probe.PDrww7/scratch-proj
-refused_with_withheld: True
-cartopian_toml_on_disk: False
-VERDICT: CONFIG_WRITE_BLOCKED (genesis tool withheld, no file on disk): PASS

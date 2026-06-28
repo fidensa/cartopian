@@ -33,7 +33,6 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
     # Helper absent: degrade to the historical unsupervised run (deadline only;
     # no report path to watch without the helper's derivation).
     function Get-CartopianReportPath { param([string]$StatusPath) return $null }
-    function Get-CartopianScopeArgs { return @() }
     function Invoke-CartopianSupervisedRun {
         param([AllowEmptyString()][AllowNull()][string]$ReportPath,
               [string]$FilePath, [object[]]$ArgumentList, [int]$TimeoutSec)
@@ -110,23 +109,7 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-# Native work-root union scoping (launch cwd + declared work roots + report dir,
-# via claude's --add-dir). The shared helper reads the mediated launcher's
-# explicit CARTOPIAN_SCOPE_DIRS / CARTOPIAN_REPORT_DIR (or falls back to
-# resolve-config for standalone use), validates the dirs, and fails closed on a
-# missing root. claude scopes natively, so it never fails closed on a present
-# multi-root union -- it carries the union via --add-dir.
-$ScopeArgs = Get-CartopianScopeArgs -Wrapper 'cartopian-claude' -ScopeFlag '--add-dir' -CommaJoin $false -Unrestricted ($env:CARTOPIAN_CLAUDE_UNRESTRICTED -eq 'true') -VarName 'CARTOPIAN_CLAUDE_UNRESTRICTED'
-
-# The prompt file lives under the governing project, outside the work-root and
-# report scope (DEC-011). Grant its directory ONLY -- the PM artifacts
-# (requirements/decisions/tasks/backlog/state) stay out of scope -- so the agent
-# can open the prompt path it was handed. Anything else the agent needs is
-# referenced (by path/URI) inside the prompt the PM authored.
-$ScopeArgs += @('--add-dir', (Split-Path -Parent $PromptPathAbs))
-
 $Args = @('-p')
-if ($ScopeArgs.Count -gt 0) { $Args += $ScopeArgs }
 if ($AllowedTools) {
     $Args += @('--allowedTools', $AllowedTools)
 }

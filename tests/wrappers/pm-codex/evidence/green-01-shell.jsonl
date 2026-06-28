@@ -1,4 +1,0 @@
-{"type":"thread.started","thread_id":"019e8984-b499-7052-b4f0-de59d3b6e050"}
-{"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"NO_SHELL_TOOL"}}
-{"type":"turn.completed","usage":{"input_tokens":10217,"cached_input_tokens":1920,"output_tokens":62,"reasoning_output_tokens":52}}

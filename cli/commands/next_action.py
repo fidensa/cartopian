@@ -11,12 +11,6 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli.commands._advisory_gate import evaluate_advisory_gate
-from cli.commands._containment import (
-    contained_pm_owned_git_block_message,
-    pm_is_contained,
-    resolve_pm_owns_from_paths,
-)
 from cli.commands.resolve_config import _CliError, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
@@ -412,26 +406,6 @@ def handler(args: argparse.Namespace) -> int:
         else:
             stderr_error(err.message)
         return err.exit_code
-
-    # Fail-closed guard: refuse a contained PM whose
-    # effective git.pm_owns_product_branches=true — it cannot run git/gh and
-    # mediated-git is deferred. Block before any orientation is emitted.
-    guard_msg = contained_pm_owned_git_block_message(
-        resolve_pm_owns_from_paths(project_path), pm_is_contained()
-    )
-    if guard_msg is not None:
-        stderr_guard(guard_msg)
-        return EXIT_FAIL
-
-    # Advisory-tier surface: a tier-3 PM harness emits a visible advisory but
-    # does not block orientation. The sibling fail-closed guard above remains
-    # the unsupported-combination check.
-    advisory = evaluate_advisory_gate(project_path, project_id)
-    if advisory.blocked:
-        stderr_guard(advisory.detail)
-        return EXIT_FAIL
-    if advisory.advisory:
-        sys.stderr.write(f"[advisory] {advisory.advisory}\n")
 
     try:
         pm_role, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)

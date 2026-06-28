@@ -232,7 +232,7 @@ Cartopian wrappers always change directory to the **Cartopian project root** bef
 
 So `LAUNCH_CWD = <workspace>/projects/<project-id>`.
 
-Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly and aligns with the FR-012 contract enforced by `skills/run-handoff.md`. Access to outside-the-project resources is explicitly granted via resolved absolute work-root paths (OQ-009) rather than by broadening cwd.
+Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly. The prompt the PM authors references any outside-the-project resources (work roots, etc.) by absolute path/URI; the wrapper does not itself scope or gate the agent's filesystem access — that is the harness's job (capability-based gating), not the launcher's.
 
 If the prompt is not inside a recognizable Cartopian project layout (missing the `prompts/` marker on its path), the wrapper leaves cwd unchanged and prints a notice. This keeps the wrappers usable in ad-hoc test harnesses.
 
@@ -256,22 +256,9 @@ A `CARTOPIAN_LAUNCH_CWD` value that does not point to an existing directory is a
 
 There is no `cartopian.toml` field for this. The launch cwd is treated as environment, not protocol: it varies per machine and per operator preference, and putting it in toml would invite drift between the recorded path and the actual filesystem.
 
-## Work-root union scoping
+## Scope and gating
 
-When a task declares **work roots** (`protocol/CONVENTIONS.md` → Launch Directory / Work Roots), the wrapper must grant the assignee the **union** of the launch cwd (the Cartopian project root) and each resolved work-root absolute path — *nothing wider, nothing narrower*. The shared helper `cartopian_enforce_work_roots` (in `bin/_cartopian-status.sh`) resolves that union via `cartopian resolve-config` and, for a tool whose sandbox can scope a multi-directory union **natively**, grants it by injecting the tool's native multi-directory flags so the agent launches **scoped to the union** — no blanket bypass. The launch cwd is already each tool's primary writable scope, so only the declared roots are added.
-
-A wrapper opts into native scoping by defining a `cartopian_tool_scope_union` hook (the helper detects it with `declare -F` and calls it). A new wrapper inherits the whole mechanism by defining that one hook; a wrapper with no hook stays fail-closed-or-bypass. The resolved per-tool mechanisms:
-
-| Wrapper | Native mechanism | What it does |
-| --- | --- | --- |
-| `cartopian-claude` | `--add-dir <dir>` per declared root | "Additional directories to allow tool access to" — extends the tool-access scope to the union. (Claude's autonomous posture has no OS-level path sandbox, so this is a tool-layer grant, not a kernel sandbox.) |
-| `cartopian-codex` | `codex exec --add-dir <DIR>` per declared root | "Additional directories that should be writable alongside the primary workspace" — extends the `workspace-write` sandbox's writable roots to the union. Added only in the sandboxed branch; under `--dangerously-bypass-approvals-and-sandbox` the sandbox is off and the union is moot. |
-| `cartopian-gemini` | `--include-directories <dirs>` (comma-joined) | "Additional directories to include in the workspace" — extends gemini's workspace (the writable/in-context scope) to the union. |
-| `cartopian-devin` | _(none)_ | The devin CLI exposes no local multi-directory write-scoping flag, so this wrapper defines **no** scope hook and stays **fail-closed** on a non-empty work-root union (`[work-root]` stderr line), with the `CARTOPIAN_DEVIN_UNRESTRICTED` bypass as the only opt-out. Scope a devin work-root task on its hosted side, or use a locally-scopable wrapper. |
-
-**Fail-closed default is preserved.** A resolved root that is missing on disk fails closed (`[work-root] missing: <path>`), and a non-empty union a tool cannot scope natively fails closed (`[work-root] tool cannot scope multi-root access; set <VAR>=true to bypass (dangerous)`). The per-tool unrestricted bypass (`CARTOPIAN_<AGENT>_UNRESTRICTED=true`) remains the documented full-access opt-out and **takes precedence over native scoping** — set it only when you deliberately want unscoped access. The operator-visible launch prints one `scoped work root: <path>` line per granted root.
-
-**Reviewer-recapture is unchanged.** When `CARTOPIAN_REVIEW_RECAPTURE` is active the reviewed source work root stays **read-only**: the guard returns before native scoping runs, so no writable-scope flag is emitted for the source (the recapture writable scope stays exactly the launch cwd + `$TMPDIR`/`/tmp`, plus egress). Outside recapture, a work root is part of the general read/write union and *is* scoped writable — the read-only-source narrowing is a recapture-only property. See [Reviewer live-evidence recapture](#reviewer-live-evidence-recapture--exact-scope).
+The wrappers are **neutral launchers**. They do not scope, sandbox, or gate the agent's filesystem access — they run the agent autonomously so the unattended handoff completes, and capability-based gating is the **harness's** responsibility, not the launcher's. If you want approval-in-the-loop behavior for a role, run it manually (`auto_start = false`) instead of through the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
 
 ## Configuration
 
@@ -281,19 +268,8 @@ A wrapper opts into native scoping by defining a `cartopian_tool_scope_union` ho
 | --- | --- | --- |
 | `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline for the dispatched handoff. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). Set by the PM from the resolved `[handoffs.<role>].timeout`. When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
 | `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection. Exported by `cartopian dispatch` from the resolved `[handoffs.<role>].model`; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model` — all four shipped wrappers honor it). Unset means the tool's own default model; dispatch never exports a stale inherited value when the handoff sets no model. |
-| `CARTOPIAN_REVIEW_RECAPTURE` | _(unset)_ | Agent-neutral, opt-in, **reviewer live-evidence recapture** signal (TASK-03-007, FR-011). When truthy (`1`/`true`/`yes`/`on`), every wrapper treats the declared work roots as the **read-only source under review** (never added to the writable scope) and grants **network egress** so the reviewer can re-run the task's probe harness and reproduce the live evidence instead of trusting the assignee's pinned artifacts. The signal carries **no agent name** — it attaches to the reviewer role — so a new wrapper inherits the behavior by sourcing the shared helper. It is normally exported by `cartopian dispatch --recapture`, which only does so for a reviewer handoff on a task that declares `Evidence gate: required` (opt-in + evidence-gated); a review with no such gate is completely unaffected (no network, no scratch change). |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
-
-#### Reviewer live-evidence recapture — exact scope
-
-When `CARTOPIAN_REVIEW_RECAPTURE` is active the writable filesystem scope is **exactly the launch cwd plus `$TMPDIR`/`/tmp`** — the probe harness scratch where the relocated runtime home and the fresh evidence are written. The reviewed source work root stays **read-only**: it is never added to the writable scope, so a reviewer cannot edit the implementation it reviews. Network, when granted, **adds egress only** — it does not widen the writable filesystem scope.
-
-How each wrapper realizes the contract (the signal handling is identical via the shared `cartopian_review_recapture_active` / `cartopian_review_recapture_banner` helper in `_cartopian-status.sh`; the read-only-source *enforcement layer* depends on the tool):
-
-- **Codex** — `--sandbox workspace-write` roots writes at the launch cwd + `$TMPDIR`/`/tmp`, keeping the source work root read-only at the sandbox layer; recapture additionally sets `-c sandbox_workspace_write.network_access=true` for egress.
-- **Gemini** — recapture forces the OS sandbox (`--sandbox`) on, which roots writes at the launch cwd (+ temp) and keeps the source read-only while retaining egress.
-- **Claude / Devin** — honor the same signal and print the same scope banner, and never add a write grant for the source; their autonomous wrapper posture has no local path-scoping sandbox, so the read-only-source boundary is held by contract (and, for Devin, by its own execution isolation) rather than a local sandbox layer. Prefer a locally-sandboxed reviewer agent (codex/gemini) when a hard review-integrity guarantee at the sandbox layer is required.
 
 ### Codex
 
@@ -327,17 +303,7 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_DEVIN_PERMISSION` | `autonomous` | **Abstract** permission mode, mapped at launch onto whichever permission surface the installed `devin` binary exposes (the wrapper probes the binary's **parser acceptance** of `--permission-mode autonomous`, bounded by a 10s timeout — exit 0 → four-mode, anything else → two-mode; see `tests/wrappers/pm-devin/FINDINGS.md` § Live-binary re-probe). On the newer **four-mode** surface: `normal` → `--permission-mode normal` (writes/shell prompt — blocks a headless handoff), `accept-edits` → `--permission-mode accept-edits` (shell still prompts), `bypass` → `--permission-mode bypass` (auto-approve all, **no** OS sandbox), `autonomous` → `--sandbox --permission-mode autonomous` (auto-approve all but OS-sandbox-bounded). On the live-verified **two-mode** surface (`devin 2026.5.26-3`: only `normal`/`dangerous` + aliases are valid): `normal` and `bypass` compose unchanged (both are valid spellings there), `autonomous` → `--sandbox --permission-mode dangerous` (the same posture: auto-approval bounded by devin's own OS sandbox), and `accept-edits` **fails closed** before launch (no equivalent exists). Default `autonomous` is the most-restrictive sensible mode that still completes the handoff with no human in the loop — the analogue of Codex's `workspace-write` sandbox default rather than full bypass. Set `bypass` to run unsandboxed (accepting the unbounded risk). Legacy values map onto the abstract modes: `auto` → `normal`, `dangerous` → `bypass`. Devin remains **tier-3 not-recommended-as-PM-host** (`tests/wrappers/pm-devin/FINDINGS.md`); the local `--sandbox` does not extend to its cloud `/handoff`. |
-
-## PM containment wrappers — toolchain pinning
-
-The `cartopian-*-pm` containment wrappers (`bin/cartopian-claude-pm`, `-codex-pm`, `-gemini-pm`) launch a **contained PM**, not an assignee. Beyond their hard-coded capability floor, they enforce a **pinned toolchain** contract at launch (BL-007):
-
-- The Cartopian MCP command is resolved from `etc/mcp-cartopian-only.json` and its identity — command path, toolchain root, `VERSION` — is printed to stderr, so "which code did the PM run?" is explicit and auditable.
-- If the resolved toolchain root is a **git work tree** (an editable checkout — the tree assignees mutate during handoffs), the wrapper **fails closed** before launching the harness. The supported toolchain is the file-copy install produced by `scripts/install.py` (e.g. `~/.cartopian`).
-- `CARTOPIAN_PM_TOOLCHAIN_DEV=1` is a loud, per-invocation development-only opt-out; it prints a warning that coder edits to `cli/`/`mcp_server/` can alter the PM mid-session.
-
-The installed `bin/cartopian` / `bin/cartopian-mcp` entrypoint shims pin `sys.path` to their own install root, so work-root edits never change the installed toolchain's resolution (pinned by `tests/wrappers/test_pm_toolchain_insulation.py`).
+| `CARTOPIAN_DEVIN_PERMISSION` | `autonomous` | **Abstract** permission mode, mapped at launch onto whichever permission surface the installed `devin` binary exposes (the wrapper probes the binary's **parser acceptance** of `--permission-mode autonomous`, bounded by a 10s timeout — exit 0 → four-mode, anything else → two-mode; see `tests/wrappers/pm-devin/FINDINGS.md` § Live-binary re-probe). On the newer **four-mode** surface: `normal` → `--permission-mode normal` (writes/shell prompt — blocks a headless handoff), `accept-edits` → `--permission-mode accept-edits` (shell still prompts), `bypass` → `--permission-mode bypass` (auto-approve all, **no** OS sandbox), `autonomous` → `--sandbox --permission-mode autonomous` (auto-approve all but OS-sandbox-bounded). On the live-verified **two-mode** surface (`devin 2026.5.26-3`: only `normal`/`dangerous` + aliases are valid): `normal` and `bypass` compose unchanged (both are valid spellings there), `autonomous` → `--sandbox --permission-mode dangerous` (the same posture: auto-approval bounded by devin's own OS sandbox), and `accept-edits` **fails closed** before launch (no equivalent exists). Default `autonomous` is the most-restrictive sensible mode that still completes the handoff with no human in the loop — the analogue of Codex's `workspace-write` sandbox default rather than full bypass. Set `bypass` to run unsandboxed (accepting the unbounded risk). Legacy values map onto the abstract modes: `auto` → `normal`, `dangerous` → `bypass`. Note: devin's local `--sandbox` does not extend to its cloud `/handoff`. |
 
 ## Alternative installation
 

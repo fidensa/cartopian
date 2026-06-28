@@ -1,7 +1,0 @@
-expected_sentinel: NO_SHELL_TOOL
-result_final_line: 'NO_SHELL_TOOL'
-MATCH (standalone trailing line): PASS
---- full result text ---
-I don't have a Bash, shell, or exec tool available in this environment. My available tools are all Cartopian project-management commands (and the standard file/memory tools) — none of them can run arbitrary shell commands like `id`.
-
-NO_SHELL_TOOL

@@ -41,10 +41,6 @@ else
   cartopian_write_status() { return 0; }
   cartopian_report_complete() { return 1; }
   cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
-  cartopian_review_recapture_active() { return 1; }
-  cartopian_review_recapture_banner() { return 0; }
-  cartopian_extract_work_roots() { echo ""; }
-  cartopian_enforce_work_roots() { return 0; }
 fi
 # --------------------------------------------------------------------
 
@@ -61,14 +57,6 @@ CODEX_SANDBOX="${CARTOPIAN_CODEX_SANDBOX:-workspace-write}"
 # Only enable inside an externally-sandboxed environment (CI container,
 # VM, etc.). Equivalent to `--dangerously-bypass-approvals-and-sandbox`.
 CODEX_BYPASS="${CARTOPIAN_CODEX_BYPASS:-false}"
-
-# Reviewer live-evidence re-capture is NOT a codex-specific flag. It is the
-# agent-agnostic, opt-in, evidence-gated reviewer-role launch contract
-# (CARTOPIAN_REVIEW_RECAPTURE) parsed by the shared helper
-# `cartopian_review_recapture_active` sourced above, so every wrapper honors it
-# identically. codex realizes it below via the workspace-write sandbox
-# (writes rooted at the launch cwd + $TMPDIR; the source work root read-only)
-# plus a network-access grant for live probe re-capture.
 # ------------------------------------------------------------------
 
 readonly PROMPT_PATH="${1:-}"
@@ -92,8 +80,7 @@ fi
 
 # Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
 # markdown body as a command-line argument is brittle across shells (it mangles
-# under PowerShell on the Windows wrapper); the agent opens the file itself (its
-# directory is granted read access in the scope args below).
+# under PowerShell on the Windows wrapper); the agent opens the file itself.
 PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
 
 # Derive the optional status-file path now, before any cd, so a relative
@@ -132,50 +119,6 @@ else
 fi
 # --------------------------------------------------------------------
 
-# --- Access grants --------------------------------------------------
-# Enforce the per-agent work-root scoping guard via the shared helper (so the
-# fail-closed contract cannot rot per-wrapper and a new wrapper inherits it).
-# The helper sets WORK_ROOTS for the recapture banner below; it fails CLOSED
-# (non-zero + a [work-root] stderr line) on a missing or unscopable non-empty
-# work-root set, unless the per-tool unrestricted bypass or the agent-neutral
-# reviewer-recapture read-only path is active. Under recapture, the
-# workspace-write sandbox keeps writes rooted at the launch cwd + $TMPDIR, so the
-# source work root stays read-only at the sandbox layer.
-#
-# Native work-root union scoping: codex's workspace-write sandbox
-# scopes a multi-directory union via `codex exec --add-dir <DIR>` ("additional
-# directories that should be writable alongside the primary workspace"). The
-# launch cwd ($1) is the primary writable workspace; add each declared work root
-# ($2..) so writes are confined to the union (launch cwd ∪ declared work roots).
-# The shared guard cartopian_enforce_work_roots calls this hook and appends the
-# flags to CARTOPIAN_SCOPE_ARGS, injected into the codex command below (only in
-# the workspace-write sandbox branch — under a full-access bypass the sandbox is
-# off and the union is moot).
-cartopian_tool_scope_union() {
-  shift  # launch cwd is already the primary writable workspace
-  local _d
-  for _d in "$@"; do
-    CARTOPIAN_SCOPE_ARGS+=(--add-dir "$_d")
-  done
-  return 0
-}
-
-CARTOPIAN_SCOPE_ARGS=()
-if command -v cartopian &>/dev/null || [[ -n "${CARTOPIAN_SCOPE_DIRS:-}" ]]; then
-  cartopian_enforce_work_roots "cartopian-codex" "${CARTOPIAN_CODEX_UNRESTRICTED:-false}" "CARTOPIAN_CODEX_UNRESTRICTED"
-fi
-# Grant the prompt file's directory ONLY (DEC-011: the project's PM artifacts
-# stay out of scope) so the agent can open the prompt path it was handed.
-# Anything else it needs is referenced (by path/URI) inside the prompt.
-CARTOPIAN_SCOPE_ARGS+=(--add-dir "$(dirname "$PROMPT_PATH_ABS")")
-# --------------------------------------------------------------------
-
-# Reviewer recapture (agent-neutral): document the exact writable/read-only/
-# network scope once, listing any declared read-only source roots.
-if cartopian_review_recapture_active; then
-  cartopian_review_recapture_banner "cartopian-codex" "$PWD" "${WORK_ROOTS:-}"
-fi
-
 CMD=(codex exec --skip-git-repo-check)
 
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
@@ -189,17 +132,6 @@ if [[ "$CODEX_BYPASS" == "true" ]]; then
   CMD+=(--dangerously-bypass-approvals-and-sandbox)
 elif [[ -n "$CODEX_SANDBOX" ]]; then
   CMD+=(--sandbox "$CODEX_SANDBOX")
-  # Native work-root union scoping: additional writable roots alongside the
-  # primary workspace (the launch cwd). Only meaningful under a sandbox, so it is
-  # added here in the sandboxed branch, not under --dangerously-bypass-*.
-  CMD+=(${CARTOPIAN_SCOPE_ARGS[@]+"${CARTOPIAN_SCOPE_ARGS[@]}"})
-  # Reviewer recapture: enable shell network for the workspace-write sandbox so
-  # the probe harness can call the real codex. This grants network ONLY; it does
-  # NOT widen the writable filesystem scope (the work-root source stays
-  # read-only). No effect under read-only or danger-full-access sandboxes.
-  if cartopian_review_recapture_active && [[ "$CODEX_SANDBOX" == "workspace-write" ]]; then
-    CMD+=(-c sandbox_workspace_write.network_access=true)
-  fi
 fi
 
 CMD+=("$PROMPT_PATH_ABS")

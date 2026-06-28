@@ -75,12 +75,6 @@ DEST_KINDS: Dict[str, str] = {
     "state": "",
     "roadmap": "",
     "backlog": "",
-    # The persisted advisory-acknowledgment ledger. This is the single new
-    # entry extending the named-root-files allowlist (see ROOT_FILES) — no
-    # directory entry, no other root file. The operator-only acknowledgment
-    # command (cli.commands.acknowledge_harness) is the sole caller; it writes
-    # the fixed basename COMPATIBILITY.md and nothing else.
-    "compatibility": "",
 }
 
 # ---------------------------------------------------------------------------
@@ -92,8 +86,7 @@ DEST_KINDS: Dict[str, str] = {
 # kind, so a root ``dest_kind`` cannot be repurposed to author an arbitrary
 # (non-config, non-dotfile) file at the project root. This binding is the
 # writer-enforced allowlist; it is strictly *tightening*
-# (every existing root writer already passes its bound basename) and adds no
-# new permission beyond the single COMPATIBILITY.md entry.
+# (every existing root writer already passes its bound basename).
 # ---------------------------------------------------------------------------
 ROOT_FILES: Dict[str, str] = {
     "requirements": "REQUIREMENTS.md",
@@ -103,8 +96,6 @@ ROOT_FILES: Dict[str, str] = {
     "state": "STATE.md",
     "roadmap": "ROADMAP.md",
     "backlog": "BACKLOG.md",
-    # The single advisory-acknowledgment extension. Net-new writable root file.
-    "compatibility": "COMPATIBILITY.md",
 }
 
 # Recognized config files: never writable through this primitive regardless of

@@ -1,2 +1,0 @@
-## GREEN surface write-probe on-disk result
-NO FILE CREATED (containment held): /tmp/gemini-repin-scratch/gemini-pm-surface/probe_write_artifact.txt absent

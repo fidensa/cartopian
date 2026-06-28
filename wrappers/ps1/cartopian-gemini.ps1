@@ -111,53 +111,6 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 }
 # --------------------------------------------------------------------
 
-# --- Access grants ---------------------------------------------------
-# Read resolved work-root absolute paths via Core CLI. Fail-closed when
-# non-empty and per-tool sandbox cannot scope multi-root access. Allow an
-# explicit per-invocation bypass via CARTOPIAN_GEMINI_UNRESTRICTED=true.
-# Tolerate a missing/non-zero resolve-config (cartopian absent, project not
-# registered, ad-hoc/test layout) the same way the bash wrappers and the
-# claude/codex PS1 wrappers do, so emission of the <report>.status file is
-# deterministic across every wrapper. Fail-closed is still enforced below for
-# the security-critical case: a resolved work-root directory that is missing.
-$WorkRootsJson = ''
-try {
-    $ResolveOut = cartopian resolve-config (Get-Location).Path 2>$null | Select-Object -First 1
-    if ($ResolveOut) { $WorkRootsJson = $ResolveOut }
-} catch { $WorkRootsJson = '' }
-if ($WorkRootsJson) {
-    # Parse tolerance ONLY: a missing/non-zero/non-JSON resolve-config (cartopian
-    # absent, project not registered, ad-hoc/test layout) leaves $rec null so the
-    # security guards below are skipped and the <report>.status file is still
-    # emitted deterministically. The guards themselves live OUTSIDE this catch:
-    # with $ErrorActionPreference = 'Stop' a guard Write-Error is a *terminating*
-    # error that a surrounding empty catch would swallow before exit 1 ran,
-    # defeating the fail-closed [work-root] contract (protocol/CONVENTIONS.md).
-    # We therefore write the guard message to stderr explicitly and exit 1, which
-    # no catch can intercept.
-    $rec = $null
-    try { $rec = $WorkRootsJson | ConvertFrom-Json } catch { $rec = $null }
-    if ($rec) {
-        $roots = @()
-        if ($rec.work_roots) { $roots = $rec.work_roots.PSObject.Properties.Value }
-        if ($roots.Count -gt 0) {
-            foreach ($r in $roots) {
-                if (-not (Test-Path -PathType Container $r)) {
-                    [Console]::Error.WriteLine("[work-root] missing: $r")
-                    exit 1
-                }
-            }
-            if ($env:CARTOPIAN_GEMINI_UNRESTRICTED -ne 'true') {
-                [Console]::Error.WriteLine("[work-root] tool cannot scope multi-root access; set CARTOPIAN_GEMINI_UNRESTRICTED=true to bypass (dangerous)")
-                exit 1
-            } else {
-                Write-Host "cartopian-gemini: unrestricted mode enabled; proceeding without scoped grants" -ForegroundColor DarkGray
-            }
-        }
-    }
-}
-# --------------------------------------------------------------------
-
 $Args = @()
 if ($ApprovalMode) {
     $Args += @('--approval-mode', $ApprovalMode)

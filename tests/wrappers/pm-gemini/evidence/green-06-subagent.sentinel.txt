@@ -1,4 +1,0 @@
-expected_sentinel: NO_SUBAGENT_TOOL
-transcript_state: OK
-result_final_line: 'NO_SUBAGENT_TOOL'
-MATCH (standalone trailing line): PASS
