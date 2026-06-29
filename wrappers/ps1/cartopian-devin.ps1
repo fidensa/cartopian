@@ -72,9 +72,10 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # devin's cloud /handoff. The `--sandbox` flag is NOT on every devin build:
 # older binaries predate it and reject it at argv parse, so it is probed
 # independently of the permission surface (see "sandbox-support detection");
-# if absent, autonomous FAILS CLOSED rather than emitting a rejected flag, and
-# an operator who must run unsandboxed sets CARTOPIAN_DEVIN_PERMISSION=bypass
-# (which never composes --sandbox). Legacy values map onto the abstract modes:
+# if absent, autonomous DEGRADES to `--permission-mode bypass` (same
+# auto-approve-all posture minus the OS sandbox) with a warning, so the
+# unattended handoff still runs rather than emitting a rejected flag. Legacy
+# values map onto the abstract modes:
 #   auto -> normal ;  dangerous -> bypass
 $PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'autonomous' }
 switch ($PermissionMode) {
@@ -201,11 +202,15 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 # passing a value devin rejects. `normal`/`bypass` are valid on both surfaces.
 if ($PermissionMode -eq 'autonomous') {
     if (-not $DevinSandboxSupported) {
-        [Console]::Error.WriteLine("cartopian-devin: error: the installed devin CLI does not support '--sandbox', which 'autonomous' requires for OS-bounded containment")
-        [Console]::Error.WriteLine("  set CARTOPIAN_DEVIN_PERMISSION=bypass to run unsandboxed (auto-approve-all, NO OS containment), or update the devin CLI")
-        exit 1
-    }
-    if ($DevinSurface -eq 'four-mode') {
+        # This devin build predates `--sandbox`, so OS-bounded autonomy is
+        # unavailable. Degrade to the same auto-approve-all posture without the
+        # sandbox flag (`--permission-mode bypass`, valid on both surfaces) so
+        # the unattended handoff still runs as it always has, rather than
+        # failing closed. Containment is gone; warn so the dropped boundary is
+        # visible in the handoff logs.
+        [Console]::Error.WriteLine("cartopian-devin: warning: installed devin CLI has no '--sandbox'; running unsandboxed via --permission-mode bypass (auto-approve-all, NO OS containment)")
+        $Args = @('-p', '--permission-mode', 'bypass')
+    } elseif ($DevinSurface -eq 'four-mode') {
         $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous')
     } else {
         $Args = @('-p', '--sandbox', '--permission-mode', 'dangerous')

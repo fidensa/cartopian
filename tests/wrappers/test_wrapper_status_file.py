@@ -92,13 +92,6 @@ def _run_wrapper(wrapper: str, prompt: Path, fake_body: str, *, timeout_spec="60
         "PATH": os.pathsep.join(path_parts),
         "HOME": os.environ.get("HOME", "/tmp"),
         "CARTOPIAN_TIMEOUT": timeout_spec,
-        # Only read by cartopian-devin (ignored by the other wrappers). The
-        # bare `exit N` fake assignee models neither the permission-surface nor
-        # the --sandbox probe, so both fail and the default `autonomous` mode
-        # would fail closed before launch. `bypass` needs no --sandbox, so the
-        # wrapper reaches the real run and this test exercises status-file
-        # writing on assignee exit (its actual subject), not probe composition.
-        "CARTOPIAN_DEVIN_PERMISSION": "bypass",
     }
     return subprocess.run(
         ["bash", str(BIN_DIR / wrapper), str(prompt)],

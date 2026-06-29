@@ -72,10 +72,12 @@ fi
 # deadline (exit 124). The `--sandbox` flag autonomous depends on is NOT
 # present on every devin build: older binaries predate it and reject it at
 # argv parse. It is probed independently of the permission surface (see
-# "sandbox-support detection" below); if absent, autonomous fails closed
-# rather than emitting a flag the binary rejects. An operator who must run
-# unsandboxed sets CARTOPIAN_DEVIN_PERMISSION=bypass (which never composes
-# `--sandbox`), explicitly accepting the unbounded risk.
+# "sandbox-support detection" below); if absent, autonomous DEGRADES to
+# `--permission-mode bypass` (the same auto-approve-all posture, minus the OS
+# sandbox) with a warning, so the unattended handoff still runs as it always
+# has rather than emitting a `--sandbox` flag the binary rejects. The OS
+# containment guarantee is simply unavailable on such a build; an operator who
+# needs it must update devin to a build that exposes `--sandbox`.
 #
 # NOTE: devin's local OS `--sandbox` does NOT extend to devin's cloud
 # `/handoff` / cloud subagents; this wrapper only sets the flags it passes.
@@ -157,8 +159,8 @@ fi
 # killed at the bound) → treat as UNSUPPORTED. The probe carries no
 # `--permission-mode` value so a two-mode binary that DOES support `--sandbox`
 # is not misclassified by an unrelated mode-value rejection. The autonomous
-# path then fails closed with actionable guidance rather than emitting a flag
-# the binary rejects.
+# path then degrades to `--permission-mode bypass` (with a warning) rather than
+# emitting a flag the binary rejects.
 DEVIN_SANDBOX_PROBE=(devin --sandbox --help)
 if command -v timeout &>/dev/null; then
   DEVIN_SANDBOX_PROBE=(timeout 10s "${DEVIN_SANDBOX_PROBE[@]}")
@@ -220,11 +222,15 @@ CMD=(devin -p)
 case "$DEVIN_PERMISSION_MODE" in
   autonomous)
     if [[ "$DEVIN_SANDBOX_SUPPORTED" != "true" ]]; then
-      echo "cartopian-devin: error: the installed devin CLI does not support '--sandbox', which 'autonomous' requires for OS-bounded containment" >&2
-      echo "  set CARTOPIAN_DEVIN_PERMISSION=bypass to run unsandboxed (auto-approve-all, NO OS containment), or update the devin CLI" >&2
-      exit 1
-    fi
-    if [[ "$DEVIN_SURFACE" == "four-mode" ]]; then
+      # This devin build predates `--sandbox`, so OS-bounded autonomy is
+      # unavailable. Degrade to the same auto-approve-all posture WITHOUT the
+      # sandbox flag — `--permission-mode bypass` (valid on both surfaces) — so
+      # the unattended handoff still runs as it always has, rather than failing
+      # closed. The OS containment guarantee is gone; warn so the dropped
+      # boundary is visible in the handoff logs.
+      echo "cartopian-devin: warning: installed devin CLI has no '--sandbox'; running unsandboxed via --permission-mode bypass (auto-approve-all, NO OS containment)" >&2
+      CMD+=(--permission-mode bypass)
+    elif [[ "$DEVIN_SURFACE" == "four-mode" ]]; then
       CMD+=(--sandbox --permission-mode autonomous)
     else
       CMD+=(--sandbox --permission-mode dangerous)

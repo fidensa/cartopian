@@ -23,12 +23,13 @@ live-launch verification.
 Independently of the permission surface, the wrapper also probes whether the
 binary accepts ``--sandbox`` at all (``devin --sandbox --help``). Older builds
 predate the flag and reject it at argv parse; on those, the default
-``autonomous`` mode — which composes ``--sandbox`` — cannot honour its
-OS-containment contract and FAILS CLOSED with guidance to set
-``CARTOPIAN_DEVIN_PERMISSION=bypass`` (which never composes ``--sandbox``). A
-sandbox probe that cannot positively confirm the flag (non-zero for any
-reason, incl. a fully-broken ``--help``) is treated as UNSUPPORTED so the
-wrapper never emits a flag the binary would reject at launch.
+``autonomous`` mode — which would compose ``--sandbox`` — instead DEGRADES to
+``--permission-mode bypass`` (the same auto-approve-all posture minus the OS
+sandbox) with a warning, so the unattended handoff still runs as it always has
+rather than emitting a flag the binary rejects. A sandbox probe that cannot
+positively confirm the flag (non-zero for any reason, incl. a fully-broken
+``--help``) is treated as UNSUPPORTED so the wrapper never composes
+``--sandbox`` against a binary that would reject it.
 
 The wrapper-side harness (fake CLI on a restricted PATH that records argv)
 mirrors ``tests/wrappers/test_timeout_ssot.py``.
@@ -63,12 +64,13 @@ TWO_MODE_VALID = {"normal", "auto", "dangerous", "yolo", "bypass"}
 #               carries --help) exits 0, so the wrapper detects four-mode.
 #   no-sandbox— a two-mode parser that ALSO predates `--sandbox` and rejects it
 #               at parse (exit 2). Models the operator's work binary: the
-#               default `autonomous` mode must fail closed rather than emit a
-#               flag the binary rejects.
+#               default `autonomous` mode must degrade to `--permission-mode
+#               bypass` rather than emit a flag the binary rejects.
 #   broken    — any --help invocation fails (exit 1) for an unrelated reason;
 #               the wrapper must degrade to two-mode for the permission VALUE,
-#               and — unable to confirm `--sandbox` — fail closed for the
-#               sandbox-dependent autonomous default.
+#               and — unable to confirm `--sandbox` — degrade the
+#               sandbox-dependent autonomous default to `--permission-mode
+#               bypass`.
 SURFACES = ("two-mode", "four-mode", "no-sandbox", "broken")
 
 _FAKE_BODIES = {
@@ -222,15 +224,16 @@ def test_failed_probe_degrades_to_two_mode_value(tmp_path):
     assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
 
 
-def test_failed_sandbox_probe_fails_closed_for_autonomous(tmp_path):
+def test_failed_sandbox_probe_degrades_autonomous_to_bypass(tmp_path):
     """When the binary's --help fails entirely the wrapper cannot positively
     confirm `--sandbox` parses; the sandbox-dependent `autonomous` default must
-    fail closed rather than emit an unconfirmed flag the binary might reject at
-    launch (the original cryptic-failure bug)."""
+    degrade to `--permission-mode bypass` (no `--sandbox`) and still run, never
+    composing an unconfirmed flag the binary might reject at launch (the
+    original cryptic-failure bug)."""
     rc, argv, err = _compose(tmp_path, "03-400", None, "broken")
-    assert rc != 0, f"expected fail-closed; argv={argv!r}"
-    assert "does not support '--sandbox'" in err, err
-    assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
+    assert rc == 0, err
+    assert "--sandbox" not in argv, f"must not compose --sandbox; argv={argv!r}"
+    assert _mode_value(argv) == "bypass", f"argv={argv!r}"
 
 
 # --- only surface-valid values are ever composed ---------------------------
@@ -329,33 +332,31 @@ def test_accept_edits_fails_closed_on_two_mode_surface(tmp_path):
 
 # --- binary that predates --sandbox (operator's work CLI) ------------------
 
-def test_no_sandbox_surface_autonomous_default_fails_closed(tmp_path):
+def test_no_sandbox_surface_autonomous_default_degrades_to_bypass(tmp_path):
     """On a binary that rejects `--sandbox` at parse, the default `autonomous`
-    mode must fail closed BEFORE launch — never compose `--sandbox`, the flag
-    the binary rejects (the reported failure: devin would not run)."""
+    mode must degrade to `--permission-mode bypass` and still launch — never
+    compose `--sandbox`, the flag the binary rejects (the reported failure:
+    devin would not run). This restores the long-standing automated behavior:
+    no env var required to run on a build that predates `--sandbox`."""
     rc, argv, err = _compose(tmp_path, "03-410", None, "no-sandbox")
-    assert rc != 0, f"expected fail-closed; argv={argv!r}"
-    assert "does not support '--sandbox'" in err, err
-    assert "CARTOPIAN_DEVIN_PERMISSION=bypass" in err, (
-        f"refusal must name the unsandboxed escape hatch; stderr={err}"
-    )
-    assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
+    assert rc == 0, err
+    assert "--sandbox" not in argv, f"must not compose --sandbox; argv={argv!r}"
+    assert _mode_value(argv) == "bypass", f"argv={argv!r}"
+    # The dropped OS boundary is surfaced, not silent.
+    assert "running unsandboxed" in err, f"degrade must warn; stderr={err}"
 
 
 @pytest.mark.parametrize(
     "permission,expect_value",
-    [(None, None), ("autonomous", None),  # autonomous (incl. default) fails closed
+    [(None, "bypass"), ("autonomous", "bypass"),  # autonomous (incl. default) degrades
      ("bypass", "bypass"), ("dangerous", "bypass"),
      ("normal", "normal"), ("auto", "normal")],
 )
-def test_no_sandbox_surface_non_autonomous_modes_run_unsandboxed(tmp_path, permission, expect_value):
-    """Modes that never compose `--sandbox` still run on a no-sandbox binary;
-    only the sandbox-dependent `autonomous` (and its default) fail closed."""
+def test_no_sandbox_surface_modes_run_unsandboxed(tmp_path, permission, expect_value):
+    """Every mode runs on a no-sandbox binary: `autonomous` (and its default)
+    degrades to `bypass`; the others compose unchanged. None composes
+    `--sandbox` — the flag this binary would reject at launch."""
     rc, argv, err = _compose(tmp_path, "03-411", permission, "no-sandbox")
-    if expect_value is None:
-        assert rc != 0, f"autonomous must fail closed on no-sandbox; argv={argv!r}"
-        assert argv == [], argv
-        return
     assert rc == 0, err
     assert "--sandbox" not in argv, f"must not compose --sandbox; argv={argv!r}"
     assert _mode_value(argv) == expect_value, f"argv={argv!r}"
