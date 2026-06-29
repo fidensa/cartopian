@@ -32,9 +32,10 @@ Do not read or mutate project-specific lifecycle artifacts, and do not call `nex
 
 ## Stage 1 - Resolve PM Role
 
-PM role and dispatch path are read from the `pm_role` and `pm_dispatch_kind` fields of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Apply these rules to the values returned:
+PM role and dispatch path are read from the `pm_role_declared` and `pm_dispatch_kind` fields of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Stage 1 is a binary readiness gate, not a remediation menu — resume must not solicit or offer config edits. Defining or customizing roles is initialization work (`init project` / `generate config`), where the operator authors `cartopian.toml`; config is operator-owned thereafter. Apply these rules to the values returned:
 
-- If `pm_role` is the default placeholder (`Manages the project lifecycle and orchestrates handoffs.`) because no `pm` entry is declared in the resolved `[roles]` table, surface a blocker: the project does not declare a PM role. Ask the operator how to proceed (declare `pm` in `[roles]`, name a different role to act as PM for this session, or stop) before taking any PM lifecycle action.
+- The readiness gate is keyed on role-**key** presence, reported by `pm_role_declared`. If `pm_role_declared` is `true`, the `pm` key is present in the resolved `[roles]` table — the minimum is met; continue. Do not inspect or comment on the description text, and do not remark on whether it has been customized (`pm_role` may equal the default placeholder for a correctly-declared role).
+- If `pm_role_declared` is `false`, the `pm` key is genuinely absent from the resolved `[roles]` table. Stop with a misconfiguration blocker that defers to setup: this project's config declares no PM role; resolve it via init/config (`init project` / `generate config`). Do not offer inline role-authoring choices during resume.
 - If `pm_dispatch_kind` is `automated`, a `[handoffs.pm]` block is configured and PM dispatch is automated via that block's wrapper.
 - If `pm_dispatch_kind` is `manual`, no `[handoffs.pm]` block is configured: this agent may summarize state and propose the next action, but lifecycle execution requires explicit operator confirmation per stage.
 

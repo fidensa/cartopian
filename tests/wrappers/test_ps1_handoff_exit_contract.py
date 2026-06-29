@@ -181,16 +181,17 @@ class TestWrapperRouting:
         no `Start-Process ... -ArgumentList $Args` launch may exist (the
         supervisor owns the assignee spawn and the single SSOT deadline). The
         only permitted spawns are the fallback stub's generic
-        `-ArgumentList $ArgumentList` run and, in cartopian-devin.ps1, the
-        bounded 10s surface PROBE (not an assignee deadline)."""
+        `-ArgumentList $ArgumentList` run and, in cartopian-devin.ps1, the two
+        bounded 10s PROBES (permission surface + `--sandbox` support — neither
+        is an assignee deadline)."""
         text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
         assert not re.search(r"Start-Process[^\n]*-ArgumentList \$Args\b", text), (
             f"{wrapper}: inline assignee launch found outside the supervisor"
         )
-        expected = 2 if wrapper == "cartopian-devin.ps1" else 1
+        expected = 3 if wrapper == "cartopian-devin.ps1" else 1
         assert text.count("Start-Process") == expected, (
             f"{wrapper}: unexpected Start-Process count "
-            f"(stub{' + surface probe' if expected == 2 else ''} only)"
+            f"(stub{' + surface probe + sandbox probe' if expected == 3 else ''} only)"
         )
         assert text.count("WaitForExit") == expected, (
             f"{wrapper}: unexpected WaitForExit count"

@@ -48,16 +48,21 @@ def _merge_table(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, An
     return result
 
 
-def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, str]:
+def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool, str]:
     global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
     roles = _merge_table(global_cfg.get("roles", {}) or {}, project_cfg.get("roles", {}) or {})
     handoffs = _merge_table(
         global_cfg.get("handoffs", {}) or {},
         project_cfg.get("handoffs", {}) or {},
     )
+    # Readiness gate is keyed on role-KEY presence, not description text: a
+    # project may legitimately declare a `pm` role whose description equals the
+    # default placeholder. `pm_role_declared` lets the resume gate distinguish
+    # "absent → placeholder injected" from "declared with default-looking text".
+    pm_role_declared = "pm" in roles
     pm_role = str(roles.get("pm", _DEFAULT_PM_ROLE))
     pm_dispatch_kind = "automated" if "pm" in handoffs else "manual"
-    return pm_role, pm_dispatch_kind
+    return pm_role, pm_role_declared, pm_dispatch_kind
 
 
 def _first_heading(content: str) -> str:
@@ -408,7 +413,7 @@ def handler(args: argparse.Namespace) -> int:
         return err.exit_code
 
     try:
-        pm_role, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)
+        pm_role, pm_role_declared, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         stderr_error(f"global config unreadable: {Path.home() / '.cartopian' / 'cartopian.toml'} — {exc}")
         return EXIT_ENV
@@ -442,6 +447,7 @@ def handler(args: argparse.Namespace) -> int:
         "next_unstarted_phase": next_unstarted_phase,
         "plan_complete": plan_complete,
         "pm_role": pm_role,
+        "pm_role_declared": pm_role_declared,
         "pm_dispatch_kind": pm_dispatch_kind,
         "blockers": _detect_blockers(project_path, phase_id, tasks_dir),
         "state_filesystem_disagreement": _detect_disagreement(project_path),

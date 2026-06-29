@@ -20,6 +20,16 @@ emulates each surface's parser (rejecting/accepting the probe value) and
 records the argv the wrapper composes for the real run. This is NOT a
 live-launch verification.
 
+Independently of the permission surface, the wrapper also probes whether the
+binary accepts ``--sandbox`` at all (``devin --sandbox --help``). Older builds
+predate the flag and reject it at argv parse; on those, the default
+``autonomous`` mode — which composes ``--sandbox`` — cannot honour its
+OS-containment contract and FAILS CLOSED with guidance to set
+``CARTOPIAN_DEVIN_PERMISSION=bypass`` (which never composes ``--sandbox``). A
+sandbox probe that cannot positively confirm the flag (non-zero for any
+reason, incl. a fully-broken ``--help``) is treated as UNSUPPORTED so the
+wrapper never emits a flag the binary would reject at launch.
+
 The wrapper-side harness (fake CLI on a restricted PATH that records argv)
 mirrors ``tests/wrappers/test_timeout_ssot.py``.
 """
@@ -47,13 +57,19 @@ TWO_MODE_VALID = {"normal", "auto", "dangerous", "yolo", "bypass"}
 # Fake-devin surface behaviors. Each emulates the corresponding parser:
 #   two-mode  — rejects `--permission-mode autonomous|accept-edits` at parse
 #               (exit 2, mirroring the live `devin 2026.5.26-3` error), so the
-#               wrapper's acceptance probe fails and detects two-mode.
-#   four-mode — accepts every documented mode; the probe (which carries
-#               --help) exits 0, so the wrapper detects four-mode.
+#               wrapper's acceptance probe fails and detects two-mode. Accepts
+#               `--sandbox` (the live 2026.5.26-3 binary has the flag).
+#   four-mode — accepts every documented mode AND `--sandbox`; the probe (which
+#               carries --help) exits 0, so the wrapper detects four-mode.
+#   no-sandbox— a two-mode parser that ALSO predates `--sandbox` and rejects it
+#               at parse (exit 2). Models the operator's work binary: the
+#               default `autonomous` mode must fail closed rather than emit a
+#               flag the binary rejects.
 #   broken    — any --help invocation fails (exit 1) for an unrelated reason;
-#               the wrapper must degrade to two-mode, the live-verified
-#               surface, never to a guessed value.
-SURFACES = ("two-mode", "four-mode", "broken")
+#               the wrapper must degrade to two-mode for the permission VALUE,
+#               and — unable to confirm `--sandbox` — fail closed for the
+#               sandbox-dependent autonomous default.
+SURFACES = ("two-mode", "four-mode", "no-sandbox", "broken")
 
 _FAKE_BODIES = {
     "two-mode": """\
@@ -67,6 +83,21 @@ case " $* " in
 esac
 """,
     "four-mode": """\
+case " $* " in
+  *" --help "*) exit 0 ;;
+esac
+""",
+    "no-sandbox": """\
+case " $* " in
+  *" --permission-mode autonomous "*|*" --permission-mode accept-edits "*)
+    echo "error: invalid value for '--permission-mode <PERMISSION_MODE>': Valid options: normal (auto), dangerous (yolo, bypass)" >&2
+    exit 2 ;;
+esac
+case " $* " in
+  *" --sandbox "*)
+    echo "error: unexpected argument '--sandbox' found" >&2
+    exit 2 ;;
+esac
 case " $* " in
   *" --help "*) exit 0 ;;
 esac
@@ -178,14 +209,28 @@ def test_default_two_mode_composes_sandboxed_dangerous(tmp_path):
     assert argv.index("--sandbox") < argv.index("--permission-mode"), argv
 
 
-def test_failed_probe_degrades_to_two_mode(tmp_path):
-    """A probe that fails for an unrelated reason (broken install, hung-then-
-    killed probe) must degrade to the two-mode composition (the only
-    live-verified surface), never to a guessed `autonomous` value."""
+def test_failed_probe_degrades_to_two_mode_value(tmp_path):
+    """A surface probe that fails for an unrelated reason (broken install,
+    hung-then-killed probe) must degrade to the two-mode VALUE surface — never
+    guess a four-mode value. `accept-edits` (a four-mode-only value) must then
+    fail closed exactly as on a positively-detected two-mode binary, proving
+    the wrapper does not optimistically compose a four-mode value when the
+    surface probe is inconclusive."""
+    rc, argv, err = _compose(tmp_path, "03-400", "accept-edits", "broken")
+    assert rc != 0, f"expected two-mode fail-closed; argv={argv!r}"
+    assert "no 'accept-edits' permission mode" in err, err
+    assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
+
+
+def test_failed_sandbox_probe_fails_closed_for_autonomous(tmp_path):
+    """When the binary's --help fails entirely the wrapper cannot positively
+    confirm `--sandbox` parses; the sandbox-dependent `autonomous` default must
+    fail closed rather than emit an unconfirmed flag the binary might reject at
+    launch (the original cryptic-failure bug)."""
     rc, argv, err = _compose(tmp_path, "03-400", None, "broken")
-    assert rc == 0, err
-    assert _mode_value(argv) == "dangerous", f"argv={argv!r}"
-    assert "--sandbox" in argv, argv
+    assert rc != 0, f"expected fail-closed; argv={argv!r}"
+    assert "does not support '--sandbox'" in err, err
+    assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
 
 
 # --- only surface-valid values are ever composed ---------------------------
@@ -280,6 +325,40 @@ def test_accept_edits_fails_closed_on_two_mode_surface(tmp_path):
     assert rc != 0, f"expected fail-closed refusal; argv={argv!r}"
     assert "no 'accept-edits' permission mode" in err, err
     assert argv == [], f"fake devin should never have been invoked: argv={argv!r}"
+
+
+# --- binary that predates --sandbox (operator's work CLI) ------------------
+
+def test_no_sandbox_surface_autonomous_default_fails_closed(tmp_path):
+    """On a binary that rejects `--sandbox` at parse, the default `autonomous`
+    mode must fail closed BEFORE launch — never compose `--sandbox`, the flag
+    the binary rejects (the reported failure: devin would not run)."""
+    rc, argv, err = _compose(tmp_path, "03-410", None, "no-sandbox")
+    assert rc != 0, f"expected fail-closed; argv={argv!r}"
+    assert "does not support '--sandbox'" in err, err
+    assert "CARTOPIAN_DEVIN_PERMISSION=bypass" in err, (
+        f"refusal must name the unsandboxed escape hatch; stderr={err}"
+    )
+    assert argv == [], f"fake devin should never have been invoked; argv={argv!r}"
+
+
+@pytest.mark.parametrize(
+    "permission,expect_value",
+    [(None, None), ("autonomous", None),  # autonomous (incl. default) fails closed
+     ("bypass", "bypass"), ("dangerous", "bypass"),
+     ("normal", "normal"), ("auto", "normal")],
+)
+def test_no_sandbox_surface_non_autonomous_modes_run_unsandboxed(tmp_path, permission, expect_value):
+    """Modes that never compose `--sandbox` still run on a no-sandbox binary;
+    only the sandbox-dependent `autonomous` (and its default) fail closed."""
+    rc, argv, err = _compose(tmp_path, "03-411", permission, "no-sandbox")
+    if expect_value is None:
+        assert rc != 0, f"autonomous must fail closed on no-sandbox; argv={argv!r}"
+        assert argv == [], argv
+        return
+    assert rc == 0, err
+    assert "--sandbox" not in argv, f"must not compose --sandbox; argv={argv!r}"
+    assert _mode_value(argv) == expect_value, f"argv={argv!r}"
 
 
 @pytest.mark.parametrize("surface", ["four-mode", "two-mode"])

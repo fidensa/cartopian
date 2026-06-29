@@ -50,6 +50,7 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "next_unstarted_phase",
                 "plan_complete",
                 "pm_role",
+                "pm_role_declared",
                 "pm_dispatch_kind",
                 "blockers",
                 "state_filesystem_disagreement",
@@ -101,6 +102,7 @@ class TestNextActionHappyPath(unittest.TestCase):
             self.assertTrue(rec["next_open_task"]["path"].endswith("TASK-01-002-pending.md"))
 
             self.assertEqual(rec["pm_role"], "Plans the work.")
+            self.assertTrue(rec["pm_role_declared"])
             self.assertEqual(rec["pm_dispatch_kind"], "automated")
 
             self.assertEqual(rec["blockers"], [])
@@ -215,6 +217,30 @@ class TestNextActionDispatchKind(unittest.TestCase):
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["pm_dispatch_kind"], "automated")
+
+
+class TestNextActionPmRoleDeclared(unittest.TestCase):
+    def test_declared_false_when_no_roles_table(self) -> None:
+        # Base config declares no [roles] table → pm key absent, placeholder injected.
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            self.assertFalse(records[0]["pm_role_declared"])
+            self.assertEqual(
+                records[0]["pm_role"],
+                next_action._DEFAULT_PM_ROLE,
+            )
+
+    def test_declared_true_even_when_description_equals_default(self) -> None:
+        # Regression: a project may legitimately declare a pm role whose
+        # description equals the default placeholder. The readiness gate keys on
+        # role-KEY presence, so pm_role_declared must be True here.
+        toml = _TOML_BASE + f'\n[roles]\npm = "{next_action._DEFAULT_PM_ROLE}"\n'
+        with project_scaffold(cartopian_toml=toml) as scaffold:
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            self.assertTrue(records[0]["pm_role_declared"])
+            self.assertEqual(records[0]["pm_role"], next_action._DEFAULT_PM_ROLE)
 
 
 class TestNextActionExitCodes(unittest.TestCase):

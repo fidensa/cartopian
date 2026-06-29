@@ -69,7 +69,12 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # the handoff with no human in the loop -- the analogue of cartopian-codex's
 # `workspace-write` sandbox default (OS-bounded autonomy, not full bypass).
 # devin stays tier-3 not-recommended; the local --sandbox does not extend to
-# devin's cloud /handoff. Legacy values are mapped onto the abstract modes:
+# devin's cloud /handoff. The `--sandbox` flag is NOT on every devin build:
+# older binaries predate it and reject it at argv parse, so it is probed
+# independently of the permission surface (see "sandbox-support detection");
+# if absent, autonomous FAILS CLOSED rather than emitting a rejected flag, and
+# an operator who must run unsandboxed sets CARTOPIAN_DEVIN_PERMISSION=bypass
+# (which never composes --sandbox). Legacy values map onto the abstract modes:
 #   auto -> normal ;  dangerous -> bypass
 $PermissionMode = if ($env:CARTOPIAN_DEVIN_PERMISSION) { $env:CARTOPIAN_DEVIN_PERMISSION } else { 'autonomous' }
 switch ($PermissionMode) {
@@ -125,6 +130,39 @@ try {
     }
 }
 
+# --- Sandbox-support detection ---------------------------------------
+# The surface probe above settles which `--permission-mode` VALUES parse; it
+# does NOT establish whether `--sandbox` exists. Older devin builds predate the
+# flag and reject it at argv parse (exit 2). `autonomous` (the default)
+# composes `--sandbox`, so on such a binary the launch fails. Probe `--sandbox`
+# independently -- parser acceptance of `devin --sandbox --help`, a 10s bound,
+# any failure (non-zero exit, a spawn that throws, or a probe past the bound)
+# -> UNSUPPORTED. The probe carries no `--permission-mode` value so a two-mode
+# binary that DOES support `--sandbox` is not misclassified by an unrelated
+# mode-value rejection. Mirrors wrappers/bin/cartopian-devin.
+$DevinSandboxSupported = $false
+$SbOut = $null
+$SbErr = $null
+try {
+    $SbOut = [System.IO.Path]::GetTempFileName()
+    $SbErr = [System.IO.Path]::GetTempFileName()
+    $sbProbe = Start-Process -FilePath devin `
+        -ArgumentList @('--sandbox', '--help') `
+        -NoNewWindow -PassThru -ErrorAction Stop `
+        -RedirectStandardOutput $SbOut -RedirectStandardError $SbErr
+    if ($sbProbe.WaitForExit(10000)) {
+        if ($sbProbe.ExitCode -eq 0) { $DevinSandboxSupported = $true }
+    } else {
+        try { $sbProbe.Kill() } catch {}
+    }
+} catch {
+    $DevinSandboxSupported = $false
+} finally {
+    foreach ($f in @($SbOut, $SbErr)) {
+        if ($f) { try { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } catch {} }
+    }
+}
+
 $PromptPathAbs = (Resolve-Path $PromptPath).Path
 
 # Derive the optional status-file path now, before any Set-Location, so a
@@ -162,6 +200,11 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 # `accept-edits` has no two-mode equivalent and FAILS CLOSED rather than
 # passing a value devin rejects. `normal`/`bypass` are valid on both surfaces.
 if ($PermissionMode -eq 'autonomous') {
+    if (-not $DevinSandboxSupported) {
+        [Console]::Error.WriteLine("cartopian-devin: error: the installed devin CLI does not support '--sandbox', which 'autonomous' requires for OS-bounded containment")
+        [Console]::Error.WriteLine("  set CARTOPIAN_DEVIN_PERMISSION=bypass to run unsandboxed (auto-approve-all, NO OS containment), or update the devin CLI")
+        exit 1
+    }
     if ($DevinSurface -eq 'four-mode') {
         $Args = @('-p', '--sandbox', '--permission-mode', 'autonomous')
     } else {
@@ -213,7 +256,7 @@ $TimeoutSpec = if ($env:CARTOPIAN_TIMEOUT) { $env:CARTOPIAN_TIMEOUT } else { '60
 $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 # --------------------------------------------------------------------
 
-Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, surface=$DevinSurface, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
+Write-Host "cartopian-devin: running devin -p (permission=$PermissionMode, surface=$DevinSurface, sandbox=$DevinSandboxSupported, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
 # Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a

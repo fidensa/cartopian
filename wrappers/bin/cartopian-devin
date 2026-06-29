@@ -69,9 +69,13 @@ fi
 # `bypass`, but OS-enforced filesystem/network bounds on top. `normal` and
 # `accept-edits` are NOT defaults because they block waiting for TTY approval
 # on the first write/shell call and would burn to the CARTOPIAN_TIMEOUT
-# deadline (exit 124). If `--sandbox` cannot initialise on a host, autonomous
-# fails closed; an operator who must run unsandboxed sets
-# CARTOPIAN_DEVIN_PERMISSION=bypass (explicitly accepting the unbounded risk).
+# deadline (exit 124). The `--sandbox` flag autonomous depends on is NOT
+# present on every devin build: older binaries predate it and reject it at
+# argv parse. It is probed independently of the permission surface (see
+# "sandbox-support detection" below); if absent, autonomous fails closed
+# rather than emitting a flag the binary rejects. An operator who must run
+# unsandboxed sets CARTOPIAN_DEVIN_PERMISSION=bypass (which never composes
+# `--sandbox`), explicitly accepting the unbounded risk.
 #
 # NOTE: devin's local OS `--sandbox` does NOT extend to devin's cloud
 # `/handoff` / cloud subagents; this wrapper only sets the flags it passes.
@@ -142,6 +146,31 @@ else
   DEVIN_SURFACE="two-mode"
 fi
 
+# --- Sandbox-support detection ---------------------------------------
+# The surface probe above settles which `--permission-mode` VALUES the binary
+# parses; it does NOT establish whether `--sandbox` exists. Older devin builds
+# predate the flag entirely and reject it at argv parse (exit 2). `autonomous`
+# (the default) composes `--sandbox …`, so on such a binary that launch fails
+# with a cryptic parser error. Probe `--sandbox` independently — same
+# discipline as the surface probe: parser acceptance of `devin --sandbox
+# --help`, a 10s bound, any failure (non-zero exit for any reason, or a probe
+# killed at the bound) → treat as UNSUPPORTED. The probe carries no
+# `--permission-mode` value so a two-mode binary that DOES support `--sandbox`
+# is not misclassified by an unrelated mode-value rejection. The autonomous
+# path then fails closed with actionable guidance rather than emitting a flag
+# the binary rejects.
+DEVIN_SANDBOX_PROBE=(devin --sandbox --help)
+if command -v timeout &>/dev/null; then
+  DEVIN_SANDBOX_PROBE=(timeout 10s "${DEVIN_SANDBOX_PROBE[@]}")
+elif command -v gtimeout &>/dev/null; then
+  DEVIN_SANDBOX_PROBE=(gtimeout 10s "${DEVIN_SANDBOX_PROBE[@]}")
+fi
+if "${DEVIN_SANDBOX_PROBE[@]}" >/dev/null 2>&1; then
+  DEVIN_SANDBOX_SUPPORTED=true
+else
+  DEVIN_SANDBOX_SUPPORTED=false
+fi
+
 PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
 
 # Derive the optional status-file path now, before any cd, so a relative
@@ -190,6 +219,11 @@ fi
 CMD=(devin -p)
 case "$DEVIN_PERMISSION_MODE" in
   autonomous)
+    if [[ "$DEVIN_SANDBOX_SUPPORTED" != "true" ]]; then
+      echo "cartopian-devin: error: the installed devin CLI does not support '--sandbox', which 'autonomous' requires for OS-bounded containment" >&2
+      echo "  set CARTOPIAN_DEVIN_PERMISSION=bypass to run unsandboxed (auto-approve-all, NO OS containment), or update the devin CLI" >&2
+      exit 1
+    fi
     if [[ "$DEVIN_SURFACE" == "four-mode" ]]; then
       CMD+=(--sandbox --permission-mode autonomous)
     else
@@ -244,7 +278,7 @@ else
 fi
 # --------------------------------------------------------------------
 
-echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE, surface=$DEVIN_SURFACE, timeout=$TIMEOUT_DURATION)" >&2
+echo "cartopian-devin: running devin -p (permission=$DEVIN_PERMISSION_MODE, surface=$DEVIN_SURFACE, sandbox=$DEVIN_SANDBOX_SUPPORTED, timeout=$TIMEOUT_DURATION)" >&2
 
 # Run the assignee (not exec) so we can capture its exit outcome and emit
 # the optional status file wait-handoff polls for early-crash detection.
