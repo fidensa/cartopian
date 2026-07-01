@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from cli._vendor import tomli_w
+from cli.capabilities import PRESETS, is_known_grant_name
 from cli.commands._registry import is_kebab_case
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -61,6 +62,11 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="[project] id (kebab-case)")
     subparser.add_argument("--role", action="append", default=[], metavar='NAME="DESC"',
                            help="Repeatable role definition")
+    subparser.add_argument("--role-grants", action="append", default=[],
+                           metavar="ROLE=NAME[,NAME...]",
+                           help="Repeatable capability grants for a declared role "
+                                "(capability names and/or preset names; empty value "
+                                "declares an explicitly empty grant list)")
     subparser.add_argument("--handoff", action="append", default=[], metavar="ROLE=WRAPPER",
                            help="Repeatable handoff agent assignment")
     subparser.add_argument("--handoff-model", action="append", default=[],
@@ -149,6 +155,39 @@ def _collect_roles(role_args: List[str]) -> Dict[str, str]:
     return roles
 
 
+def _collect_role_grants(
+    grant_args: List[str], declared_roles: Dict[str, str]
+) -> Dict[str, List[str]]:
+    """Parse --role-grants ROLE=NAME[,NAME...] entries.
+
+    Names may be capability names or preset names; the vocabulary is closed,
+    so an unknown name is a usage error — never silently accepted. An empty
+    value declares an explicitly empty grant list (the role can write
+    nothing once gating is active).
+    """
+    grants: Dict[str, List[str]] = {}
+    for raw in grant_args:
+        role, value = _parse_kv(raw, "--role-grants")
+        if role not in declared_roles:
+            raise _Usage(f"--role-grants {role!r}: declare with --role first")
+        if role in grants:
+            raise _Usage(f"--role-grants {role!r} declared more than once")
+        names = [] if value == "" else value.split(",")
+        seen: set = set()
+        for name in names:
+            if not is_known_grant_name(name):
+                raise _Usage(
+                    f"--role-grants {role}: unknown capability or preset "
+                    f"name: {name!r} — the vocabulary is closed; see "
+                    f"CAPABILITIES.md (presets: {', '.join(sorted(PRESETS))})"
+                )
+            if name in seen:
+                raise _Usage(f"--role-grants {role}: {name!r} listed more than once")
+            seen.add(name)
+        grants[role] = names
+    return grants
+
+
 def _collect_handoff_field(
     raw_args: List[str], flag: str, declared_roles: Dict[str, str],
     seen: Dict[str, set], field: str, parser
@@ -212,6 +251,7 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
         raise _Usage(f"--id must be kebab-case [a-z0-9][a-z0-9-]*; got: {args.proj_id!r}")
 
     roles = _collect_roles(args.role)
+    role_grants = _collect_role_grants(args.role_grants, roles)
 
     handoffs = _build_handoffs(
         args.handoff, args.handoff_model, args.handoff_auto_start,
@@ -276,9 +316,19 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
             seen_keys.add(key)
             git_block[key] = _parse_git_key_value(value)
 
+    roles_block: Dict[str, Any] = {}
+    for role_name, description in roles.items():
+        if role_name in role_grants:
+            roles_block[role_name] = {
+                "description": description,
+                "grants": role_grants[role_name],
+            }
+        else:
+            roles_block[role_name] = description
+
     cfg: Dict[str, Any] = {"project": project_block}
-    if roles:
-        cfg["roles"] = roles
+    if roles_block:
+        cfg["roles"] = roles_block
     if handoffs:
         cfg["handoffs"] = handoffs
     if automation:

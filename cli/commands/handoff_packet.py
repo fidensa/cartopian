@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.capabilities import role_description
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -208,7 +209,9 @@ def handler(args: argparse.Namespace) -> int:
         "task_title": task_title,
         "task_path": str(task_path),
         "role": role,
-        "role_description": roles.get(role),
+        "role_description": (
+            role_description(roles[role]) if role in roles else None
+        ),
         "handoff_target": role_handoff.get("agent"),
         "model": role_handoff.get("model"),
         "auto_start": role_handoff.get("auto_start"),

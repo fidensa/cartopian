@@ -11,6 +11,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.capabilities import role_description
 from cli.commands.resolve_config import _CliError, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
@@ -60,7 +61,7 @@ def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tup
     # default placeholder. `pm_role_declared` lets the resume gate distinguish
     # "absent → placeholder injected" from "declared with default-looking text".
     pm_role_declared = "pm" in roles
-    pm_role = str(roles.get("pm", _DEFAULT_PM_ROLE))
+    pm_role = role_description(roles["pm"]) if pm_role_declared else _DEFAULT_PM_ROLE
     pm_dispatch_kind = "automated" if "pm" in handoffs else "manual"
     return pm_role, pm_role_declared, pm_dispatch_kind
 

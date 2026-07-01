@@ -86,6 +86,7 @@ class TestHappyPath(unittest.TestCase):
             "project_path",
             "protocol_version",
             "roles",
+            "capabilities",
             "handoffs",
             "automation",
             "work_roots",

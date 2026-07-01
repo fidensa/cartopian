@@ -23,10 +23,15 @@ Ask the operator for:
 1. **Project path** — absolute filesystem path where the project will live (e.g., `/path/to/projects/widget-api`).
 2. **Project name** — human-readable (e.g., "Widget API").
 3. **Project ID** — kebab-case slug (e.g., `widget-api`). Suggest one derived from the name if the operator doesn't provide one.
-4. **Role overrides** — any roles that differ from defaults for this project. Each role value is a one-line description string describing the role's responsibility. A role exists in the project iff its key appears in `[roles]`; omit a key to drop a default role from this project. The protocol-default roster is `pm` and `operator`; common example labels operators add are `coder` and `reviewer`. There is no kind field on the role itself.
-5. **Handoff overrides** — for any role that should dispatch automatically, ask if the project needs specific handoff targets, auto-start, or timeout values. Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block.
-6. **Automation overrides** — ask if the project needs a different confirmation policy or max handoffs per run.
-7. **Work roots (optional)** — operator-declared external work locations to be surfaced by the config (names that resolve to absolute paths per-machine via `cartopian resolve-config`).
+4. **Role overrides** — any roles that differ from defaults for this project. Each role carries a one-line description string describing the role's responsibility. A role exists in the project iff its key appears in `[roles]`; omit a key to drop a default role from this project. The protocol-default roster is `pm` and `operator`; common example labels operators add are `coder` and `reviewer`. There is no kind field on the role itself.
+5. **Planning ownership and capability grants** — ask: **"Will a separate planner role author plans, or will the PM?"** Land the answer on explicit grant sets (see `CAPABILITIES.md` at the Cartopian install root for the vocabulary and presets):
+   - **Separate planner** → `pm` gets `pm-with-planner`, and a `planner` role gets `planner-like`.
+   - **The PM plans** → `pm` gets `pm-solo`.
+
+   Default any `coder`-shaped role to the `coder-like` preset and any `reviewer`-shaped role to `reviewer-like`. Then **show the operator the full role→grants mapping as editable defaults** — presets compose with individual capability names (e.g. a reviewer may additionally get `read:reports`) — and apply any edits before generating the config. Because at least one role declares grants, the new project starts in the **activated** state: containment is on project-wide and any role left without a declared grant list fails closed (holds no grants). Give every remaining role, including `operator` and custom roles, an explicit grant list — ask the operator which grants each should hold.
+6. **Handoff overrides** — for any role that should dispatch automatically, ask if the project needs specific handoff targets, auto-start, or timeout values. Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block.
+7. **Automation overrides** — ask if the project needs a different confirmation policy or max handoffs per run.
+8. **Work roots (optional)** — operator-declared external work locations to be surfaced by the config (names that resolve to absolute paths per-machine via `cartopian resolve-config`).
 
 Launch cwd is the cartopian project root (registry-based). Tasks reference external work locations via the renamed work-location field. Projects that routinely use fixed external roots declare named work roots in `cartopian.toml`; `cartopian resolve-config` resolves these names to absolute paths per machine, and launchers grant access to declared paths per the access-grant model.
 
@@ -53,11 +58,21 @@ Write the project-level config with the CLI, supplying the gathered inputs as fl
 cartopian generate-config <project-path> \
   --name "<project name>" \
   --id "<project-id>" \
-  [role description flags] [handoff flags] [automation flags] [work-root flags]
+  [role description flags] [role grant flags] [handoff flags] [automation flags] [work-root flags]
+```
+
+Grant flags carry the role→grants mapping landed in Step 1 — one `--role-grants ROLE=NAME[,NAME...]` per role, where each name is a capability or preset from `CAPABILITIES.md`. Example for the separate-planner answer:
+
+```
+  --role 'pm=Plans phases, dispatches handoffs, integrates results.' \
+  --role 'planner=Authors plans and phase structure.' \
+  --role-grants pm=pm-with-planner \
+  --role-grants planner=planner-like
 ```
 
 Notes:
 - Include only role overrides; defaults apply when a role key is omitted.
+- Every declared role should get a `--role-grants` entry: declaring any grants activates containment project-wide, and a role without a declared grant list then fails closed. Unknown grant names are rejected at generation time.
 - `[handoffs.<role>]` blocks are emitted only when provided; omitted inherits defaults.
 - `[automation]` is emitted only when provided.
 - Work-root flags declare named roots; resolution to absolute paths is per-machine via `cartopian resolve-config`.
@@ -84,6 +99,7 @@ Print a summary of everything that was created:
 
 - Directory structure (including `reports/`)
 - Config file location and contents
+- The role→grants mapping that was landed (the project starts with containment activated; grants remain editable in `cartopian.toml`)
 - Seed files created
 - Handoff and automation config (if any overrides were set)
 

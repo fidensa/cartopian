@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from cli.capabilities import GrantResolution, resolve_grants, role_description
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
@@ -123,7 +124,8 @@ def _resolve_handoffs(
 
 def _resolve_roles(
     global_cfg: Dict[str, Any], project_cfg: Dict[str, Any]
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
+    """Merge [roles]; values are legacy description strings or [roles.<name>] tables."""
     g_roles = global_cfg.get("roles", {}) or {}
     p_roles = project_cfg.get("roles", {}) or {}
     if not g_roles and not p_roles:
@@ -249,7 +251,9 @@ def handler(args: argparse.Namespace) -> int:
 
         project_id, project_name, protocol_version = _require_project_keys(project_cfg, project_toml)
 
-        roles = _resolve_roles(global_cfg, project_cfg)
+        roles_raw = _resolve_roles(global_cfg, project_cfg)
+        roles = {name: role_description(value) for name, value in roles_raw.items()}
+        capabilities: GrantResolution = resolve_grants(roles_raw)
         handoffs = _resolve_handoffs(global_cfg, project_cfg)
         automation = _resolve_automation(global_cfg, project_cfg)
         work_roots = _resolve_work_roots(project_cfg, project_path)
@@ -278,6 +282,13 @@ def handler(args: argparse.Namespace) -> int:
                 sys.stderr.write(
                     f"[validation] empty role description: {role_name}\n"
                 )
+
+        for role_name, entries in capabilities.invalid.items():
+            sys.stderr.write(
+                f"[validation] unknown capability grants for role "
+                f"{role_name!r} (role fails closed — holds no grants): "
+                f"{', '.join(entries)}\n"
+            )
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
@@ -288,6 +299,13 @@ def handler(args: argparse.Namespace) -> int:
         "project_path": str(project_path),
         "protocol_version": protocol_version,
         "roles": roles,
+        "capabilities": {
+            "activated": capabilities.activated,
+            "role_grants": {
+                name: sorted(grants)
+                for name, grants in capabilities.role_grants.items()
+            },
+        },
         "handoffs": handoffs,
         "automation": automation,
         "work_roots": work_roots,
