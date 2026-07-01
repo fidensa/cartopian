@@ -6,8 +6,10 @@ command performs the launch on the PM's behalf as *per-invocation* Cartopian cod
 (no daemon, no broker): it composes the existing ``handoff-packet`` /
 ``resolve-config`` aggregators to prepare the packet, fails closed on a missing
 ``[handoffs.<role>]`` block / a missing agent / a missing prompt, exports
-``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout`` and
+``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout``,
 ``CARTOPIAN_MODEL`` from the resolved ``[handoffs.<role>].model`` (when set), and
+``CARTOPIAN_ROLE`` from the dispatched role (the session-role marker capability
+enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
 cartopian project-root cwd (the launch contract fixed by
 ``protocol/CONVENTIONS.md`` § Handoffs / Launch Directory). Capability gating of
@@ -211,6 +213,11 @@ def handler(args: argparse.Namespace) -> int:
     env = dict(os.environ)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
     env["CARTOPIAN_LAUNCH_CWD"] = launch_cwd
+    # Session-role marker for capability enforcement points (e.g. the Claude
+    # Code refusal adapter, cli/claude_hook.py). Carries identity only — the
+    # wrapper stays a neutral launcher and never keys behavior on it; the
+    # enforcement point maps the role to grants via the resolved config.
+    env["CARTOPIAN_ROLE"] = role
     # Agent-neutral model selection from the resolved [handoffs.<role>].model.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.

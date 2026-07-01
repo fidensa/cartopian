@@ -1,0 +1,196 @@
+# Operator acceptance — Claude Code refusal adapter
+
+Live acceptance for the capability-keyed PreToolUse hook (`cli/claude_hook.py`).
+Run these steps **by hand in a real Claude Code session** — automated tests do
+not satisfy this gate. Execute the full sequence once on native Windows
+(PowerShell-launched Claude Code) and once on macOS; the steps are written for
+both, with the Windows command form first where they differ.
+
+Prerequisites: Python 3.11+ on `PATH` as `python`, Claude Code installed, and
+Cartopian installed at `~/.cartopian` (`%USERPROFILE%\.cartopian` on Windows)
+via `python scripts/install.py` from the source repo.
+
+Throughout, `$CART` means the install root:
+
+- Windows (PowerShell): `$CART = "$env:USERPROFILE\.cartopian"`
+- macOS (zsh/bash): `CART="$HOME/.cartopian"`
+
+## 1. Set up a throwaway registered project with an activated config
+
+Create a scratch governed project and a scratch work root:
+
+```powershell
+# Windows (PowerShell)
+mkdir $env:TEMP\guard-accept; cd $env:TEMP\guard-accept
+mkdir gov-project, gov-project\specs, gov-project\prompts, gov-project\reports, tool-repo
+```
+
+```bash
+# macOS
+mkdir -p /tmp/guard-accept && cd /tmp/guard-accept
+mkdir -p gov-project/specs gov-project/prompts gov-project/reports tool-repo
+```
+
+Write `gov-project/cartopian.toml` (any text editor). The `pm` role declares a
+grants key, which **activates** containment project-wide, and deliberately
+holds neither `write:lifecycle` nor `write:worktree`:
+
+```toml
+[project]
+id = "guard-accept"
+name = "Guard Acceptance"
+protocol_version = "v0.3.0"
+work_roots = ["tool-repo"]
+
+[roles.pm]
+description = "PM under test."
+grants = ["read:governance"]
+```
+
+Write `gov-project/cartopian.local.toml` mapping the work root to its
+**absolute** path (adjust to your machine):
+
+```toml
+# Windows — note escaped backslashes or use forward slashes
+[work_roots]
+tool-repo = 'C:\Users\<you>\AppData\Local\Temp\guard-accept\tool-repo'
+```
+
+```toml
+# macOS
+[work_roots]
+tool-repo = "/tmp/guard-accept/tool-repo"
+```
+
+Write a minimal `gov-project/STATE.md` (one line of text is enough).
+
+Register the project:
+
+```powershell
+# Windows
+python "$env:USERPROFILE\.cartopian\bin\cartopian" register-project "$env:TEMP\guard-accept\gov-project"
+```
+
+```bash
+# macOS
+"$HOME/.cartopian/bin/cartopian" register-project /tmp/guard-accept/gov-project
+```
+
+(The registry id comes from `[project].id` in `cartopian.toml` — here
+`guard-accept`.)
+
+## 2. Register the hook (project-level settings only)
+
+From the Cartopian **source repo**:
+
+```
+python scripts/install.py --claude-hook <path-to>/guard-accept
+```
+
+(or hand-write `guard-accept/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"%USERPROFILE%\\.cartopian\\cli\\claude_hook.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+On macOS use `"python \"$HOME/.cartopian/cli/claude_hook.py\""` as the command.
+Confirm no user-global settings file (`~/.claude/settings.json`) was modified.
+
+## 3. Deny: ungranted governed write
+
+Launch Claude Code in `guard-accept/` (PowerShell on Windows; Terminal on
+macOS) with **no** `CARTOPIAN_ROLE` set — the session resolves to the `pm`
+role, which holds only `read:governance`. Ask:
+
+> Append the line "acceptance touch" to gov-project/STATE.md using the Edit tool.
+
+**Expected:** the tool call is denied and Claude reports a refusal whose reason
+is a single `[guard]` message naming the STATE.md path, the path-class
+(`lifecycle`), and the missing grant (`write:lifecycle`). The file is
+unchanged.
+
+Also ask:
+
+> Create gov-project/specs/SPEC-01-001-demo.md with any content.
+
+**Expected:** `[guard]` deny naming path-class `plan` and grant `write:plan`.
+
+## 4. Deny: work-root write without `write:worktree`
+
+In the same session, ask:
+
+> Create tool-repo/src/main.py with a hello-world.
+
+**Expected:** `[guard]` deny naming the path, path-class `work-root:tool-repo`,
+and missing grant `write:worktree`.
+
+## 5. Allow: granted write
+
+Exit Claude Code. Edit `gov-project/cartopian.toml` so `pm` holds the grant:
+
+```toml
+grants = ["read:governance", "write:lifecycle"]
+```
+
+Relaunch Claude Code in `guard-accept/` and repeat the STATE.md edit request.
+
+**Expected:** the edit succeeds; STATE.md now contains the appended line. (The
+specs and tool-repo writes from steps 3–4 would still deny — `write:plan` and
+`write:worktree` remain ungranted.)
+
+## 6. Zero footprint: write outside any registered project
+
+In the same session, ask:
+
+> Write the file ../outside-note.md (next to the guard-accept directory) with any content.
+
+**Expected:** no interference — the write proceeds exactly as it would without
+the hook, with no `[guard]` output anywhere.
+
+## 7. Ungated-config pass-through
+
+Exit Claude Code. Replace the `[roles.pm]` table in
+`gov-project/cartopian.toml` with a grant-free declaration (no `grants` key
+anywhere in the config):
+
+```toml
+[roles]
+pm = "PM under test."
+```
+
+Relaunch Claude Code in `guard-accept/` and repeat the STATE.md edit and the
+tool-repo write.
+
+**Expected:** both succeed with no denial — a config that declares no grants is
+ungated and behaves exactly as before containment existed.
+
+## 8. Clean up
+
+```
+"$HOME/.cartopian/bin/cartopian" unregister-project guard-accept
+```
+
+(Windows: `python "$env:USERPROFILE\.cartopian\bin\cartopian" unregister-project guard-accept`.)
+Delete the `guard-accept` scratch directory and remove or keep
+`.claude/settings.json` as desired.
+
+## Pass criteria
+
+All four behaviors observed live, on both platforms: (3)+(4) deny with honest
+`[guard]` messages naming path, class, and missing grant; (5) granted write
+succeeds; (6) zero footprint outside registered boundaries; (7) ungated config
+passes through undenied.

@@ -217,6 +217,68 @@ def install(
     return actions
 
 
+# --- Claude Code refusal-adapter hook registration (operator-invoked) -----
+# `--claude-hook <project-dir>` merges the PreToolUse registration for
+# cli/claude_hook.py into <project-dir>/.claude/settings.json — project-level
+# Claude Code settings only. It is never run implicitly and never touches any
+# user-global settings file.
+CLAUDE_HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
+
+
+def _claude_hook_command(install_root: Path) -> str:
+    hook_path = install_root / "cli" / "claude_hook.py"
+    return f'"{sys.executable}" "{hook_path}"'
+
+
+def register_claude_hook(
+    project_dir: Path, install_root: Path, actions: List[str]
+) -> None:
+    """Merge the refusal-adapter PreToolUse hook into the project's
+    ``.claude/settings.json``. Idempotent: an existing claude_hook.py entry is
+    replaced in place; all other settings are preserved."""
+    import json
+
+    settings_path = project_dir / ".claude" / "settings.json"
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(
+                f"[error] cannot merge into {settings_path}: {exc}\n"
+                "        fix or remove the file, then re-run."
+            )
+        if not isinstance(settings, dict):
+            raise SystemExit(
+                f"[error] {settings_path} is not a JSON object; not merging."
+            )
+    hooks = settings.setdefault("hooks", {})
+    pre = hooks.setdefault("PreToolUse", [])
+    entry = {
+        "matcher": CLAUDE_HOOK_MATCHER,
+        "hooks": [
+            {"type": "command", "command": _claude_hook_command(install_root)}
+        ],
+    }
+    kept = [
+        item
+        for item in pre
+        if "claude_hook.py"
+        not in "".join(
+            h.get("command", "")
+            for h in (item.get("hooks", []) if isinstance(item, dict) else [])
+            if isinstance(h, dict)
+        )
+    ]
+    kept.append(entry)
+    hooks["PreToolUse"] = kept
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+    )
+    actions.append(f"registered claude refusal-adapter hook in {settings_path}")
+
+
 def _check_optional_coreutils() -> Optional[str]:
     """Return a recommendation string if macOS is missing coreutils.
 
@@ -271,6 +333,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="suppress per-action stdout; print only the final summary line.",
     )
+    p.add_argument(
+        "--claude-hook",
+        type=Path,
+        default=None,
+        metavar="PROJECT_DIR",
+        help=(
+            "also register the Claude Code refusal-adapter PreToolUse hook in "
+            "PROJECT_DIR/.claude/settings.json (project-level settings only; "
+            "never modifies user-global settings)."
+        ),
+    )
     return p
 
 
@@ -282,6 +355,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     install_root = (args.prefix or default_install_root()).expanduser().resolve()
 
     actions = install(source_root, install_root, mode=args.mode)
+    if args.claude_hook is not None:
+        register_claude_hook(
+            args.claude_hook.expanduser().resolve(), install_root, actions
+        )
     if not args.quiet:
         for line in actions:
             print(line)
