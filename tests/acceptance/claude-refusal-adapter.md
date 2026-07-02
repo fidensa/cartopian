@@ -6,9 +6,11 @@ not satisfy this gate. Execute the full sequence once on native Windows
 (PowerShell-launched Claude Code) and once on macOS; the steps are written for
 both, with the Windows command form first where they differ.
 
-Prerequisites: Python 3.11+ on `PATH` as `python`, Claude Code installed, and
-Cartopian installed at `~/.cartopian` (`%USERPROFILE%\.cartopian` on Windows)
-via `python scripts/install.py` from the source repo.
+Prerequisites: Python 3.11+ (macOS: on `PATH` as `python`; Windows: via the
+`py` launcher), Claude Code installed, and Cartopian installed at
+`~/.cartopian` (`%USERPROFILE%\.cartopian` on Windows) via
+`python scripts/install.py` (macOS) or `py scripts\install.py --mode copy`
+(Windows) from the source repo.
 
 Throughout, `$CART` means the install root:
 
@@ -68,7 +70,7 @@ Register the project:
 
 ```powershell
 # Windows
-python "$env:USERPROFILE\.cartopian\bin\cartopian" register-project "$env:TEMP\guard-accept\gov-project"
+py "$env:USERPROFILE\.cartopian\bin\cartopian" register-project "$env:TEMP\guard-accept\gov-project"
 ```
 
 ```bash
@@ -83,7 +85,17 @@ python "$env:USERPROFILE\.cartopian\bin\cartopian" register-project "$env:TEMP\g
 
 From the Cartopian **source repo**:
 
+```powershell
+# Windows
+py scripts\install.py --mode copy --claude-hook <path-to>\guard-accept
 ```
+
+`--mode copy` is required on native Windows because `--claude-hook` performs a
+full install at the chosen mode, and the default symlink mode fails without
+Developer Mode / admin.
+
+```bash
+# macOS
 python scripts/install.py --claude-hook <path-to>/guard-accept
 ```
 
@@ -98,7 +110,7 @@ python scripts/install.py --claude-hook <path-to>/guard-accept
         "hooks": [
           {
             "type": "command",
-            "command": "python \"%USERPROFILE%\\.cartopian\\cli\\claude_hook.py\""
+            "command": "py \"%USERPROFILE%\\.cartopian\\cli\\claude_hook.py\""
           }
         ]
       }
@@ -108,7 +120,11 @@ python scripts/install.py --claude-hook <path-to>/guard-accept
 ```
 
 On macOS use `"python \"$HOME/.cartopian/cli/claude_hook.py\""` as the command.
-Confirm no user-global settings file (`~/.claude/settings.json`) was modified.
+Note: the installer itself writes the **absolute path** of the interpreter
+that ran `install.py` (`sys.executable`) as the hook command, not a bare
+`py`/`python` — the literals above are an illustrative hand-written fallback
+only. Confirm no user-global settings file (`~/.claude/settings.json`) was
+modified.
 
 ## 3. Deny: ungranted governed write
 
@@ -214,7 +230,7 @@ ungated and behaves exactly as before containment existed.
 "$HOME/.cartopian/bin/cartopian" unregister-project guard-accept
 ```
 
-(Windows: `python "$env:USERPROFILE\.cartopian\bin\cartopian" unregister-project guard-accept`.)
+(Windows: `py "$env:USERPROFILE\.cartopian\bin\cartopian" unregister-project guard-accept`.)
 Delete the `guard-accept` scratch directory and remove or keep
 `.claude/settings.json` as desired.
 
