@@ -58,6 +58,8 @@ SUBCOMMANDS: List[str] = [
     "dispatch",
     # lifecycle + provenance audit
     "plan-audit",
+    # honest per-host containment matrix
+    "containment-matrix",
 ]
 
 
@@ -106,6 +108,7 @@ def _real_handlers():
     from cli.commands import (
         close_audit,
         compose_state,
+        containment_matrix,
         delete_backlog,
         delete_prompt,
         delete_report,
@@ -144,6 +147,7 @@ def _real_handlers():
     return {
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
+        "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),
         "delete-backlog": (delete_backlog.configure_parser, delete_backlog.handler),
         "delete-prompt": (delete_prompt.configure_parser, delete_prompt.handler),
         "delete-report": (delete_report.configure_parser, delete_report.handler),
