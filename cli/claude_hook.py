@@ -1,15 +1,17 @@
-"""Claude Code refusal adapter — capability-keyed PreToolUse write gating.
+"""Claude Code refusal adapter — capability-keyed PreToolUse read/write gating.
 
 A Claude Code **PreToolUse hook** that denies raw file-mutation tool calls
-(``Write``, ``Edit``, ``MultiEdit``, ``NotebookEdit``) against a registered
-Cartopian project's governed path-classes — and against its declared work
-roots — when the active session lacks the corresponding capability grant
-(see ``cli/capabilities.py`` and ``CAPABILITIES.md``). Enforcement lives here,
-at the harness's native interception point; the launchers under ``wrappers/``
-stay neutral. ``Bash``/shell tool calls are deliberately never gated — the
-raw-edit detection floor owns that residual.
+(``Write``, ``Edit``, ``MultiEdit``, ``NotebookEdit``) *and* raw read tool
+calls (``Read``, ``NotebookRead``, and the search tools ``Glob``/``Grep``)
+against a registered Cartopian project's governed path-classes — and against
+its declared work roots — when the active session lacks the corresponding
+capability grant (see ``cli/capabilities.py`` and ``CAPABILITIES.md``).
+Enforcement lives here, at the harness's native interception point; the
+launchers under ``wrappers/`` stay neutral. ``Bash``/shell tool calls are
+deliberately never gated — the raw-edit/read detection floor owns that
+residual.
 
-Decision procedure (per target path):
+Decision procedure (per target path; identical for both axes):
 
 1. Not inside any registered project's directory or declared work root →
    **allow untouched** (zero footprint: no output, exit 0).
@@ -25,20 +27,26 @@ Decision procedure (per target path):
    Errors that belong to *other* projects (or an unparseable hook payload,
    which carries no usable target) never block anything.
 
-Path classification (governed artifact class → required grant):
+Path classification (one spine; the required grant depends on the axis —
+write for the mutation tools, read for the read tools):
 
 - ``specs/``, ``phases/``, ``IMPLEMENTATION_PLAN.md``, ``REQUIREMENTS.md``,
-  ``ROADMAP.md`` → ``write:plan``
+  ``ROADMAP.md`` → ``write:plan`` / ``read:governance``
 - ``tasks/``, ``STATE.md``, ``BACKLOG.md``, ``STANDARDS.md``,
   ``CONVENTIONS.md``, ``cartopian.toml``, ``cartopian.local.toml``
-  → ``write:lifecycle`` (protocol/lifecycle surface)
-- ``prompts/`` → ``write:lifecycle`` (the PM lifecycle surface)
-- ``decisions/`` → ``write:decisions``
-- ``reports/``, ``reviews/`` → ``write:reports``
-- a declared work root → ``write:worktree``
-- any other path inside the project directory → ``write:lifecycle``
-  (unclassified project files fall to the PM surface rather than passing
-  through an activated boundary ungated)
+  → ``write:lifecycle`` / ``read:governance``
+- ``prompts/`` → ``write:lifecycle`` (the PM lifecycle surface) /
+  ``read:prompts`` (the assignee's handoff)
+- ``decisions/`` → ``write:decisions`` / ``read:governance``
+- ``reports/``, ``reviews/`` → ``write:reports`` / ``read:reports``
+- a declared work root → ``write:worktree`` / ``read:work-roots``
+- any other path inside the project directory → ``write:lifecycle`` /
+  ``read:governance`` (unclassified project files fall to the PM surface
+  rather than passing through an activated boundary ungated)
+
+A ``Glob``/``Grep`` call without an explicit ``path`` searches the session
+cwd, so it gates on the cwd; ``Read``-family calls without a usable path
+carry no target and pass untouched (protocol failure, nothing attributable).
 
 Session-role identification: ``cartopian dispatch`` exports environment to the
 launched wrapper (the same mechanism that carries ``CARTOPIAN_TIMEOUT`` /
@@ -64,7 +72,7 @@ settings): register the hook in the *project-level* Claude Code settings —
       "hooks": {
         "PreToolUse": [
           {
-            "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+            "matcher": "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit",
             "hooks": [
               {
                 "type": "command",
@@ -104,23 +112,50 @@ from cli.commands.resolve_config import (  # noqa: E402
     _resolve_work_roots,
 )
 
-# The file-mutation tools this hook gates. Bash is deliberately absent: the
-# raw-edit detection floor owns shell-routed writes.
+# The file-mutation tools this hook gates on the write axis. Bash is
+# deliberately absent: the raw-edit/read detection floor owns shell-routed
+# access.
 FILE_MUTATION_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
-_PATH_KEYS = ("file_path", "notebook_path")
+# The read tools gated on the read axis. FILE_READ_TOOLS carry an explicit
+# target path; SEARCH_READ_TOOLS (directory/content search) may omit it, in
+# which case they search — and therefore gate on — the session cwd.
+FILE_READ_TOOLS = frozenset({"Read", "NotebookRead"})
+SEARCH_READ_TOOLS = frozenset({"Glob", "Grep"})
+READ_TOOLS = FILE_READ_TOOLS | SEARCH_READ_TOOLS
+
+# Target-path keys across all gated tools (mutation tools never send "path",
+# search tools never send file_path/notebook_path, so one tuple serves both).
+_PATH_KEYS = ("file_path", "notebook_path", "path")
 
 ROLE_ENV = "CARTOPIAN_ROLE"
 DEFAULT_ROLE = "pm"  # interactive session with no role marker → the PM role
 
-# Governed path-class → required capability grant.
-CLASS_GRANTS: Dict[str, str] = {
+# Governed path-class → required capability grant, per axis. The two axes
+# share one classification spine; only the grant lookup differs.
+WRITE_CLASS_GRANTS: Dict[str, str] = {
     "plan": "write:plan",
     "lifecycle": "write:lifecycle",
+    "prompts": "write:lifecycle",  # prompts are the PM lifecycle surface to write
     "decisions": "write:decisions",
     "reports": "write:reports",
     "project-file": "write:lifecycle",
     "work-root": "write:worktree",
+}
+
+READ_CLASS_GRANTS: Dict[str, str] = {
+    "plan": "read:governance",
+    "lifecycle": "read:governance",
+    "prompts": "read:prompts",  # ...but the assignee's handoff to read
+    "decisions": "read:governance",
+    "reports": "read:reports",
+    "project-file": "read:governance",
+    "work-root": "read:work-roots",
+}
+
+AXIS_GRANTS: Dict[str, Dict[str, str]] = {
+    "write": WRITE_CLASS_GRANTS,
+    "read": READ_CLASS_GRANTS,
 }
 
 # First path segment under the project root → class.
@@ -128,7 +163,7 @@ _DIR_CLASSES: Dict[str, str] = {
     "specs": "plan",
     "phases": "plan",
     "tasks": "lifecycle",
-    "prompts": "lifecycle",
+    "prompts": "prompts",
     "decisions": "decisions",
     "reports": "reports",
     "reviews": "reports",
@@ -179,24 +214,33 @@ def _is_within(target: str, root: str, flavor) -> bool:
     return t.startswith(r)
 
 
-def classify_project_path(target: str, project_root: str, flavor) -> Tuple[str, str]:
-    """Classify a path *inside* the project directory → (class, grant)."""
+def classify_project_path(
+    target: str, project_root: str, flavor, axis: str = "write"
+) -> Tuple[str, str]:
+    """Classify a path *inside* the project directory → (class, grant).
+
+    ``axis`` selects which grant the class requires (``"write"`` for the
+    mutation tools, ``"read"`` for the read tools); classification itself is
+    axis-independent.
+    """
+    grants = AXIS_GRANTS[axis]
     rel = flavor.relpath(_norm(target, flavor), _norm(project_root, flavor))
     segments = [s for s in rel.split(flavor.sep) if s not in ("", ".")]
     if not segments or segments[0] == "..":
         # Caller guarantees membership; treat degenerate input as the broadest
         # governed surface rather than passing it through.
-        return "project-file", CLASS_GRANTS["project-file"]
+        return "project-file", grants["project-file"]
     if len(segments) == 1:
+        # A single segment may be a governed root file, or — for the search
+        # tools, which target directories — a governed directory itself.
         name = segments[0]
         for known, klass in _ROOT_FILE_CLASSES.items():
             if flavor.normcase(known) == name:
-                return klass, CLASS_GRANTS[klass]
-        return "project-file", CLASS_GRANTS["project-file"]
+                return klass, grants[klass]
     klass = _DIR_CLASSES.get(segments[0])
     if klass is None:
-        return "project-file", CLASS_GRANTS["project-file"]
-    return klass, CLASS_GRANTS[klass]
+        return "project-file", grants["project-file"]
+    return klass, grants[klass]
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +345,7 @@ def _gate_inside_project(
     cartopian_home: Path,
     flavor,
     resolve,
+    axis: str,
 ) -> Decision:
     """Gate a target that lies inside a registered project's directory."""
     project_id = entry.get("id") or project_root
@@ -326,10 +371,10 @@ def _gate_inside_project(
     klass = grant = None
     for name, wr_path in work_roots.items():
         if _is_within(target, resolve(wr_path), flavor):
-            klass, grant = f"work-root:{name}", CLASS_GRANTS["work-root"]
+            klass, grant = f"work-root:{name}", AXIS_GRANTS[axis]["work-root"]
             break
     if klass is None:
-        klass, grant = classify_project_path(target, project_root, flavor)
+        klass, grant = classify_project_path(target, project_root, flavor, axis)
 
     roles = _session_roles(environ)
     if grant in resolution.grants_for(roles):
@@ -345,6 +390,7 @@ def _gate_work_root_scan(
     cartopian_home: Path,
     flavor,
     resolve,
+    axis: str,
 ) -> Decision:
     """Gate a target outside every project directory against declared work roots.
 
@@ -368,7 +414,7 @@ def _gate_work_root_scan(
             if not resolution.activated:
                 return _ALLOW
             roles = _session_roles(environ)
-            grant = CLASS_GRANTS["work-root"]
+            grant = AXIS_GRANTS[axis]["work-root"]
             if grant in resolution.grants_for(roles):
                 return _ALLOW
             project_id = entry.get("id") or project_root
@@ -400,18 +446,28 @@ def evaluate(
         resolve = os.path.realpath if flavor is os.path else (lambda p: p)
 
     tool_name = payload.get("tool_name")
-    if tool_name not in FILE_MUTATION_TOOLS:
+    if tool_name in FILE_MUTATION_TOOLS:
+        axis = "write"
+    elif tool_name in READ_TOOLS:
+        axis = "read"
+    else:
         return _ALLOW
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         return _ALLOW
+    cwd = payload.get("cwd") or os.getcwd()
     raw_targets = [
         tool_input[key]
         for key in _PATH_KEYS
         if isinstance(tool_input.get(key), str) and tool_input[key]
     ]
     if not raw_targets:
-        return _ALLOW
+        if tool_name in SEARCH_READ_TOOLS:
+            # A pathless directory/content search runs over the session cwd —
+            # that is the surface it reads, so that is what gates it.
+            raw_targets = [cwd]
+        else:
+            return _ALLOW
 
     registry_file = Path(cartopian_home) / "projects.json"
     entries, registry_error = _load_registry_entries(registry_file, flavor)
@@ -421,12 +477,10 @@ def evaluate(
             f"[guard] {tool_name} denied: the Cartopian project registry is "
             f"unreadable ({registry_error}) — project boundaries cannot be "
             f"established, failing closed rather than silently allowing. "
-            f"Repair {registry_file} to restore writes.",
+            f"Repair {registry_file} to restore gated tool access.",
         )
     if not entries:
         return _ALLOW
-
-    cwd = payload.get("cwd") or os.getcwd()
     for raw_target in raw_targets:
         target = raw_target if flavor.isabs(raw_target) else flavor.join(cwd, raw_target)
         target = resolve(target)
@@ -451,10 +505,18 @@ def evaluate(
                 cartopian_home,
                 flavor,
                 resolve,
+                axis,
             )
         else:
             decision = _gate_work_root_scan(
-                tool_name, target, entries, environ, cartopian_home, flavor, resolve
+                tool_name,
+                target,
+                entries,
+                environ,
+                cartopian_home,
+                flavor,
+                resolve,
+                axis,
             )
         if decision.action == "deny":
             return decision

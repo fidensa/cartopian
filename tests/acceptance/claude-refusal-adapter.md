@@ -94,7 +94,7 @@ python scripts/install.py --claude-hook <path-to>/guard-accept
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "matcher": "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -152,6 +152,36 @@ Relaunch Claude Code in `guard-accept/` and repeat the STATE.md edit request.
 specs and tool-repo writes from steps 3–4 would still deny — `write:plan` and
 `write:worktree` remain ungranted.)
 
+## 5a. Deny: ungranted read
+
+In the same session (`pm` holds `read:governance` and `write:lifecycle` — and
+deliberately neither `read:reports`, `read:prompts`, nor `read:work-roots`),
+ask:
+
+> Read gov-project/reports/REPORT-01-001.md.
+
+**Expected:** `[guard]` deny naming the path, path-class `reports`, and
+missing grant `read:reports`. Also ask:
+
+> Search tool-repo for the string "hello" using the Grep tool.
+
+**Expected:** `[guard]` deny naming path-class `work-root:tool-repo` and
+missing grant `read:work-roots`. (Reads of `gov-project/STATE.md` and
+`gov-project/specs/` still succeed — `read:governance` is held.)
+
+## 5b. Allow: granted read
+
+Exit Claude Code. Extend the `pm` grants:
+
+```toml
+grants = ["read:governance", "read:reports", "write:lifecycle"]
+```
+
+Relaunch and repeat the reports read from step 5a.
+
+**Expected:** the read succeeds. (The tool-repo search would still deny —
+`read:work-roots` remains ungranted.)
+
 ## 6. Zero footprint: write outside any registered project
 
 In the same session, ask:
@@ -190,7 +220,7 @@ Delete the `guard-accept` scratch directory and remove or keep
 
 ## Pass criteria
 
-All four behaviors observed live, on both platforms: (3)+(4) deny with honest
-`[guard]` messages naming path, class, and missing grant; (5) granted write
-succeeds; (6) zero footprint outside registered boundaries; (7) ungated config
-passes through undenied.
+All behaviors observed live, on both platforms: (3)+(4)+(5a) deny with honest
+`[guard]` messages naming path, class, and missing grant; (5)+(5b) granted
+write and read succeed; (6) zero footprint outside registered boundaries;
+(7) ungated config passes through undenied.

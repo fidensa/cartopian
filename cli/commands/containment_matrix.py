@@ -1,8 +1,10 @@
 """`cartopian containment-matrix <project-path>` — honest per-host containment matrix.
 
 For each supported host application, render the containment tier the host
-currently provides for the target project: the *floor* (more conservative) of
-the host's static tier ceiling and the project's runtime evidence tier.
+currently provides for the target project — separately for the **write
+boundary** and the **read boundary**, plus their floor as the overall tier.
+Each boundary's tier is the *floor* (more conservative) of the host's static
+tier ceiling and the project's runtime evidence tier for that boundary.
 
 The ceiling table (:data:`HOST_CEILINGS`) is the authoritative
 operator-acceptance clearance source, encoded in code — never a config field,
@@ -15,21 +17,29 @@ Runtime evidence is derived from real state, never asserted:
   resolved ``[roles]`` config (an ungated project renders advisory on every
   host — nothing is refused anywhere, whatever is installed);
 - interception evidence for a host means that host's native refusal adapter is
-  actually present and registered for *this* project. The one implemented
-  adapter is the Claude Code PreToolUse hook (``cli/claude_hook.py``),
-  registered in the project's ``.claude/settings.json``. Hosts with no
-  implemented adapter can never show interception evidence.
+  actually present and registered for *this* project, per boundary: the
+  registered PreToolUse matcher must cover the mutation tools for the write
+  boundary and the read tools for the read boundary. A write-only matcher
+  never claims read enforcement. The one implemented adapter is the Claude
+  Code PreToolUse hook (``cli/claude_hook.py``), registered in the project's
+  ``.claude/settings.json``. Hosts with no implemented adapter can never show
+  interception evidence for either boundary.
 
-Every ``advisory+detection`` row carries a plain-language disclosure naming the
-residual: out-of-band writes are detected after the fact by the raw-edit
-detection floor (``plan-audit`` provenance), not prevented at the point of
-write. When the cause is an ungated config, the disclosure names that too.
+Every ``advisory+detection`` boundary carries a plain-language disclosure
+naming the residual: out-of-band writes are detected after the fact by the
+raw-edit detection floor (``plan-audit`` provenance), not prevented at the
+point of write; ungranted reads are not prevented at the point of read, with
+the detection floor as the fail-safe. When the cause is an ungated config,
+the disclosure names that too.
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from cli.claude_hook import FILE_MUTATION_TOOLS, READ_TOOLS
 
 from cli.capabilities import resolve_grants
 from cli.commands.resolve_config import (
@@ -68,11 +78,21 @@ HOST_CEILINGS: Dict[str, Tuple[str, str]] = {
     "devin": ("Devin", TIER_ADVISORY),
 }
 
-_RESIDUAL = (
+_WRITE_RESIDUAL = (
     "out-of-band writes are detected after the fact by the raw-edit "
     "detection floor (plan-audit provenance), not prevented at the point "
     "of write"
 )
+
+_READ_RESIDUAL = (
+    "ungranted reads are not prevented at the point of read; the detection "
+    "floor remains the fail-safe"
+)
+
+_BOUNDARY_RESIDUALS: Dict[str, str] = {
+    "write": _WRITE_RESIDUAL,
+    "read": _READ_RESIDUAL,
+}
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -91,28 +111,31 @@ def _claude_hook_file() -> Path:
     return Path(__file__).resolve().parent.parent / "claude_hook.py"
 
 
-def _claude_hook_registered(project_path: Path) -> bool:
-    """True iff the Claude Code PreToolUse hook is registered for this project.
+def _claude_hook_matchers(project_path: Path) -> List[str]:
+    """PreToolUse matcher strings of registered claude_hook.py entries.
 
     Registration lives in the project's ``.claude/settings.json`` (the form
     ``scripts/install.py --claude-hook`` writes). Anything unreadable or
-    malformed counts as not registered — evidence must be positive.
+    malformed yields no matchers — evidence must be positive. An entry with
+    no ``matcher`` key matches every tool (Claude Code semantics), recorded
+    here as ``""``.
     """
     settings_path = project_path / ".claude" / "settings.json"
     if not settings_path.is_file():
-        return False
+        return []
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
+        return []
     if not isinstance(settings, dict):
-        return False
+        return []
     hooks = settings.get("hooks")
     if not isinstance(hooks, dict):
-        return False
+        return []
     pre = hooks.get("PreToolUse")
     if not isinstance(pre, list):
-        return False
+        return []
+    matchers: List[str] = []
     for item in pre:
         if not isinstance(item, dict):
             continue
@@ -120,22 +143,48 @@ def _claude_hook_registered(project_path: Path) -> bool:
             if isinstance(hook, dict) and "claude_hook.py" in str(
                 hook.get("command", "")
             ):
-                return True
-    return False
+                matcher = item.get("matcher", "")
+                matchers.append(matcher if isinstance(matcher, str) else "")
+                break
+    return matchers
 
 
-def _interception_evidence(host: str, project_path: Path) -> Tuple[bool, bool]:
-    """(interception_present, interception_registered) for one host.
+def _matcher_covers(matcher: str, tool: str) -> bool:
+    """Whether a PreToolUse matcher intercepts `tool` (Claude Code semantics:
+    the matcher is a regex over the tool name; empty or ``"*"`` matches all;
+    an unparseable matcher matches nothing — evidence must be positive)."""
+    if matcher in ("", "*"):
+        return True
+    try:
+        return re.fullmatch(matcher, tool) is not None
+    except re.error:
+        return False
+
+
+def _boundary_registered(matchers: List[str], tools) -> bool:
+    """A boundary counts as registered only when every tool the hook gates on
+    that boundary is covered by some registered matcher."""
+    return bool(matchers) and all(
+        any(_matcher_covers(m, tool) for m in matchers) for tool in sorted(tools)
+    )
+
+
+def _interception_evidence(host: str, project_path: Path) -> Tuple[bool, bool, bool]:
+    """(present, write_registered, read_registered) for one host.
 
     Only Claude Code has an implemented refusal adapter; every other host has
     no interception point this tool can verify, so its evidence is negative
-    by construction.
+    by construction — for both boundaries.
     """
     if host == "claude-code":
         present = _claude_hook_file().is_file()
-        registered = present and _claude_hook_registered(project_path)
-        return present, registered
-    return False, False
+        matchers = _claude_hook_matchers(project_path) if present else []
+        return (
+            present,
+            _boundary_registered(matchers, FILE_MUTATION_TOOLS),
+            _boundary_registered(matchers, READ_TOOLS),
+        )
+    return False, False, False
 
 
 def render_tier(
@@ -160,20 +209,32 @@ def render_tier(
     return ceiling if _TIER_RANK[ceiling] <= _TIER_RANK[evidence] else evidence
 
 
-def _disclosure(tier: str, *, activated: bool) -> Optional[str]:
-    """Plain-language residual disclosure for advisory rows; None otherwise."""
+def _disclosure(tier: str, *, activated: bool, boundary: str = "write") -> Optional[str]:
+    """Plain-language residual disclosure for an advisory boundary; None otherwise."""
     if tier != TIER_ADVISORY:
         return None
+    residual = _BOUNDARY_RESIDUALS[boundary]
     if not activated:
         return (
             "the project config is ungated (no capability grants are "
             "declared for any role), so no host refuses anything for this "
-            f"project; {_RESIDUAL}."
+            f"project; {residual}."
         )
     return (
-        "no cleared native interception is active on this host for this "
-        f"project; {_RESIDUAL}."
+        f"no cleared native {boundary} interception is active on this host "
+        f"for this project; {residual}."
     )
+
+
+def _overall_disclosure(
+    write_tier: str, read_tier: str, *, activated: bool
+) -> Optional[str]:
+    """The row-level disclosure: the write residual when the write boundary
+    (or the whole config) is advisory, else the read residual when only the
+    read boundary degrades the row."""
+    if not activated or write_tier == TIER_ADVISORY:
+        return _disclosure(write_tier, activated=activated, boundary="write")
+    return _disclosure(read_tier, activated=activated, boundary="read")
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -201,13 +262,22 @@ def handler(args: argparse.Namespace) -> int:
 
     hosts = []
     for host, (label, ceiling) in HOST_CEILINGS.items():
-        present, registered = _interception_evidence(host, project_path)
-        tier = render_tier(
+        present, write_reg, read_reg = _interception_evidence(host, project_path)
+        write_tier = render_tier(
             ceiling,
             activated=activated,
             interception_present=present,
-            interception_registered=registered,
+            interception_registered=write_reg,
         )
+        read_tier = render_tier(
+            ceiling,
+            activated=activated,
+            interception_present=present,
+            interception_registered=read_reg,
+        )
+        # The row tier is the floor of the two boundaries: a host is only as
+        # contained as its weakest enforced boundary.
+        tier = min((write_tier, read_tier), key=_TIER_RANK.get)
         hosts.append(
             {
                 "host": host,
@@ -215,9 +285,27 @@ def handler(args: argparse.Namespace) -> int:
                 "tier": tier,
                 "ceiling": ceiling,
                 "interception_present": present,
-                "interception_registered": registered,
+                "interception_registered": write_reg,
                 "activated": activated,
-                "disclosure": _disclosure(tier, activated=activated),
+                "disclosure": _overall_disclosure(
+                    write_tier, read_tier, activated=activated
+                ),
+                "boundaries": {
+                    "write": {
+                        "tier": write_tier,
+                        "interception_registered": write_reg,
+                        "disclosure": _disclosure(
+                            write_tier, activated=activated, boundary="write"
+                        ),
+                    },
+                    "read": {
+                        "tier": read_tier,
+                        "interception_registered": read_reg,
+                        "disclosure": _disclosure(
+                            read_tier, activated=activated, boundary="read"
+                        ),
+                    },
+                },
             }
         )
 

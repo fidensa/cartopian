@@ -74,13 +74,18 @@ class _Fixture(unittest.TestCase):
         env_patch.start()
         self.addCleanup(env_patch.stop)
 
-    def register_hook(self):
+    # The full matcher the installer writes (read + write tools) and the
+    # pre-read-boundary form that intercepts only the mutation tools.
+    FULL_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
+    WRITE_ONLY_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
+
+    def register_hook(self, matcher=FULL_MATCHER):
         """Register the real Claude Code refusal-adapter hook for this project."""
         settings = {
             "hooks": {
                 "PreToolUse": [
                     {
-                        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+                        "matcher": matcher,
                         "hooks": [
                             {
                                 "type": "command",
@@ -155,6 +160,64 @@ class TestHonestTiersFromEvidence(_Fixture):
         )
 
 
+class TestReadBoundaryTiers(_Fixture):
+    """The matrix renders the read boundary per host, honestly: enforced only
+    where the interception point actually intercepts the read tools; advisory
+    + detection (with a plain disclosure) everywhere else."""
+
+    def test_full_matcher_renders_both_boundaries_contained(self):
+        self.register_hook()
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+        self.assertEqual(claude["boundaries"]["write"]["tier"], "contained")
+        self.assertEqual(claude["boundaries"]["read"]["tier"], "contained")
+        self.assertEqual(claude["tier"], "contained")
+        self.assertIsNone(claude["boundaries"]["read"]["disclosure"])
+
+    def test_write_only_matcher_discloses_read_as_advisory(self):
+        # A registration that intercepts only the mutation tools cannot claim
+        # read enforcement: the read boundary — and therefore the overall
+        # tier — degrades, and the disclosure names the read residual.
+        self.register_hook(matcher=self.WRITE_ONLY_MATCHER)
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+        self.assertEqual(claude["boundaries"]["write"]["tier"], "contained")
+        self.assertEqual(
+            claude["boundaries"]["read"]["tier"], "advisory+detection"
+        )
+        self.assertFalse(claude["boundaries"]["read"]["interception_registered"])
+        self.assertEqual(claude["tier"], "advisory+detection")
+        read_disclosure = claude["boundaries"]["read"]["disclosure"]
+        self.assertIsNotNone(read_disclosure)
+        self.assertIn("read", read_disclosure)
+        self.assertIsNotNone(claude["disclosure"])
+        self.assertIn("read", claude["disclosure"])
+
+    def test_read_boundary_advisory_on_hosts_without_adapter(self):
+        self.register_hook()
+        _, rows = self.rows()
+        for host, row in rows.items():
+            if host == "claude-code":
+                continue
+            with self.subTest(host=host):
+                self.assertEqual(
+                    row["boundaries"]["read"]["tier"], "advisory+detection"
+                )
+                self.assertFalse(
+                    row["boundaries"]["read"]["interception_registered"]
+                )
+                self.assertIsNotNone(row["boundaries"]["read"]["disclosure"])
+
+    def test_no_registration_degrades_both_boundaries(self):
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+        for boundary in ("read", "write"):
+            with self.subTest(boundary=boundary):
+                self.assertEqual(
+                    claude["boundaries"][boundary]["tier"], "advisory+detection"
+                )
+
+
 class TestFailClosedGateWiring(_Fixture):
     def test_gated_ceiling_never_renders_contained_via_cli(self):
         self.register_hook()
@@ -208,6 +271,13 @@ class TestUngatedProject(_Fixture):
         self.assertIsNotNone(disclosure)
         self.assertIn("ungated", disclosure)
         self.assertIn("no capability grants", disclosure)
+
+    def test_ungated_read_boundary_is_advisory_with_ungated_disclosure(self):
+        self.register_hook()
+        _, rows = self.rows()
+        read = rows["claude-code"]["boundaries"]["read"]
+        self.assertEqual(read["tier"], "advisory+detection")
+        self.assertIn("ungated", read["disclosure"])
 
 
 class TestAdvisoryDisclosure(_Fixture):

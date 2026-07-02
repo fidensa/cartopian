@@ -222,7 +222,10 @@ def install(
 # cli/claude_hook.py into <project-dir>/.claude/settings.json — project-level
 # Claude Code settings only. It is never run implicitly and never touches any
 # user-global settings file.
-CLAUDE_HOOK_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
+# Read tools first, then the mutation tools: the hook gates both axes, and
+# the containment matrix claims read enforcement only when the registered
+# matcher actually covers the read tools.
+CLAUDE_HOOK_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
 
 
 def _claude_hook_command(install_root: Path) -> str:

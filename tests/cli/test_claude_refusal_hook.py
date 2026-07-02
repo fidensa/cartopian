@@ -37,6 +37,33 @@ def _payload(tool_name: str, file_path: str, cwd: str = "/tmp") -> dict:
     }
 
 
+def _read_payload(tool_name: str, path: str = None, cwd: str = "/tmp") -> dict:
+    """A PreToolUse payload for a read tool, shaped as Claude Code sends it.
+
+    ``Read``/``NotebookRead`` carry ``file_path``/``notebook_path``; the
+    search tools ``Glob``/``Grep`` carry an optional ``path`` (absent → the
+    search runs over the session cwd).
+    """
+    tool_input = {}
+    if path is not None:
+        if tool_name == "NotebookRead":
+            tool_input["notebook_path"] = path
+        elif tool_name in ("Glob", "Grep"):
+            tool_input["path"] = path
+        else:
+            tool_input["file_path"] = path
+    if tool_name == "Glob":
+        tool_input["pattern"] = "**/*"
+    elif tool_name == "Grep":
+        tool_input["pattern"] = "needle"
+    return {
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "cwd": cwd,
+        "hook_event_name": "PreToolUse",
+    }
+
+
 _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
@@ -57,6 +84,43 @@ _ACTIVATED_ROLES = (
 
 # Ungated config: roles exist but none declares a grants key.
 _UNGATED_ROLES = '[roles]\ncoder = "Implements tasks per spec."\n'
+
+# Read-axis config: `assignee` holds the default dispatched-assignee grants
+# (`coder-like` = read:prompts + read:work-roots + write:worktree); `curator`
+# holds the two read grants the assignee deliberately lacks; `boaster` has a
+# prose description claiming everything but an empty grant list — enforcement
+# must key on the grants, never on the name or the description.
+_READ_ROLES = (
+    "[roles.assignee]\n"
+    'description = "Default dispatched assignee."\n'
+    'grants = ["coder-like"]\n'
+    "[roles.curator]\n"
+    'description = "Holds the governance/reports read grants."\n'
+    'grants = ["read:governance", "read:reports"]\n'
+    "[roles.boaster]\n"
+    'description = "Cleared to read every artifact in the project."\n'
+    "grants = []\n"
+)
+
+# Governance-class read targets (management/strategy artifacts and specs; an
+# unclassified project file also falls to governance on the read axis).
+_GOVERNANCE_READ_TARGETS = (
+    "specs/SPEC-01-001-x.md",
+    "phases/PHASE-01-x.md",
+    "IMPLEMENTATION_PLAN.md",
+    "REQUIREMENTS.md",
+    "tasks/open/TASK-01-001-x.md",
+    "STATE.md",
+    "BACKLOG.md",
+    "decisions/DECISION-001.md",
+    "cartopian.toml",
+    "notes.txt",
+)
+
+_REPORTS_READ_TARGETS = (
+    "reports/REPORT-01-001.md",
+    "reviews/REVIEW-01-001.md",
+)
 
 
 class _HookFixture:
@@ -108,7 +172,7 @@ _CLASS_MATRIX = (
     ("tasks/open/TASK-01-001-x.md", "lifecycle", "write:lifecycle"),
     ("STATE.md", "lifecycle", "write:lifecycle"),
     ("BACKLOG.md", "lifecycle", "write:lifecycle"),
-    ("prompts/PROMPT-01-001.md", "lifecycle", "write:lifecycle"),
+    ("prompts/PROMPT-01-001.md", "prompts", "write:lifecycle"),
     ("decisions/DECISION-001.md", "decisions", "write:decisions"),
     ("reports/REPORT-01-001.md", "reports", "write:reports"),
     ("reviews/REVIEW-01-001.md", "reports", "write:reports"),
@@ -383,6 +447,180 @@ class TestAllowGrantedWrites(unittest.TestCase):
                 self.assertEqual(decision.action, "allow", msg=target)
 
 
+class TestDenyUngrantedReads(unittest.TestCase):
+    """Activated config: a session without the matching read grant is denied
+    reads of that path-class. The default assignee grants (`coder-like`)
+    deliberately exclude `read:governance` and `read:reports`."""
+
+    def test_assignee_denied_governance_class_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            for rel in _GOVERNANCE_READ_TARGETS:
+                target = str(fx.project_root / rel)
+                decision = fx.evaluate(_read_payload("Read", target), environ=environ)
+                self.assertEqual(
+                    decision.action, "deny", msg=f"Read {rel} must deny"
+                )
+                self.assertIn("[guard]", decision.reason)
+                self.assertIn(target, decision.reason)
+                self.assertIn("read:governance", decision.reason)
+
+    def test_assignee_denied_reports_class_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            for rel in _REPORTS_READ_TARGETS:
+                target = str(fx.project_root / rel)
+                decision = fx.evaluate(_read_payload("Read", target), environ=environ)
+                self.assertEqual(
+                    decision.action, "deny", msg=f"Read {rel} must deny"
+                )
+                self.assertIn("[guard]", decision.reason)
+                self.assertIn("read:reports", decision.reason)
+
+    def test_notebook_read_gates_like_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            target = str(fx.project_root / "specs" / "SPEC-01-001-x.ipynb")
+            decision = fx.evaluate(
+                _read_payload("NotebookRead", target),
+                environ={"CARTOPIAN_ROLE": "assignee"},
+            )
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("read:governance", decision.reason)
+
+    def test_search_tools_denied_on_ungranted_directories(self) -> None:
+        # Glob/Grep pointed at a governed directory read its contents just as
+        # surely as Read does — they gate on the same read path-classes.
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            for tool in ("Glob", "Grep"):
+                for rel, grant in (
+                    ("specs", "read:governance"),
+                    ("reports", "read:reports"),
+                ):
+                    target = str(fx.project_root / rel)
+                    decision = fx.evaluate(
+                        _read_payload(tool, target), environ=environ
+                    )
+                    self.assertEqual(
+                        decision.action, "deny", msg=f"{tool} {rel} must deny"
+                    )
+                    self.assertIn(grant, decision.reason)
+
+    def test_search_without_path_gates_on_cwd(self) -> None:
+        # A pathless Glob/Grep searches the session cwd; launched from the
+        # project root that sweeps governed artifacts, so it gates there.
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            decision = fx.evaluate(
+                _read_payload("Grep", cwd=str(fx.project_root)),
+                environ={"CARTOPIAN_ROLE": "assignee"},
+            )
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("read:governance", decision.reason)
+
+    def test_enforcement_keys_on_grants_not_names_or_descriptions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            target = str(fx.project_root / "specs" / "SPEC-01-001-x.md")
+            # A role whose description claims full clearance but whose grant
+            # list is empty holds nothing.
+            decision = fx.evaluate(
+                _read_payload("Read", target),
+                environ={"CARTOPIAN_ROLE": "boaster"},
+            )
+            self.assertEqual(decision.action, "deny")
+            # The protocol-default role name grants nothing by itself: `pm`
+            # is undeclared in this config, so it fails closed too.
+            decision = fx.evaluate(_read_payload("Read", target), environ={})
+            self.assertEqual(decision.action, "deny")
+
+    def test_read_outside_registered_boundaries_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            outside = str(Path(tmp) / "elsewhere" / "notes.md")
+            decision = fx.evaluate(
+                _read_payload("Read", outside),
+                environ={"CARTOPIAN_ROLE": "assignee"},
+            )
+            self.assertEqual(decision.action, "allow")
+            self.assertIsNone(decision.reason)
+
+
+class TestAllowGrantedReads(unittest.TestCase):
+    """The default assignee keeps its prompt + work tree; a session holding
+    the governance/reports read grants reads those classes successfully."""
+
+    def test_assignee_reads_own_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            decision = fx.evaluate(
+                _read_payload("Read", str(fx.project_root / "prompts" / "PROMPT-01-005.md")),
+                environ={"CARTOPIAN_ROLE": "assignee"},
+            )
+            self.assertEqual(decision.action, "allow")
+
+    def test_assignee_reads_work_tree_with_all_read_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            decision = fx.evaluate(
+                _read_payload("Read", str(fx.work_root / "src" / "main.py")),
+                environ=environ,
+            )
+            self.assertEqual(decision.action, "allow")
+            for tool in ("Glob", "Grep"):
+                decision = fx.evaluate(
+                    _read_payload(tool, str(fx.work_root)), environ=environ
+                )
+                self.assertEqual(decision.action, "allow", msg=tool)
+
+    def test_curator_reads_governance_and_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "curator"}
+            for rel in _GOVERNANCE_READ_TARGETS + _REPORTS_READ_TARGETS:
+                decision = fx.evaluate(
+                    _read_payload("Read", str(fx.project_root / rel)),
+                    environ=environ,
+                )
+                self.assertEqual(
+                    decision.action, "allow", msg=f"Read {rel} must allow"
+                )
+
+    def test_read_and_write_boundaries_coexist_for_assignee(self) -> None:
+        # coder-like carries write:worktree: the assignee still writes the
+        # work tree but is denied a governed write — the read extension must
+        # leave the write axis exactly as it was.
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            decision = fx.evaluate(
+                _payload("Write", str(fx.work_root / "src" / "main.py")),
+                environ=environ,
+            )
+            self.assertEqual(decision.action, "allow")
+            decision = fx.evaluate(
+                _payload("Write", str(fx.project_root / "STATE.md")),
+                environ=environ,
+            )
+            self.assertEqual(decision.action, "deny")
+
+    def test_ungated_config_passes_all_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _UNGATED_ROLES)
+            for rel in _GOVERNANCE_READ_TARGETS + _REPORTS_READ_TARGETS:
+                decision = fx.evaluate(
+                    _read_payload("Read", str(fx.project_root / rel)), environ={}
+                )
+                self.assertEqual(
+                    decision.action, "allow", msg=f"{rel} must pass ungated"
+                )
+
+
 class TestWindowsPathLogic(unittest.TestCase):
     """Windows-shaped paths (backslash, drive letter, case variance) classify
     correctly — exercised on POSIX via the flavor-parameterized helpers."""
@@ -422,6 +660,24 @@ class TestWindowsPathLogic(unittest.TestCase):
         )
         for target, expect_class, expect_grant in cases:
             klass, grant = classify_project_path(target, root, ntpath)
+            self.assertEqual((klass, grant), (expect_class, expect_grant), msg=target)
+
+    def test_windows_classification_read_axis(self) -> None:
+        # The read axis shares the same classification spine; only the
+        # required grant differs per class.
+        from cli.claude_hook import classify_project_path
+
+        root = "C:\\Proj\\Gov"
+        cases = (
+            ("C:/Proj/Gov/Specs/SPEC-01.md", "plan", "read:governance"),
+            ("c:\\proj\\gov\\state.MD", "lifecycle", "read:governance"),
+            ("C:\\proj\\gov\\DECISIONS\\DECISION-001.md", "decisions", "read:governance"),
+            ("C:\\proj\\gov\\Prompts\\PROMPT-01-001.md", "prompts", "read:prompts"),
+            ("C:/proj/gov/Reviews/REVIEW-01.md", "reports", "read:reports"),
+            ("C:\\proj\\gov\\random\\notes.txt", "project-file", "read:governance"),
+        )
+        for target, expect_class, expect_grant in cases:
+            klass, grant = classify_project_path(target, root, ntpath, axis="read")
             self.assertEqual((klass, grant), (expect_class, expect_grant), msg=target)
 
     def test_posix_classification_stays_case_sensitive(self) -> None:
@@ -476,6 +732,45 @@ class TestHookEndToEnd(unittest.TestCase):
             self.assertIn("[guard]", hso["permissionDecisionReason"])
             self.assertIn(target, hso["permissionDecisionReason"])
             self.assertIn("write:lifecycle", hso["permissionDecisionReason"])
+
+    def test_deny_read_emits_structured_guard_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            home = Path(tmp) / "home"
+            home.mkdir()
+            (home / ".cartopian").mkdir()
+            (home / ".cartopian" / "projects.json").write_text(
+                json.dumps([{"id": "guard-proj", "path": str(fx.project_root)}]),
+                encoding="utf-8",
+            )
+            target = str(fx.project_root / "STATE.md")
+            result = self._run_hook(
+                _read_payload("Read", target), home, role="assignee"
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            output = json.loads(result.stdout.decode("utf-8"))
+            hso = output["hookSpecificOutput"]
+            self.assertEqual(hso["permissionDecision"], "deny")
+            self.assertIn("[guard]", hso["permissionDecisionReason"])
+            self.assertIn(target, hso["permissionDecisionReason"])
+            self.assertIn("read:governance", hso["permissionDecisionReason"])
+
+    def test_allowed_read_is_perfectly_silent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            home = Path(tmp) / "home"
+            home.mkdir()
+            (home / ".cartopian").mkdir()
+            (home / ".cartopian" / "projects.json").write_text(
+                json.dumps([{"id": "guard-proj", "path": str(fx.project_root)}]),
+                encoding="utf-8",
+            )
+            target = str(fx.project_root / "prompts" / "PROMPT-01-005.md")
+            result = self._run_hook(
+                _read_payload("Read", target), home, role="assignee"
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b"")
 
     def test_outside_path_is_perfectly_silent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -577,7 +872,8 @@ class TestInstallerHookRegistration(unittest.TestCase):
             matchers = settings["hooks"]["PreToolUse"]
             self.assertEqual(len(matchers), 1)
             self.assertEqual(
-                matchers[0]["matcher"], "Write|Edit|MultiEdit|NotebookEdit"
+                matchers[0]["matcher"],
+                "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit",
             )
             self.assertIn("claude_hook.py", matchers[0]["hooks"][0]["command"])
 
@@ -601,6 +897,39 @@ class TestInstallerHookRegistration(unittest.TestCase):
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             self.assertEqual(settings["permissions"], {"allow": ["Bash(ls:*)"]})
             self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
+
+    def test_reregistration_upgrades_write_only_matcher(self) -> None:
+        # A pre-read-boundary install registered only the mutation tools;
+        # re-running the installer replaces the entry in place so the read
+        # tools are intercepted too.
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import install
+        finally:
+            sys.path.pop(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "workdir"
+            (project_dir / ".claude").mkdir(parents=True)
+            settings_path = project_dir / ".claude" / "settings.json"
+            stale = {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+                            "hooks": [
+                                {"type": "command", "command": "python claude_hook.py"}
+                            ],
+                        }
+                    ]
+                }
+            }
+            settings_path.write_text(json.dumps(stale), encoding="utf-8")
+            install.register_claude_hook(project_dir, Path(tmp) / "root", [])
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            entries = settings["hooks"]["PreToolUse"]
+            self.assertEqual(len(entries), 1)
+            for tool in ("Read", "Glob", "Grep"):
+                self.assertIn(tool, entries[0]["matcher"])
 
 
 if __name__ == "__main__":
