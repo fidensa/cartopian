@@ -21,6 +21,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Kebab-case slug for the filename (SPEC-NN-NNN-<slug>.md)",
     )
+    _writers.add_source_arg(subparser)
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -38,10 +39,28 @@ def handler(args: argparse.Namespace) -> int:
             f"--slug must be kebab-case [a-z0-9][a-z0-9-]*; got: {slug!r}",
         )
         return _writers.EXIT_USAGE
+
+    root, err = _writers.validated_root(args.project_root)
+    if err is not None:
+        _writers.stderr("usage", err)
+        return _writers.EXIT_USAGE
+    content, cerr = _writers.resolve_content(args)
+    if cerr is not None:
+        _writers.stderr("usage", cerr)
+        return _writers.EXIT_USAGE
+    content, source_id, serr = _writers.apply_source_stamp(args, root, content)
+    if serr is not None:
+        _writers.stderr(*serr)
+        return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
+    extra_details = {"spec_id": spec_id, "slug": slug}
+    if source_id is not None:
+        extra_details["source"] = source_id
     return _writers.perform_write(
         args,
         action="write-spec",
         dest_kind="spec",
         relative_target=f"{spec_id}-{slug}.md",
-        extra_details={"spec_id": spec_id, "slug": slug},
+        content=content,
+        extra_details=extra_details,
     )

@@ -177,8 +177,53 @@ def _find_active_task(tasks_dir: Path) -> Optional[Dict[str, str]]:
     return None
 
 
+def _parse_blocked_by(content: str) -> List[str]:
+    """Return blocked-by task ids declared in the task header, if any."""
+    for line in content.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith("Blocked by:"):
+            value = stripped[len("Blocked by:") :].strip()
+            if not value or value.lower() in {"none", "n/a"}:
+                return []
+            return [part.strip() for part in value.split(",") if part.strip()]
+    return []
+
+
+def _has_open_tasks(tasks_dir: Path) -> bool:
+    """Return True when tasks/open/ contains at least one task file."""
+    open_dir = tasks_dir / "open"
+    if not open_dir.is_dir():
+        return False
+    return any(
+        entry.is_file() and _TASK_FILENAME_RE.match(entry.name)
+        for entry in open_dir.iterdir()
+    )
+
+
+def _collect_done_task_ids(tasks_dir: Path) -> set:
+    """Return the task ids of every task file in tasks/done/."""
+    done_dir = tasks_dir / "done"
+    if not done_dir.is_dir():
+        return set()
+    done_ids = set()
+    for entry in done_dir.iterdir():
+        if not entry.is_file():
+            continue
+        m = _TASK_FILENAME_RE.match(entry.name)
+        if m:
+            done_ids.add(m.group(1))
+    return done_ids
+
+
 def _find_next_open_task(project_path: Path) -> Optional[Dict[str, str]]:
-    """Return {id, title, path} for the first task file in tasks/open/, sorted by name."""
+    """Return {id, title, path} for the next sequential ready task in tasks/open/.
+
+    Linear execution order per protocol/CONVENTIONS.md § Task Execution Order:
+    phase order first, then filename order within the phase, skipping tasks
+    whose `Blocked by:` dependencies are not yet in tasks/done/.
+    """
     tasks_dir = project_path / "tasks"
     open_dir = tasks_dir / "open"
     if not open_dir.is_dir():
@@ -186,6 +231,7 @@ def _find_next_open_task(project_path: Path) -> Optional[Dict[str, str]]:
     phase_order = {
         stem: index for index, stem in enumerate(_collect_phase_stems(project_path / "phases"))
     }
+    done_ids = _collect_done_task_ids(tasks_dir)
     candidates = []
     for entry in sorted(open_dir.iterdir(), key=lambda p: p.name):
         if not entry.is_file():
@@ -196,6 +242,8 @@ def _find_next_open_task(project_path: Path) -> Optional[Dict[str, str]]:
         try:
             content = entry.read_text(encoding="utf-8")
         except OSError:
+            continue
+        if any(dep not in done_ids for dep in _parse_blocked_by(content)):
             continue
         phase_id = _parse_phase_header(content)
         known_phase = phase_id in phase_order
@@ -423,6 +471,7 @@ def handler(args: argparse.Namespace) -> int:
     phase_id = _find_phase_id(project_path)
     active_task = _find_active_task(tasks_dir)
     next_open_task = _find_next_open_task(project_path)
+    has_open_tasks = _has_open_tasks(tasks_dir)
 
     # Phase-aware completion truth (FR-012): an empty open queue does NOT imply
     # the plan is done if later phases exist whose tasks were never generated.
@@ -435,9 +484,19 @@ def handler(args: argparse.Namespace) -> int:
     plan_complete = (
         active_task is None
         and next_open_task is None
+        and not has_open_tasks
         and next_unstarted_phase is None
         and any(has_task.values())
     )
+
+    blockers = _detect_blockers(project_path, phase_id, tasks_dir)
+    # Open tasks that are all dependency-blocked are a deadlock, not progress:
+    # next_open_task skips not-ready tasks, so without this the queue would
+    # look empty while work still exists.
+    if next_open_task is None and has_open_tasks and active_task is None:
+        blockers.append(
+            "open tasks exist but none are ready to start (unmet Blocked by: dependencies)"
+        )
 
     record: Dict[str, Any] = {
         "project_id": project_id,
@@ -450,7 +509,7 @@ def handler(args: argparse.Namespace) -> int:
         "pm_role": pm_role,
         "pm_role_declared": pm_role_declared,
         "pm_dispatch_kind": pm_dispatch_kind,
-        "blockers": _detect_blockers(project_path, phase_id, tasks_dir),
+        "blockers": blockers,
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }
     emit_record(record)

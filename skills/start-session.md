@@ -1,10 +1,10 @@
 # Skill: Start Session
 
-Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and asking whether to begin the current or next protocol action.
+Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and proceeding with the next protocol action per the linear execution default.
 
 Use this skill when the operator gives a project-agnostic startup direction such as "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off", or "resume" without naming another lifecycle skill.
 
-**Output:** The selected project is named to the operator, `STATE.md` is summarized, and the PM asks whether to begin or continue the current or next task. No handoff is launched and no task is moved before operator confirmation.
+**Output:** The selected project is named to the operator, `STATE.md` is summarized, and the PM continues the active task or starts the next sequential task with `run task` — without asking the operator to choose or approve the selection. The PM stops instead only for blockers, plan-level forks, or decisions reserved to the operator.
 
 ---
 
@@ -67,18 +67,24 @@ Resolve blockers with the operator before taking any lifecycle action.
 
 ---
 
-## Stage 3 - Propose The Next Action
+## Stage 3 - Take The Next Action
 
-Convert the `next-action` record's `active_task` and `next_open_task` fields into one proposed PM action:
+Task execution is linear by default (`protocol/CONVENTIONS.md § Task Execution Order`): the next action is computed from the `next-action` record, not negotiated with the operator. Convert the record into one action, then act on it.
 
-- If `active_task` is non-null and its status is `in-progress`, ask whether to continue it with `run task`.
-- If `active_task` is non-null and its status is `in-review`, ask whether to process the review path with `run task`.
-- If `phase_id` is null and no plan exists for the project, ask whether to begin planning with `plan project`.
-- If `next_unstarted_phase` is non-null — the open queue is empty but a later phase exists whose tasks have **not** been generated yet — the plan is **not** complete. Name that phase to the operator and ask whether to generate its tasks now (the planning skill's task-generation stage). Do **not** offer to close the plan in this case; an empty open queue with a later un-generated phase means "generate the next phase," not "plan done."
-- If `plan_complete` is true (no `active_task`, no `next_open_task`, no `next_unstarted_phase`, and the plan actually had tasks), the plan is genuinely finished — ask whether to close it with `close plan`.
-- If `active_task` is null and `next_open_task` is non-null, ask whether to start that task with `run task`.
-- If `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact, ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
+**Proceed without asking** — these are deterministic continuations of the plan the operator already approved. Name the action in the summary and continue with `run task` immediately; do not ask permission to take the obvious next step:
 
-Ask the operator for confirmation before launching a handoff, moving a task, creating an assignment prompt, or otherwise advancing lifecycle state.
+- `active_task` non-null with status `in-progress` — continue it with `run task`.
+- `active_task` non-null with status `in-review` — process the review path with `run task`.
+- `active_task` null and `next_open_task` non-null — start `next_open_task` with `run task`. Do not offer alternatives or ask which task to run; the record's selection is the protocol order. (The operator may override at any time by naming a different task; an override applies to that task only.)
 
-If the operator confirms, continue with the relevant skill or PM-owned authoring procedure. If the operator declines, stop after the state summary.
+Pace within and across tasks is governed by the resolved `[automation]` policy: `each-handoff` stops after each processed handoff result and resumes when the operator says to continue; `until-blocked` chains through sequential tasks until a stop condition or the run budget is spent.
+
+**Stop and consult the operator** — these are plan-level forks or reserved decisions, not linear movement:
+
+- `phase_id` is null and no plan exists for the project — ask whether to begin planning with `plan project`.
+- `next_unstarted_phase` is non-null — the open queue is empty but a later phase exists whose tasks have **not** been generated yet; the plan is **not** complete. Name that phase to the operator and ask whether to generate its tasks now (the planning skill's task-generation stage). Do **not** offer to close the plan in this case; an empty open queue with a later un-generated phase means "generate the next phase," not "plan done."
+- `plan_complete` is true (no `active_task`, no `next_open_task`, no `next_unstarted_phase`, and the plan actually had tasks) — the plan is genuinely finished; ask whether to close it with `close plan`.
+- `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact — ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
+- Any unresolved blocker from Stage 2, or a decision the protocol or plan reserves to the operator.
+
+If the operator explicitly declines or pauses work, stop after the state summary and do not restart the chain until directed.

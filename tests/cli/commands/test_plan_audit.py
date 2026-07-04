@@ -528,5 +528,49 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
             self.assertEqual(infra, [], record["warnings"])
 
 
+class TestPlanAuditBacklogInvariants(unittest.TestCase):
+    def test_healthy_backlog_is_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-002\n\n"
+                   "## BL-001 — One\n\nA.\n\n## BL-002 — Two\n\nB.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertTrue(record["clean"])
+
+    def test_regressed_mark_is_blocker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            # Mark below a live id — only a raw hand-edit can produce this.
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-001\n\n## BL-004 — Live\n\nB.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 1)
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            kinds = [b["kind"] for b in record["blockers"]]
+            self.assertIn("backlog-mark-regressed", kinds)
+
+    def test_stamped_live_entry_warns_unfinished_promotion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-001\n\n## BL-001 — One\n\nA.\n")
+            # A durable artifact already stamps BL-001 but the entry is still
+            # live: the benign stamp-then-delete crash-window duplicate.
+            _write(project / "tasks" / "open" / "TASK-01-001-x.md",
+                   "# TASK-01-001: x\n\nPlan ref: P01-BUILD-001\nSource: BL-001\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            kinds = [w["kind"] for w in record["warnings"]]
+            self.assertIn("backlog-promotion-unfinished", kinds)
+
+
 if __name__ == "__main__":
     unittest.main()

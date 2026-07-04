@@ -163,7 +163,7 @@ cartopian report-action <report-path>
 - `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
 - `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
 
-Confirm with the operator before applying any lifecycle move.
+Evidence-supported lifecycle moves are applied without an operator confirmation prompt (`protocol/CONVENTIONS.md § Task Execution Order` — the `[automation]` policy gates pace, not selection). Report the move in the running summary; consult the operator only at the stop conditions below.
 
 If the verdict is `blocked`, `failed`, or `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
@@ -252,7 +252,7 @@ For the `review` variant, the emitted record carries:
 - `target_task_status` — the post-verdict lifecycle directory (`done` for `approve`, `in-progress` for `request-changes`, `open` for `reject`).
 - `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` after an `approve` verdict.
 
-Confirm the verdict with the operator before applying any lifecycle move. Then apply the verdict by delegating directory status transitions to the Core CLI:
+Apply the reviewer's verdict without an operator confirmation prompt — the verdict is the review file's recorded evidence, and the CLI guards verify it before executing any move (the `[automation]` policy gates pace, not selection). Report the applied verdict in the running summary. Decisions the protocol or plan reserves to the operator (e.g. an open-question ruling the task was created to inform) remain operator-owned: pause for those before recording them, even when the task's own lifecycle proceeds. Apply the verdict by delegating directory status transitions to the Core CLI:
 
 - `approve`, when `git.pm_owns_product_branches = false` or unset, or when no product-repo PR exists: use `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
 
@@ -327,4 +327,4 @@ Confirm the result is under 5KB and names:
 
 If git versioning is enabled for the project, the PM performs the configured session-close git behavior for project PM data. Git staging, commits, and pushes for the protocol repository itself remain human-owned.
 
-Finish with a concise operator-facing summary that names the task's new status and the exact next action.
+Then continue linearly (`protocol/CONVENTIONS.md § Task Execution Order`): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start that task from Stage 1 without asking. Otherwise finish with a concise operator-facing summary that names the task's new status and the exact next protocol action — when the budget is spent, say so and name the next sequential task the operator's "continue" will start.

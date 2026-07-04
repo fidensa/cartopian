@@ -2,6 +2,7 @@
 
 Phase: PHASE-NN-slug
 Plan ref: PNN-KIND-NNN
+Source: <BL-NNN | n/a>
 Work root: <name | name, name | n/a>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN-slug.md | none>
@@ -17,6 +18,10 @@ One or two sentences. What does done look like?
 ## Plan ref
 
 One primary plan item from `IMPLEMENTATION_PLAN.md`, for example `P01-BUILD-001`. The matching phase file must carry the same plan ref. A task that truly advances multiple plan refs should usually be split; use References for secondary context.
+
+## Source
+
+The backlog entry (`BL-NNN`) this task was promoted from, or `n/a` when the task was not born from a backlog item. Do not hand-type this line to satisfy the promotion guard — stamp it with `cartopian write-task … --source BL-NNN`, which verifies the entry is live before writing it. `delete-backlog` reads this stamp to confirm the promotion is recorded before removing the entry.
 
 ## Work root
 

@@ -16,6 +16,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Phase id matching the grammar PHASE-NN-slug, e.g. PHASE-foundation",
     )
+    _writers.add_source_arg(subparser)
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -26,10 +27,28 @@ def handler(args: argparse.Namespace) -> int:
             f"--phase-id must match PHASE-NN-slug grammar; got: {phase_id!r}",
         )
         return _writers.EXIT_USAGE
+
+    root, err = _writers.validated_root(args.project_root)
+    if err is not None:
+        _writers.stderr("usage", err)
+        return _writers.EXIT_USAGE
+    content, cerr = _writers.resolve_content(args)
+    if cerr is not None:
+        _writers.stderr("usage", cerr)
+        return _writers.EXIT_USAGE
+    content, source_id, serr = _writers.apply_source_stamp(args, root, content)
+    if serr is not None:
+        _writers.stderr(*serr)
+        return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
+    extra_details = {"phase_id": phase_id}
+    if source_id is not None:
+        extra_details["source"] = source_id
     return _writers.perform_write(
         args,
         action="write-phase",
         dest_kind="phase",
         relative_target=f"{phase_id}.md",
-        extra_details={"phase_id": phase_id},
+        content=content,
+        extra_details=extra_details,
     )

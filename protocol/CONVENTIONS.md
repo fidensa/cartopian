@@ -50,9 +50,9 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 1. Read `STATE.md` before taking lifecycle action.
 2. Reconcile `STATE.md` against the filesystem when it names task state that disagrees with task directories.
 3. Tell the operator the current phase, active work, and next protocol action from `STATE.md`.
-4. Ask whether to begin or continue the current task, or proceed to the next task when no task is active.
+4. Proceed per the linear execution default (see [Task Execution Order](#task-execution-order)): continue the active task, or start the next sequential task when no task is active.
 
-A bare startup direction is not permission to launch a handoff or move a task. The PM waits for the operator to confirm the current or next task before using `skills/run-task.md`, `skills/plan-project.md`, or another lifecycle skill.
+A bare startup direction ("continue", "what's next", "pick up where we left off") **is** direction to proceed linearly. The PM continues the active task — or starts the next sequential task when none is active — via `skills/run-task.md` without asking the operator to choose or approve the selection. Pace is governed by the `[automation]` policy; selection is never an operator question. The PM still stops for blockers, for decisions the protocol reserves to the operator, and at the plan-level forks named in `skills/start-session.md` (no plan exists, plan complete).
 
 ## Naming
 
@@ -146,6 +146,19 @@ Task files follow the canonical field schema in `templates/TASK.md`.
 Open task files should contain enough context to assign and review the work without becoming progress journals.
 
 If completion evidence arrives before assignment/start was recorded, the PM may fast-forward the task to the status supported by that evidence.
+
+### Task Execution Order
+
+Task execution is **linear by default**. The next task is deterministic: the first file in `tasks/open/`, ordered by phase (plan order), then by task filename within the phase, skipping tasks whose `Blocked by:` dependencies are not yet in `tasks/done/`. This is the same selection `cartopian next-action` emits as `next_open_task`.
+
+Because the order is deterministic, choosing the next task is a computation, not a conversation:
+
+- The PM does not ask the operator which task to run next, whether to start the obvious next task, or whether to continue an already in-progress task. It proceeds.
+- When a task completes and automation budget remains (see the `[automation]` policy under [Handoffs](#handoffs)), the PM continues to the next sequential task in the same run.
+- The operator may override the order at any time by naming a task; an explicit override applies to that task only and does not change the default for subsequent selections.
+- Deviating from sequential order on the PM's own initiative is a protocol violation.
+
+Linear movement stops — and the operator is consulted — only at genuine stop conditions: a readiness or audit blocker, a failed/blocked/rejected handoff, evidence gates that cannot be satisfied, a decision the protocol or plan reserves to the operator, a plan-level fork (no plan, phase tasks not yet generated, plan complete), or exhaustion of the `[automation]` budget.
 
 ## Specs
 
@@ -315,6 +328,8 @@ Supported `confirmation` values are:
 
 Defaults are `confirmation = "each-handoff"` and `max_handoffs_per_run = 1`.
 
+The `confirmation` policy gates **pace**, never **selection**. Task order is deterministic per [Task Execution Order](#task-execution-order): under `each-handoff` the PM stops after processing each handoff result and resumes with the next sequential step when the operator says to continue; under `until-blocked` it chains through sequential tasks within the run budget. Neither value makes "which task next" or "shall I apply this evidence-supported move" an operator question — evidence-supported lifecycle moves (starting the next sequential task, moving a task per a parsed report or review verdict) are applied without a confirmation prompt. The operator is consulted only at the stop conditions named in [Task Execution Order](#task-execution-order).
+
 Handoffs are sequential. Concurrent child agents are out of scope.
 
 ### Waiting For Completion
@@ -418,7 +433,22 @@ A decision that changes a prior decision creates a new file with `Supersedes: DE
 
 `BACKLOG.md` at the project root is the durable home for PM/reviewer follow-up notes — actionable tech debt, process debt, and protocol-hardening items that are not yet promoted into a task or roadmap entry. Follow-up notes belong here, never in `STATE.md`, which stays canonical composed state under its 5KB ceiling.
 
-Entries are written through `cartopian write-backlog` (one section per `BL-NNN` id; re-issuing an id revises its entry in place) and removed through `cartopian delete-backlog <project-root> --bl-id BL-NNN` (which removes only that entry's section; the preamble and every other entry round-trip byte-for-byte). Both paths are mediated writes — hand-edits to `BACKLOG.md` remain out of band, the same as any other mediated artifact. The file survives plan closeout and is input to the next planning cycle.
+Entries are written through `cartopian write-backlog` (one section per `BL-NNN` id) and removed through `cartopian delete-backlog <project-root> --bl-id BL-NNN` (which removes only that entry's section; the preamble and every other entry round-trip byte-for-byte). Both paths are mediated writes — hand-edits to `BACKLOG.md` remain out of band, the same as any other mediated artifact. The file survives plan closeout and is input to the next planning cycle.
+
+### Ids are writer-allocated and never reused
+
+`BACKLOG.md` carries a visible preamble field, `Highest id issued: BL-NNN`, owned exclusively by the mediated writers. New-entry ids are **allocated by the writer, never supplied by the caller**: omitting `--bl-id` mints the next id (mark + 1), bumps the field, and reports the allocated id in the command's NDJSON record. Supplying `--bl-id` is legal only to revise an entry that is currently live. Because the mark only ever ascends and `delete-backlog` never touches it, a deleted id is never reissued — so a stray reference a cleanup sweep missed can never collide with a freshly minted entry. The counter lives in the file itself (not a machine-local counter, a sidecar file, or git history) so it travels with the project and cannot split-brain from the entries it governs. On every mediated write the writer reconciles the field: a value **below** the highest live id can only come from a raw hand-edit and is refused fail-closed; an **absent** field (a legacy file predating this rule) is the one permitted self-heal, initialized to the highest live id on the next write. `plan-audit` asserts `mark ≥ max live id` as a portable detection floor.
+
+### Promotion is a recorded move
+
+When a backlog item is promoted into a task, spec, or phase, the durable artifact records where it came from with a `Source: BL-NNN` header line, and the backlog entry is deleted outright. Reference points from the durable artifact back to the ephemeral entry, never the reverse — the file that outlives the reference is the one that holds it, so nothing can dangle. This is enforced by an **interlocking pair of guards with the delete as the choke point**, not by a composite verb (sugar cannot hold the invariant while the primitive commands stay callable):
+
+- **Stamping is an argument, not body text.** `cartopian write-task` / `write-spec` / `write-phase` take `--source BL-NNN`; the writer validates the grammar, verifies the entry is live in `BACKLOG.md` at stamp time, and renders the `Source:` line itself. A `Source:` line hand-typed into a content body is decoration the guard never saw. This is what separates it from a plain `Plan ref:` — the reference is created by a command that checked the referent existed.
+- **`delete-backlog` refuses undocumented deletion.** Before removing a live entry it scans the governed durable surfaces (`tasks/` in all four status dirs, `specs/`, `phases/`, `IMPLEMENTATION_PLAN.md`, `decisions/`) for a matching `Source: BL-NNN` stamp and refuses without one.
+
+Neither guard alone suffices — stamping without the delete guard still lets an unstamped entry be deleted (the dangle); the delete guard without mediated stamping is satisfied by a hand-typed line pointing at nothing. Together you can only stamp what exists and only delete what has been stamped. The ordering is **stamp-then-delete**: the filesystem offers no transaction, so promotion is not atomic — but stamp-first leaves a benign, mechanically recoverable duplicate (the entry is still live and already referenced; `plan-audit` flags it as an unfinished promotion), whereas delete-first would lose information irreversibly. The delete guard makes the safe ordering the only one that executes. The one legitimate exception — an entry **abandoned** rather than promoted — is an explicit `--discard` flag: loud, recorded in the NDJSON, never the default, mirroring the evidence gate's `required` vs `n/a` grammar where an exception is legal only when it is stated.
+
+The general principle this settles: **every cross-artifact reference field is verified by a guard at the lifecycle transition that consumes it** — `validate-task-readiness` already checks `Plan ref:` at task start, and `move-task` checks the review `Verdict:` before a task reaches `done`. A reference that no transition ever verifies is exactly the kind this rule exists to forbid.
 
 ## Sizing
 

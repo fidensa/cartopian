@@ -1,6 +1,7 @@
 # PHASE-NN-slug: <short noun-phrase title>
 
 Plan ref section: `## Phase NN: <name>` in `IMPLEMENTATION_PLAN.md`
+Source: <BL-NNN | n/a>
 Created: YYYY-MM-DD
 
 ## Goal

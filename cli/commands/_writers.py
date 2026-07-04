@@ -89,6 +89,97 @@ def resolve_content(args: argparse.Namespace) -> Tuple[Optional[Union[str, bytes
     return None, "missing artifact body: pass --content or --content-file"
 
 
+_STAMP_PLAN_RE = re.compile(r"^Plan refs?:")
+
+
+def stamp_header_field(content: str, field: str, value: str) -> str:
+    """Insert-or-replace a ``Field: value`` line in the artifact's top header
+    block, rendering the line ourselves so it cannot be forged in body text.
+
+    The header block is the run of lines before the first ``## `` section
+    header (the same boundary ``validate_task_readiness._parse_headers`` uses).
+    An existing ``field`` line in that block is replaced in place; otherwise the
+    line is inserted immediately after the ``Plan ref(s):`` line when present,
+    else directly under the H1 title.
+    """
+    line = f"{field}: {value}"
+    lines = content.splitlines(keepends=True)
+    block_end = len(lines)
+    for i, text in enumerate(lines):
+        if text.startswith("## "):
+            block_end = i
+            break
+
+    field_re = re.compile(rf"^{re.escape(field)}:")
+    for i in range(block_end):
+        if field_re.match(lines[i].strip("\n")):
+            newline = "\n" if lines[i].endswith("\n") else ""
+            lines[i] = line + newline
+            return "".join(lines)
+
+    insert_at, h1_idx = None, None
+    for i in range(block_end):
+        if _STAMP_PLAN_RE.match(lines[i].strip("\n")):
+            insert_at = i + 1
+            break
+        if h1_idx is None and lines[i].startswith("# "):
+            h1_idx = i
+    if insert_at is None:
+        insert_at = (h1_idx + 1) if h1_idx is not None else 0
+    lines.insert(insert_at, line + "\n")
+    return "".join(lines)
+
+
+def add_source_arg(subparser: argparse.ArgumentParser) -> None:
+    """Bind the ``--source BL-NNN`` promotion flag for artifact writers whose
+    output can be a backlog-promotion target (task, spec, phase)."""
+    subparser.add_argument(
+        "--source",
+        default=None,
+        help=(
+            "Backlog entry (BL-NNN) this artifact is promoted from. The writer "
+            "verifies the entry is live and stamps `Source: BL-NNN` into the "
+            "header itself — a hand-typed body line does not count."
+        ),
+    )
+
+
+def apply_source_stamp(
+    args: argparse.Namespace,
+    root: Path,
+    content: Union[str, bytes],
+) -> Tuple[Union[str, bytes], Optional[str], Optional[Tuple[str, str]]]:
+    """Honour ``--source`` when present: validate the id, verify it names a live
+    backlog entry, and stamp ``Source: BL-NNN`` into the header block.
+
+    Returns ``(content, source_id, error)`` where ``error`` is ``None`` or a
+    ``(prefix, message)`` pair ready for :func:`stderr` (``usage`` for grammar,
+    ``guard`` for a non-live referent). ``content`` is unchanged when no
+    ``--source`` was given.
+    """
+    bl_id = getattr(args, "source", None)
+    if bl_id is None:
+        return content, None, None
+    if not BL_ID_RE.match(bl_id):
+        return content, None, ("usage", f"--source must match BL-NNN grammar; got: {bl_id!r}")
+    # Lazy import: write_backlog imports this module, so importing it here (not
+    # at module load) keeps the dependency one-directional.
+    from cli.commands import write_backlog
+
+    if int(bl_id[3:]) not in set(write_backlog.live_entry_ids(root)):
+        return content, None, (
+            "guard",
+            f"source-entry-not-live: --source {bl_id} names no live backlog "
+            "entry in BACKLOG.md; only a live entry can be promoted",
+        )
+    if isinstance(content, bytes):
+        try:
+            content = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content, None, ("usage", "artifact body must be valid UTF-8 to stamp --source")
+    return stamp_header_field(content, "Source", bl_id), bl_id, None
+
+
 def validated_root(raw: str) -> Tuple[Optional[Path], Optional[str]]:
     """Return ``(project_root, error)``; root must be an absolute directory."""
     if not isinstance(raw, str) or not Path(raw).is_absolute():

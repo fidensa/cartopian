@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -474,6 +475,54 @@ def _check_infra_artifacts(
     return warnings
 
 
+def _check_backlog_invariants(
+    project_path: Path,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Assert the backlog id invariant and flag stalled promotions.
+
+    - Blocker: ``Highest id issued:`` sits below a live entry's id — only a raw
+      hand-edit can regress the mark, and reusing an id below it would collide.
+    - Warning: a live entry already carries a ``Source: BL-NNN`` stamp in the
+      durable surface — the benign duplicate a stamp-then-delete crash leaves;
+      finish the promotion by deleting the entry.
+    """
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    backlog_path = project_path / "BACKLOG.md"
+    if not backlog_path.is_file():
+        return blockers, warnings
+    try:
+        text = backlog_path.read_text(encoding="utf-8")
+    except OSError:
+        return blockers, warnings
+
+    preamble, sections = write_backlog._split_sections(text)
+    live = write_backlog._live_ids(sections)
+    max_live = max(live) if live else 0
+    mark = write_backlog._read_mark(preamble)
+    if mark is not None and mark < max_live:
+        blockers.append({
+            "kind": "backlog-mark-regressed",
+            "detail": (
+                f"BACKLOG.md `Highest id issued:` is {write_backlog._format_id(mark)} "
+                f"but a live entry is {write_backlog._format_id(max_live)}; the mark "
+                "was hand-edited below a live id"
+            ),
+        })
+
+    for sid, _text in sections:
+        stamp = delete_backlog.find_source_stamp(project_path, sid)
+        if stamp is not None:
+            warnings.append({
+                "kind": "backlog-promotion-unfinished",
+                "detail": (
+                    f"live backlog entry {sid} is already stamped as Source in "
+                    f"{stamp}; finish the promotion by deleting {sid}"
+                ),
+            })
+    return blockers, warnings
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
@@ -498,6 +547,8 @@ def handler(args: argparse.Namespace) -> int:
 
     blockers: List[Dict[str, Any]] = []
     blockers.extend(_check_artifact_chains(project_path))
+    backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
+    blockers.extend(backlog_blockers)
 
     work_roots = _load_work_roots(project_path)
     pm_owns_product_branches = _resolve_pm_owns_product_branches(project_path)
@@ -514,6 +565,7 @@ def handler(args: argparse.Namespace) -> int:
     # Assignee scope boundary — infra artifacts require explicit task
     # authorization regardless of attribution.
     warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
+    warnings.extend(backlog_warnings)
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI
     # command — no harness interception — so it is the portable floor: it

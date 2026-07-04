@@ -613,9 +613,9 @@ STARTUP_SLUG = "startup"
 # H2 headings concatenated (in document order) into
 # `cartopian://protocol/CONVENTIONS/startup` — the sections a PM needs through
 # session startup: project selection, role resolution, state read, and the
-# next-action proposal. Fail-closed: if any heading disappears from
-# CONVENTIONS.md the startup read errors instead of silently dropping a
-# guardrail.
+# linear next-action default (Tasks carries § Task Execution Order).
+# Fail-closed: if any heading disappears from CONVENTIONS.md the startup read
+# errors instead of silently dropping a guardrail.
 STARTUP_SECTIONS = (
     "Core Principle",
     "Protocol And Skills",
@@ -623,6 +623,7 @@ STARTUP_SECTIONS = (
     "Session Startup And Project Selection",
     "Status Through Directory",
     "Lifecycle Authority",
+    "Tasks",
     "Roles",
     "Session State",
 )

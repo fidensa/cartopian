@@ -46,4 +46,4 @@ The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; 
 
 ## Step 3 — Continue from `start_session` Stage 1
 
-Stage 0 of `start_session` (project selection) is already complete — you did it in Step 1. Confirm the selected project with the operator, then continue from Stage 1: call `resolve_config <project>` to resolve roles, handoff targets, and automation policy, and proceed through the remaining stages. Confirm each lifecycle action with the operator before advancing state.
+Stage 0 of `start_session` (project selection) is already complete — you did it in Step 1. Continue from Stage 1: call `resolve_config <project>` to resolve roles, handoff targets, and automation policy, and proceed through the remaining stages. Task execution is linear by default (`protocol/CONVENTIONS.md § Task Execution Order`): proceed through evidence-supported lifecycle actions without per-action confirmation prompts, consulting the operator only for blockers, plan-level forks, and decisions the protocol reserves to the operator.

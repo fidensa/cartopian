@@ -8,17 +8,19 @@ parked in ``STATE.md`` (which stays canonical composed state only, under its
 - a section heading ``## BL-NNN — <title>``, followed by
 - the entry body (``--content`` / ``--content-file``).
 
-Re-issuing the same ``--bl-id`` replaces that entry's section in place;
-a new id appends. The whole file is rendered back through the mediated-write
-primitive (``backlog`` dest_kind → the allowlisted root file ``BACKLOG.md``)
-— no raw edit, no second bypass surface. An existing ``BACKLOG.md`` keeps its
-preamble (everything before the first entry heading); a missing one is seeded
-with a minimal header.
+Ids are **writer-allocated, never caller-supplied**. Omitting ``--bl-id`` mints
+the next id from the ``Highest id issued:`` preamble field (mark + 1) and bumps
+that field; deleted ids are never reissued. Supplying ``--bl-id`` is legal only
+to revise a *live* entry in place. The whole file is rendered back through the
+mediated-write primitive (``backlog`` dest_kind → the allowlisted root file
+``BACKLOG.md``) — no raw edit, no second bypass surface. An existing
+``BACKLOG.md`` keeps its preamble (everything before the first entry heading); a
+missing one is seeded with a minimal header.
 """
 import argparse
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from cli.commands import _writers
 from cli.mediated_write import GuardRefusal, mediated_write
@@ -37,13 +39,73 @@ _ENTRY_HEADING_RE = re.compile(r"^## (BL-\d{3})\b")
 # misread as a section boundary (which would shear the entry on round-trip).
 _FENCE_RE = re.compile(r"^ {0,3}(```|~~~)")
 
+# The high-water mark: a visible preamble field, owned exclusively by the
+# mediated writers, that records the highest id ever issued. New-entry ids are
+# allocated from this field (mark + 1), never caller-supplied, so a deleted
+# entry can never be reissued — monotonicity by construction. It travels with
+# the file (no machine-local counter, no sidecar split-brain state) and rides
+# through the byte-for-byte preamble preservation both writers already provide.
+_MARK_RE = re.compile(r"^Highest id issued:[ \t]*(BL-\d{3})[ \t]*$", re.MULTILINE)
+
+
+def _id_num(bl_id: str) -> int:
+    """``"BL-019"`` -> ``19``. Assumes BL-NNN grammar already validated."""
+    return int(bl_id[3:])
+
+
+def _format_id(num: int) -> str:
+    return f"BL-{num:03d}"
+
+
+def _live_ids(sections: List[Tuple[str, str]]) -> List[int]:
+    return [_id_num(sid) for sid, _ in sections]
+
+
+def live_entry_ids(root: Path) -> List[int]:
+    """Numeric ids of the entries currently live in ``<root>/BACKLOG.md``
+    (empty when the file is absent). The promotion writers use this to verify a
+    ``--source`` id names something that actually exists before stamping it."""
+    try:
+        existing = (root / "BACKLOG.md").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    _preamble, sections = _split_sections(existing)
+    return _live_ids(sections)
+
+
+def _read_mark(preamble: str) -> Optional[int]:
+    """Return the recorded high-water number, or ``None`` for a legacy file
+    that predates the field (the one permitted self-heal path)."""
+    m = _MARK_RE.search(preamble)
+    return _id_num(m.group(1)) if m else None
+
+
+def _write_mark(preamble: str, num: int) -> str:
+    """Set the ``Highest id issued:`` field to ``num``, preserving the rest of
+    the preamble byte-for-byte. Replaces the line in place when present, else
+    inserts it as its own paragraph directly under the first H1."""
+    line = f"Highest id issued: {_format_id(num)}"
+    if _MARK_RE.search(preamble):
+        return _MARK_RE.sub(line, preamble, count=1)
+    lines = preamble.splitlines(keepends=True)
+    insert_at = 0
+    for i, text in enumerate(lines):
+        if text.startswith("# "):
+            insert_at = i + 1
+            break
+    lines.insert(insert_at, f"\n{line}\n")
+    return "".join(lines)
+
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     _writers.add_content_args(subparser)
     subparser.add_argument(
         "--bl-id",
-        required=True,
-        help="Backlog entry id matching the BL-NNN grammar",
+        default=None,
+        help=(
+            "Backlog entry id (BL-NNN grammar). Omit to allocate a fresh id; "
+            "supply one only to revise an existing (live) entry in place."
+        ),
     )
     subparser.add_argument(
         "--title",
@@ -121,9 +183,11 @@ def _sanitize_title(value: str) -> str:
 
 
 def handler(args: argparse.Namespace) -> int:
-    bl_id = args.bl_id
-    if not _writers.BL_ID_RE.match(bl_id):
-        _writers.stderr("usage", f"--bl-id must match BL-NNN grammar; got: {bl_id!r}")
+    supplied_id = args.bl_id
+    if supplied_id is not None and not _writers.BL_ID_RE.match(supplied_id):
+        _writers.stderr(
+            "usage", f"--bl-id must match BL-NNN grammar; got: {supplied_id!r}"
+        )
         return _writers.EXIT_USAGE
     title = _sanitize_title(args.title)
     if not title:
@@ -157,16 +221,54 @@ def handler(args: argparse.Namespace) -> int:
     else:
         preamble, sections = _DEFAULT_PREAMBLE, []
 
-    new_section = _render_entry(bl_id, title, content)
-    replaced = False
-    for i, (sid, _text) in enumerate(sections):
-        if sid == bl_id:
-            sections[i] = (bl_id, new_section)
-            replaced = True
-            break
-    if not replaced:
-        sections.append((bl_id, new_section))
+    # Reconcile the high-water mark before allocating. `max_live` is the highest
+    # id still present; the mark must never sit below it.
+    live = _live_ids(sections)
+    max_live = max(live) if live else 0
+    mark = _read_mark(preamble)
+    if mark is None:
+        # Legacy file predating the field: the one permitted self-heal — adopt
+        # the highest live id (or 0) and record it on this write.
+        mark = max_live
+    elif mark < max_live:
+        # Only a raw hand-edit can drop the mark below a live id; refuse rather
+        # than compound the corruption (move-task guard posture).
+        _writers.stderr(
+            "guard",
+            "backlog-mark-regressed: Highest id issued is "
+            f"{_format_id(mark)} but a live entry is {_format_id(max_live)}; "
+            "BACKLOG.md was hand-edited",
+        )
+        return _writers.EXIT_FAIL
 
+    if supplied_id is None:
+        # New entry: the writer allocates. Never reuse — always mark + 1.
+        bl_id = _format_id(mark + 1)
+        mark += 1
+        allocated = True
+        sections.append((bl_id, _render_entry(bl_id, title, content)))
+        replaced = False
+    else:
+        # Caller-supplied id is legal only to revise a live entry in place;
+        # inventing new ids is exactly the ambient authority this design removes.
+        bl_id = supplied_id
+        if _id_num(bl_id) not in live:
+            _writers.stderr(
+                "guard",
+                f"backlog-id-not-live: --bl-id {bl_id} names no live entry; "
+                "omit --bl-id to allocate a fresh id, or name an existing entry "
+                "to revise",
+            )
+            return _writers.EXIT_FAIL
+        allocated = False
+        new_section = _render_entry(bl_id, title, content)
+        for i, (sid, _text) in enumerate(sections):
+            if sid == bl_id:
+                sections[i] = (bl_id, new_section)
+                break
+        replaced = True
+
+    preamble = _write_mark(preamble, mark)
     rendered = _assemble(preamble, sections)
 
     try:
@@ -180,6 +282,8 @@ def handler(args: argparse.Namespace) -> int:
         "details": {
             "dest_kind": "backlog",
             "bl_id": bl_id,
+            "allocated": allocated,
+            "highest_id_issued": _format_id(mark),
             "path": result["path"],
             "bytes": result["bytes"],
             "entry_replaced": replaced,

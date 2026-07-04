@@ -32,6 +32,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Kebab-case slug for the filename (TASK-NN-NNN-<slug>.md)",
     )
+    _writers.add_source_arg(subparser)
 
 
 def _find_task_files(project_root: Path, task_id: str) -> List[Path]:
@@ -83,6 +84,13 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr("usage", cerr)
         return _writers.EXIT_USAGE
 
+    # Promotion stamp (--source): validate + verify the referent is live and
+    # render `Source: BL-NNN` into the header ourselves, before any on-disk move.
+    content, source_id, serr = _writers.apply_source_stamp(args, root, content)
+    if serr is not None:
+        _writers.stderr(*serr)
+        return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
     filename = f"{task_id}-{slug}.md"
 
     # Id uniqueness: the same id in more than one place is pre-existing
@@ -120,13 +128,16 @@ def handler(args: argparse.Namespace) -> int:
         renamed_from = None
         relative_target = f"open/{filename}"
 
+    extra_details = {"task_id": task_id, "slug": slug, "status": status}
+    if source_id is not None:
+        extra_details["source"] = source_id
     code = _writers.perform_write(
         args,
         action="write-task",
         dest_kind="task",
         relative_target=relative_target,
         content=content,
-        extra_details={"task_id": task_id, "slug": slug, "status": status},
+        extra_details=extra_details,
     )
     if code != _writers.EXIT_OK and renamed_from is not None:
         # The write was refused after the slug rename; restore the original

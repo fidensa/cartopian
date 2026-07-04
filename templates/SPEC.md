@@ -5,6 +5,7 @@ Author: <name or role>
 Reviewer: <name or role>
 Date: YYYY-MM-DD
 Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
+Source: <BL-NNN | n/a>
 
 ## Problem
 

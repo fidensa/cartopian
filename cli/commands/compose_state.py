@@ -101,7 +101,7 @@ def _task_blocked_by(content: str) -> List[str]:
         stripped = line.strip()
         if stripped.startswith("Blocked by:"):
             value = stripped[len("Blocked by:") :].strip()
-            if not value or value.lower() == "n/a":
+            if not value or value.lower() in {"none", "n/a"}:
                 return []
             return [part.strip() for part in value.split(",") if part.strip()]
     return []
