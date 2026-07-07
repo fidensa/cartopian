@@ -11,6 +11,7 @@ For vague session-start requests that do not name a project or target task, use 
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
 - `cartopian://protocol/CONVENTIONS/status-through-directory` — directory-as-status semantics behind every task move.
+- `cartopian://protocol/CONVENTIONS/tasks` — linear task-execution order and the stop conditions that end confirmation-free continuation (§ Task Execution Order).
 - `cartopian://protocol/CONVENTIONS/lifecycle-authority` — who may move tasks and author protocol files.
 - `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` — `move-task` artifact guards and the plan-audit blocker contract (Stages 0, 4, 6).
 - `cartopian://protocol/CONVENTIONS/handoffs` — the handoff contract behind Stages 3-6.
@@ -163,7 +164,7 @@ cartopian report-action <report-path>
 - `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
 - `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
 
-Evidence-supported lifecycle moves are applied without an operator confirmation prompt (`protocol/CONVENTIONS.md § Task Execution Order` — the `[automation]` policy gates pace, not selection). Report the move in the running summary; consult the operator only at the stop conditions below.
+Evidence-supported lifecycle moves are applied without an operator confirmation prompt (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order — the `[automation]` policy gates pace, not selection). Report the move in the running summary; consult the operator only at the stop conditions below.
 
 If the verdict is `blocked`, `failed`, or `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
@@ -327,4 +328,4 @@ Confirm the result is under 5KB and names:
 
 If git versioning is enabled for the project, the PM performs the configured session-close git behavior for project PM data. Git staging, commits, and pushes for the protocol repository itself remain human-owned.
 
-Then continue linearly (`protocol/CONVENTIONS.md § Task Execution Order`): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start that task from Stage 1 without asking. Otherwise finish with a concise operator-facing summary that names the task's new status and the exact next protocol action — when the budget is spent, say so and name the next sequential task the operator's "continue" will start.
+Then continue linearly (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start that task from Stage 1 without asking. Otherwise finish with a concise operator-facing summary that names the task's new status and the exact next protocol action — when the budget is spent, say so and name the next sequential task the operator's "continue" will start.

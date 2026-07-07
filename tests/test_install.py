@@ -42,6 +42,7 @@ TOOL_SHIPPED_TARGETS = (
     "bin/cartopian-mcp",
     "bin/cartopian-mcp.cmd",
     "install-cartopian.md",
+    "scripts/install.py",
     "CHANGELOG.md",
 )
 
@@ -266,6 +267,172 @@ class InstallScriptInvocationTests(_InstallTestBase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertTrue((custom / "bin" / "cartopian").exists())
         self.assertEqual((custom / "projects.json").read_text(), "[]\n")
+
+
+class VersionMarkerTests(_InstallTestBase):
+    def test_ref_records_version_marker(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--source",
+                str(REPO_ROOT),
+                "--prefix",
+                str(self.install_root),
+                "--ref",
+                "v9.9.9",
+                "--quiet",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(
+            (self.install_root / "VERSION").read_text(), "v9.9.9\n"
+        )
+
+    def test_no_ref_leaves_version_untouched(self) -> None:
+        install_mod.install(REPO_ROOT, self.install_root, mode="copy")
+        self.assertFalse((self.install_root / "VERSION").exists())
+
+
+class GithubBootstrapTests(_InstallTestBase):
+    """--from-github mechanics with the network layer mocked out."""
+
+    def test_explicit_ref_needs_no_network(self) -> None:
+        ref, url = install_mod.resolve_github_ref("v1.2.3")
+        self.assertEqual(ref, "v1.2.3")
+        self.assertEqual(
+            url,
+            "https://api.github.com/repos/fidensa/cartopian/tarball/v1.2.3",
+        )
+
+    def test_latest_release_resolves_tag(self) -> None:
+        import io
+
+        payload = io.BytesIO(
+            json.dumps(
+                {"tag_name": "v2.0.0", "tarball_url": "https://example/tarball"}
+            ).encode()
+        )
+        with mock.patch.object(install_mod, "_github_open", return_value=payload):
+            ref, url = install_mod.resolve_github_ref(None)
+        self.assertEqual(ref, "v2.0.0")
+        self.assertEqual(url, "https://example/tarball")
+
+    def test_no_releases_falls_back_to_main(self) -> None:
+        import urllib.error
+
+        err = urllib.error.HTTPError("u", 404, "Not Found", None, None)
+        with mock.patch.object(install_mod, "_github_open", side_effect=err):
+            ref, url = install_mod.resolve_github_ref(None)
+        self.assertEqual(ref, "main")
+        self.assertEqual(
+            url, "https://api.github.com/repos/fidensa/cartopian/tarball/main"
+        )
+
+    def test_fetch_extracts_single_top_level_dir(self) -> None:
+        import tarfile
+
+        # Build a minimal GitHub-shaped tarball: one top-level dir holding
+        # bin/cartopian.
+        src = Path(self.tmp.name) / "fidensa-cartopian-abc123"
+        (src / "bin").mkdir(parents=True)
+        (src / "bin" / "cartopian").write_text("#!/usr/bin/env python3\n")
+        tarball = Path(self.tmp.name) / "fake.tar.gz"
+        with tarfile.open(tarball, "w:gz") as archive:
+            archive.add(src, arcname=src.name)
+
+        workdir = Path(self.tmp.name) / "work"
+        workdir.mkdir()
+        with mock.patch.object(
+            install_mod, "_github_open", return_value=tarball.open("rb")
+        ):
+            root = install_mod.fetch_github_source("https://example/tarball", workdir)
+        self.assertEqual(root.name, "fidensa-cartopian-abc123")
+        self.assertTrue((root / "bin" / "cartopian").is_file())
+
+    def test_from_github_rejects_symlink_mode(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--from-github",
+                "--mode",
+                "symlink",
+                "--prefix",
+                str(self.install_root),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("copy mode", result.stderr)
+
+    def test_from_github_rejects_source(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--from-github",
+                "--source",
+                str(REPO_ROOT),
+                "--prefix",
+                str(self.install_root),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
+
+
+class PatchPathTests(_InstallTestBase):
+    """Unix rc-file PATH patching (--patch-path); idempotent by content."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        if os.name == "nt":
+            self.skipTest("Unix rc-file branch")
+        self.fake_home = Path(self.tmp.name) / "home"
+        self.fake_home.mkdir()
+
+    def _patch(self, actions):
+        with mock.patch.dict(
+            os.environ, {"HOME": str(self.fake_home), "SHELL": "/bin/zsh"}
+        ):
+            install_mod._patch_unix_rc(
+                self.install_root / "bin",
+                self.install_root / "wrappers" / "bin",
+                actions,
+            )
+
+    def test_appends_once_then_noop(self) -> None:
+        actions: list = []
+        self._patch(actions)
+        rc = self.fake_home / ".zshrc"
+        content = rc.read_text()
+        self.assertIn(str(self.install_root / "bin"), content)
+        self.assertIn(str(self.install_root / "wrappers" / "bin"), content)
+        self.assertTrue(any("patched" in a for a in actions))
+
+        again: list = []
+        self._patch(again)
+        self.assertEqual(rc.read_text(), content, "second run must not append")
+        self.assertTrue(any("unchanged" in a for a in again))
+
+    def test_unrecognized_shell_prints_manual_line(self) -> None:
+        actions: list = []
+        with mock.patch.dict(
+            os.environ, {"HOME": str(self.fake_home), "SHELL": "/bin/fish"}
+        ):
+            install_mod._patch_unix_rc(
+                self.install_root / "bin",
+                self.install_root / "wrappers" / "bin",
+                actions,
+            )
+        self.assertFalse((self.fake_home / ".zshrc").exists())
+        self.assertTrue(any("add manually" in a for a in actions))
 
 
 class InstallRootPlatformTests(unittest.TestCase):

@@ -25,7 +25,7 @@ Check whether a newer Cartopian release is available and, on operator approval, 
 Cartopian supports a non-default install root (`scripts/install.py --prefix <path>`); a wrong root here would have this skill read one install and upgrade another. Establish the install root **before** touching anything else:
 
 1. If the operator explicitly named an install root in this invocation, use it.
-2. Otherwise, default to `$HOME/.cartopian` on Unix or `$HOME\.cartopian` on native Windows (PowerShell expands `$HOME` to `%USERPROFILE%`).
+2. Otherwise, default to `$HOME/.cartopian` on Unix or `$env:USERPROFILE\.cartopian` on native Windows. **Never embed `$HOME` in a command handed to PowerShell** — when the agent's own shell is Git Bash on Windows (common for Claude Code), bash expands/rewrites `$HOME` and POSIX-looking paths before PowerShell ever sees them, producing paths like `/c/Users/...` that PowerShell cannot resolve. `$env:USERPROFILE` survives the handoff because PowerShell expands it itself. Better still: from Git Bash, read files with plain bash (`cat ~/.cartopian/VERSION`) and skip PowerShell entirely.
 3. Confirm the chosen root by checking that `<root>/VERSION` **or** `<root>/cartopian.toml` exists. If neither is present at the default root and the operator did not pass an override, ask whether they used `--prefix` at install time and re-resolve. Do not proceed against a path that has no Cartopian install signal.
 
 Hold the resolved value as `$install_root` (`$installRoot` on PowerShell). Every subsequent step references this variable rather than `~/.cartopian`. If the operator used `--prefix` at install time, record that path so Step 5 can pass it back to the installer.
@@ -42,7 +42,7 @@ Read `$install_root/VERSION`. It contains a single line: the git ref the install
 Issue a plain **unauthenticated** HTTP GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and extract `tag_name`. Do **not** use `gh api` — it requires `gh auth login`, which is often unconfigured, and the unauthenticated REST call needs no credentials:
 
 - Unix: `curl -s https://api.github.com/repos/fidensa/cartopian/releases/latest`
-- Windows (PowerShell): `Invoke-RestMethod -Uri https://api.github.com/repos/fidensa/cartopian/releases/latest -UseBasicParsing`
+- Windows (any shell — PowerShell, cmd, or Git Bash): `py -3 -c "import json,urllib.request;print(json.load(urllib.request.urlopen('https://api.github.com/repos/fidensa/cartopian/releases/latest'))['tag_name'])"` — a single line that avoids both Git Bash's `curl` (`schannel` certificate errors) and any `powershell -Command` quoting. Native PowerShell users may equivalently use `Invoke-RestMethod -Uri https://api.github.com/repos/fidensa/cartopian/releases/latest -UseBasicParsing`.
 
 Parse the JSON response and extract `tag_name`.
 
@@ -63,13 +63,15 @@ Parse the JSON response and extract `tag_name`.
 
 If you were invoked with the operator's upgrade **already approved** — e.g. from the `use_cartopian` Stage 0 update check, which already showed the version delta and got a "yes" — do **not** re-ask; proceed directly to the upgrade below. Otherwise (this skill was run standalone), ask the operator whether to upgrade now, and if no, stop.
 
-If yes, run the install skill against the latest ref. **Read the install runbook from the MCP resource `cartopian://skills/install_cartopian`** — the MCP server already ships it, so no external fetch is needed (and `raw.githubusercontent.com` is commonly proxy-blocked). Only if the MCP resource is genuinely unavailable, fall back to `https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md`. That runbook resolves the latest release, downloads the tree via the `api.github.com` tarball endpoint (no raw-content or `codeload` host required; on Windows it uses `Invoke-WebRequest`), copies it into `$install_root` via `scripts/install.py --mode copy`, refreshes tool-shipped paths, and writes the new `VERSION`. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved by the installer.
+If yes, run the install skill against the latest ref. **Read the install runbook from the MCP resource `cartopian://skills/install_cartopian`** — the MCP server already ships it, so no external fetch is needed (and `raw.githubusercontent.com` is commonly proxy-blocked). Only if the MCP resource is genuinely unavailable, fall back to `https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md`.
 
-**Scope: Steps 1–9 only.** Run the install runbook through Step 9 (verify) and **stop before Step 10** (Register the MCP server). Agent registration is a user-config write — for Codex it mutates `~/.codex/config.toml`, for Claude Desktop / Cursor / Windsurf it edits their JSON configs — and an update should not silently re-touch those files. Registration is handled explicitly in Step 6 below so the operator decides per-agent.
+The upgrade itself is normally **one single-line command** that behaves identically in PowerShell, cmd, Git Bash, zsh, and bash: `scripts/install.py --from-github` resolves the latest release via `api.github.com`, downloads and extracts the tarball with the Python standard library (no `curl`, `tar`, `Invoke-WebRequest`, or multi-line PowerShell anywhere), copies the tree into `$install_root`, refreshes tool-shipped paths, and writes the new `VERSION`. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved by the installer. If `$install_root/scripts/install.py` exists (installs at v1.3.27+ ship it), run it directly; otherwise the runbook's Step 2B bootstraps the installer with one shell-agnostic Python line.
 
-**Pass the install root through.** If `$install_root` is not the platform default, instruct the install skill to invoke `scripts/install.py` with `--prefix "$install_root"`. Omitting `--prefix` on a non-default install root would create a second install at the default path and leave the original stale.
+**Scope: runbook Steps 1–5 only.** Run the install runbook through Step 5 (verify) and **stop before Step 6** (Register the MCP server). Agent registration is a user-config write — for Codex it mutates `~/.codex/config.toml`, for Claude Desktop / Cursor / Windsurf it edits their JSON configs — and an update should not silently re-touch those files. Registration is handled explicitly in Step 6 of *this* skill so the operator decides per-agent.
 
-To pin to a specific tag instead of latest, tell the install skill the desired ref when invoking it.
+**Pass the install root through.** If `$install_root` is not the platform default, invoke `scripts/install.py` with `--prefix "$install_root"`. Omitting `--prefix` on a non-default install root would create a second install at the default path and leave the original stale.
+
+To pin to a specific tag instead of latest, pass `--ref <tag>` to the installer.
 
 ### Step 6 — Check and repair agent registrations
 

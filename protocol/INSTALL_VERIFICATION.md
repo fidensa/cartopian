@@ -11,6 +11,7 @@ V1 ships this as documentation only — there is no `cartopian verify-install` c
 - `~/.cartopian/` resolves to:
   - **macOS / Linux / WSL:** `$HOME/.cartopian/`
   - **Native Windows (PowerShell, cmd):** `%USERPROFILE%\.cartopian\`
+- The PowerShell commands below deliberately use `$env:USERPROFILE`, never `$HOME`: when an agent's driver shell is Git Bash on Windows and it hands a command string to `powershell -Command`, bash expands/rewrites `$HOME` and POSIX-looking paths (MSYS path conversion) before PowerShell sees them, yielding unresolvable paths like `/c/Users/...`. `$env:USERPROFILE` is expanded by PowerShell itself and survives the handoff. (From Git Bash it is simpler still to run the POSIX variants directly.)
 - Where commands differ between shells, both are shown. Pick the one for your platform.
 - "Pass when" lines name the expected observable outcome. Any other outcome fails that step.
 
@@ -24,11 +25,13 @@ The Core CLI requires Python 3.11+ per DEC-001 (stdlib `tomllib` is the floor; t
 python3 --version
 ```
 
-**Native Windows (PowerShell):**
+**Native Windows (PowerShell, cmd, or Git Bash):**
 
 ```powershell
-python --version
+py -3 --version
 ```
+
+(Fall back to `python --version` only if the Python Launcher is missing.)
 
 Pass when: output is `Python 3.11.x` or any later 3.x (e.g., `Python 3.12.5`, `Python 3.13.0`).
 
@@ -55,6 +58,7 @@ test -d ~/.cartopian/wrappers
 test -d ~/.cartopian/cli
 test -f ~/.cartopian/bin/cartopian
 test -f ~/.cartopian/bin/cartopian.cmd   # native-Windows PATH shim; present on all platforms
+test -f ~/.cartopian/scripts/install.py  # self-shipped installer; makes upgrades a one-line command
 test -f ~/.cartopian/CHANGELOG.md
 test -f ~/.cartopian/cartopian.toml
 test -f ~/.cartopian/projects.json
@@ -63,17 +67,18 @@ test -f ~/.cartopian/projects.json
 **Native Windows (PowerShell):**
 
 ```powershell
-Get-ChildItem -Force $HOME\.cartopian\
-Test-Path $HOME\.cartopian\protocol -PathType Container
-Test-Path $HOME\.cartopian\templates -PathType Container
-Test-Path $HOME\.cartopian\skills -PathType Container
-Test-Path $HOME\.cartopian\wrappers -PathType Container
-Test-Path $HOME\.cartopian\cli -PathType Container
-Test-Path $HOME\.cartopian\bin\cartopian -PathType Leaf
-Test-Path $HOME\.cartopian\bin\cartopian.cmd -PathType Leaf   # PATH shim that resolves the bare 'cartopian' command on PowerShell/cmd
-Test-Path $HOME\.cartopian\CHANGELOG.md -PathType Leaf
-Test-Path $HOME\.cartopian\cartopian.toml -PathType Leaf
-Test-Path $HOME\.cartopian\projects.json -PathType Leaf
+Get-ChildItem -Force $env:USERPROFILE\.cartopian\
+Test-Path $env:USERPROFILE\.cartopian\protocol -PathType Container
+Test-Path $env:USERPROFILE\.cartopian\templates -PathType Container
+Test-Path $env:USERPROFILE\.cartopian\skills -PathType Container
+Test-Path $env:USERPROFILE\.cartopian\wrappers -PathType Container
+Test-Path $env:USERPROFILE\.cartopian\cli -PathType Container
+Test-Path $env:USERPROFILE\.cartopian\bin\cartopian -PathType Leaf
+Test-Path $env:USERPROFILE\.cartopian\bin\cartopian.cmd -PathType Leaf   # PATH shim that resolves the bare 'cartopian' command on PowerShell/cmd
+Test-Path $env:USERPROFILE\.cartopian\scripts\install.py -PathType Leaf  # self-shipped installer; makes upgrades a one-line command
+Test-Path $env:USERPROFILE\.cartopian\CHANGELOG.md -PathType Leaf
+Test-Path $env:USERPROFILE\.cartopian\cartopian.toml -PathType Leaf
+Test-Path $env:USERPROFILE\.cartopian\projects.json -PathType Leaf
 ```
 
 Pass when: every `test`/`Test-Path` returns success (`True` on PowerShell, exit 0 on POSIX). A missing path means the install or upgrade did not complete.
@@ -92,8 +97,8 @@ head -n 1 ~/.cartopian/cli/_vendor/tomli_w.py
 **Native Windows (PowerShell):**
 
 ```powershell
-Test-Path $HOME\.cartopian\cli\_vendor\tomli_w.py -PathType Leaf
-Get-Content $HOME\.cartopian\cli\_vendor\tomli_w.py -TotalCount 1
+Test-Path $env:USERPROFILE\.cartopian\cli\_vendor\tomli_w.py -PathType Leaf
+Get-Content $env:USERPROFILE\.cartopian\cli\_vendor\tomli_w.py -TotalCount 1
 ```
 
 Pass when: the file exists and reading the first line succeeds (any non-empty content is fine — the check is "the file is on disk and readable at the DEC-001-locked path").
@@ -130,7 +135,7 @@ print(type(data).__name__, len(data))"
 **Native Windows (PowerShell):**
 
 ```powershell
-python -c "import json, pathlib; data = json.loads(pathlib.Path(r'$HOME\.cartopian\projects.json').read_text()); print(type(data).__name__, len(data))"
+python -c "import json, pathlib; data = json.loads(pathlib.Path(r'$env:USERPROFILE\.cartopian\projects.json').read_text()); print(type(data).__name__, len(data))"
 ```
 
 Pass when: output is `list <N>` (e.g., `list 0` on a fresh install, `list 3` if three projects are registered). Any `json.JSONDecodeError`, non-list top-level type, or read error fails the step.
@@ -151,10 +156,10 @@ diff -u /tmp/projects.json.pre-upgrade ~/.cartopian/projects.json
 ```powershell
 Compare-Object `
   (Get-Content $env:TEMP\cartopian.toml.pre-upgrade) `
-  (Get-Content $HOME\.cartopian\cartopian.toml)
+  (Get-Content $env:USERPROFILE\.cartopian\cartopian.toml)
 Compare-Object `
   (Get-Content $env:TEMP\projects.json.pre-upgrade) `
-  (Get-Content $HOME\.cartopian\projects.json)
+  (Get-Content $env:USERPROFILE\.cartopian\projects.json)
 ```
 
 Pass when: each `diff` is empty (POSIX) / each `Compare-Object` returns no rows (PowerShell). Any divergence is a regression — the upgrade overwrote operator-owned state and must be reported.
@@ -170,7 +175,7 @@ There are two install shapes; pick the section that matches your install:
 - **Copy mode (primary end-user path)** — driven by the `install-cartopian` skill (the README's primary `Install` flow). Tool-shipped paths under `~/.cartopian/` are real copies of an extracted release tarball. There is no on-disk source clone; verify against the upstream tag recorded in `~/.cartopian/VERSION` if you need a remote comparison.
 - **Symlink mode (contributor path)** — `git clone` + `python3 scripts/install.py` (no `--mode copy`). Tool-shipped paths under `~/.cartopian/` are symlinks back into your local clone.
 
-The commands below assume the source clone lives at `~/src/cartopian` (POSIX) or `$HOME\src\cartopian` (Windows) for any clone-relative checks. Adjust the source path if you cloned elsewhere.
+The commands below assume the source clone lives at `~/src/cartopian` (POSIX) or `$env:USERPROFILE\src\cartopian` (Windows) for any clone-relative checks. Adjust the source path if you cloned elsewhere.
 
 `CHANGELOG.md` is a special case: per `scripts/install.py` it is always a real copy of `protocol/CHANGELOG.md`, even in symlink mode. A `git pull` of the source clone refreshes the source file but does not touch `~/.cartopian/CHANGELOG.md` until the install script is rerun.
 
@@ -191,12 +196,12 @@ diff -u ~/src/cartopian/protocol/CHANGELOG.md ~/.cartopian/CHANGELOG.md
 
 ```powershell
 foreach ($p in 'protocol','templates','skills','wrappers','cli','bin\cartopian','bin\cartopian.cmd') {
-  $item = Get-Item -Force "$HOME\.cartopian\$p"
+  $item = Get-Item -Force "$env:USERPROFILE\.cartopian\$p"
   "{0,-20} {1} -> {2}" -f $p, $item.LinkType, $item.Target
 }
 Compare-Object `
-  (Get-Content $HOME\src\cartopian\protocol\CHANGELOG.md) `
-  (Get-Content $HOME\.cartopian\CHANGELOG.md)
+  (Get-Content $env:USERPROFILE\src\cartopian\protocol\CHANGELOG.md) `
+  (Get-Content $env:USERPROFILE\.cartopian\CHANGELOG.md)
 ```
 
 Pass when:
@@ -235,17 +240,17 @@ function Compare-Tree($src, $dst) {
   Compare-Object (& $hash $src) (& $hash $dst) -Property Rel,Hash
 }
 foreach ($p in 'protocol','templates','skills','wrappers','cli') {
-  Compare-Tree "$HOME\src\cartopian\$p" "$HOME\.cartopian\$p"
+  Compare-Tree "$env:USERPROFILE\src\cartopian\$p" "$env:USERPROFILE\.cartopian\$p"
 }
 Compare-Object `
-  (Get-Content $HOME\src\cartopian\bin\cartopian) `
-  (Get-Content $HOME\.cartopian\bin\cartopian)
+  (Get-Content $env:USERPROFILE\src\cartopian\bin\cartopian) `
+  (Get-Content $env:USERPROFILE\.cartopian\bin\cartopian)
 Compare-Object `
-  (Get-Content $HOME\src\cartopian\bin\cartopian.cmd) `
-  (Get-Content $HOME\.cartopian\bin\cartopian.cmd)
+  (Get-Content $env:USERPROFILE\src\cartopian\bin\cartopian.cmd) `
+  (Get-Content $env:USERPROFILE\.cartopian\bin\cartopian.cmd)
 Compare-Object `
-  (Get-Content $HOME\src\cartopian\protocol\CHANGELOG.md) `
-  (Get-Content $HOME\.cartopian\CHANGELOG.md)
+  (Get-Content $env:USERPROFILE\src\cartopian\protocol\CHANGELOG.md) `
+  (Get-Content $env:USERPROFILE\.cartopian\CHANGELOG.md)
 ```
 
 Pass when: every `diff` is empty (POSIX) and every `Compare-Object` / `Compare-Tree` call returns no rows (PowerShell). A non-empty result means the upgrade did not refresh tool-shipped content (commonly: `git pull` ran but the install script did not re-run; see the README upgrade section).
@@ -264,8 +269,8 @@ cat ~/.cartopian/VERSION
 **Native Windows (PowerShell):**
 
 ```powershell
-Test-Path $HOME\.cartopian\VERSION -PathType Leaf
-Get-Content $HOME\.cartopian\VERSION
+Test-Path $env:USERPROFILE\.cartopian\VERSION -PathType Leaf
+Get-Content $env:USERPROFILE\.cartopian\VERSION
 ```
 
 Pass when: the file exists, is non-empty, and contains exactly one ref token (release tag or `main`) on a single line.
