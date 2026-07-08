@@ -272,6 +272,7 @@ timeout = "60m"
 [handoffs.reviewer]
 agent = "gemini"
 auto_start = false
+planning_reviews = true
 timeout = "30m"
 ```
 
@@ -280,6 +281,7 @@ Handoff fields are:
 - `agent`: executable name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
+- `planning_reviews`: whether the role's handoff automation extends to planning-checkpoint reviews (report-path-only handoffs — no task file exists during planning). Default `false`: planning-review launches are operator-performed unless explicitly opted in, so enabling `auto_start` for task handoffs never silently automates planning reviews. When `true`, the launch mode follows `auto_start`: with `auto_start = true` the PM launches through the prompt-keyed mediated dispatch (`cartopian dispatch --prompt <prompt-path> --role <role>`, accepted only for allowlisted `<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md` slots); with `auto_start = false` the PM presents the launch command to the operator. The gate is enforced fail-closed by `cartopian dispatch` itself, not only by skill procedure.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
 `[handoffs.<role>].timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).

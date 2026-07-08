@@ -121,9 +121,15 @@ def _toml(
     work_roots: str = "",
     timeout: str = "30m",
     model: str = "",
+    planning_reviews: "bool | None" = None,
 ) -> str:
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
+    pr_line = (
+        f"planning_reviews = {str(planning_reviews).lower()}\n"
+        if planning_reviews is not None
+        else ""
+    )
     return (
         "[project]\n"
         'id = "dispatch-proj"\n'
@@ -138,6 +144,7 @@ def _toml(
         f'agent = "{agent}"\n'
         f"{model_line}"
         "auto_start = true\n"
+        f"{pr_line}"
         f'timeout = "{timeout}"\n'
     )
 
@@ -160,9 +167,9 @@ def _write_task_and_prompt(scaffold, nn_nnn: str = "01-004") -> Path:
     return task_path
 
 
-def _dispatch(task_path: str, role: str, fake_home: Path):
+def _dispatch(task_path, role: str, fake_home: Path, prompt=None):
     """Invoke dispatch.handler with a fake HOME so the real global config can't leak."""
-    args = argparse.Namespace(task_path=task_path, role=role)
+    args = argparse.Namespace(task_path=task_path, prompt=prompt, role=role)
     out, err = io.StringIO(), io.StringIO()
     with mock.patch("cli.commands.dispatch.Path.home", return_value=fake_home):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -392,6 +399,190 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertFalse(capture.exists())
 
 
+class TestDispatchPromptKeyed(unittest.TestCase):
+    """Prompt-keyed (report-path-only) dispatch for planning-checkpoint reviews.
+
+    RED framing: before this mode existed, a planning checkpoint with a
+    configured `auto_start = true` reviewer still fell back to an
+    operator-performed launch — `dispatch` was keyed exclusively on a task
+    path, and planning reviews have no task file. GREEN: `--prompt` launches
+    the config-bound wrapper for an allowlisted `PROMPT-PLAN-*` slot, gated
+    fail-closed on the opt-in `[handoffs.<role>].planning_reviews` flag
+    (default off — a role's task automation never silently extends to
+    planning reviews).
+    """
+
+    PLAN_PROMPT = "PROMPT-PLAN-001-requirements-and-engineering.md"
+
+    def _fake_home(self, tmp_path: Path) -> Path:
+        home = tmp_path / "home"
+        home.mkdir()
+        return home
+
+    def test_launches_wrapper_for_planning_prompt(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), planning_reviews=True))
+            prompt_path = scaffold.write(
+                f"prompts/{self.PLAN_PROMPT}",
+                "# PROMPT-PLAN-001\n\n## Your task\n\nReview the requirements.\n",
+            )
+            project_root = scaffold.project_root.resolve()
+            resolved_prompt = Path(prompt_path).resolve()
+
+            env = {"STUB_CAPTURE": str(capture), "STUB_NO_REPORT": "1"}
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    None, "coder", self._fake_home(tmp_path), prompt=str(prompt_path)
+                )
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertEqual(rec["status"], "dispatched")
+            self.assertIsNone(rec["task_id"])
+            self.assertEqual(
+                rec["prompt_id"], "PROMPT-PLAN-001-requirements-and-engineering"
+            )
+            self.assertEqual(rec["prompt_path"], str(resolved_prompt))
+            self.assertTrue(
+                rec["expected_report_path"].endswith(
+                    "/reports/REPORT-PLAN-001-requirements-and-engineering.md"
+                ),
+                msg=rec["expected_report_path"],
+            )
+            self.assertEqual(Path(rec["cwd"]).resolve(), project_root)
+
+            # dispatch is non-blocking; poll briefly for the detached stub's capture.
+            cap = None
+            deadline = time.monotonic() + 5.0
+            while cap is None and time.monotonic() < deadline:
+                try:
+                    cap = json.loads(capture.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.05)
+            self.assertIsNotNone(cap, "stub wrapper did not run")
+            self.assertEqual(cap["argv"], [str(stub), str(resolved_prompt)])
+            self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
+
+    def test_planning_reviews_unset_or_false_fails_closed(self) -> None:
+        # Default-off gate: neither an absent key nor an explicit false may
+        # launch — planning-review automation is a per-role opt-in.
+        for planning_reviews in (None, False):
+            with self.subTest(planning_reviews=planning_reviews), \
+                    project_scaffold(cartopian_toml="") as scaffold, \
+                    tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+                tmp_path = Path(tmp)
+                stub = _make_stub(tmp_path)
+                capture = tmp_path / "capture.json"
+                scaffold.write(
+                    "cartopian.toml",
+                    _toml(str(stub), planning_reviews=planning_reviews),
+                )
+                prompt_path = scaffold.write(f"prompts/{self.PLAN_PROMPT}", "# P\n")
+
+                with mock.patch.dict(
+                    os.environ, {"STUB_CAPTURE": str(capture)}, clear=False
+                ):
+                    stdout, stderr, rc = _dispatch(
+                        None, "coder", self._fake_home(tmp_path), prompt=str(prompt_path)
+                    )
+
+                self.assertEqual(rc, EXIT_FAIL)
+                self.assertEqual(stdout, "")
+                self.assertIn("[guard]", stderr)
+                self.assertIn("planning_reviews", stderr)
+                self.assertFalse(
+                    capture.exists(), "wrapper launched despite fail-closed gate"
+                )
+
+    def test_task_prompt_id_rejected(self) -> None:
+        # PROMPT-NN-NNN dispatches by task path (which enforces task/prompt/
+        # report agreement); --prompt refuses it even with the gate enabled,
+        # so no second, weaker route to a task launch exists.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), planning_reviews=True))
+            prompt_path = scaffold.write("prompts/PROMPT-01-004.md", "# P\n")
+
+            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    None, "coder", self._fake_home(tmp_path), prompt=str(prompt_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("planning-checkpoint prompt slot", stderr)
+            self.assertFalse(capture.exists())
+
+    def test_prompt_outside_prompts_dir_rejected(self) -> None:
+        # A well-named file outside <project-root>/prompts/ is not an
+        # allowlisted slot.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), planning_reviews=True))
+            stray = scaffold.write("PROMPT-PLAN-001-stray.md", "# P\n")
+
+            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    None, "coder", self._fake_home(tmp_path), prompt=str(stray)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("planning-checkpoint prompt slot", stderr)
+            self.assertFalse(capture.exists())
+
+    def test_missing_prompt_file_fails_closed(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            scaffold.write("cartopian.toml", _toml(str(stub), planning_reviews=True))
+            missing = scaffold.prompts / self.PLAN_PROMPT
+
+            stdout, stderr, rc = _dispatch(
+                None, "coder", self._fake_home(tmp_path), prompt=str(missing)
+            )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("prompt not found", stderr)
+
+    def test_both_or_neither_keys_are_usage_errors(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            scaffold.write("cartopian.toml", _toml(str(stub), planning_reviews=True))
+            task_path = _write_task_and_prompt(scaffold)
+            prompt_path = scaffold.write(f"prompts/{self.PLAN_PROMPT}", "# P\n")
+            fake_home = self._fake_home(tmp_path)
+
+            for task_arg, prompt_arg in (
+                (str(task_path), str(prompt_path)),  # both
+                (None, None),  # neither
+            ):
+                with self.subTest(task=task_arg, prompt=prompt_arg):
+                    stdout, stderr, rc = _dispatch(
+                        task_arg, "coder", fake_home, prompt=prompt_arg
+                    )
+                    self.assertEqual(rc, EXIT_USAGE)
+                    self.assertEqual(stdout, "")
+                    self.assertIn("exactly one of", stderr)
+
+
 class TestDispatchNoRawExec(unittest.TestCase):
     """Containment negative test: the mediated, config-bound dispatch is the
     ONLY process-launch route on the PM tool surface.
@@ -404,7 +595,8 @@ class TestDispatchNoRawExec(unittest.TestCase):
     """
 
     def test_dispatch_exposes_no_arbitrary_executable_argument(self) -> None:
-        # The dispatch subparser must accept only `task_path` + `--role`.
+        # The dispatch subparser must accept only `task_path` / `--prompt`
+        # (an allowlisted prompt slot, never an executable) + `--role`.
         # No flag may let the caller name an executable/command to run.
         parser = build_parser()
         sub = parser._subparsers._group_actions[0].choices["dispatch"]  # type: ignore[attr-defined]

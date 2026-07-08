@@ -1,4 +1,16 @@
-"""`cartopian dispatch <task-path> --role <role>` — mediated handoff launch.
+"""`cartopian dispatch` — mediated handoff launch.
+
+Two keying modes:
+
+- ``cartopian dispatch <task-path> --role <role>`` — task-scoped handoffs
+  (task assignment, task review). The prompt path is derived from the task id
+  (``prompts/PROMPT-NN-NNN.md``), so prompt, report, and review paths agree.
+- ``cartopian dispatch --prompt <prompt-path> --role <role>`` — report-path-only
+  handoffs (planning-checkpoint reviews; no task file exists during planning).
+  ``--prompt`` accepts only an allowlisted planning-checkpoint prompt slot
+  (``<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md``) and fails closed unless
+  the resolved ``[handoffs.<role>].planning_reviews`` is ``true`` — planning-review
+  automation is opt-in per role (default off), independent of ``auto_start``.
 
 The delegation counterpart to the mediated writer. A contained PM has no
 shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
@@ -31,9 +43,10 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from cli.commands import handoff_packet
+from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -102,14 +115,27 @@ def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     """Add arguments for dispatch.
 
-    Deliberately minimal: a task path and a role. The executable launched is
-    sourced exclusively from ``[handoffs.<role>].agent`` in config — there is
-    intentionally no flag to supply an arbitrary command, so the PM cannot turn
-    dispatch into a raw exec primitive (containment invariant).
+    Deliberately minimal: a task path (or a planning-checkpoint prompt path)
+    and a role. The executable launched is sourced exclusively from
+    ``[handoffs.<role>].agent`` in config — there is intentionally no flag to
+    supply an arbitrary command, so the PM cannot turn dispatch into a raw
+    exec primitive (containment invariant). ``--prompt`` names an allowlisted
+    prompt slot to hand to the config-bound agent, never an executable.
     """
     subparser.add_argument(
         "task_path",
-        help="Absolute path to the task file whose handoff to launch",
+        nargs="?",
+        default=None,
+        help="Absolute path to the task file whose handoff to launch (task-scoped handoffs)",
+    )
+    subparser.add_argument(
+        "--prompt",
+        default=None,
+        help=(
+            "Absolute path to a planning-checkpoint prompt "
+            "(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md) for a "
+            "report-path-only handoff; requires [handoffs.<role>].planning_reviews = true"
+        ),
     )
     subparser.add_argument(
         "--role",
@@ -120,22 +146,46 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
 def handler(args: argparse.Namespace) -> int:
     """Prepare the packet, validate fail-closed, launch the wrapper, emit NDJSON."""
-    raw_path: str = args.task_path
+    raw_task: Optional[str] = args.task_path
+    raw_prompt: Optional[str] = args.prompt
     role: str = args.role
 
-    if not Path(raw_path).is_absolute():
-        stderr_usage(f"task_path must be an absolute path; got: {raw_path}")
+    if (raw_task is None) == (raw_prompt is None):
+        stderr_usage(
+            "provide exactly one of <task-path> (task-scoped handoff) or "
+            "--prompt <prompt-path> (planning-checkpoint handoff)"
+        )
         return EXIT_USAGE
 
-    task_path = Path(raw_path)
-    if not task_path.is_file():
-        stderr_error(f"task file not found: {raw_path}")
-        return EXIT_FAIL
-    task_path = task_path.resolve()
+    task_path: Optional[Path] = None
+    prompt_path: Optional[Path] = None
+    if raw_task is not None:
+        if not Path(raw_task).is_absolute():
+            stderr_usage(f"task_path must be an absolute path; got: {raw_task}")
+            return EXIT_USAGE
+        task_path = Path(raw_task)
+        if not task_path.is_file():
+            stderr_error(f"task file not found: {raw_task}")
+            return EXIT_FAIL
+        task_path = task_path.resolve()
+        anchor = task_path
+    else:
+        if not Path(raw_prompt).is_absolute():
+            stderr_usage(f"--prompt must be an absolute path; got: {raw_prompt}")
+            return EXIT_USAGE
+        prompt_path = Path(raw_prompt)
+        if not prompt_path.is_file():
+            stderr_guard(
+                f"prompt not found: {raw_prompt} — prepare the handoff prompt "
+                f"before dispatching (run-handoff Stage 1)"
+            )
+            return EXIT_FAIL
+        prompt_path = prompt_path.resolve()
+        anchor = prompt_path
 
-    project_root = handoff_packet._find_project_root(task_path)
+    project_root = handoff_packet._find_project_root(anchor)
     if project_root is None:
-        stderr_error(f"project config not found for task: {raw_path}")
+        stderr_error(f"project config not found for: {anchor}")
         return EXIT_ENV
 
     project_toml = project_root / "cartopian.toml"
@@ -188,18 +238,49 @@ def handler(args: argparse.Namespace) -> int:
         )
         return EXIT_FAIL
 
-    # --- Fail-closed: the assignee prompt must exist -------------------------
-    task_id = handoff_packet._extract_task_id(task_path) or task_path.stem
-    nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
-    prompt_path = (project_root / "prompts" / f"PROMPT-{nn_nnn}.md").resolve()
-    if not prompt_path.is_file():
-        stderr_guard(
-            f"prompt not found: {prompt_path} — prepare the handoff prompt before "
-            f"dispatching (run-handoff Stage 1)"
-        )
-        return EXIT_FAIL
-
-    expected_report_path = handoff_packet._expected_report_path(project_root, task_id)
+    task_id: Optional[str]
+    if task_path is not None:
+        # --- Fail-closed: the assignee prompt must exist ---------------------
+        task_id = handoff_packet._extract_task_id(task_path) or task_path.stem
+        nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
+        prompt_path = (project_root / "prompts" / f"PROMPT-{nn_nnn}.md").resolve()
+        if not prompt_path.is_file():
+            stderr_guard(
+                f"prompt not found: {prompt_path} — prepare the handoff prompt before "
+                f"dispatching (run-handoff Stage 1)"
+            )
+            return EXIT_FAIL
+        expected_report_path = handoff_packet._expected_report_path(project_root, task_id)
+    else:
+        # --- Fail-closed: --prompt names an allowlisted planning slot only ---
+        # Task prompts (PROMPT-NN-NNN) must dispatch by task path, which
+        # enforces task/prompt/report agreement; --prompt would be a second,
+        # weaker route to the same launch.
+        task_id = None
+        prompt_id = prompt_path.stem
+        if (
+            prompt_path.parent != project_root / "prompts"
+            or prompt_path.suffix != ".md"
+            or not prompt_id.startswith("PROMPT-PLAN-")
+            or not PROMPT_ID_RE.match(prompt_id)
+        ):
+            stderr_guard(
+                f"--prompt must name a planning-checkpoint prompt slot "
+                f"(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md); got: {prompt_path}. "
+                f"Task-scoped handoffs dispatch by task path"
+            )
+            return EXIT_FAIL
+        # --- Fail-closed: planning-review automation is opt-in per role ------
+        if role_handoff.get("planning_reviews") is not True:
+            stderr_guard(
+                f"planning-checkpoint dispatch is not enabled for role {role} — "
+                f"set [handoffs.{role}].planning_reviews = true to opt in, or "
+                f"present the launch command to the operator"
+            )
+            return EXIT_FAIL
+        expected_report_path = (
+            project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
+        ).resolve()
 
     # --- Launch (per-invocation; non-blocking) -------------------------------
     # The launch contract: `<agent> <absolute prompt path>` as a single argv
@@ -266,6 +347,7 @@ def handler(args: argparse.Namespace) -> int:
 
     record: Dict[str, Any] = {
         "task_id": task_id,
+        "prompt_id": prompt_path.stem,
         "role": role,
         "handoff_target": agent,
         "model": model,

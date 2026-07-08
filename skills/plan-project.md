@@ -59,7 +59,7 @@ If a previous closeout carried forward `STANDARDS.md` or `CONVENTIONS.md`, treat
 
    - Run `cartopian resolve-config <project-path>` to obtain the canonical `project_path` and merged `roles`, `handoffs`, `automation`, `work_roots`, and `git_versioning`.
    - Use this emitted record instead of reading and merging TOML by hand.
-5. Determine whether a **reviewer** is configured. A reviewer is considered configured when `reviewer` appears as a key in the resolved `[roles]` table. If `[handoffs.reviewer]` is also configured, review checkpoints dispatch automatically; if only the `[roles].reviewer` key is present, review checkpoints dispatch manually (the PM surfaces the prompt; the operator acts).
+5. Determine whether a **reviewer** is configured. A reviewer is considered configured when `reviewer` appears as a key in the resolved `[roles]` table. How review checkpoints dispatch is governed by the resolved `[handoffs.reviewer]` block: with `planning_reviews = true` and `auto_start = true`, checkpoints launch PM-performed through the prompt-keyed mediated dispatch (`skills/run-handoff.md` Stage 2); with `planning_reviews = true` and `auto_start = false`, the PM prepares the handoff and presents the exact launch command to the operator; when `planning_reviews` is unset or `false`, or no `[handoffs.reviewer]` block exists, checkpoints dispatch manually (the PM surfaces the prompt; the operator acts).
 6. If `reviewer` is not declared in `[roles]`, ask the operator:
 
    > "No reviewer is configured. Do you want to designate a reviewer for this planning session? If not, we'll proceed without review checkpoints."

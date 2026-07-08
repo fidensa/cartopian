@@ -118,6 +118,7 @@ def _resolve_handoffs(
             "model": block.get("model"),
             "auto_start": block.get("auto_start"),
             "timeout": block.get("timeout"),
+            "planning_reviews": block.get("planning_reviews"),
         }
     return merged
 
