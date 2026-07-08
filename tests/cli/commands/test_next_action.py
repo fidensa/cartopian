@@ -1,8 +1,13 @@
 """Tests for `cartopian next-action`."""
 import argparse
+import contextlib
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from cli.commands import next_action  # noqa: F401 — red stage: module must exist
+from cli.commands import resolve_config
 from tests.scaffold import project_scaffold, write_disagreement_layout
 
 _TOML_BASE = (
@@ -11,6 +16,24 @@ _TOML_BASE = (
     'name = "Test Project"\n'
     'protocol_version = "v0.3.0"\n'
 )
+
+
+@contextlib.contextmanager
+def _isolated_home(global_toml: str | None = None):
+    """Point ``Path.home()`` at a fresh temp dir for the duration.
+
+    Role resolution merges ``~/.cartopian/cartopian.toml``; without this, the
+    developer's real global config would leak into the merge chain under test.
+    Pass ``global_toml`` to write a controlled global config into the fake home.
+    """
+    with tempfile.TemporaryDirectory(prefix="cartopian-home-") as tmp:
+        home = Path(tmp)
+        if global_toml is not None:
+            global_path = home / ".cartopian" / "cartopian.toml"
+            global_path.parent.mkdir(parents=True)
+            global_path.write_text(global_toml, encoding="utf-8")
+        with mock.patch.object(Path, "home", return_value=home):
+            yield home
 
 
 def _invoke(project_path: str):
@@ -220,16 +243,41 @@ class TestNextActionDispatchKind(unittest.TestCase):
 
 
 class TestNextActionPmRoleDeclared(unittest.TestCase):
-    def test_declared_false_when_no_roles_table(self) -> None:
-        # Base config declares no [roles] table → pm key absent, placeholder injected.
-        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+    def test_declared_true_when_no_roles_table_via_default_roster(self) -> None:
+        # Regression (live-hit): a project that declares no local [roles] and
+        # relies on the protocol default roster resolves a `pm` role through
+        # resolve-config's merge chain. next-action must apply the same
+        # fallthrough — pm_role_declared=true, no false resume blocker.
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold, _isolated_home():
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
-            self.assertFalse(records[0]["pm_role_declared"])
-            self.assertEqual(
-                records[0]["pm_role"],
-                next_action._DEFAULT_PM_ROLE,
+            self.assertTrue(records[0]["pm_role_declared"])
+            self.assertEqual(records[0]["pm_role"], next_action._DEFAULT_PM_ROLE)
+            self.assertNotIn(
+                "pm",
+                " ".join(records[0]["blockers"]).lower(),
+                msg=f"unexpected PM-role blocker: {records[0]['blockers']}",
             )
+
+    def test_declared_true_via_default_roster_when_only_other_roles_declared(self) -> None:
+        # A [roles] table that declares other roles but not pm still resolves
+        # pm through the protocol-default backfill, matching resolve-config.
+        toml = _TOML_BASE + '\n[roles]\ncoder = "Writes code."\n'
+        with project_scaffold(cartopian_toml=toml) as scaffold, _isolated_home():
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            self.assertTrue(records[0]["pm_role_declared"])
+            self.assertEqual(records[0]["pm_role"], next_action._DEFAULT_PM_ROLE)
+
+    def test_declared_false_when_resolved_roster_lacks_pm(self) -> None:
+        # The gate still catches a real absence: a resolved roster with no pm
+        # key yields pm_role_declared=false and the placeholder description.
+        pm_role, pm_role_declared, pm_dispatch_kind = next_action._pm_settings_from_resolved(
+            {"operator": "Approves things."}, {}
+        )
+        self.assertFalse(pm_role_declared)
+        self.assertEqual(pm_role, next_action._DEFAULT_PM_ROLE)
+        self.assertEqual(pm_dispatch_kind, "manual")
 
     def test_declared_true_even_when_description_equals_default(self) -> None:
         # Regression: a project may legitimately declare a pm role whose
@@ -241,6 +289,51 @@ class TestNextActionPmRoleDeclared(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertTrue(records[0]["pm_role_declared"])
             self.assertEqual(records[0]["pm_role"], next_action._DEFAULT_PM_ROLE)
+
+
+class TestNextActionResolveConfigParity(unittest.TestCase):
+    """next-action and resolve-config must agree on the resolved [roles] table."""
+
+    def _resolve_config_roles(self, project_path: str) -> dict:
+        args = argparse.Namespace(project_path=project_path)
+        captured = []
+        original = resolve_config.emit_record
+
+        def _capture(record, *, out=None):
+            captured.append(record)
+
+        resolve_config.emit_record = _capture
+        try:
+            rc = resolve_config.handler(args)
+        finally:
+            resolve_config.emit_record = original
+        self.assertEqual(rc, 0)
+        return captured[0]["roles"]
+
+    def _assert_parity(self, cartopian_toml: str, global_toml: str | None) -> None:
+        with project_scaffold(cartopian_toml=cartopian_toml) as scaffold, _isolated_home(global_toml):
+            project_path = str(scaffold.project_root)
+            roles = self._resolve_config_roles(project_path)
+            records, rc = _invoke(project_path)
+            self.assertEqual(rc, 0)
+            self.assertEqual(records[0]["pm_role_declared"], "pm" in roles)
+            if "pm" in roles:
+                self.assertEqual(records[0]["pm_role"], roles["pm"])
+
+    def test_parity_on_default_roster_fallthrough(self) -> None:
+        # No [roles] anywhere: resolve-config emits the protocol default roster.
+        self._assert_parity(_TOML_BASE, None)
+
+    def test_parity_when_roles_declared_without_pm(self) -> None:
+        # Local and global [roles] exist but neither declares pm: the protocol
+        # default backfills it in resolve-config, and next-action must agree.
+        toml = _TOML_BASE + '\n[roles]\ncoder = "Writes code."\n'
+        self._assert_parity(toml, '[roles]\nreviewer = "Reviews changes."\n')
+
+    def test_parity_when_pm_declared_locally(self) -> None:
+        # Locally-declared pm: behavior unchanged, both report the local text.
+        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n'
+        self._assert_parity(toml, None)
 
 
 class TestNextActionExitCodes(unittest.TestCase):

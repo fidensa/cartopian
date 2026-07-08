@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cli.capabilities import role_description
-from cli.commands.resolve_config import _CliError, _require_project_keys
+from cli.commands.resolve_config import _CliError, _require_project_keys, _resolve_roles
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 
@@ -49,21 +49,31 @@ def _merge_table(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, An
     return result
 
 
-def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool, str]:
-    global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
-    roles = _merge_table(global_cfg.get("roles", {}) or {}, project_cfg.get("roles", {}) or {})
-    handoffs = _merge_table(
-        global_cfg.get("handoffs", {}) or {},
-        project_cfg.get("handoffs", {}) or {},
-    )
-    # Readiness gate is keyed on role-KEY presence, not description text: a
+def _pm_settings_from_resolved(
+    roles: Dict[str, Any], handoffs: Dict[str, Any]
+) -> tuple[str, bool, str]:
+    # Readiness gate is keyed on role-KEY presence in the RESOLVED table, not
+    # description text: the default-roster `pm` counts as declared, and a
     # project may legitimately declare a `pm` role whose description equals the
-    # default placeholder. `pm_role_declared` lets the resume gate distinguish
-    # "absent → placeholder injected" from "declared with default-looking text".
+    # default placeholder. `pm_role_declared=false` therefore means the key is
+    # genuinely absent from the resolved roster.
     pm_role_declared = "pm" in roles
     pm_role = role_description(roles["pm"]) if pm_role_declared else _DEFAULT_PM_ROLE
     pm_dispatch_kind = "automated" if "pm" in handoffs else "manual"
     return pm_role, pm_role_declared, pm_dispatch_kind
+
+
+def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool, str]:
+    global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
+    # Roles come from resolve-config's merge chain (protocol defaults included)
+    # so the resume gate and `resolve-config` cannot diverge on whether the
+    # default roster counts as declared.
+    roles = _resolve_roles(global_cfg, project_cfg)
+    handoffs = _merge_table(
+        global_cfg.get("handoffs", {}) or {},
+        project_cfg.get("handoffs", {}) or {},
+    )
+    return _pm_settings_from_resolved(roles, handoffs)
 
 
 def _first_heading(content: str) -> str:
