@@ -232,6 +232,33 @@ def _require_project_keys(project_cfg: Dict[str, Any], project_toml: Path) -> Tu
     )
 
 
+def _require_startup_project_keys(
+    project_cfg: Dict[str, Any], project_toml: Path
+) -> Tuple[str, str, Optional[str]]:
+    """Required-keys check for the session-startup surfaces (next-action,
+    plan-audit): ``[project].id`` and ``[project].name`` stay mandatory, but a
+    missing ``protocol_version`` is returned as ``None`` so the protocol gate
+    can classify it as unset/older-but-migratable — the CHANGELOG's "unset,
+    missing" case, matching installer reconciliation — instead of rejecting
+    the config before the gate runs. Commands that intentionally require the
+    marker keep using :func:`_require_project_keys`.
+    """
+    project_table = _require_project_table(project_cfg, project_toml)
+    for key in ("id", "name"):
+        if key not in project_table:
+            raise _CliError(
+                EXIT_FAIL,
+                "error",
+                f"project config missing required key: [project].{key}",
+            )
+    declared = project_table.get("protocol_version")
+    return (
+        str(project_table["id"]),
+        str(project_table["name"]),
+        None if declared is None else str(declared),
+    )
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():

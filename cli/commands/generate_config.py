@@ -18,15 +18,11 @@ from cli.capabilities import PRESETS, is_known_grant_name
 from cli.commands._registry import is_kebab_case
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
+from cli.protocol_gate import read_shipped_protocol_version
 
 _ROLE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _WORK_ROOT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_PROTOCOL_VERSION_RE = re.compile(r"^###\s+(v\d+\.\d+\.\d+)\b", re.MULTILINE)
-
-# Repo root is two parents up from this file: cli/commands/generate_config.py → repo.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CHANGELOG_PATH = _REPO_ROOT / "protocol" / "CHANGELOG.md"
 
 
 def _stderr(prefix: str, msg: str) -> None:
@@ -92,14 +88,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
 
 def _read_protocol_version() -> str:
-    text = _CHANGELOG_PATH.read_text(encoding="utf-8")
-    _, _, body = text.partition("\n## Entries\n")
-    m = _PROTOCOL_VERSION_RE.search(body)
-    if not m:
-        raise RuntimeError(
-            f"could not locate a protocol version entry in {_CHANGELOG_PATH}"
-        )
-    return m.group(1)
+    # Shared with the protocol-version migration gate so the stamped version
+    # and the gate's shipped version can never diverge.
+    return read_shipped_protocol_version()
 
 
 def _parse_kv(raw: str, flag: str) -> Tuple[str, str]:

@@ -12,9 +12,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cli.capabilities import role_description
-from cli.commands.resolve_config import _CliError, _require_project_keys, _resolve_roles
+from cli.commands.resolve_config import _CliError, _require_startup_project_keys, _resolve_roles
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
+from cli.protocol_gate import (
+    GATE_BLOCKED,
+    GATE_MIGRATE,
+    classify_protocol_version,
+    read_shipped_protocol_version,
+)
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
 _PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
@@ -463,13 +469,27 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_ENV
 
     try:
-        project_id = _require_project_keys(cfg, toml_path)[0]
+        project_id, _project_name, declared_protocol_version = _require_startup_project_keys(cfg, toml_path)
     except _CliError as err:
         if err.prefix == "guard":
             stderr_guard(err.message)
         else:
             stderr_error(err.message)
         return err.exit_code
+
+    # Config-schema migration gate: a stale [project].protocol_version must
+    # not silently reach session orientation. Older-but-migratable configs
+    # surface a migration blocker below; unknown/newer configs fail closed
+    # here with the named residual. The gate never edits cartopian.toml.
+    try:
+        shipped_protocol_version = read_shipped_protocol_version()
+    except (OSError, RuntimeError) as exc:
+        stderr_error(str(exc))
+        return EXIT_ENV
+    protocol_gate = classify_protocol_version(declared_protocol_version, shipped_protocol_version)
+    if protocol_gate["status"] == GATE_BLOCKED:
+        stderr_guard(protocol_gate["detail"])
+        return EXIT_FAIL
 
     try:
         pm_role, pm_role_declared, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)
@@ -483,7 +503,7 @@ def handler(args: argparse.Namespace) -> int:
     next_open_task = _find_next_open_task(project_path)
     has_open_tasks = _has_open_tasks(tasks_dir)
 
-    # Phase-aware completion truth (FR-012): an empty open queue does NOT imply
+    # Phase-aware completion truth: an empty open queue does NOT imply
     # the plan is done if later phases exist whose tasks were never generated.
     phase_stems = _collect_phase_stems(project_path / "phases")
     has_task = _phase_task_presence(project_path)
@@ -500,6 +520,8 @@ def handler(args: argparse.Namespace) -> int:
     )
 
     blockers = _detect_blockers(project_path, phase_id, tasks_dir)
+    if protocol_gate["status"] == GATE_MIGRATE:
+        blockers.insert(0, protocol_gate["detail"])
     # Open tasks that are all dependency-blocked are a deadlock, not progress:
     # next_open_task skips not-ready tasks, so without this the queue would
     # look empty while work still exists.

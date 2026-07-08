@@ -344,6 +344,127 @@ def write_version_marker(install_root: Path, ref: str, actions: List[str]) -> No
     actions.append(f"recorded   VERSION = {ref}")
 
 
+# --- Protocol-version reconciliation gate -----------------------------------
+# After the tool tree is refreshed, every registered project's
+# [project].protocol_version is compared against the shipped protocol version
+# (the topmost CHANGELOG entry) so a stale config cannot drift silently across
+# releases. Classification and message text live in cli/protocol_gate.py in
+# the source tree being installed; it is loaded by file path (stdlib
+# importlib) so this script stays a standalone bootstrap. The gate only
+# detects and reports — it never writes a project's cartopian.toml.
+
+
+def _load_protocol_gate(source_root: Path):
+    """Load ``cli/protocol_gate.py`` from the source tree, or None if the
+    source predates the gate (e.g. installing an older --ref)."""
+    gate_path = source_root / "cli" / "protocol_gate.py"
+    if not gate_path.is_file():
+        return None
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_cartopian_protocol_gate", gate_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _read_declared_protocol_version(project_toml: Path):
+    """Return ``(declared, error)`` for a project config's protocol_version.
+
+    ``declared`` is the raw marker value (None when the key or file content
+    leaves it unset — the CHANGELOG's "unset, missing" migratable case);
+    ``error`` is a message when the config cannot be read at all.
+    """
+    import tomllib
+
+    try:
+        with project_toml.open("rb") as fh:
+            cfg = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return None, f"config unreadable: {project_toml} — {exc}"
+    project_table = cfg.get("project")
+    if not isinstance(project_table, dict):
+        return None, f"no [project] table in {project_toml}"
+    return project_table.get("protocol_version"), None
+
+
+def reconcile_registered_projects(
+    install_root: Path, source_root: Path, actions: List[str]
+) -> List[str]:
+    """Run the protocol-version gate over every registered project.
+
+    Migratable projects print a ``[migration]`` line naming the detected and
+    shipped versions; unknown/newer (or unreadable) configs print a
+    ``[residual]`` line and are returned so the caller can fail closed.
+    Current projects produce no output.
+    """
+    gate = _load_protocol_gate(source_root)
+    if gate is None:
+        actions.append(
+            "skipped    protocol-version reconciliation (source ships no gate module)"
+        )
+        return []
+
+    registry_path = install_root / OPERATOR_REGISTRY
+    if not registry_path.is_file():
+        return []
+
+    residuals: List[str] = []
+    try:
+        entries = json.loads(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            raise ValueError("registry is not a JSON array")
+    except (OSError, ValueError) as exc:
+        line = (
+            f"protocol-version reconciliation impossible: registry unreadable "
+            f"({registry_path} — {exc}); registered project configs cannot be "
+            f"verified against the shipped schema"
+        )
+        _eprint(f"[residual] {line}")
+        residuals.append(line)
+        return residuals
+
+    shipped = gate.read_shipped_protocol_version(
+        source_root / "protocol" / "CHANGELOG.md"
+    )
+    checked = 0
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("path"):
+            continue
+        checked += 1
+        project_id = entry.get("id") or "<unknown>"
+        project_toml = Path(str(entry["path"])) / "cartopian.toml"
+        declared, error = _read_declared_protocol_version(project_toml)
+        if error is not None:
+            line = (
+                f"project {project_id}: config-schema gate failed closed "
+                f"(residual: {gate.RESIDUAL_NAME}): {error}; the config cannot "
+                f"be validated against the shipped protocol {shipped} and is "
+                f"left unmodified"
+            )
+            _eprint(f"[residual] {line}")
+            residuals.append(line)
+            continue
+        verdict = gate.classify_protocol_version(declared, shipped)
+        if verdict["status"] == gate.GATE_CURRENT:
+            continue
+        line = f"project {project_id} ({project_toml.parent}): {verdict['detail']}"
+        if verdict["status"] == gate.GATE_MIGRATE:
+            _eprint(f"[migration] {line}")
+            actions.append(f"migration  {project_id}: {verdict['detected_version']} -> {shipped}")
+        else:
+            _eprint(f"[residual] {line}")
+            residuals.append(line)
+    if checked:
+        actions.append(
+            f"reconciled protocol_version for {checked} registered project(s) "
+            f"against shipped {shipped}"
+        )
+    return residuals
+
+
 # --- User-PATH patching (--patch-path) --------------------------------------
 # Idempotent across re-runs. Windows edits the registry-backed user PATH
 # (the same value ``[Environment]::SetEnvironmentVariable(..., "User")``
@@ -604,6 +725,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             ref = args.ref
 
         actions = install(source_root, install_root, mode=mode)
+        gate_residuals = reconcile_registered_projects(install_root, source_root, actions)
         if ref:
             write_version_marker(install_root, ref, actions)
         if args.patch_path:
@@ -623,6 +745,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     coreutils_note = _check_optional_coreutils()
     if coreutils_note:
         print(coreutils_note)
+    if gate_residuals:
+        _eprint(
+            f"[residual] {len(gate_residuals)} registered project config(s) failed "
+            "the protocol-version gate (fail-closed); see [residual] lines above. "
+            "No cartopian.toml was modified."
+        )
+        return EXIT_FAIL
     return EXIT_OK
 
 

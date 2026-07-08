@@ -46,7 +46,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "floor-fixture"\n'
     'name = "Floor Fixture"\n'
-    'protocol_version = "1"\n'
+    'protocol_version = "v0.3.0"\n'
     "\n[defaults]\ngit_versioning = false\n"
 )
 
@@ -68,36 +68,36 @@ class TestGovernedSet(_ProjectFixture):
     def test_governed_files_are_enumerated_root_and_dirs(self):
         (Path(self.root) / "STATE.md").write_text("s\n", encoding="utf-8")
         (Path(self.root) / "IMPLEMENTATION_PLAN.md").write_text("p\n", encoding="utf-8")
-        (Path(self.root) / "tasks/open/TASK-01-001-x.md").write_text("t\n", encoding="utf-8")
-        (Path(self.root) / "decisions/DEC-001-y.md").write_text("d\n", encoding="utf-8")
+        (Path(self.root) / "tasks/open/sample-a.md").write_text("t\n", encoding="utf-8")
+        (Path(self.root) / "decisions/sample-b.md").write_text("d\n", encoding="utf-8")
         # A non-governed file must not be enumerated.
         (Path(self.root) / "README.md").write_text("r\n", encoding="utf-8")
         rels = {os.path.relpath(p, self.root).replace(os.sep, "/") for p in governed_files(self.root)}
         self.assertIn("STATE.md", rels)
         self.assertIn("IMPLEMENTATION_PLAN.md", rels)
-        self.assertIn("tasks/open/TASK-01-001-x.md", rels)
-        self.assertIn("decisions/DEC-001-y.md", rels)
+        self.assertIn("tasks/open/sample-a.md", rels)
+        self.assertIn("decisions/sample-b.md", rels)
         self.assertNotIn("README.md", rels)
 
 
 class TestAuditLogic(_ProjectFixture):
     def test_mediated_write_audits_clean(self):
-        mediated_write(self.root, "task", "open/TASK-01-001-x.md", "body\n")
+        mediated_write(self.root, "task", "open/sample-a.md", "body\n")
         result = audit_provenance(self.root)
         self.assertEqual(result["baseline"], "established")
         self.assertEqual(result["guard"], [])
         self.assertEqual(result["advisory"], [])
 
     def test_raw_edit_fires_guard(self):
-        mediated_write(self.root, "task", "open/TASK-01-001-x.md", "body\n")
+        mediated_write(self.root, "task", "open/sample-a.md", "body\n")
         # Seed an out-of-band raw edit: a plain write that bypassed the writer.
-        target = Path(self.root) / "tasks/open/TASK-01-001-x.md"
+        target = Path(self.root) / "tasks/open/sample-a.md"
         target.write_text("tampered\n", encoding="utf-8")
         result = audit_provenance(self.root)
         self.assertEqual(len(result["guard"]), 1, result)
         g = result["guard"][0]
         self.assertEqual(g["kind"], "raw-edit")
-        self.assertEqual(g["relpath"], "tasks/open/TASK-01-001-x.md")
+        self.assertEqual(g["relpath"], "tasks/open/sample-a.md")
         self.assertEqual(g["current_hash"], hash_bytes(b"tampered\n"))
         self.assertEqual(result["advisory"], [])
 
@@ -133,7 +133,7 @@ class TestAuditLogic(_ProjectFixture):
         # Establish a baseline with one mediated write, then create a second
         # governed artifact entirely out of band.
         mediated_write(self.root, "state", "STATE.md", "s\n")
-        (Path(self.root) / "tasks/open/TASK-09-009-rogue.md").write_text(
+        (Path(self.root) / "tasks/open/rogue-note.md").write_text(
             "rogue\n", encoding="utf-8"
         )
         result = audit_provenance(self.root)
@@ -141,7 +141,7 @@ class TestAuditLogic(_ProjectFixture):
         self.assertEqual(len(result["advisory"]), 1, result)
         adv = result["advisory"][0]
         self.assertEqual(adv["kind"], "untracked-governed-artifact")
-        self.assertEqual(adv["relpath"], "tasks/open/TASK-09-009-rogue.md")
+        self.assertEqual(adv["relpath"], "tasks/open/rogue-note.md")
 
     def test_raw_create_copying_mediated_bytes_is_not_clean(self):
         # Regression: provenance is path-bound. A raw-created governed artifact
@@ -152,7 +152,7 @@ class TestAuditLogic(_ProjectFixture):
         # own path — so the floor must still flag it, not accept it as clean.
         body = "shared content bytes\n"
         mediated_write(self.root, "state", "STATE.md", body)
-        copied = Path(self.root) / "tasks/open/TASK-01-001-copy.md"
+        copied = Path(self.root) / "tasks/open/copied-note.md"
         copied.write_text(body, encoding="utf-8")
         # Same bytes, hence same hash, as the mediated STATE.md write.
         self.assertEqual(
@@ -166,13 +166,13 @@ class TestAuditLogic(_ProjectFixture):
         self.assertEqual(len(result["advisory"]), 1, result)
         adv = result["advisory"][0]
         self.assertEqual(adv["kind"], "untracked-governed-artifact")
-        self.assertEqual(adv["relpath"], "tasks/open/TASK-01-001-copy.md")
+        self.assertEqual(adv["relpath"], "tasks/open/copied-note.md")
         # Not clean: at least one advisory was raised for the laundered file.
         self.assertTrue(result["guard"] or result["advisory"])
 
     def test_no_log_emits_single_baseline_advisory_no_guard(self):
         (Path(self.root) / "STATE.md").write_text("s\n", encoding="utf-8")
-        (Path(self.root) / "tasks/open/TASK-01-001-x.md").write_text("t\n", encoding="utf-8")
+        (Path(self.root) / "tasks/open/sample-a.md").write_text("t\n", encoding="utf-8")
         # No mediated write has ever happened: no log exists.
         self.assertFalse((Path(self.root) / LOG_RELPATH).exists())
         result = audit_provenance(self.root)
@@ -192,11 +192,11 @@ class TestMoveTaskProvenance(_ProjectFixture):
         )
 
     def test_move_carries_provenance_and_post_move_edit_is_guard(self):
-        mediated_write(self.root, "task", "open/TASK-01-001-x.md", "body\n")
-        src = Path(self.root) / "tasks/open/TASK-01-001-x.md"
+        mediated_write(self.root, "task", "open/sample-a.md", "body\n")
+        src = Path(self.root) / "tasks/open/sample-a.md"
         proc = self._run_cli("move-task", str(src), "in-progress")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        moved = Path(self.root) / "tasks/in-progress/TASK-01-001-x.md"
+        moved = Path(self.root) / "tasks/in-progress/sample-a.md"
         self.assertTrue(moved.is_file())
 
         # The moved file (unchanged content, new path) audits clean.
@@ -208,7 +208,7 @@ class TestMoveTaskProvenance(_ProjectFixture):
         moved.write_text("tampered after move\n", encoding="utf-8")
         drifted = audit_provenance(self.root)
         self.assertEqual(len(drifted["guard"]), 1, drifted)
-        self.assertEqual(drifted["guard"][0]["relpath"], "tasks/in-progress/TASK-01-001-x.md")
+        self.assertEqual(drifted["guard"][0]["relpath"], "tasks/in-progress/sample-a.md")
 
 
 class TestPlanAuditEndToEnd(_ProjectFixture):
@@ -247,7 +247,7 @@ class TestPlanAuditEndToEnd(_ProjectFixture):
         body = "orientation\n"
         mediated_write(self.root, "state", "STATE.md", body)
         # Raw-create a task file with STATE.md's exact bytes.
-        (Path(self.root) / "tasks/open/TASK-01-001-copy.md").write_text(
+        (Path(self.root) / "tasks/open/copied-note.md").write_text(
             body, encoding="utf-8"
         )
         proc = self._plan_audit()
@@ -258,7 +258,7 @@ class TestPlanAuditEndToEnd(_ProjectFixture):
         copied = [
             a for a in advisories
             if a["kind"] == "untracked-governed-artifact"
-            and a["relpath"] == "tasks/open/TASK-01-001-copy.md"
+            and a["relpath"] == "tasks/open/copied-note.md"
         ]
         self.assertEqual(len(copied), 1, rec)
         # The mediated STATE.md itself stays attributed (no guard fired).

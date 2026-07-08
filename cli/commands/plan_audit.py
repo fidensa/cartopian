@@ -8,9 +8,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from cli.commands import delete_backlog, write_backlog
-from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
+from cli.commands.resolve_config import _CliError, _load_project_config, _require_startup_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
+from cli.protocol_gate import (
+    GATE_BLOCKED,
+    GATE_MIGRATE,
+    classify_protocol_version,
+    read_shipped_protocol_version,
+)
 from cli.provenance import audit_provenance, scan_pm_identifiers
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
@@ -594,12 +600,35 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         project_cfg = _load_project_config(project_path)
-        _require_project_keys(project_cfg, project_path / "cartopian.toml")
+        _, _, declared_protocol_version = _require_startup_project_keys(
+            project_cfg, project_path / "cartopian.toml"
+        )
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
 
+    # Config-schema migration gate: classify the config's declared
+    # [project].protocol_version against the shipped protocol version.
+    # Older-but-migratable → warning naming the required migration;
+    # unknown/newer → blocker (audit fails closed with the named residual).
+    # The gate never edits cartopian.toml.
+    try:
+        shipped_protocol_version = read_shipped_protocol_version()
+    except (OSError, RuntimeError) as exc:
+        _stderr("error", str(exc))
+        return EXIT_FAIL
+    protocol_gate = classify_protocol_version(
+        declared_protocol_version, shipped_protocol_version
+    )
+
     blockers: List[Dict[str, Any]] = []
+    if protocol_gate["status"] == GATE_BLOCKED:
+        blockers.append({
+            "kind": "protocol-version-unverifiable",
+            "detected_version": protocol_gate["detected_version"],
+            "shipped_version": protocol_gate["shipped_version"],
+            "detail": protocol_gate["detail"],
+        })
     blockers.extend(_check_artifact_chains(project_path))
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
@@ -616,6 +645,13 @@ def handler(args: argparse.Namespace) -> int:
     warnings, attributions = _check_work_root_provenance(
         project_path, work_roots, pm_owns_product_branches, task_index, changed_by_root
     )
+    if protocol_gate["status"] == GATE_MIGRATE:
+        warnings.insert(0, {
+            "kind": "protocol-version-migration",
+            "detected_version": protocol_gate["detected_version"],
+            "shipped_version": protocol_gate["shipped_version"],
+            "detail": protocol_gate["detail"],
+        })
     # Assignee scope boundary — infra artifacts require explicit task
     # authorization regardless of attribution.
     warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
