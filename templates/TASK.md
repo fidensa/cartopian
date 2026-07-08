@@ -4,6 +4,7 @@ Phase: PHASE-NN-slug
 Plan ref: PNN-KIND-NNN
 Source: <BL-NNN | n/a>
 Work root: <name | name, name | n/a>
+Deliverable: <root:relative/path.md | project:relative/path.md | n/a>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN-slug.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
@@ -34,6 +35,15 @@ Work root: product, design
 Names only. Absolute paths, project-relative paths, and `<owner>/<repo>` slugs are rejected. Operator-machine path mapping lives in `<project-root>/cartopian.local.toml` and is resolved by `cartopian resolve-config`; the launcher consumes the resolved absolute paths and fails closed on unmapped names.
 
 Use `n/a` (or omit the line) when the task touches nothing outside the cartopian project root. Within-root subdirectory scope belongs in the task body, not in this field.
+
+## Deliverable
+
+Set this when the task's work product is a durable document — research findings, a design or evaluation, an analysis — rather than code. It names where that document lives, so the report can stay a thin summary and the reviewer reviews the real artifact. Name-only and deidentified (no task, plan, spec, or requirement identifiers), same discipline as `Work root:`. Two forms:
+
+- `root:relative/path.md` — the document lives in the work root named `root` (drawn from `[project].work_roots`); the assignee writes it there directly, exactly as it writes code.
+- `project:relative/path.md` — the document lives under the cartopian project root. The assignee returns the document inline in its completion report and the PM persists it here, because the assignee is not granted write access inside the project.
+
+Use `n/a` (or omit the line) for code tasks and any task with no durable document deliverable. See `protocol/CONVENTIONS.md` → Document Deliverables.
 
 ## Dependencies
 

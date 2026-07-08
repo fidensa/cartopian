@@ -217,6 +217,87 @@ def _resolve_work_roots(
     return resolved
 
 
+_DELIVERABLE_SKIP = {"", "n/a", "none"}
+
+
+def _lookup_work_root_path(
+    project_cfg: Dict[str, Any], project_path: Path, name: str
+) -> Optional[Path]:
+    """Resolve one work-root ``name`` to its absolute path, or ``None``.
+
+    Lenient and single-name by design — unlike :func:`_resolve_work_roots`
+    (all-or-nothing), an unrelated unmapped or malformed root never poisons this
+    lookup. Returns ``None`` when the name is not a declared work root, when
+    ``cartopian.local.toml`` is absent/unreadable/omits it, or when the mapped
+    value is not absolute. Callers that need existence verification treat
+    ``None`` as "cannot verify on this machine".
+    """
+    project_table = project_cfg.get("project", {}) or {}
+    if name not in (project_table.get("work_roots", []) or []):
+        return None
+    local_path = project_path / "cartopian.local.toml"
+    if not local_path.exists():
+        return None
+    try:
+        with local_path.open("rb") as fh:
+            local_cfg = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    raw = (local_cfg.get("work_roots", {}) or {}).get(name)
+    if raw is None:
+        return None
+    candidate = Path(str(raw))
+    return candidate if candidate.is_absolute() else None
+
+
+def _resolve_deliverable(
+    project_cfg: Dict[str, Any], project_path: Path, raw_value: str
+) -> Optional[Dict[str, Any]]:
+    """Resolve a task's ``Deliverable:`` reference to an absolute path.
+
+    The reference is name-only and deidentified (it mirrors ``Work root:`` and
+    carries no ``NN-NNN``), in one of two forms:
+
+    - ``<work-root-name>:<relative/path>`` (mode ``work-root``) — the coder
+      writes the durable work product directly into that work root, exactly as
+      it writes code. ``absolute_path`` is ``None`` when the name is unmapped
+      on this machine; the work-root validator surfaces that separately, so the
+      aggregator does not hard-fail on it.
+    - ``project:<relative/path>`` (mode ``project``) — the durable work product
+      lands under the cartopian project root. Because the coder is not granted
+      write access there, it returns the work product inline in its completion
+      report and the PM persists it to this path before the report is cleared.
+
+    Returns ``None`` for an absent / ``n/a`` / ``none`` deliverable.
+    """
+    value = (raw_value or "").strip()
+    if value.lower() in _DELIVERABLE_SKIP:
+        return None
+    root, sep, relpath = value.partition(":")
+    root = root.strip()
+    relpath = relpath.strip()
+    if not sep or not relpath:
+        # No ``<root>:`` prefix — treat the whole value as project-root-relative.
+        root, relpath, mode = "project", value, "project"
+    elif root == "project":
+        mode = "project"
+    else:
+        mode = "work-root"
+    if mode == "project":
+        base: Optional[Path] = project_path
+    else:
+        base = _lookup_work_root_path(project_cfg, project_path, root)
+    absolute = (base / relpath).resolve() if base is not None else None
+    return {
+        "logical": value,
+        "mode": mode,
+        "root": root,
+        "relpath": relpath,
+        "absolute_path": str(absolute) if absolute is not None else None,
+        "exists": absolute.exists() if absolute is not None else False,
+    }
+
+
 def _require_project_keys(project_cfg: Dict[str, Any], project_toml: Path) -> Tuple[str, str, str]:
     project_table = _require_project_table(project_cfg, project_toml)
     for key in ("id", "name", "protocol_version"):

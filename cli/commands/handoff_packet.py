@@ -14,6 +14,7 @@ from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
     _resolve_automation,
+    _resolve_deliverable,
     _resolve_git_block,
     _resolve_git_versioning,
     _resolve_handoffs,
@@ -52,6 +53,21 @@ def _first_heading(content: str) -> str:
     for line in content.splitlines():
         if line.startswith("# "):
             return line[2:].strip()
+    return ""
+
+
+def _deliverable_value(content: str) -> str:
+    """Return the raw `Deliverable:` header value, or "" when absent.
+
+    Scans the top-of-file header block only (stops at the first `## ` section),
+    matching how `_parse_headers` reads declarative task fields.
+    """
+    for line in content.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith("Deliverable:"):
+            return stripped[len("Deliverable:"):].strip()
     return ""
 
 
@@ -196,6 +212,9 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         work_roots = _build_work_roots(project_root, project_cfg)
+        deliverable = _resolve_deliverable(
+            project_cfg, project_root, _deliverable_value(content)
+        )
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
@@ -217,6 +236,7 @@ def handler(args: argparse.Namespace) -> int:
         "auto_start": role_handoff.get("auto_start"),
         "timeout": role_handoff.get("timeout"),
         "work_roots": work_roots,
+        "deliverable": deliverable,
         "expected_report_path": str(expected_report_path),
         "git_versioning": git_versioning,
         "git_policy": git_policy,

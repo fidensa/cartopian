@@ -4,7 +4,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli.commands.resolve_config import _CliError, _load_toml, _resolve_work_roots
+from cli.commands.resolve_config import (
+    _CliError,
+    _load_toml,
+    _resolve_deliverable,
+    _resolve_work_roots,
+)
 from cli.commands.validate_task_readiness import (
     CHECK_ORDER,
     _check_acceptance,
@@ -222,6 +227,9 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         work_roots_resolved = _collect_work_roots(project_root, project_cfg, headers)
+        deliverable = _resolve_deliverable(
+            project_cfg, project_root, headers.get("Deliverable", "")
+        )
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
@@ -240,6 +248,7 @@ def handler(args: argparse.Namespace) -> int:
         "spec_path": _resolve_spec_path(project_root, headers),
         "dependencies": _collect_dependencies(project_root, headers),
         "work_roots_resolved": work_roots_resolved,
+        "deliverable": deliverable,
         "ready": ready,
         "validator_blockers": _validator_blockers(checks),
         "expected_prompt_path": str((project_root / "prompts" / f"PROMPT-{nn_nnn}.md").resolve()),

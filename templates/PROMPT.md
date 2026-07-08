@@ -7,6 +7,7 @@ Branch: <branch or n/a>
 
 - **Project root**: <absolute path to the governing cartopian project directory; NOT in the assignee's scope except the report target below>
 - **Work root paths**: <comma-separated absolute paths resolved from `Work root:`, or n/a>
+- **Deliverable path**: <absolute path where the durable work product is written, or n/a; when the deliverable must land inside the governing project, this is n/a and the work product is returned inline in the report instead — see the Deliverable section below>
 - **Report path**: <absolute path to the expected completion report>
 - **Report template path**: <absolute path to templates/REPORT.md>
 
@@ -30,6 +31,15 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 ## Specification
 
 <When the work has a spec, paste the **deidentified** spec body here — the `deidentified_spec` field from `cartopian render-spec <spec-path>`. Do not link or hand over the raw spec file; it carries PM identifiers the assignee must not copy into product code. Omit this section when the task has no spec.>
+
+## Deliverable
+
+<Include this section only when the task produces a durable document (research findings, a design, an evaluation, an analysis) rather than code.
+
+- When a **Deliverable path** is given above, write the complete work product to that file. Treat it like code: it is the artifact the reviewer reviews, not the report. Your completion report then only summarizes what you did and points to the deliverable — do not paste the full work product into the report.
+- When the **Deliverable path** is n/a because the durable copy must live inside the governing project (outside your write scope), put the complete work product in the report's `## Deliverable content` section instead. The PM persists it to its durable location and the reviewer reviews that copy.
+
+Omit this section for code-only tasks.>
 
 ## What to produce
 

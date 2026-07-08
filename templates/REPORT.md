@@ -14,6 +14,16 @@ The `Work root:` value carries names only — the same names declared in the pro
 
 - <path/to/file.ext> — <brief description of change>
 
+## Deliverable
+
+- <absolute path to the durable work product this task produced, or n/a>
+
+When this task produced a durable document (research, design, evaluation) rather than code, name its path here. The substantive work product lives in that file, not in this report — this report only summarizes what was done. When the prompt gave no Deliverable path because the durable copy must land inside the governing project, leave this `n/a` and paste the work product in `## Deliverable content` below; the PM persists it.
+
+## Deliverable content
+
+<Only when the prompt directed you to return the work product inline (no Deliverable path was given). Paste the complete document here so the PM can persist it to its durable location. Omit this section otherwise.>
+
 ## Test evidence
 
 <When evidence gate was `required`:

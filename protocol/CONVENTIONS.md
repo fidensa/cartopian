@@ -221,6 +221,33 @@ Report parsing outcomes are:
 
 `failed-to-parse` is a PM-level blocker. It preserves the prompt and invalid report for inspection and prevents lifecycle movement.
 
+## Document Deliverables
+
+A document-deliverable task is one whose work product is a durable document — research findings, a design, an evaluation, an analysis — rather than code. Such a task declares a `Deliverable:` field so its work product is written to a durable file the reviewer reviews directly, and the completion report stays a thin summary. This is the same shape as a code task: code is written to the work root and the report summarizes it; a document is written to a deliverable and the report summarizes it. A report is never the home of the work product, and reports are not durable (a task and its review report share `reports/REPORT-NN-NNN.md`, so the coder's report is cleared before the review handoff).
+
+### The Deliverable field
+
+`Deliverable:` is name-only and deidentified — it carries no task, plan, spec, or requirement identifier, the same discipline as `Work root:`. It takes one of two forms:
+
+- `root:relative/path.md` (work-root deliverable) — the assignee writes the document into the named work root directly, exactly as it writes code.
+- `project:relative/path.md` (project-root deliverable) — the document lands under the cartopian project root. The assignee is not granted write access there, so it returns the document inline in its completion report and the PM persists it to this path.
+
+The field is set at task authoring, or captured at assignment when the PM prompts the operator for the location. `n/a` (or an absent line) means the task has no durable document deliverable. `handoff-packet` and `task-bundle` resolve the field to an absolute `deliverable` record (mode, root, relpath, absolute path, existence) so the PM sources the path without re-reading the task.
+
+### Work-root deliverables
+
+The assignee writes the complete work product to the resolved deliverable path (inside a declared work root, already in its write scope). The completion report only summarizes what was done and points to the deliverable. The review prompt names the deliverable path as the primary artifact to review.
+
+### Project-root deliverables
+
+The assignee returns the complete work product inline in the report's `## Deliverable content` section. Before clearing the report for the review handoff, the PM persists that content to the resolved project-root deliverable path using its own project-write authority. The review prompt then names the persisted file as the primary artifact to review. (A deployment may instead grant the assignee role write access to the project directory, in which case a project-root deliverable is written directly like a work-root one; the inline path is the default that needs no extra grant.)
+
+### Durability
+
+The deliverable is the durable record of the work; the report may be cleared and is not a substitute for it. A deliverable is the assignee's produced knowledge artifact — distinct from a decision (`decisions/DEC-NNN`, a PM ruling) and from a spec (`specs/SPEC-NN-NNN`, the input contract). When a deliverable's findings warrant a durable protocol ruling, the PM still records that as a decision.
+
+`plan-audit` enforces this durability: a task in `in-review` or `done` that declares a `Deliverable:` whose file is missing is a `missing-deliverable` blocker (skipped only when a work-root deliverable's name is unmapped on the auditing machine, since existence cannot be verified there).
+
 ## Roles
 
 The `[roles]` section in `cartopian.toml` maps each role name to a one-line description string. Role names are operator-chosen identifiers; descriptions explain what the role is responsible for so the PM can align tasks to roles during assignment.

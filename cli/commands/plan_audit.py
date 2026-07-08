@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from cli.commands import delete_backlog, write_backlog
-from cli.commands.resolve_config import _CliError, _load_project_config, _require_startup_project_keys
+from cli.commands.resolve_config import (
+    _CliError,
+    _load_project_config,
+    _require_startup_project_keys,
+    _resolve_deliverable,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.protocol_gate import (
@@ -22,7 +27,12 @@ from cli.provenance import audit_provenance, scan_pm_identifiers
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
 _ALL_TASK_DIRS = ("open", "in-progress", "in-review", "done")
+# Deliverable existence is checked once a document-deliverable task has reached
+# review (the reviewer must have the artifact) and at done (the durable record
+# the task promised must persist).
+_DELIVERABLE_STATUS_DIRS = ("in-review", "done")
 _WORK_ROOT_RE = re.compile(r"^Work root:\s*(.+)$", re.MULTILINE)
+_DELIVERABLE_RE = re.compile(r"^Deliverable:\s*(.+)$", re.MULTILINE)
 _ASSIGNEE_RE = re.compile(r"^Assignee:\s*(.+)$", re.MULTILINE)
 _VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
@@ -317,6 +327,63 @@ def _check_artifact_chains(project_path: Path) -> List[Dict[str, Any]]:
                             "detail": f"review artifact for {task_id} has no Verdict: field",
                         })
 
+    return blockers
+
+
+def _check_deliverables(
+    project_path: Path, project_cfg: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Blocker when a document-deliverable task's durable file is missing.
+
+    A task in ``in-review`` or ``done`` that declares a ``Deliverable:`` must
+    have that file on disk — at ``in-review`` the reviewer reviews it; at
+    ``done`` it is the durable record the task promised (CONVENTIONS § Document
+    Deliverables). Resolution reuses the aggregators' rule
+    (:func:`_resolve_deliverable`). When the path cannot be resolved on this
+    machine — a work-root name unmapped in ``cartopian.local.toml`` — the check
+    is skipped rather than firing a cross-machine false positive; work-root
+    mapping is validated on its own path. ``project``-mode deliverables always
+    resolve (relative to the project root), so they are always checked.
+    """
+    blockers: List[Dict[str, Any]] = []
+    for status_dir in _DELIVERABLE_STATUS_DIRS:
+        tasks_dir = project_path / "tasks" / status_dir
+        if not tasks_dir.is_dir():
+            continue
+        for task_file in sorted(tasks_dir.iterdir()):
+            if not task_file.is_file() or task_file.suffix != ".md":
+                continue
+            m = _TASK_ID_RE.match(task_file.stem)
+            if not m:
+                continue
+            task_id = f"TASK-{m.group(1)}"
+            try:
+                content = task_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            dm = _DELIVERABLE_RE.search(content)
+            if not dm:
+                continue
+            deliverable = _resolve_deliverable(project_cfg, project_path, dm.group(1))
+            if deliverable is None:
+                continue
+            absolute = deliverable["absolute_path"]
+            if absolute is None:
+                # Work-root name unmapped on this machine — cannot verify; skip.
+                continue
+            if Path(absolute).is_file():
+                continue
+            blockers.append({
+                "kind": "missing-deliverable",
+                "task_id": task_id,
+                "task_path": str(task_file),
+                "task_status": status_dir,
+                "expected": absolute,
+                "detail": (
+                    f"{task_id} is {status_dir} and declares deliverable "
+                    f"'{deliverable['logical']}' but no file exists at {absolute}"
+                ),
+            })
     return blockers
 
 
@@ -630,6 +697,7 @@ def handler(args: argparse.Namespace) -> int:
             "detail": protocol_gate["detail"],
         })
     blockers.extend(_check_artifact_chains(project_path))
+    blockers.extend(_check_deliverables(project_path, project_cfg))
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
 

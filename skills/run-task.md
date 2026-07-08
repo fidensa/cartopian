@@ -15,6 +15,7 @@ For vague session-start requests that do not name a project or target task, use 
 - `cartopian://protocol/CONVENTIONS/lifecycle-authority` — who may move tasks and author protocol files.
 - `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` — `move-task` artifact guards and the plan-audit blocker contract (Stages 0, 4, 6).
 - `cartopian://protocol/CONVENTIONS/handoffs` — the handoff contract behind Stages 3-6.
+- `cartopian://protocol/CONVENTIONS/document-deliverables` — where a document-producing task's work product lives and how the prompt, report, and review reference it (Stages 2, 4, 5).
 - `cartopian://protocol/CONVENTIONS/evidence-gate-discipline` — `required` vs `n/a` evidence gates.
 - `cartopian://protocol/CONVENTIONS/git` — git policy keys behind the PM-owned product-repo steps and session-close behavior.
 
@@ -95,6 +96,8 @@ cartopian handoff-packet <task-path> --role <role>
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
+If the task's work product is a durable document (research, design, evaluation) rather than code and the task's `Deliverable:` field is not yet set, prompt the operator for where the document should live before authoring the prompt: an existing work-root name plus a relative path (`root:relative/path.md`, written directly by the assignee), or `project:relative/path.md` (returned inline and persisted by the PM). Persist the chosen value into the task via `cartopian write-task` so it enters the trace chain, then re-run `handoff-packet` so the record carries the resolved `deliverable`. See `cartopian://protocol/CONVENTIONS/document-deliverables`.
+
 Then author the assignment prompt. This is a **PM-performed** write; the contained PM has no raw `Write` tool, so create or update `prompts/PROMPT-NN-NNN.md` through the mediated writer:
 
 ```
@@ -107,6 +110,7 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - Declared `Work root:` names from the task header (comma-separated), or `n/a`.
 - Absolute path(s) for the declared work root(s) (from the record's `work_roots[].absolute_path`); use `n/a` when none are declared.
 - When the task names a spec, the **deidentified** spec body, inlined into the prompt's `## Specification` section. Obtain it by running `cartopian render-spec <spec-path>` (the `spec_path` comes from the `task-bundle` record) and using the `deidentified_spec` field. Do **not** put the raw spec path in the prompt or otherwise direct the assignee to read `specs/` — the raw spec carries PM identifiers that would leak into product code.
+- When the record's `deliverable` is non-null, a `## Deliverable` section directing the assignee to the durable work product: for a `work-root` deliverable, the absolute `deliverable.absolute_path` with an instruction to write the complete work product there and keep the report a summary that points to it; for a `project` deliverable, an instruction to return the complete work product inline in the report's `## Deliverable content` section (the prompt's Deliverable path stays `n/a`). Omit this section when `deliverable` is null.
 - Absolute expected report path (from the record's `expected_report_path`).
 - Absolute report template path.
 - The goal, context, acceptance criteria, scope boundaries, and test gate — written as self-contained prose, not as references to PM artifacts.
@@ -178,6 +182,8 @@ cartopian move-task <task-path> in-review
 
 The CLI verifies that `reports/REPORT-NN-NNN.md` exists (the filename is the task link) and has `Status: complete` before executing this rename. The parsed completion report already on disk satisfies this check. Capture any evidence the reviewer will need from the completion report and proceed to reviewer assignment.
 
+If the task declares a `project`-mode `Deliverable:` (the `handoff-packet`/`task-bundle` `deliverable.mode` is `project`), the assignee returned its work product inline in the report's `## Deliverable content` section. Persist that content to the resolved `deliverable.absolute_path` using the PM's project-write authority **before** the review handoff clears the report — the report is transient, the deliverable is the durable artifact the reviewer reviews. A `work-root`-mode deliverable is already written by the assignee and needs no PM step here.
+
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
 
 If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before Stage 5.
@@ -211,6 +217,7 @@ The review prompt must include absolute paths to:
 
 - The task file.
 - The spec file, when present.
+- The deliverable, when the task declares one — the absolute `deliverable.absolute_path`, named as the **primary artifact to review** (the durable work product, not a summary of it). For a `project`-mode deliverable this is the copy the PM persisted in Stage 4.
 - The completion report.
 - The expected review file.
 - Absolute path(s) for the declared work root(s), if any.
