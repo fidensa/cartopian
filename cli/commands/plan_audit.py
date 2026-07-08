@@ -11,7 +11,7 @@ from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import _CliError, _load_project_config, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
-from cli.provenance import audit_provenance
+from cli.provenance import audit_provenance, scan_pm_identifiers
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
@@ -475,6 +475,60 @@ def _check_infra_artifacts(
     return warnings
 
 
+def _check_pm_identifier_leaks(
+    work_roots: Dict[str, str],
+    changed_by_root: Dict[str, Optional[List[str]]],
+) -> List[Dict[str, Any]]:
+    """Identifier-leak detection floor over changed work-root files.
+
+    Product code must never carry managing-project planning identifiers
+    (requirement, decision, task, backlog, review, phase, prompt, report, spec
+    ids). For every dirty work root, the changed files are run through
+    :func:`cli.provenance.scan_pm_identifiers` — a pure regex pass, no model
+    round-trip — and any hit emits a ``pm-identifier-leak`` warning naming the
+    file, line, and matched identifier. A warning, not a blocker: the leak is
+    an output-hygiene violation for the operator to route back to the
+    assignee; lifecycle movement is not blocked by itself (CONVENTIONS §
+    Lifecycle CLI Guards).
+    """
+    warnings: List[Dict[str, Any]] = []
+    for name, abs_path in work_roots.items():
+        changed = changed_by_root.get(name)
+        if not changed:
+            continue
+        # Map absolute candidate path -> the git-relative path for reporting.
+        candidates = {str(Path(abs_path) / rel): rel for rel in changed}
+        hits = [
+            {
+                "path": candidates.get(h["path"], h["path"]),
+                "line": h["line"],
+                "match": h["match"],
+                "text": h["text"],
+            }
+            for h in scan_pm_identifiers(list(candidates))
+        ]
+        if not hits:
+            continue
+        files = sorted({h["path"] for h in hits})
+        shown = ", ".join(
+            f"{h['path']}:{h['line']} ({h['match']})" for h in hits[:5]
+        ) + ("..." if len(hits) > 5 else "")
+        warnings.append({
+            "kind": "pm-identifier-leak",
+            "work_root": name,
+            "work_root_path": abs_path,
+            "files": files,
+            "hits": hits,
+            "detail": (
+                f"management planning identifier(s) leaked into changed "
+                f"file(s) in work root '{name}' ({abs_path}): {shown}. "
+                f"Product code must not carry management-bookkeeping "
+                f"references"
+            ),
+        })
+    return warnings
+
+
 def _check_backlog_invariants(
     project_path: Path,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -565,6 +619,9 @@ def handler(args: argparse.Namespace) -> int:
     # Assignee scope boundary — infra artifacts require explicit task
     # authorization regardless of attribution.
     warnings.extend(_check_infra_artifacts(work_roots, task_index, changed_by_root))
+    # Assignee output hygiene — planning identifiers leaked into changed
+    # work-root files, caught by the pure-regex detection floor.
+    warnings.extend(_check_pm_identifier_leaks(work_roots, changed_by_root))
     warnings.extend(backlog_warnings)
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI

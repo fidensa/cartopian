@@ -528,6 +528,78 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
             self.assertEqual(infra, [], record["warnings"])
 
 
+class TestPlanAuditPmIdentifierLeaks(unittest.TestCase):
+    """The identifier-leak detection floor: a management planning identifier
+    leaked into a changed work-root file fires a `pm-identifier-leak` warning
+    through `plan-audit` — a pure regex pass over the changed files, no model
+    round-trip. A warning, never a blocker."""
+
+    def _project_with_work_root(self, tmp_path: Path):
+        project = _make_project(tmp_path)
+        (project / "cartopian.toml").write_text(
+            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+            encoding="utf-8",
+        )
+        work_root = tmp_path / "tool-repo"
+        work_root.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "init"], cwd=str(work_root),
+            capture_output=True, text=True, check=True,
+        )
+        (project / "cartopian.local.toml").write_text(
+            f"[work_roots]\ntool-repo = \"{work_root}\"\n",
+            encoding="utf-8",
+        )
+        return project, work_root
+
+    def test_leaked_identifier_in_changed_file_warns_but_does_not_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            # Seed the leak: an assignee annotating product code with a
+            # management-bookkeeping reference, ticket-comment style.
+            _write(
+                work_root / "src" / "feature.py",
+                "def f():\n"
+                "    # acceptance per TASK-01-002\n"
+                "    return 1\n",
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)  # warning, not blocker
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            self.assertEqual(record["blockers"], [])
+            leaks = [w for w in record["warnings"]
+                     if w["kind"] == "pm-identifier-leak"]
+            self.assertEqual(len(leaks), 1, record["warnings"])
+            leak = leaks[0]
+            self.assertEqual(leak["work_root"], "tool-repo")
+            self.assertIn("src/feature.py", leak["files"])
+            self.assertTrue(
+                any(h["path"] == "src/feature.py" and h["line"] == 2
+                    and h["match"] == "TASK-01-002" for h in leak["hits"]),
+                leak["hits"],
+            )
+            self.assertIn("[warning]", proc.stderr)
+
+    def test_clean_changed_files_emit_no_leak_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(work_root / "src" / "main.py",
+                   "TIMEOUT = 60  # seconds\nresult = total - 1\n")
+
+            proc = _run(str(project), home=tmp_path)
+
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            leaks = [w for w in record["warnings"]
+                     if w["kind"] == "pm-identifier-leak"]
+            self.assertEqual(leaks, [], record["warnings"])
+
+
 class TestPlanAuditBacklogInvariants(unittest.TestCase):
     def test_healthy_backlog_is_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
