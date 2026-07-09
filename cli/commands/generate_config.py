@@ -188,6 +188,12 @@ def _collect_handoff_field(
         role, value = _parse_kv(raw, flag)
         if not _ROLE_NAME_RE.match(role):
             raise _Usage(f"{flag} role must match [A-Za-z0-9_-]+; got: {role!r}")
+        if role == "pm":
+            raise _Usage(
+                "handoffs-pm-forbidden: the `pm` role is never launched as a "
+                "handoff — it is the interactive session orchestrator, and a "
+                f"[handoffs.pm] block has no meaning; drop {flag} pm=…"
+            )
         if role not in declared_roles:
             raise _Usage(f"orphan-handoff: {role} — declare with --role first")
         if role in seen[field]:

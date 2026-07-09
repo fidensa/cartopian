@@ -71,7 +71,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--name", "Cartopian Manager",
                 "--id", "cartopian-manager",
                 "--role", "pm=Plans...",
-                "--handoff", "pm=claude-vscode",
+                "--role", "coder=Writes",
+                "--handoff", "coder=claude-vscode",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 0, msg=f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
@@ -89,8 +90,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(data["project"]["name"], "Cartopian Manager")
             self.assertEqual(data["project"]["id"], "cartopian-manager")
             self.assertEqual(data["project"]["protocol_version"], version)
-            self.assertEqual(data["roles"], {"pm": "Plans..."})
-            self.assertEqual(data["handoffs"], {"pm": {"agent": "claude-vscode"}})
+            self.assertEqual(data["roles"], {"pm": "Plans...", "coder": "Writes"})
+            self.assertEqual(data["handoffs"], {"coder": {"agent": "claude-vscode"}})
             # No protocol defaults written
             self.assertNotIn("automation", data)
             self.assertNotIn("defaults", data)
@@ -109,12 +110,9 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--id", "demo",
                 "--role", "pm=Plans things",
                 "--role", "coder=Writes code",
-                "--handoff", "pm=claude-vscode",
                 "--handoff", "coder=cartopian-claude",
                 "--handoff-model", "coder=claude-opus-4-8",
-                "--handoff-auto-start", "pm=true",
                 "--handoff-auto-start", "coder=false",
-                "--handoff-timeout", "pm=60m",
                 "--handoff-timeout", "coder=30m",
                 "--automation-confirmation", "until-blocked",
                 "--automation-max-handoffs", "5",
@@ -134,10 +132,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(data["project"]["protocol_version"], version)
             self.assertEqual(data["project"]["work_roots"], ["build", "docs"])
             self.assertEqual(data["roles"], {"pm": "Plans things", "coder": "Writes code"})
-            self.assertEqual(
-                data["handoffs"]["pm"],
-                {"agent": "claude-vscode", "auto_start": True, "timeout": "60m"},
-            )
+            self.assertNotIn("pm", data["handoffs"])
             self.assertEqual(
                 data["handoffs"]["coder"],
                 {
@@ -231,6 +226,44 @@ class TestGenerateConfigGuards(unittest.TestCase):
             self.assertEqual(proc.stdout, "")
             self.assertIn("[usage] orphan-handoff: foo", proc.stderr)
             self.assertIn("--role first", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_pm_handoff_rejected(self):
+        # The PM is the interactive session orchestrator, never launched as a
+        # handoff; a [handoffs.pm] block is forbidden and must fail closed so it
+        # can never be written. Regression for the "PM dispatch is manual"
+        # confusion caused by a stray [handoffs.pm] block.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "pm=Plans",
+                "--handoff", "pm=cartopian-claude",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("handoffs-pm-forbidden", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_pm_handoff_timeout_rejected(self):
+        # The guard must fire on every --handoff* flavour, not just --handoff.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "pm=Plans",
+                "--handoff-timeout", "pm=60m",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("handoffs-pm-forbidden", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_orphan_handoff_auto_start_rejected(self):
