@@ -13,11 +13,50 @@ allowlisted ``task`` dest_kind.
 import argparse
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from cli.commands import _writers
 
 STATUSES = ("open", "in-progress", "in-review", "done")
+
+
+def _schema_errors(content: Union[str, bytes]) -> List[str]:
+    """Structural (content-shape) reasons this task body would fail readiness.
+
+    Fail-closed gate for ``write-task``: a body that omits the ``Evidence gate:``
+    header or a checkbox-bearing ``## Acceptance`` section can never satisfy
+    ``validate-task-readiness``, so refuse it at write time rather than persist a
+    task that is dead on arrival. Only the two content-shape checks are enforced
+    here — the state-dependent readiness checks (phase-exists, plan-ref-exists,
+    blocked-by-complete, work-root-names-valid) can legitimately be unmet when a
+    task is first authored and are left to ``validate-task-readiness``.
+
+    Reuses the readiness validator's own check functions so the two can never
+    drift; imported lazily to keep the module dependency one-directional.
+    """
+    from cli.commands.validate_task_readiness import (
+        _check_acceptance,
+        _check_evidence_gate,
+        _parse_headers,
+    )
+
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return ["task body must be valid UTF-8 text"]
+    else:
+        text = content
+
+    headers, presence = _parse_headers(text)
+    errors: List[str] = []
+    evidence = _check_evidence_gate(headers, presence)
+    if not evidence["pass"]:
+        errors.append(evidence["reason"])
+    acceptance = _check_acceptance(text)
+    if not acceptance["pass"]:
+        errors.append(acceptance["reason"])
+    return errors
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -90,6 +129,16 @@ def handler(args: argparse.Namespace) -> int:
     if serr is not None:
         _writers.stderr(*serr)
         return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
+    # Fail-closed schema gate: refuse a body that could never pass readiness,
+    # before any on-disk rename so a refusal leaves the tree unchanged.
+    schema_errors = _schema_errors(content)
+    if schema_errors:
+        _writers.stderr(
+            "guard",
+            "task-schema-invalid: " + "; ".join(schema_errors),
+        )
+        return _writers.EXIT_FAIL
 
     filename = f"{task_id}-{slug}.md"
 

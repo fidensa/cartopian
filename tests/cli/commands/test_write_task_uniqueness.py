@@ -22,6 +22,11 @@ _TOML = (
     'protocol_version = "v0.3.0"\n'
 )
 
+# A schema-valid task body: write-task refuses one that could never pass
+# readiness, so these placement/rename/record tests must supply a body that
+# clears the content-shape gate (Evidence gate header + Acceptance checkbox).
+_BODY = "# v2\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n"
+
 
 def run_cli(*argv):
     """Drive the real CLI parser in-process; return (exit_code, records, stderr)."""
@@ -67,10 +72,10 @@ class TestUpdateInPlace(_Fixture):
 
                 code, recs, err = run_cli(
                     "write-task", self.root, "--task-id", task_id,
-                    "--slug", "do-thing", "--content", "# v2\n",
+                    "--slug", "do-thing", "--content", _BODY,
                 )
                 self.assertEqual(code, 0, msg=err)
-                self.assertEqual(existing.read_text(encoding="utf-8"), "# v2\n")
+                self.assertEqual(existing.read_text(encoding="utf-8"), _BODY)
                 self.assertFalse(
                     (self.scaffold.tasks_open / f"{task_id}-do-thing.md").exists(),
                     msg=f"duplicate created in open/ for id residing in {status}/",
@@ -86,19 +91,19 @@ class TestUpdateInPlace(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-002",
-            "--slug", "new-slug", "--content", "# v2\n",
+            "--slug", "new-slug", "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         renamed = self.scaffold.tasks_in_review / "TASK-01-002-new-slug.md"
         self.assertTrue(renamed.is_file())
-        self.assertEqual(renamed.read_text(encoding="utf-8"), "# v2\n")
+        self.assertEqual(renamed.read_text(encoding="utf-8"), _BODY)
         self.assertFalse(old.exists(), msg="old-slug file left behind after rename")
         self.assertEqual(self.all_task_files(), ["in-review/TASK-01-002-new-slug.md"])
 
     def test_new_id_still_lands_in_open(self):
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-003",
-            "--slug", "fresh", "--content", "# task\n",
+            "--slug", "fresh", "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertTrue(
@@ -116,7 +121,7 @@ class TestCollision(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-004",
-            "--slug", "thing", "--content", "# v2\n",
+            "--slug", "thing", "--content", _BODY,
         )
         self.assertEqual(code, 1)
         self.assertEqual(recs, [])
@@ -132,6 +137,50 @@ class TestCollision(_Fixture):
         )
 
 
+class TestSchemaGate(_Fixture):
+    """write-task refuses a body that could never pass validate-task-readiness,
+    fail-closed, before touching disk."""
+
+    def test_missing_evidence_gate_and_acceptance_refused(self):
+        code, recs, err = run_cli(
+            "write-task", self.root, "--task-id", "TASK-01-007", "--slug", "bad",
+            "--content", "# TASK-01-007: incomplete\n\nPhase: PHASE-01-x\n",
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(recs, [])
+        self.assertIn("[guard] task-schema-invalid", err)
+        self.assertIn("Evidence gate", err)
+        self.assertIn("## Acceptance", err)
+        # Nothing written anywhere.
+        self.assertEqual(self.all_task_files(), [])
+
+    def test_missing_acceptance_alone_refused_without_writing(self):
+        code, recs, err = run_cli(
+            "write-task", self.root, "--task-id", "TASK-01-008", "--slug", "bad",
+            "--content", "# t\n\nEvidence gate: required\n",
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(recs, [])
+        self.assertIn("task-schema-invalid", err)
+        self.assertNotIn("Evidence gate:", err)  # gate value was fine
+        self.assertEqual(self.all_task_files(), [])
+
+    def test_schema_refusal_does_not_rename_existing_task(self):
+        # An in-place slug change whose new body is invalid must leave the
+        # original file untouched (the refusal precedes the rename).
+        existing = self.scaffold.tasks_in_progress / "TASK-01-010-old.md"
+        existing.write_text("# original\n", encoding="utf-8")
+        code, recs, err = run_cli(
+            "write-task", self.root, "--task-id", "TASK-01-010", "--slug", "new",
+            "--content", "# no gate, no acceptance\n",
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("task-schema-invalid", err)
+        self.assertTrue(existing.is_file(), msg="original renamed despite refusal")
+        self.assertEqual(existing.read_text(encoding="utf-8"), "# original\n")
+        self.assertEqual(self.all_task_files(), ["in-progress/TASK-01-010-old.md"])
+
+
 class TestRecordDestination(_Fixture):
     def test_record_names_actual_destination_directory(self):
         existing = self.scaffold.tasks_done / "TASK-01-005-shipped.md"
@@ -139,7 +188,7 @@ class TestRecordDestination(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-005",
-            "--slug", "shipped", "--content", "# v2\n",
+            "--slug", "shipped", "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(len(recs), 1)
@@ -152,7 +201,7 @@ class TestRecordDestination(_Fixture):
     def test_record_for_new_id_names_open(self):
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-006",
-            "--slug", "brand-new", "--content", "# task\n",
+            "--slug", "brand-new", "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(

@@ -104,7 +104,7 @@ class TestIdBearingWriters(_Fixture):
     def test_write_task_lands_in_open(self):
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do-thing",
-            "--content", "# task\n",
+            "--content", "# task\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n",
         )
         self.assertEqual(code, 0, msg=err)
         self.assertTrue((self.scaffold.tasks_open / "TASK-01-001-do-thing.md").is_file())
@@ -192,7 +192,9 @@ class TestDestinationRefusalDelegation(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-009", "--slug", "x",
-            "--content", "PWNED",
+            # Schema-valid so the write reaches the primitive's symlink guard
+            # rather than tripping write-task's own content-shape gate first.
+            "--content", "PWNED\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n",
         )
         self.assertEqual(code, 1)
         self.assertIn("[guard] symlink:", err)

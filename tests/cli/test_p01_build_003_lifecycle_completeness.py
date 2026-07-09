@@ -124,7 +124,8 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
                   "--content", "# SPEC-01-001\n")
         self._run("write-task", ps, "--task-id", "TASK-01-001", "--slug", "do-thing",
                   "--content",
-                  "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: P01-BUILD-001\n")
+                  "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: P01-BUILD-001\n"
+                  "Evidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n")
         self._run("write-prompt", ps, "--prompt-id", "PROMPT-01-001",
                   "--content", "# PROMPT-01-001\n")
 

@@ -52,7 +52,10 @@ class _Fixture(unittest.TestCase):
         return records[0]["details"]["bl_id"]
 
 
-_TASK_BODY = "# TASK-01-001: do\n\nPhase: PHASE-01-x\nPlan ref: P01-BUILD-001\n\n## Goal\n\ng\n"
+_TASK_BODY = (
+    "# TASK-01-001: do\n\nPhase: PHASE-01-x\nPlan ref: P01-BUILD-001\n"
+    "Evidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n\n## Goal\n\ng\n"
+)
 _SPEC_BODY = "# SPEC-01-001: s\n\nStatus: draft\nPlan refs: P01-BUILD-001\n\n## Problem\n\np\n"
 _PHASE_BODY = "# PHASE-01-x: p\n\nPlan ref section: `## Phase 01`\nCreated: 2026-07-04\n\n## Goal\n\ng\n"
 
