@@ -124,6 +124,17 @@ class TestInitializeHandshake(unittest.TestCase):
         self.assertIn("install context", instructions.lower())
         self.assertIn("use_cartopian", instructions)
 
+    def test_initialize_instructions_direct_model_to_read_the_resource(self):
+        # A model cannot invoke an MCP prompt (that is a human picker action).
+        # If the startup guidance tells it to "invoke the use_cartopian prompt"
+        # as its action, it has no executable path and improvises past the
+        # runbook — the "startup went wrong from the beginning" report. The
+        # instructions must point at the resource read the model can actually do.
+        instructions = single("initialize")["result"].get("instructions", "")
+        self.assertIn("cartopian://skills/use_cartopian", instructions)
+        self.assertIn("read the resource", instructions.lower())
+        self.assertNotIn("invoke the `use_cartopian` MCP prompt", instructions)
+
 
 class TestServerVersionResolution(unittest.TestCase):
     def test_version_marker_is_preferred_when_present(self):

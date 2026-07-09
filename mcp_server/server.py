@@ -281,8 +281,12 @@ def _server_instructions() -> str:
         "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
         "`cartopian://skills/check_for_updates`\n\n"
         "To act as a Cartopian project manager (e.g. when the operator says "
-        "\"use cartopian\"), invoke the `use_cartopian` MCP prompt. Cartopian "
-        "skills are MCP prompts/resources, not native client skills."
+        "\"use cartopian\"), read the resource `cartopian://skills/use_cartopian` "
+        "and follow it literally — it is the authoritative startup runbook. You "
+        "cannot invoke an MCP prompt yourself (that is a human-initiated picker "
+        "action); the identically-named `use_cartopian` prompt is the equivalent "
+        "for that path, so do not wait on a prompt invocation — read the resource. "
+        "Cartopian skills are MCP prompts/resources, not native client skills."
     )
 
 

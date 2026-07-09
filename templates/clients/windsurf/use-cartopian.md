@@ -7,9 +7,9 @@ auto_execution_mode: safe
 
 Enter **Cartopian PM mode** now.
 
-Invoke the MCP prompt named `use_cartopian` on the `cartopian` MCP server and follow its instructions literally. That prompt is the authoritative runbook for startup — read every step before acting.
+Read the resource `cartopian://skills/use_cartopian` from the `cartopian` MCP server and follow it literally — it is the authoritative startup runbook. Read every step before acting.
 
-If your MCP client cannot invoke a prompt directly, read the resource `cartopian://skills/use_cartopian` from the `cartopian` MCP server and follow it as the runbook instead.
+(You cannot invoke an MCP prompt yourself — that is a human-initiated action in the client's prompt picker. The identically-named `use_cartopian` prompt carries the same runbook for that path. Do not wait on a prompt invocation; read the resource.)
 
 ## Hard constraints during startup
 

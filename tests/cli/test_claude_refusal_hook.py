@@ -834,7 +834,7 @@ class TestDispatchExportsRole(unittest.TestCase):
                 captured["env"] = env
                 return mock.Mock(pid=12345)
 
-            args = argparse.Namespace(task_path=str(task_path), role="coder")
+            args = argparse.Namespace(task_path=str(task_path), prompt=None, role="coder")
             out, err = io.StringIO(), io.StringIO()
             with mock.patch(
                 "cli.commands.dispatch.Path.home", return_value=Path(fake_home)
