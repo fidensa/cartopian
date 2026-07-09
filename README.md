@@ -1,6 +1,6 @@
 # Cartopian
 
-**A filesystem-first project-governance protocol for AI-native development.**
+**Project management and governance protocol for AI-native development**
 
 Cartopian turns "I want to do X" into a tracked plan, logical phases, structured tasks, real specs, and dispatched work - recorded as plain markdown files with directory-as-status conventions. No database, no SaaS dependency, no third-party packages: it is self-contained and runs on the Python standard library alone. It's flexible enough to run a SaaS product, an Etsy store launch, or a weekend garage sale, and disciplined enough that an AI agent can pick the project back up tomorrow and keep going.
 
