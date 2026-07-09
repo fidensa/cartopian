@@ -74,7 +74,6 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "plan_complete",
                 "pm_role",
                 "pm_role_declared",
-                "pm_dispatch_kind",
                 "blockers",
                 "state_filesystem_disagreement",
             ):
@@ -85,8 +84,8 @@ class TestNextActionHappyPath(unittest.TestCase):
     """Happy-path test: valid project fixture → all required fields populated."""
 
     def test_all_fr001_fields_populated(self) -> None:
-        # This test exercises field population with a PM handoff configured.
-        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n\n[handoffs.pm]\nagent = "cartopian-claude"\n'
+        # This test exercises field population with a declared PM role.
+        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n'
         state_md = (
             "# test-proj — State\n\n"
             "## Current phase\n\nPHASE-01-foundation\n\n"
@@ -126,7 +125,6 @@ class TestNextActionHappyPath(unittest.TestCase):
 
             self.assertEqual(rec["pm_role"], "Plans the work.")
             self.assertTrue(rec["pm_role_declared"])
-            self.assertEqual(rec["pm_dispatch_kind"], "automated")
 
             self.assertEqual(rec["blockers"], [])
             self.assertIsNone(rec["state_filesystem_disagreement"])
@@ -226,22 +224,6 @@ class TestNextActionActiveTask(unittest.TestCase):
             self.assertEqual(records[0]["next_open_task"]["id"], "TASK-99-001")
 
 
-class TestNextActionDispatchKind(unittest.TestCase):
-    def test_manual_when_no_handoff(self) -> None:
-        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            records, rc = _invoke(str(scaffold.project_root))
-            self.assertEqual(rc, 0)
-            self.assertEqual(records[0]["pm_dispatch_kind"], "manual")
-
-    def test_automated_when_handoff_pm_configured(self) -> None:
-        # A configured PM agent makes the dispatch kind "automated".
-        toml = _TOML_BASE + "\n[handoffs.pm]\nagent = \"cartopian-claude\"\n"
-        with project_scaffold(cartopian_toml=toml) as scaffold:
-            records, rc = _invoke(str(scaffold.project_root))
-            self.assertEqual(rc, 0)
-            self.assertEqual(records[0]["pm_dispatch_kind"], "automated")
-
-
 class TestNextActionPmRoleDeclared(unittest.TestCase):
     def test_declared_true_when_no_roles_table_via_default_roster(self) -> None:
         # Regression (live-hit): a project that declares no local [roles] and
@@ -272,12 +254,11 @@ class TestNextActionPmRoleDeclared(unittest.TestCase):
     def test_declared_false_when_resolved_roster_lacks_pm(self) -> None:
         # The gate still catches a real absence: a resolved roster with no pm
         # key yields pm_role_declared=false and the placeholder description.
-        pm_role, pm_role_declared, pm_dispatch_kind = next_action._pm_settings_from_resolved(
-            {"operator": "Approves things."}, {}
+        pm_role, pm_role_declared = next_action._pm_settings_from_resolved(
+            {"operator": "Approves things."}
         )
         self.assertFalse(pm_role_declared)
         self.assertEqual(pm_role, next_action._DEFAULT_PM_ROLE)
-        self.assertEqual(pm_dispatch_kind, "manual")
 
     def test_declared_true_even_when_description_equals_default(self) -> None:
         # Regression: a project may legitimately declare a pm role whose

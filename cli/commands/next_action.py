@@ -2,7 +2,7 @@
 
 Emits a single flat NDJSON record with all orientation data a PM needs to
 start or resume a session: active task, next open task, phase, PM role,
-dispatch kind, blockers, and any STATE.md vs. filesystem disagreement.
+blockers, and any STATE.md vs. filesystem disagreement.
 """
 import argparse
 import re
@@ -49,15 +49,7 @@ def _load_toml(path: Path) -> Optional[Dict[str, Any]]:
         return tomllib.load(fh)
 
 
-def _merge_table(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    result = dict(base)
-    result.update(override)
-    return result
-
-
-def _pm_settings_from_resolved(
-    roles: Dict[str, Any], handoffs: Dict[str, Any]
-) -> tuple[str, bool, str]:
+def _pm_settings_from_resolved(roles: Dict[str, Any]) -> tuple[str, bool]:
     # Readiness gate is keyed on role-KEY presence in the RESOLVED table, not
     # description text: the default-roster `pm` counts as declared, and a
     # project may legitimately declare a `pm` role whose description equals the
@@ -65,21 +57,16 @@ def _pm_settings_from_resolved(
     # genuinely absent from the resolved roster.
     pm_role_declared = "pm" in roles
     pm_role = role_description(roles["pm"]) if pm_role_declared else _DEFAULT_PM_ROLE
-    pm_dispatch_kind = "automated" if "pm" in handoffs else "manual"
-    return pm_role, pm_role_declared, pm_dispatch_kind
+    return pm_role, pm_role_declared
 
 
-def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool, str]:
+def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool]:
     global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
     # Roles come from resolve-config's merge chain (protocol defaults included)
     # so the resume gate and `resolve-config` cannot diverge on whether the
     # default roster counts as declared.
     roles = _resolve_roles(global_cfg, project_cfg)
-    handoffs = _merge_table(
-        global_cfg.get("handoffs", {}) or {},
-        project_cfg.get("handoffs", {}) or {},
-    )
-    return _pm_settings_from_resolved(roles, handoffs)
+    return _pm_settings_from_resolved(roles)
 
 
 def _first_heading(content: str) -> str:
@@ -492,7 +479,7 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     try:
-        pm_role, pm_role_declared, pm_dispatch_kind = _resolve_pm_settings(project_path, cfg)
+        pm_role, pm_role_declared = _resolve_pm_settings(project_path, cfg)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         stderr_error(f"global config unreadable: {Path.home() / '.cartopian' / 'cartopian.toml'} — {exc}")
         return EXIT_ENV
@@ -540,7 +527,6 @@ def handler(args: argparse.Namespace) -> int:
         "plan_complete": plan_complete,
         "pm_role": pm_role,
         "pm_role_declared": pm_role_declared,
-        "pm_dispatch_kind": pm_dispatch_kind,
         "blockers": blockers,
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }

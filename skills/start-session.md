@@ -32,12 +32,12 @@ Do not read or mutate project-specific lifecycle artifacts, and do not call `nex
 
 ## Stage 1 - Resolve PM Role
 
-PM role and dispatch path are read from the `pm_role_declared` and `pm_dispatch_kind` fields of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Stage 1 is a binary readiness gate, not a remediation menu — resume must not solicit or offer config edits. Defining or customizing roles is initialization work (`init project` / `generate config`), where the operator authors `cartopian.toml`; config is operator-owned thereafter. Apply these rules to the values returned:
+The PM role is read from the `pm_role_declared` field of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Stage 1 is a binary readiness gate, not a remediation menu — resume must not solicit or offer config edits. Defining or customizing roles is initialization work (`init project` / `generate config`), where the operator authors `cartopian.toml`; config is operator-owned thereafter. Apply these rules to the values returned:
 
 - The readiness gate is keyed on role-**key** presence, reported by `pm_role_declared`. If `pm_role_declared` is `true`, the `pm` key is present in the resolved `[roles]` table — the minimum is met; continue. Do not inspect or comment on the description text, and do not remark on whether it has been customized (`pm_role` may equal the default placeholder for a correctly-declared role).
 - If `pm_role_declared` is `false`, the `pm` key is genuinely absent from the resolved `[roles]` table. Stop with a misconfiguration blocker that defers to setup: this project's config declares no PM role; resolve it via init/config (`init project` / `generate config`). Do not offer inline role-authoring choices during resume.
-- If `pm_dispatch_kind` is `automated`, a `[handoffs.pm]` block is configured and PM dispatch is automated via that block's wrapper.
-- If `pm_dispatch_kind` is `manual`, no `[handoffs.pm]` block is configured: this agent may summarize state and propose the next action, but lifecycle execution requires explicit operator confirmation per stage.
+
+You **are** the PM, running interactively with the operator — the PM is never launched as a handoff. Once the readiness gate passes, proceed under the linear execution default (`protocol/CONVENTIONS.md § Task Execution Order`): take evidence-supported lifecycle actions without per-action confirmation prompts, stopping only for blockers, plan-level forks, and decisions the protocol reserves to the operator. Do not announce that you will "propose actions for confirmation."
 
 ---
 
@@ -49,7 +49,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_dispatch_kind`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
 
 Present a short summary to the operator from the returned record:
 

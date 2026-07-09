@@ -111,9 +111,13 @@
 #                 (subject to [automation] confirmation policy above).
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #
-# Example — uncomment and edit to wire up an automated `pm` dispatch:
+# Never configure `[handoffs.pm]`: the PM is the interactive orchestrator of
+# the session and is never itself launched as a handoff (there would be no PM
+# to launch it). A `[handoffs.pm]` block has no meaning.
+#
+# Example — uncomment and edit to wire up an automated `coder` dispatch:
 
-# [handoffs.pm]
+# [handoffs.coder]
 # agent = "claude-vscode"
 # auto_start = false
 # timeout = "60m"

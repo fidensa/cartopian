@@ -263,7 +263,7 @@ The PM role is bounded to project-management authoring:
 - **Config is not a PM responsibility.** `cartopian.toml` is authored once at project initialization via `skills/init-project.md`, which invokes `cartopian generate-config`. After init, runtime config edits are operator-owned and happen outside the PM lifecycle; the PM may read effective config via `cartopian resolve-config` but never writes or mutates `cartopian.toml`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
 
-These limits apply to every PM, whether dispatched automatically via `[handoffs.pm]` or acting manually.
+These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so a `[handoffs.pm]` block has no meaning and must not be configured.
 
 ```toml
 [roles]
