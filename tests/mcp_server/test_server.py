@@ -346,6 +346,31 @@ class TestResourceSurface(unittest.TestCase):
         text = response["result"]["contents"][0]["text"]
         self.assertGreater(len(text), 200)
 
+    def test_read_template_with_explicit_extension(self):
+        response = single("resources/read", {"uri": "cartopian://templates/REPORT.md"})
+        self.assertNotIn("error", response, msg=response.get("error"))
+        self.assertEqual(
+            response["result"]["contents"][0]["mimeType"], "text/markdown"
+        )
+
+    def test_read_template_tolerates_missing_md_extension(self):
+        # Models routinely request `templates/REPORT` (extensionless), mirroring
+        # the skills/protocol surfaces; the server must resolve it to REPORT.md
+        # rather than 404. Regression for the "resource not found:
+        # cartopian://templates/REPORT" report.
+        explicit = single("resources/read", {"uri": "cartopian://templates/REPORT.md"})
+        implicit = single("resources/read", {"uri": "cartopian://templates/REPORT"})
+        self.assertNotIn("error", implicit, msg=implicit.get("error"))
+        self.assertEqual(
+            implicit["result"]["contents"][0]["text"],
+            explicit["result"]["contents"][0]["text"],
+        )
+
+    def test_read_missing_template_still_errors(self):
+        response = single("resources/read", {"uri": "cartopian://templates/NOPE"})
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
     def test_unknown_namespace_returns_invalid_params(self):
         response = single("resources/read", {"uri": "cartopian://nope/whatever"})
         self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)

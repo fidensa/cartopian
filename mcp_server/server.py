@@ -860,8 +860,20 @@ def read_resource(uri: str) -> Dict[str, Any]:
     elif namespace == "templates":
         if not _safe_segment(tail[0]):
             raise McpError(ERR_INVALID_PARAMS, f"invalid template name: {uri}")
-        candidate = ROOT / "templates" / tail[0]
-        resolved_path = _bounded_path(candidate, ROOT / "templates")
+        # Tolerate a missing extension: the `skills` and `protocol` surfaces
+        # both resolve extensionless, so models routinely request
+        # `templates/REPORT` rather than `templates/REPORT.md`. Try the literal
+        # name first (an explicit `.md`/`.toml` still wins), then the known
+        # template extensions.
+        template_root = ROOT / "templates"
+        names = [tail[0]]
+        if not tail[0].endswith((".md", ".toml")):
+            names += [f"{tail[0]}.md", f"{tail[0]}.toml"]
+        for name in names:
+            resolved_path = _bounded_path(template_root / name, template_root)
+            if resolved_path is not None and resolved_path.is_file():
+                break
+            resolved_path = None
     elif namespace == "project":
         if len(tail) != 2:
             raise McpError(ERR_INVALID_PARAMS, f"project uri requires <id>/<file>: {uri}")
