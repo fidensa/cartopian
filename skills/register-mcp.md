@@ -46,7 +46,14 @@ For Gemini: run `gemini mcp list` and check for a `cartopian` entry to determine
 
 For JSON-config agents: read the file (if it exists) and check for `mcpServers.cartopian`.
 
-Mark each agent as **present — not registered**, **present — already registered**, or **not detected**.
+For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
+
+Mark each agent as one of:
+
+- **present — not registered** — MCP server not yet configured.
+- **present — already registered, bridge current** — MCP server configured and the installed bridge matches the template; nothing to do.
+- **present — already registered, bridge update available** — MCP server configured, but the installed bridge is missing or differs from the current template.
+- **not detected**.
 
 ---
 
@@ -56,10 +63,10 @@ Present a status table to the operator, for example:
 
 ```
 Agent           Status
-──────────────  ─────────────────────────
+──────────────  ─────────────────────────────────────────────
 Claude Code     present — not registered
-Codex           present — already registered
-Gemini          present — not registered
+Codex           present — already registered, bridge update available
+Gemini          present — already registered, bridge current
 Devin           not detected
 Windsurf        present — not registered
 Claude Desktop  not detected
@@ -67,16 +74,20 @@ Cursor          not detected
 ```
 
 Ask:
-- Which agents (detected as present and not registered) should Cartopian be registered with?
+- Which agents (detected as present and **not registered**) should Cartopian be registered with?
+- Which agents marked **bridge update available** should have their trigger bridge refreshed? This re-copies the current bridge template over the installed copy; it does **not** touch the already-working MCP registration.
 - Are there agents not in this list the operator wants to configure?
 
-Do not modify any config without the operator explicitly selecting it.
+Fold both selections into the same confirmation so an operator upgrading Cartopian is asked **once**, not twice — and offer a select-all so every drifted bridge can be refreshed in one step. Do not modify any config without the operator explicitly selecting it. Agents marked **bridge current** need no action — say so and move on.
 
 ---
 
 ## Stage 3 — Apply registrations
 
-Apply the recipe for each agent the operator selected. Always confirm before writing to a config file.
+Apply the recipe for each agent the operator selected. Always confirm before writing to a config file. Run the parts that match *how* the agent was selected:
+
+- Selected as **not registered** → run **both** Part A and Part B.
+- Selected as **bridge update available** → run **Part B only**. Part A is already done; do not re-register the MCP server or rewrite its config — just re-copy the bridge template over the installed file.
 
 **Every recipe has two parts:**
 
@@ -347,7 +358,7 @@ If the operator names an agent not covered above, provide the registration facts
 Report, per agent the operator selected:
 
 - Whether the MCP server was already registered (no change) or newly registered this run (Part A).
-- Whether the trigger bridge was installed (Part B) and **how the operator invokes it**:
+- Whether the trigger bridge was installed fresh, **refreshed from a drifted copy**, or left as-is because it was already current (Part B) — and **how the operator invokes it**:
 
   | Agent | Entry phrase / command |
   | --- | --- |
