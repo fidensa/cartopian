@@ -202,16 +202,57 @@ def test_failed_when_status_file_exited_nonzero(tmp_path, capsys, fake_clock):
     assert record["exit_code"] == 1
 
 
-def test_clean_exit_status_does_not_early_fail(tmp_path, capsys, fake_clock):
-    """state=exited with exit_code=0 is not a crash; fall through to the budget."""
+def test_failed_when_exited_clean_but_no_report(tmp_path, capsys, fake_clock):
+    """A clean exit that produced no report is terminal, not still-running.
+
+    The assignee process is gone (state=exited), so no report will ever appear.
+    wait-handoff must report `failed` promptly rather than blocking to the
+    deadline — this is the exited-without-report zombie (e.g. a reviewer that
+    wrote its REVIEW file but never wrote the REPORT the PM waits on).
+    """
     task_path = _make_project(tmp_path, config_body=CONFIG_NO_TIMEOUT)
     status_path = Path(str(_report_path(task_path).resolve()) + ".status")
-    _write(status_path, "state=exited\nexit_code=0\npid=4242\n")
+    _write(status_path, "state=exited\nexit_code=0\nreason=clean\npid=4242\n")
 
     exit_code = _run(task_path, max_block="30s")
     record = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == EXIT_FAIL
+    assert record["status"] == "failed"
+    assert record["exit_code"] == 0
+    assert record["report_verdict"] is None
+    # Failed immediately on the clean-exit signal, without blocking the budget.
+    assert fake_clock["t"] == 0
+
+
+def test_done_when_clean_exit_and_report_present(tmp_path, capsys, fake_clock):
+    """Clean exit WITH a valid report is the success path: report wins → done."""
+    task_path = _make_project(tmp_path)
+    _write(_report_path(task_path), ACCEPTED_REPORT)
+    status_path = Path(str(_report_path(task_path).resolve()) + ".status")
+    _write(status_path, "state=exited\nexit_code=0\nreason=clean\n")
+
+    exit_code = _run(task_path)
+    record = json.loads(capsys.readouterr().out.strip())
     assert exit_code == EXIT_OK
-    assert record["status"] == "still-running"
+    assert record["status"] == "done"
+
+
+def test_failed_to_parse_wins_over_clean_exit(tmp_path, capsys, fake_clock):
+    """A present-but-invalid report classifies as failed-to-parse, not failed.
+
+    Even when the wrapper reports a clean exit, an invalid report on disk is a
+    parse failure — the exited-without-report path only applies when no report
+    is present at all.
+    """
+    task_path = _make_project(tmp_path)
+    _write(_report_path(task_path), INVALID_REPORT)
+    status_path = Path(str(_report_path(task_path).resolve()) + ".status")
+    _write(status_path, "state=exited\nexit_code=0\nreason=clean\n")
+
+    exit_code = _run(task_path)
+    record = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == EXIT_FAIL
+    assert record["status"] == "failed-to-parse"
 
 
 def test_done_takes_precedence_over_crash(tmp_path, capsys, fake_clock):

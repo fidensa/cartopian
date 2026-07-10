@@ -150,7 +150,7 @@ Interpret the emitted `status`:
 
 - `done` / `accepted`: a report is present and parses. Proceed to Stage 4 to read its verdict.
 - `failed-to-parse`: a report is present but invalid. Treat as blocked; preserve the prompt and report for inspection.
-- `failed`: the wrapper status file reports the assignee crashed and no valid report appeared. Return a blocked outcome.
+- `failed`: the wrapper status file reports the assignee process exited and no valid report appeared — a crash/timeout exit, or a clean exit that nonetheless wrote no report (a common reviewer failure: it writes `reviews/REVIEW-NN-NNN.md` but not the `reports/REPORT-NN-NNN.md` the wait watches). The process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
 - `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
 - `still-running` / `still_running`: the `--max-block` budget elapsed before the configured timeout, so the assignee may still be working. Yield control back to the operator or host harness and re-call the same wait command on resume. The filesystem observation survives the yield, so nothing is lost by stopping and resuming, and no second handoff is started.
 

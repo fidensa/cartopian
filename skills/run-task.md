@@ -218,11 +218,18 @@ The review prompt must include absolute paths to:
 - The task file.
 - The spec file, when present.
 - The deliverable, when the task declares one — the absolute `deliverable.absolute_path`, named as the **primary artifact to review** (the durable work product, not a summary of it). For a `project`-mode deliverable this is the copy the PM persisted in Stage 4.
-- The completion report.
-- The expected review file.
+- The coder's completion report — the input the reviewer reads.
+- The expected review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`), carrying findings and the `Verdict:` header.
+- The expected report path the reviewer writes its review-completion report to (the `expected_report_path` from the handoff record — the same `reports/REPORT-NN-NNN.md` slot the coder report used, cleared below before the review handoff).
+- The report template path, directing the reviewer to the **review-completion variant** of `cartopian://templates/REPORT.md`.
 - Absolute path(s) for the declared work root(s), if any.
 - Relevant implementation evidence.
 - The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
+
+The reviewer produces **two** artifacts, exactly as the coder produces its work product plus a report. State both explicitly in the prompt:
+
+- The durable **review file** (`reviews/REVIEW-NN-NNN.md`) is the work product: findings, evidence, and the `Verdict:` header the `in-review → done | in-progress | open` move guard reads.
+- The transient **review-completion report** (`reports/REPORT-NN-NNN.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
 
 The review prompt must also include:
 

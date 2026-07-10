@@ -170,23 +170,28 @@ reason=clean|error|timeout
 
 | Field | Meaning |
 | --- | --- |
-| `state` | Always `exited` once the assignee process has terminated. The consumer only acts on `state=exited`. |
-| `exit_code` | The assignee's exit code. A **non-zero** code is the crash signal (`wait-handoff` reports `failed`); `0` is not a crash. |
-| `reason` | Human/diagnostic distinction only — **ignored by the consumer**, which keys off `exit_code` alone. One of `clean` (exit 0), `error` (any other non-zero exit), or `timeout` (the OS deadline killed the assignee). |
+| `state` | Always `exited` once the assignee process has terminated. `state=exited` is itself terminal for the consumer: the process is gone, so if no report is present none is coming. |
+| `exit_code` | The assignee's exit code. A **non-zero** code is the crash signal (`wait-handoff` reports `failed`). A `0` (clean) exit is not a crash, but it is still terminal — see the outcome table below. |
+| `reason` | Human/diagnostic distinction only — **ignored by the consumer**, which keys off `state`/`exit_code` alone. One of `clean` (exit 0), `error` (any other non-zero exit), or `timeout` (the OS deadline killed the assignee). |
 
 ### Outcome → fields
 
-| Outcome | `state` | `exit_code` | `reason` | wait-handoff verdict |
+The report file is always the authoritative signal: when a valid report is present, `wait-handoff` reports `done` regardless of the status file. The status file only changes what happens when **no** report is present.
+
+| Outcome | `state` | `exit_code` | `reason` | wait-handoff verdict (no valid report present) |
 | --- | --- | --- | --- | --- |
-| Clean exit | `exited` | `0` | `clean` | not a crash (falls through to report/budget) |
+| Clean exit, report written | `exited` | `0` | `clean` | `done` (report wins) |
+| Clean exit, no report | `exited` | `0` | `clean` | `failed` — assignee exited without writing a report |
 | Non-zero exit | `exited` | `<n≠0>` | `error` | `failed` |
 | Timeout kill | `exited` | `124` | `timeout` | `failed` |
 
-A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout` returns when it kills the child at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is deliberately surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
+A clean exit with no report is treated as terminal (not a wait-to-deadline) because `state=exited` means the assignee process is gone — a report that was never written will never appear. This closes the "exited-without-report zombie": a reviewer that wrote `reviews/REVIEW-NN-NNN.md` but forgot the `reports/REPORT-NN-NNN.md` used to leave `wait-handoff` blocking until its deadline; now it returns `failed` promptly so the PM can retry the handoff.
+
+A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout` returns when it kills the child at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
 
 ### Consumer / producer agreement
 
-The producer (the shared helpers `bin/_cartopian-status.sh` and `ps1/CartopianStatus.ps1`) and the consumer (`cli/commands/wait_handoff.py :: _status_exit_code`) must agree on path and shape. The agreement is asserted directly in `tests/wrappers/test_wrapper_status_file.py`, which runs each wrapper against a fake assignee and feeds the produced file back through the real consumer function.
+The producer (the shared helpers `bin/_cartopian-status.sh` and `ps1/CartopianStatus.ps1`) and the consumer (`cli/commands/wait_handoff.py` — `_status_exit_code` for the crash code, `_status_reports_exit` for the terminal `state=exited` signal) must agree on path and shape. The agreement is asserted directly in `tests/wrappers/test_wrapper_status_file.py`, which runs each wrapper against a fake assignee and feeds the produced file back through the real consumer function.
 
 ### Security
 

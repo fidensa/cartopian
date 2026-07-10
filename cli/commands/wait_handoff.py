@@ -15,8 +15,11 @@ Terminal status flags emitted on stdout (one NDJSON record):
   ``accepted``/``blocked``/``failed``). The PM reads the report verdict to
   decide lifecycle action.
 - ``failed-to-parse``: a report is present but invalid.
-- ``failed``: the wrapper status file reports the assignee process exited
-  non-zero and no valid report appeared.
+- ``failed``: the wrapper status file reports the assignee process exited and
+  no valid report appeared — either a non-zero (crash/timeout) exit, or a
+  clean exit that nonetheless produced no report. In both cases the assignee
+  process is gone, so no report will ever appear; wait-handoff reports the
+  terminal failure now instead of blocking to the deadline.
 - ``timeout``: the configured handoff timeout (the maximum absolute limit) was
   reached before any terminal signal.
 - ``still-running``: the ``--max-block`` polling budget elapsed before the
@@ -32,7 +35,7 @@ import argparse
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from cli.commands import handoff_packet, report_action
 from cli.commands.resolve_config import _CliError, _load_toml, _resolve_handoffs
@@ -152,14 +155,11 @@ def _report_verdict(report_path: Path) -> Optional[str]:
     return verdict
 
 
-def _status_exit_code(status_path: Path) -> Optional[int]:
-    """Return the non-zero exit code from a wrapper status file, else None.
+def _read_status_fields(status_path: Path) -> Optional[Dict[str, str]]:
+    """Parse a wrapper ``<report-path>.status`` file into a key=value dict.
 
-    Returns the integer ``exit_code`` only when the wrapper reports
-    ``state=exited`` with a non-zero code — the crash signal that lets
-    wait-handoff exit early instead of blocking to the deadline. Absent,
-    unreadable, still-running, clean-exit, or malformed status files yield None
-    (the report remains the authoritative signal).
+    Returns None when the file is absent or unreadable (both valid: the report
+    remains the authoritative signal). Malformed lines are skipped.
     """
     if not status_path.is_file():
         return None
@@ -174,7 +174,22 @@ def _status_exit_code(status_path: Path) -> Optional[int]:
             continue
         key, value = line.split("=", 1)
         fields[key.strip()] = value.strip()
-    if fields.get("state") != "exited":
+    return fields
+
+
+def _status_exit_code(status_path: Path) -> Optional[int]:
+    """Return the non-zero exit code from a wrapper status file, else None.
+
+    Returns the integer ``exit_code`` only when the wrapper reports
+    ``state=exited`` with a non-zero code — the crash signal that lets
+    wait-handoff exit early instead of blocking to the deadline. Absent,
+    unreadable, still-running, clean-exit, or malformed status files yield None.
+    A clean exit is handled separately by ``_status_reports_exit`` (a clean exit
+    with no report is still terminal); the report otherwise remains the
+    authoritative signal.
+    """
+    fields = _read_status_fields(status_path)
+    if fields is None or fields.get("state") != "exited":
         return None
     raw = fields.get("exit_code")
     if raw is None:
@@ -184,6 +199,28 @@ def _status_exit_code(status_path: Path) -> Optional[int]:
     except ValueError:
         return None
     return code if code != 0 else None
+
+
+def _status_reports_exit(status_path: Path) -> Tuple[bool, Optional[int]]:
+    """Report whether the wrapper says the assignee exited, and its code.
+
+    Returns ``(exited, code)``: ``exited`` is True whenever the status file
+    records ``state=exited`` (any exit code, including a clean ``0``); ``code``
+    is the parsed exit code, or None when absent/unparseable. Unlike a non-zero
+    exit code (a crash), a *clean* exit that produced no report is still
+    terminal — the assignee process is gone and no report will appear — so
+    wait-handoff must not block to the deadline waiting for one.
+    """
+    fields = _read_status_fields(status_path)
+    if fields is None or fields.get("state") != "exited":
+        return False, None
+    raw = fields.get("exit_code")
+    if raw is None:
+        return True, None
+    try:
+        return True, int(raw)
+    except ValueError:
+        return True, None
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -253,6 +290,22 @@ def handler(args: argparse.Namespace) -> int:
         if verdict == "failed-to-parse":
             return _emit(args.role, task_id, task_path, report_path,
                          "failed-to-parse", report_verdict=verdict,
+                         max_block_seconds=max_block_seconds,
+                         timeout_seconds=timeout_seconds,
+                         effective_seconds=effective_seconds)
+
+        # The wrapper reports the assignee process exited but no report ever
+        # appeared (verdict is None here — a present-but-invalid report was
+        # already classified as failed-to-parse above, and a non-zero crash as
+        # failed at the crash check). A clean exit that wrote no report is still
+        # terminal: the process is gone, so no report is coming. Fail now rather
+        # than block to the deadline (the "exited-without-report zombie" — e.g. a
+        # reviewer that wrote reviews/REVIEW-NN-NNN.md but not the
+        # reports/REPORT-NN-NNN.md the PM waits on).
+        exited, exited_code = _status_reports_exit(status_path)
+        if verdict is None and exited:
+            return _emit(args.role, task_id, task_path, report_path,
+                         "failed", report_verdict=verdict, exit_code=exited_code,
                          max_block_seconds=max_block_seconds,
                          timeout_seconds=timeout_seconds,
                          effective_seconds=effective_seconds)
