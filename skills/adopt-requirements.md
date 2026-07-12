@@ -141,13 +141,15 @@ Otherwise, leave `STANDARDS.md` as its seed stub — the planning phase can refi
 
 ## Step 5 — Update STATE.md
 
-Updating `STATE.md` is **PM-performed**. Compose the updated body — adding a note to its "What to do next" section — and write it through the mediated writer (never a raw `Edit`):
+Updating `STATE.md` is **PM-performed**. The project has no plan artifacts yet, so this is the no-plan case where the body is PM-authored — write it through the mediated writer (never a raw `Edit`):
 
 ```
 cartopian write-state <project-root> --content-file <body-path>
 ```
 
-The added note reads:
+(Once plan artifacts exist, `write-state` refuses an authored body and composes it from the filesystem instead; that does not apply here.)
+
+The body's "What to do next" section reads:
 
 > Requirements adopted from <source name> on <date>. Next: run `adopt-plan` to migrate an existing implementation plan, or run `plan-project` starting from Stage 2 (implementation plan generation) to build a plan from these requirements.
 

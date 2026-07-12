@@ -467,6 +467,26 @@ class TestNextActionBlockers(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["blockers"], [])
 
+    def test_blocker_unresolved_situation_note_in_state_md(self) -> None:
+        """Blocker reported per undelivered Situation note (one-delivery TTL)."""
+        state_with_note = (
+            "# test-proj — State\n\n"
+            "## Current phase\n\nPhase 01\n\n"
+            "## Situation\n\n"
+            "- coder deploy failed mid-handoff; operator restarting the machine\n"
+        )
+        with project_scaffold(cartopian_toml=_TOML_BASE, state_md=state_with_note) as scaffold:
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            note_blockers = [
+                b for b in records[0]["blockers"]
+                if "situation note" in b.lower()
+            ]
+            self.assertEqual(len(note_blockers), 1, msg=f"got: {records[0]['blockers']}")
+            self.assertIn("coder deploy failed mid-handoff", note_blockers[0])
+            self.assertIn("write-state", note_blockers[0])
+
 
 class TestNextUnstartedPhaseHelper(unittest.TestCase):
     """Pure logic of `_next_unstarted_phase` (FR-012)."""

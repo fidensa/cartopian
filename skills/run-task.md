@@ -305,7 +305,7 @@ Failed reviews do not create replacement tasks. Continue with the original task.
    The same command renders the `decisions/INDEX.md` row from the `--title` / `--date` / `--status` / `--supersedes` arguments, so a separate raw edit of `INDEX.md` is not needed (and the contained PM cannot perform one).
 2. Ensure task, review, and report evidence agree.
 3. Remove superseded prompts with the Core CLI (`cartopian delete-prompt <prompt-path>`), never a raw `rm`.
-4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or state files.
+4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or backlog files. `STATE.md` is not an evidence home — its body is composed from the filesystem.
 6. Remove the transient wrapper status file for any report whose handoff is finished, even when the report `.md` is intentionally retained as evidence:
 
    ```text
@@ -320,25 +320,21 @@ Do not treat reports as durable substitutes for task, review, or decision record
 
 ## Stage 8 - Close Session
 
-Render the post-task `STATE.md` body via the Core CLI:
+Refresh `STATE.md` via the Core CLI:
 
 ```
-cartopian compose-state <project-path>
+cartopian write-state <project-root>
 ```
 
-`compose-state` is the FR-006 aggregator. It emits a single NDJSON record with `current_phase`, `active_work`, `open_work`, `what_to_do_next`, and `rendered_body` — the last is the full markdown body. Persisting that body is a **PM-performed** write; the contained PM has no raw `Write` tool, so write `STATE.md` through the mediated writer, passing `rendered_body` verbatim as the content:
+`write-state` composes the canonical body (Current phase / Active work / Open work / What to do next) from the filesystem in-process — do not run `compose-state` first or pass `--content`; the writer refuses a PM-authored body while plan artifacts exist. The body never round-trips through PM context.
+
+If — and only if — this session surfaced a fact that is (1) about this project's current state, (2) not derivable from the filesystem, config, or protocol, and (3) changes what the next session does, deliver it as a situation note:
 
 ```
-cartopian write-state <project-root> --content-file <rendered-body-path>
+cartopian write-state <project-root> --note "coder deploy failed mid-handoff; operator is restarting the development machine"
 ```
 
-Confirm the result is under 5KB and names:
-
-- Current phase.
-- Active work.
-- Open work.
-- Blockers, if any.
-- The exact next protocol action.
+Notes are bounded (max 5, one line of ≤ 200 chars each) and have a one-delivery TTL: every `write-state` starts from zero notes, a byte-identical re-pass is refused, and `plan-audit` blocks the next session until each note is acted on, promoted (`write-backlog`, `write-decision`), or dropped. Protocol-compliance feedback is never a note — it routes to `BACKLOG.md` as process debt (`cartopian://protocol/CONVENTIONS/session-state`).
 
 If git versioning is enabled for the project, the PM performs the configured session-close git behavior for project PM data. Git staging, commits, and pushes for the protocol repository itself remain human-owned.
 

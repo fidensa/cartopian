@@ -243,6 +243,8 @@ Authoring that body is a **PM-performed** write; the contained PM has no raw `Wr
 cartopian write-state <project-root> --content-file <closeout-body-path>
 ```
 
+This no-plan case is the only one where `write-state` accepts an authored body — on a project with plan artifacts it refuses `--content` and composes the body from the filesystem itself, so an incomplete Stage 4 reset also fails closed here.
+
 The composed body says:
 
 - There is no active plan.

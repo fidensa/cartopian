@@ -60,8 +60,9 @@ Present a short summary to the operator from the returned record:
 
 Then check the disagreement and blocker fields before proposing any action:
 
-- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency. The refresh is **PM-performed** — write the corrected body through the mediated writer (`cartopian write-state <project-root> --content-file <body-path>`), never a raw `Edit`.
+- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency. The refresh is **PM-performed** — run `cartopian write-state <project-root>` (the mediated writer composes the corrected body from the filesystem), never a raw `Edit`.
 - **`blockers`**: any non-empty `blockers` array is a PM-level blocker (e.g. `no active phase detected but tasks are present`, `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not proceed to Stage 3 while blockers exist.
+  - `unresolved situation note in STATE.md: …` entries are the exception to "resolve with the operator": a situation note is last session's handoff of a non-derivable fact, and consuming it is PM work. Surface the note to the operator, act on it — promote a durable item (`cartopian write-backlog`, `cartopian write-decision`) or drop a stale one — then refresh `STATE.md` via `cartopian write-state <project-root>` (which always composes with zero notes). Escalate only if the note itself requires an operator decision.
 
 Resolve blockers with the operator before taking any lifecycle action.
 

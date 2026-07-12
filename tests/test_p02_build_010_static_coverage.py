@@ -36,7 +36,7 @@ class SkillsStaticCoverageTest(unittest.TestCase):
             "cartopian task-bundle",
             "cartopian handoff-packet",
             "cartopian report-action",
-            "cartopian compose-state",
+            "cartopian write-state",
             "Work root:",
         ):
             self.assertIn(needle, text, msg=f"run-task.md must reference `{needle}`")

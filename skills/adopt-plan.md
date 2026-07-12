@@ -185,18 +185,13 @@ If a reviewer is configured, run review checkpoint `004 tasks-and-specs`.
 
 ## Stage 6 — Update STATE.md
 
-Updating `STATE.md` is **PM-performed**; compose the body and write it through the mediated writer (never a raw `Write`):
+Updating `STATE.md` is **PM-performed** through the mediated writer (never a raw `Write`). The plan artifacts written in Stages 3–5 exist now, so the writer composes the canonical body from the filesystem itself — do not author a body or pass `--content`:
 
 ```
-cartopian write-state <project-root> --content-file <body-path>
+cartopian write-state <project-root>
 ```
 
-The body reflects:
-
-- **Current phase:** the first active phase
-- **Active work:** none yet (nothing assigned)
-- **Open work:** all generated tasks with brief descriptions
-- **What to do next:** suggest the first task to assign, or instruct the operator to review the plan and begin assignment. Do not create a prompt during plan adoption unless assignment is happening immediately; prompts belong in `prompts/` and are temporary handoff artifacts.
+The composed body reflects the first active phase, no active work (nothing assigned yet), all generated tasks as open work, and the first ready task as what to do next. Do not create a prompt during plan adoption unless assignment is happening immediately; prompts belong in `prompts/` and are temporary handoff artifacts.
 
 ---
 

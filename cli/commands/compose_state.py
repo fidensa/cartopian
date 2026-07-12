@@ -57,8 +57,13 @@ def _has_plan_artifacts(project_path: Path) -> bool:
         if not directory.is_dir():
             continue
         for path in directory.iterdir():
-            if path.is_file() and path.suffix == ".md":
-                return True
+            if not (path.is_file() and path.suffix == ".md"):
+                continue
+            if dirname == "decisions" and path.name == "INDEX.md":
+                # The scaffold seeds decisions/INDEX.md; the empty index is
+                # scaffolding, not evidence of a plan.
+                continue
+            return True
     for status in _TASK_STATUSES:
         if _iter_task_paths(project_path, status):
             return True
@@ -322,6 +327,36 @@ def _no_plan_record() -> Dict[str, Any]:
     }
 
 
+def compose_record(project_path: Path, project_name: str) -> Dict[str, Any]:
+    """Compose the canonical STATE record from filesystem facts.
+
+    Shared by the ``compose-state`` handler and ``write-state`` (which renders
+    the canonical body in-process so the PM never round-trips it). Returns the
+    no-plan record shape (all fields ``None``) when no plan artifacts exist.
+    """
+    if not _has_plan_artifacts(project_path):
+        return _no_plan_record()
+
+    current_phase = _current_phase(project_path)
+    active_work = _active_work(project_path) or "None"
+    open_work = _open_work(project_path) or "None"
+    what_to_do_next = _what_to_do_next(project_path) or "None"
+
+    return {
+        "current_phase": current_phase or "None",
+        "active_work": active_work,
+        "open_work": open_work,
+        "what_to_do_next": what_to_do_next,
+        "rendered_body": _render_body(
+            project_name,
+            current_phase or "None",
+            active_work,
+            open_work,
+            what_to_do_next,
+        ),
+    }
+
+
 def handler(args: argparse.Namespace) -> int:
     """Emit the canonical STATE.md sections derived from filesystem facts."""
     raw_path = args.project_path
@@ -345,27 +380,5 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(err.message)
         return err.exit_code
 
-    if not _has_plan_artifacts(project_path):
-        emit_record(_no_plan_record())
-        return EXIT_OK
-
-    current_phase = _current_phase(project_path)
-    active_work = _active_work(project_path) or "None"
-    open_work = _open_work(project_path) or "None"
-    what_to_do_next = _what_to_do_next(project_path) or "None"
-
-    record = {
-        "current_phase": current_phase or "None",
-        "active_work": active_work,
-        "open_work": open_work,
-        "what_to_do_next": what_to_do_next,
-        "rendered_body": _render_body(
-            project_name,
-            current_phase or "None",
-            active_work,
-            open_work,
-            what_to_do_next,
-        ),
-    }
-    emit_record(record)
+    emit_record(compose_record(project_path, project_name))
     return EXIT_OK

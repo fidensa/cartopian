@@ -161,12 +161,15 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         self.assertTrue((proj / "decisions" / "DEC-001-approach.md").is_file())
         self.assertIn("[DEC-001]", (proj / "decisions" / "INDEX.md").read_text(encoding="utf-8"))
 
-        # Persist STATE.md by consuming compose-state's rendered_body (G11).
+        # Persist STATE.md; write-state composes the canonical body itself
+        # (G11) — a PM-authored body is refused while plan artifacts exist.
         recs = self._run("compose-state", ps)
         rendered = recs[0]["rendered_body"]
         self.assertIsNotNone(rendered, "active plan should render a STATE body")
-        self._run("write-state", ps, "--content", rendered)
-        self.assertIn("Lifecycle Demo", (proj / "STATE.md").read_text(encoding="utf-8"))
+        self._run("write-state", ps)
+        state_text = (proj / "STATE.md").read_text(encoding="utf-8")
+        self.assertIn("Lifecycle Demo", state_text)
+        self.assertEqual(state_text.rstrip("\n"), rendered.rstrip("\n"))
 
         # Approve → done.
         self._run("move-task", str(task_path), "done")

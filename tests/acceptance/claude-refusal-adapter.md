@@ -96,7 +96,7 @@ Developer Mode / admin.
 
 ```bash
 # macOS
-python scripts/install.py --claude-hook <path-to>/guard-accept
+python3 scripts/install.py --claude-hook /tmp/guard-accept
 ```
 
 (or hand-write `guard-accept/.claude/settings.json`):

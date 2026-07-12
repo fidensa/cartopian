@@ -387,7 +387,15 @@ def _action_json_type(action: argparse.Action) -> str:
 
 
 def _action_to_schema(action: argparse.Action) -> Dict[str, Any]:
-    schema: Dict[str, Any] = {"type": _action_json_type(action)}
+    if isinstance(action, argparse._AppendAction):  # noqa: SLF001
+        schema: Dict[str, Any] = {
+            "type": "array",
+            "items": {"type": _action_json_type(action)},
+        }
+        if action.help:
+            schema["description"] = action.help
+        return schema
+    schema = {"type": _action_json_type(action)}
     if action.help:
         schema["description"] = action.help
     if action.choices:
@@ -491,6 +499,10 @@ def _kwargs_to_argv(actions: List[argparse.Action], kwargs: Dict[str, Any]) -> L
         elif isinstance(action, argparse._StoreFalseAction):  # noqa: SLF001
             if not value:
                 optional_parts.append(flag)
+        elif isinstance(action, argparse._AppendAction):  # noqa: SLF001
+            items = value if isinstance(value, list) else [value]
+            for item in items:
+                optional_parts.extend([flag, str(item)])
         else:
             optional_parts.extend([flag, str(value)])
     # Optionals first, then positionals (works for argparse either way; this

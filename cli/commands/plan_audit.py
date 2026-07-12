@@ -650,6 +650,33 @@ def _check_backlog_invariants(
     return blockers, warnings
 
 
+def _check_situation_notes(project_path: Path) -> List[Dict[str, Any]]:
+    """Block while STATE.md carries undelivered-mail Situation notes.
+
+    A Situation note has a one-delivery TTL: it exists to survive exactly one
+    gap between sessions, and its mere presence at audit time means the
+    current session has not yet consumed it. Each note is a blocker so none
+    can be skimmed past — act on it, promote it (``write-backlog``,
+    ``write-decision``), or drop it, then refresh ``STATE.md`` via
+    ``write-state`` (which always composes with zero notes).
+    """
+    # Lazy import: write_state imports compose_state, which shares config
+    # helpers with this module; importing here keeps startup one-directional.
+    from cli.commands.write_state import existing_notes
+
+    blockers: List[Dict[str, Any]] = []
+    for note in existing_notes(project_path):
+        blockers.append({
+            "kind": "unresolved-situation-note",
+            "detail": (
+                f"STATE.md situation note awaits resolution: {note!r} — act on "
+                "it, promote it (write-backlog / write-decision) if durable, "
+                "then refresh STATE.md via write-state"
+            ),
+        })
+    return blockers
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
@@ -696,6 +723,7 @@ def handler(args: argparse.Namespace) -> int:
             "shipped_version": protocol_gate["shipped_version"],
             "detail": protocol_gate["detail"],
         })
+    blockers.extend(_check_situation_notes(project_path))
     blockers.extend(_check_artifact_chains(project_path))
     blockers.extend(_check_deliverables(project_path, project_cfg))
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)

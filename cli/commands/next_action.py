@@ -294,7 +294,9 @@ def _detect_blockers(
     """Detect and return human-readable blocker strings.
 
     Checks for: (1) tasks present but no active phase; (2) unresolved open
-    questions listed under an 'Open Questions' section in STATE.md.
+    questions listed under an 'Open Questions' section in STATE.md;
+    (3) undelivered Situation notes in STATE.md (one-delivery TTL — the
+    session must act on, promote, or drop each before lifecycle movement).
     """
     blockers: List[str] = []
 
@@ -320,6 +322,17 @@ def _detect_blockers(
             state_text = ""
         for oq in _find_open_questions_in_state(state_text):
             blockers.append(f"unresolved open question in STATE.md: {oq}")
+
+    # Lazy import mirrors plan_audit._check_situation_notes — one parser for
+    # the Situation section, owned by the writer that renders it.
+    from cli.commands.write_state import existing_notes
+
+    for note in existing_notes(project_path):
+        blockers.append(
+            f"unresolved situation note in STATE.md: {note} — act on it, "
+            "promote it (write-backlog / write-decision) if durable, then "
+            "refresh STATE.md via write-state"
+        )
 
     return blockers
 

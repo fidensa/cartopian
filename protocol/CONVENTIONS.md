@@ -202,7 +202,7 @@ Task prompts are deleted when the task reaches `done/` or when the prompt is sup
 
 ## Reports
 
-Reports are protocol-defined handoff result artifacts in `reports/`. They are evidence for the PM, not replacements for task, review, decision, or state records.
+Reports are protocol-defined handoff result artifacts in `reports/`. They are evidence for the PM, not replacements for task, review, decision, or backlog records.
 
 Report files follow the canonical field schema and variants in `templates/REPORT.md`.
 
@@ -460,7 +460,7 @@ A decision that changes a prior decision creates a new file with `Supersedes: DE
 
 ## Backlog
 
-`BACKLOG.md` at the project root is the durable home for PM/reviewer follow-up notes — actionable tech debt, process debt, and protocol-hardening items that are not yet promoted into a task or roadmap entry. Follow-up notes belong here, never in `STATE.md`, which stays canonical composed state under its 5KB ceiling.
+`BACKLOG.md` at the project root is the durable home for PM/reviewer follow-up notes — actionable tech debt, process debt, and protocol-hardening items that are not yet promoted into a task or roadmap entry. Follow-up notes belong here, never in `STATE.md`, which stays canonical composed state under its 5KB ceiling; the mediated `write-state` enforces this by composing the body itself (see Session State). Protocol-compliance feedback (e.g. the operator points out a protocol or config rule the PM missed) is process debt and lands here the moment it arises — not in a `STATE.md` situation note.
 
 Entries are written through `cartopian write-backlog` (one section per `BL-NNN` id) and removed through `cartopian delete-backlog <project-root> --bl-id BL-NNN` (which removes only that entry's section; the preamble and every other entry round-trip byte-for-byte). Both paths are mediated writes — hand-edits to `BACKLOG.md` remain out of band, the same as any other mediated artifact. The file survives plan closeout and is input to the next planning cycle.
 
@@ -481,7 +481,7 @@ The general principle this settles: **every cross-artifact reference field is ve
 
 ## Sizing
 
-- `STATE.md` has a hard ceiling of 5KB.
+- `STATE.md` has a hard ceiling of 5KB; its `## Situation` section is capped at 5 notes, one line of ≤ 200 chars each, ≤ 1KB rendered (see Session State).
 - Task files are assignment-sized, not running journals.
 - Open task files should usually stay under 2KB.
 - Completed tasks may be larger when they need closure evidence.
@@ -543,6 +543,22 @@ Review-evidence authorship follows the event boundary. Reviewers fill the pre-me
 ## Session State
 
 After project selection, every PM session starts from that project's `STATE.md` and ends with `STATE.md` refreshed. The file remains short, current, and under 5KB.
+
+### The body is composed, not authored
+
+While a project has plan artifacts, the canonical `STATE.md` body — Current phase, Active work, Open work, What to do next — is derived entirely from the filesystem, so the PM never authors it. `cartopian write-state <project-root>` composes and persists the body in one step; it refuses `--content`/`--content-file` while plan artifacts exist. The PM decides *when* state is refreshed; the CLI renders *what* it says. This removes the round-trip of derivable text through the PM's context and closes `STATE.md` as a free-form note surface.
+
+The one exception is the no-plan project (post-closeout, pre-plan): there is nothing to compose from, so the closeout body (closeout date, archive note, carry-forward choices, next-action pointer) is PM-authored via `--content`/`--content-file` — and only there.
+
+### Situation notes
+
+The single PM-authored input on a planned project is the `## Situation` section, supplied as `write-state --note` lines (bounded: max 5 notes, one line of ≤ 200 chars each, section ≤ 1KB). A note qualifies only if all three hold: it is about the current state of *this project*; it is **not derivable** from the filesystem, config, or protocol; and it **changes what the next session does**. Example: "coder deploy failed mid-handoff; operator is restarting the development machine." Protocol rules, config values, and task placement never qualify — they are already recorded. Protocol-compliance feedback and follow-up items route to `BACKLOG.md` as process debt at the moment they arise, never into a note.
+
+Notes have a **one-delivery TTL** — a note exists to survive exactly one gap between sessions, then must be consumed:
+
+- Every `write-state` starts from zero notes; nothing carries forward by inertia.
+- A `--note` byte-identical to one already in `STATE.md` is refused fail-closed (`note-carry-forward`). A fact that outlives its delivery is promoted (`write-backlog`, `write-decision`), dropped, or — for a genuinely still-live transient — consciously restated, never repasted.
+- `plan-audit` and the `next-action` session brief emit a **blocker** per note present: undelivered mail must be resolved before lifecycle movement. Resolving it (acting, promoting, dropping, then refreshing `STATE.md`) is PM work and does not itself require operator input. A healthy steady-state `STATE.md` has zero notes.
 
 Session closeout leaves task directories, prompts, reports, decisions, and git state consistent with the lifecycle evidence processed during the session.
 

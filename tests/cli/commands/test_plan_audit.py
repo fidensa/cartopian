@@ -644,5 +644,37 @@ class TestPlanAuditBacklogInvariants(unittest.TestCase):
             self.assertIn("backlog-promotion-unfinished", kinds)
 
 
+class TestPlanAuditSituationNotes(unittest.TestCase):
+    def test_undelivered_note_is_blocker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "STATE.md",
+                   "# Test - State\n\n## Current phase\n\nPhase 01\n\n"
+                   "## Situation\n\n"
+                   "- coder deploy failed; operator restarting the machine\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 1)
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            notes = [b for b in record["blockers"]
+                     if b["kind"] == "unresolved-situation-note"]
+            self.assertEqual(len(notes), 1, msg=f"got: {record['blockers']}")
+            self.assertIn("coder deploy failed", notes[0]["detail"])
+            self.assertIn("write-state", notes[0]["detail"])
+
+    def test_state_without_situation_section_is_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "STATE.md",
+                   "# Test - State\n\n## Current phase\n\nPhase 01\n\n"
+                   "## What to do next\n\nContinue.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertTrue(record["clean"])
+
+
 if __name__ == "__main__":
     unittest.main()
