@@ -33,8 +33,11 @@ write for the mutation tools, read for the read tools):
 - ``specs/``, ``phases/``, ``IMPLEMENTATION_PLAN.md``, ``REQUIREMENTS.md``,
   ``ROADMAP.md`` → ``write:plan`` / ``read:governance``
 - ``tasks/``, ``STATE.md``, ``BACKLOG.md``, ``STANDARDS.md``,
-  ``CONVENTIONS.md``, ``cartopian.toml``, ``cartopian.local.toml``
-  → ``write:lifecycle`` / ``read:governance``
+  ``CONVENTIONS.md`` → ``write:lifecycle`` / ``read:governance``
+- ``cartopian.toml`` / ``cartopian.local.toml`` → ``read:governance`` on the
+  read axis; on the **write axis** a structured raw-edit tool is always denied
+  regardless of grants (the mediated ``cartopian update-config`` command is the
+  only edit path). Bash/shell and advisory-tier hosts stay documented residuals.
 - ``prompts/`` → ``write:lifecycle`` (the PM lifecycle surface) /
   ``read:prompts`` (the assignee's handoff)
 - ``decisions/`` → ``write:decisions`` / ``read:governance``
@@ -130,6 +133,14 @@ _PATH_KEYS = ("file_path", "notebook_path", "path")
 
 ROLE_ENV = "CARTOPIAN_ROLE"
 DEFAULT_ROLE = "pm"  # interactive session with no role marker → the PM role
+
+# Config files are never writable through a structured raw-edit tool, regardless
+# of grants or activation state — the mediated `cartopian update-config` command
+# is the only edit path (it writes via the CLI subprocess, which this hook never
+# gates). This is a structured-tool deny, not an absolute boundary: Bash/shell
+# and advisory-tier hosts remain documented residuals, exactly as for every other
+# governed path-class.
+_RAW_CONFIG_BASENAMES = frozenset({"cartopian.toml", "cartopian.local.toml"})
 
 # Governed path-class → required capability grant, per axis. The two axes
 # share one classification spine; only the grant lookup differs.
@@ -325,6 +336,17 @@ def _deny_missing_grant(
     )
 
 
+def _deny_raw_config_write(tool_name: str, target: str, project_id: str) -> Decision:
+    return Decision(
+        "deny",
+        f"[guard] {tool_name} denied: {target} — raw edits to Cartopian config "
+        f"files in project '{project_id}' are not permitted through structured "
+        f"edit tools. Use the mediated `cartopian update-config` command "
+        f"(the `update_config` MCP tool), which validates and atomically writes "
+        f"the change.",
+    )
+
+
 def _deny_resolution_failure(
     tool_name: str, target: str, project_id: str, detail: str
 ) -> Decision:
@@ -349,6 +371,16 @@ def _gate_inside_project(
 ) -> Decision:
     """Gate a target that lies inside a registered project's directory."""
     project_id = entry.get("id") or project_root
+
+    # Config files are never writable through a structured raw-edit tool — the
+    # mediated `cartopian update-config` command is the only edit path. This runs
+    # before grant resolution so it holds in ungated projects and even when the
+    # config cannot be resolved (fail-closed for config writes specifically).
+    if axis == "write":
+        basename = flavor.normcase(flavor.basename(_norm(target, flavor)))
+        if basename in {flavor.normcase(n) for n in _RAW_CONFIG_BASENAMES}:
+            return _deny_raw_config_write(tool_name, target, project_id)
+
     try:
         project_cfg, resolution = _resolve_project_grants(
             Path(project_root), cartopian_home

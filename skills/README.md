@@ -16,6 +16,7 @@ Skills are agent-executable markdown runbooks. Each skill is a structured, step-
 | **Run Handoff** | `run-handoff.md` | Execute one manual or CLI handoff and parse its report outcome | Reusable handoff/report mechanics for planning, task, and review work |
 | **Run Task** | `run-task.md` | Drive one task from assignment through completion report, review, and state refresh | Uses handoff automation for assignee and reviewer work |
 | **Close Plan** | `close-plan.md` | Close a completed plan, optionally archive it, and reset for the next planning cycle | Inspects `reports/` for unresolved handoffs, resets reports during closeout |
+| **Migrate Project** | `migrate-project.md` | Bring a project's `[project].protocol_version` current by applying the applicable `CHANGELOG.md` entries; PM-owned, on operator approval | Config edits via `cartopian update-config`; dispatches or surfaces non-mediated steps (file renames, header swaps, wrapper edits) |
 | **Register MCP** | `register-mcp.md` | Detect installed agents, show registration status, and register `cartopian-mcp` with any/all selected agents; called by the install skill and usable standalone | None — installer-side skill; no handoff |
 | **Check For Updates** | `check-for-updates.md` | Compare the installed Cartopian ref against the latest GitHub release and re-run `install-cartopian` on approval | None — installer-side skill; no handoff |
 

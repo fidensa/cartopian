@@ -355,6 +355,50 @@ def _require_startup_project_keys(
     )
 
 
+def validate_effective_config(
+    roles: Dict[str, str],
+    handoffs: Dict[str, Dict[str, Any]],
+    capabilities: GrantResolution,
+) -> list:
+    """Validate the *resolved* effective config (project + global merged).
+
+    This reasons about the merged result, not any single file — a project
+    handoff may validly reference a globally-declared role, and a project
+    override may reveal a valid global value. Raises :class:`_CliError` on a
+    blocking violation (an orphan handoff whose role is declared nowhere in the
+    effective ``[roles]``). Returns a list of advisory ``(prefix, message)``
+    warnings the caller may surface. Shared by ``resolve-config`` and
+    ``update-config`` so both reason identically.
+    """
+    for role in handoffs.keys():
+        if role not in roles:
+            raise _CliError(
+                EXIT_FAIL,
+                "config",
+                (
+                    f"orphan-handoff: {role} — declare in [roles] or "
+                    f"remove the [handoffs.{role}] block"
+                ),
+            )
+    warnings: list = []
+    for role_name, description in roles.items():
+        if role_name in PROTOCOL_DEFAULT_ROLES:
+            continue
+        if description == "":
+            warnings.append(("validation", f"empty role description: {role_name}"))
+    for role_name, entries in capabilities.invalid.items():
+        warnings.append(
+            (
+                "validation",
+                (
+                    f"unknown capability grants for role {role_name!r} "
+                    f"(role fails closed — holds no grants): {', '.join(entries)}"
+                ),
+            )
+        )
+    return warnings
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
@@ -387,31 +431,8 @@ def handler(args: argparse.Namespace) -> int:
         else:
             git_block = None
 
-        for role in handoffs.keys():
-            if role not in roles:
-                raise _CliError(
-                    EXIT_FAIL,
-                    "config",
-                    (
-                        f"orphan-handoff: {role} — declare in [roles] or "
-                        f"remove the [handoffs.{role}] block"
-                    ),
-                )
-
-        for role_name, description in roles.items():
-            if role_name in PROTOCOL_DEFAULT_ROLES:
-                continue
-            if description == "":
-                sys.stderr.write(
-                    f"[validation] empty role description: {role_name}\n"
-                )
-
-        for role_name, entries in capabilities.invalid.items():
-            sys.stderr.write(
-                f"[validation] unknown capability grants for role "
-                f"{role_name!r} (role fails closed — holds no grants): "
-                f"{', '.join(entries)}\n"
-            )
+        for prefix, message in validate_effective_config(roles, handoffs, capabilities):
+            _stderr(prefix, message)
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code

@@ -932,5 +932,52 @@ class TestInstallerHookRegistration(unittest.TestCase):
                 self.assertIn(tool, entries[0]["matcher"])
 
 
+_PM_LIFECYCLE_ROLES = (
+    "[roles.pm]\n"
+    'description = "Plans the work."\n'
+    'grants = ["pm-solo"]\n'  # pm-solo includes write:lifecycle and read:governance
+)
+
+
+class TestConfigWriteDeny(unittest.TestCase):
+    """Structured raw-edit tools are denied for config files regardless of
+    grants or activation — the mediated `update-config` command is the only edit
+    path. Bash/shell stays a documented residual (not exercised here)."""
+
+    def test_ungated_project_denies_raw_config_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _UNGATED_ROLES)
+            for fname in ("cartopian.toml", "cartopian.local.toml"):
+                target = str(fx.project_root / fname)
+                for tool in ("Write", "Edit", "MultiEdit"):
+                    decision = fx.evaluate(_payload(tool, target), environ={})
+                    self.assertEqual(decision.action, "deny", f"{tool} {fname}")
+                    self.assertIn("update-config", decision.reason)
+
+    def test_activated_with_write_lifecycle_still_denies_config_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _PM_LIFECYCLE_ROLES)
+            target = str(fx.project_root / "cartopian.toml")
+            decision = fx.evaluate(_payload("Write", target), environ={"CARTOPIAN_ROLE": "pm"})
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("update-config", decision.reason)
+
+    def test_config_read_still_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _PM_LIFECYCLE_ROLES)
+            target = str(fx.project_root / "cartopian.toml")
+            decision = fx.evaluate(_read_payload("Read", target), environ={"CARTOPIAN_ROLE": "pm"})
+            self.assertEqual(decision.action, "allow")
+
+    def test_normal_md_write_path_unaffected(self):
+        # A non-config lifecycle write still follows the capability path (allowed
+        # here because pm-solo holds write:lifecycle).
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _PM_LIFECYCLE_ROLES)
+            target = str(fx.project_root / "STATE.md")
+            decision = fx.evaluate(_payload("Write", target), environ={"CARTOPIAN_ROLE": "pm"})
+            self.assertEqual(decision.action, "allow")
+
+
 if __name__ == "__main__":
     unittest.main()

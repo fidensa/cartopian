@@ -24,6 +24,7 @@ SUBCOMMANDS: List[str] = [
     "scaffold-project",
     "task-bundle",
     "unregister-project",
+    "update-config",
     "validate-task-readiness",
     # Deidentified spec rendering for coder handoffs
     "render-spec",
@@ -128,6 +129,7 @@ def _real_handlers():
         scaffold_project,
         task_bundle,
         unregister_project,
+        update_config,
         validate_task_readiness as vtr,
         wait_handoff,
         wait_report,
@@ -167,6 +169,7 @@ def _real_handlers():
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
+        "update-config": (update_config.configure_parser, update_config.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
         "wait-report": (wait_report.configure_parser, wait_report.handler),

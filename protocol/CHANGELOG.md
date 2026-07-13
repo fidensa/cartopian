@@ -2,7 +2,7 @@
 
 This file is the durable, agent-followable record of every protocol-breaking change to the Cartopian protocol. Each entry below the header documents one breaking change and the concrete migration steps required to bring an older project up to the new protocol version.
 
-Operators read this file (and follow its migration steps); authoring is owned by maintainers and ships with each release. The installed copy lives at `~/.cartopian/CHANGELOG.md` and is replaced on upgrade.
+The operator *approves* a project migration; the PM then *executes* its steps as PM-owned orchestration (`skills/migrate-project.md`) — doing config edits through `cartopian update-config` and dispatching or surfacing the steps it cannot mediate. Authoring of this file is owned by maintainers and ships with each release. The installed copy lives at `~/.cartopian/CHANGELOG.md` and is replaced on upgrade.
 
 ## Per-entry schema
 

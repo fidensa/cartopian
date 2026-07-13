@@ -13,8 +13,9 @@ the shipped protocol version — the topmost ``### vX.Y.Z`` entry under
   shipped version; no CHANGELOG migration path exists, so consumers fail
   closed with the named residual :data:`RESIDUAL_NAME`.
 
-Detection only: the gate never writes ``cartopian.toml`` — config is
-operator-owned.
+Detection only: the gate never writes ``cartopian.toml``. Applying the
+migration (including the marker bump) is PM-owned and goes through the mediated
+``cartopian update-config`` command on operator approval.
 
 Standard library only, with no intra-package imports, so
 ``scripts/install.py`` can load this file directly from a source tree via
@@ -84,7 +85,7 @@ def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
                 f"apply the protocol/CHANGELOG.md migration entries whose "
                 f"applies-when precondition matches {detected_label} (they end "
                 f"by setting the marker to {shipped}); the gate does not edit "
-                f"cartopian.toml"
+                f"cartopian.toml — the PM applies it via `cartopian update-config`"
             ),
         }
 
