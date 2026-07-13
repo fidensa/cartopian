@@ -55,17 +55,36 @@
 # -----------------------------------------------------------------------------
 # [automation]
 # -----------------------------------------------------------------------------
-# Controls how aggressively the PM dispatches handoffs without operator
-# confirmation.
+# Controls how aggressively the PM initiates execution and dispatches
+# handoffs without operator confirmation.
 #
+# initiation: whether execution may begin without an operator execution
+#   directive. "operator" (protocol default) — the PM computes and names the
+#   next task but starts work only when told to ("continue", "run the next
+#   task"). "auto" — the PM may start ready work on its own: at session
+#   startup and when a scoped operation (e.g. task generation) leaves the
+#   queue ready. Informational requests ("what's next?") never start work
+#   under either value, and an explicit "stop"/"pause" always wins.
 # confirmation: when the PM pauses to confirm with the operator before
-#   dispatching the next handoff. Protocol default: "each-handoff".
+#   dispatching the next handoff within an initiated run. Protocol
+#   default: "each-handoff".
 # max_handoffs_per_run: hard ceiling on consecutive automated handoffs in
 #   a single session. Protocol default: 1.
 
 # [automation]
+# initiation = "operator"
 # confirmation = "each-handoff"
 # max_handoffs_per_run = 1
+
+# Full unattended recipe — every layer is a separate explicit opt-in
+# (none is a protocol default):
+#
+# [automation]
+# initiation = "auto"              # runs may begin without a directive
+# confirmation = "until-blocked"   # runs chain through sequential tasks
+# max_handoffs_per_run = 5         # bounded batch size per run
+#
+# plus `auto_start = true` on each [handoffs.<role>] the PM should launch.
 
 # -----------------------------------------------------------------------------
 # [roles]
@@ -107,8 +126,10 @@
 #                 "gpt-5-codex"). Dispatch exports it to the wrapper as
 #                 CARTOPIAN_MODEL; the wrapper translates it into the
 #                 tool-specific model flag. Unset means the tool's own default.
-#   auto_start  — if true, the wrapper launches without operator confirmation
-#                 (subject to [automation] confirmation policy above).
+#   auto_start  — if true, the PM launches the wrapper itself once the run
+#                 is already authorized by the [automation] initiation and
+#                 confirmation policies above. Governs launch mode only; it
+#                 never initiates a run.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #
 # Never configure `[handoffs.pm]`: the PM is the interactive orchestrator of

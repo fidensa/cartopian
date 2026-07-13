@@ -263,6 +263,8 @@ Print a summary of everything that was produced:
 - Resolved automation policy
 - Suggested first action, including whether to create `prompts/PROMPT-NN-NNN.md` for the first assignment
 
+Planning — including task generation — is a **scoped directive** (`cartopian://protocol/CONVENTIONS/request-intent`): generating tasks fills the open queue but does not authorize running it. Under `initiation = "operator"` (the default), end here with the summary; execution starts when the operator gives an execution directive ("continue", "run the next task"). Under `initiation = "auto"`, the newly ready queue may initiate execution via `run task`.
+
 ---
 
 ## Review Flow Reference

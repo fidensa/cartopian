@@ -1,10 +1,10 @@
 # Skill: Start Session
 
-Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and proceeding with the next protocol action per the linear execution default.
+Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and acting on the operator's request per its intent class and the resolved `[automation] initiation` policy.
 
-Use this skill when the operator gives a project-agnostic startup direction such as "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off", or "resume" without naming another lifecycle skill.
+Use this skill when the operator gives a project-agnostic startup request such as "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off", or "resume" without naming another lifecycle skill.
 
-**Output:** The selected project is named to the operator, `STATE.md` is summarized, and the PM continues the active task or starts the next sequential task with `run task` — without asking the operator to choose or approve the selection. The PM stops instead only for blockers, plan-level forks, or decisions reserved to the operator.
+**Output:** The selected project is named to the operator and `STATE.md` is summarized. What happens next depends on request intent (`protocol/CONVENTIONS.md § Request Intent`): an execution directive — or `initiation = "auto"` — continues the active task or starts the next sequential task with `run task`, without asking the operator to choose or approve the selection; an informational request ends with the summary and the named next protocol action. The PM stops for blockers, plan-level forks, or decisions reserved to the operator.
 
 ---
 
@@ -37,7 +37,7 @@ The PM role is read from the `pm_role_declared` field of the `cartopian next-act
 - The readiness gate is keyed on role-**key** presence, reported by `pm_role_declared`. If `pm_role_declared` is `true`, the `pm` key is present in the resolved `[roles]` table — the minimum is met; continue. Do not inspect or comment on the description text, and do not remark on whether it has been customized (`pm_role` may equal the default placeholder for a correctly-declared role).
 - If `pm_role_declared` is `false`, the `pm` key is genuinely absent from the resolved `[roles]` table. Stop with a misconfiguration blocker that defers to setup: this project's config declares no PM role; resolve it via init/config (`init project` / `generate config`). Do not offer inline role-authoring choices during resume.
 
-You **are** the PM, running interactively with the operator — the PM is never launched as a handoff. Once the readiness gate passes, proceed under the linear execution default (`protocol/CONVENTIONS.md § Task Execution Order`): take evidence-supported lifecycle actions without per-action confirmation prompts, stopping only for blockers, plan-level forks, and decisions the protocol reserves to the operator. Do not announce that you will "propose actions for confirmation."
+You **are** the PM, running interactively with the operator — the PM is never launched as a handoff. Once the readiness gate passes, classify the operator's request per `protocol/CONVENTIONS.md § Request Intent` and honor the resolved `[automation]` policy (Stage 3). Within an initiated run, take evidence-supported lifecycle actions without per-action confirmation prompts, stopping only for blockers, plan-level forks, and decisions the protocol reserves to the operator. Do not announce that you will "propose actions for confirmation."
 
 ---
 
@@ -49,7 +49,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
+This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `automation`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
 
 Present a short summary to the operator from the returned record:
 
@@ -57,6 +57,7 @@ Present a short summary to the operator from the returned record:
 - Current phase — `phase_id`.
 - Active work — `active_task` (id, title, status).
 - Open or queued work — `next_open_task` (id, title).
+- Resolved automation policy — `automation` (`initiation`, `confirmation`, `max_handoffs_per_run`).
 
 Then check the disagreement and blocker fields before proposing any action:
 
@@ -70,9 +71,16 @@ Resolve blockers with the operator before taking any lifecycle action.
 
 ## Stage 3 - Take The Next Action
 
-Task execution is linear by default (`protocol/CONVENTIONS.md § Task Execution Order`): the next action is computed from the `next-action` record, not negotiated with the operator. Convert the record into one action, then act on it.
+Task selection is deterministic (`protocol/CONVENTIONS.md § Task Execution Order`): the next action is computed from the `next-action` record, not negotiated with the operator. Whether that action *executes* is a separate authority: selection does not authorize execution. Execution begins only when the session request is an execution directive or the record's resolved `automation.initiation` is `"auto"` (`protocol/CONVENTIONS.md § Request Intent`).
 
-**Proceed without asking** — these are deterministic continuations of the plan the operator already approved. Name the action in the summary and continue with `run task` immediately; do not ask permission to take the obvious next step:
+**Classify the request first, then act on its class:**
+
+- **Informational request** ("what's next?", "check `STATE.md`", "give me status") — answer from the Stage 2 summary, name the exact next protocol action, and stop. Never initiate execution from an informational request, even when `initiation = "auto"`.
+- **Scoped directive** (a named operation such as "generate the phase's tasks" or "write the spec") — perform exactly that operation via its owning skill. On completion, report and stop under `initiation = "operator"`; under `initiation = "auto"`, the newly ready queue may initiate execution below.
+- **Execution directive** ("continue", "resume", "start working", "run the next task") — initiate execution below.
+- **No directive** (the session opened on bare project selection) — with `initiation = "auto"` and no Stage 2 blockers, initiate execution below; otherwise end with the summary, naming the exact task an execution directive ("continue") will start.
+
+**Once execution is initiated, proceed without asking** — these are deterministic continuations of the plan the operator already approved. Name the action in the summary and continue with `run task` immediately; do not ask permission to take the obvious next step:
 
 - `active_task` non-null with status `in-progress` — continue it with `run task`.
 - `active_task` non-null with status `in-review` — process the review path with `run task`.
@@ -88,4 +96,4 @@ Pace within and across tasks is governed by the resolved `[automation]` policy: 
 - `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact — ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
 - Any unresolved blocker from Stage 2, or a decision the protocol or plan reserves to the operator.
 
-If the operator explicitly declines or pauses work, stop after the state summary and do not restart the chain until directed.
+An explicit "stop", "pause", or "don't execute" always overrides configuration. If the operator declines or pauses work, end any run at the next safe point, stop after the state summary, and do not restart the chain — automatic initiation included — until the operator directs execution again.

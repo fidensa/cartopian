@@ -15,9 +15,12 @@ PROTOCOL_DEFAULT_ROLES: Dict[str, str] = {
 }
 
 PROTOCOL_DEFAULT_AUTOMATION: Dict[str, Any] = {
+    "initiation": "operator",
     "confirmation": "each-handoff",
     "max_handoffs_per_run": 1,
 }
+
+_AUTOMATION_INITIATION_VALUES = ("operator", "auto")
 
 PROTOCOL_DEFAULT_GIT_VERSIONING: bool = False
 
@@ -146,7 +149,18 @@ def _resolve_automation(
     p_auto = project_cfg.get("automation", {}) or {}
     merged.update(g_auto)
     merged.update(p_auto)
+    initiation = merged.get("initiation", PROTOCOL_DEFAULT_AUTOMATION["initiation"])
+    if initiation not in _AUTOMATION_INITIATION_VALUES:
+        # Fail safe, not closed: an unknown value disables automatic initiation
+        # rather than blocking the session on a typo.
+        _stderr(
+            "validation",
+            f"unknown [automation].initiation value {initiation!r} — "
+            'falling back to "operator" (execution waits for an operator directive)',
+        )
+        initiation = PROTOCOL_DEFAULT_AUTOMATION["initiation"]
     return {
+        "initiation": initiation,
         "confirmation": merged.get("confirmation", PROTOCOL_DEFAULT_AUTOMATION["confirmation"]),
         "max_handoffs_per_run": merged.get(
             "max_handoffs_per_run", PROTOCOL_DEFAULT_AUTOMATION["max_handoffs_per_run"]

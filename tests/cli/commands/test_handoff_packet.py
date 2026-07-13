@@ -21,7 +21,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.3.0"\n'
+    'protocol_version = "v0.4.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles]\n"
@@ -151,7 +151,11 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertIsNone(rec["git_policy"])
             self.assertEqual(
                 rec["automation_policy"],
-                {"confirmation": "each-handoff", "max_handoffs_per_run": 1},
+                {
+                    "initiation": "operator",
+                    "confirmation": "each-handoff",
+                    "max_handoffs_per_run": 1,
+                },
             )
 
 
@@ -165,7 +169,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'protocol_version = "v0.3.0"\n'
+        'protocol_version = "v0.4.0"\n'
         "\n"
         "[handoffs.coder]\n"
         'agent = "cartopian-claude"\n'
@@ -207,7 +211,11 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             # Automation policy is always populated from protocol defaults.
             self.assertEqual(
                 rec["automation_policy"],
-                {"confirmation": "each-handoff", "max_handoffs_per_run": 1},
+                {
+                    "initiation": "operator",
+                    "confirmation": "each-handoff",
+                    "max_handoffs_per_run": 1,
+                },
             )
             self.assertEqual(rec["task_id"], "TASK-09-007")
             self.assertTrue(
@@ -243,7 +251,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'protocol_version = "v0.3.0"\n'
+        'protocol_version = "v0.4.0"\n'
         "\n"
         "[roles]\n"
         'coder = "Implements tasks per spec."\n'

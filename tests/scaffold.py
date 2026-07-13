@@ -157,7 +157,7 @@ def project_scaffold(
         else (
             "[project]\n"
             f'name = "{project_name}"\n'
-            'protocol_version = "v0.3.0"\n'
+            'protocol_version = "v0.4.0"\n'
         )
     )
     (project_root / "cartopian.toml").write_text(toml_text, encoding="utf-8")

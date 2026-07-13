@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'protocol_version = "v0.3.0"\n'
+    'protocol_version = "v0.4.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -810,7 +810,7 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'protocol_version = "v0.3.0"\n'
+            'protocol_version = "v0.4.0"\n'
             "\n"
             "[roles]\n"
             'coder = "Implements tasks per spec."\n'

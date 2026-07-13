@@ -38,7 +38,7 @@ Project selection is **registry-only**. The project registry lives at `~/.cartop
 
 A project is selected explicitly when the operator names a registered project ID or registered project path.
 
-For project-agnostic startup directions such as "start working", "continue", "check `STATE.md`", "what's next", or "pick up where we left off", the PM resolves eligible projects through the registry:
+For project-agnostic startup requests of any intent class (see [Request Intent](#request-intent)) — "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off" — the PM resolves eligible projects through the registry:
 
 1. Enumerate registered projects via `cartopian discover-projects`.
 2. If exactly one project is registered, use it and name it to the operator.
@@ -50,9 +50,17 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 1. Read `STATE.md` before taking lifecycle action.
 2. Reconcile `STATE.md` against the filesystem when it names task state that disagrees with task directories.
 3. Tell the operator the current phase, active work, and next protocol action from `STATE.md`.
-4. Proceed per the linear execution default (see [Task Execution Order](#task-execution-order)): continue the active task, or start the next sequential task when no task is active.
+4. Act on the operator's request per its intent class (see [Request Intent](#request-intent)). Execution begins only when that classification — or the resolved `[automation] initiation` policy — authorizes it.
 
-A bare startup direction ("continue", "what's next", "pick up where we left off") **is** direction to proceed linearly. The PM continues the active task — or starts the next sequential task when none is active — via `skills/run-task.md` without asking the operator to choose or approve the selection. Pace is governed by the `[automation]` policy; selection is never an operator question. The PM still stops for blockers, for decisions the protocol reserves to the operator, and at the plan-level forks named in `skills/start-session.md` (no plan exists, plan complete).
+## Request Intent
+
+Operator requests fall into three classes. Classifying intent is the PM's first interpretive duty, and a request never changes class because automation is configured aggressively.
+
+- **Execution directives** — "continue", "resume", "start working", "run the next task", "keep going", "pick up where we left off". These initiate (or resume) linear execution: the PM continues the active task — or starts the next sequential task when none is active — via `skills/run-task.md` without asking the operator to choose or approve the selection. Pace is governed by the `[automation]` policy; selection is never an operator question. The PM still stops for blockers, for decisions the protocol reserves to the operator, and at the plan-level forks named in `skills/start-session.md` (no plan exists, plan complete).
+- **Informational requests** — "what's next?", "check `STATE.md`", "give me status", "where are we?". These are read-only: answer from `STATE.md` and the `next-action` record, name the next protocol action, and stop. An informational request never initiates execution — even under `[automation] initiation = "auto"` — because a question must not acquire side effects.
+- **Scoped directives** — "generate PHASE-04's tasks", "write the spec", "revise the plan". These authorize exactly the named operation. When it completes: under `initiation = "operator"` (the protocol default), the PM reports completion, names the next protocol action, and stops; under `initiation = "auto"`, the newly ready open queue may initiate a run (see [Task Execution Order](#task-execution-order)).
+
+An explicit "stop", "pause", or "don't execute" always overrides configuration: it ends any run in progress at the next safe point and suspends automatic initiation until the operator directs execution again.
 
 ## Naming
 
@@ -151,12 +159,16 @@ If completion evidence arrives before assignment/start was recorded, the PM may 
 
 Task execution is **linear by default**. The next task is deterministic: the first file in `tasks/open/`, ordered by phase (plan order), then by task filename within the phase, skipping tasks whose `Blocked by:` dependencies are not yet in `tasks/done/`. This is the same selection `cartopian next-action` emits as `next_open_task`.
 
-Because the order is deterministic, choosing the next task is a computation, not a conversation:
+**Selection does not authorize execution.** Deterministic selection answers *which task would run next*; it does not answer *whether execution begins*. Execution begins only from an operator execution directive or from `[automation] initiation = "auto"` (see [Request Intent](#request-intent) and the `[automation]` policy under [Handoffs](#handoffs)). A populated open queue is a fact about the plan, not permission to run it.
 
-- The PM does not ask the operator which task to run next, whether to start the obvious next task, or whether to continue an already in-progress task. It proceeds.
+Within an initiated run, choosing the next task is a computation, not a conversation:
+
+- The PM does not ask the operator which task to run next or whether to continue an already in-progress task. It proceeds.
 - When a task completes and automation budget remains (see the `[automation]` policy under [Handoffs](#handoffs)), the PM continues to the next sequential task in the same run.
 - The operator may override the order at any time by naming a task; an explicit override applies to that task only and does not change the default for subsequent selections.
 - Deviating from sequential order on the PM's own initiative is a protocol violation.
+
+**Directive scope.** A scoped directive ("generate PHASE-04's tasks", "write the spec", "revise the plan") authorizes only the named operation; completing it never rolls into execution on its own. Under `initiation = "operator"` the PM reports completion and stops. Under `initiation = "auto"` the newly ready open queue may initiate a run, subject to the same stop conditions. An explicit "stop", "pause", or "don't execute" always wins over configuration.
 
 Linear movement stops — and the operator is consulted — only at genuine stop conditions: a readiness or audit blocker, a failed/blocked/rejected handoff, evidence gates that cannot be satisfied, a decision the protocol or plan reserves to the operator, a plan-level fork (no plan, phase tasks not yet generated, plan complete), or exhaustion of the `[automation]` budget.
 
@@ -307,7 +319,7 @@ Handoff fields are:
 
 - `agent`: executable name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
-- `auto_start`: whether the PM may launch the executable after assignment is authorized by run policy.
+- `auto_start`: whether the PM may launch the executable itself once a run is already authorized — that is, after `[automation] initiation` has allowed the run to begin and the `confirmation` pace policy permits this handoff. `auto_start` chooses the launch mode (PM-performed vs. operator-performed) only; it never initiates a run.
 - `planning_reviews`: whether the role's handoff automation extends to planning-checkpoint reviews (report-path-only handoffs — no task file exists during planning). Default `false`: planning-review launches are operator-performed unless explicitly opted in, so enabling `auto_start` for task handoffs never silently automates planning reviews. When `true`, the launch mode follows `auto_start`: with `auto_start = true` the PM launches through the prompt-keyed mediated dispatch (`cartopian dispatch --prompt <prompt-path> --role <role>`, accepted only for allowlisted `<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md` slots); with `auto_start = false` the PM presents the launch command to the operator. The gate is enforced fail-closed by `cartopian dispatch` itself, not only by skill procedure.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
@@ -346,18 +358,31 @@ Optional automation policy:
 
 ```toml
 [automation]
+initiation = "operator"
 confirmation = "each-handoff"
 max_handoffs_per_run = 1
 ```
+
+Supported `initiation` values are:
+
+- `operator`: execution begins only from an operator execution directive (see [Request Intent](#request-intent)). After informational requests and scoped directives the PM reports and stops.
+- `auto`: the PM may initiate a run without a directive — at session startup once startup duty completes with no blockers, and when a scoped directive leaves the open queue ready. Informational requests remain read-only, and explicit "stop"/"pause" language still suspends initiation until the operator directs execution again.
 
 Supported `confirmation` values are:
 
 - `each-handoff`: stop after each handoff result is processed.
 - `until-blocked`: continue through eligible `auto_start = true` handoffs until blocked, failed, rejected, missing evidence, requiring operator judgment, reaching a phase boundary, or hitting `max_handoffs_per_run`.
 
-Defaults are `confirmation = "each-handoff"` and `max_handoffs_per_run = 1`.
+Defaults are `initiation = "operator"`, `confirmation = "each-handoff"`, and `max_handoffs_per_run = 1`. `resolve-config` resolves an unrecognized `initiation` value to `operator` (fail-safe: less automation, never more) and emits a `[validation]` warning.
 
-The `confirmation` policy gates **pace**, never **selection**. Task order is deterministic per [Task Execution Order](#task-execution-order): under `each-handoff` the PM stops after processing each handoff result and resumes with the next sequential step when the operator says to continue; under `until-blocked` it chains through sequential tasks within the run budget. Neither value makes "which task next" or "shall I apply this evidence-supported move" an operator question — evidence-supported lifecycle moves (starting the next sequential task, moving a task per a parsed report or review verdict) are applied without a confirmation prompt. The operator is consulted only at the stop conditions named in [Task Execution Order](#task-execution-order).
+The automation authorities are disjoint, and each gates a different question:
+
+- `initiation` gates **whether a run begins** when no execution directive was given.
+- `confirmation` gates **pace** within an initiated run: under `each-handoff` the PM stops after processing each handoff result and resumes with the next sequential step when the operator says to continue; under `until-blocked` it chains through sequential tasks within the run budget. Neither value authorizes initiation — `until-blocked` describes how far an initiated run chains, not whether one starts.
+- **Selection** is never gated and never an operator question: task order is deterministic per [Task Execution Order](#task-execution-order). Within an initiated run, evidence-supported lifecycle moves (starting the next sequential task, moving a task per a parsed report or review verdict) are applied without a confirmation prompt; the operator is consulted only at the stop conditions named there.
+- `[handoffs.<role>].auto_start` gates **launch mode** for a handoff the run policies already authorize; it participates in neither initiation nor pace.
+
+Full unattended operation is therefore a stack of explicit opt-ins, each an operator choice and none a protocol default: `initiation = "auto"` (runs may begin without a directive), `confirmation = "until-blocked"` (runs chain), `max_handoffs_per_run` sized to the desired batch, and `auto_start = true` on the roles the PM should launch itself.
 
 Handoffs are sequential. Concurrent child agents are out of scope.
 

@@ -114,6 +114,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--handoff-model", "coder=claude-opus-4-8",
                 "--handoff-auto-start", "coder=false",
                 "--handoff-timeout", "coder=30m",
+                "--automation-initiation", "auto",
                 "--automation-confirmation", "until-blocked",
                 "--automation-max-handoffs", "5",
                 "--work-root", "build",
@@ -144,7 +145,11 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             )
             self.assertEqual(
                 data["automation"],
-                {"confirmation": "until-blocked", "max_handoffs_per_run": 5},
+                {
+                    "initiation": "auto",
+                    "confirmation": "until-blocked",
+                    "max_handoffs_per_run": 5,
+                },
             )
             self.assertEqual(data["defaults"], {"git_versioning": True})
             # primitive type fidelity in [git]
@@ -393,6 +398,37 @@ class TestGenerateConfigUsage(unittest.TestCase):
             self.assertEqual(proc.returncode, 2)
             self.assertTrue(proc.stderr.startswith("[usage]"), msg=proc.stderr)
 
+    def test_bad_automation_initiation_enum(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj), "--name", "X", "--id", "x",
+                "--automation-initiation", "sometimes",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertTrue(proc.stderr.startswith("[usage]"), msg=proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_automation_initiation_operator_written_verbatim(self):
+        # "operator" equals the protocol default, but an explicit flag is an
+        # explicit operator choice — it must be written, not elided.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj), "--name", "X", "--id", "x",
+                "--automation-initiation", "operator",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            with (proj / "cartopian.toml").open("rb") as fh:
+                data = tomllib.load(fh)
+            self.assertEqual(data["automation"], {"initiation": "operator"})
+
     def test_bad_max_handoffs_not_positive(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -457,6 +493,20 @@ class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
                 home=tmp_path,
             )
             self._assert_rejected(proc, proj, "--id")
+
+    def test_repeated_automation_initiation_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--automation-initiation", "operator",
+                "--automation-initiation", "auto",
+                home=tmp_path,
+            )
+            self._assert_rejected(proc, proj, "--automation-initiation")
 
     def test_repeated_automation_confirmation_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

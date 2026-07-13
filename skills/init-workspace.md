@@ -41,10 +41,15 @@ If the operator does not want automated CLI handoff for a role, skip the `[hando
 
 ### Step 4 — Gather automation policy
 
-Ask the operator about the default automation confirmation policy:
+Present the automation choice as two presets, then refine:
 
-1. **Confirmation mode** — `each-handoff` (stop after each result) or `until-blocked` (continue until a blocker, limit, or failed report)? (default: `each-handoff`)
-2. **Max handoffs per run** — How many handoffs may the PM launch in one session? (default: `1`)
+1. **Initiation preset** — "How should sessions start work?"
+   - **"Wait for me to start work"** (recommended default) — the PM computes and names the next task but begins execution only on an explicit directive ("continue", "run the next task"). Maps to `initiation = "operator"`; since it is the protocol default, the key may be omitted.
+   - **"Automatically start ready work"** — the PM may begin execution without a directive: at session startup and when a scoped operation (e.g. task generation) leaves the queue ready. Maps to `initiation = "auto"`. Informational requests ("what's next?") stay read-only either way, and an explicit "stop"/"pause" always wins.
+2. **Confirmation mode** — `each-handoff` (stop after each result) or `until-blocked` (continue until a blocker, limit, or failed report)? (default: `each-handoff`)
+3. **Max handoffs per run** — How many handoffs may the PM launch in one session? (default: `1`)
+
+For fully unattended operation the operator must choose each layer explicitly: `initiation = "auto"`, `confirmation = "until-blocked"`, a `max_handoffs_per_run` batch size, and `auto_start = true` on the roles the PM should launch (Step 3). No single answer switches them all on.
 
 ### Step 5 — Generate workspace config
 
@@ -70,6 +75,7 @@ operator = "<one-line description>"
 # timeout = "<duration>"
 
 [automation]
+# initiation = "<operator|auto>"  # omit for the "operator" default
 confirmation = "<each-handoff|until-blocked>"
 max_handoffs_per_run = <number>
 ```

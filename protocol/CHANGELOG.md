@@ -30,6 +30,40 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.4.0 — Execution initiation is operator-gated (`[automation] initiation`)
+
+- **Protocol version:** `v0.4.0`
+- **One-line summary:** Separates execution initiation from deterministic task selection: a run now begins only from an operator execution directive or the explicit `[automation] initiation = "auto"` opt-in, with `initiation = "operator"` as the protocol default.
+
+#### Breakage description
+
+No file, field, or naming form becomes invalid; the breakage is behavioral, at the session-orientation surface.
+
+1. Under v0.3.0 conventions, session startup and a populated open queue were treated as authorization to start the next sequential task ("starts the next sequential task ... without asking"), so `confirmation = "until-blocked"` with `auto_start = true` produced fully hands-off execution with no dedicated opt-in for the initiation step itself. Under v0.4.0, deterministic selection answers only *which task would run next*; execution begins only from an operator execution directive ("continue", "resume", "start working", "run the next task") or from `[automation] initiation = "auto"` (`protocol/CONVENTIONS.md § Task Execution Order`).
+2. Operator requests are classified by intent (`protocol/CONVENTIONS.md § Request Intent`): informational requests ("what's next?", "check `STATE.md`") are read-only and never initiate execution; scoped directives ("generate PHASE-04's tasks") authorize only the named operation and, under the default `initiation = "operator"`, end with report-and-stop.
+3. Projects that relied on the old hands-off initiation behavior stop and wait for an execution directive at session startup and after scoped directives until `[automation] initiation = "auto"` is set.
+
+#### Applies-when precondition
+
+Applies when the project's `cartopian.toml` `[project] protocol_version` is unset, missing, or lexically less than `v0.4.0`. Projects already at `v0.4.0` (or any later entry's version) are skipped.
+
+#### Agent-followable migration steps
+
+Run these against the project root in order.
+
+1. **Offer the operator the one-time initiation choice — never choose silently.** If `[automation].initiation` is already present in the project or global config, keep it (the choice was already made; do not re-ask). Otherwise ask which behavior this project should have:
+   - **"Wait for me to start work" (recommended default)** — no config change required; the resolved default is `initiation = "operator"`.
+   - **"Automatically start ready work"** — add `initiation = "auto"` to the `[automation]` table in `<project-root>/cartopian.toml` (create the table if absent). Write `"auto"` only on the operator's explicit selection; a migration performed without operator input must leave the key unset.
+2. **Bump the marker.** Set `[project] protocol_version = "v0.4.0"` in `<project-root>/cartopian.toml`.
+
+#### Idempotence guarantee
+
+Both steps are no-ops on re-application: step 1 skips whenever `initiation` is already present (and "no config change" is inherently repeatable); step 2 is a fixed-value assignment.
+
+#### Post-migration validation hint
+
+`cartopian resolve-config <project-path>` exits 0 and emits an `"automation"` object whose `"initiation"` is `"operator"` or `"auto"`, with no `[validation]` initiation warning on stderr; `grep protocol_version <project-root>/cartopian.toml` shows `v0.4.0`.
+
 ### v0.3.0 — Registry-only selection, project-root launch cwd, Work root field
 
 - **Protocol version:** `v0.3.0`

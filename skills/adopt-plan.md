@@ -207,6 +207,8 @@ Report to the operator:
 - Resolved handoff configuration
 - Suggested first action, including whether to create `prompts/PROMPT-NN-NNN.md` for the first assignment
 
+Plan adoption — including task generation — is a **scoped directive** (`protocol/CONVENTIONS.md § Request Intent`): filling the open queue does not authorize running it. Under `initiation = "operator"` (the default), end here with the summary; under `initiation = "auto"`, the newly ready queue may initiate execution via `run task`.
+
 ---
 
 ## Review Flow Reference

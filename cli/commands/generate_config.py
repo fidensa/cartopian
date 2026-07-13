@@ -36,8 +36,9 @@ class _Usage(Exception):
 class _SingleValuedAction(argparse.Action):
     """Store action that rejects a repeated occurrence with `[usage]` exit 2.
 
-    The flags `--name`, `--id`, `--automation-confirmation`,
-    `--automation-max-handoffs`, and `--git-versioning` are single-valued.
+    The flags `--name`, `--id`, `--automation-initiation`,
+    `--automation-confirmation`, `--automation-max-handoffs`, and
+    `--git-versioning` are single-valued.
     Choices validation runs before ``__call__`` so enum flags still reject
     bad values first; a second occurrence of any single-valued flag fails
     here regardless of value.
@@ -71,6 +72,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            metavar="ROLE=BOOL", help="Repeatable handoff auto_start")
     subparser.add_argument("--handoff-timeout", action="append", default=[],
                            metavar="ROLE=DURATION", help="Repeatable handoff timeout")
+    subparser.add_argument("--automation-initiation", default=None,
+                           action=_SingleValuedAction,
+                           choices=["operator", "auto"],
+                           help="[automation] initiation")
     subparser.add_argument("--automation-confirmation", default=None,
                            action=_SingleValuedAction,
                            choices=["each-handoff", "until-blocked"],
@@ -273,6 +278,8 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
         project_block["work_roots"] = work_roots
 
     automation: Dict[str, Any] = {}
+    if args.automation_initiation is not None:
+        automation["initiation"] = args.automation_initiation
     if args.automation_confirmation is not None:
         automation["confirmation"] = args.automation_confirmation
     if args.automation_max_handoffs is not None:

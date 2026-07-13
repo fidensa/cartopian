@@ -2,7 +2,8 @@
 
 Emits a single flat NDJSON record with all orientation data a PM needs to
 start or resume a session: active task, next open task, phase, PM role,
-blockers, and any STATE.md vs. filesystem disagreement.
+resolved [automation] policy, blockers, and any STATE.md vs. filesystem
+disagreement.
 """
 import argparse
 import re
@@ -12,7 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cli.capabilities import role_description
-from cli.commands.resolve_config import _CliError, _require_startup_project_keys, _resolve_roles
+from cli.commands.resolve_config import (
+    _CliError,
+    _require_startup_project_keys,
+    _resolve_automation,
+    _resolve_roles,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 from cli.protocol_gate import (
@@ -60,8 +66,7 @@ def _pm_settings_from_resolved(roles: Dict[str, Any]) -> tuple[str, bool]:
     return pm_role, pm_role_declared
 
 
-def _resolve_pm_settings(project_path: Path, project_cfg: Dict[str, Any]) -> tuple[str, bool]:
-    global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
+def _resolve_pm_settings(global_cfg: Dict[str, Any], project_cfg: Dict[str, Any]) -> tuple[str, bool]:
     # Roles come from resolve-config's merge chain (protocol defaults included)
     # so the resume gate and `resolve-config` cannot diverge on whether the
     # default roster counts as declared.
@@ -492,10 +497,12 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     try:
-        pm_role, pm_role_declared = _resolve_pm_settings(project_path, cfg)
+        global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
     except (OSError, tomllib.TOMLDecodeError) as exc:
         stderr_error(f"global config unreadable: {Path.home() / '.cartopian' / 'cartopian.toml'} — {exc}")
         return EXIT_ENV
+    pm_role, pm_role_declared = _resolve_pm_settings(global_cfg, cfg)
+    automation = _resolve_automation(global_cfg, cfg)
 
     tasks_dir = project_path / "tasks"
     phase_id = _find_phase_id(project_path)
@@ -540,6 +547,7 @@ def handler(args: argparse.Namespace) -> int:
         "plan_complete": plan_complete,
         "pm_role": pm_role,
         "pm_role_declared": pm_role_declared,
+        "automation": automation,
         "blockers": blockers,
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }

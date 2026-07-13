@@ -134,7 +134,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'protocol_version = "v0.3.0"\n'
+        'protocol_version = "v0.4.0"\n'
         f"{wr}"
         "\n"
         "[roles]\n"
@@ -330,7 +330,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'protocol_version = "v0.3.0"\n'
+            'protocol_version = "v0.4.0"\n'
             "\n"
             "[roles]\n"
             'coder = "Implements tasks per spec."\n'

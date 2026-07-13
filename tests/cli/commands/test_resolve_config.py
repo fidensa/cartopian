@@ -113,7 +113,11 @@ class TestHappyPath(unittest.TestCase):
         )
         self.assertEqual(
             record["automation"],
-            {"confirmation": "until-blocked", "max_handoffs_per_run": 3},
+            {
+                "initiation": "operator",
+                "confirmation": "until-blocked",
+                "max_handoffs_per_run": 3,
+            },
         )
         self.assertEqual(record["work_roots"], {})
         self.assertFalse(record["git_versioning"])
@@ -250,6 +254,96 @@ class TestGitVersioningAttribution(unittest.TestCase):
         self.assertEqual(record["defaults_attribution"]["git_versioning"], "project")
         self.assertTrue(record["git_versioning"])
         self.assertEqual(record["git"], {})
+
+
+class TestAutomationInitiationResolution(unittest.TestCase):
+    _BARE_PROJECT = (
+        '[project]\n'
+        'id = "demo"\n'
+        'name = "Demo"\n'
+        'protocol_version = "v0.2.0"\n'
+    )
+
+    def _record(self, result):
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return json.loads(result.stdout.splitlines()[0])
+
+    def test_protocol_default_is_operator(self):
+        with _Sandbox() as sb:
+            _write(sb.project / "cartopian.toml", self._BARE_PROJECT)
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertEqual(record["automation"]["initiation"], "operator")
+
+    def test_global_supplies_initiation(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.home / ".cartopian" / "cartopian.toml",
+                '[automation]\ninitiation = "auto"\n',
+            )
+            _write(sb.project / "cartopian.toml", self._BARE_PROJECT)
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertEqual(record["automation"]["initiation"], "auto")
+
+    def test_project_overrides_global_initiation(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.home / ".cartopian" / "cartopian.toml",
+                '[automation]\ninitiation = "auto"\n',
+            )
+            _write(
+                sb.project / "cartopian.toml",
+                self._BARE_PROJECT + '\n[automation]\ninitiation = "operator"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertEqual(record["automation"]["initiation"], "operator")
+
+    def test_project_opts_into_auto_over_global_silence(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                self._BARE_PROJECT + '\n[automation]\ninitiation = "auto"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertEqual(record["automation"]["initiation"], "auto")
+
+    def test_initiation_merges_independently_of_other_automation_keys(self):
+        # Global sets pace; project sets initiation — both must survive.
+        with _Sandbox() as sb:
+            _write(
+                sb.home / ".cartopian" / "cartopian.toml",
+                '[automation]\nconfirmation = "until-blocked"\nmax_handoffs_per_run = 4\n',
+            )
+            _write(
+                sb.project / "cartopian.toml",
+                self._BARE_PROJECT + '\n[automation]\ninitiation = "auto"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertEqual(
+            record["automation"],
+            {
+                "initiation": "auto",
+                "confirmation": "until-blocked",
+                "max_handoffs_per_run": 4,
+            },
+        )
+
+    def test_unknown_initiation_value_fails_safe_to_operator(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                self._BARE_PROJECT + '\n[automation]\ninitiation = "always"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("[validation]", result.stderr)
+        self.assertIn("initiation", result.stderr)
+        record = json.loads(result.stdout.splitlines()[0])
+        self.assertEqual(record["automation"]["initiation"], "operator")
 
 
 class TestRelativeProjectPathRejected(unittest.TestCase):

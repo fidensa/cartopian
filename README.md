@@ -37,10 +37,11 @@ Cartopian's core rhythm is a pair of review loops, and both can run themselves.
 
 **Code → review.** During `run task`, the assignee implements against the spec and writes a completion report. The PM parses that report with the CLI, moves the task to `in-review`, and hands off to the reviewer. The reviewer's verdict drives the next move deterministically: `approve` → `done`, `request-changes` → back to `in-progress` with the findings in the coder's next prompt, `reject` → back to `open`. Each move is verified by the CLI against the evidence on disk (the report and review files must exist and say what the move claims) before it executes.
 
-Wire both roles up and set the pace, and the loop runs end to end:
+Wire both roles up and opt in to each automation layer, and the loop runs end to end — this is the full unattended recipe:
 
 ```toml
 [automation]
+initiation = "auto"              # runs may begin without you saying "continue"
 confirmation = "until-blocked"   # chain through tasks until something needs a human
 max_handoffs_per_run = 5         # bounded unattended runs
 
@@ -54,7 +55,7 @@ auto_start = true
 planning_reviews = true
 ```
 
-With that config, running a task means: assign → implement → report → review → verdict applied → next task, stopping only for blockers, failures, phase boundaries, decisions reserved to you, or the run budget. The `confirmation` policy gates **pace**, never **selection** - task order is deterministic (first open task in plan order, dependencies satisfied), so "which task next" is a computation, not a conversation. The default is `each-handoff`: one handoff at a time, you say when to continue.
+With that config, running a task means: assign → implement → report → review → verdict applied → next task, stopping only for blockers, failures, phase boundaries, decisions reserved to you, or the run budget. The three automation authorities are separate: `initiation` gates **whether a run begins**, `confirmation` gates **pace** within a run, and **selection** is never gated — task order is deterministic (first open task in plan order, dependencies satisfied), so "which task next" is a computation, not a conversation, but a ready queue is never itself permission to run. The defaults are the attended ones: `initiation = "operator"` (the PM names the next task and waits for your "continue"; asking "what's next?" is always read-only, and "stop" always wins over config) and `confirmation = "each-handoff"` (one handoff at a time, you say when to continue).
 
 ## Built for small context windows
 
@@ -171,7 +172,7 @@ The optional `model` key pins the assigned agent to a specific model. Dispatch e
 
 `planning_reviews` opts the role into planning-checkpoint review dispatch (see [The loops](#the-loops-plan--review-and-code--review)); it defaults to `false` and is enforced fail-closed by `cartopian dispatch` itself, not just by skill procedure.
 
-Confirmation is per-handoff by default. Bounded unattended runs are available when you want them (`[automation]`, above). Manual handoff is always supported; automation is opt-in.
+The defaults are attended: execution starts on your directive and confirmation is per-handoff. Bounded unattended runs are available when you want them — each layer (`initiation`, `confirmation`, `auto_start`) is a separate opt-in (`[automation]`, above). Manual handoff is always supported; automation is opt-in.
 
 See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full contract.
 

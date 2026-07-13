@@ -67,7 +67,7 @@ class TestScanPmIdentifiers(unittest.TestCase):
                         "result = total - 1",
                         "name = 'REPORT'  # a bare word, not an id",
                         "path = 'a-1/b-2'",
-                        "version = 'v0.3.0'",
+                        "version = 'v0.4.0'",
                     ]
                 ),
             )

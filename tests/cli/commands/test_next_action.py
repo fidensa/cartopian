@@ -14,7 +14,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.3.0"\n'
+    'protocol_version = "v0.4.0"\n'
 )
 
 
@@ -74,10 +74,46 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "plan_complete",
                 "pm_role",
                 "pm_role_declared",
+                "automation",
                 "blockers",
                 "state_filesystem_disagreement",
             ):
                 self.assertIn(field, rec, msg=f"missing field: {field}")
+
+
+class TestNextActionAutomation(unittest.TestCase):
+    """The record carries the resolved [automation] policy so the startup
+    skill can gate initiation without a separate resolve-config call."""
+
+    def test_automation_defaults_emitted(self) -> None:
+        with _isolated_home():
+            with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+                records, rc = _invoke(str(scaffold.project_root))
+                self.assertEqual(rc, 0)
+                self.assertEqual(
+                    records[0]["automation"],
+                    {
+                        "initiation": "operator",
+                        "confirmation": "each-handoff",
+                        "max_handoffs_per_run": 1,
+                    },
+                )
+
+    def test_automation_reflects_merged_config(self) -> None:
+        global_toml = '[automation]\nconfirmation = "until-blocked"\n'
+        project_toml = _TOML_BASE + '\n[automation]\ninitiation = "auto"\nmax_handoffs_per_run = 3\n'
+        with _isolated_home(global_toml=global_toml):
+            with project_scaffold(cartopian_toml=project_toml) as scaffold:
+                records, rc = _invoke(str(scaffold.project_root))
+                self.assertEqual(rc, 0)
+                self.assertEqual(
+                    records[0]["automation"],
+                    {
+                        "initiation": "auto",
+                        "confirmation": "until-blocked",
+                        "max_handoffs_per_run": 3,
+                    },
+                )
 
 
 class TestNextActionHappyPath(unittest.TestCase):
