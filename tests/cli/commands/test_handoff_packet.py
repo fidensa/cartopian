@@ -21,7 +21,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles]\n"
@@ -30,7 +30,7 @@ _TOML = (
     "[handoffs.coder]\n"
     'agent = "cartopian-claude"\n'
     'model = "claude-opus-4-8"\n'
-    "auto_start = true\n"
+    "auto_start_tasks = true\n"
     'timeout = "30m"\n'
 )
 
@@ -124,7 +124,8 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 "role_description",
                 "handoff_target",
                 "model",
-                "auto_start",
+                "auto_start_tasks",
+                "auto_start_reviews",
                 "timeout",
                 "work_roots",
                 "expected_report_path",
@@ -140,7 +141,8 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["role_description"], "Implements tasks per spec.")
             self.assertEqual(rec["handoff_target"], "cartopian-claude")
             self.assertEqual(rec["model"], "claude-opus-4-8")
-            self.assertTrue(rec["auto_start"])
+            self.assertTrue(rec["auto_start_tasks"])
+            self.assertFalse(rec["auto_start_reviews"])
             self.assertEqual(rec["timeout"], "30m")
             self.assertEqual(
                 rec["work_roots"],
@@ -169,7 +171,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'protocol_version = "v0.4.0"\n'
+        'protocol_version = "v0.5.0"\n'
         "\n"
         "[handoffs.coder]\n"
         'agent = "cartopian-claude"\n'
@@ -196,14 +198,16 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             raw = stdout.strip()
             self.assertIn('"role_description":null', raw)
             self.assertIn('"model":null', raw)
-            self.assertIn('"auto_start":null', raw)
+            self.assertIn('"auto_start_tasks":null', raw)
+            self.assertIn('"auto_start_reviews":null', raw)
             self.assertIn('"timeout":null', raw)
             self.assertIn('"git_policy":null', raw)
 
             self.assertIsNone(rec["role_description"])
             self.assertEqual(rec["handoff_target"], "cartopian-claude")
             self.assertIsNone(rec["model"])
-            self.assertIsNone(rec["auto_start"])
+            self.assertIsNone(rec["auto_start_tasks"])
+            self.assertIsNone(rec["auto_start_reviews"])
             self.assertIsNone(rec["timeout"])
             self.assertEqual(rec["work_roots"], [])
             self.assertFalse(rec["git_versioning"])
@@ -251,7 +255,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'protocol_version = "v0.4.0"\n'
+        'protocol_version = "v0.5.0"\n'
         "\n"
         "[roles]\n"
         'coder = "Implements tasks per spec."\n'

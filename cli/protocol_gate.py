@@ -80,12 +80,14 @@ def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
             "detected_version": detected_label,
             "shipped_version": shipped,
             "detail": (
-                f"config-schema migration required: [project].protocol_version "
-                f"is {detected_label} but the shipped protocol is {shipped} — "
+                f"project protocol schema migration required (this is separate "
+                f"from the Cartopian application version): the project's internal "
+                f"schema marker is {detected_label}, while this Cartopian install "
+                f"uses schema {shipped} — "
                 f"apply the protocol/CHANGELOG.md migration entries whose "
                 f"applies-when precondition matches {detected_label} (they end "
-                f"by setting the marker to {shipped}); the gate does not edit "
-                f"cartopian.toml — the PM applies it via `cartopian update-config`"
+                f"by setting the internal marker to {shipped}); the PM applies "
+                f"the migration after operator approval"
             ),
         }
 
@@ -95,10 +97,11 @@ def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
         "shipped_version": shipped,
         "detail": (
             f"config-schema gate failed closed (residual: {RESIDUAL_NAME}): "
-            f"[project].protocol_version is {detected!r}, which is unknown to "
-            f"or newer than the shipped protocol {shipped}; no CHANGELOG "
+            f"the project's internal protocol-schema marker is {detected!r}, "
+            f"which is unknown to or newer than schema {shipped} shipped by "
+            f"this Cartopian install (not the application release version); no CHANGELOG "
             f"migration path exists, so this config cannot be validated "
-            f"against the shipped schema. cartopian.toml is left unmodified — "
-            f"upgrade Cartopian or correct the marker"
+            f"against the shipped schema. Project config is left unmodified — "
+            f"upgrade Cartopian or let the PM repair the internal marker"
         ),
     }

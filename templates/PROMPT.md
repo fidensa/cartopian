@@ -1,7 +1,7 @@
 # <title>
 
 Work root: <name | name, name | n/a>
-Branch: <branch or n/a>
+Branch: <branch or n/a; include only for a git workflow>
 
 ## Paths
 
@@ -17,6 +17,8 @@ The assignee CLI is launched with cwd set to the **primary work root** (the firs
 
 - **PR URL**: <URL or n/a>
 - **Preview URL**: <URL or n/a>
+
+Omit this section when the work has no pull-request workflow.
 
 For review prompts in projects using PM-owned product-repo git, the PM populates `Branch`, `PR URL`, and `Preview URL` when available. If no preview URL exists, write `n/a`. Coder prompts may leave `PR URL` and `Preview URL` as `n/a` or omit them entirely.
 
@@ -43,11 +45,11 @@ Omit this section for code-only tasks.>
 
 ## What to produce
 
-<File paths, interfaces, test targets.>
+<File paths, interfaces, confirmation sources, checklists, validation targets, or other concrete evidence locations.>
 
 ## Evidence gate
 
-<Red before code, or n/a with reason.>
+<The before-and-after evidence required: test target, fixture run, validation script, fact-check pass, approval checklist, inspection, rehearsal, or n/a with reason.>
 
 ## What not to do
 

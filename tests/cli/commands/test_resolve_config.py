@@ -70,7 +70,7 @@ class TestHappyPath(unittest.TestCase):
                 '\n'
                 '[handoffs.coder]\n'
                 'agent = "claude"\n'
-                'auto_start = true\n'
+                'auto_start_tasks = true\n'
                 'timeout = "60m"\n',
             )
             result = _run(sb.project, home=sb.home)
@@ -88,6 +88,7 @@ class TestHappyPath(unittest.TestCase):
             "roles",
             "capabilities",
             "handoffs",
+            "reviews",
             "automation",
             "work_roots",
             "git_versioning",
@@ -106,9 +107,9 @@ class TestHappyPath(unittest.TestCase):
             {
                 "agent": "claude",
                 "model": None,
-                "auto_start": True,
+                "auto_start_tasks": True,
+                "auto_start_reviews": None,
                 "timeout": "60m",
-                "planning_reviews": None,
             },
         )
         self.assertEqual(
@@ -119,6 +120,8 @@ class TestHappyPath(unittest.TestCase):
                 "max_handoffs_per_run": 3,
             },
         )
+        self.assertEqual(record["reviews"]["planning"]["mode"], "off")
+        self.assertEqual(record["reviews"]["task_closure"]["mode"], "off")
         self.assertEqual(record["work_roots"], {})
         self.assertFalse(record["git_versioning"])
         self.assertIsNone(record["git"])
@@ -148,6 +151,126 @@ class TestOrphanHandoffGuard(unittest.TestCase):
             "[config] orphan-handoff: coder — declare in [roles] or remove the [handoffs.coder] block",
             result.stderr,
         )
+
+
+class TestReviewPolicyResolution(unittest.TestCase):
+    _PROJECT = (
+        '[project]\n'
+        'id = "demo"\n'
+        'name = "Demo"\n'
+        'protocol_version = "v0.5.0"\n'
+    )
+
+    def _record(self, result):
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return json.loads(result.stdout.splitlines()[0])
+
+    def test_arbitrary_role_name_can_own_both_review_loops(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                self._PROJECT
+                + '\n[roles]\nquality-checker = "Checks work independently."\n'
+                + '\n[reviews]\n'
+                + 'planning = "required"\nplanning_role = "quality-checker"\n'
+                + 'task_closure = "required"\ntask_role = "quality-checker"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        reviews = self._record(result)["reviews"]
+        self.assertEqual(reviews["planning"]["role"], "quality-checker")
+        self.assertEqual(reviews["task_closure"]["role"], "quality-checker")
+
+    def test_legacy_project_with_reviewer_preserves_both_review_loops(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                '[project]\nid = "demo"\nname = "Demo"\n'
+                'protocol_version = "v0.4.0"\n'
+                '\n[roles]\nreviewer = "Checks work."\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        reviews = self._record(result)["reviews"]
+        self.assertEqual(reviews["planning"]["mode"], "required")
+        self.assertEqual(reviews["planning"]["role"], "reviewer")
+        self.assertEqual(
+            reviews["task_closure"]["attribution"]["mode"],
+            "legacy-pre-v0.5",
+        )
+
+    def test_current_project_never_infers_review_from_reviewer_role(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                self._PROJECT + '\n[roles]\nreviewer = "Checks work."\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        reviews = self._record(result)["reviews"]
+        self.assertEqual(reviews["planning"]["mode"], "off")
+        self.assertEqual(reviews["task_closure"]["mode"], "off")
+
+    def test_project_can_disable_globally_required_reviews(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.home / ".cartopian" / "cartopian.toml",
+                '[roles]\nreviewer = "Checks work."\n'
+                '\n[reviews]\n'
+                'planning = "required"\nplanning_role = "reviewer"\n'
+                'task_closure = "required"\ntask_role = "reviewer"\n',
+            )
+            _write(
+                sb.project / "cartopian.toml",
+                self._PROJECT
+                + '\n[reviews]\nplanning = "off"\ntask_closure = "off"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        record = self._record(result)
+        self.assertIn("reviewer", record["roles"])
+        self.assertEqual(record["reviews"]["planning"]["mode"], "off")
+        self.assertIsNone(record["reviews"]["planning"]["role"])
+        self.assertEqual(record["reviews"]["task_closure"]["mode"], "off")
+
+    def test_required_review_needs_declared_assigned_role(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                self._PROJECT
+                + '\n[reviews]\n'
+                + 'planning = "off"\n'
+                + 'task_closure = "required"\ntask_role = "reviewer"\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("names undeclared role 'reviewer'", result.stderr)
+
+    def test_malformed_reviews_shape_fails_closed(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                'reviews = "off"\n\n' + self._PROJECT,
+            )
+            result = _run(sb.project, home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("[reviews] must be a table", result.stderr)
+
+
+class TestHandoffLaunchResolution(unittest.TestCase):
+    def test_legacy_launch_keys_map_to_explicit_fields(self):
+        with _Sandbox() as sb:
+            _write(
+                sb.project / "cartopian.toml",
+                '[project]\nid = "demo"\nname = "Demo"\n'
+                'protocol_version = "v0.4.0"\n'
+                '\n[roles]\nreviewer = "Checks work."\n'
+                '\n[handoffs.reviewer]\nagent = "claude"\n'
+                'auto_start = true\nplanning_reviews = true\n',
+            )
+            result = _run(sb.project, home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        handoff = json.loads(result.stdout)["handoffs"]["reviewer"]
+        self.assertTrue(handoff["auto_start_tasks"])
+        self.assertTrue(handoff["auto_start_reviews"])
+        self.assertNotIn("auto_start", handoff)
+        self.assertNotIn("planning_reviews", handoff)
 
 
 class TestUnmappedWorkRootGuard(unittest.TestCase):

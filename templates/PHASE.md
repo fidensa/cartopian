@@ -19,14 +19,14 @@ Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit ph
 
 ## Build items
 
-Tasks that produce code or artifacts. List by plan ref; the corresponding `TASK-NN-NNN-slug.md` files are generated when this phase becomes active.
+Delivery/execution tasks that produce an outcome or artifact. `BUILD` is a compatibility identifier, not a claim that the project is software. List by plan ref; the corresponding `TASK-NN-NNN-slug.md` files are generated when this phase becomes active.
 
 - `PNN-BUILD-001` — …
 - `PNN-BUILD-002` — …
 
 ## Research items
 
-Tasks that produce knowledge, decisions, or designs. List by plan ref.
+Tasks that produce knowledge, decisions, investigations, or designs. List by plan ref.
 
 - `PNN-RESEARCH-001` — …
 

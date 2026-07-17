@@ -134,7 +134,7 @@ def test_launcher_resolves_configured_timeout(tmp_path):
     """handoff-packet resolves [handoffs.<role>].timeout to the one canonical value."""
     _root, task = _handoff_packet_project(
         tmp_path,
-        '[handoffs.coder]\nagent = "cartopian-claude"\nauto_start = true\ntimeout = "17m"\n',
+        '[handoffs.coder]\nagent = "cartopian-claude"\nauto_start_tasks = true\ntimeout = "17m"\n',
         "01-001",
     )
     res = _run_packet(task, "coder")

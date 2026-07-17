@@ -15,7 +15,25 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
+)
+
+_REVIEW_TOML = (
+    '\n'
+    '[roles]\n'
+    'reviewer = "Reviews completed work."\n'
+    '\n'
+    '[reviews]\n'
+    'planning = "required"\n'
+    'planning_role = "reviewer"\n'
+    'task_closure = "required"\n'
+    'task_role = "reviewer"\n'
+)
+
+_REVIEW_OFF_TOML = (
+    '\n[reviews]\n'
+    'planning = "off"\n'
+    'task_closure = "off"\n'
 )
 
 
@@ -36,7 +54,9 @@ def _run(*cli_args, home, cwd=None):
 def _make_project(tmp: Path) -> Path:
     project = tmp / "project"
     project.mkdir(parents=True, exist_ok=True)
-    (project / "cartopian.toml").write_text(_MINIMAL_TOML, encoding="utf-8")
+    (project / "cartopian.toml").write_text(
+        _MINIMAL_TOML + _REVIEW_TOML, encoding="utf-8"
+    )
     for sub in ("tasks/open", "tasks/in-progress", "tasks/in-review", "tasks/done",
                 "phases", "prompts", "reports", "reviews"):
         (project / sub).mkdir(parents=True, exist_ok=True)
@@ -224,6 +244,40 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
             record = json.loads(proc.stdout.strip())
             self.assertTrue(record["clean"])
 
+
+class TestPlanAuditReviewOff(unittest.TestCase):
+    def _make_review_off_project(self, root: Path) -> Path:
+        project = _make_project(root)
+        (project / "cartopian.toml").write_text(
+            _MINIMAL_TOML + _REVIEW_OFF_TOML, encoding="utf-8"
+        )
+        return project
+
+    def test_in_review_missing_artifact_is_advisory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self._make_review_off_project(root)
+            _write(project / "tasks/in-review/TASK-02-005-thing.md", "# task\n")
+            result = _run(str(project), home=root)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = json.loads(result.stdout)
+        self.assertEqual(record["blockers"], [])
+        self.assertEqual(record["warnings"][0]["kind"], "missing-review-artifact")
+        self.assertFalse(record["clean"])
+
+    def test_done_missing_deliverable_still_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self._make_review_off_project(root)
+            _write(
+                project / "tasks/done/TASK-02-006-output.md",
+                "# task\n\nDeliverable: project:outputs/result.md\n",
+            )
+            result = _run(str(project), home=root)
+        self.assertEqual(result.returncode, 1)
+        record = json.loads(result.stdout)
+        self.assertEqual(record["blockers"][0]["kind"], "missing-deliverable")
+
     def test_open_tasks_not_audited(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -244,7 +298,8 @@ class TestPlanAuditOutput(unittest.TestCase):
             (project / "cartopian.toml").write_text(
                 _MINIMAL_TOML
                 + 'work_roots = ["tool-repo"]\n'
-                + '\n[git]\npm_owns_product_branches = true\n',
+                + '\n[git]\npm_owns_product_branches = true\n'
+                + _REVIEW_TOML,
                 encoding="utf-8",
             )
             work_root = tmp_path / "tool-repo"
@@ -279,7 +334,7 @@ class TestPlanAuditOutput(unittest.TestCase):
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
             (project / "cartopian.toml").write_text(
-                _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+                _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n' + _REVIEW_TOML,
                 encoding="utf-8",
             )
             work_root = tmp_path / "tool-repo"
@@ -323,7 +378,7 @@ class TestPlanAuditOutput(unittest.TestCase):
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
             (project / "cartopian.toml").write_text(
-                _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+                _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n' + _REVIEW_TOML,
                 encoding="utf-8",
             )
             work_root = tmp_path / "tool-repo"
@@ -386,7 +441,7 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
     def _project_with_work_root(self, tmp_path: Path):
         project = _make_project(tmp_path)
         (project / "cartopian.toml").write_text(
-            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n' + _REVIEW_TOML,
             encoding="utf-8",
         )
         work_root = tmp_path / "tool-repo"
@@ -537,7 +592,7 @@ class TestPlanAuditPmIdentifierLeaks(unittest.TestCase):
     def _project_with_work_root(self, tmp_path: Path):
         project = _make_project(tmp_path)
         (project / "cartopian.toml").write_text(
-            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n',
+            _MINIMAL_TOML + 'work_roots = ["tool-repo"]\n' + _REVIEW_TOML,
             encoding="utf-8",
         )
         work_root = tmp_path / "tool-repo"

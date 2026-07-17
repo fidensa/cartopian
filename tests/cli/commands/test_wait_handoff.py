@@ -42,7 +42,7 @@ coder = "Implements tasks per spec."
 
 [handoffs.coder]
 agent = "codex"
-auto_start = true
+auto_start_tasks = true
 timeout = "{timeout}"
 """
 
@@ -54,7 +54,7 @@ coder = "Implements tasks per spec."
 
 [handoffs.coder]
 agent = "codex"
-auto_start = true
+auto_start_tasks = true
 """
 
 TASK_BODY = """# TASK-01-003: Implement wait-handoff CLI command

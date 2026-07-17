@@ -16,6 +16,12 @@ from typing import Any, Dict, List, Tuple
 from cli._vendor import tomli_w
 from cli.capabilities import PRESETS, is_known_grant_name
 from cli.commands._registry import is_kebab_case
+from cli.commands.resolve_config import (
+    _CliError,
+    _load_toml,
+    _resolve_reviews,
+    _resolve_roles,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.protocol_gate import read_shipped_protocol_version
@@ -68,8 +74,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable handoff agent assignment")
     subparser.add_argument("--handoff-model", action="append", default=[],
                            metavar="ROLE=MODEL", help="Repeatable handoff model")
+    subparser.add_argument("--handoff-auto-start-tasks", action="append", default=[],
+                           metavar="ROLE=BOOL",
+                           help="Repeatable task-handoff automatic launch setting")
+    subparser.add_argument("--handoff-auto-start-reviews", action="append", default=[],
+                           metavar="ROLE=BOOL",
+                           help="Repeatable planning-review automatic launch setting")
     subparser.add_argument("--handoff-auto-start", action="append", default=[],
-                           metavar="ROLE=BOOL", help="Repeatable handoff auto_start")
+                           metavar="ROLE=BOOL", help=argparse.SUPPRESS)
     subparser.add_argument("--handoff-timeout", action="append", default=[],
                            metavar="ROLE=DURATION", help="Repeatable handoff timeout")
     subparser.add_argument("--automation-initiation", default=None,
@@ -85,6 +97,20 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            metavar="N", help="[automation] max_handoffs_per_run (positive int)")
     subparser.add_argument("--work-root", action="append", default=[], metavar="NAME",
                            help="Repeatable work-root name")
+    subparser.add_argument("--review-planning", default=None,
+                           action=_SingleValuedAction,
+                           choices=["required", "off"],
+                           help="[reviews] planning policy")
+    subparser.add_argument("--review-planning-role", default=None,
+                           action=_SingleValuedAction, metavar="ROLE",
+                           help="Role assigned to required planning reviews")
+    subparser.add_argument("--review-task-closure", default=None,
+                           action=_SingleValuedAction,
+                           choices=["required", "off"],
+                           help="[reviews] task_closure policy")
+    subparser.add_argument("--review-task-role", default=None,
+                           action=_SingleValuedAction, metavar="ROLE",
+                           help="Role assigned to required task-closure reviews")
     subparser.add_argument("--git-versioning", default=None,
                            action=_SingleValuedAction,
                            choices=["true", "false"], help="[defaults] git_versioning")
@@ -209,10 +235,17 @@ def _collect_handoff_field(
 
 
 def _build_handoffs(
-    handoff_args: List[str], model_args: List[str], auto_args: List[str],
-    timeout_args: List[str], declared_roles: Dict[str, str],
+    handoff_args: List[str], model_args: List[str], auto_task_args: List[str],
+    auto_review_args: List[str], timeout_args: List[str],
+    declared_roles: Dict[str, str],
 ) -> Dict[str, Dict[str, Any]]:
-    seen = {"agent": set(), "model": set(), "auto_start": set(), "timeout": set()}
+    seen = {
+        "agent": set(),
+        "model": set(),
+        "auto_start_tasks": set(),
+        "auto_start_reviews": set(),
+        "timeout": set(),
+    }
     agents = _collect_handoff_field(
         handoff_args, "--handoff", declared_roles, seen, "agent",
         lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: wrapper must be non-empty")),
@@ -221,9 +254,14 @@ def _build_handoffs(
         model_args, "--handoff-model", declared_roles, seen, "model",
         lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: model must be non-empty")),
     )
-    auto_starts = _collect_handoff_field(
-        auto_args, "--handoff-auto-start", declared_roles, seen, "auto_start",
+    auto_start_tasks = _collect_handoff_field(
+        auto_task_args, "--handoff-auto-start-tasks", declared_roles,
+        seen, "auto_start_tasks",
         _parse_bool,
+    )
+    auto_start_reviews = _collect_handoff_field(
+        auto_review_args, "--handoff-auto-start-reviews", declared_roles,
+        seen, "auto_start_reviews", _parse_bool,
     )
     timeouts = _collect_handoff_field(
         timeout_args, "--handoff-timeout", declared_roles, seen, "timeout",
@@ -236,8 +274,10 @@ def _build_handoffs(
             block["agent"] = agents[role]
         if role in models:
             block["model"] = models[role]
-        if role in auto_starts:
-            block["auto_start"] = auto_starts[role]
+        if role in auto_start_tasks:
+            block["auto_start_tasks"] = auto_start_tasks[role]
+        if role in auto_start_reviews:
+            block["auto_start_reviews"] = auto_start_reviews[role]
         if role in timeouts:
             block["timeout"] = timeouts[role]
         if block:
@@ -256,8 +296,14 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
     role_grants = _collect_role_grants(args.role_grants, roles)
 
     handoffs = _build_handoffs(
-        args.handoff, args.handoff_model, args.handoff_auto_start,
-        args.handoff_timeout, roles
+        args.handoff, args.handoff_model,
+        (
+            getattr(args, "handoff_auto_start_tasks", [])
+            + getattr(args, "handoff_auto_start", [])
+        ),
+        getattr(args, "handoff_auto_start_reviews", []),
+        args.handoff_timeout,
+        roles,
     )
 
     project_block: Dict[str, Any] = {
@@ -330,11 +376,29 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
         else:
             roles_block[role_name] = description
 
+    reviews_block: Dict[str, Any] = {}
+    review_values = (
+        ("planning", getattr(args, "review_planning", None)),
+        ("planning_role", getattr(args, "review_planning_role", None)),
+        ("task_closure", getattr(args, "review_task_closure", None)),
+        ("task_role", getattr(args, "review_task_role", None)),
+    )
+    for key, value in review_values:
+        if value is not None:
+            if key.endswith("_role") and not _ROLE_NAME_RE.match(value):
+                raise _Usage(
+                    f"--review-{key.replace('_', '-')} must match "
+                    f"[A-Za-z0-9_-]+; got: {value!r}"
+                )
+            reviews_block[key] = value
+
     cfg: Dict[str, Any] = {"project": project_block}
     if roles_block:
         cfg["roles"] = roles_block
     if handoffs:
         cfg["handoffs"] = handoffs
+    if reviews_block:
+        cfg["reviews"] = reviews_block
     if automation:
         cfg["automation"] = automation
     if defaults:
@@ -364,6 +428,16 @@ def handler(args: argparse.Namespace) -> int:
     except _Usage as exc:
         _stderr("usage", str(exc))
         return EXIT_USAGE
+
+    try:
+        global_cfg = _load_toml(
+            Path.home() / ".cartopian" / "cartopian.toml", "global config"
+        ) or {}
+        roles = _resolve_roles(global_cfg, cfg)
+        _resolve_reviews(global_cfg, cfg, roles)
+    except _CliError as exc:
+        _stderr(exc.prefix, exc.message)
+        return exc.exit_code
 
     if config_path.exists():
         _stderr(

@@ -57,14 +57,10 @@ If a previous closeout carried forward `STANDARDS.md` or `CONVENTIONS.md`, treat
 
 2. Resolve the effective configuration via the Core CLI.
 
-   - Run `cartopian resolve-config <project-path>` to obtain the canonical `project_path` and merged `roles`, `handoffs`, `automation`, `work_roots`, and `git_versioning`.
+   - Run `cartopian resolve-config <project-path>` to obtain the canonical `project_path` and merged `roles`, `reviews`, `handoffs`, `automation`, `work_roots`, and `git_versioning`.
    - Use this emitted record instead of reading and merging TOML by hand.
-5. Determine whether a **reviewer** is configured. A reviewer is considered configured when `reviewer` appears as a key in the resolved `[roles]` table. How review checkpoints dispatch is governed by the resolved `[handoffs.reviewer]` block: with `planning_reviews = true` and `auto_start = true`, checkpoints launch PM-performed through the prompt-keyed mediated dispatch (`skills/run-handoff.md` Stage 2); with `planning_reviews = true` and `auto_start = false`, the PM prepares the handoff and presents the exact launch command to the operator; when `planning_reviews` is unset or `false`, or no `[handoffs.reviewer]` block exists, checkpoints dispatch manually (the PM surfaces the prompt; the operator acts).
-6. If `reviewer` is not declared in `[roles]`, ask the operator:
-
-   > "No reviewer is configured. Do you want to designate a reviewer for this planning session? If not, we'll proceed without review checkpoints."
-
-7. If the operator provides a reviewer, note it for use at review checkpoints. If not, proceed without review checkpoints and note this in STATE.md.
+3. Read `reviews.planning.mode` and `reviews.planning.role` from that record. When the mode is `required`, use the emitted arbitrary role name for every planning checkpoint; never infer review responsibility from a role named `reviewer` or from description prose. When the mode is `off`, skip every planning checkpoint.
+4. Dispatch mechanics remain separate from policy: the assigned role's resolved `[handoffs.<role>].auto_start_reviews` controls automatic versus operator-performed planning-review launch. It does not enable review when policy is off.
 
 ---
 
@@ -112,14 +108,13 @@ cartopian write-standards <project-root> --content-file <body-path>
 
 ### 1.5 Review checkpoint
 
-If a reviewer is configured:
+If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `001 requirements-and-engineering` using the Review Flow Reference.
 2. Target artifacts: `REQUIREMENTS.md` and `STANDARDS.md`.
 3. If `approve`: proceed to Stage 2.
 4. If `request-changes`: revise the target artifacts in place and rerun the checkpoint.
 5. If `reject`, blocked, failed, or failed-to-parse: stop and return control to the operator.
-6. If the operator says "skip review": proceed without review and note this in STATE.md.
 
 ---
 
@@ -143,7 +138,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 
 - **Purpose**: what this plan accomplishes and which source documents it derives from.
 - **Architecture rules**: rules derived from requirements and engineering standards. These are consequences of locked inputs, not new decisions.
-- **Repo topology**: which repos are involved and what each owns. For single-repo projects, a brief note.
+- **Work topology**: which repos or other work locations are involved and what each owns. Include no-repo projects when applicable.
 - **Phase sequence**: each phase with:
   - Goal
   - Plan ref table (`PNN-KIND-NNN` format) listing build and research items
@@ -154,7 +149,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 
 ### 2.3 Review checkpoint
 
-If a reviewer is configured:
+If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `002 implementation-plan` using the Review Flow Reference.
 2. Target artifact: `IMPLEMENTATION_PLAN.md`.
@@ -182,7 +177,7 @@ Each phase body contains:
 
 - **Phase goal**: one or two sentences.
 - **Plan refs covered**: list from the plan's phase table.
-- **Build items**: tasks that produce code or artifacts.
+- **Build items**: delivery/execution tasks that produce outcomes or artifacts (`BUILD` is a compatibility identifier, not a software-only type).
 - **Research items**: tasks that produce knowledge or decisions.
 - **Exit criteria**: copied from the plan.
 - **Dependencies on prior phases**: what must be done before this phase can start.
@@ -191,7 +186,7 @@ Use the phase number and slug from the plan. The two-digit phase number (`NN`) m
 
 ### 3.3 Review checkpoint
 
-If a reviewer is configured:
+If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `003 phases` using the Review Flow Reference.
 2. Target artifacts: `phases/PHASE-*.md`.
@@ -229,7 +224,7 @@ Not every task needs a spec. Use judgment: configuration tasks, documentation ta
 
 ### 4.4 Review checkpoint
 
-If a reviewer is configured:
+If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `004 tasks-and-specs` using the Review Flow Reference.
 2. Target artifacts: generated files in `tasks/open/` and `specs/`.
@@ -258,7 +253,7 @@ Print a summary of everything that was produced:
 - Number of requirements captured
 - Number of phases generated
 - Number of tasks and specs generated
-- Review status (reviewed or skipped, with any noted findings)
+- Review status (required and completed, or policy off, with any findings)
 - Resolved handoff configuration (which roles have CLI targets)
 - Resolved automation policy
 - Suggested first action, including whether to create `prompts/PROMPT-NN-NNN.md` for the first assignment
@@ -269,7 +264,7 @@ Planning — including task generation — is a **scoped directive** (`cartopian
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the reviewer, who is not contained). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path>` — to hand off the review work; the contained PM has no raw `Write`. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path>` — to hand off the review work; the contained PM has no raw `Write`. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
@@ -284,7 +279,7 @@ At every review checkpoint:
 
 1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`.
 2. Call `skills/run-handoff.md` with:
-   - Role: `reviewer`
+   - Role: the exact resolved `reviews.planning.role` value
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`
    - Absolute report path: `<project>/reports/REPORT-PLAN-NNN-slug.md`
    - Expected report variant: planning-review completion
@@ -299,8 +294,6 @@ cartopian wait-report <project>/reports/REPORT-PLAN-NNN-slug.md --max-block <dur
 ```
 
 `cartopian wait-report` is a read-only observer: the report file is the authoritative completion signal. It emits `accepted` when the planning-review report is present and parses, a `[guard]` failure when a report is present but not acceptable, or `still_running` when the `--max-block` budget elapses before the report lands. On `still_running`, yield control back to the operator and re-call `wait-report` on resume; the filesystem observation survives the yield. When the checkpoint is dispatched through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
-
-If the operator says "skip review" at any checkpoint, do not call `skills/run-handoff.md`; proceed without review and note the skip in `STATE.md`.
 
 `skills/run-handoff.md` owns stale report deletion, manual versus CLI handoff behavior, timeout enforcement, completion waiting via `cartopian wait-handoff` / `cartopian wait-report`, report parsing, and sequential automation boundaries.
 

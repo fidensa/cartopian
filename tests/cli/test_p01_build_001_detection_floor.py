@@ -46,7 +46,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "floor-fixture"\n'
     'name = "Floor Fixture"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
     "\n[defaults]\ngit_versioning = false\n"
 )
 

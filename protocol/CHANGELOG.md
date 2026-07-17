@@ -2,6 +2,8 @@
 
 This file is the durable, agent-followable record of every protocol-breaking change to the Cartopian protocol. Each entry below the header documents one breaking change and the concrete migration steps required to bring an older project up to the new protocol version.
 
+Here, **protocol version** means the internal schema/lifecycle version recorded for each governed project. It is separate from the installed Cartopian application's release version. Operators normally approve a migration choice; the PM agent reads and updates this marker and should not ask the operator to edit version fields manually.
+
 The operator *approves* a project migration; the PM then *executes* its steps as PM-owned orchestration (`skills/migrate-project.md`) — doing config edits through `cartopian update-config` and dispatching or surfacing the steps it cannot mediate. Authoring of this file is owned by maintainers and ships with each release. The installed copy lives at `~/.cartopian/CHANGELOG.md` and is replaced on upgrade.
 
 ## Per-entry schema
@@ -29,6 +31,35 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 - Newly-scaffolded projects start at the current protocol version (the version of the topmost entry below).
 
 ## Entries
+
+### v0.5.0 — Explicit review policy and domain-neutral completion evidence
+
+- **Protocol version:** `v0.5.0`
+- **One-line summary:** Separates review policy from arbitrary role names, lets projects independently require or disable planning and task-closure reviews (including overriding global policy), and gives task reports a domain-neutral completion-evidence shape.
+
+#### Breakage description
+
+Review behavior no longer follows the presence of a role literally named `reviewer`. Projects declare the two review loops explicitly under `[reviews]`, and each required loop names the ordinary role assigned to it. Until migration writes that policy, a pre-v0.5.0 project with the conventional `reviewer` role retains both formerly mandatory loops as a version-scoped compatibility rule; this is not role-name inference for v0.5.0+ projects. New task reports prefer `## Completion evidence` and `## Ready to close`; existing `## Files changed` / `## Deliverable` evidence and `## Ready for review` remain accepted compatibility forms. Existing reports remain valid.
+
+#### Applies-when precondition
+
+Applies when the project's `cartopian.toml` `[project] protocol_version` is unset, missing, or lexically less than `v0.5.0`. Projects already at `v0.5.0` or later are skipped.
+
+#### Agent-followable migration steps
+
+1. Offer the operator one review-policy choice: no reviews, planning only, task closure only, or both planning and task closure. Do not infer the choice from role descriptions, capability presets, or review artifacts.
+2. If the operator chooses a required loop, ask which existing resolved role performs it. Any role name is valid. For the pre-v0.5.0 projects that use the conventional `reviewer` role, that role is the compatibility assignment.
+3. Write the selected policy with `cartopian update-config`, using `reviews.planning`, `reviews.planning_role`, `reviews.task_closure`, and `reviews.task_role`. An unattended migration preserves existing behavior by setting both loops to `required` and assigning the existing `reviewer` role; it never silently removes review. Before this step is completed, lifecycle commands apply the same preservation behavior to a pre-v0.5.0 project carrying that conventional role.
+4. Configure launch behavior independently: set `[handoffs.<role>].auto_start_tasks` for task-scoped handoffs and `[handoffs.<role>].auto_start_reviews` for planning-review handoffs. Neither key enables review policy. For an older handoff block, preserve its behavior by mapping legacy `auto_start` to `auto_start_tasks`; map legacy `auto_start = true` plus `planning_reviews = true` to `auto_start_reviews = true`. The resolver accepts the legacy inputs while migration is pending.
+5. Set `[project] protocol_version = "v0.5.0"` only after `cartopian resolve-config` validates the effective review policy and assignments.
+
+#### Idempotence guarantee
+
+Explicit `[reviews]` values are authoritative on re-application. A migration never replaces an existing valid choice, and setting the marker or a selected value to its current value is a no-op.
+
+#### Post-migration validation hint
+
+`cartopian resolve-config <project-path>` exits 0 and emits independent `reviews.planning` and `reviews.task_closure` objects. Every `required` object names a declared role; every `off` object emits a null effective role. A project may override globally required review by setting the corresponding project mode to `off`. `grep protocol_version <project-root>/cartopian.toml` shows `v0.5.0`.
 
 ### v0.4.0 — Execution initiation is operator-gated (`[automation] initiation`)
 

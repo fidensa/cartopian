@@ -8,9 +8,9 @@ What this plan exists to accomplish. Name the source documents or external refer
 
 Rules derived from requirements and engineering standards that constrain all phases. These are not new decisions — they are consequences of locked inputs.
 
-## Repo topology
+## Work topology
 
-Which repos are involved, what each one owns, and how they interact. For single-repo projects, a brief note is sufficient.
+Which repos or other work locations are involved, what each owns, and how they interact. Include single-repo, multi-repo, and no-repo projects as applicable.
 
 ## Phase sequence
 

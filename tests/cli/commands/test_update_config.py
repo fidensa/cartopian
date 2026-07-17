@@ -17,7 +17,7 @@ BASE_CONFIG = """\
 [project]
 name = "Demo"
 id = "demo"
-protocol_version = "v0.4.0"
+protocol_version = "v0.5.0"
 
 [roles.pm]
 description = "Plans phases."
@@ -219,12 +219,44 @@ class TestRoleAndHandoff(_Base):
         proc = self.run_uc(
             str(self.proj),
             "--set-handoff", "coder.agent=cartopian-claude",
-            "--set-handoff", "coder.auto_start=true",
+            "--set-handoff", "coder.auto_start_tasks=true",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
         self.assertEqual(cfg["handoffs"]["coder"]["agent"], "cartopian-claude")
-        self.assertIs(cfg["handoffs"]["coder"]["auto_start"], True)
+        self.assertIs(cfg["handoffs"]["coder"]["auto_start_tasks"], True)
+
+    def test_set_review_policy_and_arbitrary_assigned_role(self):
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-role", "reviewer=Checks work independently.",
+            "--set-role-grants", "reviewer=reviewer-like",
+            "--set", "reviews.planning=required",
+            "--set", "reviews.planning_role=reviewer",
+            "--set", "reviews.task_closure=off",
+            "--set-handoff", "reviewer.auto_start_reviews=true",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        cfg = tomllib.loads(self.cfg.read_text())
+        self.assertEqual(cfg["reviews"]["planning"], "required")
+        self.assertEqual(cfg["reviews"]["planning_role"], "reviewer")
+        self.assertEqual(cfg["reviews"]["task_closure"], "off")
+        self.assertTrue(cfg["handoffs"]["reviewer"]["auto_start_reviews"])
+
+    def test_cannot_remove_role_assigned_to_required_review(self):
+        first = self.run_uc(
+            str(self.proj),
+            "--set-role", "reviewer=Checks work.",
+            "--set-role-grants", "reviewer=reviewer-like",
+            "--set", "reviews.task_closure=required",
+            "--set", "reviews.task_role=reviewer",
+        )
+        self.assertEqual(first.returncode, 0, msg=first.stderr)
+        before = self.cfg.read_bytes()
+        result = self.run_uc(str(self.proj), "--remove-role", "reviewer")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("undeclared role", result.stderr)
+        self.assertEqual(self.cfg.read_bytes(), before)
 
     def test_orphan_handoff_rejected_effective_layer(self):
         before = self.cfg.read_bytes()

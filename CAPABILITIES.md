@@ -2,6 +2,8 @@
 
 Capability-based access grants for Cartopian-governed projects. Roles are user-named bundles of grants declared in `[roles.<name>]` tables in `cartopian.toml` (`grants = [...]`); enforcement keys on grants only — never on role names or prose role descriptions. **The vocabulary is closed and append-only**: names may be added in later protocol versions but are never renamed or removed, and unknown names are never silently accepted.
 
+Review assignment is a separate concern. `[reviews].planning_role` and `[reviews].task_role` may point to any defined role name. The conventional `reviewer` label, a review-oriented description, and the `reviewer-like` preset do not by themselves assign that role to a review checkpoint. Conversely, assigning a role in `[reviews]` does not grant access. When containment is active, the operator must grant that role the capabilities its handoff needs.
+
 ## Vocabulary
 
 Read grants (deliberately coarse; may be split finer later, append-only):
@@ -28,7 +30,7 @@ Write/act grants:
 
 ## Presets
 
-Preset names are valid anywhere a capability name is and expand to their grants at resolution time; the operator composes them per role (e.g. `grants = ["reviewer-like", "read:reports"]`).
+Preset names are valid anywhere a capability name is and expand to their grants at resolution time; the operator composes them per role (e.g. `grants = ["reviewer-like", "read:reports"]`). Preset names describe access shapes only; they do not select lifecycle policy or review assignment.
 
 | Preset | Grants |
 | --- | --- |

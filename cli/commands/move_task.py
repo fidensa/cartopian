@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
+from cli.commands.resolve_config import _CliError, resolve_review_policy
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.provenance import record_write as record_provenance
@@ -16,12 +17,20 @@ STATUSES = ("open", "in-progress", "in-review", "done")
 DISALLOWED: Dict[Tuple[str, str], str] = {
     ("open", "open"): "no-op (source=target)",
     ("in-progress", "in-progress"): "no-op",
-    ("in-progress", "open"): "use review verdict instead",
     ("in-review", "in-review"): "no-op",
     ("done", "open"): "terminal",
     ("done", "in-progress"): "terminal",
     ("done", "in-review"): "terminal",
     ("done", "done"): "no-op terminal",
+}
+
+_REVIEW_REQUIRED_DISALLOWED: Dict[Tuple[str, str], str] = {
+    ("in-progress", "open"): "use review verdict instead",
+    ("in-progress", "done"): "task-closure review is required",
+}
+
+_REVIEW_OFF_DISALLOWED: Dict[Tuple[str, str], str] = {
+    ("in-progress", "in-review"): "task-closure review is off",
 }
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
@@ -90,11 +99,18 @@ def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[
 # `open -> in-progress` is deliberately unguarded: the PM moves the task first,
 # then writes the prompt against the in-progress path; prompt existence is
 # enforced fail-closed at the handoff boundary (`cartopian dispatch`).
-_GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str]]] = {
+_COMMON_GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str]]] = {
     ("in-progress", "in-review"): _guard_coder_report,
+}
+
+_REVIEW_GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str]]] = {
     ("in-review", "done"): _guard_review_verdict("approve"),
     ("in-review", "in-progress"): _guard_review_verdict("request-changes"),
     ("in-review", "open"): _guard_review_verdict("reject"),
+}
+
+_NO_REVIEW_GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str]]] = {
+    ("in-progress", "done"): _guard_coder_report,
 }
 
 
@@ -102,6 +118,16 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "task_path",
         help="Absolute path to the task file under tasks/<status>/",
+    )
+    subparser.add_argument(
+        "--administrative",
+        action="store_true",
+        help="Allow the explicit administrative open -> done fast-forward",
+    )
+    subparser.add_argument(
+        "--reason",
+        default=None,
+        help="Required reason for --administrative",
     )
     subparser.add_argument(
         "to_status",
@@ -128,6 +154,31 @@ def handler(args: argparse.Namespace) -> int:
 
     to_status = args.to_status
 
+    administrative = bool(getattr(args, "administrative", False))
+    administrative_reason = getattr(args, "reason", None)
+    if administrative:
+        if (from_status, to_status) != ("open", "done"):
+            _stderr("usage", "--administrative is only valid for open -> done")
+            return EXIT_USAGE
+        if not isinstance(administrative_reason, str) or not administrative_reason.strip():
+            _stderr("usage", "--administrative requires a non-empty --reason")
+            return EXIT_USAGE
+    elif administrative_reason is not None:
+        _stderr("usage", "--reason requires --administrative")
+        return EXIT_USAGE
+
+    canonical_suffix = _extract_nn_nnn(task_path)
+    if (
+        canonical_suffix is not None
+        and (from_status, to_status) == ("open", "done")
+        and not administrative
+    ):
+        _stderr(
+            "guard",
+            "disallowed transition open -> done: use --administrative with --reason",
+        )
+        return EXIT_FAIL
+
     reason = DISALLOWED.get((from_status, to_status))
     if reason is not None:
         _stderr(
@@ -140,11 +191,48 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("error", f"task file not found: {raw_path}")
         return EXIT_FAIL
 
-    guard_fn = _GUARDS.get((from_status, to_status))
+    policy_pairs = (
+        set(_REVIEW_REQUIRED_DISALLOWED)
+        | set(_REVIEW_OFF_DISALLOWED)
+        | set(_REVIEW_GUARDS)
+        | set(_NO_REVIEW_GUARDS)
+    )
+    review_required: Optional[bool] = None
+    project_root: Optional[Path] = None
+    if canonical_suffix is not None and (from_status, to_status) in policy_pairs:
+        project_root = _find_project_root(task_path)
+        if project_root is None:
+            _stderr("guard", f"project root not found for task: {raw_path}")
+            return EXIT_FAIL
+        try:
+            review_required = (
+                resolve_review_policy(project_root)["task_closure"]["mode"]
+                == "required"
+            )
+        except _CliError as err:
+            _stderr(err.prefix, err.message)
+            return err.exit_code
+
+        regime_disallowed = (
+            _REVIEW_REQUIRED_DISALLOWED if review_required else _REVIEW_OFF_DISALLOWED
+        )
+        reason = regime_disallowed.get((from_status, to_status))
+        if reason is not None:
+            _stderr(
+                "guard",
+                f"disallowed transition {from_status} -> {to_status}: {reason}",
+            )
+            return EXIT_FAIL
+
+    guard_fn = _COMMON_GUARDS.get((from_status, to_status))
+    if guard_fn is None and review_required is True:
+        guard_fn = _REVIEW_GUARDS.get((from_status, to_status))
+    if guard_fn is None and review_required is False:
+        guard_fn = _NO_REVIEW_GUARDS.get((from_status, to_status))
     if guard_fn is not None:
-        nn_nnn = _extract_nn_nnn(task_path)
+        nn_nnn = canonical_suffix
         if nn_nnn is not None:
-            project_root = _find_project_root(task_path)
+            project_root = project_root or _find_project_root(task_path)
             if project_root is None:
                 _stderr("guard", f"project root not found for task: {raw_path}")
                 return EXIT_FAIL
@@ -192,5 +280,8 @@ def handler(args: argparse.Namespace) -> int:
             "to_status": to_status,
         },
     }
+    if administrative:
+        record["details"]["administrative"] = True
+        record["details"]["reason"] = administrative_reason.strip()
     emit_record(record)
     return EXIT_OK

@@ -1,6 +1,6 @@
 # Skill: Migrate Project
 
-Bring a Cartopian project up to the shipped protocol version by applying the applicable `protocol/CHANGELOG.md` migration entries. Migration is **PM-owned orchestration**: the PM drives it, performs the config and markdown edits it can mediate, and dispatches or surfaces the steps it cannot. It runs only on the operator's explicit request or approval — never proactively.
+Bring a Cartopian project's internal protocol-schema version up to the schema shipped by the installed Cartopian application by applying the applicable `protocol/CHANGELOG.md` migration entries. The project schema version is not the Cartopian application release version. Migration is **PM-owned orchestration**: the PM drives it, performs the config and markdown edits it can mediate, and dispatches or surfaces the steps it cannot. It runs only on the operator's explicit request or approval — never proactively, and never asks the operator to edit the version marker manually.
 
 **Output:** the project's `[project].protocol_version` marker advanced to the shipped version (or as far as every applicable entry could be fully applied and validated), with each entry's changes landed through mediated tooling.
 
@@ -58,7 +58,7 @@ Then move to the next entry and repeat Steps 2–3. Because each `update-config`
 
 Report:
 
-- The starting and ending `protocol_version`.
+- The starting and ending internal project protocol-schema versions, labeled explicitly as distinct from the Cartopian application version.
 - Each entry applied, and for each: the PM-mediated changes made and any steps that were delegated/surfaced (and their status).
 - Any entry left partially applied and why (which step is outstanding), if the run stopped short of the shipped version.
 - The validation checks that passed.

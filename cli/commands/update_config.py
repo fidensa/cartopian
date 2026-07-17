@@ -57,6 +57,7 @@ from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
     _resolve_handoffs,
+    _resolve_reviews,
     _resolve_roles,
     resolve_grants,
     role_description,
@@ -66,7 +67,17 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_HANDOFF_FIELDS = ("agent", "model", "auto_start", "timeout")
+_HANDOFF_FIELDS = (
+    "agent",
+    "model",
+    "auto_start_tasks",
+    "auto_start_reviews",
+    "timeout",
+    # Legacy fields remain editable so migration agents can remove or repair
+    # old settings; resolved output always uses the explicit names above.
+    "auto_start",
+    "planning_reviews",
+)
 
 
 class _Usage(Exception):
@@ -175,12 +186,20 @@ SCHEMA: Dict[str, Tuple[Tuple[str, ...], str, Callable[[str], str]]] = {
     "git.default_merge_strategy": (
         ("git",), "default_merge_strategy", _v_enum("merge", "squash", "rebase"),
     ),
+    "reviews.planning": (("reviews",), "planning", _v_enum("required", "off")),
+    "reviews.planning_role": (("reviews",), "planning_role", _v_nonempty),
+    "reviews.task_closure": (
+        ("reviews",), "task_closure", _v_enum("required", "off"),
+    ),
+    "reviews.task_role": (("reviews",), "task_role", _v_nonempty),
 }
 
 # The table heads the surgical editor manages; a dotted-key or inline-table form
 # for any of these (e.g. `automation.initiation = ...` at top level, or
 # `automation = { ... }`) is a construct we refuse to edit blindly.
-_MANAGED_HEADS = frozenset({"project", "automation", "defaults", "git", "roles", "handoffs"})
+_MANAGED_HEADS = frozenset(
+    {"project", "automation", "defaults", "git", "reviews", "roles", "handoffs"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -658,11 +677,16 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
         if (role, field) in handoff_fields:
             raise _Usage(f"--set-handoff {role}.{field} given more than once")
         handoff_fields.add((role, field))
-        if field == "auto_start":
+        if field in {
+            "auto_start_tasks",
+            "auto_start_reviews",
+            "auto_start",
+            "planning_reviews",
+        }:
             try:
                 token = _v_bool(value)
             except _Usage as exc:
-                raise _Usage(f"--set-handoff {role}.auto_start: {exc}")
+                raise _Usage(f"--set-handoff {role}.{field}: {exc}")
         else:
             try:
                 token = _toml_str(value)
@@ -812,6 +836,7 @@ def _validate_effective(project_root: Path, new_project_cfg: Dict[str, Any]) -> 
     global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml", "global config") or {}
     roles_raw = _resolve_roles(global_cfg, new_project_cfg)
     roles = {name: role_description(value) for name, value in roles_raw.items()}
+    _resolve_reviews(global_cfg, new_project_cfg, roles_raw)
     handoffs = _resolve_handoffs(global_cfg, new_project_cfg)
     capabilities = resolve_grants(roles_raw)
     # Raises on a blocking violation (e.g. orphan handoff); warnings are advisory.

@@ -16,10 +16,33 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
+    "\n"
+    "[roles]\n"
+    'reviewer = "Reviews completed work."\n'
+    "\n"
+    "[reviews]\n"
+    'planning = "required"\n'
+    'planning_role = "reviewer"\n'
+    'task_closure = "required"\n'
+    'task_role = "reviewer"\n'
+)
+
+_PROJECT_TOML_OFF = (
+    "[project]\n"
+    'id = "demo"\n'
+    'name = "Demo Project"\n'
+    'protocol_version = "v0.5.0"\n'
+    "\n"
+    "[git]\n"
+    "pm_owns_product_branches = true\n"
+    "\n"
+    "[reviews]\n"
+    'planning = "off"\n'
+    'task_closure = "off"\n'
 )
 
 
@@ -190,6 +213,63 @@ class TestReportActionHappyPath(unittest.TestCase):
         self.assertEqual(record["review_path"], str((scaffold.reviews / "REVIEW-01-006.md").resolve()))
         self.assertEqual(record["declared_report_task_path"], str(task_path.resolve()))
         self.assertFalse(record["path_mismatch"])
+
+
+class TestReportActionReviewOff(unittest.TestCase):
+    def test_accepted_task_routes_directly_to_done(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML_OFF) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-01-006-demo.md",
+                "# task\n\nWork root: tool-repo\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-01-006.md",
+                _task_report(
+                    task_id="TASK-01-006",
+                    prompt_path=scaffold.prompts / "PROMPT-01-006.md",
+                    task_path=task_path,
+                    work_root="tool-repo",
+                    status="complete",
+                    ready_for_review="yes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["target_task_status"], "done")
+        self.assertTrue(record["requires_pr_step"])
+        self.assertIsNone(record["prompt_to_overwrite"])
+        self.assertIsNone(record["review_path"])
+        self.assertEqual(record["recommended_action"], "prepare-pr-and-close-task")
+
+    def test_neutral_completion_report_is_accepted(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML_OFF) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            scaffold.write(
+                "tasks/in-progress/TASK-01-009-book-venue.md",
+                "# task\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-01-009.md",
+                "# REPORT-01-009\n\n"
+                "Status: complete\n\n"
+                "## Identity\n\n- Work root: n/a\n\n"
+                "## Completion evidence\n\n"
+                "- Venue confirmed; confirmation number ABC-123.\n\n"
+                "## Remaining risks\n\n- Cancellation window closes Friday.\n\n"
+                "## Ready to close\n\nyes\n",
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "accepted")
+        self.assertEqual(record["target_task_status"], "done")
+        self.assertEqual(record["recommended_action"], "close-task")
 
     def test_task_blocked_and_failed_route_back_to_in_progress(self) -> None:
         for status in ("blocked", "failed"):

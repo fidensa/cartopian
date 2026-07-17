@@ -1,6 +1,6 @@
 # Skill: Run Task
 
-Run one Cartopian task from assignment through completion report, review, verdict handling, and session state refresh.
+Run one Cartopian task from assignment through evidence-supported closure, any required review, verdict handling, and session state refresh.
 
 Use this skill when the operator wants to start, continue, review, or close a task in the current plan.
 
@@ -41,7 +41,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `pm_role`, `pm_role_declared`, `blockers`, and `state_filesystem_disagreement`. It internally resolves the project config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
+This emits the orientation record. Also run `cartopian resolve-config <project-path>` and retain its `reviews.task_closure.mode` and `reviews.task_closure.role` values: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
 
 Surface the disagreement and blocker fields to the operator before proposing any action:
 
@@ -70,7 +70,7 @@ Resolve blockers with the operator before proceeding to Stage 1.
 
    `task-bundle` assembles content; `validate-task-readiness` enforces readiness gating — the two are complementary. Treat a non-zero exit from `validate-task-readiness` as a blocker and stop.
 
-3. Confirm acceptance criteria are actionable for the assignee/reviewer per task context.
+3. Confirm acceptance criteria are actionable for the assignee and, when task-closure review is required, the assigned review role.
 
 ---
 
@@ -92,7 +92,7 @@ Then assemble the prompt-input bundle with a single Core CLI call against the mo
 cartopian handoff-packet <task-path> --role <role>
 ```
 
-`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `model`, `auto_start`, `timeout`), the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths or roles.
+`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `model`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths or roles.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
@@ -104,7 +104,7 @@ Then author the assignment prompt. This is a **PM-performed** write; the contain
 cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
 ```
 
-The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The coder handoff is **deidentified**: name the work by its title and address every resource by file path. Do **not** put project-management identifiers (the task id, plan ref, spec id, `FR-`/`NF-` requirement refs, decision refs) anywhere in the prompt body — they map to nothing once PM data is archived and are exactly what leaks into product code. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
+The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The assignee handoff is **deidentified**: name the work by its title and address every resource by file path. Do **not** put project-management identifiers (the task id, plan ref, spec id, `FR-`/`NF-` requirement refs, decision refs) anywhere in the prompt body — they map to nothing once PM data is archived and can leak into the delivered work. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
 
 - Absolute project root.
 - Declared `Work root:` names from the task header (comma-separated), or `n/a`.
@@ -134,7 +134,7 @@ Use `skills/run-handoff.md` for assignment mechanics.
 
 For manual assignment, present the prompt path and expected report path to the operator and wait for explicit assignment/start confirmation.
 
-For configured agent handoff, follow the resolved `auto_start` value and automation policy.
+For configured task-scoped agent handoff, follow the resolved `auto_start_tasks` value and automation policy. Planning-review handoffs use `auto_start_reviews` through `skills/run-handoff.md`.
 
 The task is already in `tasks/in-progress/` from Stage 2. Prompt existence is enforced fail-closed at the handoff boundary: `cartopian dispatch` refuses to launch when `prompts/PROMPT-NN-NNN.md` is missing. The prompt written in Stage 2 satisfies this check.
 
@@ -163,7 +163,7 @@ cartopian report-action <report-path>
 - `verdict` — `accepted | blocked | failed | failed-to-parse`.
 - `variant` — `task` for this stage.
 - `status` — the report's `Status:` header value.
-- `target_task_status` — the lifecycle directory the PM should move the task into next (typically `in-review` for accepted task reports).
+- `target_task_status` — `in-review` when task-closure review is required, `done` when it is off, or the evidence-supported nonterminal status.
 - `requires_pr_step` — true when the PM-owned product-repo git step is required before reviewer dispatch.
 - `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
 - `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
@@ -172,25 +172,17 @@ Evidence-supported lifecycle moves are applied without an operator confirmation 
 
 If the verdict is `blocked`, `failed`, or `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
-If the verdict is `accepted` with `Ready for review: no`, keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
+If the verdict is `accepted` with `Ready to close: no` (or legacy `Ready for review: no`), keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
 
-If the verdict is `accepted` with `Ready for review: yes`, apply the lifecycle move named by `target_task_status` (typically `in-review`) using the Core CLI:
+If the verdict is `accepted` with `Ready to close: yes` (or the legacy heading), first persist every durable output. If the task declares a `project`-mode `Deliverable:`, persist the report's `## Deliverable content` to `deliverable.absolute_path` using PM project-write authority before any lifecycle move or report reuse. A `work-root`-mode deliverable is already written by the assignee.
 
-```
-cartopian move-task <task-path> in-review
-```
+If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, skip the git block below and apply the routing step after it.
 
-The CLI verifies that `reports/REPORT-NN-NNN.md` exists (the filename is the task link) and has `Status: complete` before executing this rename. The parsed completion report already on disk satisfies this check. Capture any evidence the reviewer will need from the completion report and proceed to reviewer assignment.
-
-If the task declares a `project`-mode `Deliverable:` (the `handoff-packet`/`task-bundle` `deliverable.mode` is `project`), the assignee returned its work product inline in the report's `## Deliverable content` section. Persist that content to the resolved `deliverable.absolute_path` using the PM's project-write authority **before** the review handoff clears the report — the report is transient, the deliverable is the durable artifact the reviewer reviews. A `work-root`-mode deliverable is already written by the assignee and needs no PM step here.
-
-If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, proceed to Stage 5 exactly as today.
-
-If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before Stage 5.
+If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before review or closure.
 
 > **Containment boundary.** The product-repo git steps below (`git`/`gh` plumbing, and the merge-evidence append to the review file in Stage 6) are raw shell operations against the product repo. They have no mediated Cartopian command in the Phase-01 set, so they are **outside the contained-PM path**: a contained PM (no shell) runs only with `pm_owns_product_branches = false` (or unset), where `requires_pr_step` is never set and this entire block is skipped. When `pm_owns_product_branches = true`, the git workflow is owned by the operator or an uncontained PM. This is a deliberate boundary, not a lifecycle-authoring action the mediated writers cover.
 
-1. Treat coder-supplied product-repo git evidence as a boundary violation. If the report claims the assignee staged, committed, pushed, branched, opened a PR, or merged product-repo code, stop for operator inspection.
+1. Treat assignee-supplied product-repo git evidence as a boundary violation. If the report claims the assignee staged, committed, pushed, branched, opened a PR, or merged product-repo work, stop for operator inspection.
 2. Resolve the product-repo absolute path(s) from the declared work-root names via the resolved config's `work_roots` mapping; when multiple are declared, choose the root that actually owns this task's changes. If ambiguous, stop for operator inspection.
 3. Resolve the configured branch name. The protocol default branch name is `task/NN-NNN-slug`, derived from `git.default_branch_pattern = "task/{task_id}-{slug}"`.
 4. Create or update that branch in the product repo. On a first pass, create it before committing the task changes. On a rework pass with an existing open PR, reuse the same branch.
@@ -199,15 +191,22 @@ If `pm_owns_product_branches = true` and the task declares one or more `Work roo
 7. Push the branch with `git push -u origin <branch>`.
 8. Open a PR with `gh pr create`, or reuse the existing PR on rework. The title and body must reference the task ID and completion report.
 9. Resolve a deploy preview URL when one exists, for example from a Vercel-bot PR comment. If no preview URL exists, proceed with the PR URL only and record the missing preview URL in `STATE.md`.
-10. Capture the branch, PR URL, preview URL if present, and implementation commit SHA as review handoff evidence.
+10. Capture the branch, PR URL, preview URL if present, and implementation commit SHA as handoff/closure evidence.
 
-If `pm_owns_product_branches = true` but no `Work root:` is declared (or it is `n/a`), there is no product-repo branch or PR step; proceed to Stage 5 with `PR URL` and `Preview URL` as `n/a`.
+Apply the `report-action` routing only after deliverable persistence and any required PR preparation:
+
+- `target_task_status == "in-review"`: run `cartopian move-task <task-path> in-review`; the complete task report satisfies the guard. Continue to Stage 5 and assign the exact role from `reviews.task_closure.role`.
+- `target_task_status == "done"`: when `recommended_action == "prepare-pr-and-close-task"`, merge the prepared PR with the configured strategy and capture the merge SHA; then run `cartopian move-task <task-path> done`, delete the task prompt, record that closure occurred with task review off, and skip to Stage 7. The CLI requires the complete task report for this direct closure.
+
+If `pm_owns_product_branches = true` but no `Work root:` is declared (or it is `n/a`), there is no product-repo branch or PR step; apply the same routing with PR and preview values `n/a`.
 
 ---
 
 ## Stage 5 - Assign Review
 
-Authoring the review prompt is **PM-performed**. Create or update `prompts/PROMPT-NN-NNN.md` for the reviewer through the mediated writer when the same prompt path is being reused for review, or ensure the existing prompt clearly identifies the review assignment:
+Run this stage only when `reviews.task_closure.mode == "required"`. Assign the exact arbitrary role named by `reviews.task_closure.role`; do not search for a role called `reviewer`.
+
+Authoring the review prompt is **PM-performed**. Create or update `prompts/PROMPT-NN-NNN.md` for the assigned review role through the mediated writer when the same prompt path is being reused for review, or ensure the existing prompt clearly identifies the review assignment:
 
 ```
 cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
@@ -247,6 +246,8 @@ Use `skills/run-handoff.md` for review handoff mechanics.
 ---
 
 ## Stage 6 - Process Review Verdict
+
+Run this stage only when `reviews.task_closure.mode == "required"`.
 
 Reviewers record their findings and verdict in:
 

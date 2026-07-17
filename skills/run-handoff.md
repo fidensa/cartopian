@@ -46,7 +46,7 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
-First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `auto_start`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
 
 ```
 cartopian handoff-packet <task-path> --role <role>
@@ -55,7 +55,7 @@ cartopian handoff-packet <task-path> --role <role>
 Read from the emitted record:
 
 - `role_description` — the one-line description for the role being assigned.
-- `handoff_target`, `model`, `auto_start`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model` is the resolved `[handoffs.<role>].model`, serialized as `null` when unset.
+- `handoff_target`, `model`, `auto_start_tasks`, `auto_start_reviews`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model` and unset launch settings are serialized as `null`.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries the assignee will receive read/write access to. Use these absolute paths verbatim when composing the prompt; do not re-derive them.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `branch_strategy`, `auto_commit`, `auto_push` for the assignee's git boundary, when `git_versioning` is true.
@@ -92,11 +92,11 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
 
 - **Human role** — *operator-performed*: present the prompt path and expected report path to the operator.
 - **Agent role without handoff config** — *operator-performed*: present the prompt path and expected report path to the operator for manual assignment.
-- **Agent role with `auto_start = false`** — *operator-performed*: present the exact command for the operator to run (the PM does not launch it):
+- **Agent role with the applicable `auto_start_*` setting false or unset** — *operator-performed*: present the exact command for the operator to run (the PM does not launch it):
   ```text
   <agent> '<absolute prompt path>'
   ```
-- **Agent role with `auto_start = true`, task-scoped handoff** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
+- **Agent role with `auto_start_tasks = true`, task-scoped handoff** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
 
   ```
   cartopian dispatch <task-path> --role <role>
@@ -104,19 +104,13 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
 
   `dispatch` is the FR-006 mediated launch (TASK-01-004). On the PM's behalf it composes the same `handoff-packet` / `resolve-config` data, fails closed on a missing `[handoffs.<role>]` block, an unmapped or non-existent work root, or a missing prompt, exports `CARTOPIAN_TIMEOUT` from the resolved `[handoffs.<role>].timeout` (the protocol default of `60m` applies when unset), exports `CARTOPIAN_MODEL` from the resolved `[handoffs.<role>].model` (no variable is exported when unset; the wrapper translates it into the tool-specific model flag), and launches the operator-configured `[handoffs.<role>].agent` with the single absolute-prompt-path argv from the cartopian project-root cwd. There is no caller-supplied executable argument, so the contained PM cannot turn dispatch into a raw exec primitive.
 
-- **Agent role, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — gated by the resolved `[handoffs.<role>].planning_reviews` flag (default `false`), which controls whether the role's handoff automation extends to planning checkpoints at all; `auto_start` then chooses the launch mode as usual:
-
-  | `planning_reviews` | `auto_start` | Launch |
-  |---|---|---|
-  | unset or `false` | any | *operator-performed*: present the command as in the `auto_start = false` case |
-  | `true` | `false` | *operator-performed*: present the command as in the `auto_start = false` case |
-  | `true` | `true` | *PM-performed*: launch through the prompt-keyed mediated dispatch below |
+- **Agent role with `auto_start_reviews = true`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *PM-performed*: launch through the prompt-keyed mediated dispatch below. When false or unset, use the operator-performed path.
 
   ```
   cartopian dispatch --prompt <absolute prompt path> --role <role>
   ```
 
-  `--prompt` accepts only an allowlisted planning-checkpoint prompt slot (`<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md`); the command derives the expected report path (`reports/REPORT-PLAN-NNN[-slug].md`), fails closed when `planning_reviews` is not `true`, and otherwise applies the same fail-closed gates, exports, and launch contract as the task-keyed form. Task-scoped handoffs never dispatch via `--prompt`; they dispatch by task path.
+  `--prompt` accepts only an allowlisted planning-checkpoint prompt slot (`<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md`); the command derives the expected report path (`reports/REPORT-PLAN-NNN[-slug].md`), fails closed unless `auto_start_reviews` is true, and otherwise applies the same fail-closed gates, exports, and launch contract as the task-keyed form. Task-scoped handoffs never dispatch via `--prompt`; they dispatch by task path and require `auto_start_tasks = true`.
 
 The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path); access grants cover the union of the project root and any declared work-root absolute paths resolved via `resolve-config`. `dispatch` and the shipped `wrappers/` apply this launch contract automatically; custom agents must honor the same convention.
 

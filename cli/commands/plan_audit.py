@@ -13,6 +13,7 @@ from cli.commands.resolve_config import (
     _load_project_config,
     _require_startup_project_keys,
     _resolve_deliverable,
+    resolve_review_policy,
 )
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -275,9 +276,12 @@ def _load_work_roots(project_path: Path) -> Dict[str, str]:
     return resolved
 
 
-def _check_artifact_chains(project_path: Path) -> List[Dict[str, Any]]:
+def _check_artifact_chains(
+    project_path: Path, task_review_required: bool = True
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Check that active tasks have their required artifacts in place."""
     blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
 
     for status_dir in _STATUS_DIRS:
         tasks_dir = project_path / "tasks" / status_dir
@@ -306,13 +310,18 @@ def _check_artifact_chains(project_path: Path) -> List[Dict[str, Any]]:
             elif status_dir == "in-review":
                 review = project_path / "reviews" / f"REVIEW-{nn_nnn}.md"
                 if not review.is_file():
-                    blockers.append({
+                    finding = {
                         "kind": "missing-review-artifact",
                         "task_id": task_id,
                         "task_path": str(task_file),
                         "expected": str(review),
                         "detail": f"{task_id} is in-review but has no review artifact at {review}",
-                    })
+                    }
+                    if task_review_required:
+                        blockers.append(finding)
+                    else:
+                        finding["detail"] += " (advisory: task-closure review is off)"
+                        warnings.append(finding)
                 else:
                     try:
                         content = review.read_text(encoding="utf-8")
@@ -320,19 +329,26 @@ def _check_artifact_chains(project_path: Path) -> List[Dict[str, Any]]:
                         content = ""
                     vm = _VERDICT_RE.search(content)
                     if not vm:
-                        blockers.append({
+                        finding = {
                             "kind": "review-missing-verdict",
                             "task_id": task_id,
                             "review_path": str(review),
                             "detail": f"review artifact for {task_id} has no Verdict: field",
-                        })
+                        }
+                        if task_review_required:
+                            blockers.append(finding)
+                        else:
+                            finding["detail"] += " (advisory: task-closure review is off)"
+                            warnings.append(finding)
 
-    return blockers
+    return blockers, warnings
 
 
 def _check_deliverables(
-    project_path: Path, project_cfg: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    project_path: Path,
+    project_cfg: Dict[str, Any],
+    task_review_required: bool = True,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Blocker when a document-deliverable task's durable file is missing.
 
     A task in ``in-review`` or ``done`` that declares a ``Deliverable:`` must
@@ -346,6 +362,7 @@ def _check_deliverables(
     resolve (relative to the project root), so they are always checked.
     """
     blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
     for status_dir in _DELIVERABLE_STATUS_DIRS:
         tasks_dir = project_path / "tasks" / status_dir
         if not tasks_dir.is_dir():
@@ -373,7 +390,7 @@ def _check_deliverables(
                 continue
             if Path(absolute).is_file():
                 continue
-            blockers.append({
+            finding = {
                 "kind": "missing-deliverable",
                 "task_id": task_id,
                 "task_path": str(task_file),
@@ -383,8 +400,13 @@ def _check_deliverables(
                     f"{task_id} is {status_dir} and declares deliverable "
                     f"'{deliverable['logical']}' but no file exists at {absolute}"
                 ),
-            })
-    return blockers
+            }
+            if status_dir == "in-review" and not task_review_required:
+                finding["detail"] += " (advisory: task-closure review is off)"
+                warnings.append(finding)
+            else:
+                blockers.append(finding)
+    return blockers, warnings
 
 
 def _check_work_root_provenance(
@@ -697,6 +719,7 @@ def handler(args: argparse.Namespace) -> int:
         _, _, declared_protocol_version = _require_startup_project_keys(
             project_cfg, project_path / "cartopian.toml"
         )
+        review_policy = resolve_review_policy(project_path)
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
@@ -724,8 +747,15 @@ def handler(args: argparse.Namespace) -> int:
             "detail": protocol_gate["detail"],
         })
     blockers.extend(_check_situation_notes(project_path))
-    blockers.extend(_check_artifact_chains(project_path))
-    blockers.extend(_check_deliverables(project_path, project_cfg))
+    task_review_required = review_policy["task_closure"]["mode"] == "required"
+    artifact_blockers, review_warnings = _check_artifact_chains(
+        project_path, task_review_required
+    )
+    deliverable_blockers, deliverable_warnings = _check_deliverables(
+        project_path, project_cfg, task_review_required
+    )
+    blockers.extend(artifact_blockers)
+    blockers.extend(deliverable_blockers)
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
 
@@ -754,6 +784,8 @@ def handler(args: argparse.Namespace) -> int:
     # Assignee output hygiene — planning identifiers leaked into changed
     # work-root files, caught by the pure-regex detection floor.
     warnings.extend(_check_pm_identifier_leaks(work_roots, changed_by_root))
+    warnings.extend(review_warnings)
+    warnings.extend(deliverable_warnings)
     warnings.extend(backlog_warnings)
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI

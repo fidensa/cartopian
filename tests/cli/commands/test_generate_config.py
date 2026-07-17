@@ -55,6 +55,11 @@ class TestGenerateConfigHelp(unittest.TestCase):
         self.assertIn("--work-root", proc.stdout)
         self.assertIn("--git-versioning", proc.stdout)
         self.assertIn("--git-key", proc.stdout)
+        self.assertIn("--review-planning", proc.stdout)
+        self.assertIn("--review-task-closure", proc.stdout)
+        self.assertIn("--handoff-auto-start-tasks", proc.stdout)
+        self.assertIn("--handoff-auto-start-reviews", proc.stdout)
+        self.assertNotIn("--handoff-planning-reviews", proc.stdout)
         # No `--kind` flag
         self.assertNotIn("--kind", proc.stdout)
 
@@ -112,7 +117,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--role", "coder=Writes code",
                 "--handoff", "coder=cartopian-claude",
                 "--handoff-model", "coder=claude-opus-4-8",
-                "--handoff-auto-start", "coder=false",
+                "--handoff-auto-start-tasks", "coder=false",
+                "--handoff-auto-start-reviews", "coder=true",
                 "--handoff-timeout", "coder=30m",
                 "--automation-initiation", "auto",
                 "--automation-confirmation", "until-blocked",
@@ -139,7 +145,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 {
                     "agent": "cartopian-claude",
                     "model": "claude-opus-4-8",
-                    "auto_start": False,
+                    "auto_start_tasks": False,
+                    "auto_start_reviews": True,
                     "timeout": "30m",
                 },
             )
@@ -174,6 +181,52 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 data = tomllib.load(fh)
             self.assertEqual(set(data.keys()), {"project"})
             self.assertEqual(set(data["project"].keys()), {"name", "id", "protocol_version"})
+
+    def test_review_policy_accepts_arbitrary_role_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "proj"
+            project.mkdir()
+            result = _run(
+                str(project),
+                "--name", "Conference",
+                "--id", "conference",
+                "--role", "quality-checker=Checks plans and completed work",
+                "--review-planning", "required",
+                "--review-planning-role", "quality-checker",
+                "--review-task-closure", "off",
+                "--handoff", "quality-checker=cartopian-claude",
+                "--handoff-auto-start-reviews", "quality-checker=true",
+                home=root,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            data = tomllib.loads((project / "cartopian.toml").read_text())
+        self.assertEqual(
+            data["reviews"],
+            {
+                "planning": "required",
+                "planning_role": "quality-checker",
+                "task_closure": "off",
+            },
+        )
+        self.assertTrue(
+            data["handoffs"]["quality-checker"]["auto_start_reviews"]
+        )
+
+    def test_required_review_role_must_be_declared_or_inherited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "proj"
+            project.mkdir()
+            result = _run(
+                str(project),
+                "--name", "X", "--id", "x",
+                "--review-task-closure", "required",
+                "--review-task-role", "reviewer",
+                home=root,
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("undeclared role", result.stderr)
 
     def test_confirmation_record_key_order(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -279,7 +332,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--handoff-auto-start", "foo=true",
+                "--handoff-auto-start-tasks", "foo=true",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)

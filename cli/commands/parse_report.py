@@ -26,11 +26,7 @@ REVIEW_VARIANTS = ("review", "planning-review")
 REQUIRED_SECTIONS = {
     "task": (
         "## Identity",
-        "## Files changed",
-        "## Test evidence",
-        "## Commit / PR",
         "## Remaining risks",
-        "## Ready for review",
     ),
     "review": (
         "## Identity",
@@ -46,7 +42,19 @@ REQUIRED_SECTIONS = {
     ),
 }
 
-# Identity keys a report must carry to validate. Coder (task) handoffs are
+# Each tuple is an alternative group: at least one exact heading in the group
+# must be present.  The neutral headings are preferred; the specialized and
+# legacy headings keep every previously valid task report valid.
+REQUIRED_ANY_SECTIONS = {
+    "task": (
+        ("## Completion evidence", "## Files changed", "## Deliverable"),
+        ("## Ready to close", "## Ready for review"),
+    ),
+    "review": (),
+    "planning-review": (),
+}
+
+# Identity keys a report must carry to validate. Assignee (task) handoffs are
 # deidentified: the task report records no PM identifiers — Cartopian links it
 # to its task by the report *filename* (`REPORT-NN-NNN.md`), so no Identity key
 # is required. Review handoffs go to a reviewer that works with PM artifacts and
@@ -73,6 +81,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
 _VERDICT_SECTION_RE = re.compile(r"^##\s+Verdict\s*$", re.MULTILINE)
 _READY_SECTION_RE = re.compile(r"^##\s+Ready for review\s*$", re.MULTILINE)
+_READY_TO_CLOSE_SECTION_RE = re.compile(r"^##\s+Ready to close\s*$", re.MULTILINE)
 
 
 def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Optional[str]]:
@@ -82,18 +91,20 @@ def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Opti
     (CONVENTIONS § Reports), so the filename alone cannot decide between them.
     Resolve ``task`` vs ``review`` from report *content*: a review report carries
     a ``Review ID:`` and a ``## Verdict`` section; a task report carries a
-    ``## Ready for review`` section. The coder (task) handoff is deidentified, so
-    a task report carries no ``Task ID:`` — its ``## Ready for review`` section is
-    the distinguishing signal. A review report may legitimately cite a reviewed
+    ``## Ready to close`` section (or its legacy alias). The assignee handoff is
+    deidentified, so a task report carries no ``Task ID:`` — its readiness section
+    is the distinguishing signal. A review report may legitimately cite a reviewed
     ``Task ID:``, so that string never marks a report as a task report. Only a
-    report shaped as *both* (a verdict *and* a ready-for-review section) is
+    report shaped as *both* (a verdict *and* a readiness section) is
     genuinely ambiguous.
     """
     filename_is_plan = report_path.name.startswith("REPORT-PLAN-")
     has_review_id = "Review ID:" in content
     has_task_id = "Task ID:" in content
     review_shaped = has_review_id and bool(_VERDICT_SECTION_RE.search(content))
-    task_shaped = bool(_READY_SECTION_RE.search(content))
+    task_shaped = bool(
+        _READY_SECTION_RE.search(content) or _READY_TO_CLOSE_SECTION_RE.search(content)
+    )
 
     _ambiguous = (
         "ambiguous variant: filename and content disagree; "
@@ -147,8 +158,17 @@ def _extract_review_verdict(content: str) -> Optional[str]:
 
 
 def _schema_ok(variant: str, content: str) -> bool:
+    def has_heading(section: str) -> bool:
+        heading = section.removeprefix("## ")
+        return bool(
+            re.search(rf"^##\s+{re.escape(heading)}\s*$", content, re.MULTILINE)
+        )
+
     for section in REQUIRED_SECTIONS[variant]:
-        if section not in content:
+        if not has_heading(section):
+            return False
+    for alternatives in REQUIRED_ANY_SECTIONS[variant]:
+        if not any(has_heading(section) for section in alternatives):
             return False
     for key in REQUIRED_IDENTITY_KEYS[variant]:
         if key not in content:

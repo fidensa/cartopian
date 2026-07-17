@@ -14,17 +14,17 @@ Skills are agent-executable markdown runbooks. Each skill is a structured, step-
 | **Plan Project** | `plan-project.md` | Walk the full lifecycle from requirements gathering through plan, phases, and tasks | Resolves handoff config, launches or instructs CLI handoffs for review checkpoints |
 | **Start Session** | `start-session.md` | Resolve the current project, read `STATE.md`, and act on the request per its intent class and the resolved `[automation] initiation` policy | On an execution directive (or `initiation = "auto"`), continues into `run-task.md` without a confirmation prompt; informational requests report and stop; stops for blockers, plan-level forks, and operator-reserved decisions |
 | **Run Handoff** | `run-handoff.md` | Execute one manual or CLI handoff and parse its report outcome | Reusable handoff/report mechanics for planning, task, and review work |
-| **Run Task** | `run-task.md` | Drive one task from assignment through completion report, review, and state refresh | Uses handoff automation for assignee and reviewer work |
+| **Run Task** | `run-task.md` | Drive one task from assignment through evidence-supported closure, any required review, and state refresh | Uses handoff automation for assignee and policy-assigned review work |
 | **Close Plan** | `close-plan.md` | Close a completed plan, optionally archive it, and reset for the next planning cycle | Inspects `reports/` for unresolved handoffs, resets reports during closeout |
-| **Migrate Project** | `migrate-project.md` | Bring a project's `[project].protocol_version` current by applying the applicable `CHANGELOG.md` entries; PM-owned, on operator approval | Config edits via `cartopian update-config`; dispatches or surfaces non-mediated steps (file renames, header swaps, wrapper edits) |
+| **Migrate Project** | `migrate-project.md` | Bring a project's internal protocol schema current (separate from the Cartopian application version); PM-owned, on operator approval | Config edits via `cartopian update-config`; dispatches or surfaces non-mediated steps (file renames, header swaps, wrapper edits) |
 | **Register MCP** | `register-mcp.md` | Detect installed agents, show registration status, and register `cartopian-mcp` with any/all selected agents; called by the install skill and usable standalone | None — installer-side skill; no handoff |
 | **Check For Updates** | `check-for-updates.md` | Compare the installed Cartopian ref against the latest GitHub release and re-run `install-cartopian` on approval | None — installer-side skill; no handoff |
 
 ## CLI handoff automation
 
-Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff targets and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
+Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff targets, independent planning/task review policy, and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
 
-Automation is optional. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the handoff contract and `skills/run-handoff.md` for the executable workflow.
+Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. `[handoffs.<role>].auto_start_tasks` and `auto_start_reviews` independently control automatic task-scoped and planning-review launches. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
 
 ## Session startup
 

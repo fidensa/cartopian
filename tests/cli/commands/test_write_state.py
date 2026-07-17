@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
 )
 
 

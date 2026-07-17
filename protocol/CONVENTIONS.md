@@ -8,6 +8,8 @@ Cartopian is filesystem-first. Directories and filenames carry the project's sta
 
 Git is optional. When git versioning is enabled, it records the same filesystem state; it is not the source of protocol authority.
 
+Reviews are optional and explicit. `[reviews]` independently controls planning checkpoints and task closure; role names and descriptions never imply review policy. A required loop names the ordinary resolved role assigned to perform it, while an `off` loop proceeds from accepted completion evidence without that review stage.
+
 AI agents come pre-trained to "be helpful and proactive". That training causes project drift and failure to follow governance verbatim. Cartopian aims to correct this training by producing a rigid framework for agentic behavior that defines exactly what helpful and proactive mean. Agents should not guess, make assumptions, or behave in any way contrary to the conventions or pronciples held by the Cartopian project mangement framework.
 
 ## Protocol And Skills
@@ -102,7 +104,7 @@ Task status is the directory the task file lives in:
 
 Task files never carry a `status:` field because duplicated status can go stale.
 
-Tasks can move backward on failed review. `request-changes` returns the task to `in-progress/`; `reject` returns it to `open/`. The original task remains the unit of work, so failed reviews do not spawn replacement tasks or follow-up tasks.
+When task-closure review is required, tasks can move backward on failed review. `request-changes` returns the task to `in-progress/`; `reject` returns it to `open/`. The original task remains the unit of work, so failed reviews do not spawn replacement tasks or follow-up tasks.
 
 ## Lifecycle Authority
 
@@ -124,14 +126,15 @@ Guarded transitions and their prerequisites:
 
 | Transition | Required artifact | Validation |
 | --- | --- | --- |
-| `in-progress → in-review` | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
-| `in-review → done` | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
-| `in-review → in-progress` | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
-| `in-review → open` | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
+| `in-progress → in-review` (task review required) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
+| `in-review → done` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
+| `in-review → in-progress` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
+| `in-review → open` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
+| `in-progress → done` (task review off) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
 
 `open → in-progress` carries no artifact guard: the PM moves the task first, then authors `prompts/PROMPT-NN-NNN.md` against the `tasks/in-progress/` path, so prompt, report, and review paths agree. Prompt existence is enforced fail-closed at the mediated handoff boundary instead — `cartopian dispatch` refuses to launch when the prompt is missing. Manual (operator-performed) assignment paths do not pass through `dispatch`; there the operator is handed the prompt path directly, and `cartopian plan-audit` reports any in-progress task without a matching prompt as a blocker.
 
-Fast-forward transitions (e.g., `open → done`) carry no artifact guard and remain available for operator-initiated cleanup and administrative movement.
+`in-progress → done` is disallowed when task-closure review is required, and `in-progress → in-review` is disallowed when it is off. A task already stranded in `in-review/` after policy is changed to off may move out without a verdict guard. `open → done` is an administrative exception only and requires `--administrative --reason`; ordinary execution never uses it.
 
 Guards apply only to task files whose names match the canonical `TASK-NN-NNN` prefix. Tasks with non-canonical names skip artifact checks. On guarded transitions, a canonical task file with no findable project root is a hard block; the CLI cannot verify prerequisites and will not execute the rename. Unguarded transitions carry no prerequisites to verify, so they execute without requiring a project root.
 
@@ -147,7 +150,7 @@ Run `plan-audit` at session startup and before plan closeout. A non-zero exit is
 
 ## Tasks
 
-Tasks are assignment-sized units of work derived from the current phase and implementation plan. The lifecycle shape is `Plan -> Spec -> Test -> Code`, with task execution procedure defined in `skills/run-task.md`.
+Tasks are assignment-sized units of work derived from the current phase and implementation plan. The domain-neutral lifecycle is `Plan -> Contract -> Evidence -> Outcome`; for software work this is the familiar `Plan -> Spec -> Test -> Code`. Task execution procedure is defined in `skills/run-task.md`.
 
 Task files follow the canonical field schema in `templates/TASK.md`.
 
@@ -188,6 +191,18 @@ A spec is surfaced to an assignee **deidentified**, never as the raw file. The c
 
 ## Reviews
 
+Review policy is resolved project over global, key-by-key:
+
+```toml
+[reviews]
+planning = "required"       # required | off
+planning_role = "reviewer"  # any resolved role name
+task_closure = "off"        # required | off
+task_role = "reviewer"      # required only when task_closure is required
+```
+
+The protocol defaults both loops to `off`. A project can therefore override globally required review by setting its local mode to `off` without removing the inherited role. Policy answers whether review happens; the role field answers who performs it; capability grants answer what that role may access and do. No behavior keys on the literal role name `reviewer`, on description prose, or on a preset name.
+
 Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review file per task, overwritten on re-review. There is no round suffix and no closure sign-off section.
 
 Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN-slug.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
@@ -217,6 +232,8 @@ Task prompts are deleted when the task reaches `done/` or when the prompt is sup
 Reports are protocol-defined handoff result artifacts in `reports/`. They are evidence for the PM, not replacements for task, review, decision, or backlog records.
 
 Report files follow the canonical field schema and variants in `templates/REPORT.md`.
+
+The neutral task-report core is `## Identity`, `## Completion evidence`, `## Remaining risks`, and `## Ready to close`. Specialized software and document sections (`## Files changed`, `## Deliverable`, `## Test evidence`, `## Commit / PR`) are optional evidence shapes. For compatibility, an exact `## Files changed` or `## Deliverable` heading may stand in for `## Completion evidence`, and `## Ready for review` may stand in for `## Ready to close`.
 
 Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use `reports/REPORT-NN-NNN.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN-slug.md`.
 
@@ -273,7 +290,7 @@ The PM role is bounded to project-management authoring:
 - **Directory scope.** The PM may only read or mutate files inside the project directory currently being managed. It may not modify files outside that project — including sibling Cartopian-governed projects, the Cartopian protocol repository itself, or any unrelated repository the operator happens to have on disk.
 - **File-type scope.** Within the managed project, the PM authors markdown (`.md`) files — CREATE, READ, UPDATE, DELETE. The project's own config files (`cartopian.toml`, `cartopian.local.toml`) are the one non-markdown exception: the PM may edit them, but only through the mediated `cartopian update-config` command and only on the operator's explicit request (see **Config management** below). All other non-markdown work — source code, data files, build artifacts, executables — must be dispatched to another role via a handoff.
 - **Config management.** The PM manages the project's config on the operator's behalf, so a non-technical operator never has to find or hand-edit `cartopian.toml`. Config edits are operator-*requested*, never proactive or routine: the PM does not offer or solicit config changes during ordinary lifecycle flow, and applies them only when the operator explicitly asks (or approves a migration). All PM config edits go through `cartopian update-config`, which validates the closed key schema and the resulting effective config and writes atomically; the PM still reads effective config via `cartopian resolve-config`. This scope covers only config files *inside the managed project directory*; the global `~/.cartopian/cartopian.toml` lives outside every project and is authored by the workspace-setup flow (`skills/init-workspace.md`), not by a per-project PM. Enforcement is precise: a structured raw-edit tool aimed at a config file is denied regardless of grants (the mediated command is the only edit path), while shell-routed edits and advisory-tier hosts remain documented residuals, exactly as for every other governed path-class.
-- **Migration is PM-owned.** Bringing a project up to a newer protocol version is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config` and markdown edits via the mediated writers, and dispatching or surfacing the steps it cannot mediate (file renames, header substitutions, wrapper edits). See `skills/migrate-project.md`.
+- **Migration is PM-owned.** A project's internal protocol-schema version is separate from the installed Cartopian application's release version. Bringing that project schema current is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config` and markdown edits via the mediated writers, and dispatching or surfacing the steps it cannot mediate (file renames, header substitutions, wrapper edits). Operators are not expected to edit the version marker. See `skills/migrate-project.md`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
 
 These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so a `[handoffs.pm]` block has no meaning and must not be configured.
@@ -284,7 +301,7 @@ pm = "Plans phases, dispatches handoffs, integrates results."
 operator = "Approves locks, unblocks, sets cadence."
 ```
 
-The protocol-default roster is **`pm` and `operator`**. Operators may add any further roles their project needs. Common example labels operators pick are `coder` ("Implements tasks per spec.") and `reviewer` ("Reviews per acceptance evidence."), but these are illustrative only — they are not part of the default roster.
+The protocol-default roster is **`pm` and `operator`**. Operators may add any further roles their project needs. Common example labels include `coder`, `reviewer`, `editor`, and `researcher`, but all are illustrative only. Review assignment is configured under `[reviews]`; role names and descriptions carry no protocol behavior, so an operator may use another label if desired.
 
 Dispatch path is inferred from the presence of a matching `[handoffs.<role>]` block, not from a `kind` value:
 
@@ -306,13 +323,13 @@ Use `[handoffs.<role>]` only for agent roles that need a named target:
 [handoffs.coder]
 agent = "codex"
 model = "gpt-5-codex"
-auto_start = true
+auto_start_tasks = true
 timeout = "60m"
 
 [handoffs.reviewer]
 agent = "gemini"
-auto_start = false
-planning_reviews = true
+auto_start_tasks = true
+auto_start_reviews = true
 timeout = "30m"
 ```
 
@@ -320,8 +337,9 @@ Handoff fields are:
 
 - `agent`: executable name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
-- `auto_start`: whether the PM may launch the executable itself once a run is already authorized — that is, after `[automation] initiation` has allowed the run to begin and the `confirmation` pace policy permits this handoff. `auto_start` chooses the launch mode (PM-performed vs. operator-performed) only; it never initiates a run.
-- `planning_reviews`: whether the role's handoff automation extends to planning-checkpoint reviews (report-path-only handoffs — no task file exists during planning). Default `false`: planning-review launches are operator-performed unless explicitly opted in, so enabling `auto_start` for task handoffs never silently automates planning reviews. When `true`, the launch mode follows `auto_start`: with `auto_start = true` the PM launches through the prompt-keyed mediated dispatch (`cartopian dispatch --prompt <prompt-path> --role <role>`, accepted only for allowlisted `<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md` slots); with `auto_start = false` the PM presents the launch command to the operator. The gate is enforced fail-closed by `cartopian dispatch` itself, not only by skill procedure.
+- `auto_start_tasks`: whether the PM may launch this role for task-scoped handoffs, including assigned task work and task-closure review. Default `false`/unset.
+- `auto_start_reviews`: whether the PM may launch this role for planning-review checkpoints, which have no task file. Default `false`/unset. It does not enable planning review; `[reviews].planning` decides whether the checkpoint exists and `planning_role` assigns it.
+- Both `auto_start_*` keys choose launch mode only, after `[automation] initiation` has allowed the run to begin and `confirmation` permits the handoff. Each setting governs only its handoff type; it never initiates a run. `cartopian dispatch` enforces the applicable key fail-closed. Older `auto_start` and `planning_reviews` keys are accepted only as compatibility inputs and resolve to these explicit fields; agents should migrate new edits to the explicit names.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
 `[handoffs.<role>].timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
@@ -342,7 +360,7 @@ Assignee CLIs run with cwd set to the **cartopian project root** — the absolut
 
 **Wrappers are neutral launchers.** A wrapper translates env → CLI flags, sets the cwd, runs the agent **autonomously** (so the unattended handoff completes), enforces the `CARTOPIAN_TIMEOUT` deadline, and emits the status signal. It does **not** scope, sandbox, or gate the agent's filesystem access, and it cannot assume the agent's role — the same wrapper may back any operator-defined role. Locations outside the project root that a task needs (declared as **work roots**, below) are referenced by absolute path/URI inside the prompt the PM authors; the wrapper does not grant or confine them.
 
-Capability-based gating of what an agent may read or mutate is the **harness's** responsibility, not the launcher's. If approval-in-the-loop behavior is wanted for a role, run it on the manual path (`auto_start = false`) rather than through the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
+Capability-based gating of what an agent may read or mutate is the **harness's** responsibility, not the launcher's. If approval-in-the-loop behavior is wanted for a role, leave the applicable `auto_start_*` setting false/unset and use the manual path rather than the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
 
 **Note for custom wrapper authors.** The cartopian project root is not automatically a git repository. Tools that refuse to run outside a git repo must be told to skip that check (the shipped wrappers do so unconditionally). The autonomy/permission flags a wrapper passes live at the wrapper layer; capability gating lives in the harness.
 
@@ -372,7 +390,7 @@ Supported `initiation` values are:
 Supported `confirmation` values are:
 
 - `each-handoff`: stop after each handoff result is processed.
-- `until-blocked`: continue through eligible `auto_start = true` handoffs until blocked, failed, rejected, missing evidence, requiring operator judgment, reaching a phase boundary, or hitting `max_handoffs_per_run`.
+- `until-blocked`: continue through handoffs whose applicable `auto_start_tasks` or `auto_start_reviews` setting is true until blocked, failed, rejected, missing evidence, requiring operator judgment, reaching a phase boundary, or hitting `max_handoffs_per_run`.
 
 Defaults are `initiation = "operator"`, `confirmation = "each-handoff"`, and `max_handoffs_per_run = 1`. `resolve-config` resolves an unrecognized `initiation` value to `operator` (fail-safe: less automation, never more) and emits a `[validation]` warning.
 
@@ -381,9 +399,9 @@ The automation authorities are disjoint, and each gates a different question:
 - `initiation` gates **whether a run begins** when no execution directive was given.
 - `confirmation` gates **pace** within an initiated run: under `each-handoff` the PM stops after processing each handoff result and resumes with the next sequential step when the operator says to continue; under `until-blocked` it chains through sequential tasks within the run budget. Neither value authorizes initiation — `until-blocked` describes how far an initiated run chains, not whether one starts.
 - **Selection** is never gated and never an operator question: task order is deterministic per [Task Execution Order](#task-execution-order). Within an initiated run, evidence-supported lifecycle moves (starting the next sequential task, moving a task per a parsed report or review verdict) are applied without a confirmation prompt; the operator is consulted only at the stop conditions named there.
-- `[handoffs.<role>].auto_start` gates **launch mode** for a handoff the run policies already authorize; it participates in neither initiation nor pace.
+- `[handoffs.<role>].auto_start_tasks` and `auto_start_reviews` gate **launch mode** for task-scoped and planning-review handoffs respectively; they participate in neither initiation nor pace.
 
-Full unattended operation is therefore a stack of explicit opt-ins, each an operator choice and none a protocol default: `initiation = "auto"` (runs may begin without a directive), `confirmation = "until-blocked"` (runs chain), `max_handoffs_per_run` sized to the desired batch, and `auto_start = true` on the roles the PM should launch itself.
+Full unattended operation is therefore a stack of explicit opt-ins, each an operator choice and none a protocol default: `initiation = "auto"` (runs may begin without a directive), `confirmation = "until-blocked"` (runs chain), `max_handoffs_per_run` sized to the desired batch, and the applicable `auto_start_tasks` / `auto_start_reviews` settings enabled on roles the PM should launch itself.
 
 Handoffs are sequential. Concurrent child agents are out of scope.
 
@@ -413,11 +431,11 @@ Both fields carry `TASK-NN-NNN` identifiers only.
 
 Every task declares `Evidence gate: required` or `Evidence gate: n/a`.
 
-`required` tasks name concrete acceptance evidence — typically test targets that must fail before implementation starts, but any verifiable red-before-green check (fixture run, validation script, fact-check pass) is acceptable when no test target exists.
+`required` tasks name concrete acceptance evidence. Software work often uses a test that fails before implementation; other work may use a fixture run, validation script, fact-check pass, approval checklist, inspection record, rehearsal, or another verifiable before-and-after check.
 
 `n/a` is only for non-executable work and must say why.
 
-Reviews of `required` tasks record red-before-green evidence: a pointer showing the named red check existed before implementation, and a pointer showing the same check is green on the closing commit.
+When task-closure review is required, reviews of `required` tasks record the before-and-after evidence. When review is off, the completion report records it directly.
 
 ## Plan Lifecycle
 
@@ -552,7 +570,7 @@ Git staging, commits, and pushes for the protocol repository itself are human-ow
 
 When `git.pm_owns_product_branches = true`, the PM owns product-repo git plumbing for tasks whose `Work root:` field names a work root that resolves to a product repository: staging, commits, branches, pushes, PRs, merges, and branch cleanup. The setting does not apply to tasks whose `Work root:` is `n/a` or omitted, and it never applies to the Cartopian protocol repository itself. Protocol-repo git staging, commits, pushes, and branch management remain human-owned regardless of any project setting.
 
-On an accepted coder completion report with `Ready for review: yes`, the coder is responsible for completed worktree changes and completion evidence only. The coder does not stage, commit, push, create a branch, or open a PR. The PM resolves the product repo, creates or updates the configured product-repo branch, stages and commits the task changes, captures the resulting implementation commit SHA, pushes with `git push -u origin <branch>`, and opens a pull request with `gh pr create`. The commit message, PR title, and PR body reference the task ID and completion report.
+On an accepted task completion report with `Ready to close: yes` (or the legacy `Ready for review: yes`), the assignee is responsible for completed worktree changes and completion evidence only. The assignee does not stage, commit, push, create a branch, or open a PR. The PM resolves the product repo, creates or updates the configured product-repo branch, stages and commits the task changes, captures the resulting implementation commit SHA, pushes with `git push -u origin <branch>`, and opens a pull request with `gh pr create`. The commit message, PR title, and PR body reference the task ID and completion report. With task-closure review required, merge follows approval; with review off, the PM merges after accepted completion evidence and then closes the task.
 
 The protocol defaults are:
 

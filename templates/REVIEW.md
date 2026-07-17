@@ -12,14 +12,14 @@ Two lines. What was reviewed, and what the verdict rests on.
 
 ## Implementation evidence
 
-Required for build and porting tasks. For planning and repo-admin tasks, use `n/a` in each field and say why.
+Required when the reviewed outcome uses implementation/git evidence. For document, operational, planning, physical, or no-repo work, use `n/a` for inapplicable fields and make the task's completion evidence or durable deliverable the primary artifact reviewed.
 
 - **Commit SHA** — filled by the reviewer: the green implementation commit they approved against. In PM-owned product-repo git projects, this is the PM-created task commit from `skills/run-task.md` Stage 4.
 - **Merge commit SHA** — filled by the PM in Stage 6 of `skills/run-task.md`, post-merge. The reviewer writes `pending`, or `n/a` when the project does not use PM-owned product-repo git.
 - **PR URL** — filled by whichever role has it: the reviewer when the PR existed before review in the PM-owned product-repo git workflow, otherwise by the PM after merge.
-- **Test evidence** — two parts when the task's evidence gate was `required`:
-  - Red test was present before implementation.
-  - Test is green at closure. When evidence gate was `n/a`, write `n/a — evidence gate was n/a per task`.
+- **Acceptance evidence** — two parts when the task's evidence gate was `required`:
+  - The named before-state evidence was recorded.
+  - The closing observation passes. For software this is commonly a green test. When evidence gate was `n/a`, write `n/a — evidence gate was n/a per task`.
 
 ## Findings
 

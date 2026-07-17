@@ -84,7 +84,8 @@
 # confirmation = "until-blocked"   # runs chain through sequential tasks
 # max_handoffs_per_run = 5         # bounded batch size per run
 #
-# plus `auto_start = true` on each [handoffs.<role>] the PM should launch.
+# plus the applicable `auto_start_tasks = true` / `auto_start_reviews = true`
+# on each [handoffs.<role>] the PM should launch.
 
 # -----------------------------------------------------------------------------
 # [roles]
@@ -112,6 +113,22 @@
 # reviewer = "Reviews per acceptance evidence."
 
 # -----------------------------------------------------------------------------
+# [reviews]
+# -----------------------------------------------------------------------------
+# Review policy and review assignment are separate from role identity. Modes
+# are `required` or `off`; role values name any resolved role (for example
+# `reviewer`, `editor`, or another operator-chosen name). Project values override these global
+# values key-by-key, so a project can disable a globally configured loop while
+# keeping the inherited role available for other assignments.
+# Protocol defaults: both loops are off.
+
+# [reviews]
+# planning = "off"
+# planning_role = "reviewer"        # required only when planning = "required"
+# task_closure = "off"
+# task_role = "reviewer"            # required only when task_closure = "required"
+
+# -----------------------------------------------------------------------------
 # [handoffs.<role>]
 # -----------------------------------------------------------------------------
 # Per DEC-007: the presence of a [handoffs.<role>] block is the dispatch
@@ -126,10 +143,12 @@
 #                 "gpt-5-codex"). Dispatch exports it to the wrapper as
 #                 CARTOPIAN_MODEL; the wrapper translates it into the
 #                 tool-specific model flag. Unset means the tool's own default.
-#   auto_start  — if true, the PM launches the wrapper itself once the run
-#                 is already authorized by the [automation] initiation and
-#                 confirmation policies above. Governs launch mode only; it
-#                 never initiates a run.
+#   auto_start_tasks   — if true, the PM launches task-scoped handoffs for
+#                        this role (assigned work and task-closure reviews).
+#   auto_start_reviews — if true, the PM launches planning-review handoffs for
+#                        this role. Neither setting enables review policy or
+#                        initiates a run; each controls launch mode only and
+#                        never initiates a run.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #
 # Never configure `[handoffs.pm]`: the PM is the interactive orchestrator of
@@ -140,7 +159,7 @@
 
 # [handoffs.coder]
 # agent = "claude-vscode"
-# auto_start = false
+# auto_start_tasks = false
 # timeout = "60m"
 
 # Additional example for a custom role label:
@@ -148,7 +167,7 @@
 # [handoffs.coder]
 # agent = "cartopian-claude"
 # model = "claude-opus-4-8"
-# auto_start = false
+# auto_start_tasks = false
 # timeout = "60m"
 
 # -----------------------------------------------------------------------------

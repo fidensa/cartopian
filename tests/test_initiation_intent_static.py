@@ -155,12 +155,13 @@ class ConfigSurfaceTest(unittest.TestCase):
         self.assertIn('# confirmation = "until-blocked"', text)
         self.assertIn("never initiates a run", text)
 
-    def test_changelog_topmost_entry_is_the_initiation_migration(self) -> None:
+    def test_changelog_preserves_initiation_migration_below_current_entry(self) -> None:
         text = _read(CHANGELOG)
         _, _, body = text.partition("\n## Entries\n")
         m = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
         self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "v0.4.0")
+        self.assertEqual(m.group(1), "v0.5.0")
+        self.assertIn("### v0.4.0", body)
         self.assertIn("never choose silently", body)
         self.assertIn('initiation = "auto"', body)
 

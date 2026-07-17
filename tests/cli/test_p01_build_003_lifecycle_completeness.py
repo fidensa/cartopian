@@ -106,7 +106,14 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
             with mock.patch.dict(os.environ, env):
                 # --- bring-up ---
                 self._run("scaffold-project", ps)
-                self._run("generate-config", ps, "--name", "Lifecycle Demo", "--id", "lifecycle-demo")
+                self._run(
+                    "generate-config", ps,
+                    "--name", "Lifecycle Demo", "--id", "lifecycle-demo",
+                    "--role", "reviewer=Reviews completed outcomes.",
+                    "--review-planning", "off",
+                    "--review-task-closure", "required",
+                    "--review-task-role", "reviewer",
+                )
                 # Register so the registry-scoped delete-prompt/delete-report
                 # (pre-existing surface) can resolve the project at close.
                 self._run("register-project", ps)

@@ -6,14 +6,19 @@ from typing import Any, Dict, Optional, Tuple
 
 from cli.commands import parse_report
 from cli.commands.plan_audit import _resolve_pm_owns_product_branches
-from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
+from cli.commands.resolve_config import (
+    _CliError,
+    _load_toml,
+    _require_project_keys,
+    resolve_review_policy,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})(?:-[^/]*)?\.md$")
 _TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 _TASK_READY_SECTION_RE = re.compile(
-    r"^##\s+Ready for review\s*$(.*?)(?=^##\s|\Z)",
+    r"^##\s+(?:Ready to close|Ready for review)\s*$(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 _IDENTITY_SECTION_RE = re.compile(
@@ -267,13 +272,18 @@ def _review_path_mismatch(
     return not declared_review_path.exists()
 
 
-def _target_task_status(variant: str, verdict: str, ready_for_review: Optional[bool]) -> Optional[str]:
+def _target_task_status(
+    variant: str,
+    verdict: str,
+    ready_for_review: Optional[bool],
+    task_review_required: bool = True,
+) -> Optional[str]:
     if verdict == "failed-to-parse":
         return None
     if variant == "task":
         if verdict == "accepted":
             if ready_for_review is True:
-                return "in-review"
+                return "in-review" if task_review_required else "done"
             if ready_for_review is False:
                 return "in-progress"
             return None
@@ -296,11 +306,16 @@ def _prompt_to_overwrite(
     verdict: str,
     ready_for_review: Optional[bool],
     prompt_path: Optional[Path],
+    task_review_required: bool = True,
 ) -> Optional[str]:
     if prompt_path is None:
         return None
     if variant == "task":
-        if verdict == "accepted" and ready_for_review is True:
+        if (
+            task_review_required
+            and verdict == "accepted"
+            and ready_for_review is True
+        ):
             return str(prompt_path)
         return None
     if verdict in {"accepted", "changes-requested", "rejected"}:
@@ -314,9 +329,15 @@ def _review_path_output(
     ready_for_review: Optional[bool],
     expected_review_path: Optional[Path],
     declared_review_path: Optional[Path],
+    task_review_required: bool = True,
 ) -> Optional[str]:
     if variant == "task":
-        if verdict == "accepted" and ready_for_review is True and expected_review_path is not None:
+        if (
+            task_review_required
+            and verdict == "accepted"
+            and ready_for_review is True
+            and expected_review_path is not None
+        ):
             return str(expected_review_path)
         return None
     if declared_review_path is not None:
@@ -331,12 +352,17 @@ def _recommended_action(
     verdict: str,
     ready_for_review: Optional[bool],
     requires_pr_step: bool,
+    task_review_required: bool = True,
 ) -> str:
     if verdict == "failed-to-parse":
         return "stop-for-inspection"
     if variant == "task":
         if verdict == "accepted":
             if ready_for_review is True:
+                if not task_review_required:
+                    if requires_pr_step:
+                        return "prepare-pr-and-close-task"
+                    return "close-task"
                 if requires_pr_step:
                     return "prepare-pr-and-assign-review"
                 return "assign-review"
@@ -384,6 +410,7 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         _load_project_config(project_root)
+        review_policy = resolve_review_policy(project_root)
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
@@ -440,7 +467,10 @@ def handler(args: argparse.Namespace) -> int:
             else:
                 requires_pr_step = verdict == "accepted"
 
-    target_task_status = _target_task_status(variant, verdict, ready_for_review)
+    task_review_required = review_policy["task_closure"]["mode"] == "required"
+    target_task_status = _target_task_status(
+        variant, verdict, ready_for_review, task_review_required
+    )
     # Use the filename-derived prompt path: the deidentified task report no
     # longer declares a `Prompt path:`, and the expected path is authoritative.
     prompt_to_overwrite = _prompt_to_overwrite(
@@ -448,6 +478,7 @@ def handler(args: argparse.Namespace) -> int:
         verdict,
         ready_for_review,
         expected_prompt_path,
+        task_review_required,
     )
     review_path = _review_path_output(
         variant,
@@ -455,6 +486,7 @@ def handler(args: argparse.Namespace) -> int:
         ready_for_review,
         expected_review_path,
         declared_review_path,
+        task_review_required,
     )
     record = {
         "verdict": verdict,
@@ -479,6 +511,7 @@ def handler(args: argparse.Namespace) -> int:
             verdict,
             ready_for_review,
             requires_pr_step,
+            task_review_required,
         ),
     }
     emit_record(record)

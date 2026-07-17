@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -810,13 +810,14 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'protocol_version = "v0.4.0"\n'
+            'protocol_version = "v0.5.0"\n'
             "\n"
             "[roles]\n"
             'coder = "Implements tasks per spec."\n'
             "\n"
             "[handoffs.coder]\n"
             'agent = "/bin/true"\n'
+            "auto_start_tasks = true\n"
             'timeout = "30m"\n'
         )
         with project_scaffold(cartopian_toml=toml) as scaffold, \

@@ -16,7 +16,27 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'protocol_version = "v0.4.0"\n'
+    'protocol_version = "v0.5.0"\n'
+    '\n'
+    '[roles]\n'
+    'reviewer = "Reviews completed work."\n'
+    '\n'
+    '[reviews]\n'
+    'planning = "required"\n'
+    'planning_role = "reviewer"\n'
+    'task_closure = "required"\n'
+    'task_role = "reviewer"\n'
+)
+
+_NO_REVIEW_TOML = (
+    '[project]\n'
+    'id = "test"\n'
+    'name = "Test"\n'
+    'protocol_version = "v0.5.0"\n'
+    '\n'
+    '[reviews]\n'
+    'planning = "off"\n'
+    'task_closure = "off"\n'
 )
 
 
@@ -34,7 +54,12 @@ def _run(*cli_args, home, cwd=None):
     )
 
 
-def _seed_task(tmp: Path, status: str, name: str = "TASK-01-007-demo.md") -> Path:
+def _seed_task(
+    tmp: Path,
+    status: str,
+    name: str = "TASK-01-007-demo.md",
+    config: str = _MINIMAL_TOML,
+) -> Path:
     """Create a minimal Cartopian project with the task in <status>."""
     project = tmp / "project"
     tasks_dir = project / "tasks"
@@ -44,7 +69,7 @@ def _seed_task(tmp: Path, status: str, name: str = "TASK-01-007-demo.md") -> Pat
     (project / "prompts").mkdir(parents=True, exist_ok=True)
     (project / "reports").mkdir(parents=True, exist_ok=True)
     (project / "reviews").mkdir(parents=True, exist_ok=True)
-    (project / "cartopian.toml").write_text(_MINIMAL_TOML, encoding="utf-8")
+    (project / "cartopian.toml").write_text(config, encoding="utf-8")
     task_path = tasks_dir / status / name
     task_path.write_text("# task\n", encoding="utf-8")
     return task_path
@@ -144,7 +169,10 @@ class TestMoveTaskHappyPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "open")
-            proc = _run(str(task_path), "done", home=tmp_path)
+            proc = _run(
+                str(task_path), "done", "--administrative", "--reason", "cleanup",
+                home=tmp_path,
+            )
             self._assert_success(proc, task_path, "done")
 
     def test_fast_forward_open_to_in_review(self):
@@ -170,12 +198,13 @@ class TestMoveTaskHappyPath(unittest.TestCase):
             proc = _run(str(task_path), "in-progress", home=tmp_path)
             self._assert_success(proc, task_path, "in-progress")
 
-    def test_in_progress_fast_forward_to_done(self):
+    def test_in_progress_to_done_is_disallowed_when_review_required(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             task_path = _seed_task(tmp_path, "in-progress")
             proc = _run(str(task_path), "done", home=tmp_path)
-            self._assert_success(proc, task_path, "done")
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("task-closure review is required", proc.stderr)
 
 
 class TestMoveTaskGuards(unittest.TestCase):
@@ -220,6 +249,52 @@ class TestMoveTaskGuards(unittest.TestCase):
 
     def test_backward_in_progress_to_open(self):
         self._expect_guard("in-progress", "open")
+
+
+class TestMoveTaskReviewOff(unittest.TestCase):
+    def test_in_progress_to_done_requires_complete_task_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "in-progress", config=_NO_REVIEW_TOML)
+            missing = _run(str(task), "done", home=root)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("missing coder report", missing.stderr)
+
+            _seed_coder_report(root / "project", "01-007", "TASK-01-007")
+            moved = _run(str(task), "done", home=root)
+            self.assertEqual(moved.returncode, 0, msg=moved.stderr)
+            self.assertTrue(root.joinpath("project/tasks/done", task.name).is_file())
+
+    def test_in_progress_can_return_to_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "in-progress", config=_NO_REVIEW_TOML)
+            result = _run(str(task), "open", home=root)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+    def test_in_progress_cannot_enter_in_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "in-progress", config=_NO_REVIEW_TOML)
+            _seed_coder_report(root / "project", "01-007", "TASK-01-007")
+            result = _run(str(task), "in-review", home=root)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("task-closure review is off", result.stderr)
+
+    def test_stranded_in_review_task_can_be_unbricked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "in-review", config=_NO_REVIEW_TOML)
+            result = _run(str(task), "done", home=root)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+    def test_administrative_fast_forward_requires_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "open", config=_NO_REVIEW_TOML)
+            refused = _run(str(task), "done", "--administrative", home=root)
+            self.assertEqual(refused.returncode, 2)
+            self.assertIn("requires a non-empty --reason", refused.stderr)
 
 
 class TestMoveTaskLifecycleGuards(unittest.TestCase):

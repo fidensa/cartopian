@@ -45,15 +45,13 @@ If inconsistent state exists (plan artifacts without a plan file, or `STATE.md` 
    cartopian register-project <project-path> [--label "Human-friendly name"]
    ```
 
-3. Resolve the effective configuration for this project (roles, handoffs, automation policy, declared work roots) via the Core CLI:
+3. Resolve the effective configuration for this project (roles, review policy and assignments, handoffs, automation policy, declared work roots) via the Core CLI:
 
    ```
    cartopian resolve-config <project-path>
    ```
 
-4. Check whether a reviewer is configured in the resolved roles. If not, ask the operator:
-
-   > "No reviewer is configured. Do you want to designate a reviewer for this session? If not, we'll proceed without review checkpoints."
+4. Read `reviews.planning.mode` and `reviews.planning.role` from the emitted record. Required planning review uses that exact arbitrary role name; policy `off` skips checkpoints. Never infer policy or assignment from a role name or description.
 
 ---
 
@@ -108,11 +106,11 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Architecture rules:** Derive from any constraints stated in the external plan or the requirements source. Note the origin of each rule.
 
-**Repo topology:** Identify which repos are involved. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
+**Work topology:** Identify which repos or other work locations are involved, including no-repo work. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
 
-Within each phase, assign `PNN-KIND-NNN` plan refs. Map subtasks to plan refs where applicable. Use `BUILD` for items that produce code or artifacts; `RESEARCH` for items that produce knowledge, decisions, or designs.
+Within each phase, assign `PNN-KIND-NNN` plan refs. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs.
 
 **Requirement coverage:**
 
@@ -126,7 +124,7 @@ Within each phase, assign `PNN-KIND-NNN` plan refs. Map subtasks to plan refs wh
 
 **Exit criteria:** Derive from the external plan's definition of done. If none are stated, propose criteria and confirm with the operator before writing them.
 
-If a reviewer is configured, run review checkpoint `002 implementation-plan` per the Review Flow Reference.
+If `reviews.planning.mode` is `required`, run review checkpoint `002 implementation-plan` per the Review Flow Reference using `reviews.planning.role`.
 
 ---
 
@@ -142,14 +140,14 @@ Each phase body contains:
 
 - **Phase goal:** one or two sentences
 - **Plan refs covered:** list from the plan's phase table
-- **Build items:** tasks that produce code or artifacts
+- **Build items:** delivery/execution tasks that produce outcomes or artifacts
 - **Research items:** tasks that produce knowledge or decisions
 - **Exit criteria:** copied from the plan
 - **Dependencies on prior phases:** what must be complete before this phase starts
 
 The two-digit phase number (`NN`) must match the plan section number.
 
-If a reviewer is configured, run review checkpoint `003 phases`.
+If `reviews.planning.mode` is `required`, run review checkpoint `003 phases`.
 
 ---
 
@@ -171,7 +169,7 @@ Populate all fields:
 - `Assignee:` from the resolved role configuration
 - `Spec:` link if a spec is being created; otherwise `none`
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
-- `Evidence gate:` use judgment — `required` for code-producing tasks; `n/a` for research, documentation, or configuration tasks
+- `Evidence gate:` use judgment — `required` whenever concrete before-and-after evidence is appropriate (tests, validations, approvals, inspections, rehearsals, fact-checks); `n/a` only with a reason
 
 For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md`:
 
@@ -179,7 +177,7 @@ For tasks that need specs (new interfaces, schemas, contracts), author `specs/SP
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
 ```
 
-If a reviewer is configured, run review checkpoint `004 tasks-and-specs`.
+If `reviews.planning.mode` is `required`, run review checkpoint `004 tasks-and-specs`.
 
 ---
 
@@ -203,7 +201,7 @@ Report to the operator:
 - Requirements handling (local, stub, or external reference)
 - Number of phases generated
 - Number of tasks and specs generated for the active phase
-- Review status (reviewed, skipped, or no reviewer configured)
+- Review status (required and completed, or policy off)
 - Resolved handoff configuration
 - Suggested first action, including whether to create `prompts/PROMPT-NN-NNN.md` for the first assignment
 

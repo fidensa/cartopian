@@ -52,12 +52,12 @@ Use `n/a` (or omit the line) for code tasks and any task with no durable documen
 
 ## Evidence gate
 
-If `required`, name the concrete acceptance evidence (test targets, fixture checks, validation runs, etc.) that must exist and fail before implementation starts. If `n/a`, say why.
+If `required`, name the concrete before-and-after acceptance evidence (test target, fixture check, validation run, fact-check, approval checklist, inspection, rehearsal, or similar) that demonstrates the outcome. If `n/a`, say why.
 
 ## Acceptance
 
 - [ ] Checkable, specific, boolean-verifiable things.
-- [ ] Each item should be something a reviewer can mark true or false.
+- [ ] Each item should be something an independent observer can mark true or false.
 
 ## References
 

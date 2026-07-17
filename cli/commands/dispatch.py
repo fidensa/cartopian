@@ -8,9 +8,11 @@ Two keying modes:
 - ``cartopian dispatch --prompt <prompt-path> --role <role>`` — report-path-only
   handoffs (planning-checkpoint reviews; no task file exists during planning).
   ``--prompt`` accepts only an allowlisted planning-checkpoint prompt slot
-  (``<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md``) and fails closed unless
-  the resolved ``[handoffs.<role>].planning_reviews`` is ``true`` — planning-review
-  automation is opt-in per role (default off), independent of ``auto_start``.
+  (``<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md``).
+
+Both modes fail closed unless their explicit launch setting is true:
+``auto_start_tasks`` for task-scoped handoffs and ``auto_start_reviews`` for
+planning-review handoffs. Review policy remains independent under ``[reviews]``.
 
 The delegation counterpart to the mediated writer. A contained PM has no
 shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
@@ -134,7 +136,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Absolute path to a planning-checkpoint prompt "
             "(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md) for a "
-            "report-path-only handoff; requires [handoffs.<role>].planning_reviews = true"
+            "report-path-only handoff; requires "
+            "[handoffs.<role>].auto_start_reviews = true"
         ),
     )
     subparser.add_argument(
@@ -240,6 +243,13 @@ def handler(args: argparse.Namespace) -> int:
 
     task_id: Optional[str]
     if task_path is not None:
+        if role_handoff.get("auto_start_tasks") is not True:
+            stderr_guard(
+                f"automatic task dispatch is not enabled for role {role} — "
+                f"set [handoffs.{role}].auto_start_tasks = true, or present "
+                f"the launch command to the operator"
+            )
+            return EXIT_FAIL
         # --- Fail-closed: the assignee prompt must exist ---------------------
         task_id = handoff_packet._extract_task_id(task_path) or task_path.stem
         nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
@@ -270,12 +280,12 @@ def handler(args: argparse.Namespace) -> int:
                 f"Task-scoped handoffs dispatch by task path"
             )
             return EXIT_FAIL
-        # --- Fail-closed: planning-review automation is opt-in per role ------
-        if role_handoff.get("planning_reviews") is not True:
+        # --- Fail-closed: planning-review automatic launch is explicit -------
+        if role_handoff.get("auto_start_reviews") is not True:
             stderr_guard(
-                f"planning-checkpoint dispatch is not enabled for role {role} — "
-                f"set [handoffs.{role}].planning_reviews = true to opt in, or "
-                f"present the launch command to the operator"
+                f"automatic planning-review dispatch is not enabled for role {role} — "
+                f"set [handoffs.{role}].auto_start_reviews = true, or present "
+                f"the launch command to the operator"
             )
             return EXIT_FAIL
         expected_report_path = (
