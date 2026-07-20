@@ -53,7 +53,8 @@ carry no target and pass untouched (protocol failure, nothing attributable).
 
 Session-role identification: ``cartopian dispatch`` exports environment to the
 launched wrapper (the same mechanism that carries ``CARTOPIAN_TIMEOUT`` /
-``CARTOPIAN_MODEL``); it additionally exports ``CARTOPIAN_ROLE=<role>``, which
+``CARTOPIAN_MODEL`` / ``CARTOPIAN_EFFORT``); it additionally exports
+``CARTOPIAN_ROLE=<role>``, which
 the assignee's Claude Code process — and therefore this hook — inherits. The
 variable may carry several comma-separated roles (grants union per
 ``GrantResolution.grants_for``). An interactive session with no role marker

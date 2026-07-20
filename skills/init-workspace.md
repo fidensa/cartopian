@@ -35,9 +35,10 @@ Ask the operator about workspace-wide defaults:
 For each role that should dispatch automatically, ask the operator:
 
 1. **CLI handoff target** — Should this role have a named executable for CLI handoff automation? If yes, what is the executable name? (e.g., `codex`, `gemini`, `claude`)
-2. **Auto-start** — Should the PM automatically launch this executable after assignment is authorized? (`true` or `false`, default `false`)
-3. **Timeout** — Should this handoff have a custom timeout? Use a duration string such as `30m`, `2h`, or `1h30m`. Leave blank to use the protocol default of `60m`.
-4. **Automatic launch by handoff type** — May the PM automatically launch task-scoped handoffs for this role (`auto_start_tasks`)? May it automatically launch planning-review handoffs (`auto_start_reviews`)? Both default to `false`; the `[reviews]` policy independently decides whether review checkpoints exist.
+2. **Effort** — Should this role pin an effort/thinking level? Valid levels depend on the chosen agent CLI (e.g., claude: `low|medium|high|xhigh|max`; codex: `low|medium|high|xhigh|max|ultra`; gemini/devin: not supported). Unsupported values fall back to the tool's default with a warning at launch. Leave blank to use the tool's default.
+3. **Auto-start** — Should the PM automatically launch this executable after assignment is authorized? (`true` or `false`, default `false`)
+4. **Timeout** — Should this handoff have a custom timeout? Use a duration string such as `30m`, `2h`, or `1h30m`. Leave blank to use the protocol default of `60m`.
+5. **Automatic launch by handoff type** — May the PM automatically launch task-scoped handoffs for this role (`auto_start_tasks`)? May it automatically launch planning-review handoffs (`auto_start_reviews`)? Both default to `false`; the `[reviews]` policy independently decides whether review checkpoints exist.
 
 If the operator does not want automated CLI handoff for a role, skip the `[handoffs.*]` section for that role. The PM will create the prompt and the operator will handle execution manually (plain manual handoff). Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block, not from any field on the role itself.
 
@@ -79,6 +80,7 @@ task_closure = "<required|off>"
 
 # [handoffs.<role>]
 # agent = "<executable name>"
+# effort = "<level>"
 # auto_start_tasks = <true|false>
 # auto_start_reviews = <true|false>
 # timeout = "<duration>"

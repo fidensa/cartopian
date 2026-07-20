@@ -126,6 +126,12 @@ if ($Sandbox) {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
+# gemini has no effort/thinking-level flag: a configured
+# [handoffs.<role>].effort cannot be translated, so it is ignored with a
+# notice and gemini runs at its own default.
+if ($env:CARTOPIAN_EFFORT) {
+    [Console]::Error.WriteLine("cartopian-gemini: gemini has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT)")
+}
 $Args += @('-p', $PromptPathAbs)
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

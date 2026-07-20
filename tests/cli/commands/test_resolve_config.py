@@ -107,6 +107,7 @@ class TestHappyPath(unittest.TestCase):
             {
                 "agent": "claude",
                 "model": None,
+                "effort": None,
                 "auto_start_tasks": True,
                 "auto_start_reviews": None,
                 "timeout": "60m",

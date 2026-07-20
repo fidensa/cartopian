@@ -258,6 +258,16 @@ class TestToolSurface(unittest.TestCase):
         # Choices propagate as JSON-schema enum.
         self.assertIn("open", schema["properties"]["to_status"]["enum"])
 
+    def test_generate_config_schema_exposes_handoff_effort(self):
+        # --handoff-effort propagates into the auto-generated tool schema
+        # alongside --handoff-model; neither is required.
+        response = single("tools/list")
+        tools = {t["name"]: t for t in response["result"]["tools"]}
+        schema = tools["generate_config"]["inputSchema"]
+        self.assertIn("handoff_effort", schema["properties"])
+        self.assertIn("handoff_model", schema["properties"])
+        self.assertNotIn("handoff_effort", schema.get("required", []))
+
     def test_register_project_label_is_optional(self):
         response = single("tools/list")
         tools = {t["name"]: t for t in response["result"]["tools"]}

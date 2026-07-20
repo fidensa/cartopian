@@ -128,6 +128,25 @@ if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
 
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved [handoffs.<role>].effort; translate it into codex's reasoning-effort
+# config override (-c model_reasoning_effort=<level>). Values outside codex's
+# CLI-wide effort vocabulary fall back to the default effort (warn + omit).
+# A vocabulary-valid level a specific model rejects is passed through — that
+# outcome is the tool's own behavior. The vocabulary tracks the installed
+# codex CLI generation and may drift as it evolves.
+if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
+  EFFORT_LC="$(printf '%s' "$CARTOPIAN_EFFORT" | tr '[:upper:]' '[:lower:]')"
+  case "$EFFORT_LC" in
+    low|medium|high|xhigh|max|ultra)
+      CMD+=(-c "model_reasoning_effort=$EFFORT_LC")
+      ;;
+    *)
+      echo "cartopian-codex: CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT is not a supported codex effort level (low|medium|high|xhigh|max|ultra); launching with the default effort" >&2
+      ;;
+  esac
+fi
+
 if [[ "$CODEX_BYPASS" == "true" ]]; then
   CMD+=(--dangerously-bypass-approvals-and-sandbox)
 elif [[ -n "$CODEX_SANDBOX" ]]; then

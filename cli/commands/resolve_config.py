@@ -145,6 +145,7 @@ def _resolve_handoffs(
         merged[role] = {
             "agent": block.get("agent"),
             "model": block.get("model"),
+            "effort": block.get("effort"),
             "auto_start_tasks": auto_start_tasks,
             "auto_start_reviews": auto_start_reviews,
             "timeout": block.get("timeout"),

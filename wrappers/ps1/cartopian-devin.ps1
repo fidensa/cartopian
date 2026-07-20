@@ -232,6 +232,12 @@ if ($PermissionMode -eq 'autonomous') {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
+# devin has no effort/thinking-level flag: a configured
+# [handoffs.<role>].effort cannot be translated, so it is ignored with a
+# notice and devin runs at its own default.
+if ($env:CARTOPIAN_EFFORT) {
+    [Console]::Error.WriteLine("cartopian-devin: devin has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT)")
+}
 # devin takes the prompt by file path (--prompt-file): pass the operator's
 # original prompt file directly. The CLI loads it, so no prompt body reaches the
 # command line (and the original is never mutated).

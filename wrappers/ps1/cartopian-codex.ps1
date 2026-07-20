@@ -124,6 +124,21 @@ $Args = @('exec', '--skip-git-repo-check')
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved [handoffs.<role>].effort; translate it into codex's reasoning-effort
+# config override (-c model_reasoning_effort=<level>). Values outside codex's
+# CLI-wide effort vocabulary fall back to the default effort (warn + omit).
+# A vocabulary-valid level a specific model rejects is passed through — that
+# outcome is the tool's own behavior. The vocabulary tracks the installed
+# codex CLI generation and may drift as it evolves.
+if ($env:CARTOPIAN_EFFORT) {
+    $EffortLc = $env:CARTOPIAN_EFFORT.ToLowerInvariant()
+    if ($EffortLc -in @('low', 'medium', 'high', 'xhigh', 'max', 'ultra')) {
+        $Args += @('-c', "model_reasoning_effort=$EffortLc")
+    } else {
+        [Console]::Error.WriteLine("cartopian-codex: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported codex effort level (low|medium|high|xhigh|max|ultra); launching with the default effort")
+    }
+}
 if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'
 } elseif ($Sandbox) {

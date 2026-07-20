@@ -323,6 +323,7 @@ Use `[handoffs.<role>]` only for agent roles that need a named target:
 [handoffs.coder]
 agent = "codex"
 model = "gpt-5-codex"
+effort = "high"
 auto_start_tasks = true
 timeout = "60m"
 
@@ -337,6 +338,7 @@ Handoff fields are:
 
 - `agent`: executable name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
+- `effort`: optional effort/thinking level for the assigned agent, exported to the wrapper as the `CARTOPIAN_EFFORT` environment variable; the wrapper translates it into the tool-specific effort flag. When unset, no variable is exported and the tool's own default effort applies. A value outside the wrapper's CLI-wide vocabulary makes the wrapper warn on stderr and launch at the default; whether a specific model supports a vocabulary-valid level is the tool's own behavior.
 - `auto_start_tasks`: whether the PM may launch this role for task-scoped handoffs, including assigned task work and task-closure review. Default `false`/unset.
 - `auto_start_reviews`: whether the PM may launch this role for planning-review checkpoints, which have no task file. Default `false`/unset. It does not enable planning review; `[reviews].planning` decides whether the checkpoint exists and `planning_role` assigns it.
 - Both `auto_start_*` keys choose launch mode only, after `[automation] initiation` has allowed the run to begin and `confirmation` permits the handoff. Each setting governs only its handoff type; it never initiates a run. `cartopian dispatch` enforces the applicable key fail-closed. Older `auto_start` and `planning_reviews` keys are accepted only as compatibility inputs and resolve to these explicit fields; agents should migrate new edits to the explicit names.

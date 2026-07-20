@@ -74,6 +74,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable handoff agent assignment")
     subparser.add_argument("--handoff-model", action="append", default=[],
                            metavar="ROLE=MODEL", help="Repeatable handoff model")
+    subparser.add_argument("--handoff-effort", action="append", default=[],
+                           metavar="ROLE=EFFORT",
+                           help="Repeatable handoff effort/thinking level")
     subparser.add_argument("--handoff-auto-start-tasks", action="append", default=[],
                            metavar="ROLE=BOOL",
                            help="Repeatable task-handoff automatic launch setting")
@@ -235,13 +238,15 @@ def _collect_handoff_field(
 
 
 def _build_handoffs(
-    handoff_args: List[str], model_args: List[str], auto_task_args: List[str],
+    handoff_args: List[str], model_args: List[str], effort_args: List[str],
+    auto_task_args: List[str],
     auto_review_args: List[str], timeout_args: List[str],
     declared_roles: Dict[str, str],
 ) -> Dict[str, Dict[str, Any]]:
     seen = {
         "agent": set(),
         "model": set(),
+        "effort": set(),
         "auto_start_tasks": set(),
         "auto_start_reviews": set(),
         "timeout": set(),
@@ -253,6 +258,10 @@ def _build_handoffs(
     models = _collect_handoff_field(
         model_args, "--handoff-model", declared_roles, seen, "model",
         lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: model must be non-empty")),
+    )
+    efforts = _collect_handoff_field(
+        effort_args, "--handoff-effort", declared_roles, seen, "effort",
+        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: effort must be non-empty")),
     )
     auto_start_tasks = _collect_handoff_field(
         auto_task_args, "--handoff-auto-start-tasks", declared_roles,
@@ -274,6 +283,8 @@ def _build_handoffs(
             block["agent"] = agents[role]
         if role in models:
             block["model"] = models[role]
+        if role in efforts:
+            block["effort"] = efforts[role]
         if role in auto_start_tasks:
             block["auto_start_tasks"] = auto_start_tasks[role]
         if role in auto_start_reviews:
@@ -297,6 +308,7 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
 
     handoffs = _build_handoffs(
         args.handoff, args.handoff_model,
+        getattr(args, "handoff_effort", []),
         (
             getattr(args, "handoff_auto_start_tasks", [])
             + getattr(args, "handoff_auto_start", [])

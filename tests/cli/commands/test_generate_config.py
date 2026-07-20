@@ -117,6 +117,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--role", "coder=Writes code",
                 "--handoff", "coder=cartopian-claude",
                 "--handoff-model", "coder=claude-opus-4-8",
+                "--handoff-effort", "coder=high",
                 "--handoff-auto-start-tasks", "coder=false",
                 "--handoff-auto-start-reviews", "coder=true",
                 "--handoff-timeout", "coder=30m",
@@ -145,6 +146,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 {
                     "agent": "cartopian-claude",
                     "model": "claude-opus-4-8",
+                    "effort": "high",
                     "auto_start_tasks": False,
                     "auto_start_reviews": True,
                     "timeout": "30m",
@@ -337,6 +339,73 @@ class TestGenerateConfigGuards(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 2)
             self.assertIn("orphan-handoff: foo", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_empty_handoff_effort_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "coder=Writes code",
+                "--handoff", "coder=cartopian-claude",
+                "--handoff-effort", "coder=",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("effort must be non-empty", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_duplicate_handoff_effort_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "coder=Writes code",
+                "--handoff", "coder=cartopian-claude",
+                "--handoff-effort", "coder=high",
+                "--handoff-effort", "coder=low",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("more than once", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_orphan_handoff_effort_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--handoff-effort", "foo=high",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("orphan-handoff: foo", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_pm_handoff_effort_rejected(self):
+        # The PM guard must fire on --handoff-effort like every --handoff* flavour.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "pm=Plans",
+                "--handoff-effort", "pm=high",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("handoffs-pm-forbidden", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_git_key_without_git_versioning_rejected(self):

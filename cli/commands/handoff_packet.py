@@ -233,6 +233,7 @@ def handler(args: argparse.Namespace) -> int:
         ),
         "handoff_target": role_handoff.get("agent"),
         "model": role_handoff.get("model"),
+        "effort": role_handoff.get("effort"),
         "auto_start_tasks": role_handoff.get("auto_start_tasks"),
         "auto_start_reviews": role_handoff.get("auto_start_reviews"),
         "timeout": role_handoff.get("timeout"),

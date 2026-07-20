@@ -175,6 +175,7 @@ Add a `[handoffs.<role>]` block and the PM can launch the work itself:
 [handoffs.coder]
 agent = "cartopian-codex"
 model = "gpt-5-codex"
+effort = "high"
 auto_start_tasks = true
 timeout = "60m"
 
@@ -188,6 +189,8 @@ timeout = "30m"
 Cartopian ships cross-platform wrappers for **Codex, Claude Code, Gemini, and Devin** under `wrappers/`. They handle non-interactive flags, set the right working directory, and conform to the simple `<agent> <prompt-path>` contract. Bring-your-own works too — anything that fits the contract is a valid agent.
 
 The optional `model` key pins the assigned agent to a specific model. Dispatch exports it to the wrapper as the agent-neutral `CARTOPIAN_MODEL` environment variable; all four shipped wrappers translate it into the tool's `--model` flag. When unset, the tool's own default model applies.
+
+The optional `effort` key sets an effort/thinking level the same way: dispatch exports it as `CARTOPIAN_EFFORT`, and the wrapper translates it into the tool-specific flag (`claude --effort`, codex `-c model_reasoning_effort=`). A value outside the wrapper's vocabulary degrades gracefully — the wrapper prints a one-line stderr notice, omits the flag, and the agent launches at its default effort. The Gemini and Devin CLIs have no effort flag, so those wrappers ignore `CARTOPIAN_EFFORT` with a notice.
 
 `auto_start_tasks` controls automatic task-scoped launches, including task-closure review. `auto_start_reviews` independently controls automatic planning-review launches. Neither setting enables a review stage or makes a role a reviewer; the `[reviews]` policy and assignment do that. Both launch settings default to false/unset and are enforced fail-closed by `cartopian dispatch`.
 

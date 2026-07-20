@@ -21,7 +21,8 @@ command performs the launch on the PM's behalf as *per-invocation* Cartopian cod
 ``resolve-config`` aggregators to prepare the packet, fails closed on a missing
 ``[handoffs.<role>]`` block / a missing agent / a missing prompt, exports
 ``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout``,
-``CARTOPIAN_MODEL`` from the resolved ``[handoffs.<role>].model`` (when set), and
+``CARTOPIAN_MODEL`` from the resolved ``[handoffs.<role>].model`` (when set),
+``CARTOPIAN_EFFORT`` from the resolved ``[handoffs.<role>].effort`` (when set), and
 ``CARTOPIAN_ROLE`` from the dispatched role (the session-role marker capability
 enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
@@ -74,6 +75,13 @@ DEFAULT_TIMEOUT = "60m"
 # tool-specific model flag; never exported when the handoff sets no model
 # (the tool's own default model applies).
 MODEL_ENV = "CARTOPIAN_MODEL"
+
+# Agent-neutral effort/thinking-level selection. Exported from the resolved
+# ``[handoffs.<role>].effort`` so the wrapper can translate it into the
+# tool-specific effort flag; never exported when the handoff sets no effort
+# (the tool's own default effort applies). Value validation is the wrapper's
+# job — effort vocabularies differ per agent CLI.
+EFFORT_ENV = "CARTOPIAN_EFFORT"
 
 def _resolve_comspec() -> str:
     """Absolute path to the Windows command interpreter (``cmd.exe``).
@@ -240,6 +248,15 @@ def handler(args: argparse.Namespace) -> int:
             f"identifier or remove the key"
         )
         return EXIT_FAIL
+    effort = role_handoff.get("effort")
+    # Same fail-closed guard as model: a set-but-falsy effort would be
+    # reported in the record below yet never exported.
+    if effort is not None and not effort:
+        stderr_guard(
+            f"[handoffs.{role}].effort is set but empty — set an effort "
+            f"level or remove the key"
+        )
+        return EXIT_FAIL
 
     task_id: Optional[str]
     if task_path is not None:
@@ -316,6 +333,12 @@ def handler(args: argparse.Namespace) -> int:
         env[MODEL_ENV] = str(model)
     else:
         env.pop(MODEL_ENV, None)
+    # Agent-neutral effort selection from the resolved [handoffs.<role>].effort,
+    # cleared the same way when unset.
+    if effort:
+        env[EFFORT_ENV] = str(effort)
+    else:
+        env.pop(EFFORT_ENV, None)
     # Resolve the agent to a full path before launching. `subprocess.Popen` with
     # a bare name uses CreateProcess on native Windows, which resolves only
     # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
@@ -361,6 +384,7 @@ def handler(args: argparse.Namespace) -> int:
         "role": role,
         "handoff_target": agent,
         "model": model,
+        "effort": effort,
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),
         "timeout": timeout,

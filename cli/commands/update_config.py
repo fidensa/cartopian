@@ -70,6 +70,7 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _HANDOFF_FIELDS = (
     "agent",
     "model",
+    "effort",
     "auto_start_tasks",
     "auto_start_reviews",
     "timeout",

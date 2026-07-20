@@ -128,6 +128,20 @@ if ($SkipPermissions) {
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved [handoffs.<role>].effort; translate it into claude's --effort flag.
+# Values outside claude's CLI-wide effort vocabulary fall back to the default
+# effort (warn + omit). A vocabulary-valid level a specific model rejects is
+# passed through — that outcome is the tool's own behavior. The vocabulary
+# tracks the installed claude CLI generation and may drift as it evolves.
+if ($env:CARTOPIAN_EFFORT) {
+    $EffortLc = $env:CARTOPIAN_EFFORT.ToLowerInvariant()
+    if ($EffortLc -in @('low', 'medium', 'high', 'xhigh', 'max')) {
+        $Args += @('--effort', $EffortLc)
+    } else {
+        [Console]::Error.WriteLine("cartopian-claude: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported claude effort level (low|medium|high|xhigh|max); launching with the default effort")
+    }
+}
 $Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

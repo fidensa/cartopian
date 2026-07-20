@@ -143,6 +143,12 @@
 #                 "gpt-5-codex"). Dispatch exports it to the wrapper as
 #                 CARTOPIAN_MODEL; the wrapper translates it into the
 #                 tool-specific model flag. Unset means the tool's own default.
+#   effort      — optional effort/thinking level for the assigned agent (e.g.
+#                 "high"). Dispatch exports it to the wrapper as
+#                 CARTOPIAN_EFFORT; the wrapper translates it into the
+#                 tool-specific effort flag. Unset means the tool's own
+#                 default. Values the wrapper's CLI does not recognize are
+#                 dropped with a stderr notice and the default applies.
 #   auto_start_tasks   — if true, the PM launches task-scoped handoffs for
 #                        this role (assigned work and task-closure reviews).
 #   auto_start_reviews — if true, the PM launches planning-review handoffs for
@@ -167,6 +173,7 @@
 # [handoffs.coder]
 # agent = "cartopian-claude"
 # model = "claude-opus-4-8"
+# effort = "high"
 # auto_start_tasks = false
 # timeout = "60m"
 

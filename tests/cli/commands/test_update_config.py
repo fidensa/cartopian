@@ -226,6 +226,16 @@ class TestRoleAndHandoff(_Base):
         self.assertEqual(cfg["handoffs"]["coder"]["agent"], "cartopian-claude")
         self.assertIs(cfg["handoffs"]["coder"]["auto_start_tasks"], True)
 
+    def test_set_handoff_effort_for_declared_role(self):
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-handoff", "coder.agent=cartopian-claude",
+            "--set-handoff", "coder.effort=high",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        cfg = tomllib.loads(self.cfg.read_text())
+        self.assertEqual(cfg["handoffs"]["coder"]["effort"], "high")
+
     def test_set_review_policy_and_arbitrary_assigned_role(self):
         proc = self.run_uc(
             str(self.proj),

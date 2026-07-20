@@ -132,6 +132,13 @@ if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
 
+# gemini has no effort/thinking-level flag: a configured
+# [handoffs.<role>].effort cannot be translated, so it is ignored with a
+# notice and gemini runs at its own default.
+if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
+  echo "cartopian-gemini: gemini has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT" >&2
+fi
+
 CMD+=(-p "$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
