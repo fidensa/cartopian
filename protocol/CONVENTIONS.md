@@ -237,6 +237,8 @@ The neutral task-report core is `## Identity`, `## Completion evidence`, `## Rem
 
 Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use `reports/REPORT-NN-NNN.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN-slug.md`.
 
+Task review completion reports declare the absolute `Task path:` in `## Identity`. The path must name the task implied by `REPORT-NN-NNN.md` in its current lifecycle directory; a missing, stale, or wrong task path is invalid completion evidence. This requirement does not apply to deidentified task completion reports or to planning-review completion reports.
+
 Reports must not include secrets or unnecessary sensitive environment data such as API keys, credentials, tokens, or private connection strings.
 
 Each handoff has one expected protocol-derived report path. A stale, missing, malformed, incomplete, internally inconsistent, unsupported, or path-mismatched report is not valid completion evidence.

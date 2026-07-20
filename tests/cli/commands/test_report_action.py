@@ -107,17 +107,20 @@ def _review_report(
     report_stem: str,
     review_id: str,
     prompt_path: Path,
+    task_path: Path | None,
     review_path: Path,
     status: str,
     verdict: str | None = None,
 ) -> str:
     verdict_body = verdict if verdict is not None else ""
+    task_identity = f"- Task path: {task_path}\n" if task_path is not None else ""
     return (
         f"# {report_stem}\n\n"
         f"Status: {status}\n\n"
         "## Identity\n\n"
         f"- Review ID: {review_id}\n"
         f"- Prompt path: {prompt_path}\n"
+        f"{task_identity}"
         f"- Review file path: {review_path}\n\n"
         "## Evidence reviewed\n\n"
         "- report-action routing fields\n\n"
@@ -312,17 +315,22 @@ class TestReportActionReviewOff(unittest.TestCase):
 
 
 class TestReportActionReviewVariants(unittest.TestCase):
-    def test_review_accepts_valid_no_plan_state_with_nullable_task_fields(self) -> None:
+    def test_review_accepts_and_resolves_task_fields(self) -> None:
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
             home.mkdir()
-            review_path = scaffold.write("reviews/REVIEW-01-007.md", "# REVIEW-01-007\n")
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-02-004-demo.md",
+                "# TASK-02-004: demo\n\nWork root: n/a\n",
+            )
+            review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
-                "reports/REPORT-01-007.md",
+                "reports/REPORT-02-004.md",
                 _review_report(
-                    report_stem="REPORT-01-007",
-                    review_id="REVIEW-01-007",
-                    prompt_path=scaffold.prompts / "PROMPT-01-007.md",
+                    report_stem="REPORT-02-004",
+                    review_id="REVIEW-02-004",
+                    prompt_path=scaffold.prompts / "PROMPT-02-004.md",
+                    task_path=task_path,
                     review_path=review_path,
                     status="complete",
                     verdict="approve",
@@ -339,13 +347,81 @@ class TestReportActionReviewVariants(unittest.TestCase):
         self.assertEqual(record["review_verdict"], "approve")
         self.assertEqual(record["target_task_status"], "done")
         self.assertFalse(record["requires_pr_step"])
-        self.assertEqual(record["prompt_to_overwrite"], str((scaffold.prompts / "PROMPT-01-007.md").resolve()))
+        self.assertEqual(record["prompt_to_overwrite"], str((scaffold.prompts / "PROMPT-02-004.md").resolve()))
         self.assertEqual(record["review_path"], str(review_path.resolve()))
-        self.assertIsNone(record["task_id"])
-        self.assertIsNone(record["task_path"])
-        self.assertIsNone(record["expected_task_path"])
+        self.assertEqual(record["task_id"], "TASK-02-004")
+        self.assertEqual(record["task_path"], str(task_path.resolve()))
+        self.assertEqual(record["expected_task_path"], str(task_path.resolve()))
+        self.assertEqual(record["declared_report_task_path"], str(task_path.resolve()))
         self.assertFalse(record["path_mismatch"])
         self.assertEqual(record["recommended_action"], "close-task")
+
+    def test_review_without_task_path_is_failed_to_parse(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            scaffold.write(
+                "tasks/in-review/TASK-02-004-demo.md",
+                "# TASK-02-004: demo\n\nWork root: n/a\n",
+            )
+            review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
+            report_path = scaffold.write(
+                "reports/REPORT-02-004.md",
+                _review_report(
+                    report_stem="REPORT-02-004",
+                    review_id="REVIEW-02-004",
+                    prompt_path=scaffold.prompts / "PROMPT-02-004.md",
+                    task_path=None,
+                    review_path=review_path,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "failed-to-parse")
+        self.assertEqual(record["variant"], "review")
+        self.assertIsNone(record["declared_report_task_path"])
+        self.assertIsNone(record["target_task_status"])
+        self.assertEqual(record["recommended_action"], "stop-for-inspection")
+
+    def test_review_with_wrong_task_path_surfaces_path_mismatch(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            expected_task_path = scaffold.write(
+                "tasks/in-review/TASK-02-004-demo.md",
+                "# TASK-02-004: demo\n\nWork root: n/a\n",
+            )
+            wrong_task_path = scaffold.write(
+                "tasks/in-review/TASK-02-005-other.md",
+                "# TASK-02-005: other\n\nWork root: n/a\n",
+            )
+            review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
+            report_path = scaffold.write(
+                "reports/REPORT-02-004.md",
+                _review_report(
+                    report_stem="REPORT-02-004",
+                    review_id="REVIEW-02-004",
+                    prompt_path=scaffold.prompts / "PROMPT-02-004.md",
+                    task_path=wrong_task_path,
+                    review_path=review_path,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["verdict"], "accepted")
+        self.assertEqual(record["declared_report_task_path"], str(wrong_task_path.resolve()))
+        self.assertEqual(record["expected_task_path"], str(expected_task_path.resolve()))
+        self.assertTrue(record["path_mismatch"])
 
     def test_review_blocked_and_failed_keep_task_in_review(self) -> None:
         for status in ("blocked", "failed"):
@@ -353,6 +429,10 @@ class TestReportActionReviewVariants(unittest.TestCase):
                 with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
                     home = scaffold.root / "home"
                     home.mkdir()
+                    task_path = scaffold.write(
+                        "tasks/in-review/TASK-01-008-demo.md",
+                        "# TASK-01-008: demo\n\nWork root: n/a\n",
+                    )
                     review_path = scaffold.write("reviews/REVIEW-01-008.md", "# REVIEW-01-008\n")
                     report_path = scaffold.write(
                         "reports/REPORT-01-008.md",
@@ -360,6 +440,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
                             report_stem="REPORT-01-008",
                             review_id="REVIEW-01-008",
                             prompt_path=scaffold.prompts / "PROMPT-01-008.md",
+                            task_path=task_path,
                             review_path=review_path,
                             status=status,
                         ),
@@ -391,6 +472,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
                     report_stem="REPORT-PLAN-001-demo",
                     review_id="REVIEW-PLAN-001-demo",
                     prompt_path=scaffold.prompts / "PROMPT-PLAN-001-demo.md",
+                    task_path=None,
                     review_path=review_path,
                     status="complete",
                     verdict="request-changes",
@@ -462,6 +544,10 @@ class TestReportActionVariantInference(unittest.TestCase):
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
             home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-01-010-demo.md",
+                "# TASK-01-010: demo\n\nWork root: n/a\n",
+            )
             review_path = scaffold.write("reviews/REVIEW-01-010.md", "# REVIEW-01-010\n")
             report_path = scaffold.write(
                 "reports/REPORT-01-010.md",
@@ -472,7 +558,7 @@ class TestReportActionVariantInference(unittest.TestCase):
                     "- Task ID: TASK-01-010\n"
                     "- Review ID: REVIEW-01-010\n"
                     f"- Prompt path: {scaffold.prompts / 'PROMPT-01-010.md'}\n"
-                    f"- Task path: {scaffold.project_root / 'tasks' / 'in-review' / 'TASK-01-010-demo.md'}\n"
+                    f"- Task path: {task_path}\n"
                     f"- Review file path: {review_path}\n\n"
                     "## Evidence reviewed\n\n"
                     "- routing fields\n\n"

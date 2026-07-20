@@ -72,6 +72,7 @@ Status: <complete | blocked | failed>
 
 - Review ID: <REVIEW-NN-NNN>
 - Prompt path: <absolute path to the prompt file>
+- Task path: <absolute path to the task file being reviewed>
 - Review file path: <absolute path to the review file>
 
 ## Evidence reviewed

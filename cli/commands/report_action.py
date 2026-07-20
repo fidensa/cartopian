@@ -189,9 +189,11 @@ def _expected_paths(
             expected_review_path = (project_root / "reviews" / f"REVIEW-{suffix}.md").resolve()
             expected_task_path = _find_expected_task_path(project_root, task_id)
         elif variant == "review":
+            task_id = f"TASK-{suffix}"
             expected_prompt_path = (project_root / "prompts" / f"PROMPT-{suffix}.md").resolve()
             expected_review_id = f"REVIEW-{suffix}"
             expected_review_path = (project_root / "reviews" / f"{expected_review_id}.md").resolve()
+            expected_task_path = _find_expected_task_path(project_root, task_id)
         else:
             expected_prompt_path = (project_root / "prompts" / f"PROMPT-PLAN-{suffix}.md").resolve()
             expected_review_id = f"REVIEW-PLAN-{suffix}"
@@ -260,13 +262,20 @@ def _task_path_mismatch(
 def _review_path_mismatch(
     identity: Dict[str, str],
     expected_prompt_path: Optional[Path],
+    expected_task_path: Optional[Path],
+    expected_task_id: Optional[str],
     expected_review_path: Optional[Path],
     expected_review_id: Optional[str],
 ) -> bool:
     declared_prompt_path = _path_from_identity(identity, "Prompt path")
+    declared_task_path = _path_from_identity(identity, "Task path")
     declared_review_path = _path_from_identity(identity, "Review file path")
     declared_review_id = identity.get("Review ID")
     if declared_prompt_path != expected_prompt_path:
+        return True
+    if expected_task_id is not None and (
+        expected_task_path is None or declared_task_path != expected_task_path
+    ):
         return True
     if expected_review_path is None or declared_review_path != expected_review_path:
         return True
@@ -442,7 +451,11 @@ def handler(args: argparse.Namespace) -> int:
     expected_task_path = expected["expected_task_path"]
     expected_review_id_obj = expected["expected_review_id"]
     expected_review_id = expected_review_id_obj.name if expected_review_id_obj is not None else None
-    expected_task_id = f"TASK-{_report_suffix(report_path, variant)}" if variant == "task" else None
+    expected_task_id = (
+        f"TASK-{_report_suffix(report_path, variant)}"
+        if variant in {"task", "review"}
+        else None
+    )
 
     if verdict == "failed-to-parse":
         path_mismatch = False
@@ -457,6 +470,8 @@ def handler(args: argparse.Namespace) -> int:
         path_mismatch = _review_path_mismatch(
             identity,
             expected_prompt_path,
+            expected_task_path,
+            expected_task_id,
             expected_review_path,
             expected_review_id,
         )

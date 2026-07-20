@@ -229,6 +229,7 @@ The reviewer produces **two** artifacts, exactly as the coder produces its work 
 
 - The durable **review file** (`reviews/REVIEW-NN-NNN.md`) is the work product: findings, evidence, and the `Verdict:` header the `in-review → done | in-progress | open` move guard reads.
 - The transient **review-completion report** (`reports/REPORT-NN-NNN.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
+- The review-completion report's `## Identity` block must copy the absolute task-file path from the prompt into `Task path:`. `report-action` cross-checks it against the task implied by `REPORT-NN-NNN.md`; a missing, stale, or wrong task path is not valid completion evidence.
 
 The review prompt must also include:
 
@@ -267,6 +268,10 @@ For the `review` variant, the emitted record carries:
 - `review_verdict` — the raw reviewer token, one of `approve | request-changes | reject`.
 - `target_task_status` — the post-verdict lifecycle directory (`done` for `approve`, `in-progress` for `request-changes`, `open` for `reject`).
 - `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` after an `approve` verdict.
+- `task_id` and `task_path` — the task resolved from the report filename and cross-checked against the report's declared `Task path`.
+- `path_mismatch` — true when any declared handoff path, including `Task path`, disagrees with the report filename's expected paths. Treat `path_mismatch = true` as `failed-to-parse`.
+
+If the verdict is `blocked`, `failed`, or `failed-to-parse`, or if `path_mismatch = true`, stop automation, preserve the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
 Apply the reviewer's verdict without an operator confirmation prompt — the verdict is the review file's recorded evidence, and the CLI guards verify it before executing any move (the `[automation]` policy gates pace, not selection). Report the applied verdict in the running summary. Decisions the protocol or plan reserves to the operator (e.g. an open-question ruling the task was created to inform) remain operator-owned: pause for those before recording them, even when the task's own lifecycle proceeds. Apply the verdict by delegating directory status transitions to the Core CLI:
 

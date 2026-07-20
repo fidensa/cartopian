@@ -61,7 +61,7 @@ REQUIRED_ANY_SECTIONS = {
 # keep their identity fields.
 REQUIRED_IDENTITY_KEYS = {
     "task": (),
-    "review": ("Review ID:", "Prompt path:", "Review file path:"),
+    "review": ("Review ID:", "Prompt path:", "Task path:", "Review file path:"),
     "planning-review": ("Review ID:", "Prompt path:", "Review file path:"),
 }
 
