@@ -11,7 +11,8 @@ PowerShell mirrors hold the same invariants:
   requiring non-bypass + workspace-write + a set CARTOPIAN_WORK_ROOTS, and
   before the trailing prompt append;
 * ``cartopian-claude.ps1`` appends ``--add-dir`` per work root only inside an
-  ``if ($env:CARTOPIAN_WORK_ROOTS)`` guard, before the trailing prompt append;
+  ``if ($env:CARTOPIAN_WORK_ROOTS)`` guard, after the positional prompt so
+  Claude's variadic option cannot consume it;
 * ``cartopian-gemini.ps1`` / ``cartopian-devin.ps1`` warn on stderr when their
   sandbox is active and work roots are declared (no per-path grant surface).
 """
@@ -54,9 +55,10 @@ def test_claude_ps1_adds_work_roots_as_add_dir():
         "claude.ps1: --add-dir append must sit inside the CARTOPIAN_WORK_ROOTS "
         "guard; unset work roots would still inject a flag"
     )
-    tail_idx = text.find("$Args += $PromptPathAbs")
-    assert tail_idx != -1 and tail_idx > append_idx, (
-        "claude.ps1: the --add-dir block must precede the trailing prompt append"
+    prompt_idx = text.find("$Args += $PromptPathAbs")
+    assert prompt_idx != -1 and prompt_idx < guard_idx, (
+        "claude.ps1: the positional prompt must precede the --add-dir block "
+        "so Claude's variadic option cannot consume it"
     )
     assert text.count(append) == 1
 

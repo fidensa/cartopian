@@ -158,6 +158,11 @@ if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
   esac
 fi
 
+# Claude 2.1.212+ parses --add-dir as variadic. Keep the positional prompt
+# before every --add-dir occurrence so the final variadic option cannot
+# consume it as another directory.
+CMD+=("$PROMPT_PATH_ABS")
+
 # Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a colon-joined
 # list of the project's resolved work-root absolute paths). Declared work
 # roots become additional working directories (--add-dir) so writes there are
@@ -169,8 +174,6 @@ if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
     [[ -n "$_root" ]] && CMD+=(--add-dir "$_root")
   done
 fi
-
-CMD+=("$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

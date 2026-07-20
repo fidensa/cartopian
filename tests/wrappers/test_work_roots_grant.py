@@ -146,6 +146,12 @@ def test_claude_adds_each_work_root_as_add_dir(tmp_path):
     assert pairs == ROOTS, (
         f"claude must receive one --add-dir per declared work root, in order. argv={received!r}"
     )
+    prompt_args = [arg for arg in received if arg.endswith("PROMPT-01-400.md")]
+    assert len(prompt_args) == 1, f"claude must receive exactly one prompt path. argv={received!r}"
+    assert received.index(prompt_args[0]) < received.index("--add-dir"), (
+        "claude's variadic --add-dir would consume a prompt appended after it; "
+        f"the positional prompt must precede every --add-dir. argv={received!r}"
+    )
 
 
 def test_claude_no_add_dir_when_unset(tmp_path):

@@ -142,6 +142,11 @@ if ($env:CARTOPIAN_EFFORT) {
         [Console]::Error.WriteLine("cartopian-claude: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported claude effort level (low|medium|high|xhigh|max); launching with the default effort")
     }
 }
+# Claude 2.1.212+ parses --add-dir as variadic. Keep the positional prompt
+# before every --add-dir occurrence so the final variadic option cannot
+# consume it as another directory.
+$Args += $PromptPathAbs
+
 # Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a pathsep-joined
 # list — ';' on Windows — of the project's resolved work-root absolute
 # paths). Declared work roots become additional working directories
@@ -152,7 +157,6 @@ if ($env:CARTOPIAN_WORK_ROOTS) {
         if ($root) { $Args += @('--add-dir', $root) }
     }
 }
-$Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
