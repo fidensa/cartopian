@@ -134,9 +134,15 @@ def _expected_report_path(project_root: Path, task_id: str) -> Path:
 def _build_git_policy(git_block: Dict[str, Any]) -> Dict[str, Any]:
     """Project the resolved git block down to the git_policy shape."""
     return {
-        "branch_strategy": git_block.get("branch_strategy"),
-        "auto_commit": git_block.get("auto_commit"),
-        "auto_push": git_block.get("auto_push"),
+        "pm_owns_product_branches": bool(
+            git_block.get("pm_owns_product_branches", False)
+        ),
+        "default_branch_pattern": git_block.get(
+            "default_branch_pattern", "task/{task_id}-{slug}"
+        ),
+        "default_merge_strategy": git_block.get(
+            "default_merge_strategy", "merge"
+        ),
     }
 
 

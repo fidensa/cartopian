@@ -61,6 +61,8 @@ Omit this section for code-only tasks.>
 - Do not rewrite `STATE.md` or perform PM lifecycle cleanup.
 - When the project uses PM-owned product-repo git, do not stage, commit, push, create branches, open PRs, merge, or otherwise perform product-repo git plumbing.
 
+For a verification-only assignment or review under the no-product-git model, add the effective operating model here: Cartopian git versioning is off; product-repository branches are not PM-owned; pre-existing uncommitted deliverables from completed tasks are expected and are not evidence that the verification handoff modified files. Evaluate only changes attributable to the current handoff.
+
 ## Done criteria
 
 <Checkable. Boolean-verifiable.>

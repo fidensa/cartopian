@@ -26,7 +26,6 @@ ALLOWED_TOP_DIRS = (
 
 ALLOWED_TOP_FILES = (
     "STATE.md",
-    "CONVENTIONS.md",
     "STANDARDS.md",
     ".gitignore",
     "cartopian.toml",
@@ -49,14 +48,12 @@ REQUIRED_DIRS = (
 
 REQUIRED_FILES = (
     "STATE.md",
-    "CONVENTIONS.md",
     "STANDARDS.md",
     "decisions/INDEX.md",
 )
 
 SEED_CONTENTS = {
     "STATE.md": "# STATE\n",
-    "CONVENTIONS.md": "# CONVENTIONS\n",
     "STANDARDS.md": "# STANDARDS\n",
     "decisions/INDEX.md": "# Decisions Index\n",
 }

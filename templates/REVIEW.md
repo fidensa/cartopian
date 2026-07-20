@@ -44,4 +44,6 @@ Findings:
 
 Optional. Anything the author or a future reader should know.
 
+For verification-only work under the no-product-git model, a dirty work root may contain expected deliverables from prior completed tasks. Do not treat `git status` alone as proof that the verification handoff changed files; use the handoff evidence to distinguish pre-existing state from current-task changes.
+
 > **Reviewer boundary:** create the review file and record the verdict only. Do not move task files, delete prompts, or perform lifecycle cleanup. The PM applies lifecycle changes after reading the review.

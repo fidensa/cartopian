@@ -50,7 +50,7 @@ class TestRegistration(unittest.TestCase):
     def test_all_writers_registered_on_cli_surface(self):
         for verb in (
             "write-requirements", "write-plan", "write-standards",
-            "write-conventions", "write-phase", "write-task", "write-spec",
+            "write-phase", "write-task", "write-spec",
             "write-prompt", "write-decision", "write-state", "reset-plan",
         ):
             self.assertIn(verb, SUBCOMMANDS)
@@ -60,7 +60,7 @@ class TestRegistration(unittest.TestCase):
         names = {t["name"] for t in server.list_tools()}
         for tool in (
             "write_requirements", "write_plan", "write_standards",
-            "write_conventions", "write_phase", "write_task", "write_spec",
+            "write_phase", "write_task", "write_spec",
             "write_prompt", "write_decision", "write_state", "reset_plan",
         ):
             self.assertIn(tool, names)
@@ -76,11 +76,10 @@ class TestRootArtifactWriters(_Fixture):
             "# Reqs\n",
         )
 
-    def test_write_plan_standards_conventions(self):
+    def test_write_plan_and_standards(self):
         for verb, fname, action in (
             ("write-plan", "IMPLEMENTATION_PLAN.md", "write-plan"),
             ("write-standards", "STANDARDS.md", "write-standards"),
-            ("write-conventions", "CONVENTIONS.md", "write-conventions"),
         ):
             code, recs, err = run_cli(verb, self.root, "--content", f"body-{verb}\n")
             self.assertEqual(code, 0, msg=err)

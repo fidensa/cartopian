@@ -33,10 +33,8 @@ Scope notes (deliberate exclusions, mirrored in the scan):
 - ``reviews/REVIEW-*`` and ``reports/REPORT-*`` are authored by the
   reviewer/assignee, not the PM, and have no PM ``write-*`` command — they are
   not flagged.
-- The optional ``archive/`` snapshot and the ``pm_owns_product_branches`` git
-  plumbing have no mediated command in the Phase-01 set; they are the explicit
-  operator-owned boundary documented in the skills and are out of this check's
-  scope (``archive/`` paths and git verbs are not scanned).
+- Product-repository git plumbing remains outside this check. Optional plan
+  archival is PM-owned and routes through ``cartopian archive-plan``.
 """
 from __future__ import annotations
 
@@ -85,6 +83,7 @@ REQUIRED_MEDIATED: dict[str, tuple[str, ...]] = {
         "cartopian write-state",
     ),
     "close-plan.md": (
+        "cartopian archive-plan",
         "cartopian reset-plan",
         "cartopian write-state",
     ),
@@ -115,7 +114,6 @@ _ARTIFACT = re.compile(
     r"REQUIREMENTS\.md"
     r"|IMPLEMENTATION_PLAN\.md"
     r"|STANDARDS\.md"
-    r"|CONVENTIONS\.md"
     r"|STATE\.md"
     r"|phases/PHASE|PHASE-(?:NN|\d{2})-"
     r"|tasks/open/TASK|TASK-(?:NN-NNN|\d{2}-\d{3})"
@@ -156,7 +154,7 @@ _RAW_LAUNCH = re.compile(
 
 # A line that names a mediated command is, by construction, the rewired path.
 _MEDIATED = re.compile(
-    r"cartopian\s+(?:write-[a-z]+|dispatch|reset-plan|move-task"
+    r"cartopian\s+(?:write-[a-z]+|dispatch|archive-plan|reset-plan|move-task"
     r"|delete-prompt|delete-report|compose-state|handoff-packet)"
 )
 
@@ -165,16 +163,6 @@ _MEDIATED = re.compile(
 # PROMPT scope boundary says to leave them unchanged, so they are not flagged.
 _ASSIGNEE = re.compile(r"\b(?:assignee|assignees|reviewer|reviewers|coder)\b", re.IGNORECASE)
 
-# Out-of-scope artifacts/paths with no Phase-01 mediated command, split so the
-# archive carve-out can be lifted independently (see ArchiveContainmentBoundaryTest).
-#
-# The ``archive/`` exclusion is only *earned* because Stage 3 of close-plan.md
-# labels the archive create/copy/append path operator-owned / outside the
-# contained-PM path. Lift the carve-out (``scan_archive=True``) and an unlabeled
-# PM archive write of a tracked artifact is flagged like any other raw PM op —
-# which is exactly why the label has to exist: the exclusion masks a real raw
-# step, and only the explicit out-of-containment label makes that acceptable.
-_OUT_OF_SCOPE_ARCHIVE = re.compile(r"archive/", re.IGNORECASE)
 _OUT_OF_SCOPE_OTHER = re.compile(r"reviews/REVIEW|reports/REPORT|INDEX\.md", re.IGNORECASE)
 
 
@@ -201,7 +189,7 @@ class MediatedCommandPresenceTest(unittest.TestCase):
 class ResidualRawOpTest(unittest.TestCase):
     """No PM-performed raw launch or raw artifact Write/Edit survives."""
 
-    def _offending_lines(self, text: str, *, scan_archive: bool = False) -> list[tuple[int, str]]:
+    def _offending_lines(self, text: str) -> list[tuple[int, str]]:
         offending: list[tuple[int, str]] = []
         for idx, raw in enumerate(text.splitlines(), start=1):
             line = raw.strip()
@@ -213,8 +201,6 @@ class ResidualRawOpTest(unittest.TestCase):
                 continue  # assignee/reviewer instruction — not PM-performed
             if _OUT_OF_SCOPE_OTHER.search(line):
                 continue  # reviewer-or-assignee output / index table
-            if not scan_archive and _OUT_OF_SCOPE_ARCHIVE.search(line):
-                continue  # archive snapshot — operator-owned, labeled out of containment
             raw_launch = _RAW_LAUNCH.search(line)
             imperative = _LEADING.sub("", line, count=1)
             raw_write = bool(_RAW_WRITE_VERB_START.match(imperative)) and bool(_ARTIFACT.search(imperative))
@@ -249,15 +235,7 @@ class ResidualRawOpTest(unittest.TestCase):
 
 
 class ArchiveContainmentBoundaryTest(unittest.TestCase):
-    """The close-plan archive path is labeled operator-owned, and the residual
-    scan's ``archive/`` carve-out is legitimate *only because* of that label.
-
-    Without this, the scan's ``archive/`` exclusion (a deliberate carve-out for
-    a path with no Phase-01 mediated command) could silently mask an *unlabeled*
-    PM-performed archive create/copy — a real raw step under containment. These
-    assertions tie the exclusion to the explicit out-of-containment label so the
-    blind spot cannot reopen unnoticed.
-    """
+    """Close-plan archival stays PM-owned and mediated."""
 
     def _read(self, name: str) -> str:
         return (SKILLS_DIR / name).read_text(encoding="utf-8")
@@ -273,53 +251,30 @@ class ArchiveContainmentBoundaryTest(unittest.TestCase):
         )
         return m.group(1)
 
-    def test_archive_stage_labeled_operator_owned(self) -> None:
-        """Stage 3 must carry the operator-owned / out-of-containment label and
-        spell out the contained-PM behavior (skip, or stop for the operator
-        before the mediated reset)."""
+    def test_archive_stage_is_pm_owned_and_mediated(self) -> None:
         region = self._stage3_region(self._read("close-plan.md")).lower()
         for needle in (
-            "containment boundary",
-            "operator-owned",
-            "outside the contained-pm path",
-            "skips the optional archive",
-            "stops here for operator execution",
-            "cartopian reset-plan",
+            "pm-performed",
+            "cartopian archive-plan",
+            "do not hand raw create/copy/index steps to the operator",
         ):
             self.assertIn(
                 needle,
                 region,
                 msg=(
-                    "close-plan.md Stage 3 archive path must carry the operator-owned / "
-                    f"out-of-containment label and contained-PM behavior (missing: {needle!r})"
+                    "close-plan.md Stage 3 must keep archival PM-owned and mediated "
+                    f"(missing: {needle!r})"
                 ),
             )
 
-    def test_unlabeled_pm_archive_write_would_be_flagged(self) -> None:
-        """Lifting the carve-out, an unlabeled PM archive write of a tracked
-        artifact is flagged — proving the exclusion masks a *real* raw step,
-        which is exactly why the out-of-containment label has to exist."""
+    def test_raw_archive_write_is_flagged(self) -> None:
         scan = ResidualRawOpTest("test_no_residual_pm_raw_ops")
         line = "Write `archive/PLAN-001-slug/STATE.md` as the closeout snapshot of STATE.md."
-        # Carve-out lifted: the raw PM archive write is detected.
         self.assertNotEqual(
-            scan._offending_lines(line, scan_archive=True),
+            scan._offending_lines(line),
             [],
-            "an unlabeled PM archive create/copy of a tracked artifact must be flaggable",
+            "a raw PM archive write must be routed through archive-plan",
         )
-        # Default scan: the documented archive/ carve-out suppresses it...
-        self.assertEqual(
-            scan._offending_lines(line, scan_archive=False),
-            [],
-            "the default scan excludes archive/ lines (the documented carve-out)",
-        )
-        # ...and that suppression is acceptable only because close-plan.md labels
-        # the archive path out of containment. If the label disappears, the
-        # carve-out is no longer earned — and test_archive_stage_labeled_operator_owned
-        # fails. Assert the linkage here too so the two cannot drift apart.
-        region = self._stage3_region(self._read("close-plan.md")).lower()
-        self.assertIn("outside the contained-pm path", region)
-        self.assertIn("operator-owned", region)
 
 
 if __name__ == "__main__":  # pragma: no cover

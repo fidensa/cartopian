@@ -58,7 +58,7 @@ Read from the emitted record:
 - `handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model`, `effort`, and unset launch settings are serialized as `null`.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries the assignee will receive read/write access to. Use these absolute paths verbatim when composing the prompt; do not re-derive them.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
-- `git_policy` — `branch_strategy`, `auto_commit`, `auto_push` for the assignee's git boundary, when `git_versioning` is true.
+- `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error to the caller and return a blocked outcome; do not fall back to a manual read sequence.
 

@@ -240,6 +240,40 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             )
 
 
+class TestHandoffPacketGitOperatingModel(unittest.TestCase):
+    def test_enabled_git_policy_exposes_product_branch_ownership_and_defaults(self) -> None:
+        configured = (
+            _TOML
+            + "\n[defaults]\ngit_versioning = true\n"
+            + "\n[git]\npm_owns_product_branches = false\n"
+        )
+        with project_scaffold(cartopian_toml=configured) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-003-verify.md",
+                "# TASK-01-003: Verify\n\nWork root: tool-repo\n",
+            )
+
+            stdout, stderr, rc = _invoke(str(task_path), "coder")
+
+            self.assertEqual(rc, EXIT_OK, msg=stderr)
+            record = json.loads(stdout)
+            self.assertTrue(record["git_versioning"])
+            self.assertEqual(
+                record["git_policy"],
+                {
+                    "pm_owns_product_branches": False,
+                    "default_branch_pattern": "task/{task_id}-{slug}",
+                    "default_merge_strategy": "merge",
+                },
+            )
+
+
 class TestHandoffPacketMissingConfig(unittest.TestCase):
     """No ancestor ``cartopian.toml`` exists → EXIT_ENV (3) with an
     ``[error]`` stderr line. Tests the environment-failure contract.

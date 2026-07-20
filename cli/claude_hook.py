@@ -33,7 +33,6 @@ write for the mutation tools, read for the read tools):
 - ``specs/``, ``phases/``, ``IMPLEMENTATION_PLAN.md``, ``REQUIREMENTS.md``,
   ``ROADMAP.md`` → ``write:plan`` / ``read:governance``
 - ``tasks/``, ``STATE.md``, ``BACKLOG.md``, ``STANDARDS.md``,
-  ``CONVENTIONS.md`` → ``write:lifecycle`` / ``read:governance``
 - ``cartopian.toml`` / ``cartopian.local.toml`` → ``read:governance`` on the
   read axis; on the **write axis** a structured raw-edit tool is always denied
   regardless of grants (the mediated ``cartopian update-config`` command is the
@@ -189,7 +188,6 @@ _ROOT_FILE_CLASSES: Dict[str, str] = {
     "STATE.md": "lifecycle",
     "BACKLOG.md": "lifecycle",
     "STANDARDS.md": "lifecycle",
-    "CONVENTIONS.md": "lifecycle",
     "cartopian.toml": "lifecycle",
     "cartopian.local.toml": "lifecycle",
 }

@@ -1,8 +1,8 @@
 """Unit tests for `cartopian reset-plan`.
 
 The destructive close-surface reset: removes live plan artifacts, recreates
-the empty lifecycle directories, and conditionally reseeds STANDARDS.md /
-CONVENTIONS.md per carry-forward flags — all behind fail-closed allowlist
+the empty lifecycle directories, and conditionally reseeds STANDARDS.md per
+the carry-forward flag — all behind fail-closed allowlist
 guards (a symlink / foreign subdir / non-project target → refuse, remove
 nothing).
 """
@@ -32,7 +32,6 @@ class _Fixture(unittest.TestCase):
         self.scaffold.write("prompts/PROMPT-01-001.md", "# p\n")
         self.scaffold.write("reports/REPORT-01-001.md", "# rep\n")
         self.scaffold.write("STANDARDS.md", "CARRIED STANDARDS\n")
-        self.scaffold.write("CONVENTIONS.md", "CARRIED CONVENTIONS\n")
 
 
 class TestResetRemovesAndRecreates(_Fixture):
@@ -59,28 +58,21 @@ class TestResetRemovesAndRecreates(_Fixture):
         self.assertTrue((pr / "cartopian.toml").is_file())
         self.assertTrue((pr / "STATE.md").is_file())
 
-    def test_reseeds_standards_and_conventions_by_default(self):
+    def test_reseeds_standards_by_default(self):
         code, recs, err = run_cli("reset-plan", self.root)
         self.assertEqual(code, 0, msg=err)
         std = (self.scaffold.project_root / "STANDARDS.md").read_text(encoding="utf-8")
-        conv = (self.scaffold.project_root / "CONVENTIONS.md").read_text(encoding="utf-8")
         self.assertNotIn("CARRIED", std)
-        self.assertNotIn("CARRIED", conv)
-        self.assertIn("Demo Project - Conventions", conv)
-        self.assertEqual(set(recs[0]["details"]["reseeded"]), {"STANDARDS.md", "CONVENTIONS.md"})
+        self.assertEqual(recs[0]["details"]["reseeded"], ["STANDARDS.md"])
 
     def test_carry_forward_keeps_files(self):
         code, recs, err = run_cli(
-            "reset-plan", self.root, "--carry-standards", "--carry-conventions",
+            "reset-plan", self.root, "--carry-standards",
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(
             (self.scaffold.project_root / "STANDARDS.md").read_text(encoding="utf-8"),
             "CARRIED STANDARDS\n",
-        )
-        self.assertEqual(
-            (self.scaffold.project_root / "CONVENTIONS.md").read_text(encoding="utf-8"),
-            "CARRIED CONVENTIONS\n",
         )
         self.assertEqual(recs[0]["details"]["reseeded"], [])
 
@@ -150,27 +142,6 @@ class TestResetFailClosed(_Fixture):
         self.assertEqual(outside.read_text(encoding="utf-8"), "OUTSIDE")
         self.assertEqual(recs, [])
 
-    def test_symlinked_conventions_reseed_dest_refused_and_nothing_removed(self):
-        # Same fail-closed guarantee when CONVENTIONS.md is the guarded reseed
-        # destination.
-        outside = Path(self.scaffold.root) / "outside-conventions.md"
-        outside.write_text("OUTSIDE", encoding="utf-8")
-        conventions = self.scaffold.project_root / "CONVENTIONS.md"
-        conventions.unlink()
-        os.symlink(outside, conventions)
-
-        code, recs, err = run_cli("reset-plan", self.root)
-        self.assertEqual(code, 1)
-        self.assertIn("[guard]", err)
-        pr = self.scaffold.project_root
-        for live in (
-            "REQUIREMENTS.md", "IMPLEMENTATION_PLAN.md",
-            "tasks/open/TASK-01-001-a.md", "specs/SPEC-01-001-s.md",
-        ):
-            self.assertTrue((pr / live).exists(), msg=f"{live} must remain intact")
-        self.assertEqual(outside.read_text(encoding="utf-8"), "OUTSIDE")
-        self.assertEqual(recs, [])
-
     def test_carry_forward_skips_guarded_reseed_dest(self):
         # With carry-forward, no reseed is attempted, so a symlinked STANDARDS.md
         # is not a reseed target and the reset proceeds normally.
@@ -181,7 +152,7 @@ class TestResetFailClosed(_Fixture):
         os.symlink(outside, standards)
 
         code, recs, err = run_cli(
-            "reset-plan", self.root, "--carry-standards", "--carry-conventions",
+            "reset-plan", self.root, "--carry-standards",
         )
         self.assertEqual(code, 0, msg=err)
         self.assertFalse((self.scaffold.project_root / "REQUIREMENTS.md").exists())

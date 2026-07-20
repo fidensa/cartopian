@@ -117,6 +117,7 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When `git.pm_owns_product_branches = true` and the task declares one or more `Work root:` names, a reminder that assignees do not stage, commit, push, branch, open PRs, merge, or otherwise perform product-repo git plumbing.
+- When the assignment is **verification-only** (it directs the assignee to inspect or run gates and explicitly forbids implementation changes), state the effective git operating model from the handoff packet. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), say explicitly: Cartopian git versioning is off; product-repository branches are not PM-owned; the work root may already contain uncommitted deliverables from earlier completed tasks; that dirty steady state is expected and is not evidence that this verification task modified files. The assignee must distinguish pre-existing work-root state from changes made during its own handoff and must report only the latter as a scope violation.
 
 Remove any stale report using the Core CLI before assigning or retrying the task:
 
@@ -235,6 +236,7 @@ The review prompt must also include:
 
 - A reminder that reviewers do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files. If the spec is wrong, ambiguous, or contradicts the implementation, the reviewer records the finding in the review file (and verdict accordingly) rather than rewriting the spec to match what was built.
 - A reminder that reviewers do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
+- When the reviewed task is **verification-only**, carry the assignment prompt's effective git operating model into the review prompt. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), state explicitly that an already-dirty work root containing prior completed tasks' deliverables is the expected steady state, not a review defect and not proof that the verification handoff changed files. The reviewer evaluates whether this handoff introduced changes using the coder report and task evidence; it must not issue `request-changes` merely because `git status` shows pre-existing modifications or untracked deliverables.
 
 After task completion evidence has been captured in the review prompt, task file, or review context, remove any stale review handoff report using the Core CLI when issuing a distinct review handoff that expects the same report path:
 

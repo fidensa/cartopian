@@ -35,7 +35,6 @@ REQUIRED_DIRS = (
 )
 REQUIRED_FILES = (
     "STATE.md",
-    "CONVENTIONS.md",
     "STANDARDS.md",
     "decisions/INDEX.md",
 )
@@ -127,6 +126,7 @@ class TestScaffoldProjectHappyPath(unittest.TestCase):
                 self.assertTrue((proj / rel).is_dir(), msg=f"missing dir: {rel}")
             for rel in REQUIRED_FILES:
                 self.assertTrue((proj / rel).is_file(), msg=f"missing file: {rel}")
+            self.assertFalse((proj / "CONVENTIONS.md").exists())
             gi = proj / ".gitignore"
             self.assertTrue(gi.is_file())
             self.assertIn(GITIGNORE_LINE, gi.read_text(encoding="utf-8").splitlines())

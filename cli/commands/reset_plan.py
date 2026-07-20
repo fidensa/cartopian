@@ -12,10 +12,9 @@ In one fail-closed pass it:
   cleared via the existing ``delete-prompt`` / ``delete-report`` commands.
 - **G14 — recreates the empty lifecycle directories** (including ``prompts/``
   and ``reports/``).
-- **G15 — conditionally reseeds** ``STANDARDS.md`` / ``CONVENTIONS.md`` per the
-  carry-forward flags. Reseed writes go through the mediated-write primitive
-  (``standards`` / ``conventions`` dest_kinds); carry-forward leaves the file
-  untouched.
+- **G15 — conditionally reseeds** ``STANDARDS.md`` per the carry-forward flag.
+  The reseed write goes through the mediated-write primitive; carry-forward
+  leaves the file untouched.
 
 Fail-closed allowlist guards: the target must be a real Cartopian project root
 (``cartopian.toml`` present); every reset target is a member of a fixed,
@@ -37,7 +36,6 @@ import argparse
 import os
 import stat
 import sys
-import tomllib
 from pathlib import Path
 from typing import List
 
@@ -93,17 +91,6 @@ STANDARDS_SEED = (
 )
 
 
-def _conventions_seed(project_name: str) -> str:
-    return (
-        f"# {project_name} - Conventions\n\n"
-        "This document extends the protocol-level conventions defined in "
-        "`protocol/CONVENTIONS.md`. Rules here apply only to this project.\n\n"
-        "## Project-specific conventions\n\n"
-        "<!-- Add project-specific naming rules, workflow modifications, or\n"
-        "     constraints here. Delete this comment when you add real content. -->\n"
-    )
-
-
 class _ResetRefusal(Exception):
     """A reset target violated the fail-closed allowlist. Nothing was removed."""
 
@@ -127,25 +114,6 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Keep STANDARDS.md in place instead of reseeding it.",
     )
-    subparser.add_argument(
-        "--carry-conventions",
-        action="store_true",
-        help="Keep CONVENTIONS.md in place instead of reseeding it.",
-    )
-
-
-def _project_name(root: Path) -> str:
-    """Best-effort project name for the conventions seed; falls back to dir name."""
-    cfg_path = root / "cartopian.toml"
-    try:
-        with cfg_path.open("rb") as fh:
-            cfg = tomllib.load(fh)
-        name = cfg.get("project", {}).get("name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-    except (OSError, tomllib.TOMLDecodeError):
-        pass
-    return root.name
 
 
 def _assert_in_root(real_root: str, candidate: Path, rule: str) -> None:
@@ -211,7 +179,7 @@ def _preflight_ensure_dir(real_root: str, root: Path, rel: str) -> None:
 
 
 def _preflight_reseed_dest(real_root: str, target: str) -> None:
-    """Validate a default reseed destination (``STANDARDS.md`` / ``CONVENTIONS.md``).
+    """Validate the default reseed destination (``STANDARDS.md``).
 
     Mirrors the fail-closed guards the mediated-write primitive applies to a
     root-level (``dest_kind`` subtree ``""``) destination, so the
@@ -249,8 +217,6 @@ def _plan_reseeds(root: Path, args: argparse.Namespace):
     seeds = []
     if not args.carry_standards:
         seeds.append(("standards", "STANDARDS.md", STANDARDS_SEED))
-    if not args.carry_conventions:
-        seeds.append(("conventions", "CONVENTIONS.md", _conventions_seed(_project_name(root))))
     return seeds
 
 
@@ -314,7 +280,7 @@ def handler(args: argparse.Namespace) -> int:
             return EXIT_FAIL
         recreated.append(rel)
 
-    # Phase 4 — conditional reseed of STANDARDS.md / CONVENTIONS.md (G15),
+    # Phase 4 — conditional reseed of STANDARDS.md (G15),
     # through the mediated-write primitive. Carry-forward leaves them in place.
     # The reseed writes go straight to the primitive (not perform_write) so the
     # command emits exactly one reset-plan NDJSON record.
@@ -336,7 +302,6 @@ def handler(args: argparse.Namespace) -> int:
             "recreated_dirs": recreated,
             "reseeded": reseeded,
             "carry_standards": bool(args.carry_standards),
-            "carry_conventions": bool(args.carry_conventions),
         },
     })
     return EXIT_OK

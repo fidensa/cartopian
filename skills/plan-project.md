@@ -44,7 +44,7 @@ If `IMPLEMENTATION_PLAN.md` does not exist but current plan artifacts exist in `
 
 If `STATE.md` says there is no active plan but current plan artifacts still exist, stop and ask the operator to resolve the inconsistent state. The normal resolution is to run `skills/close-plan.md`.
 
-If a previous closeout carried forward `STANDARDS.md` or `CONVENTIONS.md`, treat those files as seed context for the new planning cycle, not as locked requirements or a locked implementation plan.
+If a previous closeout carried forward `STANDARDS.md`, treat it as seed context for the new planning cycle, not as locked requirements or a locked implementation plan.
 
 ---
 

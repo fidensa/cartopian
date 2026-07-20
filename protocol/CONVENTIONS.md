@@ -471,7 +471,7 @@ Plan closeout resets the live plan surface:
 
 `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md` never carry forward as live artifacts. A new planning cycle produces fresh requirements and a fresh implementation plan.
 
-`STANDARDS.md` and project-level `CONVENTIONS.md` may carry forward only when the operator explicitly chooses to keep them as seed context for the next plan. Otherwise, they reset to seed files.
+`STANDARDS.md` may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
 
 `cartopian.toml` remains live across plans.
 
@@ -483,7 +483,6 @@ Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
 
 - `REQUIREMENTS.md`
 - `STANDARDS.md`
-- `CONVENTIONS.md`
 - `IMPLEMENTATION_PLAN.md`
 - `STATE.md`
 - `decisions/`
@@ -495,6 +494,8 @@ Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
 - `CLOSEOUT.md`
 
 Prompts are not archived.
+
+Archival is a PM lifecycle action. When the operator requests a snapshot, the PM runs the bounded `cartopian archive-plan` command before reset; the PM does not delegate raw archive creation or copying to the operator. The command owns archive numbering, copies only the fixed plan-artifact allowlist, writes `CLOSEOUT.md`, and updates `archive/INDEX.md`.
 
 `archive/INDEX.md` is a one-line-per-archive summary table. It is created with the first archive and updated on each subsequent closeout that produces an archive.
 
@@ -569,6 +570,7 @@ When `git_versioning = false`:
 
 - The filesystem is the only protocol record.
 - `STATE.md` remains the current cross-session handoff.
+- Product-repository branches are not PM-owned. In a verification-only task, an uncommitted work root containing deliverables from prior completed tasks is an expected steady state, not evidence that the verification handoff modified files. Assignment and review prompts for such tasks state this operating model explicitly, and reviewers distinguish pre-existing work-root state from changes attributable to the current handoff instead of treating `git status` alone as a defect.
 
 Git staging, commits, and pushes for the protocol repository itself are human-owned.
 

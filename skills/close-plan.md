@@ -104,17 +104,15 @@ Also compare the task identifiers reported under `tasks/done/` to the current ph
 
 ## Stage 2 - Operator Choices
 
-Ask the operator three closeout questions:
+Ask the operator two closeout questions:
 
 1. **Archive:** "Do you want to archive the completed plan before reset?"
 2. **Standards:** "Should `STANDARDS.md` carry forward as the seed for the next plan, or reset to a blank project standards file?"
-3. **Conventions:** "Should `CONVENTIONS.md` carry forward as the seed for the next plan, or reset to the default project conventions file?"
 
 Defaults:
 
 - Archive: no.
 - Standards: carry forward only if the operator says so.
-- Conventions: carry forward only if the operator says so.
 
 Requirements and implementation plans never carry forward as live artifacts. The next planning cycle must produce fresh `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md`.
 
@@ -124,11 +122,9 @@ Requirements and implementation plans never carry forward as live artifacts. The
 
 Skip this stage unless the operator requested an archive.
 
-> **Containment boundary.** The archive steps below (creating `archive/`, writing `archive/PLAN-NNN-slug/CLOSEOUT.md`, copying live artifacts into the snapshot, and creating/appending `archive/INDEX.md`) are raw filesystem create/copy/append operations. They have no mediated Cartopian command in the Phase-01 set, so they are **outside the contained-PM path** and are **operator-owned**: a contained PM (no shell, no raw `Write`) does **not** perform them. The archive snapshot remains an operator-requested option (the semantics below are unchanged) — but when an archive is requested under containment, the raw create/copy/append work is owned by the operator or an uncontained PM, exactly like the `pm_owns_product_branches` git block in `skills/run-task.md`. A contained PM that reaches this stage either **skips the optional archive** (the default — Stage 2 archive answer is "no") or, when the operator did request an archive, **stops here for operator execution** and resumes at the mediated `cartopian reset-plan` in Stage 4 only after the operator reports the snapshot is in place. This is a deliberate boundary, not a lifecycle-authoring action the mediated writers cover.
+Archival is **PM-performed**. Route the complete snapshot operation through the bounded `cartopian archive-plan` command; do not hand raw create/copy/index steps to the operator. The command owns archive numbering, the fixed source allowlist, directory creation, `CLOSEOUT.md`, and `archive/INDEX.md`, and refuses symlinked or non-regular source trees before copying.
 
 ### 3.1 Choose archive path
-
-Create `archive/` if it does not exist.
 
 Choose the next available plan archive directory:
 
@@ -137,19 +133,19 @@ archive/PLAN-NNN-slug/
 ```
 
 - `NNN` is a three-digit counter, starting at `001`.
-- Use the next number after existing `archive/PLAN-*` directories.
+- `cartopian archive-plan` allocates the next number after existing `archive/PLAN-*` directories.
 - `slug` is a short kebab-case name derived from the completed plan title or project outcome.
 
 ### 3.2 Write closeout summary
 
-Create `archive/PLAN-NNN-slug/CLOSEOUT.md` using `cartopian://templates/PLAN_CLOSEOUT.md` as the starting structure.
+Compose the `CLOSEOUT.md` body from `cartopian://templates/PLAN_CLOSEOUT.md`. Pass it directly as the archive command's `content` value (or use `--content-file` in a shell-capable environment); a contained PM does not need a raw temporary-file write.
 
 The closeout summary records:
 
 - Plan identity and completion date.
 - Whether this was a full completion or another operator-approved closeout after all active work was resolved.
 - Archive contents.
-- Carry-forward choices for `STANDARDS.md` and `CONVENTIONS.md`.
+- The carry-forward choice for `STANDARDS.md`.
 - Any plan refs or work intentionally not carried forward.
 - Suggested seed context for the next requirements session.
 
@@ -159,7 +155,6 @@ Copy these live artifacts into the archive directory when they exist:
 
 - `REQUIREMENTS.md`
 - `STANDARDS.md`
-- `CONVENTIONS.md`
 - `IMPLEMENTATION_PLAN.md`
 - `STATE.md`
 - `phases/`
@@ -171,19 +166,15 @@ Copy these live artifacts into the archive directory when they exist:
 
 Do not archive `prompts/`. Prompts are temporary handoff artifacts and must not become a durable archive.
 
-### 3.4 Update archive index
+### 3.4 Create the snapshot and update the index
 
-Create `archive/INDEX.md` if it does not exist, or append to the existing table. Use this structure:
+Run the PM-owned archive command before any reset:
 
-```markdown
-# Archive Index
-
-| Archive         | Closed     | Summary            |
-| --------------- | ---------- | ------------------ |
-| `PLAN-NNN-slug` | YYYY-MM-DD | Brief plan outcome |
+```text
+cartopian archive-plan <project-root> --slug <slug> --closed <YYYY-MM-DD> --summary <brief-outcome> --content <closeout-body>
 ```
 
-Each row records one archived plan. The summary is a short phrase derived from the plan title or project outcome used in the archive slug.
+Consume the emitted `archive_path` as the authoritative snapshot location. The command copies the fixed live-artifact set, writes `CLOSEOUT.md`, and creates or appends the one-line entry in `archive/INDEX.md`. If it exits non-zero, stop closeout; never run the reset without the requested snapshot.
 
 ---
 
@@ -207,14 +198,14 @@ cartopian delete-report <project-path>/reports/<file>.md
 Run `cartopian reset-plan` to fold the rest of Stage 4 into one fail-closed pass:
 
 ```
-cartopian reset-plan <project-root> [--carry-standards] [--carry-conventions]
+cartopian reset-plan <project-root> [--carry-standards]
 ```
 
 `reset-plan` (FR-005, the OQ-003 close-surface verb):
 
 - **Removes** the live plan artifacts — `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, and every file in `phases/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`. (It does **not** touch `prompts/` or `reports/` — those were cleared in 4.1.)
 - **Recreates** the empty lifecycle directories (`phases/`, `prompts/`, `reports/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`).
-- **Conditionally reseeds** `STANDARDS.md` and `CONVENTIONS.md` from the carry-forward choices in Stage 2: pass `--carry-standards` / `--carry-conventions` to **keep** a file in place as seed context; **omit** the flag to reseed that file to a fresh project seed. The reseed writes go through the same mediated-write guards as the `write-*` commands.
+- **Conditionally reseeds** `STANDARDS.md` from the carry-forward choice in Stage 2: pass `--carry-standards` to **keep** it as seed context; omit the flag to reseed it to a fresh project seed. The reseed write goes through the same mediated-write guards as the `write-*` commands.
 
 The command supplies only the project root — the PM never names a path to remove, create, or reseed; every target is a fixed, code-owned member of the close-surface allowlist. A symlink, foreign subdirectory, or out-of-root target aborts the whole pass with nothing removed, created, or written.
 
@@ -250,7 +241,7 @@ The composed body says:
 - There is no active plan.
 - The previous plan has been closed.
 - Whether an archive was created, and where.
-- Whether `STANDARDS.md` and `CONVENTIONS.md` were carried forward.
+- Whether `STANDARDS.md` was carried forward.
 - The next action is to run `skills/plan-project.md` to gather fresh requirements and generate the next implementation plan.
 
 Use this structure:
@@ -274,7 +265,6 @@ None.
 
 - Archive: <none | archive/PLAN-NNN-slug/>
 - Engineering carry-forward: <yes | no>
-- Conventions carry-forward: <yes | no>
 
 ## What to do next
 
@@ -292,6 +282,5 @@ Print a concise closeout summary:
 - Whether the plan was archived.
 - What was reset (including reports/).
 - Whether project standards carried forward.
-- Whether project conventions carried forward.
 - Any unresolved decision follow-up.
 - The exact next action: run `skills/plan-project.md`.

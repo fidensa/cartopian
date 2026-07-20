@@ -52,7 +52,7 @@ Both boundaries are enforced at the harness's native interception point — the 
 
 | Path-class | Paths | Required grant |
 | --- | --- | --- |
-| governance | `specs/`, `phases/`, `tasks/`, `decisions/`, `STATE.md`, `BACKLOG.md`, `IMPLEMENTATION_PLAN.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STANDARDS.md`, `CONVENTIONS.md`, `cartopian.toml`, `cartopian.local.toml`, and any unclassified project file | `read:governance` |
+| governance | `specs/`, `phases/`, `tasks/`, `decisions/`, `STATE.md`, `BACKLOG.md`, `IMPLEMENTATION_PLAN.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STANDARDS.md`, `cartopian.toml`, `cartopian.local.toml`, and any unclassified project file | `read:governance` |
 | reports | `reports/`, `reviews/` | `read:reports` |
 | prompts | `prompts/` | `read:prompts` |
 | work root | each declared work root | `read:work-roots` |

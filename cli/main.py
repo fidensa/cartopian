@@ -37,7 +37,6 @@ SUBCOMMANDS: List[str] = [
     "write-requirements",
     "write-plan",
     "write-standards",
-    "write-conventions",
     "write-phase",
     "write-task",
     "write-spec",
@@ -47,6 +46,7 @@ SUBCOMMANDS: List[str] = [
     # Durable CLI-supported home for PM/reviewer follow-up notes
     "write-backlog",
     "delete-backlog",
+    "archive-plan",
     "reset-plan",
     # Aggregator: next action to take
     "next-action",
@@ -107,6 +107,7 @@ def _real_handlers():
     constants from this module).
     """
     from cli.commands import (
+        archive_plan,
         close_audit,
         compose_state,
         containment_matrix,
@@ -134,7 +135,6 @@ def _real_handlers():
         wait_handoff,
         wait_report,
         write_backlog,
-        write_conventions,
         write_decision,
         write_phase,
         write_plan,
@@ -147,6 +147,7 @@ def _real_handlers():
     )
 
     return {
+        "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),
@@ -174,7 +175,6 @@ def _real_handlers():
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
         "wait-report": (wait_report.configure_parser, wait_report.handler),
         "write-backlog": (write_backlog.configure_parser, write_backlog.handler),
-        "write-conventions": (write_conventions.configure_parser, write_conventions.handler),
         "write-decision": (write_decision.configure_parser, write_decision.handler),
         "write-phase": (write_phase.configure_parser, write_phase.handler),
         "write-plan": (write_plan.configure_parser, write_plan.handler),

@@ -32,7 +32,7 @@ import cli.main as cli_main
 # The new structured-authoring verbs. Pruning them reproduces the
 # pre-extension contained-PM surface for the red capture.
 NEW_VERBS = (
-    "write-requirements", "write-plan", "write-standards", "write-conventions",
+    "write-requirements", "write-plan", "write-standards",
     "write-phase", "write-task", "write-spec", "write-prompt", "write-decision",
     "write-state", "reset-plan",
 )
@@ -124,7 +124,6 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         self._run("write-requirements", ps, "--content", "# Requirements\n\nFR-1\n")
         self._run("write-plan", ps, "--content", "# Implementation Plan\n\nP01-BUILD-001\n")
         self._run("write-standards", ps, "--content", "# Standards\n")
-        self._run("write-conventions", ps, "--content", "# Conventions\n")
         self._run("write-phase", ps, "--phase-id", "PHASE-01-core", "--content",
                   "# PHASE-01-core: Core\n")
         self._run("write-spec", ps, "--spec-id", "SPEC-01-001", "--slug", "thing",
