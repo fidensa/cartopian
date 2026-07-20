@@ -33,6 +33,10 @@ _TOML = (
     'effort = "high"\n'
     "auto_start_tasks = true\n"
     'timeout = "30m"\n'
+    "\n"
+    "[reviews]\n"
+    'planning = "off"\n'
+    'task_closure = "off"\n'
 )
 
 
@@ -134,6 +138,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 "git_versioning",
                 "git_policy",
                 "automation_policy",
+                "reviews",
             ):
                 self.assertIn(field, rec, msg=f"missing field: {field}")
 
@@ -146,6 +151,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["effort"], "high")
             self.assertTrue(rec["auto_start_tasks"])
             self.assertFalse(rec["auto_start_reviews"])
+            self.assertNotIn("auto_start", rec)
             self.assertEqual(rec["timeout"], "30m")
             self.assertEqual(
                 rec["work_roots"],
@@ -162,6 +168,8 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                     "max_handoffs_per_run": 1,
                 },
             )
+            self.assertEqual(rec["reviews"]["planning"]["mode"], "off")
+            self.assertEqual(rec["reviews"]["task_closure"]["mode"], "off")
 
 
 class TestHandoffPacketNoPlanState(unittest.TestCase):

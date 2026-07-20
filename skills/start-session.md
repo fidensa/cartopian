@@ -58,6 +58,8 @@ Present a short summary to the operator from the returned record:
 - Active work — `active_task` (id, title, status).
 - Open or queued work — `next_open_task` (id, title).
 - Resolved automation policy — `automation` (`initiation`, `confirmation`, `max_handoffs_per_run`).
+- Resolved handoff launch policy — `handoffs`, using only `auto_start_tasks` and `auto_start_reviews` (legacy inputs are normalized away).
+- Resolved review policy — `reviews.planning` and `reviews.task_closure`, including their assigned roles and source attribution.
 
 Then check the disagreement and blocker fields before proposing any action:
 

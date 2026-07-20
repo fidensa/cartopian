@@ -596,7 +596,9 @@ class TestReportActionFailedToParse(unittest.TestCase):
         record = _parse_single_record(result)
         self.assertEqual(record["verdict"], "failed-to-parse")
         self.assertEqual(record["variant"], "task")
-        self.assertIsNone(record["status"])
+        # Preserve a valid Status header for diagnostics even when a later
+        # task-schema check fails.
+        self.assertEqual(record["status"], "complete")
         self.assertIsNone(record["review_verdict"])
         self.assertIsNone(record["target_task_status"])
         self.assertFalse(record["requires_pr_step"])

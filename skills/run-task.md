@@ -41,7 +41,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits the orientation record. Also run `cartopian resolve-config <project-path>` and retain its `reviews.task_closure.mode` and `reviews.task_closure.role` values: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
+This emits the orientation record, including resolved `handoffs` and `reviews`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. `handoffs` exposes only the normalized `auto_start_tasks` and `auto_start_reviews` launch keys; never look for legacy `auto_start`. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
 
 Surface the disagreement and blocker fields to the operator before proposing any action:
 
@@ -92,7 +92,7 @@ Then assemble the prompt-input bundle with a single Core CLI call against the mo
 cartopian handoff-packet <task-path> --role <role>
 ```
 
-`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths or roles.
+`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), resolved `reviews`, the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths, roles, or review policy.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 

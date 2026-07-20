@@ -1,8 +1,8 @@
 """`cartopian handoff-packet <task-path> --role <role>` aggregator.
 
-Folds the handoff-packet assembly chain (resolved roles, handoff block,
-work-root absolute paths, expected report path, git policy) into a single
-NDJSON call. Read-only; no file writes, moves, renames, or deletes.
+Folds the handoff-packet assembly chain (resolved roles, handoff block, review
+policy, work-root absolute paths, expected report path, git policy) into a
+single NDJSON call. Read-only; no file writes, moves, renames, or deletes.
 """
 import argparse
 import re
@@ -18,6 +18,7 @@ from cli.commands.resolve_config import (
     _resolve_git_block,
     _resolve_git_versioning,
     _resolve_handoffs,
+    _resolve_reviews,
     _resolve_roles,
     _resolve_work_roots,
 )
@@ -190,6 +191,11 @@ def handler(args: argparse.Namespace) -> int:
 
     handoffs = _resolve_handoffs(global_cfg, project_cfg)
     roles = _resolve_roles(global_cfg, project_cfg)
+    try:
+        reviews = _resolve_reviews(global_cfg, project_cfg, roles)
+    except _CliError as err:
+        stderr_error(err.message)
+        return err.exit_code
 
     raw_handoffs_project = project_cfg.get("handoffs", {}) or {}
     raw_handoffs_global = global_cfg.get("handoffs", {}) or {}
@@ -243,6 +249,7 @@ def handler(args: argparse.Namespace) -> int:
         "git_versioning": git_versioning,
         "git_policy": git_policy,
         "automation_policy": automation,
+        "reviews": reviews,
     }
     emit_record(record)
     return EXIT_OK

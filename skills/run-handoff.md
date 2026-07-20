@@ -46,7 +46,7 @@ If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configu
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
-First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), resolved `reviews`, the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
 
 ```
 cartopian handoff-packet <task-path> --role <role>

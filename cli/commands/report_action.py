@@ -108,10 +108,13 @@ def _parse_report_state(
         if variant is None:
             raise _CliError(EXIT_USAGE, "usage", err or "cannot infer variant")
 
-    if not parse_report._schema_ok(variant, content):
-        return "failed-to-parse", variant, None, None
-
     raw_status = parse_report._extract_status(content)
+    status_value = (
+        raw_status if raw_status in parse_report.STATUS_VERDICT else None
+    )
+    if not parse_report._schema_ok(variant, content):
+        return "failed-to-parse", variant, status_value, None
+
     if raw_status is None or raw_status not in parse_report.STATUS_VERDICT:
         return "failed-to-parse", variant, None, None
 

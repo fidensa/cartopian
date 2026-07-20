@@ -75,6 +75,8 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "pm_role",
                 "pm_role_declared",
                 "automation",
+                "handoffs",
+                "reviews",
                 "blockers",
                 "state_filesystem_disagreement",
             ):
@@ -114,6 +116,27 @@ class TestNextActionAutomation(unittest.TestCase):
                         "max_handoffs_per_run": 3,
                     },
                 )
+
+
+class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
+    def test_reviews_and_explicit_handoff_launch_fields_are_emitted(self) -> None:
+        project_toml = (
+            _TOML_BASE
+            + '\n[roles]\ncoder = "Implements work."\nreviewer = "Checks work."\n'
+            + '\n[reviews]\nplanning = "required"\nplanning_role = "reviewer"\n'
+            + 'task_closure = "required"\ntask_role = "reviewer"\n'
+            + '\n[handoffs.coder]\nagent = "cartopian-claude"\n'
+            + 'auto_start_tasks = true\n'
+        )
+        with _isolated_home():
+            with project_scaffold(cartopian_toml=project_toml) as scaffold:
+                records, rc = _invoke(str(scaffold.project_root))
+        self.assertEqual(rc, 0)
+        record = records[0]
+        self.assertEqual(record["reviews"]["task_closure"]["mode"], "required")
+        self.assertEqual(record["reviews"]["task_closure"]["role"], "reviewer")
+        self.assertTrue(record["handoffs"]["coder"]["auto_start_tasks"])
+        self.assertNotIn("auto_start", record["handoffs"]["coder"])
 
 
 class TestNextActionHappyPath(unittest.TestCase):

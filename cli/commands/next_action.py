@@ -1,9 +1,9 @@
 """`cartopian next-action <project-path>` aggregator.
 
-Emits a single flat NDJSON record with all orientation data a PM needs to
-start or resume a session: active task, next open task, phase, PM role,
-resolved [automation] policy, blockers, and any STATE.md vs. filesystem
-disagreement.
+Emits a single NDJSON record with all orientation data a PM needs to start or
+resume a session: active task, next open task, phase, PM role, resolved
+``[automation]``, ``[handoffs]``, and ``[reviews]`` policy, blockers, and any
+STATE.md vs. filesystem disagreement.
 """
 import argparse
 import re
@@ -17,6 +17,8 @@ from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
     _resolve_automation,
+    _resolve_handoffs,
+    _resolve_reviews,
     _resolve_roles,
 )
 from cli.emit import emit_record
@@ -501,8 +503,15 @@ def handler(args: argparse.Namespace) -> int:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         stderr_error(f"global config unreadable: {Path.home() / '.cartopian' / 'cartopian.toml'} — {exc}")
         return EXIT_ENV
-    pm_role, pm_role_declared = _resolve_pm_settings(global_cfg, cfg)
+    roles = _resolve_roles(global_cfg, cfg)
+    pm_role, pm_role_declared = _pm_settings_from_resolved(roles)
     automation = _resolve_automation(global_cfg, cfg)
+    handoffs = _resolve_handoffs(global_cfg, cfg)
+    try:
+        reviews = _resolve_reviews(global_cfg, cfg, roles)
+    except _CliError as err:
+        stderr_error(err.message)
+        return err.exit_code
 
     tasks_dir = project_path / "tasks"
     phase_id = _find_phase_id(project_path)
@@ -548,6 +557,8 @@ def handler(args: argparse.Namespace) -> int:
         "pm_role": pm_role,
         "pm_role_declared": pm_role_declared,
         "automation": automation,
+        "handoffs": handoffs,
+        "reviews": reviews,
         "blockers": blockers,
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }

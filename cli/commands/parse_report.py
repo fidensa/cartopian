@@ -201,11 +201,13 @@ def handler(args: argparse.Namespace) -> int:
             return EXIT_USAGE
 
     review_verdict: Optional[str] = None
+    raw_status = _extract_status(content)
+    status_value: Optional[str] = (
+        raw_status if raw_status in STATUS_VERDICT else None
+    )
     if not _schema_ok(variant, content):
         verdict = "failed-to-parse"
-        status_value: Optional[str] = None
     else:
-        raw_status = _extract_status(content)
         if raw_status is None or raw_status not in STATUS_VERDICT:
             verdict = "failed-to-parse"
             status_value = None

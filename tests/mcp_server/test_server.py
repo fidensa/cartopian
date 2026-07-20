@@ -298,6 +298,94 @@ class TestToolSurface(unittest.TestCase):
         self.assertEqual(sc["exit_code"], 0)
         self.assertIsInstance(sc["records"], list)
 
+    def test_workflow_aggregators_expose_current_schema_end_to_end(self):
+        """Exercise the MCP surface, not only direct CLI helper calls.
+
+        Regression coverage for review policy disappearing, the retired
+        ``auto_start`` key leaking back into records, and the canonical task
+        completion report failing while the review variant still parsed.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            task = project / "tasks" / "in-progress" / "TASK-01-001-demo.md"
+            report = project / "reports" / "REPORT-01-001.md"
+            (project / "phases").mkdir(parents=True)
+            task.parent.mkdir(parents=True)
+            report.parent.mkdir(parents=True)
+            for status in ("open", "in-review", "done"):
+                (project / "tasks" / status).mkdir(parents=True)
+            (project / "cartopian.toml").write_text(
+                "[project]\n"
+                'id = "demo"\n'
+                'name = "Demo"\n'
+                'protocol_version = "v0.5.0"\n'
+                "\n[roles]\n"
+                'coder = "Implements work."\n'
+                'reviewer = "Checks work."\n'
+                "\n[reviews]\n"
+                'planning = "required"\n'
+                'planning_role = "reviewer"\n'
+                'task_closure = "required"\n'
+                'task_role = "reviewer"\n'
+                "\n[handoffs.coder]\n"
+                'agent = "cartopian-claude"\n'
+                "auto_start_tasks = true\n",
+                encoding="utf-8",
+            )
+            task.write_text(
+                "# TASK-01-001: Demo\n\n"
+                "Phase: PHASE-01-demo\n"
+                "Work root: n/a\n",
+                encoding="utf-8",
+            )
+            report.write_text(
+                "# REPORT-01-001\n\n"
+                "Status: blocked\n\n"
+                "## Identity\n\n- Work root: n/a\n\n"
+                "## Completion evidence\n\n- Blocked before completion.\n\n"
+                "## Remaining risks\n\n- Blocking condition remains.\n\n"
+                "## Ready to close\n\nno\n",
+                encoding="utf-8",
+            )
+
+            calls = {
+                "resolve": single(
+                    "tools/call",
+                    {"name": "resolve_config", "arguments": {"project_path": str(project)}},
+                ),
+                "next": single(
+                    "tools/call",
+                    {"name": "next_action", "arguments": {"project_path": str(project)}},
+                ),
+                "packet": single(
+                    "tools/call",
+                    {
+                        "name": "handoff_packet",
+                        "arguments": {"task_path": str(task), "role": "coder"},
+                    },
+                ),
+                "report": single(
+                    "tools/call",
+                    {"name": "report_action", "arguments": {"report_path": str(report)}},
+                ),
+            }
+
+        records = {
+            name: response["result"]["structuredContent"]["records"][0]
+            for name, response in calls.items()
+        }
+        for name in ("resolve", "next", "packet"):
+            self.assertEqual(records[name]["reviews"]["task_closure"]["mode"], "required")
+        self.assertTrue(records["resolve"]["handoffs"]["coder"]["auto_start_tasks"])
+        self.assertNotIn("auto_start", records["resolve"]["handoffs"]["coder"])
+        self.assertTrue(records["next"]["handoffs"]["coder"]["auto_start_tasks"])
+        self.assertNotIn("auto_start", records["next"]["handoffs"]["coder"])
+        self.assertTrue(records["packet"]["auto_start_tasks"])
+        self.assertNotIn("auto_start", records["packet"])
+        self.assertEqual(records["report"]["variant"], "task")
+        self.assertEqual(records["report"]["verdict"], "blocked")
+        self.assertEqual(records["report"]["status"], "blocked")
+
     def test_move_task_invalid_status_preserves_fr014_usage_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
             task = Path(tmp) / "project" / "tasks" / "open" / "TASK-01-001-demo.md"
