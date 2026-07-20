@@ -17,7 +17,7 @@ Cartopian also treats an AI model's context window and token budget as scarce re
 - **Spends your tokens carefully.** Status reads, task selection, prompt assembly, report parsing, and plan audits are computations rather than conversations. The CLI handles them without bloating the model's context.
 - **Stays out of your way.** No database, SaaS control plane, or third-party Python package is required. Git and automation are optional, roles are operator-chosen, and every decision is overridable.
 
-## How it feels in practice
+## How it works
 
 Once Cartopian is installed and registered with your agent, open it from any directory and enter PM mode with the entry trigger. In most clients, that is the `/use-cartopian` command. See [Entry point](#entry-point) for the form used by each client. There is no working directory to set or path to remember because project context comes from the registry rather than the current directory.
 
