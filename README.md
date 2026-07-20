@@ -1,6 +1,6 @@
 # Cartopian
 
-**Structure any project into plans, phases, and tasks for people or AI agents. Add governance, bounded automation, and optional review while keeping context focused and token use low.**
+**Structure any project into plans, phases, and tasks for humans or AI agents. Add governance, bounded automation, and optional review while keeping context focused and token use low.**
 
 Cartopian turns "I want to do X" into clear requirements, a comprehensive plan, logical phases, structured tasks, practical work specifications, and tracked outcomes. It can govern technical and nontechnical projects alike, from building a SaaS product to launching an Etsy store or organizing a weekend garage sale. Tasks can go to AI agents or people. The Project Manager coordinates assignments, evidence, and progress; automates agent handoffs within limits you set; and can add independent review loops that catch gaps and errors before they spread.
 
@@ -24,7 +24,7 @@ Once Cartopian is installed and registered with your agent, open it from any dir
 That one command is roughly the last command you type. The PM checks for updates, finds your registered projects, and asks which one to open. If you have none, it scaffolds a new one. From there, it drives the whole lifecycle itself:
 
 ```text
-init project   →   plan project   →   start session   →   run task   →   close plan
+init project   →   plan project   →   start session   →   run tasks   →   close plan
 ```
 
 Those are the runbooks the PM follows, not commands you memorize. On a new project, it interviews you, produces a requirements document, drafts a plan, breaks it into phases and tasks, and stores everything on disk as plain markdown. When you return, it reads the current state, tells you where things stand, and continues with the next task. It can dispatch that task to a configured CLI agent or assign it directly to you. When the plan is complete, it offers to close and archive it. Your side of the session is conversational: describe what you want, answer the PM's questions, and make the decisions the protocol reserves for you.
@@ -43,21 +43,19 @@ Require both review policies and opt in to each automation layer, and the loop r
 [automation]
 initiation = "auto"              # runs may begin without you saying "continue"
 confirmation = "until-blocked"   # chain through tasks until something needs a human
-max_handoffs_per_run = 5         # bounded unattended runs
+max_handoffs_per_run = 2         # bounded unattended runs
+
+[roles]
+pm = "Surface the evidence and facilitate operator decisions"
+operator = "Designs the product and provides direction to guide implementation"
+coder = "Implements tasks per spec"
+reviewer = "Reviews against acceptance criteria and original operator intent"
 
 [roles.coder]
-description = "Completes assigned delivery work against its acceptance evidence."
 grants = ["coder-like"]
 
 [roles.reviewer]
-description = "Independently checks plans and completed outcomes."
 grants = ["reviewer-like"]
-
-[reviews]
-planning = "required"
-planning_role = "reviewer"
-task_closure = "required"
-task_role = "reviewer"
 
 [handoffs.coder]
 agent = "cartopian-codex"
@@ -67,6 +65,15 @@ auto_start_tasks = true
 agent = "cartopian-gemini"
 auto_start_tasks = true
 auto_start_reviews = true
+
+[reviews]
+planning = "required"
+planning_role = "reviewer"
+task_closure = "required"
+task_role = "reviewer"
+
+[defaults]
+git_versioning = false     # git automation can be enabled; more robust support is coming soon
 ```
 
 With that configuration, running a task means: assign → complete → report → review → apply verdict → start the next task. The run stops only for blockers, failures, phase boundaries, decisions reserved for you, or the run budget. The three automation authorities are separate. `initiation` determines **whether a run begins**, `confirmation` controls **pace** within a run, and **selection** is never gated. Task order is deterministic: Cartopian selects the first open task in plan order whose dependencies are satisfied. The question "Which task comes next?" is therefore a computation rather than a conversation, although a ready queue does not itself grant permission to run. The defaults require your participation: `initiation = "operator"` means the PM names the next task and waits for you to say "continue," while `confirmation = "each-handoff"` allows one handoff at a time. Asking "What's next?" is always read-only, and "stop" always takes precedence over configuration.
@@ -201,19 +208,34 @@ See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full co
 
 ## Configuration
 
-Configuration resolves in three layers, with the most specific first:
+Cartopian uses a global configuration file, a committed configuration file for each project, and an optional machine-local work-root map. Built-in protocol defaults provide fallback behavior, but they are not another file or a TOML section. Each configuration section has its own resolution rules.
 
-- **Project:** `cartopian.toml` in each project directory contains overrides and project-specific settings.
-- **Global:** `cartopian.toml` at the install root (`~/.cartopian/`) contains defaults shared across projects.
-- **Protocol defaults:** Defaults shipped with the tool provide the fallback when neither file sets a key.
+### Configuration files
 
-A project's committed `cartopian.toml` names its **work roots**, which are the repositories its tasks reference. A gitignored **`cartopian.local.toml`** beside it maps those names to absolute paths on each machine. This arrangement keeps the committed configuration identical for every operator while paths remain machine-local. See `protocol/CONVENTIONS.md` for the work-root contract.
+- **Global configuration:** `~/.cartopian/cartopian.toml` holds workspace-wide defaults for projects that do not override them.
+- **Project configuration:** `<project-root>/cartopian.toml` identifies the project, declares its portable settings, and overrides supported global values. This file is committed with the project when Git versioning is enabled.
+- **Machine-local work roots:** `<project-root>/cartopian.local.toml` maps declared work-root names to absolute paths on one machine. It is gitignored and is not a general configuration override file.
 
-The `[reviews]` table controls planning and task-closure review independently. Each key resolves project → global → protocol default, so a project can explicitly set a mode to `"off"` even when global config requires it. Required modes must name an existing role; no role name, description, handoff, or capability preset implicitly enables review after the explicit-policy migration. Both modes otherwise default to off. Existing projects with the conventional reviewer retain both review loops while their agent-guided migration is pending, unless the operator selects a different preset.
+### TOML sections
 
-Cartopian also records an internal **project protocol schema version** in the project configuration so agents know which migrations apply. That marker is not the installed Cartopian application's release version, and users normally do not need to read or edit it; Cartopian's migration runbook maintains it on approval.
+| Section | Where it belongs | Purpose |
+| --- | --- | --- |
+| `[project]` | Project | Required project `name`, `id`, and `protocol_version`, plus optional `work_roots` names |
+| `[defaults]` | Global or project | The `git_versioning` switch |
+| `[git]` | Global or project | Optional PM-owned product-branch behavior, branch naming, and merge strategy |
+| `[automation]` | Global or project | Run initiation, confirmation pace, and the handoff limit for each run |
+| `[roles]` and `[roles.<name>]` | Global or project | Role descriptions and optional capability grants |
+| `[reviews]` | Global or project | Independent planning and task-closure policies and the role assigned to each required loop |
+| `[handoffs.<role>]` | Global or project | Agent, model, effort, launch permissions, and timeout for an automated role handoff |
+| `[work_roots]` | Machine-local file only | Absolute path mappings for names declared by `[project].work_roots` |
 
-Run `init workspace` to scaffold the global and project files. Edit any of them with a text editor.
+For sections shared by the global and project files, project values take precedence over global values. Resolution is performed at the key or role level as appropriate for that section. Built-in defaults fill supported values that remain unset, including the `pm` and `operator` roles, attended automation, reviews set to `off`, and Git versioning set to `false`. The `[project]` table comes only from the project file. The machine-local `[work_roots]` table only supplies paths for names declared in that project's `[project].work_roots` list.
+
+`cartopian resolve-config <project-root>` validates these sources together and returns the effective configuration. It fails when, for example, a declared work root has no machine-local path or a handoff names an undeclared role.
+
+Run `init workspace` to establish global defaults and `init project` to create a project configuration. The PM manages changes inside a project through the validated `cartopian update-config` command after you request them. The workspace setup flow owns the global file, which can also be edited directly by the operator.
+
+The `[project].protocol_version` value records the project's protocol schema version so Cartopian can identify applicable migrations. It is separate from the installed Cartopian release version and is maintained by the migration workflow after operator approval.
 
 ## Protocol
 
