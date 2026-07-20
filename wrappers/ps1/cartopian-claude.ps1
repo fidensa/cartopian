@@ -142,6 +142,16 @@ if ($env:CARTOPIAN_EFFORT) {
         [Console]::Error.WriteLine("cartopian-claude: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported claude effort level (low|medium|high|xhigh|max); launching with the default effort")
     }
 }
+# Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a pathsep-joined
+# list — ';' on Windows — of the project's resolved work-root absolute
+# paths). Declared work roots become additional working directories
+# (--add-dir) so writes there are in-scope in every permission mode — an
+# explicit grant, not a side effect of --dangerously-skip-permissions.
+if ($env:CARTOPIAN_WORK_ROOTS) {
+    foreach ($root in ($env:CARTOPIAN_WORK_ROOTS -split [IO.Path]::PathSeparator)) {
+        if ($root) { $Args += @('--add-dir', $root) }
+    }
+}
 $Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

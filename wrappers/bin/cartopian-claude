@@ -158,6 +158,18 @@ if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
   esac
 fi
 
+# Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a colon-joined
+# list of the project's resolved work-root absolute paths). Declared work
+# roots become additional working directories (--add-dir) so writes there are
+# in-scope in every permission mode — an explicit grant, not a side effect of
+# --dangerously-skip-permissions.
+if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+  IFS=':' read -r -a _CARTOPIAN_ROOTS <<< "$CARTOPIAN_WORK_ROOTS"
+  for _root in "${_CARTOPIAN_ROOTS[@]}"; do
+    [[ -n "$_root" ]] && CMD+=(--add-dir "$_root")
+  done
+fi
+
 CMD+=("$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

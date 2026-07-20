@@ -113,6 +113,14 @@ class WrappersStaticCoverageTest(unittest.TestCase):
         # This locks the wrappers (and their shared helpers) against a regression
         # that re-introduces work-root scoping, reviewer recapture, the
         # *_UNRESTRICTED bypass, or the contained-PM signal.
+        #
+        # Widening is NOT scoping: a wrapper whose agent CLI imposes its own
+        # filesystem sandbox rooted at the launch cwd (codex `--sandbox
+        # workspace-write`; claude's permission modes) must widen it with the
+        # CARTOPIAN_WORK_ROOTS grant dispatch exports (codex writable_roots,
+        # claude --add-dir) — otherwise declared work roots are unwritable
+        # (tests/wrappers/test_work_roots_grant.py). Only confinement
+        # machinery is forbidden here.
         forbidden = [
             "CARTOPIAN_SCOPE_DIRS",
             "CARTOPIAN_REPORT_DIR",
@@ -122,7 +130,6 @@ class WrappersStaticCoverageTest(unittest.TestCase):
             "tool_scope_union",
             "Get-CartopianScopeArgs",
             "CARTOPIAN_PM_CONTAINED",
-            "--add-dir",
             "--include-directories",
         ]
         paths = (

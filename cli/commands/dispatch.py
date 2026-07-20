@@ -54,6 +54,7 @@ from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
     _resolve_handoffs,
+    _resolve_work_roots,
 )
 from cli.emit import emit_record
 from cli.main import (
@@ -82,6 +83,15 @@ MODEL_ENV = "CARTOPIAN_MODEL"
 # (the tool's own default effort applies). Value validation is the wrapper's
 # job — effort vocabularies differ per agent CLI.
 EFFORT_ENV = "CARTOPIAN_EFFORT"
+
+# Resolved work-root grant. Exported as an ``os.pathsep``-joined list of the
+# project's resolved work-root absolute paths. The launch contract grants the
+# assignee write access to the union of the cartopian project root and the
+# declared work roots; some agent CLIs impose their own filesystem sandbox
+# rooted at the launch cwd (e.g. codex ``--sandbox workspace-write``), so the
+# wrapper needs the resolved paths to widen that sandbox to cover them. Never
+# exported when the project declares no work roots.
+WORK_ROOTS_ENV = "CARTOPIAN_WORK_ROOTS"
 
 def _resolve_comspec() -> str:
     """Absolute path to the Windows command interpreter (``cmd.exe``).
@@ -309,14 +319,39 @@ def handler(args: argparse.Namespace) -> int:
             project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
         ).resolve()
 
+    # --- Fail-closed: declared work roots resolve and exist ------------------
+    # The launch contract grants the assignee write access to the union of the
+    # project root and the declared work roots. An unmapped root, or one whose
+    # mapped path is missing on this machine, would launch an agent whose
+    # work-root writes are doomed to fail mid-run — refuse up front instead.
+    try:
+        resolved_roots = _resolve_work_roots(project_cfg, project_root)
+    except _CliError as err:
+        if err.prefix == "work-root":
+            stderr_guard(f"work root {err.message}")
+        else:
+            stderr_error(err.message)
+        return err.exit_code
+    work_root_paths = list(resolved_roots.values())
+    missing_roots = [p for p in work_root_paths if not Path(p).is_dir()]
+    if missing_roots:
+        stderr_guard(
+            "work root path(s) do not exist on this machine: "
+            + ", ".join(missing_roots)
+            + " — fix the [work_roots] mapping in cartopian.local.toml"
+        )
+        return EXIT_FAIL
+
     # --- Launch (per-invocation; non-blocking) -------------------------------
     # The launch contract: `<agent> <absolute prompt path>` as a single argv
     # argument, cwd = the cartopian project root, CARTOPIAN_TIMEOUT exported.
     # `start_new_session` detaches the wrapper so it runs in the background and
     # survives this short-lived invocation; we never wait() — the PM observes
     # completion via wait-handoff / wait-report. The wrapper is a neutral
-    # launcher: dispatch sets where to run and the deadline; it does not scope
-    # the agent's filesystem access (capability gating is the harness's job).
+    # launcher: dispatch sets where to run and the deadline; it does not gate
+    # the agent's filesystem access (capability gating is the harness's job),
+    # but it does export the resolved work roots so a wrapper whose agent CLI
+    # imposes its own sandbox can widen it to cover the declared work roots.
     launch_cwd = str(project_root)
     env = dict(os.environ)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
@@ -339,6 +374,12 @@ def handler(args: argparse.Namespace) -> int:
         env[EFFORT_ENV] = str(effort)
     else:
         env.pop(EFFORT_ENV, None)
+    # Resolved work-root grant (os.pathsep-joined absolute paths); a stale
+    # inherited value is cleared when the project declares no work roots.
+    if work_root_paths:
+        env[WORK_ROOTS_ENV] = os.pathsep.join(work_root_paths)
+    else:
+        env.pop(WORK_ROOTS_ENV, None)
     # Resolve the agent to a full path before launching. `subprocess.Popen` with
     # a bare name uses CreateProcess on native Windows, which resolves only
     # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
@@ -385,6 +426,7 @@ def handler(args: argparse.Namespace) -> int:
         "handoff_target": agent,
         "model": model,
         "effort": effort,
+        "work_roots": work_root_paths,
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),
         "timeout": timeout,

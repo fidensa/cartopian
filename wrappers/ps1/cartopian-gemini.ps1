@@ -119,6 +119,14 @@ if ($ApprovalMode) {
 }
 if ($Sandbox) {
     $Args += '--sandbox'
+    # gemini's boolean --sandbox exposes no per-path grant surface, so the
+    # declared work roots dispatch exports (CARTOPIAN_WORK_ROOTS) cannot be
+    # added to it — writes there may fail inside the sandbox. Warn so a
+    # work-root write failure is traceable to the tool's sandbox, not the
+    # launch contract. The default (sandbox off) leaves work roots writable.
+    if ($env:CARTOPIAN_WORK_ROOTS) {
+        [Console]::Error.WriteLine("cartopian-gemini: warning: gemini --sandbox has no writable-roots surface; declared work roots may not be writable inside the sandbox: $($env:CARTOPIAN_WORK_ROOTS)")
+    }
 }
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
 # resolved [handoffs.<role>].model; translate it into gemini's --model flag.

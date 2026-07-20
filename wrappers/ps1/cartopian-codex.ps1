@@ -144,6 +144,24 @@ if ($Bypass) {
 } elseif ($Sandbox) {
     $Args += @('--sandbox', $Sandbox)
 }
+# Work-root sandbox widening: dispatch exports CARTOPIAN_WORK_ROOTS (a
+# pathsep-joined list — ';' on Windows — of the project's resolved work-root
+# absolute paths). --sandbox workspace-write roots writes at the launch cwd
+# only, so without this every write into a declared work root fails.
+# writable_roots is additive — the cwd workspace and temp dirs stay writable.
+# Paths are TOML-escaped (backslash, double-quote) into the array literal.
+if (-not $Bypass -and $Sandbox -eq 'workspace-write' -and $env:CARTOPIAN_WORK_ROOTS) {
+    $WritableRoots = @()
+    foreach ($root in ($env:CARTOPIAN_WORK_ROOTS -split [IO.Path]::PathSeparator)) {
+        if (-not $root) { continue }
+        $esc = $root.Replace('\', '\\').Replace('"', '\"')
+        $WritableRoots += ('"' + $esc + '"')
+    }
+    if ($WritableRoots.Count -gt 0) {
+        $Args += @('-c', ('sandbox_workspace_write.writable_roots=[' + ($WritableRoots -join ', ') + ']'))
+        Write-Host "cartopian-codex: sandbox writable roots += $($env:CARTOPIAN_WORK_ROOTS)" -ForegroundColor DarkGray
+    }
+}
 $Args += $PromptPathAbs
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

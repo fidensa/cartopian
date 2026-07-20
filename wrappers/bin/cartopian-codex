@@ -153,6 +153,28 @@ elif [[ -n "$CODEX_SANDBOX" ]]; then
   CMD+=(--sandbox "$CODEX_SANDBOX")
 fi
 
+# Work-root sandbox widening: dispatch exports CARTOPIAN_WORK_ROOTS (a
+# colon-joined list of the project's resolved work-root absolute paths).
+# `--sandbox workspace-write` roots writes at the launch cwd only, so without
+# this every write into a declared work root fails ("Operation not
+# permitted"). writable_roots is additive — the cwd workspace and temp dirs
+# stay writable. Paths are TOML-escaped (backslash, double-quote) into the
+# array literal handed to codex's -c config override.
+if [[ "$CODEX_BYPASS" != "true" && "$CODEX_SANDBOX" == "workspace-write" && -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+  WRITABLE_ROOTS_TOML=""
+  IFS=':' read -r -a _CARTOPIAN_ROOTS <<< "$CARTOPIAN_WORK_ROOTS"
+  for _root in "${_CARTOPIAN_ROOTS[@]}"; do
+    [[ -z "$_root" ]] && continue
+    _esc="${_root//\\/\\\\}"
+    _esc="${_esc//\"/\\\"}"
+    WRITABLE_ROOTS_TOML+="${WRITABLE_ROOTS_TOML:+, }\"$_esc\""
+  done
+  if [[ -n "$WRITABLE_ROOTS_TOML" ]]; then
+    CMD+=(-c "sandbox_workspace_write.writable_roots=[$WRITABLE_ROOTS_TOML]")
+    echo "cartopian-codex: sandbox writable roots += $CARTOPIAN_WORK_ROOTS" >&2
+  fi
+fi
+
 CMD+=("$PROMPT_PATH_ABS")
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------

@@ -215,6 +215,15 @@ if ($PermissionMode -eq 'autonomous') {
     } else {
         $Args = @('-p', '--sandbox', '--permission-mode', 'dangerous')
     }
+    # devin's --sandbox enforces devin-configured Read/Write scopes and
+    # exposes no CLI surface to add the declared work roots dispatch exports
+    # (CARTOPIAN_WORK_ROOTS) to them — writes there may fail inside the
+    # sandbox. Warn so a work-root write failure is traceable to the tool's
+    # sandbox, not the launch contract; grant the paths in devin's own
+    # settings or choose CARTOPIAN_DEVIN_PERMISSION=bypass.
+    if ($DevinSandboxSupported -and $env:CARTOPIAN_WORK_ROOTS) {
+        [Console]::Error.WriteLine("cartopian-devin: warning: devin --sandbox has no writable-roots surface; declared work roots may not be writable inside the sandbox: $($env:CARTOPIAN_WORK_ROOTS)")
+    }
 } elseif ($PermissionMode -eq 'accept-edits') {
     if ($DevinSurface -eq 'four-mode') {
         $Args = @('-p', '--permission-mode', 'accept-edits')
