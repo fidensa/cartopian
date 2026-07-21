@@ -177,11 +177,22 @@ Linear movement stops — and the operator is consulted — only at genuine stop
 
 ## Specs
 
-Specs are mutable, single-file **work contracts** — a generic agreement between the PM and the assignee about what "done" looks like for the work the spec covers. In software contexts they typically describe an implementation contract, but the same artifact carries operating procedures, creative briefs, research plans, checklists, and similar domain-neutral work agreements. The `SPEC-NN-NNN` identifier prefix, the `templates/SPEC.md` filename, the `Spec:` task-file field, and the `specs/` project directory are retained as compatibility labels; the reframing is editorial.
+Specs are mutable, single-file **work contracts** — a generic agreement between the PM and the assignee about what "done" looks like for the work the spec covers. The same artifact can carry a software requirements and design contract, operating procedure, creative brief, research plan, checklist, or similar domain-neutral work agreement. The `SPEC-NN-NNN` identifier prefix, the `templates/SPEC.md` filename, the `Spec:` task-file field, and the `specs/` project directory are compatibility labels, not a declaration that every project is a software project.
+
+Every spec declares `Profile: software | general`. Profile selection follows the outcome governed by that spec, not the label applied to the overall project:
+
+- **Software profile.** Required when the spec's end outcome is creating or changing executable software or a technical contract intended for software implementation. This includes applications, services, libraries, command-line tools, automation scripts, and implementable schemas, APIs, or integrations. A software project may still use the general profile for a genuinely non-software outcome such as a research report, launch procedure, or creative asset.
+- **General profile.** Required when the spec governs a non-software outcome such as an operating procedure, creative brief, research plan, physical activity, or other work contract. A generally non-software project still uses the software profile for any spec whose outcome is software.
+
+A software-profile spec defines requirements and technical design, not the implementation the assignee should type. Its **SRS** portion covers **Overview & Goals**, **Functional Requirements**, **Non-Functional Requirements**, and **User Stories & Use Cases**. Its **TDS** portion covers **Architecture & Structure**, **Data Models**, **APIs & Integrations**, and **Edge Cases & Error Handling**. The PM specifies observable behavior, design boundaries, externally imposed constraints, and acceptance conditions while leaving source-level implementation decisions to the assignee.
+
+Software-profile specs must not contain source or executable code, pseudocode, step-by-step algorithms, function or class bodies, complete configuration or build files, or copy/paste-ready implementation snippets. Contract notation is allowed when it communicates a requirement rather than an implementation: diagrams, tables, field/type definitions, endpoint signatures, protocol grammar, and concise example payloads or input/output values. A required named algorithm, standard, framework, or platform may be recorded as a constraint when it comes from an approved requirement or decision; the PM does not turn that constraint into implementation code.
+
+General-profile specs use the domain-neutral work-contract sections in `templates/SPEC.md`. The software-code prohibition does not prevent a general-profile spec from quoting source material needed for a non-software outcome, but the PM still may not use a general profile to evade software-profile rules. Each authored spec keeps exactly one body profile and removes the unused template profile and its instructional text.
 
 The current file is the current version.
 
-Spec files follow the canonical field schema in `templates/SPEC.md`.
+Spec files follow the applicable canonical profile schema in `templates/SPEC.md`.
 
 A spec may carry `Status: draft | locked`. `locked` means the current contract has been approved; it does not make the file immutable forever.
 

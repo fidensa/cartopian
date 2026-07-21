@@ -13,6 +13,7 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 - `cartopian://protocol/CONVENTIONS/roles` — role declaration and reviewer resolution (Stage 0).
 - `cartopian://protocol/CONVENTIONS/reviews` — review artifact rules behind the checkpoints.
+- `cartopian://protocol/CONVENTIONS/specs` — spec profile selection and the software-spec authoring boundary (Stage 4).
 - `cartopian://protocol/CONVENTIONS/plan-lifecycle` — the plan, phase, task, and spec generation contract (Stages 2-4).
 - `cartopian://protocol/CONVENTIONS/session-state` — `STATE.md` rules (Stage 5).
 
@@ -222,12 +223,21 @@ cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --conten
 
 Not every task needs a spec. Use judgment: configuration tasks, documentation tasks, and simple implementation tasks typically do not need specs.
 
+Before authoring each spec, classify the outcome governed by that spec and set its `Profile`:
+
+- Use `software` when the end outcome is executable software or a technical contract intended for software implementation, including an application, service, library, CLI, automation script, or implementable schema, API, or integration.
+- Use `general` for a genuinely non-software work contract such as a research report, operating procedure, launch activity, or creative asset. Classify the spec itself rather than the overall project: one project may legitimately contain both profiles.
+
+For `software`, keep the template's software profile and remove the general profile. The spec is the task-scoped SRS and TDS: cover **Overview & Goals**, **Functional Requirements**, **Non-Functional Requirements**, **User Stories & Use Cases**, **Architecture & Structure**, **Data Models**, **APIs & Integrations**, and **Edge Cases & Error Handling**. Describe required behavior, design boundaries, constraints, and acceptance conditions, while leaving source-level implementation decisions to the assignee. Do not write source/executable code, pseudocode, step-by-step algorithms, function or class bodies, complete configuration or build files, or copy/paste-ready implementation snippets. Contract notation such as diagrams, tables, field/type definitions, endpoint signatures, protocol grammar, and concise example payloads or input/output values is allowed.
+
+For `general`, keep the template's general profile and remove the software profile. Do not select `general` merely to put implementation content into a software spec. Before writing either profile, remove the unused profile and all template instructional text.
+
 ### 4.4 Review checkpoint
 
 If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `004 tasks-and-specs` using the Review Flow Reference.
-2. Target artifacts: generated files in `tasks/open/` and `specs/`.
+2. Target artifacts: generated files in `tasks/open/` and `specs/`. In the checkpoint prompt, require the reviewer to verify every spec's profile classification. For each software-profile spec, require all eight SRS/TDS areas and treat source code, executable code, pseudocode, step-by-step algorithms, function/class bodies, complete configuration/build files, or copy/paste-ready implementation as a blocking finding requiring changes.
 3. If `approve`: proceed to Stage 5.
 4. If `request-changes`: revise tasks and specs in place and rerun the checkpoint.
 5. If `reject`, blocked, failed, or failed-to-parse: stop and return control to the operator.

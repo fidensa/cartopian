@@ -177,7 +177,13 @@ For tasks that need specs (new interfaces, schemas, contracts), author `specs/SP
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
 ```
 
-If `reviews.planning.mode` is `required`, run review checkpoint `004 tasks-and-specs`.
+Before authoring each spec, classify the outcome governed by that spec and set `Profile: software | general`; classify the spec itself, not the overall project. Use `software` when the end outcome is executable software or a technical contract intended for software implementation (including applications, services, libraries, CLIs, automation scripts, or implementable schemas, APIs, and integrations). Use `general` for genuinely non-software outcomes such as research reports, operating procedures, launch activities, or creative assets. A project may contain both profiles.
+
+For `software`, keep only the template's software profile. Treat the spec as the task-scoped SRS and TDS and cover **Overview & Goals**, **Functional Requirements**, **Non-Functional Requirements**, **User Stories & Use Cases**, **Architecture & Structure**, **Data Models**, **APIs & Integrations**, and **Edge Cases & Error Handling**. State required behavior and design boundaries while leaving source-level implementation decisions to the assignee. Do not include source/executable code, pseudocode, step-by-step algorithms, function or class bodies, complete configuration or build files, or copy/paste-ready implementation snippets. Contract notation such as diagrams, tables, field/type definitions, endpoint signatures, protocol grammar, and concise example payloads or input/output values is allowed.
+
+For `general`, keep only the template's general profile. Do not select it to evade the software rules. Remove the unused profile and all template instructional text before writing either profile.
+
+If `reviews.planning.mode` is `required`, run review checkpoint `004 tasks-and-specs`. Require the reviewer to verify profile selection and all eight SRS/TDS areas for software specs; any prohibited implementation content in a software spec is a blocking finding requiring changes.
 
 ---
 
