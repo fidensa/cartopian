@@ -24,7 +24,10 @@ import io
 import json
 import os
 import stat
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -94,6 +97,24 @@ if capture:
         )
 
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
+
+# Detached-stdio probe (both env-gated; default no-op). STUB_GATE parks the
+# stub until the test signals that the dispatch caller and its captured pipes
+# are gone; STUB_STDIO_PROBE then writes to stdout/stderr and reads stdin. If
+# any stream were still an inherited caller-owned pipe, the flush would raise
+# BrokenPipeError here and the report below would never be written.
+gate = os.environ.get("STUB_GATE")
+if gate:
+    deadline = time.time() + 30.0
+    while not os.path.exists(gate) and time.time() < deadline:
+        time.sleep(0.05)
+
+if os.environ.get("STUB_STDIO_PROBE") == "1":
+    sys.stdout.write("stub-stdout-probe\n")
+    sys.stdout.flush()
+    sys.stderr.write("stub-stderr-probe\n")
+    sys.stderr.flush()
+    sys.stdin.read()
 
 if prompt and os.environ.get("STUB_NO_REPORT") != "1":
     prompts_dir = os.path.dirname(os.path.abspath(prompt))
@@ -376,6 +397,658 @@ class TestDispatchPositive(unittest.TestCase):
                     time.sleep(0.05)
             self.assertIsNotNone(cap, "stub wrapper did not run")
             self.assertIsNone(cap["work_roots"])
+
+
+class TestDispatchDetachedStdio(unittest.TestCase):
+    """Detached-stdio regression: the wrapper is detached (start_new_session)
+    and outlives the short-lived dispatch invocation, so no child stream may
+    be implicitly inherited from that caller.
+
+    RED framing: with implicit Popen stdio the detached child inherited the
+    dispatch caller's stdin/stdout/stderr. A captured CLI or MCP caller exits
+    right after launch and its pipes die with it — the wrapper/agent's first
+    write after that hits a closed pipe (EPIPE) and kills the handoff mid-run
+    before any report exists (and an inherited stdout would interleave agent
+    output into the MCP server's JSON-RPC stream). GREEN: dispatch pins an
+    explicit stable stdio policy — stdin from the null device, stdout/stderr
+    on POSIX to a dispatch-owned launch-log sidecar of the expected report
+    (null-device fallback) — so the handoff reaches a terminal status
+    regardless of the caller's lifetime, and wrapper/agent diagnostics
+    survive in the log. Native Windows pins the same detachment with
+    deliberate null-device output and no sidecar — see
+    TestDispatchWindowsDevnullPolicy.
+    """
+
+    # Repo root, for running the real CLI as a short-lived captured caller.
+    REPO_ROOT = Path(dispatch.__file__).resolve().parents[2]
+
+    def _scaffolded_task(self, scaffold, stub: Path):
+        scaffold.write("cartopian.toml", _toml(str(stub)))
+        return _write_task_and_prompt(scaffold)
+
+    @unittest.skipUnless(os.name == "posix", "the launch-log sidecar is POSIX-only policy")
+    def test_launch_contract_pins_explicit_stable_stdio(self) -> None:
+        # POSIX launch contract: the detached child's streams are set
+        # explicitly at Popen time — stdin from the null device, stdout to
+        # the dispatch-owned launch log (a sidecar of the expected report,
+        # like the wrapper status file), stderr folded into stdout. Nothing
+        # is left implicit/inherited. The native-Windows counterpart (same
+        # explicit streams, null-device output, no sidecar) is pinned by
+        # TestDispatchWindowsDevnullPolicy.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            task_path = self._scaffolded_task(scaffold, stub)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+
+            captured: dict = {}
+
+            class _FakeProc:
+                pid = 4242
+
+            def fake_popen(argv, **kwargs):
+                captured["argv"] = argv
+                captured.update(kwargs)
+                return _FakeProc()
+
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen", side_effect=fake_popen
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            self.assertIn(
+                "stdin", captured,
+                msg="detached child stdin left implicit — inherited from the caller",
+            )
+            self.assertIs(captured["stdin"], subprocess.DEVNULL)
+            self.assertIn(
+                "stdout", captured,
+                msg="detached child stdout left implicit — inherited from the caller",
+            )
+            self.assertIs(captured["stderr"], subprocess.STDOUT)
+            self.assertTrue(captured["start_new_session"])
+
+            # stdout is the dispatch-owned launch log next to the expected
+            # report; the parent's handle is closed once the child owns it.
+            log_handle = captured["stdout"]
+            self.assertTrue(
+                log_handle.name.endswith(
+                    os.path.join("reports", "REPORT-01-004.md.launch.log")
+                ),
+                msg=f"launch log at unexpected path: {log_handle.name}",
+            )
+            self.assertTrue(log_handle.closed, "parent kept the launch log open")
+
+            rec = json.loads(stdout.strip())
+            self.assertEqual(rec["launch_log_path"], log_handle.name)
+
+    @unittest.skipUnless(os.name == "posix", "pipe-lifetime semantics are POSIX-specific here")
+    def test_detached_child_survives_caller_and_captured_pipe_exit(self) -> None:
+        # Behavioral regression, end to end: run the real `cartopian dispatch`
+        # CLI as a short-lived caller with fully captured stdio (the shape of
+        # both the observed CLI failure and the in-process MCP server, whose
+        # fds are the harness's pipes). After the caller exits, close every
+        # captured pipe — then let the detached stub write to stdout/stderr
+        # and continue to its terminal status. With inherited stdio the probe
+        # write raises BrokenPipeError and no report ever appears.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            template = tmp_path / "report-template.txt"
+            template.write_text(_STUB_REPORT, encoding="utf-8")
+            task_path = self._scaffolded_task(scaffold, stub)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            gate = tmp_path / "caller-and-pipes-gone"
+
+            env = dict(os.environ)
+            env.update(
+                {
+                    "HOME": str(fake_home),
+                    "STUB_REPORT_TEMPLATE": str(template),
+                    "STUB_GATE": str(gate),
+                    "STUB_STDIO_PROBE": "1",
+                }
+            )
+            env.pop("STUB_SLEEP", None)
+            env.pop("STUB_NO_REPORT", None)
+
+            caller = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "cli.main",
+                    "dispatch",
+                    str(task_path),
+                    "--role",
+                    "coder",
+                ],
+                cwd=str(self.REPO_ROOT),
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            # dispatch is non-blocking: the caller exits at launch. Its own
+            # output (one NDJSON line) fits the pipe buffer, so wait() is safe.
+            rc = caller.wait(timeout=30)
+            if rc != 0:
+                # The launch itself failed — pipes hold only the caller's
+                # output now, so draining them cannot block.
+                self.fail(
+                    f"dispatch caller exited {rc}: "
+                    f"stderr={caller.stderr.read().decode(errors='replace')!r}"
+                )
+            record_line = caller.stdout.readline().decode()
+            rec = json.loads(record_line)
+            self.assertEqual(rec["status"], "dispatched")
+
+            # The caller is gone; now kill its captured pipes. Do NOT read to
+            # EOF first — with inherited stdio the detached stub holds the
+            # write ends and EOF would never come.
+            caller.stdin.close()
+            caller.stdout.close()
+            caller.stderr.close()
+
+            # Signal the detached stub to probe its stdio and finish.
+            gate.write_text("go", encoding="utf-8")
+
+            report = scaffold.reports / "REPORT-01-004.md"
+            deadline = time.monotonic() + 20.0
+            while not report.is_file() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertTrue(
+                report.is_file(),
+                "detached handoff died after the caller and its captured "
+                "pipes exited — it never reached a terminal status (no report)",
+            )
+
+            # Diagnostics survived the caller: the probe output landed in the
+            # dispatch-owned launch log (the report exists, so the probe —
+            # which runs first — has already been flushed).
+            log_path = Path(rec["launch_log_path"])
+            log_text = log_path.read_text(encoding="utf-8")
+            self.assertIn("stub-stdout-probe", log_text)
+            self.assertIn("stub-stderr-probe", log_text)
+
+    @unittest.skipUnless(os.name == "posix", "the launch-log sidecar is POSIX-only policy")
+    def test_unopenable_launch_log_falls_back_to_devnull(self) -> None:
+        # Diagnostics are best-effort; detachment is not. If the launch log
+        # cannot be opened, the launch proceeds with the null device and the
+        # record says so (launch_log_path null) instead of failing the
+        # handoff or falling back to inherited streams.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            task_path = self._scaffolded_task(scaffold, stub)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            # A directory squatting on the launch-log path makes open() fail.
+            (scaffold.reports / "REPORT-01-004.md.launch.log").mkdir()
+
+            env = {"STUB_CAPTURE": str(capture), "STUB_NO_REPORT": "1"}
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertIsNone(rec["launch_log_path"])
+
+            cap = None
+            deadline = time.monotonic() + 5.0
+            while cap is None and time.monotonic() < deadline:
+                try:
+                    cap = json.loads(capture.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.05)
+            self.assertIsNotNone(cap, "stub wrapper did not run under the fallback")
+
+
+@unittest.skipUnless(os.name == "posix", "the launch-log sidecar is POSIX-only policy")
+class TestDispatchLaunchLogSink(unittest.TestCase):
+    """Launch-log sidecar hardening (POSIX-only policy — native Windows
+    dispatch deliberately writes no sidecar; see
+    TestDispatchWindowsDevnullPolicy): each dispatch gets a fresh, safe,
+    owner-only diagnostic sink, and a hostile or invalid pre-existing sink
+    degrades to the null device without blocking or failing the handoff.
+
+    RED framing: the first sidecar implementation opened
+    ``<expected-report>.launch.log`` with a bare ``open(path, "ab")`` —
+
+    - repeated dispatches appended separate runs into one file, so handoff
+      boundaries were lost and a prior run's diagnostics read as this run's;
+    - a planted leaf symlink was followed and its target received the child's
+      diagnostics;
+    - a FIFO at the predictable sidecar path blocked the ``open`` before
+      ``Popen``, wedging dispatch (and the PM behind it) indefinitely;
+    - a normal ``022`` umask created the log world-readable (``0644``);
+    - a failed ``Popen`` left the just-created empty log orphaned.
+
+    GREEN: dispatch opens the sink refusing symlinks and non-regular files
+    (atomically via O_NOFOLLOW/O_NONBLOCK + fstat), truncates it fresh per
+    dispatch, forces owner-only permissions whether the file is new or
+    pre-existing, discards it again when the launch fails, and falls back to
+    the null device for every unsafe or unopenable collision.
+    """
+
+    LOG_NAME = "REPORT-01-004.md.launch.log"
+
+    def _scaffolded(self, scaffold, tmp_path: Path):
+        stub = _make_stub(tmp_path)
+        scaffold.write("cartopian.toml", _toml(str(stub)))
+        task_path = _write_task_and_prompt(scaffold)
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        return task_path, fake_home
+
+    @staticmethod
+    def _fake_popen(captured: dict):
+        class _FakeProc:
+            pid = 4242
+
+        def fake_popen(argv, **kwargs):
+            captured["argv"] = argv
+            captured.update(kwargs)
+            return _FakeProc()
+
+        return fake_popen
+
+    def test_each_dispatch_starts_with_a_fresh_launch_log(self) -> None:
+        # Slot reuse: a prior run's diagnostics must not leak into this
+        # dispatch's sink — the log is truncated at launch, so its content
+        # always belongs to exactly one handoff.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            log_path = scaffold.reports / self.LOG_NAME
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            log_path.write_bytes(b"prior-run diagnostics\n")
+
+            captured: dict = {}
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen",
+                side_effect=self._fake_popen(captured),
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            # dispatch records the resolved (symlink-collapsed) form, e.g.
+            # /var -> /private/var on macOS; compare canonically.
+            self.assertEqual(
+                Path(rec["launch_log_path"]).resolve(), log_path.resolve()
+            )
+            self.assertEqual(
+                log_path.read_bytes(), b"",
+                msg="prior-run diagnostics survived into the new dispatch's "
+                    "sink — runs appended into one file",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "umask/mode semantics are POSIX-specific")
+    def test_launch_log_created_owner_only_despite_umask(self) -> None:
+        # A fresh log under a normal 022 umask must still be 0600: the sink
+        # can carry agent/wrapper diagnostics (paths, env echoes, tracebacks)
+        # that are no one else's business.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            log_path = scaffold.reports / self.LOG_NAME
+
+            captured: dict = {}
+            old_umask = os.umask(0o022)
+            try:
+                with mock.patch(
+                    "cli.commands.dispatch.subprocess.Popen",
+                    side_effect=self._fake_popen(captured),
+                ):
+                    stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+            finally:
+                os.umask(old_umask)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            mode = stat.S_IMODE(log_path.stat().st_mode)
+            self.assertEqual(
+                mode, 0o600,
+                msg=f"launch log created mode {oct(mode)}; must be owner-only 0600",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "chmod semantics are POSIX-specific")
+    def test_preexisting_launch_log_normalized_to_owner_only(self) -> None:
+        # A pre-existing world-readable log from an earlier (unhardened) run
+        # is normalized, not inherited: reuse truncates it AND forces 0600.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            log_path = scaffold.reports / self.LOG_NAME
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            log_path.write_bytes(b"old\n")
+            os.chmod(log_path, 0o644)
+
+            captured: dict = {}
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen",
+                side_effect=self._fake_popen(captured),
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            mode = stat.S_IMODE(log_path.stat().st_mode)
+            self.assertEqual(mode, 0o600, msg=f"pre-existing log kept mode {oct(mode)}")
+            self.assertEqual(log_path.read_bytes(), b"")
+
+    def test_symlink_launch_log_not_followed(self) -> None:
+        # A leaf symlink planted at the predictable sidecar path must never
+        # be followed: its target receives nothing, and the dispatch falls
+        # back to the null device rather than failing or inheriting.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            target = tmp_path / "victim-file"
+            target.write_bytes(b"victim content\n")
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            log_path = scaffold.reports / self.LOG_NAME
+            log_path.symlink_to(target)
+
+            captured: dict = {}
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen",
+                side_effect=self._fake_popen(captured),
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertIsNone(
+                rec["launch_log_path"],
+                msg="symlinked sink was accepted — diagnostics would follow the link",
+            )
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
+            self.assertEqual(
+                target.read_bytes(), b"victim content\n",
+                msg="symlink target was opened/truncated through the sidecar path",
+            )
+            self.assertTrue(log_path.is_symlink(), "planted symlink must be left in place")
+
+    @unittest.skipUnless(os.name == "posix", "FIFOs are POSIX-specific")
+    def test_fifo_launch_log_does_not_block_dispatch(self) -> None:
+        # A FIFO squatting on the sidecar path must not wedge dispatch: a
+        # blocking open(..., "ab") before Popen would hang the launch (and
+        # the PM behind it) until a reader appeared. The sink open must be
+        # non-blocking and reject the non-regular file.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            log_path = scaffold.reports / self.LOG_NAME
+            os.mkfifo(log_path)
+
+            # Rescue reader: if regressed code blocks opening the FIFO for
+            # write, this unblocks it after 5s so the suite fails (on the
+            # elapsed-time assertion) instead of hanging forever.
+            def _rescue() -> None:
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    time.sleep(0.1)
+                try:
+                    fd = os.open(log_path, os.O_RDONLY | os.O_NONBLOCK)
+                    os.close(fd)
+                except OSError:
+                    pass
+
+            rescuer = threading.Thread(target=_rescue, daemon=True)
+            rescuer.start()
+
+            captured: dict = {}
+            start = time.monotonic()
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen",
+                side_effect=self._fake_popen(captured),
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+            elapsed = time.monotonic() - start
+
+            self.assertLess(
+                elapsed, 2.0,
+                msg=f"dispatch blocked {elapsed:.1f}s opening a FIFO sink before Popen",
+            )
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertIsNone(rec["launch_log_path"])
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
+            self.assertTrue(
+                stat.S_ISFIFO(os.lstat(log_path).st_mode),
+                "FIFO must be left in place, never opened as the sink",
+            )
+
+    def test_failed_launch_does_not_orphan_launch_log(self) -> None:
+        # Popen failure means no handoff exists: the just-created (empty)
+        # sink must be discarded, not left as an orphan sidecar next to a
+        # report that will never arrive.
+        for exc in (FileNotFoundError(2, "gone", "stub"), OSError("boom")):
+            with self.subTest(exc=type(exc).__name__), \
+                    project_scaffold(cartopian_toml="") as scaffold, \
+                    tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+                tmp_path = Path(tmp)
+                task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+                log_path = scaffold.reports / self.LOG_NAME
+
+                with mock.patch(
+                    "cli.commands.dispatch.subprocess.Popen", side_effect=exc
+                ):
+                    stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+                self.assertEqual(rc, EXIT_FAIL)
+                self.assertIn("failed to launch handoff agent", stderr)
+                self.assertFalse(
+                    log_path.exists(),
+                    msg="failed launch left an empty .launch.log orphan behind",
+                )
+
+
+class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
+    """Native-Windows output policy, exercised through the real handler with
+    the ``_running_on_windows`` platform seam patched — the exact predicate
+    the handler branches on. The branch under test performs no filesystem
+    work at all, so driving it on a POSIX host is faithful (unlike simulating
+    Windows *rename semantics* under POSIX, which these tests replaced).
+
+    The POSIX sidecar's hardened open has no native-Windows equivalent that
+    has been validated on Windows: the CRT open lacks ``O_NOFOLLOW``, and the
+    exclusive-temp-plus-``os.replace`` alternative renames a still-open
+    ``mkstemp`` descriptor — opened without ``FILE_SHARE_DELETE``, so on real
+    Windows that rename is expected to fail with a sharing violation on every
+    normal launch, silently degrading to the null device while the code and
+    its POSIX-hosted tests claimed otherwise. Native Windows therefore
+    deliberately gets safe detached null output: explicit ``stdin=DEVNULL``,
+    ``stdout=DEVNULL``, stderr folded, ``launch_log_path`` recorded as null,
+    and the sidecar path never created, opened, replaced, truncated, or
+    cleaned — so no planted node there can redirect anything and no
+    share-mode assumption exists.
+
+    RED framing: before this policy, the nt branch built the sink via
+    mkstemp+``os.replace`` — under POSIX rename semantics that *appears* to
+    work, so with ``os.name`` patched the handler handed Popen a log handle
+    (not ``DEVNULL``), truncated a planted sidecar, and unlinked it again on
+    a failed launch. GREEN: the nt branch touches nothing and pins DEVNULL.
+    """
+
+    LOG_NAME = "REPORT-01-004.md.launch.log"
+
+    def _scaffolded(self, scaffold, tmp_path: Path):
+        stub = _make_stub(tmp_path)
+        scaffold.write("cartopian.toml", _toml(str(stub)))
+        task_path = _write_task_and_prompt(scaffold)
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        return task_path, fake_home
+
+    @staticmethod
+    def _fake_popen(captured: dict):
+        class _FakeProc:
+            pid = 4242
+
+        def fake_popen(argv, **kwargs):
+            captured["argv"] = argv
+            captured.update(kwargs)
+            return _FakeProc()
+
+        return fake_popen
+
+    def test_nt_launch_uses_devnull_and_records_null_log(self) -> None:
+        # The deliberate policy: on native Windows the detached child gets
+        # explicit null-device stdio (stderr folded), the record says
+        # launch_log_path null, and a planted sidecar — plus the directory
+        # around it — is left byte-for-byte alone (no create/open/replace/
+        # truncate/clean, no temp-file residue).
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            planted = scaffold.reports / self.LOG_NAME
+            planted.write_bytes(b"planted sidecar content\n")
+
+            captured: dict = {}
+            with mock.patch(
+                        "cli.commands.dispatch._running_on_windows",
+                        return_value=True,
+                    ), \
+                    mock.patch(
+                        "cli.commands.dispatch.subprocess.Popen",
+                        side_effect=self._fake_popen(captured),
+                    ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            self.assertIs(captured["stdin"], subprocess.DEVNULL)
+            self.assertIs(
+                captured["stdout"], subprocess.DEVNULL,
+                msg="native-Windows launch must use explicit DEVNULL stdout, "
+                    "not a launch-log handle",
+            )
+            self.assertIs(captured["stderr"], subprocess.STDOUT)
+            self.assertTrue(captured["start_new_session"])
+
+            rec = json.loads(stdout.strip())
+            self.assertIsNone(
+                rec["launch_log_path"],
+                msg="native-Windows record must state the honest policy: no log",
+            )
+            self.assertEqual(
+                planted.read_bytes(), b"planted sidecar content\n",
+                msg="nt branch touched the planted sidecar (truncated/replaced)",
+            )
+            self.assertEqual(
+                sorted(os.listdir(scaffold.reports)), [self.LOG_NAME],
+                msg="nt branch left residue in reports/ (temp file or cleanup)",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "planting a symlink needs POSIX")
+    def test_nt_launch_leaves_planted_symlink_and_target_untouched(self) -> None:
+        # No sink is ever derived from the sidecar path, so a planted symlink
+        # cannot redirect anything: link and target both survive unmodified.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            target = tmp_path / "victim-file"
+            target.write_bytes(b"victim content\n")
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            link = scaffold.reports / self.LOG_NAME
+            link.symlink_to(target)
+
+            captured: dict = {}
+            with mock.patch(
+                        "cli.commands.dispatch._running_on_windows",
+                        return_value=True,
+                    ), \
+                    mock.patch(
+                        "cli.commands.dispatch.subprocess.Popen",
+                        side_effect=self._fake_popen(captured),
+                    ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
+            self.assertIsNone(json.loads(stdout.strip())["launch_log_path"])
+            self.assertTrue(link.is_symlink(), "planted symlink must be left in place")
+            self.assertEqual(target.read_bytes(), b"victim content\n")
+
+    @unittest.skipUnless(os.name == "posix", "FIFO stand-in for any node at the path")
+    def test_nt_launch_never_opens_sidecar_path(self) -> None:
+        # A FIFO squatting on the sidecar path proves the nt branch performs
+        # no open at all: a blocking writer-open would hang here, and even an
+        # lstat-then-refuse policy would be more than this branch does.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            fifo = scaffold.reports / self.LOG_NAME
+            os.mkfifo(fifo)
+
+            captured: dict = {}
+            start = time.monotonic()
+            with mock.patch(
+                        "cli.commands.dispatch._running_on_windows",
+                        return_value=True,
+                    ), \
+                    mock.patch(
+                        "cli.commands.dispatch.subprocess.Popen",
+                        side_effect=self._fake_popen(captured),
+                    ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+            elapsed = time.monotonic() - start
+
+            self.assertLess(elapsed, 2.0, "nt branch opened (and blocked on) the sidecar path")
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
+            self.assertIsNone(json.loads(stdout.strip())["launch_log_path"])
+            self.assertTrue(
+                stat.S_ISFIFO(os.lstat(fifo).st_mode),
+                "node at the sidecar path must be left exactly as planted",
+            )
+
+    def test_nt_failed_launch_leaves_planted_sidecar_alone(self) -> None:
+        # The failed-launch orphan cleanup is a POSIX-sidecar concern. On
+        # native Windows no sink was created, so nothing may be unlinked — a
+        # planted file at the sidecar path survives a Popen failure.
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            task_path, fake_home = self._scaffolded(scaffold, tmp_path)
+            scaffold.reports.mkdir(parents=True, exist_ok=True)
+            planted = scaffold.reports / self.LOG_NAME
+            planted.write_bytes(b"planted sidecar content\n")
+
+            with mock.patch(
+                        "cli.commands.dispatch._running_on_windows",
+                        return_value=True,
+                    ), \
+                    mock.patch(
+                        "cli.commands.dispatch.subprocess.Popen",
+                        side_effect=OSError("boom"),
+                    ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn("failed to launch handoff agent", stderr)
+            self.assertEqual(
+                planted.read_bytes(), b"planted sidecar content\n",
+                msg="nt failed-launch cleanup deleted or truncated a file it "
+                    "never created",
+            )
 
 
 class TestDispatchFailClosed(unittest.TestCase):

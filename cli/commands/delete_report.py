@@ -6,22 +6,33 @@ Cartopian report grammar: ``REPORT-NN-NNN.md`` or
 ``REPORT-PLAN-NNN[-kebab-slug].md`` (planning-checkpoint reports carry an
 operator-authored slug per CONVENTIONS.md).
 
-It also removes the companion wrapper status file at ``<report-path>.status``
-when present. That file is transient early-crash-detection enrichment written
-by the agent wrappers and consumed by ``cartopian wait-handoff`` (see
-``wrappers/README.md`` and ``protocol/CONVENTIONS.md`` § Handoffs); it must
-never outlive the handoff it describes. Because the PM is markdown-only, this
-command is the PM-sanctioned hook for clearing that non-markdown file.
+It also removes the transient companion files that a handoff leaves next to
+its report:
+
+- ``<report-path>.status`` — early-crash-detection enrichment written by the
+  agent wrappers and consumed by ``cartopian wait-handoff`` (see
+  ``wrappers/README.md`` and ``protocol/CONVENTIONS.md`` § Handoffs);
+- ``<report-path>.launch.log`` — the diagnostic sidecar ``cartopian
+  dispatch`` points the detached child's stdout/stderr at on POSIX (see
+  ``cli/commands/dispatch.py``; native-Windows dispatch deliberately uses
+  the null device and writes no sidecar, so its absence there is the
+  ordinary no-op).
+
+Both are per-handoff transients that must never outlive the handoff they
+describe. Because the PM is markdown-only, this command is the PM-sanctioned
+hook for clearing those non-markdown files.
 
 Two cleanup moments share this command:
 
-- **report-clear** (default): the report ``.md`` and its companion
-  ``.status`` are both removed before a (re)handoff reuses the slot.
+- **report-clear** (default): the report ``.md`` and its transient
+  companions are all removed before a (re)handoff reuses the slot — even
+  when the report ``.md`` itself is absent (a crash-only handoff that died
+  before reporting still leaves ``.status``/``.launch.log`` behind).
 - **task-close** (``--status-only``): the report ``.md`` is intentionally
-  retained as evidence while only the companion ``.status`` is removed, so a
-  lingering report never keeps its transient status file alive.
+  retained as evidence while the transient companions are removed, so a
+  lingering report never keeps them alive.
 
-Absence of the ``.status`` file is always a successful no-op.
+Absence of either companion file is always a successful no-op.
 """
 import argparse
 import os
@@ -55,9 +66,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--status-only",
         action="store_true",
         help=(
-            "Remove only the companion <report-path>.status file and leave the "
-            "report .md in place. Used at task close, when the report lingers "
-            "as evidence but its transient wrapper status file must not."
+            "Remove only the transient companion files (<report-path>.status "
+            "and <report-path>.launch.log) and leave the report .md in place. "
+            "Used at task close, when the report lingers as evidence but its "
+            "transient handoff files must not."
         ),
     )
 
@@ -70,22 +82,24 @@ def _is_under(child: Path, parent: Path) -> bool:
     return True
 
 
-def _remove_status_companion(status_path: Path) -> bool:
-    """Best-effort removal of a wrapper ``<report>.status`` companion file.
+def _remove_transient_companion(companion_path: Path) -> bool:
+    """Best-effort removal of a transient handoff companion file — the
+    wrapper's ``<report>.status`` or dispatch's ``<report>.launch.log``.
 
-    Returns True when a status file was present and removed, False otherwise.
-    Never raises and never treats absence as an error: the status file is
-    optional enrichment, so its cleanup degrades gracefully — mirroring the
-    fail-open posture of the wrappers that write it. A symlink at the status
-    path is left untouched (the same leaf-symlink caution the report path
-    itself applies), so cleanup only ever unlinks a real status file in place.
+    Returns True when a companion file was present and removed, False
+    otherwise. Never raises and never treats absence as an error: both files
+    are optional enrichment, so their cleanup degrades gracefully — mirroring
+    the fail-open posture of the wrappers/dispatch that write them. A symlink
+    at the companion path is left untouched (the same leaf-symlink caution
+    the report path itself applies), so cleanup only ever unlinks a real
+    companion file in place.
     """
     try:
-        if status_path.is_symlink():
+        if companion_path.is_symlink():
             return False
-        if not status_path.is_file():
+        if not companion_path.is_file():
             return False
-        status_path.unlink()
+        companion_path.unlink()
         return True
     except OSError:
         return False
@@ -150,15 +164,19 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     # The wrapper early-crash signal lives at "<report-path>.status" — the same
-    # path wait_handoff.py derives. delete-report owns its removal so the
-    # transient status file never outlives the handoff it describes.
+    # path wait_handoff.py derives — and dispatch's diagnostic sidecar at
+    # "<report-path>.launch.log" — the same path dispatch.py derives.
+    # delete-report owns their removal so neither transient file ever
+    # outlives the handoff it describes.
     status_path = Path(str(report_path) + ".status")
+    launch_log_path = Path(str(report_path) + ".launch.log")
 
     if status_only:
         # Task-close cleanup: the report .md is intentionally retained as
-        # evidence; only the companion status file is removed. A missing status
-        # file is a successful no-op so close stays idempotent.
-        status_deleted = _remove_status_companion(status_path)
+        # evidence; only the transient companion files are removed. Missing
+        # companions are a successful no-op so close stays idempotent.
+        status_deleted = _remove_transient_companion(status_path)
+        launch_log_deleted = _remove_transient_companion(launch_log_path)
         emit_record(
             {
                 "action": "delete-report",
@@ -166,16 +184,22 @@ def handler(args: argparse.Namespace) -> int:
                     "deleted_path": None,
                     "status_path": str(status_path),
                     "status_deleted": status_deleted,
+                    "launch_log_path": str(launch_log_path),
+                    "launch_log_deleted": launch_log_deleted,
                     "status_only": True,
                 },
             }
         )
         return EXIT_OK
 
-    # Report-clear: remove the companion status file (best-effort; never an
+    # Report-clear: remove the transient companions (best-effort; never an
     # error when absent) alongside the report .md, so a reused report slot
-    # never carries a stale status file into the next handoff.
-    _remove_status_companion(status_path)
+    # never carries a stale status file or a prior run's launch log into the
+    # next handoff. This runs before the report-exists guard below: a
+    # crash-only handoff (died before reporting) leaves only the companions,
+    # and they must be cleared even though the delete itself then fails.
+    _remove_transient_companion(status_path)
+    _remove_transient_companion(launch_log_path)
 
     if not report_path.is_file():
         _stderr("guard", f"report file not found: {report_path}")

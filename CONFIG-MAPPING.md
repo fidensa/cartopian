@@ -55,7 +55,7 @@ project (<project-root>/cartopian.toml)
 [project]
 id = "my-project"
 name = "My Project"
-protocol_version = "v1.5.2"
+protocol_version = "v0.6.0"
 work_roots = ["product", "design"]
 ```
 

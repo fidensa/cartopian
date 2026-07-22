@@ -32,7 +32,7 @@ Hold the resolved value as `$install_root` (`$installRoot` on PowerShell). Every
 
 ### Step 2 — Read the installed ref
 
-Read `$install_root/VERSION`. It contains a single line: the git ref the installer recorded (a release tag like `v0.3.0`, or the literal `main` if no release was published at install time).
+Read `$install_root/VERSION`. It contains a single line: the git ref the installer recorded (a release tag like `v1.5.0`, or the literal `main` if no release was published at install time).
 
 - If the file is missing, the install predates the `VERSION` marker. Report this and proceed to Step 5 with installed ref = "unknown".
 - Otherwise, hold the value as `installed_ref`.

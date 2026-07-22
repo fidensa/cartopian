@@ -257,7 +257,7 @@ Pass when: every `diff` is empty (POSIX) and every `Compare-Object` / `Compare-T
 
 ## 7. `VERSION` marker matches the installed ref
 
-The `install-cartopian` skill writes `~/.cartopian/VERSION` as a single line: the git ref the installer resolved (a release tag like `v0.3.0`, or the literal `main` when no release has been tagged upstream). The `check-for-updates` skill reads this file to decide whether an upgrade is needed.
+The `install-cartopian` skill writes `~/.cartopian/VERSION` as a single line: the git ref the installer resolved (a release tag like `v1.5.0`, or the literal `main` when no release has been tagged upstream). The `check-for-updates` skill reads this file to decide whether an upgrade is needed.
 
 **macOS / Linux / WSL:**
 
