@@ -36,6 +36,7 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
   - Preserve each entry's operator-choice points. For example, v0.4.0's initiation opt-in is an explicit operator decision: only set `automation.initiation = "auto"` if the operator chooses "automatically start ready work"; a migration performed without that choice leaves the key unset.
 - **Not PM-mediated (dispatch or surface):** the PM has no mediated operation for arbitrary file surgery. These steps must be dispatched to a role that can perform them (a handoff), or surfaced to the operator as an explicit, bounded action. They include:
   - File renames (e.g. v0.2.0's `ENGINEERING.md → STANDARDS.md`).
+  - File removals (e.g. v0.6.0's deletion of a superseded project-level `CONVENTIONS.md`).
   - Line-anchored header substitutions across existing `tasks/` / `reviews/` / `reports/` files (e.g. v0.2.0's `Test gate:→Evidence gate:`, v0.3.0's `Repo subpath:→Work root:`) — the structured writers regenerate whole artifacts from inputs; they do not do surgical header swaps on arbitrary existing files.
   - Wrapper / launcher edits (v0.3.0).
 

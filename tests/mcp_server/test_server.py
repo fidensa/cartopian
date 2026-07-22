@@ -318,7 +318,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'protocol_version = "v0.5.0"\n'
+                'protocol_version = "v0.6.0"\n'
                 "\n[roles]\n"
                 'coder = "Implements work."\n'
                 'reviewer = "Checks work."\n'

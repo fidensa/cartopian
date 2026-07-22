@@ -1,10 +1,13 @@
 # Standards: <project name>
 
-<!-- This document is highly recommended but optional. It captures the
-     domain-neutral standards and constraints that govern execution of
-     this project. Fill in what applies; delete what doesn't. The
-     section names below are illustrative — replace them with whatever
-     best fits the project's domain (engineering, research, writing,
+<!-- This document is highly recommended but optional. It is project
+     metadata: the chosen tools or stack, the working standards that
+     apply to the project, and the constraints that bound each cycle's
+     work. It is not a governance contract — protocol conventions are
+     tool-owned (`protocol/CONVENTIONS.md`) and cannot be overridden
+     here. Fill in what applies; delete what doesn't. The section
+     names below are illustrative — replace them with whatever best
+     fits the project's domain (engineering, research, writing,
      design, ops, etc.). -->
 
 ## Tools and stack
@@ -13,7 +16,7 @@ List the languages, frameworks, runtimes, infrastructure, or other tools the pro
 
 ## Working standards
 
-Style, formatting, naming, or process conventions the team follows.
+Style, formatting, naming, or process conventions that apply to the project.
 
 ## Constraints
 

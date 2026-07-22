@@ -16,7 +16,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.5.0"\n'
+    'protocol_version = "v0.6.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -35,7 +35,7 @@ _PROJECT_TOML_OFF = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.5.0"\n'
+    'protocol_version = "v0.6.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"

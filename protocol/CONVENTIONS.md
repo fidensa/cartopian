@@ -482,7 +482,7 @@ Plan closeout resets the live plan surface:
 
 `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md` never carry forward as live artifacts. A new planning cycle produces fresh requirements and a fresh implementation plan.
 
-`STANDARDS.md` may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
+`STANDARDS.md` — project metadata: the chosen tools or stack, working standards, and cycle constraints — may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
 
 `cartopian.toml` remains live across plans.
 

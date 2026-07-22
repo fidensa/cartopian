@@ -32,6 +32,54 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.6.0 — Project-level conventions retired; STANDARDS.md finalized as project metadata
+
+- **Protocol version:** `v0.6.0`
+- **One-line summary:** Retires the project-level `CONVENTIONS.md` so the tool-owned `protocol/CONVENTIONS.md` is the only conventions layer, and finalizes `STANDARDS.md` as the sole project-metadata artifact (chosen tools or stack, working standards, and cycle constraints).
+
+#### Breakage description
+
+There is exactly one governance contract: the tool-owned `protocol/CONVENTIONS.md`, read through `cartopian://protocol/CONVENTIONS`. A project file must not override or shadow it.
+
+1. The project-root `CONVENTIONS.md` file is retired. No shipped surface reads, seeds, preserves, or writes it: `scaffold-project` does not create it, and its rerun guard treats one at the project root as a foreign file; `reset-plan` neither clears nor reseeds it; plan closeout has no carry-forward for it; `archive-plan` does not snapshot it; and no mediated writer targets it (the former `write-conventions` command is removed). A project still carrying the file is not conformant until the file is retired.
+2. `STANDARDS.md` is project metadata — the chosen tools or stack, the working standards that apply to the project, and the constraints that bound each cycle's work — not a governance contract, and not limited to software engineering. It remains the sole project-metadata artifact and keeps its existing carry-forward semantics at plan closeout.
+
+Body prose inside existing project artifacts (plan narratives, decision rationale, review notes, etc.) that mentions a project-level conventions file in passing is **not** part of the breakage contract; only the project-root file itself breaks.
+
+#### Applies-when precondition
+
+Applies when the project's `cartopian.toml` `[project] protocol_version` is unset, missing, or lexically less than `v0.6.0`. Projects already at `v0.6.0` (or any later entry's version) are skipped.
+
+#### Agent-followable migration steps
+
+Run these against the project root in order.
+
+1. **Retire the project-level `CONVENTIONS.md`, if present.** If `<project-root>/CONVENTIONS.md` does not exist, no action. If it exists, it is superseded by the tool-owned `protocol/CONVENTIONS.md`; name it to the operator as superseded, then:
+   - If the file carries project-specific content worth keeping, fold the metadata (tools or stack, working standards, cycle constraints) into `STANDARDS.md` via `cartopian write-standards`, and record any durable project decision via `cartopian write-decision`. Governance rules are never salvaged into `STANDARDS.md` — the protocol document already owns them, and a project file must not override or shadow it.
+   - Delete `<project-root>/CONVENTIONS.md`. File deletion is not a PM-mediated operation, so dispatch it or surface it to the operator as an explicit, bounded action (`skills/migrate-project.md`). If the operator wants the old file preserved verbatim, it moves outside the project root; the project root must end this step without a `CONVENTIONS.md`.
+2. **Bump the marker.** Set `[project] protocol_version = "v0.6.0"` in `<project-root>/cartopian.toml`, only after step 1 leaves no `CONVENTIONS.md` at the project root.
+
+#### Idempotence guarantee
+
+Step 1's precondition is the file's existence: once the file is removed, re-application finds nothing to retire and is a no-op (and re-running the salvage writers with unchanged content is a byte-identical mediated write). Step 2 is a fixed-value assignment; re-applying it is a no-op.
+
+#### Post-migration validation hint
+
+```sh
+PROJECT_ROOT=<project-root>
+
+# 1. No project-level conventions file remains (step 1).
+test ! -e "$PROJECT_ROOT/CONVENTIONS.md"
+# expected: exit status 0
+
+# 2. protocol_version marker is v0.6.0 (or a later entry's version)
+#    (step 2).
+grep -E '^protocol_version *= *"v0\.6\.0"' \
+  "$PROJECT_ROOT/cartopian.toml"
+# expected: one match (or a later version line if a later entry
+# has been applied on top)
+```
+
 ### v0.5.0 — Explicit review policy and domain-neutral completion evidence
 
 - **Protocol version:** `v0.5.0`

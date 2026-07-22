@@ -139,7 +139,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'protocol_version = "v0.5.0"\n'
+        'protocol_version = "v0.6.0"\n'
         f"{wr}"
         "\n"
         "[roles]\n"
@@ -391,7 +391,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'protocol_version = "v0.5.0"\n'
+            'protocol_version = "v0.6.0"\n'
             "\n"
             "[roles]\n"
             'coder = "Implements tasks per spec."\n'
@@ -575,7 +575,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
     role's task automation never silently extends to planning reviews).
     """
 
-    PLAN_PROMPT = "PROMPT-PLAN-001-requirements-and-engineering.md"
+    PLAN_PROMPT = "PROMPT-PLAN-001-requirements-and-standards.md"
 
     def _fake_home(self, tmp_path: Path) -> Path:
         home = tmp_path / "home"
@@ -607,12 +607,12 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             self.assertEqual(rec["status"], "dispatched")
             self.assertIsNone(rec["task_id"])
             self.assertEqual(
-                rec["prompt_id"], "PROMPT-PLAN-001-requirements-and-engineering"
+                rec["prompt_id"], "PROMPT-PLAN-001-requirements-and-standards"
             )
             self.assertEqual(rec["prompt_path"], str(resolved_prompt))
             self.assertTrue(
                 rec["expected_report_path"].endswith(
-                    "/reports/REPORT-PLAN-001-requirements-and-engineering.md"
+                    "/reports/REPORT-PLAN-001-requirements-and-standards.md"
                 ),
                 msg=rec["expected_report_path"],
             )

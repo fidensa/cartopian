@@ -17,7 +17,7 @@ BASE_CONFIG = """\
 [project]
 name = "Demo"
 id = "demo"
-protocol_version = "v0.5.0"
+protocol_version = "v0.6.0"
 
 [roles.pm]
 description = "Plans phases."

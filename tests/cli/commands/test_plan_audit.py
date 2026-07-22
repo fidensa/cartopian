@@ -15,7 +15,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'protocol_version = "v0.5.0"\n'
+    'protocol_version = "v0.6.0"\n'
 )
 
 _REVIEW_TOML = (

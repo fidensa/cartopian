@@ -21,7 +21,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.5.0"\n'
+    'protocol_version = "v0.6.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles]\n"
@@ -182,7 +182,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'protocol_version = "v0.5.0"\n'
+        'protocol_version = "v0.6.0"\n'
         "\n"
         "[handoffs.coder]\n"
         'agent = "cartopian-claude"\n'
@@ -302,7 +302,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'protocol_version = "v0.5.0"\n'
+        'protocol_version = "v0.6.0"\n'
         "\n"
         "[roles]\n"
         'coder = "Implements tasks per spec."\n'

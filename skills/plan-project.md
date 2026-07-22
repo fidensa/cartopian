@@ -111,7 +111,7 @@ cartopian write-standards <project-root> --content-file <body-path>
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `001 requirements-and-engineering` using the Review Flow Reference.
+1. Run planning-review checkpoint `001 requirements-and-standards` using the Review Flow Reference.
 2. Target artifacts: `REQUIREMENTS.md` and `STANDARDS.md`.
 3. If `approve`: proceed to Stage 2.
 4. If `request-changes`: revise the target artifacts in place and rerun the checkpoint.
@@ -124,7 +124,7 @@ If `reviews.planning.mode` is `required`:
 ### 2.1 Read inputs
 
 1. Read the locked `REQUIREMENTS.md`.
-2. Read the current-cycle `STANDARDS.md` as technical constraints.
+2. Read the current-cycle `STANDARDS.md` as the project's standards and constraints.
 3. Read the templates in `cartopian://templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md
@@ -138,7 +138,7 @@ cartopian write-plan <project-root> --content-file <body-path>
 The `IMPLEMENTATION_PLAN.md` body must contain:
 
 - **Purpose**: what this plan accomplishes and which source documents it derives from.
-- **Architecture rules**: rules derived from requirements and engineering standards. These are consequences of locked inputs, not new decisions.
+- **Architecture rules**: rules derived from requirements and project standards. These are consequences of locked inputs, not new decisions.
 - **Work topology**: which repos or other work locations are involved and what each owns. Include no-repo projects when applicable.
 - **Phase sequence**: each phase with:
   - Goal
@@ -280,7 +280,7 @@ The standard checkpoint sequence is:
 
 | NNN | Stage | Shared slug | Prompt | Report | Review |
 | --- | --- | --- | --- | --- | --- |
-| 001 | Requirements & Engineering | `requirements-and-engineering` | `PROMPT-PLAN-001-requirements-and-engineering.md` | `REPORT-PLAN-001-requirements-and-engineering.md` | `REVIEW-PLAN-001-requirements-and-engineering.md` |
+| 001 | Requirements & Standards | `requirements-and-standards` | `PROMPT-PLAN-001-requirements-and-standards.md` | `REPORT-PLAN-001-requirements-and-standards.md` | `REVIEW-PLAN-001-requirements-and-standards.md` |
 | 002 | Implementation Plan | `implementation-plan` | `PROMPT-PLAN-002-implementation-plan.md` | `REPORT-PLAN-002-implementation-plan.md` | `REVIEW-PLAN-002-implementation-plan.md` |
 | 003 | Phases | `phases` | `PROMPT-PLAN-003-phases.md` | `REPORT-PLAN-003-phases.md` | `REVIEW-PLAN-003-phases.md` |
 | 004 | Tasks & Specs | `tasks-and-specs` | `PROMPT-PLAN-004-tasks-and-specs.md` | `REPORT-PLAN-004-tasks-and-specs.md` | `REVIEW-PLAN-004-tasks-and-specs.md` |

@@ -6,7 +6,7 @@ What this plan exists to accomplish. Name the source documents or external refer
 
 ## Architecture rules
 
-Rules derived from requirements and engineering standards that constrain all phases. These are not new decisions — they are consequences of locked inputs.
+Rules derived from requirements and project standards that constrain all phases. These are not new decisions — they are consequences of locked inputs.
 
 ## Work topology
 

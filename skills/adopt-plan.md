@@ -219,4 +219,4 @@ Plan adoption — including task generation — is a **scoped directive** (`prot
 
 Uses the same checkpoint sequence as `plan-project`. See the Review Flow Reference table in `plan-project.md` for prompt/report/review file paths and `run-handoff.md` for handoff mechanics.
 
-Checkpoint `001 requirements-and-engineering` is only run if `REQUIREMENTS.md` was generated during Stage 1 of this skill (option (a)). If requirements were skipped or created as a stub, proceed directly to the implementation-plan checkpoint (`002`).
+Checkpoint `001 requirements-and-standards` is only run if `REQUIREMENTS.md` was generated during Stage 1 of this skill (option (a)). If requirements were skipped or created as a stub, proceed directly to the implementation-plan checkpoint (`002`).

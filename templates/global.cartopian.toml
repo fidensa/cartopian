@@ -23,9 +23,10 @@
 #
 # Schema authority lives in the protocol — see protocol/CONVENTIONS.md and
 # the FR-011 protocol-defaults table in projects/cartopian-manager/
-# REQUIREMENTS.md for the canonical list. STANDARDS.md (the engineering-
-# standards file shipped per project) is unrelated to this global config;
-# it is mentioned here only because operators sometimes confuse the two.
+# REQUIREMENTS.md for the canonical list. STANDARDS.md (the per-project
+# metadata file: chosen tools or stack, working standards, and cycle
+# constraints) is unrelated to this global config; it is mentioned here
+# only because operators sometimes confuse the two.
 
 # -----------------------------------------------------------------------------
 # [defaults]
