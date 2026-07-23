@@ -33,7 +33,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cli.commands import dispatch, wait_handoff
+from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 from tests.scaffold import project_scaffold
 
@@ -95,6 +95,11 @@ if capture:
             },
             fh,
         )
+
+launch_log = os.environ.get("STUB_LAUNCH_LOG")
+if launch_log:
+    with open(launch_log, "a", encoding="utf-8") as fh:
+        fh.write("%s\n" % os.getpid())
 
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
 
@@ -306,6 +311,131 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(cap["work_roots"], str(work_root))
             # The wrapper actually ran with cwd = the cartopian project root.
             self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
+
+    def test_multiple_nonterminal_slices_use_one_launch_and_one_budget_unit(self) -> None:
+        """A bounded wait slice stays inside one initiated automation run."""
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-multislice-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            template = tmp_path / "report-template.txt"
+            template.write_text(_STUB_REPORT, encoding="utf-8")
+            launch_log = tmp_path / "launches.log"
+
+            scaffold.write(
+                "cartopian.toml",
+                _toml(str(stub), timeout="30s")
+                + "\n[automation]\n"
+                  'initiation = "auto"\n'
+                  'confirmation = "until-blocked"\n'
+                  "max_handoffs_per_run = 1\n",
+            )
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-01-005-x.md",
+                "# TASK-01-005: Multi-slice handoff\n\n"
+                "Phase: PHASE-01-x\n"
+                "Work root: n/a\n"
+                "Assignee: coder\n\n"
+                "## Goal\n\nExercise bounded wait slices.\n",
+            )
+            scaffold.write(
+                "prompts/PROMPT-01-005.md",
+                "# PROMPT-01-005\n\n## Your task\n\nWrite the report.\n",
+            )
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+
+            launches = 0
+            handoff_budget_used = 0
+            operator_confirmations = 0
+            nonterminal_observations = 0
+            automatic_host_resumes = 0
+            user_visible_context_messages = []
+            nonterminal_message_counts = []
+            terminal_record = None
+
+            # One initiated run launches exactly once.  The stub deliberately
+            # outlives two one-second observation slices before writing a
+            # valid report.
+            env = {
+                "STUB_REPORT_TEMPLATE": str(template),
+                "STUB_LAUNCH_LOG": str(launch_log),
+                "STUB_SLEEP": "2.4",
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                _, dispatch_stderr, dispatch_rc = _dispatch(
+                    str(task_path), "coder", fake_home
+                )
+            self.assertEqual(dispatch_rc, EXIT_OK, msg=dispatch_stderr)
+            launches += 1
+            handoff_budget_used += 1
+
+            while terminal_record is None:
+                wait_args = argparse.Namespace(
+                    task_path=str(task_path),
+                    role="coder",
+                    max_block="1s",
+                    poll_interval=0.05,
+                )
+                wait_out, wait_err = io.StringIO(), io.StringIO()
+                with mock.patch(
+                    "cli.commands.wait_handoff.Path.home", return_value=fake_home
+                ):
+                    with contextlib.redirect_stdout(wait_out), \
+                            contextlib.redirect_stderr(wait_err):
+                        wait_rc = wait_handoff.handler(wait_args)
+                wait_record = json.loads(wait_out.getvalue().strip())
+                self.assertEqual(wait_rc, EXIT_OK, msg=wait_err.getvalue())
+                if wait_record["status"] == "still-running":
+                    nonterminal_observations += 1
+                    automatic_host_resumes += 1
+                    nonterminal_message_counts.append(
+                        len(user_visible_context_messages)
+                    )
+                    # Internal observation boundary: re-wait directly and
+                    # silently.  No context message, dispatch, budget
+                    # increment, or operator confirmation.
+                    continue
+                terminal_record = wait_record
+
+            report_path = Path(terminal_record["report_path"])
+            action_args = argparse.Namespace(
+                report_path=str(report_path), variant=None
+            )
+            action_out, action_err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(action_out), \
+                    contextlib.redirect_stderr(action_err):
+                action_rc = report_action.handler(action_args)
+            action_record = json.loads(action_out.getvalue().strip())
+            user_visible_context_messages.append(
+                {
+                    "status": terminal_record["status"],
+                    "verdict": action_record["verdict"],
+                }
+            )
+
+            self.assertGreaterEqual(nonterminal_observations, 2)
+            self.assertEqual(automatic_host_resumes, nonterminal_observations)
+            self.assertEqual(
+                nonterminal_message_counts,
+                [0] * nonterminal_observations,
+                msg="routine nonterminal slices must not accumulate context",
+            )
+            self.assertEqual(
+                user_visible_context_messages,
+                [{"status": "done", "verdict": "accepted"}],
+                msg="the first user-visible update must be the terminal result",
+            )
+            self.assertEqual(terminal_record["status"], "done")
+            self.assertEqual(action_rc, EXIT_OK, msg=action_err.getvalue())
+            self.assertEqual(action_record["verdict"], "accepted")
+            self.assertFalse(action_record["path_mismatch"])
+            self.assertEqual(launches, 1)
+            self.assertEqual(handoff_budget_used, 1)
+            self.assertEqual(operator_confirmations, 0)
+            self.assertEqual(
+                len(launch_log.read_text(encoding="utf-8").splitlines()), 1
+            )
 
     def test_clears_stale_model_and_effort_when_handoff_sets_neither(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \

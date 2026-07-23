@@ -116,6 +116,8 @@ The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (
 
 `dispatch` returns as soon as the wrapper is launched in the background — it does not block to completion and never reaps the child; the PM observes the result through Stage 3's wait primitive. Dispatch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
 
+The successful dispatch is the launch event and consumes one `max_handoffs_per_run` unit. Only launches consume the handoff budget; Stage 3 wait calls and their observation slices consume none.
+
 ---
 
 ## Stage 3 - Wait For Completion
@@ -146,7 +148,7 @@ Interpret the emitted `status`:
 - `failed-to-parse`: a report is present but invalid. Treat as blocked; preserve the prompt and report for inspection.
 - `failed`: the wrapper status file reports the assignee process exited and no valid report appeared — a crash/timeout exit, or a clean exit that nonetheless wrote no report (a common reviewer failure: it writes `reviews/REVIEW-NN-NNN.md` but not the `reports/REPORT-NN-NNN.md` the wait watches). The process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
 - `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
-- `still-running` / `still_running`: the `--max-block` budget elapsed before the configured timeout, so the assignee may still be working. Yield control back to the operator or host harness and re-call the same wait command on resume. The filesystem observation survives the yield, so nothing is lost by stopping and resuming, and no second handoff is started.
+- `still-running` / `still_running`: the `--max-block` budget elapsed before the configured timeout, so the assignee may still be working. Treat this as a nonterminal internal observation boundary, not as a blocker, completion result, or operator-confirmation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. An automatic host wake/resume must not itself emit a user-visible message merely because an observation slice ended. A wait is read-only and does not launch an assignee, so do not return to Stage 2, call `dispatch`, or consume another `max_handoffs_per_run` unit. Continue until the wait reports a terminal result or the configured deadline. If the host cannot keep one turn open, use the automatic wake/resume mechanism; do not request operator continuation merely because an observation slice ended.
 
 The wrapper still enforces the wall-clock deadline at the OS level using `CARTOPIAN_TIMEOUT` (Stage 2); the wait command observes the result rather than imposing a separate PM-side deadline.
 
@@ -197,8 +199,8 @@ Do not move tasks, delete prompts, update reviews, or rewrite `STATE.md` unless 
 
 ## Stage 6 - Automation Policy Boundary
 
-When `confirmation = "each-handoff"`, return control to the operator after the caller processes the handoff result.
+When `confirmation = "each-handoff"`, return control to the operator only after the handoff reaches a terminal result and the caller processes that result. A nonterminal wait observation does not reach this boundary.
 
-When `confirmation = "until-blocked"`, the caller may continue only after this handoff is fully processed and only until a blocker, failed report, review rejection, missing evidence, operator-required decision, phase boundary, or `max_handoffs_per_run` limit.
+When `confirmation = "until-blocked"`, the initiated run remains active through every nonterminal wait observation. After this handoff reaches a terminal result and is fully processed, the caller may continue only until a blocker, failed report, review rejection, missing evidence, operator-required decision, phase boundary, or `max_handoffs_per_run` limit.
 
 The policy permits sequential continuation only. It never permits concurrent child handoffs.

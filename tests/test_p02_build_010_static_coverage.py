@@ -217,6 +217,39 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         r"wait for the operator to tell you",
     )
 
+    # A bounded observation slice is internal to an already-initiated run.  It
+    # must never be documented as a reason to hand control to the operator.
+    # Automatic host wake/resume is allowed, but operator confirmation is not.
+    FORBIDDEN_NONTERMINAL_YIELD_PATTERNS = (
+        r"on [`']?still[-_]running[`']?[^.\n]*yield control back to the operator",
+        r"yield control back to the operator[^.\n]*re-call",
+        r"operator continuation[^.\n]*still[-_]running",
+    )
+
+    # Routine nonterminal slices are silent.  In particular, changing the old
+    # operator-yield instruction into a per-slice commentary mandate is still
+    # a contract violation because it accumulates user-visible context while
+    # no material handoff state has changed.
+    FORBIDDEN_ROUTINE_SLICE_OUTPUT_PATTERNS = (
+        r"\bprovide(?:s)?\s+(?:concise\s+)?progress commentary\b",
+        r"\b(?:must|should)\s+(?:provide|emit|send|write)\b[^.\n]*"
+        r"(?:commentary|message|output|state)\b",
+        r"\b(?:emit|send|write)\s+(?:a\s+)?(?:concise\s+)?progress "
+        r"(?:commentary|message|update)\b",
+    )
+
+    SILENT_REWAIT_NEEDLES = (
+        "silent and context-neutral",
+        "without user-facing text",
+        "terminal result",
+        "blocker",
+        "timeout/failure",
+        "meaningful new progress evidence",
+        "deliberately throttled long-running threshold",
+        "automatic host wake/resume",
+        "must not itself emit a user-visible message",
+    )
+
     def _read_skill(self, name: str) -> str:
         return (SKILLS_DIR / name).read_text(encoding="utf-8")
 
@@ -239,22 +272,67 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
                 ),
             )
 
+    def _assert_no_nonterminal_operator_yield(self, label: str, body: str) -> None:
+        for pattern in self.FORBIDDEN_NONTERMINAL_YIELD_PATTERNS:
+            self.assertIsNone(
+                re.search(pattern, body, re.IGNORECASE),
+                msg=(
+                    f"{label} must keep an initiated run active across a "
+                    f"nonterminal wait slice; stale operator-yield wording "
+                    f"matched /{pattern}/"
+                ),
+            )
+
+    def _assert_silent_rewait_contract(self, label: str, body: str) -> None:
+        for pattern in self.FORBIDDEN_ROUTINE_SLICE_OUTPUT_PATTERNS:
+            self.assertIsNone(
+                re.search(pattern, body, re.IGNORECASE),
+                msg=(
+                    f"{label} must not require user-visible output for a "
+                    f"routine nonterminal slice; matched /{pattern}/"
+                ),
+            )
+        for needle in self.SILENT_REWAIT_NEEDLES:
+            self.assertIn(
+                needle,
+                body,
+                msg=f"{label} must pin the silent re-wait contract: {needle!r}",
+            )
+
     def test_run_handoff_uses_wait_primitives(self) -> None:
         text = self._read_skill("run-handoff.md")
         self.assertIn("cartopian wait-handoff", text)
         self.assertIn("cartopian wait-report", text)
         self.assertIn("still-running", text)
         self._assert_no_adhoc_polling("run-handoff.md", text)
+        self._assert_no_nonterminal_operator_yield("run-handoff.md", text)
+        self._assert_silent_rewait_contract("run-handoff.md", text)
+        for needle in (
+            "internal observation boundary",
+            "same canonical wait primitive",
+            "does not launch",
+            "Only launches consume",
+            "automatic host wake/resume",
+        ):
+            self.assertIn(needle, text)
 
     def test_run_task_uses_wait_handoff(self) -> None:
         text = self._read_skill("run-task.md")
         self.assertIn("cartopian wait-handoff", text)
         self._assert_no_adhoc_polling("run-task.md", text)
+        self._assert_no_nonterminal_operator_yield("run-task.md", text)
+        self._assert_silent_rewait_contract("run-task.md", text)
+        self.assertIn("same canonical wait primitive", text)
+        self.assertIn("does not consume", text)
 
     def test_plan_project_uses_wait_report(self) -> None:
         text = self._read_skill("plan-project.md")
         self.assertIn("cartopian wait-report", text)
         self._assert_no_adhoc_polling("plan-project.md", text)
+        self._assert_no_nonterminal_operator_yield("plan-project.md", text)
+        self._assert_silent_rewait_contract("plan-project.md", text)
+        self.assertIn("same canonical wait primitive", text)
+        self.assertIn("does not consume", text)
 
     def test_conventions_handoffs_formalizes_wait_contract(self) -> None:
         section = self._handoffs_section()
@@ -264,10 +342,23 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         # Report file is authoritative; the wrapper status file is optional.
         self.assertRegex(section, r"authoritative")
         self.assertRegex(section, r"\.status|status file")
-        # still-running yield-and-resume model.
+        # still-running is an internal observation boundary, not an operator
+        # confirmation boundary.
         self.assertIn("still-running", section)
-        self.assertRegex(section, r"yield")
+        for needle in (
+            "internal observation boundary",
+            "same canonical wait primitive",
+            "Only launches consume",
+            "automatic host wake/resume",
+        ):
+            self.assertIn(needle, section)
+        self.assertRegex(section, r"each-handoff.*terminal result.*processed")
+        self.assertRegex(section, r"until-blocked.*remains active")
         self._assert_no_adhoc_polling("CONVENTIONS.md § Handoffs", section)
+        self._assert_no_nonterminal_operator_yield(
+            "CONVENTIONS.md § Handoffs", section
+        )
+        self._assert_silent_rewait_contract("CONVENTIONS.md § Handoffs", section)
 
 
 class SectionUriStaticCoverageTest(unittest.TestCase):
