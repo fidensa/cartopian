@@ -2,9 +2,13 @@
 
 `wait-report` filesystem-polls until a handoff report exists and reaches an
 `accepted` outcome under the `report-action` aggregator's verdict semantics,
-or until the `--max-block` budget elapses. It is read-only and stdlib-only.
+or until the deadline elapses. It is terminal by default (bounded by the
+resolved handoff timeout); an explicit `--max-block` bounds one nonterminal
+observation slice. It is read-only and stdlib-only.
 """
+import contextlib
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -13,6 +17,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.scaffold import project_scaffold
 
@@ -228,12 +233,123 @@ class TestWaitReportArgParsing(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertTrue(result.stderr.startswith("[usage]"))
 
-    def test_missing_max_block_exits_usage(self) -> None:
+class TestWaitReportDefaultTerminal(unittest.TestCase):
+    """Without --max-block the wait is terminal: it blocks to the resolved
+    handoff-timeout ceiling and the deadline classifies as `timeout`, never
+    `still_running`. Runs in-process with an injected clock so the default
+    ceiling (up to the protocol 60m) never actually elapses."""
+
+    def _run_inprocess(self, argv: list) -> tuple:
+        from cli.commands import wait_report
+        from cli.main import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["wait-report", *argv])
+        clock = {"t": 0.0}
+
+        def fake_sleep(seconds: float) -> None:
+            clock["t"] += seconds
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(wait_report.time, "monotonic", lambda: clock["t"]), \
+                mock.patch.object(wait_report.time, "sleep", fake_sleep), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = args._handler(args)
+        return rc, out.getvalue(), err.getvalue(), clock
+
+    def test_default_wait_ends_in_terminal_timeout(self) -> None:
+        """No --max-block, no role → protocol-default 60m ceiling, `timeout`."""
         with project_scaffold() as scaffold:
             report_path = scaffold.reports / "REPORT-01-002.md"
-            result = _run(str(report_path))
-        self.assertEqual(result.returncode, 2)
-        self.assertTrue(result.stderr.startswith("[usage]"))
+            rc, out, err, clock = self._run_inprocess([str(report_path)])
+
+        self.assertEqual(rc, 1, msg=err)
+        record = json.loads(out.strip())
+        self.assertEqual(record["status"], "timeout")
+        self.assertIs(record["still_running"], False)
+        self.assertIs(record["accepted"], False)
+        self.assertIsNone(record["max_block_seconds"])
+        self.assertEqual(record["timeout_seconds"], 3600)
+        self.assertEqual(record["effective_block_seconds"], 3600)
+        self.assertGreaterEqual(clock["t"], 3600)
+
+    def test_default_wait_honors_resolved_role_timeout(self) -> None:
+        """With --role, the ceiling is the resolved [handoffs.<role>] timeout."""
+        with project_scaffold() as scaffold:
+            scaffold.write(
+                "cartopian.toml",
+                "[project]\n"
+                'work_roots = ["tool-repo"]\n\n'
+                "[roles]\n"
+                'reviewer = "Reviews completed tasks."\n\n'
+                "[handoffs.reviewer]\n"
+                'agent = "codex"\n'
+                "auto_start_reviews = true\n"
+                'timeout = "10s"\n',
+            )
+            report_path = scaffold.reports / "REPORT-01-002.md"
+            fake_home = scaffold.root / "fake-home"
+            fake_home.mkdir(parents=True, exist_ok=True)
+            with mock.patch(
+                "cli.commands.wait_handoff.Path.home", return_value=fake_home
+            ):
+                rc, out, err, clock = self._run_inprocess(
+                    [str(report_path), "--role", "reviewer"]
+                )
+
+        self.assertEqual(rc, 1, msg=err)
+        record = json.loads(out.strip())
+        self.assertEqual(record["status"], "timeout")
+        self.assertIs(record["still_running"], False)
+        self.assertEqual(record["timeout_seconds"], 10)
+        self.assertGreaterEqual(clock["t"], 10)
+
+    def test_explicit_slice_beyond_ceiling_is_terminal_timeout(self) -> None:
+        """--max-block larger than the resolved ceiling → ceiling wins, `timeout`."""
+        with project_scaffold() as scaffold:
+            scaffold.write(
+                "cartopian.toml",
+                "[project]\n"
+                'work_roots = ["tool-repo"]\n\n'
+                "[roles]\n"
+                'reviewer = "Reviews completed tasks."\n\n'
+                "[handoffs.reviewer]\n"
+                'agent = "codex"\n'
+                "auto_start_reviews = true\n"
+                'timeout = "10s"\n',
+            )
+            report_path = scaffold.reports / "REPORT-01-002.md"
+            fake_home = scaffold.root / "fake-home"
+            fake_home.mkdir(parents=True, exist_ok=True)
+            with mock.patch(
+                "cli.commands.wait_handoff.Path.home", return_value=fake_home
+            ):
+                rc, out, err, clock = self._run_inprocess(
+                    [str(report_path), "--role", "reviewer", "--max-block", "5m"]
+                )
+
+        self.assertEqual(rc, 1, msg=err)
+        record = json.loads(out.strip())
+        self.assertEqual(record["status"], "timeout")
+        self.assertIs(record["still_running"], False)
+        self.assertEqual(record["max_block_seconds"], 300)
+        self.assertEqual(record["timeout_seconds"], 10)
+        self.assertEqual(record["effective_block_seconds"], 10)
+
+    def test_explicit_slice_below_ceiling_stays_still_running(self) -> None:
+        """An explicitly requested slice below the ceiling remains nonterminal."""
+        with project_scaffold() as scaffold:
+            report_path = scaffold.reports / "REPORT-01-002.md"
+            rc, out, err, clock = self._run_inprocess(
+                [str(report_path), "--max-block", "30s"]
+            )
+
+        self.assertEqual(rc, 0, msg=err)
+        record = json.loads(out.strip())
+        self.assertEqual(record["status"], "still_running")
+        self.assertIs(record["still_running"], True)
+        self.assertEqual(record["max_block_seconds"], 30)
+        self.assertEqual(record["effective_block_seconds"], 30)
 
 
 class TestWaitReportReadOnly(unittest.TestCase):

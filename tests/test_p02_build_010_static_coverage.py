@@ -250,6 +250,23 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         "must not itself emit a user-visible message",
     )
 
+    # The wait primitives are terminal/event-driven by default; a nonterminal
+    # observation slice exists only when `--max-block` is explicitly requested
+    # (a host-constraint opt-in), so no doc may present slicing as the default
+    # calling convention.
+    TERMINAL_DEFAULT_NEEDLES = (
+        "terminal and event-driven by default",
+        "explicit opt-in",
+    )
+
+    # A fenced wait command (the command template at line start) must not
+    # carry `--max-block` — the documented default call is the terminal form;
+    # the slice flag appears only in the opt-in prose and in bracketed
+    # optional-argument synopses.
+    FORBIDDEN_DEFAULT_SLICE_PATTERNS = (
+        r"(?m)^\s*cartopian wait-(?:handoff|report)\b[^\n]*--max-block",
+    )
+
     def _read_skill(self, name: str) -> str:
         return (SKILLS_DIR / name).read_text(encoding="utf-8")
 
@@ -299,6 +316,26 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
                 msg=f"{label} must pin the silent re-wait contract: {needle!r}",
             )
 
+    def _assert_terminal_default_contract(self, label: str, body: str) -> None:
+        for needle in self.TERMINAL_DEFAULT_NEEDLES:
+            self.assertIn(
+                needle,
+                body,
+                msg=(
+                    f"{label} must pin the terminal-by-default wait contract: "
+                    f"{needle!r}"
+                ),
+            )
+        for pattern in self.FORBIDDEN_DEFAULT_SLICE_PATTERNS:
+            self.assertIsNone(
+                re.search(pattern, body),
+                msg=(
+                    f"{label} must document the terminal wait call as the "
+                    f"default (no --max-block in the command template); "
+                    f"matched /{pattern}/"
+                ),
+            )
+
     def test_run_handoff_uses_wait_primitives(self) -> None:
         text = self._read_skill("run-handoff.md")
         self.assertIn("cartopian wait-handoff", text)
@@ -307,6 +344,7 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         self._assert_no_adhoc_polling("run-handoff.md", text)
         self._assert_no_nonterminal_operator_yield("run-handoff.md", text)
         self._assert_silent_rewait_contract("run-handoff.md", text)
+        self._assert_terminal_default_contract("run-handoff.md", text)
         for needle in (
             "internal observation boundary",
             "same canonical wait primitive",
@@ -322,6 +360,7 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         self._assert_no_adhoc_polling("run-task.md", text)
         self._assert_no_nonterminal_operator_yield("run-task.md", text)
         self._assert_silent_rewait_contract("run-task.md", text)
+        self._assert_terminal_default_contract("run-task.md", text)
         self.assertIn("same canonical wait primitive", text)
         self.assertIn("does not consume", text)
 
@@ -331,6 +370,7 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         self._assert_no_adhoc_polling("plan-project.md", text)
         self._assert_no_nonterminal_operator_yield("plan-project.md", text)
         self._assert_silent_rewait_contract("plan-project.md", text)
+        self._assert_terminal_default_contract("plan-project.md", text)
         self.assertIn("same canonical wait primitive", text)
         self.assertIn("does not consume", text)
 
@@ -359,6 +399,11 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
             "CONVENTIONS.md § Handoffs", section
         )
         self._assert_silent_rewait_contract("CONVENTIONS.md § Handoffs", section)
+        self._assert_terminal_default_contract("CONVENTIONS.md § Handoffs", section)
+        # The host-constraint escape hatch is a wake mechanism, not skill
+        # wording: a host that cannot sustain the terminal call must supply a
+        # filesystem-change wake (or equivalent) to re-invoke the wait.
+        self.assertIn("filesystem-change wake", section)
 
 
 class SectionUriStaticCoverageTest(unittest.TestCase):

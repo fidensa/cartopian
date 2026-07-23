@@ -124,12 +124,14 @@ The successful dispatch is the launch event and consumes one `max_handoffs_per_r
 
 Detect completion with a Core CLI wait primitive rather than a hand-rolled timing loop, a repeated manual re-read of the report on a fixed cadence, or a "tell me when it's done" prompt to the operator. The wait commands are read-only filesystem observers: the **report file is the authoritative completion signal**, and the optional `<report-path>.status` wrapper file is consulted only as early crash detection. They never write, move, or launch anything. The PM removes that `<report-path>.status` file through `cartopian delete-report` at report-clear (Stage 1) and through `cartopian delete-report <report-path> --status-only` at task close (`skills/run-task.md` Stage 7), so it never outlives the handoff.
 
+Both primitives are terminal and event-driven by default: called without `--max-block`, one call blocks until a terminal outcome, bounded by the resolved handoff timeout as the absolute ceiling — one launch, one wait call, one result, no intermediate output. `--max-block` is an explicit opt-in that bounds a single nonterminal observation slice; request it only when the host cannot sustain a blocking call for the full handoff timeout, and pair it with the host's automatic wake/resume mechanism (for example a filesystem-change wake on the expected report path) so slice cadence is host-driven, never a PM-chosen rhythm.
+
 Choose the primitive by handoff kind:
 
 - **Task-scoped handoff** (a task file exists — task assignment or task review): block on the task's expected report with
 
   ```
-  cartopian wait-handoff <task-path> --role <role> --max-block <duration>
+  cartopian wait-handoff <task-path> --role <role>
   ```
 
   It resolves the same expected report path Stage 1 named, honors the configured `[handoffs.<role>].timeout` as the absolute ceiling, and emits one NDJSON record carrying a `status` flag.
@@ -137,10 +139,10 @@ Choose the primitive by handoff kind:
 - **Report-path-only handoff** (no task file — for example a planning-checkpoint review): block on the report path directly with
 
   ```
-  cartopian wait-report <report-path> --max-block <duration>
+  cartopian wait-report <report-path> --role <role>
   ```
 
-  It watches the single report file and emits `accepted` (done), a `[guard]` failure (a report is present but not acceptable), or `still_running` (the budget elapsed first).
+  It watches the single report file and emits `accepted` (done), a `[guard]` failure (a report is present but not acceptable), `timeout` (the resolved ceiling elapsed first), or — only under an explicit `--max-block` slice — `still_running` (the requested budget elapsed first). With `--role` it honors the same resolved `[handoffs.<role>].timeout` ceiling; otherwise the protocol default applies.
 
 Interpret the emitted `status`:
 
@@ -148,7 +150,7 @@ Interpret the emitted `status`:
 - `failed-to-parse`: a report is present but invalid. Treat as blocked; preserve the prompt and report for inspection.
 - `failed`: the wrapper status file reports the assignee process exited and no valid report appeared — a crash/timeout exit, or a clean exit that nonetheless wrote no report (a common reviewer failure: it writes `reviews/REVIEW-NN-NNN.md` but not the `reports/REPORT-NN-NNN.md` the wait watches). The process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
 - `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
-- `still-running` / `still_running`: the `--max-block` budget elapsed before the configured timeout, so the assignee may still be working. Treat this as a nonterminal internal observation boundary, not as a blocker, completion result, or operator-confirmation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. An automatic host wake/resume must not itself emit a user-visible message merely because an observation slice ended. A wait is read-only and does not launch an assignee, so do not return to Stage 2, call `dispatch`, or consume another `max_handoffs_per_run` unit. Continue until the wait reports a terminal result or the configured deadline. If the host cannot keep one turn open, use the automatic wake/resume mechanism; do not request operator continuation merely because an observation slice ended.
+- `still-running` / `still_running`: reachable only under an explicitly requested `--max-block` slice — that budget elapsed before the configured timeout, so the assignee may still be working. Treat this as a nonterminal internal observation boundary, not as a blocker, completion result, or operator-confirmation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. An automatic host wake/resume must not itself emit a user-visible message merely because an observation slice ended. A wait is read-only and does not launch an assignee, so do not return to Stage 2, call `dispatch`, or consume another `max_handoffs_per_run` unit. Continue until the wait reports a terminal result or the configured deadline. If the host cannot keep one turn open, use the automatic wake/resume mechanism; do not request operator continuation merely because an observation slice ended.
 
 The wrapper still enforces the wall-clock deadline at the OS level using `CARTOPIAN_TIMEOUT` (Stage 2); the wait command observes the result rather than imposing a separate PM-side deadline.
 

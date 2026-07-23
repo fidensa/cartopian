@@ -1,4 +1,4 @@
-"""`cartopian wait-handoff <task-path> --role <role> --max-block <duration>`.
+"""`cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]`.
 
 Read-only observer that monitors one handoff. It resolves the expected report
 path from the task file (the same task-derived ``reports/REPORT-NN-NNN.md``
@@ -22,12 +22,17 @@ Terminal status flags emitted on stdout (one NDJSON record):
   terminal failure now instead of blocking to the deadline.
 - ``timeout``: the configured handoff timeout (the maximum absolute limit) was
   reached before any terminal signal.
-- ``still-running``: the ``--max-block`` polling budget elapsed before the
-  configured timeout; the assignee may still be working.
+- ``still-running``: the explicitly requested ``--max-block`` observation-slice
+  budget elapsed before the configured timeout; the assignee may still be
+  working. Reachable only when ``--max-block`` was supplied.
 
-The effective block budget is ``min(--max-block, configured timeout)``; the
-configured timeout from ``[handoffs.<role>] timeout`` (protocol default ``60m``)
-is honored as the maximum absolute ceiling. Read-only: never writes to the
+The wait is terminal by default: called without ``--max-block``, it blocks
+until one of the terminal signals above, bounded by the resolved
+``[handoffs.<role>] timeout`` (protocol default ``60m``) as the absolute
+ceiling — a single call, a single record, no nonterminal slices. ``--max-block``
+is an explicit opt-in for hosts that cannot sustain a blocking call for the
+full handoff timeout; when supplied, the effective block budget is
+``min(--max-block, configured timeout)``. Read-only: never writes to the
 project tree, never moves tasks, never launches processes. Standard library
 only (see STANDARDS.md § Wait Command Standards).
 """
@@ -83,8 +88,12 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--max-block",
         dest="max_block",
-        required=True,
-        help="Maximum time to block before giving up, e.g. 30s, 1m, 5h",
+        default=None,
+        help=(
+            "Optional observation-slice budget, e.g. 30s, 1m, 5h. Default: "
+            "block until a terminal observation, bounded by the configured "
+            "[handoffs.<role>] timeout"
+        ),
     )
     subparser.add_argument(
         "--poll-interval",
@@ -230,13 +239,15 @@ def handler(args: argparse.Namespace) -> int:
         stderr_usage(f"task_path must be an absolute path; got: {raw_path}")
         return EXIT_USAGE
 
-    max_block_seconds = _parse_duration(args.max_block)
-    if max_block_seconds is None:
-        stderr_usage(
-            f"invalid --max-block duration: {args.max_block!r}; "
-            "expected a positive integer with unit s|m|h|d (e.g. 30s, 1m, 5h)"
-        )
-        return EXIT_USAGE
+    max_block_seconds: Optional[int] = None
+    if args.max_block is not None:
+        max_block_seconds = _parse_duration(args.max_block)
+        if max_block_seconds is None:
+            stderr_usage(
+                f"invalid --max-block duration: {args.max_block!r}; "
+                "expected a positive integer with unit s|m|h|d (e.g. 30s, 1m, 5h)"
+            )
+            return EXIT_USAGE
 
     poll_interval = args.poll_interval
     if poll_interval <= 0:
@@ -258,15 +269,22 @@ def handler(args: argparse.Namespace) -> int:
     report_path = handoff_packet._expected_report_path(project_root, task_id)
     status_path = Path(str(report_path) + ".status")
 
-    # The configured timeout is the absolute ceiling; --max-block is this
-    # call's polling budget. Whichever is smaller bounds the loop.
+    # The configured timeout is the absolute ceiling. Without --max-block the
+    # wait is terminal: it blocks to that ceiling and can only end in a
+    # terminal status. An explicit --max-block bounds one observation slice.
     timeout_seconds = _resolve_timeout_seconds(project_root, args.role)
-    effective_seconds = min(max_block_seconds, timeout_seconds)
-    # When the configured ceiling is the limiting factor, hitting the deadline
-    # means the agent blew its absolute limit (`timeout`); otherwise our own
-    # polling budget elapsed while the agent is still permitted to run
-    # (`still-running`).
-    deadline_status = "timeout" if timeout_seconds <= max_block_seconds else "still-running"
+    if max_block_seconds is None:
+        effective_seconds = timeout_seconds
+        deadline_status = "timeout"
+    else:
+        effective_seconds = min(max_block_seconds, timeout_seconds)
+        # When the configured ceiling is the limiting factor, hitting the
+        # deadline means the agent blew its absolute limit (`timeout`);
+        # otherwise the requested slice elapsed while the agent is still
+        # permitted to run (`still-running`).
+        deadline_status = (
+            "timeout" if timeout_seconds <= max_block_seconds else "still-running"
+        )
 
     deadline = time.monotonic() + effective_seconds
 
@@ -330,7 +348,7 @@ def _emit(
     *,
     report_verdict: Optional[str] = None,
     exit_code: Optional[int] = None,
-    max_block_seconds: int,
+    max_block_seconds: Optional[int],
     timeout_seconds: int,
     effective_seconds: int,
 ) -> int:

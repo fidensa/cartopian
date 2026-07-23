@@ -3,9 +3,11 @@
 Exercises the read-only polling state machine with an injected clock: the
 report file is the authoritative completion signal, the optional
 ``<report-path>.status`` wrapper file is an early-exit crash signal, and the
-loop is bounded by ``min(--max-block, configured timeout)`` — emitting the
-``done`` / ``failed-to-parse`` / ``failed`` / ``timeout`` / ``still-running``
-status flags per STANDARDS.md § Wait Command Standards.
+loop is terminal by default — bounded by the configured timeout, or by
+``min(--max-block, configured timeout)`` when an explicit observation slice is
+requested — emitting the ``done`` / ``failed-to-parse`` / ``failed`` /
+``timeout`` / ``still-running`` status flags per STANDARDS.md § Wait Command
+Standards.
 """
 import json
 from pathlib import Path
@@ -121,9 +123,10 @@ def _make_project(tmp_path: Path, config_body: str = None) -> Path:
 
 def _run(task_path: Path, *, role="coder", max_block="30s"):
     parser = build_parser()
-    args = parser.parse_args(
-        ["wait-handoff", str(task_path), "--role", role, "--max-block", max_block]
-    )
+    argv = ["wait-handoff", str(task_path), "--role", role]
+    if max_block is not None:
+        argv += ["--max-block", max_block]
+    args = parser.parse_args(argv)
     return args._handler(args)
 
 
@@ -292,6 +295,34 @@ def test_timeout_when_configured_timeout_is_limiting(tmp_path, capsys, fake_cloc
     assert record["status"] == "timeout"
     assert record["effective_block_seconds"] == 10
     assert record["timeout_seconds"] == 10
+
+
+def test_default_wait_is_terminal_timeout_at_ceiling(tmp_path, capsys, fake_clock):
+    """Without --max-block the wait blocks to the resolved timeout and can only
+    end terminal — the ceiling expiry classifies as `timeout`, never
+    `still-running`."""
+    task_path = _make_project(tmp_path, config_body=CONFIG_BODY.format(timeout="10s"))
+    exit_code = _run(task_path, max_block=None)
+    record = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == EXIT_FAIL
+    assert record["status"] == "timeout"
+    assert record["max_block_seconds"] is None
+    assert record["timeout_seconds"] == 10
+    assert record["effective_block_seconds"] == 10
+    # The loop blocked to the full ceiling before giving up.
+    assert fake_clock["t"] >= 10
+
+
+def test_default_wait_reports_done_without_slicing(tmp_path, capsys, fake_clock):
+    """Without --max-block a landed report ends the single wait call in `done`."""
+    task_path = _make_project(tmp_path)
+    _write(_report_path(task_path), ACCEPTED_REPORT)
+
+    exit_code = _run(task_path, max_block=None)
+    record = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == EXIT_OK
+    assert record["status"] == "done"
+    assert record["max_block_seconds"] is None
 
 
 # --- blocking until the assignee state changes ------------------------------
