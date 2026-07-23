@@ -141,8 +141,131 @@ def _silent_unlink_path(path: str) -> None:
         pass
 
 
+def _read_all(fd: int) -> bytes:
+    chunks = []
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    written = 0
+    while written < len(view):
+        count = os.write(fd, view[written:])
+        if count <= 0:
+            raise OSError("short write while landing atomic file")
+        written += count
+
+
+def _verify_expected_leaf_dir_fd(
+    dir_fd: int,
+    final_name: str,
+    *,
+    expected_leaf=None,
+    expect_absent: bool = False,
+    expected_data=None,
+) -> None:
+    """Revalidate a caller's final-component precondition at replace time."""
+    if expected_leaf is None and not expect_absent:
+        return
+    try:
+        now = os.stat(final_name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        if expect_absent:
+            return
+        raise GuardRefusal("toctou", "destination vanished before atomic replace")
+    except OSError as exc:
+        raise GuardRefusal(
+            "toctou", f"destination could not be revalidated: {exc.strerror}"
+        )
+    if expect_absent:
+        raise GuardRefusal("toctou", "destination appeared before atomic replace")
+    if not stat.S_ISREG(now.st_mode) or now.st_nlink > 1:
+        raise GuardRefusal("toctou", "destination type changed before atomic replace")
+    if (now.st_dev, now.st_ino) != expected_leaf:
+        raise GuardRefusal("toctou", "destination identity changed before atomic replace")
+    if expected_data is None:
+        return
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(final_name, flags, dir_fd=dir_fd)
+    except OSError as exc:
+        raise GuardRefusal(
+            "toctou", f"destination could not be reopened no-follow: {exc.strerror}"
+        )
+    try:
+        opened = os.fstat(fd)
+        if (opened.st_dev, opened.st_ino) != expected_leaf:
+            raise GuardRefusal("toctou", "destination identity changed before reread")
+        if _read_all(fd) != expected_data:
+            raise GuardRefusal(
+                "unexpected-content", "destination content changed before atomic replace"
+            )
+    finally:
+        os.close(fd)
+
+
+def _verify_expected_leaf_path(
+    final_path: str,
+    *,
+    expected_leaf=None,
+    expect_absent: bool = False,
+    expected_data=None,
+) -> None:
+    """Path-based equivalent used on hosts without directory descriptors."""
+    if expected_leaf is None and not expect_absent:
+        return
+    try:
+        now = os.lstat(final_path)
+    except FileNotFoundError:
+        if expect_absent:
+            return
+        raise GuardRefusal("toctou", "destination vanished before atomic replace")
+    except OSError as exc:
+        raise GuardRefusal(
+            "toctou", f"destination could not be revalidated: {exc.strerror}"
+        )
+    if expect_absent:
+        raise GuardRefusal("toctou", "destination appeared before atomic replace")
+    if not stat.S_ISREG(now.st_mode) or now.st_nlink > 1:
+        raise GuardRefusal("toctou", "destination type changed before atomic replace")
+    if (now.st_dev, now.st_ino) != expected_leaf:
+        raise GuardRefusal("toctou", "destination identity changed before atomic replace")
+    if expected_data is None:
+        return
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(final_path, flags)
+    except OSError as exc:
+        raise GuardRefusal(
+            "toctou", f"destination could not be reopened no-follow: {exc.strerror}"
+        )
+    try:
+        opened = os.fstat(fd)
+        if (opened.st_dev, opened.st_ino) != expected_leaf:
+            raise GuardRefusal("toctou", "destination identity changed before reread")
+        if _read_all(fd) != expected_data:
+            raise GuardRefusal(
+                "unexpected-content", "destination content changed before atomic replace"
+            )
+    finally:
+        os.close(fd)
+
+
 def _atomic_write_via_dir_fd(
-    canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+    canonical_parent,
+    snapshot,
+    final_name,
+    tmp_name,
+    data,
+    safe_mode,
+    *,
+    expected_leaf=None,
+    expect_absent: bool = False,
+    expected_data=None,
 ) -> None:
     """POSIX write: pin the parent directory by an ``O_NOFOLLOW | O_DIRECTORY``
     fd and route the temp create, write, and rename through it (openat/renameat),
@@ -178,16 +301,38 @@ def _atomic_write_via_dir_fd(
         tmp_created = True
         try:
             os.fchmod(tmp_fd, safe_mode)
-            os.write(tmp_fd, data)
+            _write_all(tmp_fd, data)
             os.fsync(tmp_fd)
         finally:
             os.close(tmp_fd)
 
         # Final TOCTOU re-verify immediately before the atomic swap.
         _reverify_chain(snapshot)
+        _verify_expected_leaf_dir_fd(
+            dir_fd,
+            final_name,
+            expected_leaf=expected_leaf,
+            expect_absent=expect_absent,
+            expected_data=expected_data,
+        )
 
-        os.replace(tmp_name, final_name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
-        tmp_created = False
+        if expect_absent and os.link in os.supports_dir_fd:
+            try:
+                os.link(
+                    tmp_name,
+                    final_name,
+                    src_dir_fd=dir_fd,
+                    dst_dir_fd=dir_fd,
+                )
+            except FileExistsError:
+                raise GuardRefusal(
+                    "toctou", "destination appeared before atomic create"
+                )
+            os.unlink(tmp_name, dir_fd=dir_fd)
+            tmp_created = False
+        else:
+            os.replace(tmp_name, final_name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            tmp_created = False
         try:
             os.fsync(dir_fd)
         except OSError:
@@ -205,7 +350,16 @@ def _atomic_write_via_dir_fd(
 
 
 def _atomic_write_via_path(
-    canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+    canonical_parent,
+    snapshot,
+    final_name,
+    tmp_name,
+    data,
+    safe_mode,
+    *,
+    expected_leaf=None,
+    expect_absent: bool = False,
+    expected_data=None,
 ) -> None:
     """Fallback write for platforms without directory file descriptors / openat
     (native Windows). Keeps every platform-agnostic guard plus ``os.replace``
@@ -231,15 +385,31 @@ def _atomic_write_via_path(
                     os.fchmod(fd, safe_mode)
                 except OSError:
                     pass  # best-effort; the open mode already applied
-            os.write(fd, data)
+            _write_all(fd, data)
             os.fsync(fd)
         finally:
             os.close(fd)
 
         # Final TOCTOU re-verify immediately before the atomic swap.
         _reverify_chain(snapshot)
-        os.replace(tmp_path, final_path)
-        tmp_created = False
+        _verify_expected_leaf_path(
+            final_path,
+            expected_leaf=expected_leaf,
+            expect_absent=expect_absent,
+            expected_data=expected_data,
+        )
+        if expect_absent:
+            try:
+                os.link(tmp_path, final_path)
+            except FileExistsError:
+                raise GuardRefusal(
+                    "toctou", "destination appeared before atomic create"
+                )
+            os.unlink(tmp_path)
+            tmp_created = False
+        else:
+            os.replace(tmp_path, final_path)
+            tmp_created = False
     except GuardRefusal:
         if tmp_created:
             _silent_unlink_path(tmp_path)

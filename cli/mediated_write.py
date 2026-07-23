@@ -240,7 +240,9 @@ def mediated_write(
     # 10. If the destination already exists it must be a plain regular file with
     #     a single link (a hardlink — st_nlink > 1 — may alias an out-of-subtree
     #     inode; a non-regular file is never a valid artifact destination).
-    if os.path.lexists(candidate):
+    expected_leaf = None
+    expect_absent = not os.path.lexists(candidate)
+    if not expect_absent:
         st = os.lstat(candidate)
         if not stat.S_ISREG(st.st_mode):
             raise GuardRefusal(
@@ -251,6 +253,7 @@ def mediated_write(
                 "hardlink",
                 f"destination is a hardlink (st_nlink={st.st_nlink}): {candidate}",
             )
+        expected_leaf = (st.st_dev, st.st_ino)
 
     # 11. Snapshot the parent chain (base..parent), then open the parent dir fd
     #     with O_NOFOLLOW to pin it. All file I/O goes through this fd so a
@@ -279,11 +282,25 @@ def mediated_write(
     # of the anti-swap depth on those platforms).
     if _DIR_FD_SUPPORTED and not _force_path_based:
         _atomic_write_via_dir_fd(
-            canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+            canonical_parent,
+            snapshot,
+            final_name,
+            tmp_name,
+            data,
+            safe_mode,
+            expected_leaf=expected_leaf,
+            expect_absent=expect_absent,
         )
     else:
         _atomic_write_via_path(
-            canonical_parent, snapshot, final_name, tmp_name, data, safe_mode
+            canonical_parent,
+            snapshot,
+            final_name,
+            tmp_name,
+            data,
+            safe_mode,
+            expected_leaf=expected_leaf,
+            expect_absent=expect_absent,
         )
 
     # Record mediated-writer provenance so an out-of-band change to this artifact

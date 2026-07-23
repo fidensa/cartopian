@@ -258,6 +258,63 @@ class TestToolSurface(unittest.TestCase):
         # Choices propagate as JSON-schema enum.
         self.assertIn("open", schema["properties"]["to_status"]["enum"])
 
+    def test_apply_migration_entry_schema_and_v060_invocation(self):
+        response = single("tools/list")
+        tools = {t["name"]: t for t in response["result"]["tools"]}
+        schema = tools["apply_migration_entry"]["inputSchema"]
+        self.assertEqual(
+            set(schema["required"]), {"project_path", "entry_version"}
+        )
+        self.assertEqual(
+            set(schema["properties"]), {"project_path", "entry_version"}
+        )
+        self.assertNotIn("path", schema["properties"])
+        self.assertNotIn("content", schema["properties"])
+
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            home = tmp / "home"
+            project = tmp / "project"
+            (home / ".cartopian").mkdir(parents=True)
+            project.mkdir()
+            (project / "cartopian.toml").write_text(
+                "[project]\n"
+                'id = "demo"\n'
+                'name = "Demo"\n'
+                'protocol_version = "v0.5.0"\n',
+                encoding="utf-8",
+            )
+            (project / "CONVENTIONS.md").write_text(
+                "# Demo - Conventions\n\n"
+                "This document extends the protocol-level conventions defined in `protocol/CONVENTIONS.md`. "
+                "Rules here apply only to this project.\n\n"
+                "## Project-specific conventions\n\n"
+                "<!-- Add project-specific naming rules, workflow modifications, or\n"
+                "     constraints here. Delete this comment when you add real content. -->\n",
+                encoding="utf-8",
+            )
+            (home / ".cartopian" / "projects.json").write_text(
+                json.dumps([{"id": "demo", "path": str(project), "label": "Demo"}]),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"HOME": str(home)}):
+                called = single(
+                    "tools/call",
+                    {
+                        "name": "apply_migration_entry",
+                        "arguments": {
+                            "project_path": str(project),
+                            "entry_version": "v0.6.0",
+                        },
+                    },
+                )
+            self.assertNotIn("error", called)
+            self.assertEqual(called["result"]["structuredContent"]["exit_code"], 0)
+            record = called["result"]["structuredContent"]["records"][0]
+            self.assertEqual(record["details"]["operations"][0]["target"], "CONVENTIONS.md")
+            self.assertEqual(record["details"]["validation"]["status"], "passed")
+            self.assertFalse((project / "CONVENTIONS.md").exists())
+
     def test_generate_config_schema_exposes_handoff_effort(self):
         # --handoff-effort propagates into the auto-generated tool schema
         # alongside --handoff-model; neither is required.

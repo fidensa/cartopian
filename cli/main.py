@@ -15,6 +15,7 @@ EXIT_USAGE = 2
 EXIT_ENV = 3
 
 SUBCOMMANDS: List[str] = [
+    "apply-migration-entry",
     "discover-projects",
     "generate-config",
     "move-task",
@@ -107,6 +108,7 @@ def _real_handlers():
     constants from this module).
     """
     from cli.commands import (
+        apply_migration_entry,
         archive_plan,
         close_audit,
         compose_state,
@@ -147,6 +149,10 @@ def _real_handlers():
     )
 
     return {
+        "apply-migration-entry": (
+            apply_migration_entry.configure_parser,
+            apply_migration_entry.handler,
+        ),
         "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),

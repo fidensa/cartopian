@@ -10,6 +10,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 ENTRYPOINT = os.path.join(REPO_ROOT, "bin", "cartopian")
 
 SUBCOMMANDS = [
+    "apply-migration-entry",
     "resolve-config",
     "report-action",
     "validate-task-readiness",

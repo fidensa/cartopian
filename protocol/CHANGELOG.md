@@ -4,7 +4,7 @@ This file is the durable, agent-followable record of every protocol-breaking cha
 
 Here, **protocol version** means the internal schema/lifecycle version recorded for each governed project. It is separate from the installed Cartopian application's release version. Operators normally approve a migration choice; the PM agent reads and updates this marker and should not ask the operator to edit version fields manually.
 
-The operator *approves* a project migration; the PM then *executes* its steps as PM-owned orchestration (`skills/migrate-project.md`) — doing config edits through `cartopian update-config` and dispatching or surfacing the steps it cannot mediate. Authoring of this file is owned by maintainers and ships with each release. The installed copy lives at `~/.cartopian/CHANGELOG.md` and is replaced on upgrade.
+The operator *approves* a project migration; the PM then *executes* its steps as PM-owned orchestration. `skills/migrate-project.md` is authoritative for execution mechanics: config edits go through `cartopian update-config`, and the tool-owned migration registry applies each shipped deterministic filesystem transform through `cartopian apply-migration-entry`. The historical entries below remain the semantic migration contracts even when their older procedural wording predates that mediated surface. Authoring of this file is owned by maintainers and ships with each release. The installed copy lives at `~/.cartopian/CHANGELOG.md` and is replaced on upgrade.
 
 ## Per-entry schema
 

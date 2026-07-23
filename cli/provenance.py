@@ -5,13 +5,14 @@ not pass through a mediated writer — on every harness, with **zero harness
 cooperation**. This module is that portable floor. It has two halves:
 
 1. **Provenance recording.** Every successful mediated write appends one line to
-   an append-only NDJSON *write log* (:data:`LOG_RELPATH`) recording the
+   an append-only NDJSON *change log* (:data:`LOG_RELPATH`) recording the
    destination's project-relative path and the SHA-256 of the bytes that were
    written. The mediated-write chokepoint
    (:func:`cli.mediated_write.mediated_write`) calls :func:`record_write`, as
    does the one content-preserving lifecycle relocation that does not go through
-   that chokepoint (``move-task``). The PM tool surface never touches the log
-   directly; it is metadata, not a governed artifact, and lives under the
+   that chokepoint (``move-task``). Mediated retirements append a ``deleted``
+   tombstone. The PM tool surface never touches the log directly; it is
+   metadata, not a governed artifact, and lives under the
    ``.cartopian/`` dot-directory that the mediated writer's dotfile guard
    refuses as a write destination.
 
@@ -57,6 +58,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
@@ -100,6 +102,88 @@ GOVERNED_DIRS: Set[str] = {
 def hash_bytes(data: bytes) -> str:
     """Return the prefixed SHA-256 digest (``sha256:<hex>``) of ``data``."""
     return _HASH_PREFIX + hashlib.sha256(data).hexdigest()
+
+
+def _append_record(project_root: Path, record: Dict[str, object]) -> bool:
+    """Append one record without following project-local metadata symlinks."""
+    root = Path(os.path.realpath(os.fspath(project_root)))
+    log_dir = root / PROVENANCE_DIRNAME
+    try:
+        if os.path.lexists(log_dir):
+            dir_st = os.lstat(log_dir)
+            if not stat.S_ISDIR(dir_st.st_mode) or stat.S_ISLNK(dir_st.st_mode):
+                return False
+        else:
+            try:
+                os.mkdir(log_dir, 0o700)
+            except FileExistsError:
+                pass
+            dir_st = os.lstat(log_dir)
+            if not stat.S_ISDIR(dir_st.st_mode) or stat.S_ISLNK(dir_st.st_mode):
+                return False
+        line = (
+            json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        flags = (
+            os.O_WRONLY
+            | os.O_APPEND
+            | os.O_CREAT
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        if hasattr(os, "O_DIRECTORY") and os.open in os.supports_dir_fd:
+            dir_fd = os.open(
+                log_dir,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            try:
+                opened_dir = os.fstat(dir_fd)
+                if (opened_dir.st_dev, opened_dir.st_ino) != (
+                    dir_st.st_dev,
+                    dir_st.st_ino,
+                ):
+                    return False
+                fd = os.open(LOG_BASENAME, flags, 0o600, dir_fd=dir_fd)
+                try:
+                    log_st = os.fstat(fd)
+                    if not stat.S_ISREG(log_st.st_mode) or log_st.st_nlink > 1:
+                        return False
+                    offset = 0
+                    while offset < len(line):
+                        count = os.write(fd, line[offset:])
+                        if count <= 0:
+                            raise OSError("short provenance append")
+                        offset += count
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(dir_fd)
+        else:
+            log_path = log_dir / LOG_BASENAME
+            if os.path.lexists(log_path):
+                log_st = os.lstat(log_path)
+                if not stat.S_ISREG(log_st.st_mode) or log_st.st_nlink > 1:
+                    return False
+            fd = os.open(log_path, flags, 0o600)
+            try:
+                opened = os.fstat(fd)
+                if not stat.S_ISREG(opened.st_mode) or opened.st_nlink > 1:
+                    return False
+                offset = 0
+                while offset < len(line):
+                    count = os.write(fd, line[offset:])
+                    if count <= 0:
+                        raise OSError("short provenance append")
+                    offset += count
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    except OSError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -198,17 +282,122 @@ def record_write(
         "action": action,
         "ts": time.time(),
     }
-    line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
-    log_dir = Path(os.path.realpath(os.fspath(root))) / PROVENANCE_DIRNAME
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        # Append mode + a single small write: the record lands atomically with
-        # respect to other appenders on every POSIX filesystem and on Windows.
-        with open(log_dir / LOG_BASENAME, "a", encoding="utf-8") as fh:
-            fh.write(line)
-    except OSError:
+    return _append_record(root, record)
+
+
+def record_delete(
+    project_root: Union[str, os.PathLike],
+    abs_path: Union[str, os.PathLike],
+    *,
+    action: str = "mediated-delete",
+) -> bool:
+    """Append a provenance tombstone for a mediated deletion.
+
+    Audits ignore absent artifacts, while a later out-of-band recreation at the
+    same governed path mismatches this deliberately non-hash marker.  The record
+    also gives migration logs explicit evidence for file retirement actions.
+    """
+    root = Path(project_root)
+    rel = _relpath_in_root(root, Path(abs_path))
+    if rel is None:
         return False
-    return True
+    record = {
+        "relpath": rel,
+        "hash": "deleted",
+        "action": action,
+        "ts": time.time(),
+    }
+    return _append_record(root, record)
+
+
+def record_migration_pending(
+    project_root: Union[str, os.PathLike],
+    abs_path: Union[str, os.PathLike],
+    data: bytes,
+    *,
+    entry_version: str,
+    pending_kind: str,
+) -> bool:
+    """Record the hash-pinned start of a judgment-dependent migration action."""
+    root = Path(project_root)
+    rel = _relpath_in_root(root, Path(abs_path))
+    if rel is None:
+        return False
+    record = {
+        "relpath": rel,
+        "hash": hash_bytes(data),
+        "action": f"migration-pending:{entry_version}:{pending_kind}",
+        "ts": time.time(),
+    }
+    return _append_record(root, record)
+
+
+def migration_resolution_evidenced(
+    project_root: Union[str, os.PathLike],
+    abs_path: Union[str, os.PathLike],
+    data: bytes,
+    *,
+    entry_version: str,
+    pending_kind: str,
+) -> bool:
+    """Whether a matching pending snapshot has a later mediated resolution.
+
+    A substantive retired conventions file may be removed only after the PM has
+    seen the hash-pinned pending action and then persisted either salvaged
+    metadata in ``STANDARDS.md`` or a durable decision.  The artifact must still
+    match the bytes originally reviewed.
+    """
+    root = Path(project_root)
+    rel = _relpath_in_root(root, Path(abs_path))
+    if rel is None:
+        return False
+    records = _read_log(root)
+    if records is None:
+        return False
+    pending_action = f"migration-pending:{entry_version}:{pending_kind}"
+    expected_hash = hash_bytes(data)
+    for index, record in enumerate(records):
+        if (
+            record.get("relpath") != rel
+            or record.get("hash") != expected_hash
+            or record.get("action") != pending_action
+        ):
+            continue
+        for later in records[index + 1 :]:
+            later_rel = later.get("relpath", "")
+            if later.get("action") == "mediated-write" and (
+                later_rel == "STANDARDS.md" or later_rel.startswith("decisions/")
+            ):
+                return True
+    return False
+
+
+def migration_write_evidenced(
+    project_root: Union[str, os.PathLike],
+    abs_path: Union[str, os.PathLike],
+    data: bytes,
+    *,
+    entry_version: str,
+    action_kind: str,
+) -> bool:
+    """Whether the latest record proves this exact migration-created state."""
+    root = Path(project_root)
+    rel = _relpath_in_root(root, Path(abs_path))
+    if rel is None:
+        return False
+    records = _read_log(root)
+    if records is None:
+        return False
+    expected_action = f"migration-entry:{entry_version}:{action_kind}"
+    expected_hash = hash_bytes(data)
+    for record in reversed(records):
+        if record.get("relpath") != rel:
+            continue
+        return (
+            record.get("hash") == expected_hash
+            and record.get("action") == expected_action
+        )
+    return False
 
 
 def _read_log(project_root: Path) -> Optional[List[Dict[str, str]]]:
