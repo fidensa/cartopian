@@ -1,5 +1,5 @@
 ---
-description: Enter Cartopian PM mode — delegates to the cartopian MCP server's use_cartopian prompt.
+description: Enter Cartopian PM mode. Delegates to the cartopian MCP server's use_cartopian prompt.
 ---
 
 # /use-cartopian

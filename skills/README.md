@@ -2,6 +2,55 @@
 
 Skills are agent-executable markdown runbooks. Each skill is a structured, step-by-step instruction document that an AI coding assistant reads and follows. The agent interacts with the user where decisions are needed and produces the output files.
 
+## Discovery metadata contract
+
+`skill-metadata.json` is the sole authority for the compact discovery identity,
+description, trigger applicability, runbook target, surface policy, bounded
+host qualification, and lifecycle of every shipped skill. The table below is
+a human-oriented workflow overview; MCP and installed client-bridge discovery
+descriptions do not scrape or derive from it or from runbook headings.
+
+The contract is a JSON object with exactly `schema_version` and `skills`.
+`schema_version` is `1`. Each `skills` record allows exactly these required
+fields:
+
+- `identity` — stable lowercase underscore identifier matching the runbook
+  filename.
+- `description` — one-line outcome, at most 96 characters.
+- `applicability` — positive one-line trigger intent and boundary, at most 140
+  characters.
+- `runbook` — repository-relative authoritative runbook path.
+- `surfaces` — exactly `mcp_prompt: true`, `mcp_resource: true`, and a
+  canonically ordered `client_bridges` array.
+- `lifecycle` — currently the closed value `shipped`.
+
+The only optional field is `host_qualifications`. Its only supported key is
+`direct_command`, a bounded routing phrase for hosts whose bridge is an
+explicit command rather than a description-matched skill. Unknown fields,
+surface types, bridge identifiers, qualification keys, and lifecycle values
+fail closed. Common MCP and description-matched bridge text is deterministically
+rendered as `<description> <applicability>`; a direct-command bridge replaces
+the applicability clause with its declared host qualification. The combined
+common discovery text is capped at 220 characters, so metadata cannot embed a
+runbook or protocol body.
+
+Validate checked-in surfaces with:
+
+```bash
+python3 -m mcp_server.skill_metadata validate
+```
+
+After an intentional metadata edit, regenerate all bridge descriptions with:
+
+```bash
+python3 -m mcp_server.skill_metadata generate
+```
+
+Generation validates all metadata and projection structure before writing any
+file. Diagnostics are sorted, repository-relative, and stable. Both commands
+use only Python 3.11+ standard-library facilities and require no network,
+provider credential, or model invocation.
+
 ## Available skills
 
 | Skill | File | Purpose | CLI Handoff |

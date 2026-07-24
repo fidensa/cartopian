@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "identity": "adopt_plan",
+      "description": "Convert an existing implementation plan into Cartopian plan, phase, and task artifacts.",
+      "applicability": "Use when a structured plan already exists and requirements may remain external or summarized.",
+      "runbook": "skills/adopt-plan.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "adopt_requirements",
+      "description": "Derive local Cartopian requirements from external source material.",
+      "applicability": "Use when requirements live outside the project and a local REQUIREMENTS.md is wanted.",
+      "runbook": "skills/adopt-requirements.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "check_for_updates",
+      "description": "Check for a newer Cartopian release and upgrade the installed tree with approval.",
+      "applicability": "Use for an explicit update check or after the entry workflow reports a newer release.",
+      "runbook": "skills/check-for-updates.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "close_plan",
+      "description": "Close a completed plan and prepare the project for a fresh planning cycle.",
+      "applicability": "Use after plan work is complete and closeout, optional archival, and reset are due.",
+      "runbook": "skills/close-plan.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "init_project",
+      "description": "Scaffold and register a new Cartopian project at an operator-chosen path.",
+      "applicability": "Use when creating a project or when the project registry is empty.",
+      "runbook": "skills/init-project.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "init_workspace",
+      "description": "Create global Cartopian configuration and verify the installed layout.",
+      "applicability": "Use for first-time workspace configuration; project setup is a separate workflow.",
+      "runbook": "skills/init-workspace.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "install_cartopian",
+      "description": "Install or upgrade Cartopian and register its MCP server and entry bridge.",
+      "applicability": "Use when Cartopian is not installed or an approved upgrade must refresh the install.",
+      "runbook": "install-cartopian.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "migrate_project",
+      "description": "Advance a Cartopian project's internal protocol schema through shipped migrations.",
+      "applicability": "Use only after the operator requests or approves migration of a selected project.",
+      "runbook": "skills/migrate-project.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "plan_project",
+      "description": "Build requirements, an implementation plan, phases, tasks, and specifications.",
+      "applicability": "Use for guided planning from scratch when an existing structured plan is not being adopted.",
+      "runbook": "skills/plan-project.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "register_mcp",
+      "description": "Register Cartopian's MCP server and entry bridge with supported AI agents.",
+      "applicability": "Use after installation, when adding an agent, or when repairing client registration.",
+      "runbook": "skills/register-mcp.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "run_handoff",
+      "description": "Execute a Cartopian handoff and interpret its completion report.",
+      "applicability": "Use as the shared handoff workflow for task assignment, task review, or planning review.",
+      "runbook": "skills/run-handoff.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "run_task",
+      "description": "Drive one task through assignment, evidence, review policy, and supported closure.",
+      "applicability": "Use when the operator wants to start, continue, review, or close a task in the current plan.",
+      "runbook": "skills/run-task.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "start_session",
+      "description": "Open or resume a Cartopian PM session and route the next protocol action.",
+      "applicability": "Use for project-agnostic requests such as start working, continue, status, what's next, or resume.",
+      "runbook": "skills/start-session.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": []
+      },
+      "lifecycle": "shipped"
+    },
+    {
+      "identity": "use_cartopian",
+      "description": "Enter Cartopian PM mode.",
+      "applicability": "Use when the operator says \"use cartopian\" or asks to start, resume, or manage a Cartopian-governed project session.",
+      "runbook": "skills/use-cartopian.md",
+      "surfaces": {
+        "mcp_prompt": true,
+        "mcp_resource": true,
+        "client_bridges": [
+          "claude_command",
+          "claude_skill",
+          "codex_skill",
+          "devin_skill",
+          "gemini_command",
+          "windsurf_command"
+        ]
+      },
+      "host_qualifications": {
+        "direct_command": "Delegates to the cartopian MCP server's use_cartopian prompt."
+      },
+      "lifecycle": "shipped"
+    }
+  ]
+}

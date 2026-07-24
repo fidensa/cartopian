@@ -45,6 +45,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .skill_metadata import (
+    MetadataValidationError,
+    discovery_description,
+    load_metadata,
+)
+
 # ---------------------------------------------------------------------------
 # Protocol constants
 # ---------------------------------------------------------------------------
@@ -189,19 +195,18 @@ def _server_version() -> str:
 # ---------------------------------------------------------------------------
 
 SKILL_DIR = ROOT / "skills"
-INSTALL_SKILL = ROOT / "install-cartopian.md"
+
+
+def _skill_records() -> List[Dict[str, Any]]:
+    try:
+        return load_metadata(ROOT)
+    except MetadataValidationError as exc:
+        detail = exc.diagnostics[0] if exc.diagnostics else "unknown validation error"
+        raise McpError(ERR_INTERNAL, f"invalid skill metadata: {detail}")
 
 
 def _skill_paths() -> List[Path]:
-    paths: List[Path] = []
-    if SKILL_DIR.is_dir():
-        paths.extend(sorted(
-            p for p in SKILL_DIR.glob("*.md")
-            if p.name.lower() != "readme.md"
-        ))
-    if INSTALL_SKILL.exists():
-        paths.append(INSTALL_SKILL)
-    return paths
+    return [ROOT / record["runbook"] for record in _skill_records()]
 
 
 def _skill_name(path: Path) -> str:
@@ -227,18 +232,16 @@ def _first_line_summary(path: Path, limit: int = 160) -> str:
 
 
 def list_prompts() -> List[Dict[str, Any]]:
-    prompts: List[Dict[str, Any]] = [{
-        "name": "use_cartopian",
-        "description": "Enter Cartopian PM mode — the startup entry point.",
-    }]
-    for path in _skill_paths():
-        if _skill_name(path) == "use_cartopian":
-            continue  # already listed as entry point above
-        prompts.append({
-            "name": _skill_name(path),
-            "description": _first_line_summary(path),
-        })
-    return prompts
+    records = _skill_records()
+    entry = next(record for record in records if record["identity"] == "use_cartopian")
+    ordered = [entry, *(record for record in records if record is not entry)]
+    return [
+        {
+            "name": record["identity"],
+            "description": discovery_description(record),
+        }
+        for record in ordered
+    ]
 
 
 def _install_context_block() -> str:
@@ -334,17 +337,18 @@ def _skill_messages(path: Path) -> List[Dict[str, Any]]:
 
 
 def get_prompt(name: str, _args: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    if name == "use_cartopian":
+    for record in _skill_records():
+        if record["identity"] != name:
+            continue
+        messages = (
+            _use_cartopian_messages()
+            if name == "use_cartopian"
+            else _skill_messages(ROOT / record["runbook"])
+        )
         return {
-            "description": "Cartopian PM mode entry point.",
-            "messages": _use_cartopian_messages(),
+            "description": discovery_description(record),
+            "messages": messages,
         }
-    for path in _skill_paths():
-        if _skill_name(path) == name:
-            return {
-                "description": _first_line_summary(path),
-                "messages": _skill_messages(path),
-            }
     raise McpError(ERR_INVALID_PARAMS, f"unknown prompt: {name}")
 
 
@@ -774,11 +778,11 @@ def list_resources() -> List[Dict[str, Any]]:
 
     # Skills — use the same underscore identifier as the matching prompt
     # so agents have one identifier shape across surfaces.
-    for path in _skill_paths():
+    for record in _skill_records():
         resources.append({
-            "uri": f"{URI_SCHEME}://skills/{_skill_name(path)}",
-            "name": f"skill: {_skill_name(path)}",
-            "description": _first_line_summary(path),
+            "uri": f"{URI_SCHEME}://skills/{record['identity']}",
+            "name": f"skill: {record['identity']}",
+            "description": discovery_description(record),
             "mimeType": "text/markdown",
         })
 

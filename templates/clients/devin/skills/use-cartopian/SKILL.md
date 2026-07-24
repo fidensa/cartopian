@@ -1,6 +1,6 @@
 ---
 name: use-cartopian
-description: Enter Cartopian PM mode. Use when the operator says "use cartopian" or asks to start a Cartopian session.
+description: Enter Cartopian PM mode. Use when the operator says "use cartopian" or asks to start, resume, or manage a Cartopian-governed project session.
 triggers:
   - user
   - model
