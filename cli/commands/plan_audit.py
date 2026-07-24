@@ -1,5 +1,6 @@
 """`cartopian plan-audit <project-path>` — lifecycle and provenance audit."""
 import argparse
+import copy
 import re
 import subprocess
 import sys
@@ -13,15 +14,16 @@ from cli.commands.resolve_config import (
     _load_project_config,
     _require_startup_project_keys,
     _resolve_deliverable,
-    resolve_review_policy,
+    resolve_project_configuration,
 )
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.protocol_gate import (
     GATE_BLOCKED,
+    GATE_CURRENT,
     GATE_MIGRATE,
-    classify_protocol_version,
-    read_shipped_protocol_version,
+    classify_project_schema_version,
+    read_shipped_project_schema_version,
 )
 from cli.provenance import audit_provenance, scan_pm_identifiers
 
@@ -734,35 +736,47 @@ def handler(args: argparse.Namespace) -> int:
 
     try:
         project_cfg = _load_project_config(project_path)
-        _, _, declared_protocol_version = _require_startup_project_keys(
+        _, _, declared_schema_version = _require_startup_project_keys(
             project_cfg, project_path / "cartopian.toml"
         )
-        review_policy = resolve_review_policy(project_path)
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
 
     # Config-schema migration gate: classify the config's declared
-    # [project].protocol_version against the shipped protocol version.
+    # project_schema_version against the shipped schema target.
     # Older-but-migratable → warning naming the required migration;
     # unknown/newer → blocker (audit fails closed with the named residual).
     # The gate never edits cartopian.toml.
     try:
-        shipped_protocol_version = read_shipped_protocol_version()
+        shipped_schema_version = read_shipped_project_schema_version()
     except (OSError, RuntimeError) as exc:
         _stderr("error", str(exc))
         return EXIT_FAIL
-    protocol_gate = classify_protocol_version(
-        declared_protocol_version, shipped_protocol_version
+    schema_gate = classify_project_schema_version(
+        declared_schema_version, shipped_schema_version
     )
+    try:
+        resolution_cfg = project_cfg
+        if schema_gate["status"] != GATE_CURRENT:
+            resolution_cfg = copy.deepcopy(project_cfg)
+            resolution_cfg.setdefault("project", {})[
+                "project_schema_version"
+            ] = shipped_schema_version
+        review_policy = resolve_project_configuration(
+            project_path, project_cfg_override=resolution_cfg
+        )["reviews"]
+    except _CliError as err:
+        _stderr(err.prefix, err.message)
+        return err.exit_code
 
     blockers: List[Dict[str, Any]] = []
-    if protocol_gate["status"] == GATE_BLOCKED:
+    if schema_gate["status"] == GATE_BLOCKED:
         blockers.append({
-            "kind": "protocol-version-unverifiable",
-            "detected_version": protocol_gate["detected_version"],
-            "shipped_version": protocol_gate["shipped_version"],
-            "detail": protocol_gate["detail"],
+            "kind": "project-schema-version-unverifiable",
+            "detected_version": schema_gate["detected_version"],
+            "shipped_version": schema_gate["shipped_version"],
+            "detail": schema_gate["detail"],
         })
     blockers.extend(_check_situation_notes(project_path))
     task_review_required = review_policy["task_closure"]["mode"] == "required"
@@ -789,12 +803,12 @@ def handler(args: argparse.Namespace) -> int:
     warnings, attributions = _check_work_root_provenance(
         project_path, work_roots, pm_owns_product_branches, task_index, changed_by_root
     )
-    if protocol_gate["status"] == GATE_MIGRATE:
+    if schema_gate["status"] == GATE_MIGRATE:
         warnings.insert(0, {
-            "kind": "protocol-version-migration",
-            "detected_version": protocol_gate["detected_version"],
-            "shipped_version": protocol_gate["shipped_version"],
-            "detail": protocol_gate["detail"],
+            "kind": "project-schema-version-migration",
+            "detected_version": schema_gate["detected_version"],
+            "shipped_version": schema_gate["shipped_version"],
+            "detail": schema_gate["detail"],
         })
     # Assignee scope boundary — infra artifacts require explicit task
     # authorization regardless of attribution.

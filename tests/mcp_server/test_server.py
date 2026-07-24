@@ -135,23 +135,39 @@ class TestInitializeHandshake(unittest.TestCase):
         self.assertIn("resource reader", instructions.lower())
         self.assertNotIn("invoke the `use_cartopian` MCP prompt", instructions)
 
+    def test_initialize_exposes_five_peer_identities(self):
+        identities = single("initialize")["result"]["cartopianIdentities"]
+        self.assertEqual(
+            list(identities),
+            [
+                "release_version",
+                "installed_content",
+                "project_schema_version",
+                "running_server",
+                "mcp_protocol_version",
+            ],
+        )
+
 
 class TestServerVersionResolution(unittest.TestCase):
     def test_version_marker_is_preferred_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "VERSION").write_text("v1.2.4\n", encoding="utf-8")
+            (root / "RELEASE_VERSION").write_text("v1.2.4\n", encoding="utf-8")
             with patch.object(server, "ROOT", root):
                 with patch.object(server, "_read_git_version") as git_version:
                     self.assertEqual(server._server_version(), "v1.2.4")
             git_version.assert_not_called()
 
-    def test_git_describe_fallback_used_without_version_marker(self):
+    def test_git_revision_never_substitutes_for_missing_release_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with patch.object(server, "ROOT", root):
-                with patch.object(server, "_read_git_version", return_value="v1.2.4-1-gcc16f01"):
-                    self.assertEqual(server._server_version(), "v1.2.4-1-gcc16f01")
+                with patch.object(
+                    server, "_read_git_version", return_value="v1.2.4-1-gcc16f01"
+                ) as git_version:
+                    self.assertEqual(server._server_version(), "unknown")
+            git_version.assert_not_called()
 
 
 class TestRpcErrorContract(unittest.TestCase):
@@ -281,7 +297,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'protocol_version = "v0.5.0"\n',
+                'project_schema_version = "v0.5.0"\n',
                 encoding="utf-8",
             )
             (project / "CONVENTIONS.md").write_text(
@@ -315,15 +331,16 @@ class TestToolSurface(unittest.TestCase):
             self.assertEqual(record["details"]["validation"]["status"], "passed")
             self.assertFalse((project / "CONVENTIONS.md").exists())
 
-    def test_generate_config_schema_exposes_handoff_effort(self):
-        # --handoff-effort propagates into the auto-generated tool schema
-        # alongside --handoff-model; neither is required.
+    def test_generate_config_schema_exposes_role_launch_effort(self):
+        # Preferred role-local launch flags propagate into the generated MCP
+        # schema; migration-source handoff names do not.
         response = single("tools/list")
         tools = {t["name"]: t for t in response["result"]["tools"]}
         schema = tools["generate_config"]["inputSchema"]
-        self.assertIn("handoff_effort", schema["properties"])
-        self.assertIn("handoff_model", schema["properties"])
-        self.assertNotIn("handoff_effort", schema.get("required", []))
+        self.assertIn("role_launch_effort", schema["properties"])
+        self.assertIn("role_launch_model", schema["properties"])
+        self.assertNotIn("handoff_effort", schema["properties"])
+        self.assertNotIn("role_launch_effort", schema.get("required", []))
 
     def test_register_project_label_is_optional(self):
         response = single("tools/list")
@@ -375,18 +392,23 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'protocol_version = "v0.6.0"\n'
-                "\n[roles]\n"
-                'coder = "Implements work."\n'
-                'reviewer = "Checks work."\n'
+                'project_schema_version = "v0.6.0"\n'
+                "\n[roles.coder]\n"
+                'description = "Implements work."\n'
+                'auto_launch = ["task_run"]\n'
+                "\n[roles.coder.launch]\n"
+                'target = "cartopian-claude"\n'
+                "\n[roles.reviewer]\n"
+                'description = "Checks work."\n'
+                'auto_launch = ["task_review", "planning_review"]\n'
+                "\n[roles.reviewer.launch]\n"
+                'target = "cartopian-claude"\n'
                 "\n[reviews]\n"
                 'planning = "required"\n'
                 'planning_role = "reviewer"\n'
                 'task_closure = "required"\n'
                 'task_role = "reviewer"\n'
-                "\n[handoffs.coder]\n"
-                'agent = "cartopian-claude"\n'
-                "auto_start_tasks = true\n",
+                "\n",
                 encoding="utf-8",
             )
             task.write_text(
@@ -433,15 +455,55 @@ class TestToolSurface(unittest.TestCase):
         }
         for name in ("resolve", "next", "packet"):
             self.assertEqual(records[name]["reviews"]["task_closure"]["mode"], "required")
-        self.assertTrue(records["resolve"]["handoffs"]["coder"]["auto_start_tasks"])
-        self.assertNotIn("auto_start", records["resolve"]["handoffs"]["coder"])
-        self.assertTrue(records["next"]["handoffs"]["coder"]["auto_start_tasks"])
-        self.assertNotIn("auto_start", records["next"]["handoffs"]["coder"])
-        self.assertTrue(records["packet"]["auto_start_tasks"])
+        self.assertEqual(
+            records["resolve"]["roles"]["coder"]["auto_launch"], ["task_run"]
+        )
+        self.assertNotIn("handoffs", records["resolve"])
+        self.assertEqual(
+            records["next"]["roles"]["coder"]["auto_launch"], ["task_run"]
+        )
+        self.assertNotIn("handoffs", records["next"])
+        self.assertEqual(records["packet"]["auto_launch"], ["task_run"])
         self.assertNotIn("auto_start", records["packet"])
         self.assertEqual(records["report"]["variant"], "task")
         self.assertEqual(records["report"]["verdict"], "blocked")
         self.assertEqual(records["report"]["status"], "blocked")
+
+    def test_wait_report_role_config_failure_matches_cli_diagnostic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            report = project / "reports" / "REPORT-01-001.md"
+            report.parent.mkdir(parents=True)
+            (project / "cartopian.toml").write_text(
+                "[project]\n"
+                'id = "demo"\n'
+                'name = "Demo"\n'
+                'project_schema_version = "v0.6.0"\n'
+                "unknown = true\n",
+                encoding="utf-8",
+            )
+            response = single(
+                "tools/call",
+                {
+                    "name": "wait_report",
+                    "arguments": {
+                        "report_path": str(report),
+                        "role": "reviewer",
+                        "max_block": "1s",
+                    },
+                },
+            )
+
+        self.assertNotIn("error", response)
+        result = response["result"]
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["structuredContent"]["exit_code"], 1)
+        self.assertEqual(result["structuredContent"]["records"], [])
+        stderr_lines = result["structuredContent"]["stderr_lines"]
+        self.assertEqual(len(stderr_lines), 1)
+        self.assertTrue(stderr_lines[0].startswith("[config]"))
+        self.assertIn("unknown-key", stderr_lines[0])
+        self.assertNotIn("Traceback", "\n".join(stderr_lines))
 
     def test_move_task_invalid_status_preserves_fr014_usage_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -344,9 +344,9 @@ def write_version_marker(install_root: Path, ref: str, actions: List[str]) -> No
     actions.append(f"recorded   VERSION = {ref}")
 
 
-# --- Protocol-version reconciliation gate -----------------------------------
+# --- Project-schema reconciliation gate -------------------------------------
 # After the tool tree is refreshed, every registered project's
-# [project].protocol_version is compared against the shipped protocol version
+# [project].project_schema_version is compared against the shipped schema target
 # (the topmost CHANGELOG entry) so a stale config cannot drift silently across
 # releases. Classification and message text live in cli/protocol_gate.py in
 # the source tree being installed; it is loaded by file path (stdlib
@@ -370,8 +370,8 @@ def _load_protocol_gate(source_root: Path):
     return module
 
 
-def _read_declared_protocol_version(project_toml: Path):
-    """Return ``(declared, error)`` for a project config's protocol_version.
+def _read_declared_project_schema_version(project_toml: Path):
+    """Return ``(declared, error)`` for project_schema_version.
 
     ``declared`` is the raw marker value (None when the key or file content
     leaves it unset — the CHANGELOG's "unset, missing" migratable case);
@@ -387,7 +387,7 @@ def _read_declared_protocol_version(project_toml: Path):
     project_table = cfg.get("project")
     if not isinstance(project_table, dict):
         return None, f"no [project] table in {project_toml}"
-    return project_table.get("protocol_version"), None
+    return project_table.get("project_schema_version"), None
 
 
 def reconcile_registered_projects(
@@ -403,7 +403,7 @@ def reconcile_registered_projects(
     gate = _load_protocol_gate(source_root)
     if gate is None:
         actions.append(
-            "skipped    protocol-version reconciliation (source ships no gate module)"
+            "skipped    project-schema reconciliation (source ships no gate module)"
         )
         return []
 
@@ -418,7 +418,7 @@ def reconcile_registered_projects(
             raise ValueError("registry is not a JSON array")
     except (OSError, ValueError) as exc:
         line = (
-            f"protocol-version reconciliation impossible: registry unreadable "
+            f"project-schema reconciliation impossible: registry unreadable "
             f"({registry_path} — {exc}); registered project configs cannot be "
             f"verified against the shipped schema"
         )
@@ -426,7 +426,7 @@ def reconcile_registered_projects(
         residuals.append(line)
         return residuals
 
-    shipped = gate.read_shipped_protocol_version(
+    shipped = gate.read_shipped_project_schema_version(
         source_root / "protocol" / "CHANGELOG.md"
     )
     checked = 0
@@ -436,18 +436,18 @@ def reconcile_registered_projects(
         checked += 1
         project_id = entry.get("id") or "<unknown>"
         project_toml = Path(str(entry["path"])) / "cartopian.toml"
-        declared, error = _read_declared_protocol_version(project_toml)
+        declared, error = _read_declared_project_schema_version(project_toml)
         if error is not None:
             line = (
                 f"project {project_id}: config-schema gate failed closed "
                 f"(residual: {gate.RESIDUAL_NAME}): {error}; the config cannot "
-                f"be validated against the shipped protocol {shipped} and is "
+                f"be validated against the shipped schema {shipped} and is "
                 f"left unmodified"
             )
             _eprint(f"[residual] {line}")
             residuals.append(line)
             continue
-        verdict = gate.classify_protocol_version(declared, shipped)
+        verdict = gate.classify_project_schema_version(declared, shipped)
         if verdict["status"] == gate.GATE_CURRENT:
             continue
         line = f"project {project_id} ({project_toml.parent}): {verdict['detail']}"
@@ -459,7 +459,7 @@ def reconcile_registered_projects(
             residuals.append(line)
     if checked:
         actions.append(
-            f"reconciled protocol_version for {checked} registered project(s) "
+            f"reconciled project_schema_version for {checked} registered project(s) "
             f"against shipped {shipped}"
         )
     return residuals

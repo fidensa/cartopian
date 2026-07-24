@@ -274,17 +274,18 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
         self.assertGreaterEqual(clock["t"], 3600)
 
     def test_default_wait_honors_resolved_role_timeout(self) -> None:
-        """With --role, the ceiling is the resolved [handoffs.<role>] timeout."""
+        """With --role, the ceiling is the resolved role launch timeout."""
         with project_scaffold() as scaffold:
             scaffold.write(
                 "cartopian.toml",
                 "[project]\n"
-                'work_roots = ["tool-repo"]\n\n'
-                "[roles]\n"
-                'reviewer = "Reviews completed tasks."\n\n'
-                "[handoffs.reviewer]\n"
-                'agent = "codex"\n'
-                "auto_start_reviews = true\n"
+                'id = "test-proj"\n'
+                'name = "Test Project"\n'
+                'project_schema_version = "v0.6.0"\n\n'
+                "[roles.reviewer]\n"
+                'description = "Reviews completed tasks."\n\n'
+                "[roles.reviewer.launch]\n"
+                'target = "codex"\n'
                 'timeout = "10s"\n',
             )
             report_path = scaffold.reports / "REPORT-01-002.md"
@@ -304,18 +305,45 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
         self.assertEqual(record["timeout_seconds"], 10)
         self.assertGreaterEqual(clock["t"], 10)
 
+    def test_role_resolution_failure_is_clean_and_fail_closed(self) -> None:
+        """Invalid config must not fall back to the protocol timeout or traceback."""
+        with project_scaffold() as scaffold:
+            scaffold.write(
+                "cartopian.toml",
+                "[project]\n"
+                'id = "test-proj"\n'
+                'name = "Test Project"\n'
+                'project_schema_version = "v0.6.0"\n'
+                "unknown = true\n",
+            )
+            report_path = scaffold.reports / "REPORT-01-002.md"
+            result = _run(
+                str(report_path),
+                "--role",
+                "reviewer",
+                "--max-block",
+                "1s",
+            )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertTrue(result.stderr.startswith("[config]"), msg=result.stderr)
+        self.assertIn("unknown-key", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_explicit_slice_beyond_ceiling_is_terminal_timeout(self) -> None:
         """--max-block larger than the resolved ceiling → ceiling wins, `timeout`."""
         with project_scaffold() as scaffold:
             scaffold.write(
                 "cartopian.toml",
                 "[project]\n"
-                'work_roots = ["tool-repo"]\n\n'
-                "[roles]\n"
-                'reviewer = "Reviews completed tasks."\n\n'
-                "[handoffs.reviewer]\n"
-                'agent = "codex"\n'
-                "auto_start_reviews = true\n"
+                'id = "test-proj"\n'
+                'name = "Test Project"\n'
+                'project_schema_version = "v0.6.0"\n\n'
+                "[roles.reviewer]\n"
+                'description = "Reviews completed tasks."\n\n'
+                "[roles.reviewer.launch]\n"
+                'target = "codex"\n'
                 'timeout = "10s"\n',
             )
             report_path = scaffold.reports / "REPORT-01-002.md"

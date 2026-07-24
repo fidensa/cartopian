@@ -9,18 +9,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli.capabilities import role_description
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
-    _resolve_automation,
     _resolve_deliverable,
-    _resolve_git_block,
-    _resolve_git_versioning,
-    _resolve_handoffs,
-    _resolve_reviews,
-    _resolve_roles,
     _resolve_work_roots,
+    resolve_project_configuration,
 )
 from cli.emit import emit_record
 from cli.main import (
@@ -45,7 +39,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--role",
         required=True,
-        help="Role identifier being dispatched (must have a [handoffs.<role>] block)",
+        help="Role identifier being dispatched (must have roles.<role>.launch.target)",
     )
 
 
@@ -188,39 +182,28 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(err.message)
         return err.exit_code
 
-    global_toml = Path.home() / ".cartopian" / "cartopian.toml"
     try:
-        global_cfg = _load_toml(global_toml, "global config") or {}
+        resolved = resolve_project_configuration(project_root)
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
 
-    handoffs = _resolve_handoffs(global_cfg, project_cfg)
-    roles = _resolve_roles(global_cfg, project_cfg)
-    try:
-        reviews = _resolve_reviews(global_cfg, project_cfg, roles)
-    except _CliError as err:
-        stderr_error(err.message)
-        return err.exit_code
-
-    raw_handoffs_project = project_cfg.get("handoffs", {}) or {}
-    raw_handoffs_global = global_cfg.get("handoffs", {}) or {}
-    role_block_present = role in raw_handoffs_project or role in raw_handoffs_global
-    if not role_block_present:
+    roles = resolved["roles"]
+    if role not in roles:
+        stderr_guard(f"role {role!r} is not declared")
+        return EXIT_FAIL
+    role_record = roles[role]
+    if role_record["launch"]["target"] is None:
         stderr_guard(
-            f"no [handoffs.{role}] block configured — declare it in the project "
-            f"or global cartopian.toml, or dispatch this role manually"
+            f"roles.{role}.launch.target is not configured — "
+            f"dispatch this role manually"
         )
         return EXIT_FAIL
 
-    role_handoff = handoffs.get(role, {}) or {}
-    automation = _resolve_automation(global_cfg, project_cfg)
-    git_versioning = _resolve_git_versioning(global_cfg, project_cfg)[0]
-    git_policy: Optional[Dict[str, Any]]
-    if git_versioning:
-        git_policy = _build_git_policy(_resolve_git_block(global_cfg, project_cfg))
-    else:
-        git_policy = None
+    git_versioning = resolved["git_versioning"]
+    git_policy = (
+        _build_git_policy(resolved["git"] or {}) if git_versioning else None
+    )
 
     try:
         work_roots = _build_work_roots(project_root, project_cfg)
@@ -240,22 +223,19 @@ def handler(args: argparse.Namespace) -> int:
         "task_title": task_title,
         "task_path": str(task_path),
         "role": role,
-        "role_description": (
-            role_description(roles[role]) if role in roles else None
-        ),
-        "handoff_target": role_handoff.get("agent"),
-        "model": role_handoff.get("model"),
-        "effort": role_handoff.get("effort"),
-        "auto_start_tasks": role_handoff.get("auto_start_tasks"),
-        "auto_start_reviews": role_handoff.get("auto_start_reviews"),
-        "timeout": role_handoff.get("timeout"),
+        "role_description": role_record["description"],
+        "effective_grants": role_record["effective_grants"],
+        "assigned_work_types": role_record["assigned_work_types"],
+        "launch": role_record["launch"],
+        "auto_launch": role_record["auto_launch"],
+        "attribution": role_record["attribution"],
         "work_roots": work_roots,
         "deliverable": deliverable,
         "expected_report_path": str(expected_report_path),
         "git_versioning": git_versioning,
         "git_policy": git_policy,
-        "automation_policy": automation,
-        "reviews": reviews,
+        "automation_policy": resolved["automation"],
+        "reviews": resolved["reviews"],
     }
     emit_record(record)
     return EXIT_OK

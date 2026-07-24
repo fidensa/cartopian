@@ -42,7 +42,7 @@ REQUIRED_FILES = (
 GITIGNORE_LINE = "cartopian.local.toml"
 
 
-def _current_protocol_version() -> str:
+def _current_project_schema_version() -> str:
     text = CHANGELOG.read_text(encoding="utf-8")
     _, _, body = text.partition("\n## Entries\n")
     m = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
@@ -501,11 +501,11 @@ class TestScaffoldProjectDec013WellFormedTomlVariants(unittest.TestCase):
 
 class TestScaffoldGenerateConfigIntegration(unittest.TestCase):
     """scaffold + generate-config in sequence yields a well-formed
-    cartopian.toml whose [project] protocol_version matches the current
+    cartopian.toml whose [project] project_schema_version matches the current
     protocol version read from protocol/CHANGELOG.md."""
 
     def test_scaffold_then_generate_config_round_trip(self):
-        version = _current_protocol_version()
+        version = _current_project_schema_version()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
@@ -519,7 +519,7 @@ class TestScaffoldGenerateConfigIntegration(unittest.TestCase):
             self.assertTrue(cfg_path.is_file())
             with cfg_path.open("rb") as fh:
                 data = tomllib.load(fh)
-            self.assertEqual(data["project"]["protocol_version"], version)
+            self.assertEqual(data["project"]["project_schema_version"], version)
             self.assertEqual(data["project"]["name"], "Demo")
             self.assertEqual(data["project"]["id"], "demo")
             # cartopian.toml is tolerated at the project root by the no-op

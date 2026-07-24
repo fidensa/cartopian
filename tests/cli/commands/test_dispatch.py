@@ -156,28 +156,40 @@ def _toml(
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
     effort_line = f'effort = "{effort}"\n' if effort else ""
-    review_line = (
-        f"auto_start_reviews = {str(auto_start_reviews).lower()}\n"
-        if auto_start_reviews is not None
+    activities = []
+    if auto_start_tasks:
+        activities.append("task_run")
+    if auto_start_reviews:
+        activities.append("planning_review")
+    auto_launch_line = (
+        "auto_launch = ["
+        + ", ".join(f'"{activity}"' for activity in activities)
+        + "]\n"
+    )
+    review_policy = (
+        "\n[reviews]\n"
+        'planning = "required"\n'
+        'planning_role = "coder"\n'
+        if auto_start_reviews
         else ""
     )
     return (
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'protocol_version = "v0.6.0"\n'
+        'project_schema_version = "v0.6.0"\n'
         f"{wr}"
         "\n"
-        "[roles]\n"
-        'coder = "Implements tasks per spec."\n'
+        "[roles.coder]\n"
+        'description = "Implements tasks per spec."\n'
+        f"{auto_launch_line}"
         "\n"
-        "[handoffs.coder]\n"
-        f'agent = "{agent}"\n'
+        "[roles.coder.launch]\n"
+        f'target = "{agent}"\n'
         f"{model_line}"
         f"{effort_line}"
-        f"auto_start_tasks = {str(auto_start_tasks).lower()}\n"
-        f"{review_line}"
         f'timeout = "{timeout}"\n'
+        f"{review_policy}"
     )
 
 
@@ -268,9 +280,9 @@ class TestDispatchPositive(unittest.TestCase):
             rec = json.loads(lines[0])
             self.assertEqual(rec["status"], "dispatched")
             self.assertEqual(rec["role"], "coder")
-            self.assertEqual(rec["handoff_target"], str(stub))
-            self.assertEqual(rec["model"], "stub-model-x")
-            self.assertEqual(rec["effort"], "high")
+            self.assertEqual(rec["launch"]["target"], str(stub))
+            self.assertEqual(rec["launch"]["model"], "stub-model-x")
+            self.assertEqual(rec["launch"]["effort"], "high")
             self.assertEqual(rec["prompt_path"], str(prompt_path))
             self.assertEqual(rec["timeout"], "30m")
             # Neutral launcher: cwd is the cartopian project root (the agent
@@ -482,8 +494,8 @@ class TestDispatchPositive(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
             rec = json.loads(stdout.strip())
-            self.assertIsNone(rec["model"])
-            self.assertIsNone(rec["effort"])
+            self.assertIsNone(rec["launch"]["model"])
+            self.assertIsNone(rec["launch"]["effort"])
 
             # dispatch is non-blocking; poll briefly for the detached stub's capture.
             cap = None
@@ -1205,10 +1217,10 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'protocol_version = "v0.6.0"\n'
+            'project_schema_version = "v0.6.0"\n'
             "\n"
-            "[roles]\n"
-            'coder = "Implements tasks per spec."\n'
+            "[roles.coder]\n"
+            'description = "Implements tasks per spec."\n'
         )
         with project_scaffold(cartopian_toml=_TOML_NO_BLOCK) as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
@@ -1222,7 +1234,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("[handoffs.coder]", stderr)
+            self.assertIn("roles.coder.launch.target", stderr)
 
     def test_task_dispatch_requires_auto_start_tasks(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
@@ -1245,7 +1257,7 @@ class TestDispatchFailClosed(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
-            self.assertIn("auto_start_tasks", stderr)
+            self.assertIn("roles.coder.auto_launch", stderr)
             self.assertFalse(capture.exists())
 
     def test_empty_model_fails_closed(self) -> None:
@@ -1257,8 +1269,8 @@ class TestDispatchFailClosed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             toml = _toml(str(stub)).replace(
-                "auto_start_tasks = true\n",
-                'model = ""\nauto_start_tasks = true\n',
+                f'target = "{stub}"\n',
+                f'target = "{stub}"\nmodel = ""\n',
             )
             scaffold.write("cartopian.toml", toml)
             task_path = _write_task_and_prompt(scaffold)
@@ -1270,8 +1282,8 @@ class TestDispatchFailClosed(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
-            self.assertIn("[guard]", stderr)
-            self.assertIn("[handoffs.coder].model", stderr)
+            self.assertIn("[error]", stderr)
+            self.assertIn("roles.coder.launch.model", stderr)
             self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_empty_effort_fails_closed(self) -> None:
@@ -1283,8 +1295,8 @@ class TestDispatchFailClosed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             toml = _toml(str(stub)).replace(
-                "auto_start_tasks = true\n",
-                'effort = ""\nauto_start_tasks = true\n',
+                f'target = "{stub}"\n',
+                f'target = "{stub}"\neffort = ""\n',
             )
             scaffold.write("cartopian.toml", toml)
             task_path = _write_task_and_prompt(scaffold)
@@ -1296,8 +1308,8 @@ class TestDispatchFailClosed(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
-            self.assertIn("[guard]", stderr)
-            self.assertIn("[handoffs.coder].effort", stderr)
+            self.assertIn("[error]", stderr)
+            self.assertIn("roles.coder.launch.effort", stderr)
             self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_unmapped_work_root_fails_closed(self) -> None:
@@ -1320,8 +1332,8 @@ class TestDispatchFailClosed(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
-            self.assertIn("[guard]", stderr)
-            self.assertIn("unmapped: tool-repo", stderr)
+            self.assertIn("[error]", stderr)
+            self.assertIn("work_roots.tool-repo", stderr)
             self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_missing_work_root_dir_fails_closed(self) -> None:
@@ -1470,7 +1482,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
                 self.assertEqual(rc, EXIT_FAIL)
                 self.assertEqual(stdout, "")
                 self.assertIn("[guard]", stderr)
-                self.assertIn("auto_start_reviews", stderr)
+                self.assertIn("planning_review", stderr)
                 self.assertFalse(
                     capture.exists(), "wrapper launched despite fail-closed gate"
                 )
@@ -1633,7 +1645,7 @@ class TestDispatchNoRawExec(unittest.TestCase):
         # And dispatch itself sources its executable from config, never argv:
         # the launched program is the resolved [handoffs.<role>].agent.
         dispatch_src = Path(dispatch.__file__).read_text(encoding="utf-8")
-        self.assertIn('agent = role_handoff.get("agent")', dispatch_src)
+        self.assertIn('agent = launch.get("target")', dispatch_src)
 
 
 class TestDispatchAgentResolution(unittest.TestCase):

@@ -670,12 +670,18 @@ def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
             f"no filesystem migration registry entry for {entry_version}",
         )
 
-    marker = _read_project_table(root).get("protocol_version")
+    project_table = _read_project_table(root)
+    # Migration tooling may inspect the historical source alias, but preferred
+    # projects and all normal writers use project_schema_version.
+    marker = project_table.get(
+        "project_schema_version", project_table.get("protocol_version")
+    )
     if marker is not None and (
         not isinstance(marker, str) or not _VERSION_RE.match(marker)
     ):
         raise GuardRefusal(
-            "invalid-config", "project.protocol_version must be a vX.Y.Z string"
+            "invalid-config",
+            "project schema marker must be a vX.Y.Z string",
         )
     if isinstance(marker, str) and marker >= entry_version:
         return MigrationPlan(

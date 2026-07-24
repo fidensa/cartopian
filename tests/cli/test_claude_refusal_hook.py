@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -83,7 +83,10 @@ _ACTIVATED_ROLES = (
 )
 
 # Ungated config: roles exist but none declares a grants key.
-_UNGATED_ROLES = '[roles]\ncoder = "Implements tasks per spec."\n'
+_UNGATED_ROLES = (
+    "[roles.coder]\n"
+    'description = "Implements tasks per spec."\n'
+)
 
 # Read-axis config: `assignee` holds the default dispatched-assignee grants
 # (`coder-like` = read:prompts + read:work-roots + write:worktree); `curator`
@@ -376,11 +379,16 @@ class TestAllowGrantedWrites(unittest.TestCase):
 
     # One role per grant, each holding exactly the grant under test.
     _GRANT_ROLES = (
-        "[roles.planner]\ngrants = [\"write:plan\"]\n"
-        "[roles.lifecycler]\ngrants = [\"write:lifecycle\"]\n"
-        "[roles.decider]\ngrants = [\"write:decisions\"]\n"
-        "[roles.reporter]\ngrants = [\"write:reports\"]\n"
-        "[roles.coder]\ngrants = [\"write:worktree\"]\n"
+        "[roles.planner]\ndescription = \"Plans.\"\n"
+        "grants = [\"write:plan\"]\n"
+        "[roles.lifecycler]\ndescription = \"Runs lifecycle.\"\n"
+        "grants = [\"write:lifecycle\"]\n"
+        "[roles.decider]\ndescription = \"Records decisions.\"\n"
+        "grants = [\"write:decisions\"]\n"
+        "[roles.reporter]\ndescription = \"Writes reports.\"\n"
+        "grants = [\"write:reports\"]\n"
+        "[roles.coder]\ndescription = \"Writes product code.\"\n"
+        "grants = [\"write:worktree\"]\n"
     )
 
     _GRANT_TO_ROLE = {
@@ -810,14 +818,14 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'protocol_version = "v0.6.0"\n'
+            'project_schema_version = "v0.6.0"\n'
             "\n"
-            "[roles]\n"
-            'coder = "Implements tasks per spec."\n'
+            "[roles.coder]\n"
+            'description = "Implements tasks per spec."\n'
+            'auto_launch = ["task_run"]\n'
             "\n"
-            "[handoffs.coder]\n"
-            'agent = "/bin/true"\n'
-            "auto_start_tasks = true\n"
+            "[roles.coder.launch]\n"
+            'target = "/bin/true"\n'
             'timeout = "30m"\n'
         )
         with project_scaffold(cartopian_toml=toml) as scaffold, \

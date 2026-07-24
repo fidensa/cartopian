@@ -44,7 +44,7 @@ class ScaffoldHelperTests(unittest.TestCase):
         self.assertTrue(scaffold.state.is_file())
         toml_text = scaffold.config.read_text(encoding="utf-8")
         self.assertIn("[project]", toml_text)
-        self.assertIn("protocol_version", toml_text)
+        self.assertIn("project_schema_version", toml_text)
 
     def test_named_subdir_properties_match_layout(self) -> None:
         with project_scaffold() as scaffold:

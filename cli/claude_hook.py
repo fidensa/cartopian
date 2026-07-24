@@ -107,12 +107,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 if __package__ in (None, ""):  # invoked as a script: `python .../cli/claude_hook.py`
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cli.capabilities import GrantResolution, resolve_grants  # noqa: E402
+from cli.capabilities import GrantResolution  # noqa: E402
+from cli.config_schema import ConfigDiagnostic, resolve_configuration  # noqa: E402
 from cli.commands.resolve_config import (  # noqa: E402
     _CliError,
     _load_toml,
-    _resolve_roles,
-    _resolve_work_roots,
 )
 
 # The file-mutation tools this hook gates on the write axis. Bash is
@@ -300,8 +299,8 @@ def _session_roles(environ: Mapping[str, str]) -> Tuple[str, ...]:
 
 def _resolve_project_grants(
     project_root: Path, cartopian_home: Path
-) -> Tuple[Dict[str, Any], GrantResolution]:
-    """Resolve (project_cfg, GrantResolution) for one registered project.
+) -> Tuple[GrantResolution, Dict[str, str]]:
+    """Resolve canonical grants and work roots for one registered project.
 
     Raises on any resolution failure (missing/unreadable config); the caller
     decides whether that fails closed (target inside this project) or is
@@ -312,8 +311,21 @@ def _resolve_project_grants(
         raise _CliError(1, "guard", f"project config not found: {project_toml}")
     project_cfg = _load_toml(project_toml, "project config") or {}
     global_cfg = _load_toml(cartopian_home / "cartopian.toml", "global config") or {}
-    roles_raw = _resolve_roles(global_cfg, project_cfg)
-    return project_cfg, resolve_grants(roles_raw)
+    local_cfg = _load_toml(
+        project_root / "cartopian.local.toml", "local config"
+    ) or {}
+    try:
+        resolved = resolve_configuration(global_cfg, project_cfg, local_cfg)
+    except ConfigDiagnostic as exc:
+        raise _CliError(1, "guard", str(exc)) from exc
+    grants = GrantResolution(
+        activated=resolved["capabilities"]["activated"],
+        role_grants={
+            name: frozenset(role["effective_grants"])
+            for name, role in resolved["roles"].items()
+        },
+    )
+    return grants, resolved["work_roots"]
 
 
 def _deny_missing_grant(
@@ -381,7 +393,7 @@ def _gate_inside_project(
             return _deny_raw_config_write(tool_name, target, project_id)
 
     try:
-        project_cfg, resolution = _resolve_project_grants(
+        resolution, work_roots = _resolve_project_grants(
             Path(project_root), cartopian_home
         )
     except Exception as exc:
@@ -394,11 +406,6 @@ def _gate_inside_project(
     # worktree, taking precedence over directory classification. In an
     # activated config an unresolvable work-root mapping means the target
     # cannot be classified safely → fail closed.
-    try:
-        work_roots = _resolve_work_roots(project_cfg, Path(project_root))
-    except Exception as exc:
-        return _deny_resolution_failure(tool_name, target, project_id, str(exc))
-
     klass = grant = None
     for name, wr_path in work_roots.items():
         if _is_within(target, resolve(wr_path), flavor):
@@ -433,10 +440,9 @@ def _gate_work_root_scan(
     for entry in entries:
         project_root = resolve(entry["path"])
         try:
-            project_cfg, resolution = _resolve_project_grants(
+            resolution, work_roots = _resolve_project_grants(
                 Path(project_root), cartopian_home
             )
-            work_roots = _resolve_work_roots(project_cfg, Path(project_root))
         except Exception:
             continue
         for name, wr_path in work_roots.items():

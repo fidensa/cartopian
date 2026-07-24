@@ -14,7 +14,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
 )
 
 
@@ -75,7 +75,7 @@ class TestNextActionRequiredFields(unittest.TestCase):
                 "pm_role",
                 "pm_role_declared",
                 "automation",
-                "handoffs",
+                "roles",
                 "reviews",
                 "blockers",
                 "state_filesystem_disagreement",
@@ -93,7 +93,14 @@ class TestNextActionAutomation(unittest.TestCase):
                 records, rc = _invoke(str(scaffold.project_root))
                 self.assertEqual(rc, 0)
                 self.assertEqual(
-                    records[0]["automation"],
+                    {
+                        key: records[0]["automation"][key]
+                        for key in (
+                            "initiation",
+                            "confirmation",
+                            "max_handoffs_per_run",
+                        )
+                    },
                     {
                         "initiation": "operator",
                         "confirmation": "each-handoff",
@@ -109,7 +116,14 @@ class TestNextActionAutomation(unittest.TestCase):
                 records, rc = _invoke(str(scaffold.project_root))
                 self.assertEqual(rc, 0)
                 self.assertEqual(
-                    records[0]["automation"],
+                    {
+                        key: records[0]["automation"][key]
+                        for key in (
+                            "initiation",
+                            "confirmation",
+                            "max_handoffs_per_run",
+                        )
+                    },
                     {
                         "initiation": "auto",
                         "confirmation": "until-blocked",
@@ -122,11 +136,12 @@ class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
     def test_reviews_and_explicit_handoff_launch_fields_are_emitted(self) -> None:
         project_toml = (
             _TOML_BASE
-            + '\n[roles]\ncoder = "Implements work."\nreviewer = "Checks work."\n'
+            + '\n[roles.coder]\ndescription = "Implements work."\n'
+            + 'auto_launch = ["task_run"]\n'
+            + '\n[roles.coder.launch]\ntarget = "cartopian-claude"\n'
+            + '\n[roles.reviewer]\ndescription = "Checks work."\n'
             + '\n[reviews]\nplanning = "required"\nplanning_role = "reviewer"\n'
             + 'task_closure = "required"\ntask_role = "reviewer"\n'
-            + '\n[handoffs.coder]\nagent = "cartopian-claude"\n'
-            + 'auto_start_tasks = true\n'
         )
         with _isolated_home():
             with project_scaffold(cartopian_toml=project_toml) as scaffold:
@@ -135,8 +150,11 @@ class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
         record = records[0]
         self.assertEqual(record["reviews"]["task_closure"]["mode"], "required")
         self.assertEqual(record["reviews"]["task_closure"]["role"], "reviewer")
-        self.assertTrue(record["handoffs"]["coder"]["auto_start_tasks"])
-        self.assertNotIn("auto_start", record["handoffs"]["coder"])
+        self.assertEqual(record["roles"]["coder"]["auto_launch"], ["task_run"])
+        self.assertEqual(
+            record["roles"]["coder"]["launch"]["target"],
+            "cartopian-claude",
+        )
 
 
 class TestNextActionHappyPath(unittest.TestCase):
@@ -144,7 +162,7 @@ class TestNextActionHappyPath(unittest.TestCase):
 
     def test_all_fr001_fields_populated(self) -> None:
         # This test exercises field population with a declared PM role.
-        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n'
+        toml = _TOML_BASE + '\n[roles.pm]\ndescription = "Plans the work."\n'
         state_md = (
             "# test-proj — State\n\n"
             "## Current phase\n\nPHASE-01-foundation\n\n"
@@ -303,7 +321,7 @@ class TestNextActionPmRoleDeclared(unittest.TestCase):
     def test_declared_true_via_default_roster_when_only_other_roles_declared(self) -> None:
         # A [roles] table that declares other roles but not pm still resolves
         # pm through the protocol-default backfill, matching resolve-config.
-        toml = _TOML_BASE + '\n[roles]\ncoder = "Writes code."\n'
+        toml = _TOML_BASE + '\n[roles.coder]\ndescription = "Writes code."\n'
         with project_scaffold(cartopian_toml=toml) as scaffold, _isolated_home():
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
@@ -323,7 +341,7 @@ class TestNextActionPmRoleDeclared(unittest.TestCase):
         # Regression: a project may legitimately declare a pm role whose
         # description equals the default placeholder. The readiness gate keys on
         # role-KEY presence, so pm_role_declared must be True here.
-        toml = _TOML_BASE + f'\n[roles]\npm = "{next_action._DEFAULT_PM_ROLE}"\n'
+        toml = _TOML_BASE + f'\n[roles.pm]\ndescription = "{next_action._DEFAULT_PM_ROLE}"\n'
         with project_scaffold(cartopian_toml=toml) as scaffold:
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
@@ -358,7 +376,9 @@ class TestNextActionResolveConfigParity(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["pm_role_declared"], "pm" in roles)
             if "pm" in roles:
-                self.assertEqual(records[0]["pm_role"], roles["pm"])
+                self.assertEqual(
+                    records[0]["pm_role"], roles["pm"]["description"]
+                )
 
     def test_parity_on_default_roster_fallthrough(self) -> None:
         # No [roles] anywhere: resolve-config emits the protocol default roster.
@@ -367,12 +387,15 @@ class TestNextActionResolveConfigParity(unittest.TestCase):
     def test_parity_when_roles_declared_without_pm(self) -> None:
         # Local and global [roles] exist but neither declares pm: the protocol
         # default backfills it in resolve-config, and next-action must agree.
-        toml = _TOML_BASE + '\n[roles]\ncoder = "Writes code."\n'
-        self._assert_parity(toml, '[roles]\nreviewer = "Reviews changes."\n')
+        toml = _TOML_BASE + '\n[roles.coder]\ndescription = "Writes code."\n'
+        self._assert_parity(
+            toml,
+            '[roles.reviewer]\ndescription = "Reviews changes."\n',
+        )
 
     def test_parity_when_pm_declared_locally(self) -> None:
         # Locally-declared pm: behavior unchanged, both report the local text.
-        toml = _TOML_BASE + '\n[roles]\npm = "Plans the work."\n'
+        toml = _TOML_BASE + '\n[roles.pm]\ndescription = "Plans the work."\n'
         self._assert_parity(toml, None)
 
 

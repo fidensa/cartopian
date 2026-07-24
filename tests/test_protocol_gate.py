@@ -1,6 +1,6 @@
-"""Tests for the config-schema migration gate on ``[project].protocol_version``.
+"""Tests for the config-schema migration gate on ``[project].project_schema_version``.
 
-The gate compares a project config's declared ``[project].protocol_version``
+The gate compares a project config's declared ``[project].project_schema_version``
 against the shipped protocol version (the topmost ``### vX.Y.Z`` entry under
 ``## Entries`` in ``protocol/CHANGELOG.md``) and classifies:
 
@@ -58,7 +58,7 @@ Fixture changelog for gate tests.
 
 #### Applies-when precondition
 
-Applies when the project's `cartopian.toml` `[project] protocol_version` is
+Applies when the project's `cartopian.toml` `[project] project_schema_version` is
 unset, missing, or lexically less than `v0.4.0`.
 
 ### v0.3.0 — Fixture: prior protocol
@@ -76,7 +76,7 @@ def _project_toml(version_line: str) -> str:
     )
 
 
-def _make_project(tmp: Path, *, version_line: str = 'protocol_version = "v0.3.0"\n') -> Path:
+def _make_project(tmp: Path, *, version_line: str = 'project_schema_version = "v0.3.0"\n') -> Path:
     project = tmp / "project"
     for sub in ("tasks/open", "tasks/in-progress", "tasks/in-review", "tasks/done",
                 "phases", "prompts", "reports", "reviews"):
@@ -126,15 +126,15 @@ class TestClassification(unittest.TestCase):
     def test_read_shipped_version_is_topmost_entry(self):
         with _fixture_changelog() as changelog:
             self.assertEqual(
-                protocol_gate.read_shipped_protocol_version(changelog), "v0.4.0"
+                protocol_gate.read_shipped_project_schema_version(changelog), "v0.4.0"
             )
 
     def test_current_passes(self):
-        verdict = protocol_gate.classify_protocol_version("v0.4.0", "v0.4.0")
+        verdict = protocol_gate.classify_project_schema_version("v0.4.0", "v0.4.0")
         self.assertEqual(verdict["status"], protocol_gate.GATE_CURRENT)
 
     def test_older_is_migratable_and_names_both_versions(self):
-        verdict = protocol_gate.classify_protocol_version("v0.3.0", "v0.4.0")
+        verdict = protocol_gate.classify_project_schema_version("v0.3.0", "v0.4.0")
         self.assertEqual(verdict["status"], protocol_gate.GATE_MIGRATE)
         self.assertEqual(verdict["detected_version"], "v0.3.0")
         self.assertEqual(verdict["shipped_version"], "v0.4.0")
@@ -145,12 +145,12 @@ class TestClassification(unittest.TestCase):
     def test_unset_marker_is_migratable(self):
         # CHANGELOG applies-when: "unset, missing, or lexically less".
         for declared in (None, "", "   "):
-            verdict = protocol_gate.classify_protocol_version(declared, "v0.4.0")
+            verdict = protocol_gate.classify_project_schema_version(declared, "v0.4.0")
             self.assertEqual(verdict["status"], protocol_gate.GATE_MIGRATE, declared)
 
     def test_newer_and_malformed_fail_closed(self):
         for declared in ("v9.9.9", "v0.5.0", "garbage", "0.3.0"):
-            verdict = protocol_gate.classify_protocol_version(declared, "v0.4.0")
+            verdict = protocol_gate.classify_project_schema_version(declared, "v0.4.0")
             self.assertEqual(verdict["status"], protocol_gate.GATE_BLOCKED, declared)
             self.assertIn(protocol_gate.RESIDUAL_NAME, verdict["detail"])
             self.assertIn("v0.4.0", verdict["detail"])
@@ -175,7 +175,7 @@ class TestNextActionGate(unittest.TestCase):
         self.assertIn("migration", gate_blockers[0].lower())
 
     def test_missing_marker_surfaces_migration_not_missing_key(self):
-        # A config with no [project].protocol_version at all must reach the
+        # A config with no [project].project_schema_version at all must reach the
         # gate and classify as unset/older-but-migratable — matching installer
         # reconciliation — not be rejected by the required-keys check.
         project = _make_project(self.tmp_path, version_line="")
@@ -192,19 +192,19 @@ class TestNextActionGate(unittest.TestCase):
 
     def test_current_version_passes_with_no_gate_noise(self):
         project = _make_project(
-            self.tmp_path, version_line='protocol_version = "v0.4.0"\n'
+            self.tmp_path, version_line='project_schema_version = "v0.4.0"\n'
         )
         with _fixture_changelog(), _isolated_home():
             records, rc, stderr = _invoke(next_action, str(project))
         self.assertEqual(rc, EXIT_OK)
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["blockers"], [])
-        self.assertNotIn("protocol_version", stderr)
+        self.assertNotIn("project_schema_version", stderr)
         self.assertNotIn("migration", stderr.lower())
 
     def test_unknown_version_fails_closed_without_mutating_config(self):
         project = _make_project(
-            self.tmp_path, version_line='protocol_version = "v9.9.9"\n'
+            self.tmp_path, version_line='project_schema_version = "v9.9.9"\n'
         )
         toml_path = project / "cartopian.toml"
         before = toml_path.read_bytes()
@@ -228,7 +228,11 @@ class TestPlanAuditGate(unittest.TestCase):
         self.tmp_path = Path(self.tmp.name)
 
     def _gate_entries(self, entries):
-        return [e for e in entries if str(e.get("kind", "")).startswith("protocol-version")]
+        return [
+            e
+            for e in entries
+            if str(e.get("kind", "")).startswith("project-schema-version")
+        ]
 
     def test_stale_version_surfaces_migration_warning(self):
         project = _make_project(self.tmp_path)
@@ -239,7 +243,7 @@ class TestPlanAuditGate(unittest.TestCase):
         gate_warnings = self._gate_entries(records[0]["warnings"])
         self.assertEqual(len(gate_warnings), 1, records[0]["warnings"])
         warning = gate_warnings[0]
-        self.assertEqual(warning["kind"], "protocol-version-migration")
+        self.assertEqual(warning["kind"], "project-schema-version-migration")
         self.assertEqual(warning["detected_version"], "v0.3.0")
         self.assertEqual(warning["shipped_version"], "v0.4.0")
         self.assertIn("v0.3.0", warning["detail"])
@@ -247,7 +251,7 @@ class TestPlanAuditGate(unittest.TestCase):
         self.assertFalse(records[0]["clean"])
 
     def test_missing_marker_surfaces_migration_not_missing_key(self):
-        # A config with no [project].protocol_version at all must reach the
+        # A config with no [project].project_schema_version at all must reach the
         # gate and classify as unset/older-but-migratable — matching installer
         # reconciliation — not be rejected by the required-keys check.
         project = _make_project(self.tmp_path, version_line="")
@@ -259,7 +263,7 @@ class TestPlanAuditGate(unittest.TestCase):
         gate_warnings = self._gate_entries(records[0]["warnings"])
         self.assertEqual(len(gate_warnings), 1, records[0]["warnings"])
         warning = gate_warnings[0]
-        self.assertEqual(warning["kind"], "protocol-version-migration")
+        self.assertEqual(warning["kind"], "project-schema-version-migration")
         self.assertEqual(warning["detected_version"], "unset")
         self.assertEqual(warning["shipped_version"], "v0.4.0")
         self.assertIn("unset", warning["detail"])
@@ -267,7 +271,7 @@ class TestPlanAuditGate(unittest.TestCase):
 
     def test_current_version_passes_with_no_gate_noise(self):
         project = _make_project(
-            self.tmp_path, version_line='protocol_version = "v0.4.0"\n'
+            self.tmp_path, version_line='project_schema_version = "v0.4.0"\n'
         )
         with _fixture_changelog(), _isolated_home():
             records, rc, stderr = _invoke(plan_audit, str(project))
@@ -279,7 +283,7 @@ class TestPlanAuditGate(unittest.TestCase):
 
     def test_unknown_version_fails_closed_without_mutating_config(self):
         project = _make_project(
-            self.tmp_path, version_line='protocol_version = "v9.9.9"\n'
+            self.tmp_path, version_line='project_schema_version = "v9.9.9"\n'
         )
         toml_path = project / "cartopian.toml"
         before = toml_path.read_bytes()
@@ -290,7 +294,9 @@ class TestPlanAuditGate(unittest.TestCase):
         gate_blockers = self._gate_entries(records[0]["blockers"])
         self.assertEqual(len(gate_blockers), 1, records[0]["blockers"])
         blocker = gate_blockers[0]
-        self.assertEqual(blocker["kind"], "protocol-version-unverifiable")
+        self.assertEqual(
+            blocker["kind"], "project-schema-version-unverifiable"
+        )
         self.assertEqual(blocker["detected_version"], "v9.9.9")
         self.assertEqual(blocker["shipped_version"], "v0.4.0")
         self.assertIn(protocol_gate.RESIDUAL_NAME, stderr)
@@ -345,14 +351,14 @@ class TestInstallReconciliationGate(unittest.TestCase):
         self.assertIn("v0.4.0", stderr)
 
     def test_current_version_is_silent(self):
-        self._set_project_version('protocol_version = "v0.4.0"\n')
+        self._set_project_version('project_schema_version = "v0.4.0"\n')
         residuals, _actions, stderr = self._reconcile()
         self.assertEqual(residuals, [])
         self.assertNotIn("[migration]", stderr)
         self.assertNotIn("[residual]", stderr)
 
     def test_unknown_version_fails_closed_without_mutating_config(self):
-        self._set_project_version('protocol_version = "v9.9.9"\n')
+        self._set_project_version('project_schema_version = "v9.9.9"\n')
         toml_path = self.project / "cartopian.toml"
         before = toml_path.read_bytes()
         residuals, _actions, stderr = self._reconcile()
@@ -367,7 +373,7 @@ class TestInstallReconciliationGate(unittest.TestCase):
         (self.source_root / "cli" / "protocol_gate.py").unlink()
         residuals, actions, _stderr = self._reconcile()
         self.assertEqual(residuals, [])
-        self.assertTrue(any("protocol-version" in a for a in actions), actions)
+        self.assertTrue(any("project-schema" in a for a in actions), actions)
 
     def test_missing_registry_is_a_noop(self):
         (self.install_root / "projects.json").unlink()
@@ -391,7 +397,7 @@ class TestInstallMainGate(unittest.TestCase):
             json.dumps([{"id": "gate-proj", "path": str(self.project), "label": None}]) + "\n",
             encoding="utf-8",
         )
-        self.shipped = protocol_gate.read_shipped_protocol_version(
+        self.shipped = protocol_gate.read_shipped_project_schema_version(
             REPO_ROOT / "protocol" / "CHANGELOG.md"
         )
 
@@ -405,7 +411,7 @@ class TestInstallMainGate(unittest.TestCase):
 
     def test_stale_registered_project_is_surfaced_on_upgrade(self):
         (self.project / "cartopian.toml").write_text(
-            _project_toml('protocol_version = "v0.2.0"\n'), encoding="utf-8"
+            _project_toml('project_schema_version = "v0.2.0"\n'), encoding="utf-8"
         )
         rc, _stdout, stderr = self._run_main()
         self.assertEqual(rc, install_mod.EXIT_OK)
@@ -415,7 +421,7 @@ class TestInstallMainGate(unittest.TestCase):
 
     def test_unknown_registered_project_fails_install_closed(self):
         (self.project / "cartopian.toml").write_text(
-            _project_toml('protocol_version = "v9.9.9"\n'), encoding="utf-8"
+            _project_toml('project_schema_version = "v9.9.9"\n'), encoding="utf-8"
         )
         toml_path = self.project / "cartopian.toml"
         before = toml_path.read_bytes()

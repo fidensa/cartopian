@@ -13,8 +13,8 @@ at most ``advisory+detection`` regardless of any runtime signal (fail closed).
 
 Runtime evidence is derived from real state, never asserted:
 
-- activation comes from :func:`cli.capabilities.resolve_grants` over the
-  resolved ``[roles]`` config (an ungated project renders advisory on every
+- activation comes from the canonical resolved configuration (an ungated
+  project renders advisory on every
   host — nothing is refused anywhere, whatever is installed);
 - interception evidence for a host means that host's native refusal adapter is
   actually present and registered for *this* project, per boundary: the
@@ -41,13 +41,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cli.claude_hook import FILE_MUTATION_TOOLS, READ_TOOLS
 
-from cli.capabilities import resolve_grants
 from cli.commands.resolve_config import (
     _CliError,
-    _load_project_config,
-    _load_toml,
-    _require_project_keys,
-    _resolve_roles,
+    resolve_project_configuration,
 )
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -249,16 +245,11 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     try:
-        project_cfg = _load_project_config(project_path)
-        _require_project_keys(project_cfg, project_path / "cartopian.toml")
-        global_toml = Path.home() / ".cartopian" / "cartopian.toml"
-        global_cfg = _load_toml(global_toml, "global config") or {}
+        resolved = resolve_project_configuration(project_path)
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
-
-    roles_raw = _resolve_roles(global_cfg, project_cfg)
-    activated = resolve_grants(roles_raw).activated
+    activated = resolved["capabilities"]["activated"]
 
     hosts = []
     for host, (label, ceiling) in HOST_CEILINGS.items():

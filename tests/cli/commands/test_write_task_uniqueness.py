@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
 )
 
 # A schema-valid task body: write-task refuses one that could never pass

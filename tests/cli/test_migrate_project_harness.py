@@ -4,13 +4,12 @@ The skill itself is agent-executed prose and is not callable by this suite, so
 the test target is the *mechanized* operations it relies on: enumerating the
 applicable `CHANGELOG.md` entries with the protocol gate, applying each entry's
 config edits + marker bump through `cartopian update-config`, and — the
-load-bearing rule — advancing the `[project].protocol_version` marker for an
+load-bearing rule — advancing the `[project].project_schema_version` marker for an
 entry **only** after that entry's steps (including any delegated non-config
 step, simulated here as satisfied/unsatisfied) have completed.
 
 The `_migrate` driver below is a faithful model of the skill's Step 2–3 loop.
 """
-import json
 import os
 import re
 import subprocess
@@ -59,7 +58,11 @@ def _run_uc(proj, home, *args):
 
 
 def _marker(cfg_path):
-    return tomllib.loads(cfg_path.read_text()).get("project", {}).get("protocol_version")
+    return (
+        tomllib.loads(cfg_path.read_text())
+        .get("project", {})
+        .get("project_schema_version")
+    )
 
 
 def _applicable(start):
@@ -80,7 +83,9 @@ def _migrate(proj, home, start, delegated_satisfied):
     for v in _applicable(start):
         if not delegated_satisfied.get(v, True):
             return reached
-        proc = _run_uc(proj, home, "--set", f"project.protocol_version={v}")
+        proc = _run_uc(
+            proj, home, "--set", f"project.project_schema_version={v}"
+        )
         assert proc.returncode == 0, proc.stderr
         reached = v
     return reached
@@ -100,12 +105,18 @@ class _Base(unittest.TestCase):
         self._tmp.cleanup()
 
     def _write_marker(self, version):
-        marker = "" if version is None else f'protocol_version = "{version}"\n'
+        marker = (
+            ""
+            if version is None
+            else f'project_schema_version = "{version}"\n'
+        )
         self.cfg.write_text(f'[project]\nname = "D"\nid = "d"\n{marker}', encoding="utf-8")
 
     def _classify(self):
         declared = _marker(self.cfg)
-        return protocol_gate.classify_protocol_version(declared, SHIPPED)["status"]
+        return protocol_gate.classify_project_schema_version(
+            declared, SHIPPED
+        )["status"]
 
 
 class TestMarkerProgression(_Base):
@@ -164,10 +175,15 @@ class TestConfigEditDuringMigration(_Base):
         self._write_marker("v0.3.0")
         proc = _run_uc(self.proj, self.home, "--set", "automation.initiation=auto")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        _run_uc(self.proj, self.home, "--set", "project.protocol_version=v0.4.0")
+        _run_uc(
+            self.proj,
+            self.home,
+            "--set",
+            "project.project_schema_version=v0.4.0",
+        )
         cfg = tomllib.loads(self.cfg.read_text())
         self.assertEqual(cfg["automation"]["initiation"], "auto")
-        self.assertEqual(cfg["project"]["protocol_version"], "v0.4.0")
+        self.assertEqual(cfg["project"]["project_schema_version"], "v0.4.0")
 
 
 if __name__ == "__main__":

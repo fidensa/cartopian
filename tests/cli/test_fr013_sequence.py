@@ -1,14 +1,14 @@
 """Protocol-version sequence test.
 
 Asserts the scaffold-project → generate-config sequence produces a
-project ``cartopian.toml`` whose ``[project] protocol_version`` matches
+project ``cartopian.toml`` whose ``[project] project_schema_version`` matches
 the current protocol version, read dynamically rather than hard-coded.
 
 The current version is sourced from ``protocol/CHANGELOG.md`` — the
 single repo-local source of truth that the implementation reads in
 ``cli/commands/generate_config.py``. Neither the workspace
 ``cartopian.toml`` nor ``templates/global.cartopian.toml`` carries a
-``[project] protocol_version`` field, so they cannot drive this
+``[project] project_schema_version`` field, so they cannot drive this
 assertion; CHANGELOG.md is the authoritative dynamic anchor.
 """
 import json
@@ -27,7 +27,7 @@ ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 CHANGELOG = REPO_ROOT / "protocol" / "CHANGELOG.md"
 
 
-def _current_protocol_version() -> str:
+def _current_project_schema_version() -> str:
     text = CHANGELOG.read_text(encoding="utf-8")
     _, _, body = text.partition("\n## Entries\n")
     match = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
@@ -50,8 +50,8 @@ def _run(*cli_args, home):
 
 
 class TestScaffoldThenGenerateConfigCarriesProtocolVersion(unittest.TestCase):
-    def test_protocol_version_lands_in_generated_cartopian_toml(self):
-        expected_version = _current_protocol_version()
+    def test_project_schema_version_lands_in_generated_cartopian_toml(self):
+        expected_version = _current_project_schema_version()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = tmp_path / "proj"
@@ -73,7 +73,7 @@ class TestScaffoldThenGenerateConfigCarriesProtocolVersion(unittest.TestCase):
             generate_record = json.loads(generate.stdout.strip())
             self.assertEqual(generate_record["action"], "generate-config")
             self.assertEqual(
-                generate_record["details"]["protocol_version"],
+                generate_record["details"]["project_schema_version"],
                 expected_version,
             )
 
@@ -82,7 +82,7 @@ class TestScaffoldThenGenerateConfigCarriesProtocolVersion(unittest.TestCase):
             with config_path.open("rb") as fh:
                 data = tomllib.load(fh)
             self.assertEqual(
-                data["project"]["protocol_version"],
+                data["project"]["project_schema_version"],
                 expected_version,
             )
             self.assertEqual(data["project"]["name"], "Demo")

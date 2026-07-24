@@ -7,9 +7,10 @@ until the deadline elapses.
 
 The wait is terminal by default: called without ``--max-block``, it blocks
 until the report lands (or guard-fails), bounded by the resolved handoff
-timeout as the absolute ceiling — ``[handoffs.<role>] timeout`` when
-``--role`` is given and resolvable from the report's project, the protocol
-default (``60m``) otherwise. ``--max-block`` is an explicit opt-in bounding
+timeout as the absolute ceiling — ``roles.<role>.launch.timeout`` when
+``--role`` is given and resolves from the report's project, the protocol
+default (``60m``) when no project is discoverable or no role is given.
+Invalid discovered configuration fails closed. ``--max-block`` is an explicit opt-in bounding
 one observation slice for hosts that cannot sustain a blocking call for the
 full handoff timeout.
 
@@ -29,6 +30,7 @@ is judged via the ``report-action`` aggregator, not the deprecated public
 """
 import argparse
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -59,8 +61,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--role",
         default=None,
         help=(
-            "Optional role whose configured [handoffs.<role>] timeout bounds "
-            "the wait (protocol default 60m when omitted or unresolvable)"
+            "Optional role whose configured launch timeout bounds "
+            "the wait (protocol default 60m when omitted or outside a project)"
         ),
     )
     subparser.add_argument(
@@ -123,9 +125,9 @@ def _resolve_ceiling_seconds(report_path: Path, role: Optional[str]) -> int:
     """Resolve the absolute timeout ceiling for this wait in whole seconds.
 
     With a ``--role`` and a discoverable project root, the ceiling is the
-    resolved ``[handoffs.<role>] timeout``; otherwise the protocol default.
-    wait-report is an observer, so resolution gaps degrade to the default
-    rather than failing.
+    resolved role launch timeout; otherwise the protocol default. A
+    discoverable project's invalid configuration propagates to the command
+    boundary so the observer fails closed.
     """
     if role:
         project_root = handoff_packet._find_project_root(report_path)
@@ -162,7 +164,11 @@ def handler(args: argparse.Namespace) -> int:
     # --max-block the wait is terminal: it blocks to that ceiling and the
     # deadline classifies as `timeout`. An explicit --max-block bounds one
     # nonterminal observation slice unless the ceiling is the limiting factor.
-    timeout_seconds = _resolve_ceiling_seconds(report_path, args.role)
+    try:
+        timeout_seconds = _resolve_ceiling_seconds(report_path, args.role)
+    except _CliError as err:
+        sys.stderr.write(f"[{err.prefix}] {err.message}\n")
+        return err.exit_code
     if max_block_seconds is None:
         effective_seconds = timeout_seconds
         deadline_still_running = False

@@ -14,7 +14,7 @@ ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 CHANGELOG = REPO_ROOT / "protocol" / "CHANGELOG.md"
 
 
-def _current_protocol_version() -> str:
+def _current_project_schema_version() -> str:
     """Read the topmost `### vX.Y.Z` entry header beneath `## Entries`."""
     text = CHANGELOG.read_text(encoding="utf-8")
     head, _, body = text.partition("\n## Entries\n")
@@ -51,22 +51,21 @@ class TestGenerateConfigHelp(unittest.TestCase):
         self.assertIn("--name", proc.stdout)
         self.assertIn("--id", proc.stdout)
         self.assertIn("--role", proc.stdout)
-        self.assertIn("--handoff", proc.stdout)
+        self.assertIn("--role-launch-target", proc.stdout)
         self.assertIn("--work-root", proc.stdout)
         self.assertIn("--git-versioning", proc.stdout)
         self.assertIn("--git-key", proc.stdout)
         self.assertIn("--review-planning", proc.stdout)
         self.assertIn("--review-task-closure", proc.stdout)
-        self.assertIn("--handoff-auto-start-tasks", proc.stdout)
-        self.assertIn("--handoff-auto-start-reviews", proc.stdout)
-        self.assertNotIn("--handoff-planning-reviews", proc.stdout)
+        self.assertIn("--role-auto-launch", proc.stdout)
+        self.assertNotIn("--handoff", proc.stdout)
         # No `--kind` flag
         self.assertNotIn("--kind", proc.stdout)
 
 
 class TestGenerateConfigHappyPath(unittest.TestCase):
     def test_minimal_round_trip_to_toml(self):
-        version = _current_protocol_version()
+        version = _current_project_schema_version()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
@@ -77,7 +76,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--id", "cartopian-manager",
                 "--role", "pm=Plans...",
                 "--role", "coder=Writes",
-                "--handoff", "coder=claude-vscode",
+                "--role-launch-target", "coder=claude-vscode",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 0, msg=f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
@@ -88,15 +87,20 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             details = record["details"]
             self.assertEqual(details["project_path"], str(proj))
             self.assertEqual(details["config_path"], str(proj / "cartopian.toml"))
-            self.assertEqual(details["protocol_version"], version)
+            self.assertEqual(details["project_schema_version"], version)
             # File round-trips through tomllib
             with (proj / "cartopian.toml").open("rb") as fh:
                 data = tomllib.load(fh)
             self.assertEqual(data["project"]["name"], "Cartopian Manager")
             self.assertEqual(data["project"]["id"], "cartopian-manager")
-            self.assertEqual(data["project"]["protocol_version"], version)
-            self.assertEqual(data["roles"], {"pm": "Plans...", "coder": "Writes"})
-            self.assertEqual(data["handoffs"], {"coder": {"agent": "claude-vscode"}})
+            self.assertEqual(data["project"]["project_schema_version"], version)
+            self.assertEqual(data["roles"]["pm"], {"description": "Plans..."})
+            self.assertEqual(data["roles"]["coder"]["description"], "Writes")
+            self.assertEqual(
+                data["roles"]["coder"]["launch"],
+                {"target": "claude-vscode"},
+            )
+            self.assertNotIn("handoffs", data)
             # No protocol defaults written
             self.assertNotIn("automation", data)
             self.assertNotIn("defaults", data)
@@ -104,7 +108,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertNotIn("work_roots", data.get("project", {}))
 
     def test_full_flag_set_round_trip(self):
-        version = _current_protocol_version()
+        version = _current_project_schema_version()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
@@ -115,12 +119,11 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--id", "demo",
                 "--role", "pm=Plans things",
                 "--role", "coder=Writes code",
-                "--handoff", "coder=cartopian-claude",
-                "--handoff-model", "coder=claude-opus-4-8",
-                "--handoff-effort", "coder=high",
-                "--handoff-auto-start-tasks", "coder=false",
-                "--handoff-auto-start-reviews", "coder=true",
-                "--handoff-timeout", "coder=30m",
+                "--role-launch-target", "coder=cartopian-claude",
+                "--role-launch-model", "coder=claude-opus-4-8",
+                "--role-launch-effort", "coder=high",
+                "--role-auto-launch", "coder=task_run",
+                "--role-launch-timeout", "coder=30m",
                 "--automation-initiation", "auto",
                 "--automation-confirmation", "until-blocked",
                 "--automation-max-handoffs", "5",
@@ -129,7 +132,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--git-versioning", "true",
                 "--git-key", "pm_owns_product_branches=true",
                 "--git-key", "default_branch_pattern=task/{task_id}-{slug}",
-                "--git-key", "max_retries=3",
+                "--git-key", "default_merge_strategy=merge",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -137,21 +140,21 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 data = tomllib.load(fh)
             self.assertEqual(data["project"]["name"], "Demo")
             self.assertEqual(data["project"]["id"], "demo")
-            self.assertEqual(data["project"]["protocol_version"], version)
+            self.assertEqual(data["project"]["project_schema_version"], version)
             self.assertEqual(data["project"]["work_roots"], ["build", "docs"])
-            self.assertEqual(data["roles"], {"pm": "Plans things", "coder": "Writes code"})
-            self.assertNotIn("pm", data["handoffs"])
+            self.assertEqual(data["roles"]["pm"], {"description": "Plans things"})
+            self.assertEqual(data["roles"]["coder"]["description"], "Writes code")
             self.assertEqual(
-                data["handoffs"]["coder"],
+                data["roles"]["coder"]["launch"],
                 {
-                    "agent": "cartopian-claude",
+                    "target": "cartopian-claude",
                     "model": "claude-opus-4-8",
                     "effort": "high",
-                    "auto_start_tasks": False,
-                    "auto_start_reviews": True,
                     "timeout": "30m",
                 },
             )
+            self.assertEqual(data["roles"]["coder"]["auto_launch"], ["task_run"])
+            self.assertNotIn("handoffs", data)
             self.assertEqual(
                 data["automation"],
                 {
@@ -164,8 +167,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             # primitive type fidelity in [git]
             self.assertIs(data["git"]["pm_owns_product_branches"], True)
             self.assertEqual(data["git"]["default_branch_pattern"], "task/{task_id}-{slug}")
-            self.assertEqual(data["git"]["max_retries"], 3)
-            self.assertIsInstance(data["git"]["max_retries"], int)
+            self.assertEqual(data["git"]["default_merge_strategy"], "merge")
 
     def test_omitted_optional_flags_emit_no_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,7 +184,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             with (proj / "cartopian.toml").open("rb") as fh:
                 data = tomllib.load(fh)
             self.assertEqual(set(data.keys()), {"project"})
-            self.assertEqual(set(data["project"].keys()), {"name", "id", "protocol_version"})
+            self.assertEqual(set(data["project"].keys()), {"name", "id", "project_schema_version"})
 
     def test_review_policy_accepts_arbitrary_role_name(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,8 +199,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--review-planning", "required",
                 "--review-planning-role", "quality-checker",
                 "--review-task-closure", "off",
-                "--handoff", "quality-checker=cartopian-claude",
-                "--handoff-auto-start-reviews", "quality-checker=true",
+                "--role-launch-target", "quality-checker=cartopian-claude",
+                "--role-auto-launch", "quality-checker=planning_review",
                 home=root,
             )
             self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -212,7 +214,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             },
         )
         self.assertTrue(
-            data["handoffs"]["quality-checker"]["auto_start_reviews"]
+            data["roles"]["quality-checker"]["auto_launch"]
         )
 
     def test_required_review_role_must_be_declared_or_inherited(self):
@@ -227,7 +229,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--review-task-role", "reviewer",
                 home=root,
             )
-        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.returncode, 2)
         self.assertIn("undeclared role", result.stderr)
 
     def test_confirmation_record_key_order(self):
@@ -244,13 +246,13 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             # Top-level keys in locked order: action, details
             top_keys = [m for m in re.findall(r'"([^"]+)":', line) if m in ("action", "details")]
             self.assertEqual(top_keys, ["action", "details"])
-            # Details keys in locked order: project_path, config_path, protocol_version
+            # Details keys in locked order: project_path, config_path, project_schema_version
             details_segment = line.split('"details":', 1)[1]
             detail_keys = [
                 m for m in re.findall(r'"([^"]+)":', details_segment)
-                if m in ("project_path", "config_path", "protocol_version")
+                if m in ("project_path", "config_path", "project_schema_version")
             ]
-            self.assertEqual(detail_keys, ["project_path", "config_path", "protocol_version"])
+            self.assertEqual(detail_keys, ["project_path", "config_path", "project_schema_version"])
 
 
 class TestGenerateConfigGuards(unittest.TestCase):
@@ -279,7 +281,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--handoff", "foo=bar",
+                "--role-launch-target", "foo=bar",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -301,12 +303,12 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "pm=Plans",
-                "--handoff", "pm=cartopian-claude",
+                "--role-launch-target", "pm=cartopian-claude",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
             self.assertEqual(proc.stdout, "")
-            self.assertIn("handoffs-pm-forbidden", proc.stderr)
+            self.assertIn("pm-launch-forbidden", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_pm_handoff_timeout_rejected(self):
@@ -319,11 +321,11 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "pm=Plans",
-                "--handoff-timeout", "pm=60m",
+                "--role-launch-timeout", "pm=60m",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
-            self.assertIn("handoffs-pm-forbidden", proc.stderr)
+            self.assertIn("pm-launch-forbidden", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_orphan_handoff_auto_start_rejected(self):
@@ -334,11 +336,11 @@ class TestGenerateConfigGuards(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--handoff-auto-start-tasks", "foo=true",
+                "--role-auto-launch", "foo=task_run",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
-            self.assertIn("orphan-handoff: foo", proc.stderr)
+            self.assertIn("declare with --role first", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_empty_handoff_effort_rejected(self):
@@ -350,8 +352,8 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "coder=Writes code",
-                "--handoff", "coder=cartopian-claude",
-                "--handoff-effort", "coder=",
+                "--role-launch-target", "coder=cartopian-claude",
+                "--role-launch-effort", "coder=",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -367,9 +369,9 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "coder=Writes code",
-                "--handoff", "coder=cartopian-claude",
-                "--handoff-effort", "coder=high",
-                "--handoff-effort", "coder=low",
+                "--role-launch-target", "coder=cartopian-claude",
+                "--role-launch-effort", "coder=high",
+                "--role-launch-effort", "coder=low",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -384,7 +386,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--handoff-effort", "foo=high",
+                "--role-launch-effort", "foo=high",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -401,11 +403,11 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "pm=Plans",
-                "--handoff-effort", "pm=high",
+                "--role-launch-effort", "pm=high",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
-            self.assertIn("handoffs-pm-forbidden", proc.stderr)
+            self.assertIn("pm-launch-forbidden", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
     def test_git_key_without_git_versioning_rejected(self):
@@ -688,11 +690,17 @@ class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             with (proj / "cartopian.toml").open("rb") as fh:
                 data = tomllib.load(fh)
-            self.assertEqual(data["roles"], {"pm": "A", "coder": "B"})
+            self.assertEqual(
+                data["roles"],
+                {
+                    "pm": {"description": "A"},
+                    "coder": {"description": "B"},
+                },
+            )
 
 
 class TestGenerateConfigGitKeyPrimitives(unittest.TestCase):
-    def test_bool_int_string_fidelity(self):
+    def test_closed_git_key_types(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
@@ -701,20 +709,19 @@ class TestGenerateConfigGitKeyPrimitives(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--git-versioning", "true",
-                "--git-key", "flag=true",
-                "--git-key", "n=42",
-                "--git-key", 'quoted="hello world"',
-                "--git-key", "bare=plainstring",
+                "--git-key", "pm_owns_product_branches=true",
+                "--git-key", 'default_branch_pattern="release/{task_id}"',
+                "--git-key", "default_merge_strategy=rebase",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             with (proj / "cartopian.toml").open("rb") as fh:
                 data = tomllib.load(fh)
-            self.assertIs(data["git"]["flag"], True)
-            self.assertEqual(data["git"]["n"], 42)
-            self.assertIsInstance(data["git"]["n"], int)
-            self.assertEqual(data["git"]["quoted"], "hello world")
-            self.assertEqual(data["git"]["bare"], "plainstring")
+            self.assertIs(data["git"]["pm_owns_product_branches"], True)
+            self.assertEqual(
+                data["git"]["default_branch_pattern"], "release/{task_id}"
+            )
+            self.assertEqual(data["git"]["default_merge_strategy"], "rebase")
 
 
 if __name__ == "__main__":

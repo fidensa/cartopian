@@ -55,7 +55,7 @@ def _seed_project(root: Path, project_id: str = "demo", name: str = "Demo Projec
         parts.append(f'id = "{project_id}"')
     if name is not None:
         parts.append(f'name = "{name}"')
-    parts.append('protocol_version = "v0.2.0"')
+    parts.append('project_schema_version = "v0.2.0"')
     toml.write_text("\n".join(parts) + "\n", encoding="utf-8")
     return proj
 
@@ -184,7 +184,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "noid",
-                '[project]\nname = "No Id"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nname = "No Id"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), home=home)
         self.assertEqual(proc.returncode, 1)
@@ -200,7 +200,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "emptyid",
-                '[project]\nid = ""\nname = "X"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = ""\nname = "X"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), home=home)
         self.assertEqual(proc.returncode, 1)
@@ -215,7 +215,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "wsid",
-                '[project]\nid = "bad id"\nname = "X"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = "bad id"\nname = "X"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), home=home)
         self.assertEqual(proc.returncode, 1)
@@ -230,7 +230,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "noname",
-                '[project]\nid = "demo"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = "demo"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), home=home)
         self.assertEqual(proc.returncode, 1)
@@ -245,7 +245,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "noname",
-                '[project]\nid = "demo"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = "demo"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), "--label", "Override", home=home)
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -262,7 +262,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             proj = _seed_project_raw(
                 tmp_path,
                 "badid",
-                '[project]\nid = "Bad_ID"\nname = "X"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = "Bad_ID"\nname = "X"\nproject_schema_version = "v0.2.0"\n',
             )
             proc = _run(str(proj), home=home)
         self.assertEqual(proc.returncode, 1)
@@ -304,7 +304,7 @@ class TestRegisterProjectGuards(unittest.TestCase):
             r1 = _run(str(proj), home=home)
             self.assertEqual(r1.returncode, 0, msg=r1.stderr)
             (proj / "cartopian.toml").write_text(
-                '[project]\nid = "second"\nname = "Second"\nprotocol_version = "v0.2.0"\n',
+                '[project]\nid = "second"\nname = "Second"\nproject_schema_version = "v0.2.0"\n',
                 encoding="utf-8",
             )
             r2 = _run(str(proj), home=home)

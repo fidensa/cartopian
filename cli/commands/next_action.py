@@ -2,32 +2,29 @@
 
 Emits a single NDJSON record with all orientation data a PM needs to start or
 resume a session: active task, next open task, phase, PM role, resolved
-``[automation]``, ``[handoffs]``, and ``[reviews]`` policy, blockers, and any
+canonical roles, ``[automation]``, and ``[reviews]`` policy, blockers, and any
 STATE.md vs. filesystem disagreement.
 """
 import argparse
+import copy
 import re
-import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli.capabilities import role_description
 from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
-    _resolve_automation,
-    _resolve_handoffs,
-    _resolve_reviews,
-    _resolve_roles,
+    resolve_project_configuration,
 )
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 from cli.protocol_gate import (
     GATE_BLOCKED,
+    GATE_CURRENT,
     GATE_MIGRATE,
-    classify_protocol_version,
-    read_shipped_protocol_version,
+    classify_project_schema_version,
+    read_shipped_project_schema_version,
 )
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
@@ -64,16 +61,12 @@ def _pm_settings_from_resolved(roles: Dict[str, Any]) -> tuple[str, bool]:
     # default placeholder. `pm_role_declared=false` therefore means the key is
     # genuinely absent from the resolved roster.
     pm_role_declared = "pm" in roles
-    pm_role = role_description(roles["pm"]) if pm_role_declared else _DEFAULT_PM_ROLE
+    pm_role = (
+        roles["pm"].get("description", _DEFAULT_PM_ROLE)
+        if pm_role_declared
+        else _DEFAULT_PM_ROLE
+    )
     return pm_role, pm_role_declared
-
-
-def _resolve_pm_settings(global_cfg: Dict[str, Any], project_cfg: Dict[str, Any]) -> tuple[str, bool]:
-    # Roles come from resolve-config's merge chain (protocol defaults included)
-    # so the resume gate and `resolve-config` cannot diverge on whether the
-    # default roster counts as declared.
-    roles = _resolve_roles(global_cfg, project_cfg)
-    return _pm_settings_from_resolved(roles)
 
 
 def _first_heading(content: str) -> str:
@@ -476,7 +469,7 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_ENV
 
     try:
-        project_id, _project_name, declared_protocol_version = _require_startup_project_keys(cfg, toml_path)
+        project_id, _project_name, declared_schema_version = _require_startup_project_keys(cfg, toml_path)
     except _CliError as err:
         if err.prefix == "guard":
             stderr_guard(err.message)
@@ -484,34 +477,39 @@ def handler(args: argparse.Namespace) -> int:
             stderr_error(err.message)
         return err.exit_code
 
-    # Config-schema migration gate: a stale [project].protocol_version must
+    # Config-schema migration gate: a stale project_schema_version must
     # not silently reach session orientation. Older-but-migratable configs
     # surface a migration blocker below; unknown/newer configs fail closed
     # here with the named residual. The gate never edits cartopian.toml.
     try:
-        shipped_protocol_version = read_shipped_protocol_version()
+        shipped_schema_version = read_shipped_project_schema_version()
     except (OSError, RuntimeError) as exc:
         stderr_error(str(exc))
         return EXIT_ENV
-    protocol_gate = classify_protocol_version(declared_protocol_version, shipped_protocol_version)
-    if protocol_gate["status"] == GATE_BLOCKED:
-        stderr_guard(protocol_gate["detail"])
+    schema_gate = classify_project_schema_version(
+        declared_schema_version, shipped_schema_version
+    )
+    if schema_gate["status"] == GATE_BLOCKED:
+        stderr_guard(schema_gate["detail"])
         return EXIT_FAIL
 
     try:
-        global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml") or {}
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        stderr_error(f"global config unreadable: {Path.home() / '.cartopian' / 'cartopian.toml'} — {exc}")
-        return EXIT_ENV
-    roles = _resolve_roles(global_cfg, cfg)
-    pm_role, pm_role_declared = _pm_settings_from_resolved(roles)
-    automation = _resolve_automation(global_cfg, cfg)
-    handoffs = _resolve_handoffs(global_cfg, cfg)
-    try:
-        reviews = _resolve_reviews(global_cfg, cfg, roles)
+        resolution_cfg = cfg
+        if schema_gate["status"] != GATE_CURRENT:
+            resolution_cfg = copy.deepcopy(cfg)
+            resolution_cfg.setdefault("project", {})[
+                "project_schema_version"
+            ] = shipped_schema_version
+        resolved = resolve_project_configuration(
+            project_path, project_cfg_override=resolution_cfg
+        )
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
+    roles = resolved["roles"]
+    pm_role, pm_role_declared = _pm_settings_from_resolved(roles)
+    automation = resolved["automation"]
+    reviews = resolved["reviews"]
 
     tasks_dir = project_path / "tasks"
     phase_id = _find_phase_id(project_path)
@@ -536,8 +534,8 @@ def handler(args: argparse.Namespace) -> int:
     )
 
     blockers = _detect_blockers(project_path, phase_id, tasks_dir)
-    if protocol_gate["status"] == GATE_MIGRATE:
-        blockers.insert(0, protocol_gate["detail"])
+    if schema_gate["status"] == GATE_MIGRATE:
+        blockers.insert(0, schema_gate["detail"])
     # Open tasks that are all dependency-blocked are a deadlock, not progress:
     # next_open_task skips not-ready tasks, so without this the queue would
     # look empty while work still exists.
@@ -557,7 +555,7 @@ def handler(args: argparse.Namespace) -> int:
         "pm_role": pm_role,
         "pm_role_declared": pm_role_declared,
         "automation": automation,
-        "handoffs": handoffs,
+        "roles": roles,
         "reviews": reviews,
         "blockers": blockers,
         "state_filesystem_disagreement": _detect_disagreement(project_path),

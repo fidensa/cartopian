@@ -34,7 +34,7 @@ BARE_PROJECT_TOML = (
     '[project]\n'
     'id = "demo"\n'
     'name = "Demo"\n'
-    'protocol_version = "v0.2.0"\n'
+    'project_schema_version = "v0.2.0"\n'
 )
 
 

@@ -17,7 +17,7 @@ BASE_CONFIG = """\
 [project]
 name = "Demo"
 id = "demo"
-protocol_version = "v0.6.0"
+project_schema_version = "v0.6.0"
 
 [roles.pm]
 description = "Plans phases."
@@ -81,7 +81,8 @@ class TestHelp(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         for flag in ("--set", "--unset", "--set-role", "--set-role-grants",
-                     "--set-handoff", "--remove-role", "--remove-handoff",
+                     "--set-role-launch", "--set-role-auto-launch",
+                     "--remove-role", "--remove-role-launch",
                      "--local", "--set-work-root"):
             self.assertIn(flag, proc.stdout)
 
@@ -145,11 +146,11 @@ class TestScalarEdits(_Base):
         self.assertEqual(proc.returncode, 2)
 
     def test_version_validation(self):
-        proc = self.run_uc(str(self.proj), "--set", "project.protocol_version=1.0")
+        proc = self.run_uc(str(self.proj), "--set", "project.project_schema_version=1.0")
         self.assertEqual(proc.returncode, 2)
-        good = self.run_uc(str(self.proj), "--set", "project.protocol_version=v0.9.0")
+        good = self.run_uc(str(self.proj), "--set", "project.project_schema_version=v0.9.0")
         self.assertEqual(good.returncode, 0, msg=good.stderr)
-        self.assertEqual(tomllib.loads(self.cfg.read_text())["project"]["protocol_version"], "v0.9.0")
+        self.assertEqual(tomllib.loads(self.cfg.read_text())["project"]["project_schema_version"], "v0.9.0")
 
     def test_work_roots_list(self):
         proc = self.run_uc(str(self.proj), "--set", "project.work_roots=product,design")
@@ -189,7 +190,7 @@ class TestRemovals(_Base):
         self.assertNotIn("coder", tomllib.loads(self.cfg.read_text()).get("roles", {}))
 
 
-class TestRoleAndHandoff(_Base):
+class TestRoleAndLaunch(_Base):
     def test_add_role_then_grants_converts_preserving_description(self):
         # Repair a fresh role: string form then grants -> table form, desc kept.
         proc = self.run_uc(
@@ -215,26 +216,28 @@ class TestRoleAndHandoff(_Base):
         self.assertEqual(proc.returncode, 2)
         self.assertIn("unknown capability or preset", proc.stderr)
 
-    def test_valid_handoff_for_declared_role(self):
+    def test_valid_launch_for_declared_role(self):
         proc = self.run_uc(
             str(self.proj),
-            "--set-handoff", "coder.agent=cartopian-claude",
-            "--set-handoff", "coder.auto_start_tasks=true",
+            "--set-role-launch", "coder.target=cartopian-claude",
+            "--set-role-auto-launch", "coder=task_run",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
-        self.assertEqual(cfg["handoffs"]["coder"]["agent"], "cartopian-claude")
-        self.assertIs(cfg["handoffs"]["coder"]["auto_start_tasks"], True)
+        self.assertEqual(
+            cfg["roles"]["coder"]["launch"]["target"], "cartopian-claude"
+        )
+        self.assertEqual(cfg["roles"]["coder"]["auto_launch"], ["task_run"])
 
-    def test_set_handoff_effort_for_declared_role(self):
+    def test_set_launch_effort_for_declared_role(self):
         proc = self.run_uc(
             str(self.proj),
-            "--set-handoff", "coder.agent=cartopian-claude",
-            "--set-handoff", "coder.effort=high",
+            "--set-role-launch", "coder.target=cartopian-claude",
+            "--set-role-launch", "coder.effort=high",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
-        self.assertEqual(cfg["handoffs"]["coder"]["effort"], "high")
+        self.assertEqual(cfg["roles"]["coder"]["launch"]["effort"], "high")
 
     def test_set_review_policy_and_arbitrary_assigned_role(self):
         proc = self.run_uc(
@@ -244,14 +247,17 @@ class TestRoleAndHandoff(_Base):
             "--set", "reviews.planning=required",
             "--set", "reviews.planning_role=reviewer",
             "--set", "reviews.task_closure=off",
-            "--set-handoff", "reviewer.auto_start_reviews=true",
+            "--set-role-launch", "reviewer.target=cartopian-claude",
+            "--set-role-auto-launch", "reviewer=planning_review",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
         self.assertEqual(cfg["reviews"]["planning"], "required")
         self.assertEqual(cfg["reviews"]["planning_role"], "reviewer")
         self.assertEqual(cfg["reviews"]["task_closure"], "off")
-        self.assertTrue(cfg["handoffs"]["reviewer"]["auto_start_reviews"])
+        self.assertEqual(
+            cfg["roles"]["reviewer"]["auto_launch"], ["planning_review"]
+        )
 
     def test_cannot_remove_role_assigned_to_required_review(self):
         first = self.run_uc(
@@ -268,15 +274,18 @@ class TestRoleAndHandoff(_Base):
         self.assertIn("undeclared role", result.stderr)
         self.assertEqual(self.cfg.read_bytes(), before)
 
-    def test_orphan_handoff_rejected_effective_layer(self):
+    def test_orphan_launch_rejected_effective_layer(self):
         before = self.cfg.read_bytes()
-        proc = self.run_uc(str(self.proj), "--set-handoff", "ghost.agent=cartopian-claude")
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-role-launch", "ghost.target=cartopian-claude",
+        )
         self.assertEqual(proc.returncode, 1)
-        self.assertIn("orphan-handoff", proc.stderr)
+        self.assertIn("missing-field", proc.stderr)
         self.assertEqual(self.cfg.read_bytes(), before)
 
-    def test_handoff_pm_forbidden(self):
-        proc = self.run_uc(str(self.proj), "--set-handoff", "pm.agent=x")
+    def test_launch_pm_forbidden(self):
+        proc = self.run_uc(str(self.proj), "--set-role-launch", "pm.target=x")
         self.assertEqual(proc.returncode, 2)
         self.assertIn("pm", proc.stderr)
 
@@ -314,6 +323,10 @@ class TestUnsupportedToml(_Base):
 
 class TestLocalTarget(_Base):
     def test_local_creates_with_mapping(self):
+        declare = self.run_uc(
+            str(self.proj), "--set", "project.work_roots=product"
+        )
+        self.assertEqual(declare.returncode, 0, msg=declare.stderr)
         proc = self.run_uc(
             str(self.proj), "--local", "--set-work-root", "product=/abs/product"
         )

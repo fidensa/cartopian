@@ -86,9 +86,9 @@ class MigrationEntryTest(unittest.TestCase):
         self.assertIn("project metadata", entry)
 
     def test_shipped_version_gate_follows_topmost_entry(self) -> None:
-        from cli.protocol_gate import read_shipped_protocol_version
+        from cli.protocol_gate import read_shipped_project_schema_version
 
-        self.assertEqual(read_shipped_protocol_version(), "v0.6.0")
+        self.assertEqual(read_shipped_project_schema_version(), "v0.6.0")
 
 
 class StandardsMetadataWordingTest(unittest.TestCase):

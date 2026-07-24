@@ -21,17 +21,17 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
-    "[roles]\n"
-    'coder = "Implements tasks per spec."\n'
+    "[roles.coder]\n"
+    'description = "Implements tasks per spec."\n'
+    'auto_launch = ["task_run"]\n'
     "\n"
-    "[handoffs.coder]\n"
-    'agent = "cartopian-claude"\n'
+    "[roles.coder.launch]\n"
+    'target = "cartopian-claude"\n'
     'model = "claude-opus-4-8"\n'
     'effort = "high"\n'
-    "auto_start_tasks = true\n"
     'timeout = "30m"\n'
     "\n"
     "[reviews]\n"
@@ -127,12 +127,11 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 "task_path",
                 "role",
                 "role_description",
-                "handoff_target",
-                "model",
-                "effort",
-                "auto_start_tasks",
-                "auto_start_reviews",
-                "timeout",
+                "effective_grants",
+                "assigned_work_types",
+                "launch",
+                "auto_launch",
+                "attribution",
                 "work_roots",
                 "expected_report_path",
                 "git_versioning",
@@ -146,13 +145,11 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["task_title"], "TASK-01-002: Example")
             self.assertEqual(rec["role"], "coder")
             self.assertEqual(rec["role_description"], "Implements tasks per spec.")
-            self.assertEqual(rec["handoff_target"], "cartopian-claude")
-            self.assertEqual(rec["model"], "claude-opus-4-8")
-            self.assertEqual(rec["effort"], "high")
-            self.assertTrue(rec["auto_start_tasks"])
-            self.assertFalse(rec["auto_start_reviews"])
-            self.assertNotIn("auto_start", rec)
-            self.assertEqual(rec["timeout"], "30m")
+            self.assertEqual(rec["launch"]["target"], "cartopian-claude")
+            self.assertEqual(rec["launch"]["model"], "claude-opus-4-8")
+            self.assertEqual(rec["launch"]["effort"], "high")
+            self.assertEqual(rec["auto_launch"], ["task_run"])
+            self.assertEqual(rec["launch"]["timeout"], "30m")
             self.assertEqual(
                 rec["work_roots"],
                 [{"name": "tool-repo", "absolute_path": str(work_root)}],
@@ -161,7 +158,14 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertFalse(rec["git_versioning"])
             self.assertIsNone(rec["git_policy"])
             self.assertEqual(
-                rec["automation_policy"],
+                {
+                    key: rec["automation_policy"][key]
+                    for key in (
+                        "initiation",
+                        "confirmation",
+                        "max_handoffs_per_run",
+                    )
+                },
                 {
                     "initiation": "operator",
                     "confirmation": "each-handoff",
@@ -182,10 +186,12 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'protocol_version = "v0.6.0"\n'
+        'project_schema_version = "v0.6.0"\n'
         "\n"
-        "[handoffs.coder]\n"
-        'agent = "cartopian-claude"\n'
+        "[roles.coder]\n"
+        'description = "Implements tasks."\n'
+        "\n[roles.coder.launch]\n"
+        'target = "cartopian-claude"\n'
     )
 
     def test_emits_null_for_unset_optional_fields(self) -> None:
@@ -207,27 +213,30 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             # Nullable fields must be present and explicitly null,
             # not omitted from the record.
             raw = stdout.strip()
-            self.assertIn('"role_description":null', raw)
             self.assertIn('"model":null', raw)
             self.assertIn('"effort":null', raw)
-            self.assertIn('"auto_start_tasks":null', raw)
-            self.assertIn('"auto_start_reviews":null', raw)
             self.assertIn('"timeout":null', raw)
             self.assertIn('"git_policy":null', raw)
 
-            self.assertIsNone(rec["role_description"])
-            self.assertEqual(rec["handoff_target"], "cartopian-claude")
-            self.assertIsNone(rec["model"])
-            self.assertIsNone(rec["effort"])
-            self.assertIsNone(rec["auto_start_tasks"])
-            self.assertIsNone(rec["auto_start_reviews"])
-            self.assertIsNone(rec["timeout"])
+            self.assertEqual(rec["role_description"], "Implements tasks.")
+            self.assertEqual(rec["launch"]["target"], "cartopian-claude")
+            self.assertIsNone(rec["launch"]["model"])
+            self.assertIsNone(rec["launch"]["effort"])
+            self.assertEqual(rec["auto_launch"], [])
+            self.assertIsNone(rec["launch"]["timeout"])
             self.assertEqual(rec["work_roots"], [])
             self.assertFalse(rec["git_versioning"])
             self.assertIsNone(rec["git_policy"])
             # Automation policy is always populated from protocol defaults.
             self.assertEqual(
-                rec["automation_policy"],
+                {
+                    key: rec["automation_policy"][key]
+                    for key in (
+                        "initiation",
+                        "confirmation",
+                        "max_handoffs_per_run",
+                    )
+                },
                 {
                     "initiation": "operator",
                     "confirmation": "each-handoff",
@@ -302,10 +311,10 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'protocol_version = "v0.6.0"\n'
+        'project_schema_version = "v0.6.0"\n'
         "\n"
-        "[roles]\n"
-        'coder = "Implements tasks per spec."\n'
+        "[roles.coder]\n"
+        'description = "Implements tasks per spec."\n'
     )
 
     def test_emits_guard_when_role_block_missing(self) -> None:
@@ -321,7 +330,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("[handoffs.coder]", stderr)
+            self.assertIn("roles.coder.launch.target", stderr)
 
 
 class TestHandoffPacketReadOnlyInvariant(unittest.TestCase):

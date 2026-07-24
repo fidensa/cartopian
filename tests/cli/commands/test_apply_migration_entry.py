@@ -36,7 +36,7 @@ def _seed(
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        f'protocol_version = "{marker}"\n',
+        f'project_schema_version = "{marker}"\n',
         encoding="utf-8",
     )
     registry = [{"id": "demo", "path": str(project), "label": "Demo"}] if registered else []
@@ -64,7 +64,7 @@ def _run_update(home: Path, project: Path, version: str):
             "update-config",
             str(project),
             "--set",
-            f"project.protocol_version={version}",
+            f"project.project_schema_version={version}",
         ],
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -190,7 +190,10 @@ class TestV060Retirement(unittest.TestCase):
             self.assertEqual(applied.returncode, 0, msg=applied.stderr)
             bumped = _run_update(home, project, "v0.6.0")
             self.assertEqual(bumped.returncode, 0, msg=bumped.stderr)
-            self.assertIn('protocol_version = "v0.6.0"', (project / "cartopian.toml").read_text())
+            self.assertIn(
+                'project_schema_version = "v0.6.0"',
+                (project / "cartopian.toml").read_text(),
+            )
             self.assertFalse((project / "CONVENTIONS.md").exists())
             self.assertEqual(unrelated.read_text(), "unchanged\n")
 
@@ -330,8 +333,9 @@ class TestOtherRegistryActions(unittest.TestCase):
             config = project / "cartopian.toml"
             config.write_text(
                 config.read_text().replace(
-                    'protocol_version = "v0.5.0"\n',
-                    'protocol_version = "v0.2.0"\nwork_roots = ["product"]\n',
+                    'project_schema_version = "v0.5.0"\n',
+                    'project_schema_version = "v0.2.0"\n'
+                    'work_roots = ["product"]\n',
                 )
             )
             (project / "tasks").mkdir()

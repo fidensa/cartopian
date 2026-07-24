@@ -11,8 +11,8 @@ Design:
 - **Closed schema.** Only the dotted keys in :data:`SCHEMA` are settable, each
   with an explicit type/validator — types come from the schema, never inferred
   from value text (so a numeric-looking branch pattern stays a string). Role and
-  handoff structure is edited through dedicated ``--set-role`` / ``--set-role-
-  grants`` / ``--set-handoff`` / ``--remove-*`` flags.
+  launch structure is edited through dedicated ``--set-role`` / ``--set-role-
+  grants`` / ``--set-role-launch`` / ``--remove-*`` flags.
 - **Comment-preserving surgical edits.** The file is edited as a line model, not
   re-serialized through a TOML dumper: untouched keys, comments, and formatting
   survive byte-for-byte. A targeted edit that would require lexing a construct
@@ -25,7 +25,7 @@ Design:
 - **Two-layer validation before write.** (1) the edited file parses and every
   touched key matches the closed schema; (2) the resulting *effective* project +
   global (+ local) configuration validates via the shared resolution functions
-  in :mod:`cli.commands.resolve_config`, so inherited global roles/handoffs are
+  in :mod:`cli.config_schema`, so inherited global role profiles are
   respected. Only a result valid at both layers is written.
 - **Guarded atomic write.** The same TOCTOU-hardened primitive the mediated
   ``.md`` writer uses (:mod:`cli.atomic_write`), with must-be-regular /
@@ -52,33 +52,20 @@ from cli.atomic_write import (
     make_tmp_name,
 )
 from cli.capabilities import PRESETS, is_known_grant_name
+from cli.config_schema import (
+    AUTO_LAUNCH_ACTIVITIES,
+    ConfigDiagnostic,
+    resolve_configuration,
+)
 from cli.commands._registry import is_kebab_case
 from cli.commands.resolve_config import (
-    _CliError,
     _load_toml,
-    _resolve_handoffs,
-    _resolve_reviews,
-    _resolve_roles,
-    resolve_grants,
-    role_description,
-    validate_effective_config,
 )
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_HANDOFF_FIELDS = (
-    "agent",
-    "model",
-    "effort",
-    "auto_start_tasks",
-    "auto_start_reviews",
-    "timeout",
-    # Legacy fields remain editable so migration agents can remove or repair
-    # old settings; resolved output always uses the explicit names above.
-    "auto_start",
-    "planning_reviews",
-)
+_ROLE_LAUNCH_FIELDS = ("target", "model", "effort", "timeout")
 
 
 class _Usage(Exception):
@@ -174,7 +161,11 @@ def _v_name_list(raw: str) -> str:
 SCHEMA: Dict[str, Tuple[Tuple[str, ...], str, Callable[[str], str]]] = {
     "project.name": (("project",), "name", _v_nonempty),
     "project.id": (("project",), "id", _v_kebab),
-    "project.protocol_version": (("project",), "protocol_version", _v_version),
+    "project.project_schema_version": (
+        ("project",),
+        "project_schema_version",
+        _v_version,
+    ),
     "project.work_roots": (("project",), "work_roots", _v_name_list),
     "automation.initiation": (("automation",), "initiation", _v_enum("operator", "auto")),
     "automation.confirmation": (
@@ -199,7 +190,7 @@ SCHEMA: Dict[str, Tuple[Tuple[str, ...], str, Callable[[str], str]]] = {
 # for any of these (e.g. `automation.initiation = ...` at top level, or
 # `automation = { ... }`) is a construct we refuse to edit blindly.
 _MANAGED_HEADS = frozenset(
-    {"project", "automation", "defaults", "git", "reviews", "roles", "handoffs"}
+    {"project", "automation", "defaults", "git", "reviews", "roles"}
 )
 
 
@@ -439,17 +430,20 @@ class _Model:
         if form == "table":
             self.set_key(("roles", name), "description", desc_token)
         elif form == "string":
+            # String roles are migration-source vocabulary. Converting an
+            # explicitly targeted role to the preferred table is safe because
+            # the operator supplied its complete description.
             roles = self.find_block(("roles",))
             idx = self.find_key(roles, name)
-            indent = roles.body[idx][: len(roles.body[idx]) - len(roles.body[idx].lstrip())]
-            roles.body[idx] = f"{indent}{name} = {desc_token}"
+            del roles.body[idx]
+            self._append_table(
+                ("roles", name), [f"description = {desc_token}"]
+            )
         else:
             self._guard_dotted_or_inline("roles")
-            roles = self.find_block(("roles",))
-            if roles is None:
-                self._append_table(("roles",), [f"{name} = {desc_token}"])
-            else:
-                self._insert_body_line(roles, f"{name} = {desc_token}")
+            self._append_table(
+                ("roles", name), [f"description = {desc_token}"]
+            )
 
     def set_role_grants(self, name: str, grants_token: str) -> None:
         form = self.role_form(name)
@@ -480,11 +474,16 @@ class _Model:
             if idx is not None:
                 del roles.body[idx]
 
-    def set_handoff_field(self, role: str, field: str, value_token: str) -> None:
-        self.set_key(("handoffs", role), field, value_token)
+    def set_role_launch_field(
+        self, role: str, field: str, value_token: str
+    ) -> None:
+        self.set_key(("roles", role, "launch"), field, value_token)
 
-    def remove_handoff(self, role: str) -> None:
-        blk = self.find_block(("handoffs", role))
+    def set_role_auto_launch(self, role: str, value_token: str) -> None:
+        self.set_key(("roles", role), "auto_launch", value_token)
+
+    def remove_role_launch(self, role: str) -> None:
+        blk = self.find_block(("roles", role, "launch"))
         if blk is not None:
             self.blocks.remove(blk)
 
@@ -570,12 +569,16 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--set-role-grants", action="append", default=[],
                            metavar="NAME=GRANT[,GRANT...]",
                            help="Set a role's capability grants (empty = explicit empty list)")
-    subparser.add_argument("--set-handoff", action="append", default=[],
-                           metavar="ROLE.FIELD=VALUE", help="Set a handoff field (repeatable)")
+    subparser.add_argument("--set-role-launch", action="append", default=[],
+                           metavar="ROLE.FIELD=VALUE",
+                           help="Set a role launch target/option (repeatable)")
+    subparser.add_argument("--set-role-auto-launch", action="append", default=[],
+                           metavar="ROLE=ACTIVITY[,ACTIVITY...]",
+                           help="Set a role's closed automatic-launch permission list")
     subparser.add_argument("--remove-role", action="append", default=[], metavar="NAME",
                            help="Remove a role (repeatable)")
-    subparser.add_argument("--remove-handoff", action="append", default=[], metavar="ROLE",
-                           help="Remove a handoff block (repeatable)")
+    subparser.add_argument("--remove-role-launch", action="append", default=[],
+                           metavar="ROLE", help="Remove a role launch block")
     subparser.add_argument("--set-work-root", action="append", default=[],
                            metavar="NAME=ABS_PATH",
                            help="[--local only] Map a work-root name to an absolute path")
@@ -603,8 +606,9 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
     set_roles: set = set()
     grant_roles: set = set()
     removed_roles: set = set()
-    handoff_fields: set = set()
-    removed_handoffs: set = set()
+    launch_fields: set = set()
+    auto_launch_roles: set = set()
+    removed_launches: set = set()
 
     for raw in getattr(args, "set"):
         key, value = _parse_kv(raw, "--set")
@@ -664,36 +668,56 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
         token = "[" + ", ".join(_toml_str(g) for g in names) + "]"
         ops.append(("set-role-grants", name, token))
 
-    for raw in args.set_handoff:
-        lhs, value = _parse_kv(raw, "--set-handoff")
+    for raw in args.set_role_launch:
+        lhs, value = _parse_kv(raw, "--set-role-launch")
         if "." not in lhs:
-            raise _Usage(f"--set-handoff expects ROLE.FIELD=VALUE; got: {raw}")
+            raise _Usage(f"--set-role-launch expects ROLE.FIELD=VALUE; got: {raw}")
         role, field = lhs.split(".", 1)
         if not _NAME_RE.match(role):
-            raise _Usage(f"--set-handoff role must match [A-Za-z0-9_-]+; got: {role!r}")
+            raise _Usage(f"--set-role-launch role must match [A-Za-z0-9_-]+; got: {role!r}")
         if role == "pm":
-            raise _Usage("--set-handoff: the pm role is never launched as a handoff; drop pm.*")
-        if field not in _HANDOFF_FIELDS:
-            raise _Usage(f"--set-handoff field must be one of {', '.join(_HANDOFF_FIELDS)}; got: {field!r}")
-        if (role, field) in handoff_fields:
-            raise _Usage(f"--set-handoff {role}.{field} given more than once")
-        handoff_fields.add((role, field))
-        if field in {
-            "auto_start_tasks",
-            "auto_start_reviews",
-            "auto_start",
-            "planning_reviews",
-        }:
-            try:
-                token = _v_bool(value)
-            except _Usage as exc:
-                raise _Usage(f"--set-handoff {role}.{field}: {exc}")
-        else:
-            try:
-                token = _toml_str(value)
-            except _Usage as exc:
-                raise _Usage(f"--set-handoff {role}.{field}: {exc}")
-        ops.append(("set-handoff", role, field, token))
+            raise _Usage("--set-role-launch: the pm role is never launched; drop pm.*")
+        if field not in _ROLE_LAUNCH_FIELDS:
+            raise _Usage(
+                f"--set-role-launch field must be one of "
+                f"{', '.join(_ROLE_LAUNCH_FIELDS)}; got: {field!r}"
+            )
+        if (role, field) in launch_fields:
+            raise _Usage(f"--set-role-launch {role}.{field} given more than once")
+        launch_fields.add((role, field))
+        try:
+            token = _toml_str(value)
+        except _Usage as exc:
+            raise _Usage(f"--set-role-launch {role}.{field}: {exc}")
+        ops.append(("set-role-launch", role, field, token))
+
+    for raw in args.set_role_auto_launch:
+        role, value = _parse_kv(raw, "--set-role-auto-launch")
+        if not _NAME_RE.match(role):
+            raise _Usage(
+                f"--set-role-auto-launch role must match [A-Za-z0-9_-]+; "
+                f"got: {role!r}"
+            )
+        if role == "pm":
+            raise _Usage("--set-role-auto-launch: pm cannot auto-launch")
+        if role in auto_launch_roles:
+            raise _Usage(
+                f"--set-role-auto-launch {role!r} given more than once"
+            )
+        auto_launch_roles.add(role)
+        activities = [] if value == "" else value.split(",")
+        if len(set(activities)) != len(activities):
+            raise _Usage(
+                f"--set-role-auto-launch {role}: activities must be unique"
+            )
+        for activity in activities:
+            if activity not in AUTO_LAUNCH_ACTIVITIES:
+                raise _Usage(
+                    f"--set-role-auto-launch {role}: unknown activity "
+                    f"{activity!r}; expected {', '.join(AUTO_LAUNCH_ACTIVITIES)}"
+                )
+        token = "[" + ", ".join(_toml_str(item) for item in activities) + "]"
+        ops.append(("set-role-auto-launch", role, token))
 
     for name in args.remove_role:
         name = name.strip()
@@ -704,23 +728,23 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
         removed_roles.add(name)
         ops.append(("remove-role", name))
 
-    for role in args.remove_handoff:
+    for role in args.remove_role_launch:
         role = role.strip()
         if not _NAME_RE.match(role):
-            raise _Usage(f"--remove-handoff role must match [A-Za-z0-9_-]+; got: {role!r}")
-        if role in removed_handoffs:
-            raise _Usage(f"--remove-handoff {role!r} given more than once")
-        removed_handoffs.add(role)
-        ops.append(("remove-handoff", role))
+            raise _Usage(f"--remove-role-launch role must match [A-Za-z0-9_-]+; got: {role!r}")
+        if role in removed_launches:
+            raise _Usage(f"--remove-role-launch {role!r} given more than once")
+        removed_launches.add(role)
+        ops.append(("remove-role-launch", role))
 
     # Cross-flag conflicts.
     conflict = (set_roles | grant_roles) & removed_roles
     if conflict:
         raise _Usage(f"role(s) both set and removed: {', '.join(sorted(conflict))}")
-    handoff_set_roles = {r for r, _ in handoff_fields}
-    hconflict = handoff_set_roles & removed_handoffs
+    launch_set_roles = {r for r, _ in launch_fields}
+    hconflict = launch_set_roles & removed_launches
     if hconflict:
-        raise _Usage(f"handoff role(s) both set and removed: {', '.join(sorted(hconflict))}")
+        raise _Usage(f"role launch(es) both set and removed: {', '.join(sorted(hconflict))}")
     return ops
 
 
@@ -755,22 +779,24 @@ def _plan_local_ops(args: argparse.Namespace) -> List[Tuple]:
 
 def _apply_project_ops(model: _Model, ops: List[Tuple]) -> None:
     # Order: role descriptions, then grants (so a set-role + set-role-grants pair
-    # composes into a table form preserving the description), then handoffs,
+    # composes into a table form preserving the description), then role launch,
     # scalars, then removals.
     for op in [o for o in ops if o[0] == "set-role"]:
         model.set_role_description(op[1], op[2])
     for op in [o for o in ops if o[0] == "set-role-grants"]:
         model.set_role_grants(op[1], op[2])
-    for op in [o for o in ops if o[0] == "set-handoff"]:
-        model.set_handoff_field(op[1], op[2], op[3])
+    for op in [o for o in ops if o[0] == "set-role-launch"]:
+        model.set_role_launch_field(op[1], op[2], op[3])
+    for op in [o for o in ops if o[0] == "set-role-auto-launch"]:
+        model.set_role_auto_launch(op[1], op[2])
     for op in [o for o in ops if o[0] == "set"]:
         model.set_key(op[1], op[2], op[3])
     for op in [o for o in ops if o[0] == "unset"]:
         model.unset_key(op[1], op[2])
     for op in [o for o in ops if o[0] == "remove-role"]:
         model.remove_role(op[1])
-    for op in [o for o in ops if o[0] == "remove-handoff"]:
-        model.remove_handoff(op[1])
+    for op in [o for o in ops if o[0] == "remove-role-launch"]:
+        model.remove_role_launch(op[1])
 
 
 def _apply_local_ops(model: _Model, ops: List[Tuple]) -> None:
@@ -789,10 +815,12 @@ def _changed_labels(ops: List[Tuple]) -> List[str]:
             out.append(".".join(op[1]) + "." + op[2])
         elif kind in ("set-role", "set-role-grants", "remove-role"):
             out.append(f"roles.{op[1]}")
-        elif kind in ("set-handoff",):
-            out.append(f"handoffs.{op[1]}.{op[2]}")
-        elif kind == "remove-handoff":
-            out.append(f"handoffs.{op[1]}")
+        elif kind == "set-role-launch":
+            out.append(f"roles.{op[1]}.launch.{op[2]}")
+        elif kind == "set-role-auto-launch":
+            out.append(f"roles.{op[1]}.auto_launch")
+        elif kind == "remove-role-launch":
+            out.append(f"roles.{op[1]}.launch")
         elif kind in ("set-work-root", "unset-work-root"):
             out.append(f"work_roots.{op[1]}")
     return out
@@ -835,18 +863,24 @@ def _atomic_write_config(
 def _validate_effective(project_root: Path, new_project_cfg: Dict[str, Any]) -> None:
     """Layer 2: validate the resolved effective (project + global) config."""
     global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml", "global config") or {}
-    roles_raw = _resolve_roles(global_cfg, new_project_cfg)
-    roles = {name: role_description(value) for name, value in roles_raw.items()}
-    _resolve_reviews(global_cfg, new_project_cfg, roles_raw)
-    handoffs = _resolve_handoffs(global_cfg, new_project_cfg)
-    capabilities = resolve_grants(roles_raw)
-    # Raises on a blocking violation (e.g. orphan handoff); warnings are advisory.
+    local_cfg = _load_toml(
+        project_root / "cartopian.local.toml", "local config"
+    ) or {}
+    # Project declarations are intentionally writable before their
+    # machine-local paths exist. Preserve real mappings and supply
+    # non-persisted absolute placeholders only for newly declared roots;
+    # existing orphan mappings still fail closed.
+    validation_local = {
+        "work_roots": dict(local_cfg.get("work_roots", {}))
+    }
+    for name in new_project_cfg.get("project", {}).get("work_roots", []):
+        validation_local["work_roots"].setdefault(
+            name, str((project_root / name).resolve())
+        )
     try:
-        warnings = validate_effective_config(roles, handoffs, capabilities)
-    except _CliError as err:
-        raise _Guard(err.prefix, err.message)
-    for prefix, message in warnings:
-        _stderr(prefix, message)
+        resolve_configuration(global_cfg, new_project_cfg, validation_local)
+    except ConfigDiagnostic as err:
+        raise _Guard("config", str(err)) from err
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -862,7 +896,8 @@ def handler(args: argparse.Namespace) -> int:
     local = bool(args.local)
     project_ops_present = any([
         getattr(args, "set"), getattr(args, "unset"), args.set_role, args.set_role_grants,
-        args.set_handoff, args.remove_role, args.remove_handoff,
+        args.set_role_launch, args.set_role_auto_launch,
+        args.remove_role, args.remove_role_launch,
     ])
     local_ops_present = bool(args.set_work_root or args.unset_work_root)
 
@@ -876,7 +911,10 @@ def handler(args: argparse.Namespace) -> int:
         else:
             ops = _plan_project_ops(args)
         if not ops:
-            raise _Usage("no operations given — supply at least one --set/--unset/--set-role/…")
+            raise _Usage(
+                "no operations given — supply at least one "
+                "--set/--unset/--set-role/…"
+            )
     except _Usage as exc:
         _stderr("usage", str(exc))
         return EXIT_USAGE
@@ -913,9 +951,21 @@ def handler(args: argparse.Namespace) -> int:
         except tomllib.TOMLDecodeError as exc:
             raise _Guard("invalid-result", f"edit produced invalid TOML: {exc}")
 
-        # Layer 2: effective-config validation (project file only).
+        # Layer 2: effective-config validation.
         if not local:
             _validate_effective(project_root, new_cfg)
+        else:
+            project_cfg = _load_toml(
+                project_root / "cartopian.toml", "project config"
+            ) or {}
+            global_cfg = _load_toml(
+                Path.home() / ".cartopian" / "cartopian.toml",
+                "global config",
+            ) or {}
+            try:
+                resolve_configuration(global_cfg, project_cfg, new_cfg)
+            except ConfigDiagnostic as exc:
+                raise _Guard("config", str(exc)) from exc
 
         if new_text == original:
             emit_record({

@@ -15,13 +15,13 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
 )
 
 _REVIEW_TOML = (
     '\n'
-    '[roles]\n'
-    'reviewer = "Reviews completed work."\n'
+    '[roles.reviewer]\n'
+    'description = "Reviews completed work."\n'
     '\n'
     '[reviews]\n'
     'planning = "required"\n'

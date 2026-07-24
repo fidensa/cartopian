@@ -1,7 +1,7 @@
 """`cartopian generate-config <project-path>`.
 
 Writes ``<project-path>/cartopian.toml`` from the supplied flags. Always stamps
-``[project] protocol_version`` to the current protocol version (the topmost
+``[project] project_schema_version`` to the current schema target (the topmost
 ``### vX.Y.Z`` entry under ``## Entries`` in ``protocol/CHANGELOG.md``).
 
 Omitted optional flags MUST NOT write protocol defaults — the resolution
@@ -16,15 +16,16 @@ from typing import Any, Dict, List, Tuple
 from cli._vendor import tomli_w
 from cli.capabilities import PRESETS, is_known_grant_name
 from cli.commands._registry import is_kebab_case
-from cli.commands.resolve_config import (
-    _CliError,
-    _load_toml,
-    _resolve_reviews,
-    _resolve_roles,
-)
+from cli.commands.resolve_config import _load_toml
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
-from cli.protocol_gate import read_shipped_protocol_version
+from cli.config_schema import (
+    AUTO_LAUNCH_ACTIVITIES,
+    ConfigDiagnostic,
+    resolve_configuration,
+    validate_authored_config,
+)
+from cli.protocol_gate import read_shipped_project_schema_version
 
 _ROLE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _WORK_ROOT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -70,23 +71,19 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable capability grants for a declared role "
                                 "(capability names and/or preset names; empty value "
                                 "declares an explicitly empty grant list)")
-    subparser.add_argument("--handoff", action="append", default=[], metavar="ROLE=WRAPPER",
-                           help="Repeatable handoff agent assignment")
-    subparser.add_argument("--handoff-model", action="append", default=[],
-                           metavar="ROLE=MODEL", help="Repeatable handoff model")
-    subparser.add_argument("--handoff-effort", action="append", default=[],
+    subparser.add_argument("--role-launch-target", action="append", default=[],
+                           metavar="ROLE=TARGET",
+                           help="Repeatable role launch target")
+    subparser.add_argument("--role-launch-model", action="append", default=[],
+                           metavar="ROLE=MODEL", help="Repeatable role launch model")
+    subparser.add_argument("--role-launch-effort", action="append", default=[],
                            metavar="ROLE=EFFORT",
-                           help="Repeatable handoff effort/thinking level")
-    subparser.add_argument("--handoff-auto-start-tasks", action="append", default=[],
-                           metavar="ROLE=BOOL",
-                           help="Repeatable task-handoff automatic launch setting")
-    subparser.add_argument("--handoff-auto-start-reviews", action="append", default=[],
-                           metavar="ROLE=BOOL",
-                           help="Repeatable planning-review automatic launch setting")
-    subparser.add_argument("--handoff-auto-start", action="append", default=[],
-                           metavar="ROLE=BOOL", help=argparse.SUPPRESS)
-    subparser.add_argument("--handoff-timeout", action="append", default=[],
-                           metavar="ROLE=DURATION", help="Repeatable handoff timeout")
+                           help="Repeatable role launch effort/thinking level")
+    subparser.add_argument("--role-auto-launch", action="append", default=[],
+                           metavar="ROLE=ACTIVITY[,ACTIVITY...]",
+                           help="Repeatable closed automatic-launch permission list")
+    subparser.add_argument("--role-launch-timeout", action="append", default=[],
+                           metavar="ROLE=DURATION", help="Repeatable role launch timeout")
     subparser.add_argument("--automation-initiation", default=None,
                            action=_SingleValuedAction,
                            choices=["operator", "auto"],
@@ -121,10 +118,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable [git] entry (primitive type preserved)")
 
 
-def _read_protocol_version() -> str:
+def _read_project_schema_version() -> str:
     # Shared with the protocol-version migration gate so the stamped version
     # and the gate's shipped version can never diverge.
-    return read_shipped_protocol_version()
+    return read_shipped_project_schema_version()
 
 
 def _parse_kv(raw: str, flag: str) -> Tuple[str, str]:
@@ -213,7 +210,7 @@ def _collect_role_grants(
     return grants
 
 
-def _collect_handoff_field(
+def _collect_role_launch_field(
     raw_args: List[str], flag: str, declared_roles: Dict[str, str],
     seen: Dict[str, set], field: str, parser
 ) -> Dict[str, Any]:
@@ -224,9 +221,8 @@ def _collect_handoff_field(
             raise _Usage(f"{flag} role must match [A-Za-z0-9_-]+; got: {role!r}")
         if role == "pm":
             raise _Usage(
-                "handoffs-pm-forbidden: the `pm` role is never launched as a "
-                "handoff — it is the interactive session orchestrator, and a "
-                f"[handoffs.pm] block has no meaning; drop {flag} pm=…"
+                "pm-launch-forbidden: the `pm` role is the interactive session "
+                f"orchestrator and cannot be launched; drop {flag} pm=…"
             )
         if role not in declared_roles:
             raise _Usage(f"orphan-handoff: {role} — declare with --role first")
@@ -237,66 +233,109 @@ def _collect_handoff_field(
     return out
 
 
-def _build_handoffs(
-    handoff_args: List[str], model_args: List[str], effort_args: List[str],
-    auto_task_args: List[str],
-    auto_review_args: List[str], timeout_args: List[str],
+def _build_role_execution(
+    target_args: List[str],
+    model_args: List[str],
+    effort_args: List[str],
+    auto_launch_args: List[str],
+    timeout_args: List[str],
     declared_roles: Dict[str, str],
 ) -> Dict[str, Dict[str, Any]]:
+    """Build preferred role-local launch and permission fields."""
     seen = {
-        "agent": set(),
+        "target": set(),
         "model": set(),
         "effort": set(),
-        "auto_start_tasks": set(),
-        "auto_start_reviews": set(),
         "timeout": set(),
     }
-    agents = _collect_handoff_field(
-        handoff_args, "--handoff", declared_roles, seen, "agent",
-        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: wrapper must be non-empty")),
+    targets = _collect_role_launch_field(
+        target_args,
+        "--role-launch-target",
+        declared_roles,
+        seen,
+        "target",
+        lambda value, ctx: value
+        if value
+        else (_ for _ in ()).throw(_Usage(f"{ctx}: target must be non-empty")),
     )
-    models = _collect_handoff_field(
-        model_args, "--handoff-model", declared_roles, seen, "model",
-        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: model must be non-empty")),
+    models = _collect_role_launch_field(
+        model_args,
+        "--role-launch-model",
+        declared_roles,
+        seen,
+        "model",
+        lambda value, ctx: value
+        if value
+        else (_ for _ in ()).throw(_Usage(f"{ctx}: model must be non-empty")),
     )
-    efforts = _collect_handoff_field(
-        effort_args, "--handoff-effort", declared_roles, seen, "effort",
-        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: effort must be non-empty")),
+    efforts = _collect_role_launch_field(
+        effort_args,
+        "--role-launch-effort",
+        declared_roles,
+        seen,
+        "effort",
+        lambda value, ctx: value
+        if value
+        else (_ for _ in ()).throw(_Usage(f"{ctx}: effort must be non-empty")),
     )
-    auto_start_tasks = _collect_handoff_field(
-        auto_task_args, "--handoff-auto-start-tasks", declared_roles,
-        seen, "auto_start_tasks",
-        _parse_bool,
+    timeouts = _collect_role_launch_field(
+        timeout_args,
+        "--role-launch-timeout",
+        declared_roles,
+        seen,
+        "timeout",
+        lambda value, ctx: value
+        if re.fullmatch(r"[1-9]\d*[smh]", value)
+        else (_ for _ in ()).throw(
+            _Usage(f"{ctx}: duration must be positive with s, m, or h suffix")
+        ),
     )
-    auto_start_reviews = _collect_handoff_field(
-        auto_review_args, "--handoff-auto-start-reviews", declared_roles,
-        seen, "auto_start_reviews", _parse_bool,
-    )
-    timeouts = _collect_handoff_field(
-        timeout_args, "--handoff-timeout", declared_roles, seen, "timeout",
-        lambda v, ctx: v if v != "" else (_ for _ in ()).throw(_Usage(f"{ctx}: duration must be non-empty")),
-    )
-    handoffs: Dict[str, Dict[str, Any]] = {}
+    auto_launch: Dict[str, List[str]] = {}
+    for raw in auto_launch_args:
+        role, value = _parse_kv(raw, "--role-auto-launch")
+        if role not in declared_roles:
+            raise _Usage(
+                f"--role-auto-launch {role!r}: declare with --role first"
+            )
+        if role == "pm":
+            raise _Usage("pm-launch-forbidden: the pm role cannot auto-launch")
+        if role in auto_launch:
+            raise _Usage(f"--role-auto-launch {role!r} declared more than once")
+        activities = [] if value == "" else value.split(",")
+        if len(set(activities)) != len(activities):
+            raise _Usage(
+                f"--role-auto-launch {role}: activities must be unique"
+            )
+        for activity in activities:
+            if activity not in AUTO_LAUNCH_ACTIVITIES:
+                raise _Usage(
+                    f"--role-auto-launch {role}: unknown activity {activity!r}; "
+                    f"expected {', '.join(AUTO_LAUNCH_ACTIVITIES)}"
+                )
+        auto_launch[role] = activities
+
+    result: Dict[str, Dict[str, Any]] = {}
     for role in declared_roles:
+        launch: Dict[str, Any] = {}
+        for key, values in (
+            ("target", targets),
+            ("model", models),
+            ("effort", efforts),
+            ("timeout", timeouts),
+        ):
+            if role in values:
+                launch[key] = values[role]
         block: Dict[str, Any] = {}
-        if role in agents:
-            block["agent"] = agents[role]
-        if role in models:
-            block["model"] = models[role]
-        if role in efforts:
-            block["effort"] = efforts[role]
-        if role in auto_start_tasks:
-            block["auto_start_tasks"] = auto_start_tasks[role]
-        if role in auto_start_reviews:
-            block["auto_start_reviews"] = auto_start_reviews[role]
-        if role in timeouts:
-            block["timeout"] = timeouts[role]
+        if launch:
+            block["launch"] = launch
+        if role in auto_launch:
+            block["auto_launch"] = auto_launch[role]
         if block:
-            handoffs[role] = block
-    return handoffs
+            result[role] = block
+    return result
 
 
-def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, Any]:
+def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict[str, Any]:
     # [project] required fields
     if args.name == "":
         raise _Usage("--name must be non-empty")
@@ -306,22 +345,19 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
     roles = _collect_roles(args.role)
     role_grants = _collect_role_grants(args.role_grants, roles)
 
-    handoffs = _build_handoffs(
-        args.handoff, args.handoff_model,
-        getattr(args, "handoff_effort", []),
-        (
-            getattr(args, "handoff_auto_start_tasks", [])
-            + getattr(args, "handoff_auto_start", [])
-        ),
-        getattr(args, "handoff_auto_start_reviews", []),
-        args.handoff_timeout,
+    role_execution = _build_role_execution(
+        args.role_launch_target,
+        args.role_launch_model,
+        args.role_launch_effort,
+        args.role_auto_launch,
+        args.role_launch_timeout,
         roles,
     )
 
     project_block: Dict[str, Any] = {
         "name": args.name,
         "id": args.proj_id,
-        "protocol_version": protocol_version,
+        "project_schema_version": project_schema_version,
     }
 
     work_roots = list(args.work_root)
@@ -380,13 +416,11 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
 
     roles_block: Dict[str, Any] = {}
     for role_name, description in roles.items():
+        role_block: Dict[str, Any] = {"description": description}
         if role_name in role_grants:
-            roles_block[role_name] = {
-                "description": description,
-                "grants": role_grants[role_name],
-            }
-        else:
-            roles_block[role_name] = description
+            role_block["grants"] = role_grants[role_name]
+        role_block.update(role_execution.get(role_name, {}))
+        roles_block[role_name] = role_block
 
     reviews_block: Dict[str, Any] = {}
     review_values = (
@@ -407,8 +441,6 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
     cfg: Dict[str, Any] = {"project": project_block}
     if roles_block:
         cfg["roles"] = roles_block
-    if handoffs:
-        cfg["handoffs"] = handoffs
     if reviews_block:
         cfg["reviews"] = reviews_block
     if automation:
@@ -417,6 +449,10 @@ def _build_config(args: argparse.Namespace, protocol_version: str) -> Dict[str, 
         cfg["defaults"] = defaults
     if git_block:
         cfg["git"] = git_block
+    try:
+        validate_authored_config(cfg, "project")
+    except ConfigDiagnostic as exc:
+        raise _Usage(str(exc)) from exc
     return cfg
 
 
@@ -430,13 +466,13 @@ def handler(args: argparse.Namespace) -> int:
     config_path = project_path / "cartopian.toml"
 
     try:
-        protocol_version = _read_protocol_version()
+        project_schema_version = _read_project_schema_version()
     except (OSError, RuntimeError) as exc:
         _stderr("error", str(exc))
         return EXIT_FAIL
 
     try:
-        cfg = _build_config(args, protocol_version)
+        cfg = _build_config(args, project_schema_version)
     except _Usage as exc:
         _stderr("usage", str(exc))
         return EXIT_USAGE
@@ -445,11 +481,19 @@ def handler(args: argparse.Namespace) -> int:
         global_cfg = _load_toml(
             Path.home() / ".cartopian" / "cartopian.toml", "global config"
         ) or {}
-        roles = _resolve_roles(global_cfg, cfg)
-        _resolve_reviews(global_cfg, cfg, roles)
-    except _CliError as exc:
-        _stderr(exc.prefix, exc.message)
-        return exc.exit_code
+        # A new project may declare work-root names before the operator adds
+        # machine-specific paths. Use non-persisted absolute placeholders so
+        # all other cross-field authority checks still run before writing.
+        local_validation = {
+            "work_roots": {
+                name: str((project_path / name).resolve())
+                for name in cfg["project"].get("work_roots", [])
+            }
+        }
+        resolve_configuration(global_cfg, cfg, local_validation)
+    except ConfigDiagnostic as exc:
+        _stderr("usage", str(exc))
+        return EXIT_USAGE
 
     if config_path.exists():
         _stderr(
@@ -471,7 +515,7 @@ def handler(args: argparse.Namespace) -> int:
             "details": {
                 "project_path": str(project_path),
                 "config_path": str(config_path),
-                "protocol_version": protocol_version,
+                "project_schema_version": project_schema_version,
             },
         }
     )

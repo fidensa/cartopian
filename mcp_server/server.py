@@ -36,7 +36,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import os
 import re
 import subprocess
 import sys
@@ -44,6 +43,8 @@ import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from cli.version_identities import version_identities
 
 from .skill_metadata import (
     MetadataValidationError,
@@ -187,8 +188,18 @@ def _read_git_version(root: Path) -> Optional[str]:
 
 
 def _server_version() -> str:
-    """Return the Cartopian release/ref this MCP server was loaded from."""
-    return _read_installed_version(ROOT) or _read_git_version(ROOT) or "unknown"
+    """MCP compatibility view of the product release only."""
+    release = version_identities(ROOT)["release_version"]
+    return release["value"] or "unknown"
+
+
+def _identity_records() -> Dict[str, Dict[str, Any]]:
+    """Structured peer identities for the connected MCP process."""
+    return version_identities(
+        ROOT,
+        mcp_protocol_version=PROTOCOL_VERSION,
+        include_running_server=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +263,22 @@ def _install_context_block() -> str:
     or which version is running, and cannot answer "where does cartopian
     live?" or run upgrade flows without scanning the filesystem.
     """
-    version = _server_version()
+    identities = _identity_records()
+    release = identities["release_version"]
+    content = identities["installed_content"]
+    runtime = identities["running_server"]
     return (
         "**Cartopian install context** (authoritative — do not re-derive by "
         "scanning the filesystem):\n"
         f"- Install root: `{ROOT}`\n"
-        f"- Installed version: `{version}`\n"
+        f"- Release version: `{release['value'] or 'unknown'}` "
+        f"({release['state']})\n"
+        f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
+        f"materialization `{content['materialization']}`, verification "
+        f"`{content['verification']}`\n"
+        f"- Running server: process `{runtime['process_id']}`, state "
+        f"`{runtime['state']}`\n"
+        f"- MCP protocol version: `{PROTOCOL_VERSION}`\n"
         f"- Upgrade skill: `cartopian://skills/check_for_updates`\n\n"
         "Use this whenever the operator asks about upgrading, updating, or "
         "where Cartopian is installed.\n\n---\n\n"
@@ -274,7 +295,10 @@ def _server_instructions() -> str:
     appeared "missing" at session start. Surfacing it here makes it available at
     connect time, no prompt invocation required.
     """
-    version = _server_version()
+    identities = _identity_records()
+    release = identities["release_version"]
+    content = identities["installed_content"]
+    runtime = identities["running_server"]
     entry = next(
         record for record in _skill_records()
         if record["identity"] == "use_cartopian"
@@ -286,7 +310,14 @@ def _server_instructions() -> str:
         "**Cartopian install context** (authoritative — do not re-derive by "
         "scanning the filesystem):\n"
         f"- Install root: `{ROOT}`\n"
-        f"- Installed version: `{version}`\n"
+        f"- Release version: `{release['value'] or 'unknown'}` "
+        f"({release['state']})\n"
+        f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
+        f"materialization `{content['materialization']}`, verification "
+        f"`{content['verification']}`\n"
+        f"- Running server: process `{runtime['process_id']}`, state "
+        f"`{runtime['state']}`\n"
+        f"- MCP protocol version: `{PROTOCOL_VERSION}`\n"
         "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
         "`cartopian://skills/check_for_updates`\n\n"
         f"{startup['outcome']}\n\n"
@@ -982,6 +1013,7 @@ def handle_request(method: str, params: Dict[str, Any]) -> Any:
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "serverInfo": _server_info(),
+            "cartopianIdentities": _identity_records(),
             "capabilities": _capabilities(),
             "instructions": _server_instructions(),
         }

@@ -10,19 +10,18 @@ Two keying modes:
   ``--prompt`` accepts only an allowlisted planning-checkpoint prompt slot
   (``<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md``).
 
-Both modes fail closed unless their explicit launch setting is true:
-``auto_start_tasks`` for task-scoped handoffs and ``auto_start_reviews`` for
-planning-review handoffs. Review policy remains independent under ``[reviews]``.
+Each mode fails closed unless its exact activity appears in the role's
+``auto_launch`` list: ``task_run``, ``task_review``, or ``planning_review``.
+Review policy remains independent under ``[reviews]``.
 
 The delegation counterpart to the mediated writer. A contained PM has no
 shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
 command performs the launch on the PM's behalf as *per-invocation* Cartopian code
-(no daemon, no broker): it composes the existing ``handoff-packet`` /
-``resolve-config`` aggregators to prepare the packet, fails closed on a missing
-``[handoffs.<role>]`` block / a missing agent / a missing prompt, exports
-``CARTOPIAN_TIMEOUT`` from the resolved ``[handoffs.<role>].timeout``,
-``CARTOPIAN_MODEL`` from the resolved ``[handoffs.<role>].model`` (when set),
-``CARTOPIAN_EFFORT`` from the resolved ``[handoffs.<role>].effort`` (when set), and
+(no daemon, no broker): it consumes canonical resolution, fails closed on a
+missing role launch target or prompt, exports ``CARTOPIAN_TIMEOUT`` from
+``roles.<role>.launch.timeout``, ``CARTOPIAN_MODEL`` from
+``roles.<role>.launch.model`` (when set), ``CARTOPIAN_EFFORT`` from
+``roles.<role>.launch.effort`` (when set), and
 ``CARTOPIAN_ROLE`` from the dispatched role (the session-role marker capability
 enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
@@ -36,7 +35,7 @@ wrapper owns its own background/timeout semantics (it kills the assignee at the
 through ``cartopian wait-handoff`` / ``cartopian wait-report``; this command never
 adds a waiting mechanism and never reaps the child.
 
-The launched executable is always the operator-configured ``[handoffs.<role>].agent``.
+The launched executable is always the operator-configured role launch target.
 There is no caller-supplied command or executable argument, so the PM cannot use
 dispatch to launch an arbitrary process — the mediated, config-bound path is the
 only route a contained PM has. Standard library only (NF-001).
@@ -57,9 +56,7 @@ from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
     _CliError,
-    _load_toml,
-    _resolve_handoffs,
-    _resolve_work_roots,
+    resolve_project_configuration,
 )
 from cli.emit import emit_record
 from cli.main import (
@@ -77,13 +74,13 @@ from cli.main import (
 DEFAULT_TIMEOUT = "60m"
 
 # Agent-neutral model selection. Exported from the resolved
-# ``[handoffs.<role>].model`` so the wrapper can translate it into the
+# ``roles.<role>.launch.model`` so the wrapper can translate it into the
 # tool-specific model flag; never exported when the handoff sets no model
 # (the tool's own default model applies).
 MODEL_ENV = "CARTOPIAN_MODEL"
 
 # Agent-neutral effort/thinking-level selection. Exported from the resolved
-# ``[handoffs.<role>].effort`` so the wrapper can translate it into the
+# ``roles.<role>.launch.effort`` so the wrapper can translate it into the
 # tool-specific effort flag; never exported when the handoff sets no effort
 # (the tool's own default effort applies). Value validation is the wrapper's
 # job — effort vocabularies differ per agent CLI.
@@ -212,7 +209,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
     Deliberately minimal: a task path (or a planning-checkpoint prompt path)
     and a role. The executable launched is sourced exclusively from
-    ``[handoffs.<role>].agent`` in config — there is intentionally no flag to
+    ``roles.<role>.launch.target`` in config — there is intentionally no flag to
     supply an arbitrary command, so the PM cannot turn dispatch into a raw
     exec primitive (containment invariant). ``--prompt`` names an allowlisted
     prompt slot to hand to the config-bound agent, never an executable.
@@ -229,14 +226,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Absolute path to a planning-checkpoint prompt "
             "(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md) for a "
-            "report-path-only handoff; requires "
-            "[handoffs.<role>].auto_start_reviews = true"
+            "report-path-only handoff; requires planning_review in the "
+            "role's auto_launch list"
         ),
     )
     subparser.add_argument(
         "--role",
         required=True,
-        help="Role identifier being dispatched (must have a [handoffs.<role>] block)",
+        help="Role identifier being dispatched (must have a launch target)",
     )
 
 
@@ -266,6 +263,7 @@ def handler(args: argparse.Namespace) -> int:
         task_path = task_path.resolve()
         anchor = task_path
     else:
+        activity = "planning_review"
         if not Path(raw_prompt).is_absolute():
             stderr_usage(f"--prompt must be an absolute path; got: {raw_prompt}")
             return EXIT_USAGE
@@ -290,65 +288,56 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_ENV
 
     try:
-        project_cfg = _load_toml(project_toml, "project config") or {}
+        resolved = resolve_project_configuration(project_root)
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
 
-    global_toml = Path.home() / ".cartopian" / "cartopian.toml"
-    try:
-        global_cfg = _load_toml(global_toml, "global config") or {}
-    except _CliError as err:
-        stderr_error(err.message)
-        return err.exit_code
-
-    # --- Fail-closed: a configured [handoffs.<role>] block with an agent -----
-    raw_handoffs_project = project_cfg.get("handoffs", {}) or {}
-    raw_handoffs_global = global_cfg.get("handoffs", {}) or {}
-    if role not in raw_handoffs_project and role not in raw_handoffs_global:
-        stderr_guard(
-            f"no [handoffs.{role}] block configured — declare it in the project "
-            f"or global cartopian.toml, or dispatch this role manually"
-        )
+    if role not in resolved["roles"]:
+        stderr_guard(f"role {role!r} is not declared")
         return EXIT_FAIL
-
-    handoffs = _resolve_handoffs(global_cfg, project_cfg)
-    role_handoff = handoffs.get(role, {}) or {}
-    agent = role_handoff.get("agent")
+    role_record = resolved["roles"][role]
+    launch = role_record["launch"]
+    agent = launch.get("target")
     if not agent:
         stderr_guard(
-            f"[handoffs.{role}] has no agent configured — set agent in the "
-            f"project or global cartopian.toml, or dispatch this role manually"
+            f"roles.{role}.launch.target is not configured — "
+            f"dispatch this role manually"
         )
         return EXIT_FAIL
 
-    timeout = role_handoff.get("timeout") or DEFAULT_TIMEOUT
-    model = role_handoff.get("model")
+    timeout = launch.get("timeout") or DEFAULT_TIMEOUT
+    model = launch.get("model")
     # Fail closed on a set-but-falsy model ("" / 0 / false): it would be
     # reported in the record below yet never exported, silently launching the
     # tool's default model while the record claims otherwise.
     if model is not None and not model:
         stderr_guard(
-            f"[handoffs.{role}].model is set but empty — set a model "
+            f"roles.{role}.launch.model is set but empty — set a model "
             f"identifier or remove the key"
         )
         return EXIT_FAIL
-    effort = role_handoff.get("effort")
+    effort = launch.get("effort")
     # Same fail-closed guard as model: a set-but-falsy effort would be
     # reported in the record below yet never exported.
     if effort is not None and not effort:
         stderr_guard(
-            f"[handoffs.{role}].effort is set but empty — set an effort "
+            f"roles.{role}.launch.effort is set but empty — set an effort "
             f"level or remove the key"
         )
         return EXIT_FAIL
 
     task_id: Optional[str]
     if task_path is not None:
-        if role_handoff.get("auto_start_tasks") is not True:
+        activity = (
+            "task_review"
+            if task_path.parent.name == "in-review"
+            else "task_run"
+        )
+        if activity not in role_record["auto_launch"]:
             stderr_guard(
-                f"automatic task dispatch is not enabled for role {role} — "
-                f"set [handoffs.{role}].auto_start_tasks = true, or present "
+                f"automatic {activity} dispatch is not enabled for role {role} "
+                f"— add {activity!r} to roles.{role}.auto_launch, or present "
                 f"the launch command to the operator"
             )
             return EXIT_FAIL
@@ -383,10 +372,10 @@ def handler(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
         # --- Fail-closed: planning-review automatic launch is explicit -------
-        if role_handoff.get("auto_start_reviews") is not True:
+        if "planning_review" not in role_record["auto_launch"]:
             stderr_guard(
                 f"automatic planning-review dispatch is not enabled for role {role} — "
-                f"set [handoffs.{role}].auto_start_reviews = true, or present "
+                f"add 'planning_review' to roles.{role}.auto_launch, or present "
                 f"the launch command to the operator"
             )
             return EXIT_FAIL
@@ -399,14 +388,7 @@ def handler(args: argparse.Namespace) -> int:
     # project root and the declared work roots. An unmapped root, or one whose
     # mapped path is missing on this machine, would launch an agent whose
     # work-root writes are doomed to fail mid-run — refuse up front instead.
-    try:
-        resolved_roots = _resolve_work_roots(project_cfg, project_root)
-    except _CliError as err:
-        if err.prefix == "work-root":
-            stderr_guard(f"work root {err.message}")
-        else:
-            stderr_error(err.message)
-        return err.exit_code
+    resolved_roots = resolved["work_roots"]
     work_root_paths = list(resolved_roots.values())
     missing_roots = [p for p in work_root_paths if not Path(p).is_dir()]
     if missing_roots:
@@ -436,14 +418,14 @@ def handler(args: argparse.Namespace) -> int:
     # wrapper stays a neutral launcher and never keys behavior on it; the
     # enforcement point maps the role to grants via the resolved config.
     env["CARTOPIAN_ROLE"] = role
-    # Agent-neutral model selection from the resolved [handoffs.<role>].model.
+    # Agent-neutral model selection from the resolved role launch record.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.
     if model:
         env[MODEL_ENV] = str(model)
     else:
         env.pop(MODEL_ENV, None)
-    # Agent-neutral effort selection from the resolved [handoffs.<role>].effort,
+    # Agent-neutral effort selection from the resolved role launch record,
     # cleared the same way when unset.
     if effort:
         env[EFFORT_ENV] = str(effort)
@@ -460,13 +442,13 @@ def handler(args: argparse.Namespace) -> int:
     # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
     # ignores PATHEXT). `shutil.which` DOES honor PATHEXT, so it finds the `.cmd`
     # on Windows and the extensionless wrapper script on POSIX. An absolute
-    # `[handoffs.<role>].agent` resolves through `shutil.which` unchanged.
+    # An absolute role launch target resolves through `shutil.which` unchanged.
     resolved_agent = shutil.which(str(agent))
     if resolved_agent is None:
         stderr_error(
             f"handoff agent not found on PATH: {agent} — install the wrapper "
             f"(on native Windows the `.cmd` shim in wrappers/ps1 must be on PATH), "
-            f"or set [handoffs.{role}].agent to an absolute path"
+            f"or set roles.{role}.launch.target to an absolute path"
         )
         return EXIT_FAIL
     is_windows = _running_on_windows()
@@ -532,7 +514,7 @@ def handler(args: argparse.Namespace) -> int:
             f"failed to launch handoff agent {agent}: could not start "
             f"{missing!r} (resolved agent: {resolved_agent}). On native Windows "
             f"this is usually the command interpreter — ensure cmd.exe is "
-            f"reachable; otherwise correct [handoffs.{role}].agent"
+            f"reachable; otherwise correct roles.{role}.launch.target"
         )
         return EXIT_FAIL
     except OSError as exc:
@@ -555,9 +537,13 @@ def handler(args: argparse.Namespace) -> int:
         "task_id": task_id,
         "prompt_id": prompt_path.stem,
         "role": role,
-        "handoff_target": agent,
-        "model": model,
-        "effort": effort,
+        "activity": activity,
+        "launch": {
+            "target": agent,
+            "model": model,
+            "effort": effort,
+            "timeout": timeout,
+        },
         "work_roots": work_root_paths,
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),

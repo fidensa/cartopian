@@ -219,32 +219,13 @@ def build_parser() -> _UsageParser:
 
 
 def _resolve_version() -> str:
-    """The installed Cartopian ref. Read from the install root's ``VERSION`` file
-    (written by the installer); fall back to ``git describe`` in a dev checkout,
-    then to ``"unknown"``. Resolved lazily so it never runs git on a normal
-    command — only when ``--version`` is requested."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    try:
-        with open(os.path.join(root, "VERSION"), encoding="utf-8") as fh:
-            ref = fh.read().strip()
-        if ref:
-            return ref
-    except OSError:
-        pass
-    try:
-        import subprocess
+    """Compatibility display of release_version only."""
+    from pathlib import Path
 
-        out = subprocess.run(
-            ["git", "-C", root, "describe", "--tags", "--always", "--dirty"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except Exception:  # noqa: BLE001 — best-effort; any failure degrades to "unknown"
-        pass
-    return "unknown"
+    from cli.version_identities import release_version
+
+    root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return release_version(root)["value"] or "unknown"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

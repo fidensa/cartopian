@@ -16,13 +16,13 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
     "\n"
-    "[roles]\n"
-    'reviewer = "Reviews completed work."\n'
+    "[roles.reviewer]\n"
+    'description = "Reviews completed work."\n'
     "\n"
     "[reviews]\n"
     'planning = "required"\n'
@@ -35,7 +35,7 @@ _PROJECT_TOML_OFF = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.6.0"\n'
+    'project_schema_version = "v0.6.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"

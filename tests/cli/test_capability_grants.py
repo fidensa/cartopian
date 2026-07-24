@@ -228,7 +228,7 @@ _PROJECT_HEADER = (
     '[project]\n'
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'protocol_version = "v0.2.0"\n'
+    'project_schema_version = "v0.2.0"\n'
     '\n'
 )
 
@@ -239,8 +239,8 @@ class TestResolveConfigCapabilities(unittest.TestCase):
             _write(
                 sb.project / "cartopian.toml",
                 _PROJECT_HEADER
-                + '[roles]\n'
-                'pm = "Plans the work."\n'
+                + '[roles.pm]\n'
+                'description = "Plans the work."\n'
                 '\n'
                 '[roles.coder]\n'
                 'description = "Writes code."\n'
@@ -249,33 +249,35 @@ class TestResolveConfigCapabilities(unittest.TestCase):
             result = _run_cli("resolve-config", str(sb.project), home=sb.home)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         record = json.loads(result.stdout.splitlines()[0])
-        # Role descriptions keep their existing shape (name → description).
-        self.assertEqual(record["roles"]["coder"], "Writes code.")
-        self.assertEqual(record["roles"]["pm"], "Plans the work.")
+        self.assertEqual(record["roles"]["coder"]["description"], "Writes code.")
+        self.assertEqual(record["roles"]["pm"]["description"], "Plans the work.")
         caps = record["capabilities"]
         self.assertTrue(caps["activated"])
         self.assertEqual(
-            frozenset(caps["role_grants"]["coder"]),
+            frozenset(record["roles"]["coder"]["effective_grants"]),
             EXPECTED_PRESETS["coder-like"],
         )
         # pm declared no grant set in an activated config: fails closed.
-        self.assertEqual(caps["role_grants"]["pm"], [])
+        self.assertEqual(record["roles"]["pm"]["effective_grants"], [])
 
     def test_ungated_config_emits_inactive_capabilities_block(self):
         with _Sandbox() as sb:
             _write(
                 sb.project / "cartopian.toml",
                 _PROJECT_HEADER
-                + '[roles]\n'
-                'pm = "Plans the work."\n'
-                'coder = "Writes code."\n',
+                + '[roles.pm]\n'
+                'description = "Plans the work."\n'
+                '\n[roles.coder]\n'
+                'description = "Writes code."\n',
             )
             result = _run_cli("resolve-config", str(sb.project), home=sb.home)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         record = json.loads(result.stdout.splitlines()[0])
         caps = record["capabilities"]
         self.assertFalse(caps["activated"])
-        self.assertEqual(frozenset(caps["role_grants"]["coder"]), FULL_SET)
+        self.assertEqual(
+            frozenset(record["roles"]["coder"]["effective_grants"]), FULL_SET
+        )
 
     def test_unknown_capability_warns_and_fails_closed(self):
         with _Sandbox() as sb:
@@ -287,11 +289,9 @@ class TestResolveConfigCapabilities(unittest.TestCase):
                 'grants = ["write:worktre"]\n',
             )
             result = _run_cli("resolve-config", str(sb.project), home=sb.home)
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        record = json.loads(result.stdout.splitlines()[0])
-        caps = record["capabilities"]
-        self.assertTrue(caps["activated"])
-        self.assertEqual(caps["role_grants"]["coder"], [])
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("unknown-value", result.stderr)
         self.assertIn("write:worktre", result.stderr)
 
 

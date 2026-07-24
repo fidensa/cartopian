@@ -28,7 +28,7 @@ Terminal status flags emitted on stdout (one NDJSON record):
 
 The wait is terminal by default: called without ``--max-block``, it blocks
 until one of the terminal signals above, bounded by the resolved
-``[handoffs.<role>] timeout`` (protocol default ``60m``) as the absolute
+``roles.<role>.launch.timeout`` (protocol default ``60m``) as the absolute
 ceiling — a single call, a single record, no nonterminal slices. ``--max-block``
 is an explicit opt-in for hosts that cannot sustain a blocking call for the
 full handoff timeout; when supplied, the effective block budget is
@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from cli.commands import handoff_packet, report_action
-from cli.commands.resolve_config import _CliError, _load_toml, _resolve_handoffs
+from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.emit import emit_record
 from cli.main import (
     EXIT_ENV,
@@ -92,7 +92,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Optional observation-slice budget, e.g. 30s, 1m, 5h. Default: "
             "block until a terminal observation, bounded by the configured "
-            "[handoffs.<role>] timeout"
+            "role launch timeout"
         ),
     )
     subparser.add_argument(
@@ -121,22 +121,14 @@ def _parse_duration(raw: str) -> Optional[int]:
 def _resolve_timeout_seconds(project_root: Path, role: str) -> int:
     """Resolve the configured handoff timeout for ``role`` in whole seconds.
 
-    Reads ``[handoffs.<role>] timeout`` along the project/global config chain,
-    falling back to the protocol default (``60m``) when no block, no timeout
-    field, or unreadable/malformed config is present. wait-handoff is an
-    observer, so config gaps degrade to the default rather than failing.
+    Reads ``roles.<role>.launch.timeout`` from canonical resolution, falling
+    back to the protocol default (``60m``) only when the valid role omits it.
     """
-    project_toml = project_root / "cartopian.toml"
-    global_toml = Path.home() / ".cartopian" / "cartopian.toml"
-    try:
-        project_cfg = _load_toml(project_toml, "project config") or {}
-        global_cfg = _load_toml(global_toml, "global config") or {}
-    except _CliError:
-        return DEFAULT_TIMEOUT_SECONDS
-
-    handoffs = _resolve_handoffs(global_cfg, project_cfg)
-    role_block = handoffs.get(role, {}) or {}
-    timeout_raw = role_block.get("timeout") or DEFAULT_TIMEOUT
+    resolved = resolve_project_configuration(project_root)
+    role_record = resolved["roles"].get(role, {})
+    timeout_raw = (
+        role_record.get("launch", {}).get("timeout") or DEFAULT_TIMEOUT
+    )
     seconds = _parse_duration(str(timeout_raw))
     return seconds if seconds is not None else DEFAULT_TIMEOUT_SECONDS
 
@@ -272,7 +264,11 @@ def handler(args: argparse.Namespace) -> int:
     # The configured timeout is the absolute ceiling. Without --max-block the
     # wait is terminal: it blocks to that ceiling and can only end in a
     # terminal status. An explicit --max-block bounds one observation slice.
-    timeout_seconds = _resolve_timeout_seconds(project_root, args.role)
+    try:
+        timeout_seconds = _resolve_timeout_seconds(project_root, args.role)
+    except _CliError as exc:
+        stderr_error(exc.message)
+        return exc.exit_code
     if max_block_seconds is None:
         effective_seconds = timeout_seconds
         deadline_status = "timeout"

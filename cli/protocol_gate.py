@@ -1,9 +1,9 @@
-"""Config-schema migration gate for ``[project].protocol_version``.
+"""Config-schema migration gate for ``[project].project_schema_version``.
 
-Compares a project config's declared ``[project].protocol_version`` against
-the shipped protocol version — the topmost ``### vX.Y.Z`` entry under
-``## Entries`` in ``protocol/CHANGELOG.md``, per the CHANGELOG's own
-``[project] protocol_version`` marker semantics — and classifies:
+Compares a project config's declared
+``[project].project_schema_version`` against the shipped schema target — the
+topmost ``### vX.Y.Z`` entry under ``## Entries`` in
+``protocol/CHANGELOG.md`` — and classifies:
 
 - ``GATE_CURRENT``  — marker equals the shipped version; pass, no gate noise.
 - ``GATE_MIGRATE``  — marker is unset, missing, or lexically less than the
@@ -40,7 +40,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CHANGELOG_PATH = _REPO_ROOT / "protocol" / "CHANGELOG.md"
 
 
-def read_shipped_protocol_version(changelog_path: Optional[Union[str, Path]] = None) -> str:
+def read_shipped_project_schema_version(
+    changelog_path: Optional[Union[str, Path]] = None,
+) -> str:
     """The shipped protocol version: the topmost ``### vX.Y.Z`` entry under
     ``## Entries`` in the protocol CHANGELOG (same rule ``generate-config``
     stamps new configs with)."""
@@ -53,8 +55,8 @@ def read_shipped_protocol_version(changelog_path: Optional[Union[str, Path]] = N
     return m.group(1)
 
 
-def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
-    """Classify a declared ``[project].protocol_version`` against ``shipped``.
+def classify_project_schema_version(declared: Any, shipped: str) -> Dict[str, str]:
+    """Classify a declared project schema marker against ``shipped``.
 
     Returns ``{status, detected_version, shipped_version, detail}``. The
     ``detail`` string names the detected version, the shipped version, and —
@@ -80,10 +82,8 @@ def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
             "detected_version": detected_label,
             "shipped_version": shipped,
             "detail": (
-                f"project protocol schema migration required (this is separate "
-                f"from the Cartopian application version): the project's internal "
-                f"schema marker is {detected_label}, while this Cartopian install "
-                f"uses schema {shipped} — "
+                f"project schema migration required: project_schema_version is "
+                f"{detected_label}, while the shipped schema target is {shipped} — "
                 f"apply the protocol/CHANGELOG.md migration entries whose "
                 f"applies-when precondition matches {detected_label} (they end "
                 f"by setting the internal marker to {shipped}); the PM applies "
@@ -97,11 +97,17 @@ def classify_protocol_version(declared: Any, shipped: str) -> Dict[str, str]:
         "shipped_version": shipped,
         "detail": (
             f"config-schema gate failed closed (residual: {RESIDUAL_NAME}): "
-            f"the project's internal protocol-schema marker is {detected!r}, "
-            f"which is unknown to or newer than schema {shipped} shipped by "
-            f"this Cartopian install (not the application release version); no CHANGELOG "
+            f"project_schema_version is {detected!r}, which is unknown to or "
+            f"newer than the shipped schema target {shipped}; no CHANGELOG "
             f"migration path exists, so this config cannot be validated "
             f"against the shipped schema. Project config is left unmodified — "
             f"upgrade Cartopian or let the PM repair the internal marker"
         ),
     }
+
+
+# Reserved migration-only compatibility aliases for transforming historical
+# markers. Normal config parsing and all preferred output use only
+# project_schema_version.
+read_shipped_protocol_version = read_shipped_project_schema_version
+classify_protocol_version = classify_project_schema_version
