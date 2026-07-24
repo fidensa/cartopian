@@ -24,7 +24,7 @@ The `Work root:` value carries names only — the same names declared in the pro
 
 - <absolute path to the durable work product this task produced, or n/a>
 
-Optional document-work evidence. When this task produced a durable document (research, design, evaluation), name its path here. The substantive work product lives in that file, not in this report. When the prompt gave no Deliverable path because the durable copy must land inside the governing project, leave this `n/a` and paste the work product in `## Deliverable content` below; the PM persists it. Omit this section when no durable document was promised.
+Optional document-work evidence. When this task produced a durable document (research, design, evaluation), name its path here. The substantive work product lives in that file, not in this report. When the prompt gave no Deliverable path because the durable copy must land inside the governing project's `resources/` directory, leave this `n/a` and paste the work product in `## Deliverable content` below; the PM persists it. Omit this section when no durable document was promised.
 
 ## Deliverable content
 

@@ -1,5 +1,6 @@
 """`cartopian resolve-config <project-path>` implementation."""
 import argparse
+import os
 import re
 import sys
 import tomllib
@@ -413,6 +414,22 @@ def _resolve_work_roots(
 _DELIVERABLE_SKIP = {"", "n/a", "none"}
 
 
+def _relpath_in_resources(relpath: str) -> bool:
+    """True when a project-mode deliverable path lands under ``resources/``.
+
+    The path must be relative, traversal-free, and name a file strictly inside
+    ``resources/`` (CONVENTIONS § Project Resources). Windows separators are
+    accepted and normalized before the check.
+    """
+    normalized = relpath.replace("\\", "/")
+    if not normalized or normalized.startswith("/") or os.path.isabs(relpath):
+        return False
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    if ".." in parts or len(parts) < 2:
+        return False
+    return parts[0] == "resources"
+
+
 def _lookup_work_root_path(
     project_cfg: Dict[str, Any], project_path: Path, name: str
 ) -> Optional[Path]:
@@ -451,15 +468,21 @@ def _resolve_deliverable(
     The reference is name-only and deidentified (it mirrors ``Work root:`` and
     carries no ``NN-NNN``), in one of two forms:
 
-    - ``<work-root-name>:<relative/path>`` (mode ``work-root``) — the coder
-      writes the durable work product directly into that work root, exactly as
-      it writes code. ``absolute_path`` is ``None`` when the name is unmapped
+    - ``<work-root-name>:<relative/path>`` (mode ``work-root``) — a work
+      product intended to become part of the product, at an operator-chosen
+      path. The coder writes it directly into that work root, exactly as it
+      writes code. ``absolute_path`` is ``None`` when the name is unmapped
       on this machine; the work-root validator surfaces that separately, so the
       aggregator does not hard-fail on it.
-    - ``project:<relative/path>`` (mode ``project``) — the durable work product
-      lands under the cartopian project root. Because the coder is not granted
-      write access there, it returns the work product inline in its completion
-      report and the PM persists it to this path before the report is cleared.
+    - ``project:resources/<relative/path>`` (mode ``project``) — a supporting
+      artifact of the project itself, under the project's ``resources/``
+      directory. Because the coder is not granted write access there, it
+      returns the work product inline in its completion report and the PM
+      persists it with ``cartopian write-resource`` before the report is
+      cleared. ``in_resources`` reports whether the path actually lands under
+      ``resources/`` (``None`` for work-root mode); ``validate-task-readiness``
+      blocks a project-mode deliverable that escapes it, and ``plan-audit``
+      warns on legacy ones.
 
     Returns ``None`` for an absent / ``n/a`` / ``none`` deliverable.
     """
@@ -478,14 +501,17 @@ def _resolve_deliverable(
         mode = "work-root"
     if mode == "project":
         base: Optional[Path] = project_path
+        in_resources: Optional[bool] = _relpath_in_resources(relpath)
     else:
         base = _lookup_work_root_path(project_cfg, project_path, root)
+        in_resources = None
     absolute = (base / relpath).resolve() if base is not None else None
     return {
         "logical": value,
         "mode": mode,
         "root": root,
         "relpath": relpath,
+        "in_resources": in_resources,
         "absolute_path": str(absolute) if absolute is not None else None,
         "exists": absolute.exists() if absolute is not None else False,
     }

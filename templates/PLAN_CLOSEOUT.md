@@ -18,6 +18,7 @@ List the artifacts copied into this archive.
 ## Carry-forward choices
 
 - `STANDARDS.md`: `<carried forward | reset>`
+- `resources/`: `<carried forward (default) | carried forward, operator pruned: <files>>`
 
 ## Not carried forward
 

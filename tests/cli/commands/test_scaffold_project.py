@@ -32,6 +32,7 @@ REQUIRED_DIRS = (
     "specs",
     "decisions",
     "reviews",
+    "resources",
 )
 REQUIRED_FILES = (
     "STATE.md",

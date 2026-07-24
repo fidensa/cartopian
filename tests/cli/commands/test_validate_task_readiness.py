@@ -129,6 +129,7 @@ CHECK_NAMES_IN_ORDER = [
     "evidence-gate-valid",
     "acceptance-present",
     "work-root-names-valid",
+    "deliverable-valid",
 ]
 
 

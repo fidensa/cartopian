@@ -4,7 +4,7 @@ Phase: PHASE-NN-slug
 Plan ref: PNN-KIND-NNN
 Source: <BL-NNN | n/a>
 Work root: <name | name, name | n/a>
-Deliverable: <root:relative/path.md | project:relative/path.md | n/a>
+Deliverable: <root:relative/path | project:resources/relative/path | n/a>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN-slug.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
@@ -38,12 +38,12 @@ Use `n/a` (or omit the line) when the task touches nothing outside the cartopian
 
 ## Deliverable
 
-Set this when the task's work product is a durable document — research findings, a design or evaluation, an analysis — rather than code. It names where that document lives, so the report can stay a thin summary and the reviewer reviews the real artifact. Name-only and deidentified (no task, plan, spec, or requirement identifiers), same discipline as `Work root:`. Two forms:
+Set this when the task's work product is a durable document — research findings, a design or evaluation, an analysis — rather than code. It names where that document lives, so the report can stay a thin summary and the reviewer reviews the real artifact. Name-only and deidentified (no task, plan, spec, or requirement identifiers), same discipline as `Work root:`. Two forms, routed by intent:
 
-- `root:relative/path.md` — the document lives in the work root named `root` (drawn from `[project].work_roots`); the assignee writes it there directly, exactly as it writes code.
-- `project:relative/path.md` — the document lives under the cartopian project root. The assignee returns the document inline in its completion report and the PM persists it here, because the assignee is not granted write access inside the project.
+- `root:relative/path` — the work product is intended to become part of the product. It lives in the work root named `root` (drawn from `[project].work_roots`); the assignee writes it there directly, exactly as it writes code. The path is operator-chosen — captured from the operator at authoring or assignment, never invented by the PM.
+- `project:resources/relative/path` — the work product is a supporting artifact of the project itself. It lives under the project's `resources/` directory (a project-mode path outside `resources/` fails `validate-task-readiness`). The assignee returns the document inline in its completion report and the PM persists it with `cartopian write-resource`, because the assignee is not granted write access inside the project.
 
-Use `n/a` (or omit the line) for code tasks and any task with no durable document deliverable. See `protocol/CONVENTIONS.md` → Document Deliverables.
+Use `n/a` (or omit the line) for code tasks and any task with no durable document deliverable. See `protocol/CONVENTIONS.md` → Project Resources and Document Deliverables.
 
 ## Dependencies
 

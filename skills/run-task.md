@@ -96,7 +96,12 @@ cartopian handoff-packet <task-path> --role <role>
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
-If the task's work product is a durable document (research, design, evaluation) rather than code and the task's `Deliverable:` field is not yet set, prompt the operator for where the document should live before authoring the prompt: an existing work-root name plus a relative path (`root:relative/path.md`, written directly by the assignee), or `project:relative/path.md` (returned inline and persisted by the PM). Persist the chosen value into the task via `cartopian write-task` so it enters the trace chain, then re-run `handoff-packet` so the record carries the resolved `deliverable`. See `cartopian://protocol/CONVENTIONS/document-deliverables`.
+If the task's work product is a durable document (research, design, evaluation) rather than code and the task's `Deliverable:` field is not yet set, prompt the operator for where the document should live before authoring the prompt. The destination is **operator authority** — the PM never invents or assigns the path itself. Route by intent:
+
+- Work product intended to become **part of the product**: an existing work-root name plus an **operator-chosen** relative path (`root:relative/path`, written directly by the assignee).
+- **Supporting artifact** of the project itself (research, analysis, planning input): `project:resources/relative/path` — the protocol fixes the `resources/` home; the operator supplies or confirms the relative path. The document is returned inline and persisted by the PM. A project-mode path outside `resources/` fails `validate-task-readiness`; supporting artifacts are never placed loose in a work root.
+
+Persist the chosen value into the task via `cartopian write-task` so it enters the trace chain, then re-run `handoff-packet` so the record carries the resolved `deliverable`. See `cartopian://protocol/CONVENTIONS/project-resources` and `cartopian://protocol/CONVENTIONS/document-deliverables`.
 
 Then author the assignment prompt. This is a **PM-performed** write; the contained PM has no raw `Write` tool, so create or update `prompts/PROMPT-NN-NNN.md` through the mediated writer:
 
@@ -175,7 +180,7 @@ If the verdict is `blocked`, `failed`, or `failed-to-parse`, stop automation, ke
 
 If the verdict is `accepted` with `Ready to close: no` (or legacy `Ready for review: no`), keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator.
 
-If the verdict is `accepted` with `Ready to close: yes` (or the legacy heading), first persist every durable output. If the task declares a `project`-mode `Deliverable:`, persist the report's `## Deliverable content` to `deliverable.absolute_path` using PM project-write authority before any lifecycle move or report reuse. A `work-root`-mode deliverable is already written by the assignee.
+If the verdict is `accepted` with `Ready to close: yes` (or the legacy heading), first persist every durable output. If the task declares a `project`-mode `Deliverable:`, persist the report's `## Deliverable content` through the mediated writer before any lifecycle move or report reuse — `cartopian write-resource <project-root> --path <resources-relative-path> --content-file <body-path>` (the `--path` value is the `deliverable.relpath` without its leading `resources/`; a contained PM passes `--content` directly). A `work-root`-mode deliverable is already written by the assignee.
 
 If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, skip the git block below and apply the routing step after it.
 

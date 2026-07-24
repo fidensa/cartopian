@@ -44,6 +44,8 @@ SUBCOMMANDS: List[str] = [
     "write-prompt",
     "write-decision",
     "write-state",
+    # Mediated transcription into resources/ (project supporting artifacts)
+    "write-resource",
     # Durable CLI-supported home for PM/reviewer follow-up notes
     "write-backlog",
     "delete-backlog",
@@ -142,6 +144,7 @@ def _real_handlers():
         write_plan,
         write_prompt,
         write_requirements,
+        write_resource,
         write_spec,
         write_standards,
         write_state,
@@ -186,6 +189,7 @@ def _real_handlers():
         "write-plan": (write_plan.configure_parser, write_plan.handler),
         "write-prompt": (write_prompt.configure_parser, write_prompt.handler),
         "write-requirements": (write_requirements.configure_parser, write_requirements.handler),
+        "write-resource": (write_resource.configure_parser, write_resource.handler),
         "write-spec": (write_spec.configure_parser, write_spec.handler),
         "write-standards": (write_standards.configure_parser, write_standards.handler),
         "write-state": (write_state.configure_parser, write_state.handler),

@@ -22,6 +22,7 @@ ALLOWED_TOP_DIRS = (
     "specs",
     "decisions",
     "reviews",
+    "resources",
 )
 
 ALLOWED_TOP_FILES = (
@@ -44,6 +45,7 @@ REQUIRED_DIRS = (
     "specs",
     "decisions",
     "reviews",
+    "resources",
 )
 
 REQUIRED_FILES = (

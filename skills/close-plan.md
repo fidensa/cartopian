@@ -104,15 +104,17 @@ Also compare the task identifiers reported under `tasks/done/` to the current ph
 
 ## Stage 2 - Operator Choices
 
-Ask the operator two closeout questions:
+Ask the operator three closeout questions:
 
 1. **Archive:** "Do you want to archive the completed plan before reset?"
 2. **Standards:** "Should `STANDARDS.md` carry forward as the seed for the next plan, or reset to a blank project standards file?"
+3. **Resources:** "The project's supporting artifacts in `resources/` carry forward to the next plan by default (an archive also snapshots them). Keep them all, or name any the operator wants pruned?"
 
 Defaults:
 
 - Archive: no.
 - Standards: carry forward only if the operator says so.
+- Resources: carry forward. `reset-plan` never clears `resources/`; when the operator asks for an archive, `archive-plan` snapshots `resources/` along with the plan artifacts. Pruning is **operator-performed** (no mediated command deletes resources) and happens only for files the operator explicitly names.
 
 Requirements and implementation plans never carry forward as live artifacts. The next planning cycle must produce fresh `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md`.
 
@@ -146,6 +148,7 @@ The closeout summary records:
 - Whether this was a full completion or another operator-approved closeout after all active work was resolved.
 - Archive contents.
 - The carry-forward choice for `STANDARDS.md`.
+- The `resources/` disposition: carried forward (the default), snapshotted in this archive, and any files the operator chose to prune.
 - Any plan refs or work intentionally not carried forward.
 - Suggested seed context for the next requirements session.
 
@@ -163,8 +166,9 @@ Copy these live artifacts into the archive directory when they exist:
 - `reviews/`
 - `reports/`
 - `decisions/`
+- `resources/`
 
-Do not archive `prompts/`. Prompts are temporary handoff artifacts and must not become a durable archive.
+Do not archive `prompts/`. Prompts are temporary handoff artifacts and must not become a durable archive. Archiving copies `resources/`; the live `resources/` directory still carries forward untouched per the Stage 2 choice.
 
 ### 3.4 Create the snapshot and update the index
 
@@ -203,8 +207,8 @@ cartopian reset-plan <project-root> [--carry-standards]
 
 `reset-plan` (FR-005, the OQ-003 close-surface verb):
 
-- **Removes** the live plan artifacts — `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, and every file in `phases/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`. (It does **not** touch `prompts/` or `reports/` — those were cleared in 4.1.)
-- **Recreates** the empty lifecycle directories (`phases/`, `prompts/`, `reports/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`).
+- **Removes** the live plan artifacts — `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, and every file in `phases/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`. (It does **not** touch `prompts/` or `reports/` — those were cleared in 4.1 — and never clears `resources/`, whose contents carry forward.)
+- **Recreates** the empty lifecycle directories (`phases/`, `prompts/`, `reports/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`), and ensures `resources/` exists.
 - **Conditionally reseeds** `STANDARDS.md` from the carry-forward choice in Stage 2: pass `--carry-standards` to **keep** it as seed context; omit the flag to reseed it to a fresh project seed. The reseed write goes through the same mediated-write guards as the `write-*` commands.
 
 The command supplies only the project root — the PM never names a path to remove, create, or reseed; every target is a fixed, code-owned member of the close-surface allowlist. A symlink, foreign subdirectory, or out-of-root target aborts the whole pass with nothing removed, created, or written.
@@ -215,6 +219,7 @@ The command supplies only the project root — the PM never names a path to remo
 
 - `cartopian.toml`
 - `archive/`
+- `resources/` (contents; the empty directory is ensured)
 
 ---
 
@@ -265,6 +270,7 @@ None.
 
 - Archive: <none | archive/PLAN-NNN-slug/>
 - Engineering carry-forward: <yes | no>
+- Resources: <carried forward | carried forward, operator pruned <files>>
 
 ## What to do next
 

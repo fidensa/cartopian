@@ -49,7 +49,7 @@ Outcomes per contract:
 - Exit 0 and no-op when a complete scaffold already exists.
 - Exit 1 with a `[guard]` message when the target is non-empty and conflicts with the scaffold layout.
 
-The scaffold seeds the directory structure and seed files (STATE.md, STANDARDS.md, phases/, tasks/{open,in-progress,in-review,done}/, prompts/, reports/, specs-or-renamed-work-contracts/, decisions/ with INDEX.md, reviews/). Protocol conventions remain tool-owned at `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md` copy.
+The scaffold seeds the directory structure and seed files (STATE.md, STANDARDS.md, phases/, tasks/{open,in-progress,in-review,done}/, prompts/, reports/, specs-or-renamed-work-contracts/, decisions/ with INDEX.md, reviews/, resources/ for project supporting artifacts). Protocol conventions remain tool-owned at `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md` copy.
 
 ### Step 3 — Generate project config via Core CLI
 

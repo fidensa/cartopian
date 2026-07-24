@@ -76,6 +76,7 @@ DEST_KINDS: Dict[str, str] = {
     "report": "reports",
     "review": "reviews",
     "decision": "decisions",
+    "resource": "resources",
     "requirements": "",
     "plan": "",
     "standards": "",

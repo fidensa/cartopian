@@ -35,6 +35,7 @@ ARCHIVE_DIRS = (
     "specs",
     "reviews",
     "reports",
+    "resources",
 )
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _ARCHIVE_RE = re.compile(r"^PLAN-(\d{3})-[a-z0-9]+(?:-[a-z0-9]+)*$")

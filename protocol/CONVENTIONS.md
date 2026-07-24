@@ -263,32 +263,41 @@ Report parsing outcomes are:
 
 `failed-to-parse` is a PM-level blocker. It preserves the prompt and invalid report for inspection and prevents lifecycle movement.
 
+## Project Resources
+
+`resources/` at the project root is the durable home for project supporting artifacts — research documents, user stories, reference papers, images, spreadsheets, datasets, or generally any format of material that supports planning and implementation but is not itself part of the product. The routing rule is intent-based: anything intended to become part of the product belongs in a work root at an operator-chosen path (see Document Deliverables); anything that exists to support the project's own planning and execution belongs in `resources/`. Supporting artifacts never land loose in a work root.
+
+- Any file format is allowed, and subdirectories are allowed.
+- The PM writes into `resources/` only through the mediated `cartopian write-resource` command (see PM Scope) — typically to persist an assignee-returned document deliverable. The operator may place files there directly.
+- PM artifacts reference resources by project-relative path (`resources/<path>`); prompts surface them to assignees by absolute path, like any other referenced location.
+- `resources/` is not part of the live plan surface. `reset-plan` never clears it, and it carries forward across plans by default. At plan closeout the operator explicitly decides its disposition: carry forward as-is, and/or snapshot it into the plan archive (`archive-plan` includes `resources/`). Pruning is operator-performed; no mediated command deletes resources.
+
 ## Document Deliverables
 
 A document-deliverable task is one whose work product is a durable document — research findings, a design, an evaluation, an analysis — rather than code. Such a task declares a `Deliverable:` field so its work product is written to a durable file the reviewer reviews directly, and the completion report stays a thin summary. This is the same shape as a code task: code is written to the work root and the report summarizes it; a document is written to a deliverable and the report summarizes it. A report is never the home of the work product, and reports are not durable (a task and its review report share `reports/REPORT-NN-NNN.md`, so the coder's report is cleared before the review handoff).
 
 ### The Deliverable field
 
-`Deliverable:` is name-only and deidentified — it carries no task, plan, spec, or requirement identifier, the same discipline as `Work root:`. It takes one of two forms:
+`Deliverable:` is name-only and deidentified — it carries no task, plan, spec, or requirement identifier, the same discipline as `Work root:`. It takes one of two forms, routed by intent:
 
-- `root:relative/path.md` (work-root deliverable) — the assignee writes the document into the named work root directly, exactly as it writes code.
-- `project:relative/path.md` (project-root deliverable) — the document lands under the cartopian project root. The assignee is not granted write access there, so it returns the document inline in its completion report and the PM persists it to this path.
+- `root:<relative/path>` (work-root deliverable) — for a work product intended to become **part of the product**. The assignee writes it into the named work root directly, exactly as it writes code. The path is **operator-chosen**: the PM captures it from the operator at task authoring or at assignment and never invents or assigns it itself.
+- `project:resources/<relative/path>` (project-resource deliverable) — for a **supporting artifact** of the project itself. The document lands under the project's `resources/` directory; a project-mode path outside `resources/` is invalid (`validate-task-readiness` blocks the task). The assignee is not granted write access to the project, so it returns the document inline in its completion report and the PM persists it via `cartopian write-resource`.
 
-The field is set at task authoring, or captured at assignment when the PM prompts the operator for the location. `n/a` (or an absent line) means the task has no durable document deliverable. `handoff-packet` and `task-bundle` resolve the field to an absolute `deliverable` record (mode, root, relpath, absolute path, existence) so the PM sources the path without re-reading the task.
+The field is set at task authoring, or captured at assignment when the PM prompts the operator for the location; the deliverable's destination is operator authority — the protocol fixes the `resources/` home for supporting artifacts, and the operator supplies or confirms the relative path in either form. `n/a` (or an absent line) means the task has no durable document deliverable. `handoff-packet` and `task-bundle` resolve the field to an absolute `deliverable` record (mode, root, relpath, absolute path, existence) so the PM sources the path without re-reading the task.
 
 ### Work-root deliverables
 
 The assignee writes the complete work product to the resolved deliverable path (inside a declared work root, already in its write scope). The completion report only summarizes what was done and points to the deliverable. The review prompt names the deliverable path as the primary artifact to review.
 
-### Project-root deliverables
+### Project-resource deliverables
 
-The assignee returns the complete work product inline in the report's `## Deliverable content` section. Before clearing the report for the review handoff, the PM persists that content to the resolved project-root deliverable path using its own project-write authority. The review prompt then names the persisted file as the primary artifact to review. (A deployment may instead grant the assignee role write access to the project directory, in which case a project-root deliverable is written directly like a work-root one; the inline path is the default that needs no extra grant.)
+The assignee returns the complete work product inline in the report's `## Deliverable content` section. Before clearing the report for the review handoff, the PM persists that content to the resolved `resources/` path with `cartopian write-resource`. The review prompt then names the persisted file as the primary artifact to review. The inline-return path carries text formats (markdown, CSV, and the like); a binary work product (an image, a binary spreadsheet) cannot travel through a report, so it is produced in a work root and brought into `resources/` by the operator. (A deployment may instead grant the assignee role write access to the project directory, in which case a project-resource deliverable is written directly like a work-root one; the inline path is the default that needs no extra grant.)
 
 ### Durability
 
 The deliverable is the durable record of the work; the report may be cleared and is not a substitute for it. A deliverable is the assignee's produced knowledge artifact — distinct from a decision (`decisions/DEC-NNN`, a PM ruling) and from a spec (`specs/SPEC-NN-NNN`, the input contract). When a deliverable's findings warrant a durable protocol ruling, the PM still records that as a decision.
 
-`plan-audit` enforces this durability: a task in `in-review` or `done` that declares a `Deliverable:` whose file is missing is a `missing-deliverable` blocker (skipped only when a work-root deliverable's name is unmapped on the auditing machine, since existence cannot be verified there).
+`plan-audit` enforces this durability: a task in `in-review` or `done` that declares a `Deliverable:` whose file is missing is a `missing-deliverable` blocker (skipped only when a work-root deliverable's name is unmapped on the auditing machine, since existence cannot be verified there). Placement is guarded at the transition that consumes it: `validate-task-readiness` blocks a task whose project-mode deliverable escapes `resources/`, and `plan-audit` emits a `deliverable-outside-resources` warning for a legacy artifact that predates the rule.
 
 ## Roles
 
@@ -301,7 +310,7 @@ Roles exist to be assigned, which means a PM who takes on the work rather than a
 The PM role is bounded to project-management authoring:
 
 - **Directory scope.** The PM may only read or mutate files inside the project directory currently being managed. It may not modify files outside that project — including sibling Cartopian-governed projects, the Cartopian protocol repository itself, or any unrelated repository the operator happens to have on disk.
-- **File-type scope.** Within the managed project, the PM authors markdown (`.md`) files — CREATE, READ, UPDATE, DELETE. The project's own config files (`cartopian.toml`, `cartopian.local.toml`) are the one non-markdown exception: the PM may edit them, but only through the mediated `cartopian update-config` command and only on the operator's explicit request (see **Config management** below). All other non-markdown work — source code, data files, build artifacts, executables — must be dispatched to another role via a handoff.
+- **File-type scope.** Within the managed project, the PM authors markdown (`.md`) files — CREATE, READ, UPDATE, DELETE. There are two non-markdown exceptions. The project's own config files (`cartopian.toml`, `cartopian.local.toml`): the PM may edit them, but only through the mediated `cartopian update-config` command and only on the operator's explicit request (see **Config management** below). And `resources/`: the PM may persist a file there, but only through the mediated `cartopian write-resource` command, and only as transcription — persisting an assignee-returned deliverable or operator-supplied content verbatim, never producing the substantive content itself. All other non-markdown work — source code, data files, build artifacts, executables — must be dispatched to another role via a handoff.
 - **Config management.** The PM manages the project's config on the operator's behalf, so a non-technical operator never has to find or hand-edit `cartopian.toml`. Config edits are operator-*requested*, never proactive or routine: the PM does not offer or solicit config changes during ordinary lifecycle flow, and applies them only when the operator explicitly asks (or approves a migration). All PM config edits go through `cartopian update-config`, which validates the closed key schema and the resulting effective config and writes atomically; the PM still reads effective config via `cartopian resolve-config`. This scope covers only config files *inside the managed project directory*; the global `~/.cartopian/cartopian.toml` lives outside every project and is authored by the workspace-setup flow (`skills/init-workspace.md`), not by a per-project PM. Enforcement is precise: a structured raw-edit tool aimed at a config file is denied regardless of grants (the mediated command is the only edit path), while shell-routed edits and advisory-tier hosts remain documented residuals, exactly as for every other governed path-class.
 - **Migration is PM-owned.** A project's internal protocol-schema version is separate from the installed Cartopian application's release version. Bringing that project schema current is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config`, ordinary project authoring through the structured writers, and shipped deterministic filesystem transforms through `cartopian apply-migration-entry`. The migration executor accepts only a registered project root and shipped entry version; its closed registry owns all paths and transformations. Judgment-dependent values return as structured pending PM actions and block the marker bump until resolved. Operators are not expected to edit the version marker or perform file surgery. See `skills/migrate-project.md`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
@@ -487,6 +496,8 @@ Plan closeout resets the live plan surface:
 
 `STANDARDS.md` — project metadata: the chosen tools or stack, working standards, and cycle constraints — may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
 
+`resources/` is not part of the live plan surface: `reset-plan` never clears it, and its contents carry forward across plans by default. Closeout puts its disposition to the operator explicitly — carry forward, and/or snapshot into the plan archive (see Project Resources).
+
 `cartopian.toml` remains live across plans.
 
 ## Plan Archives
@@ -505,9 +516,10 @@ Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
 - `specs/`
 - `reviews/`
 - `reports/`
+- `resources/`
 - `CLOSEOUT.md`
 
-Prompts are not archived.
+Prompts are not archived. Archiving copies `resources/` — it never removes the live directory; whether the live `resources/` carries forward untouched is the operator's closeout decision (see Project Resources).
 
 Archival is a PM lifecycle action. When the operator requests a snapshot, the PM runs the bounded `cartopian archive-plan` command before reset; the PM does not delegate raw archive creation or copying to the operator. The command owns archive numbering, copies only the fixed plan-artifact allowlist, writes `CLOSEOUT.md`, and updates `archive/INDEX.md`.
 

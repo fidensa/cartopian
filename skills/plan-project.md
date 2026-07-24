@@ -91,6 +91,8 @@ Do **not** present a blank form. Be conversational. Draw out requirements throug
 
 **Challenge vague statements.** If the operator says "it should be fast," ask "how fast? What's the latency target?" Push for specificity, because vague requirements produce vague plans.
 
+**Supporting documents live in `resources/`.** When the operator supplies or asks for supporting material for planning — research documents, user stories, reference papers, datasets — its durable home is the project's `resources/` directory (`cartopian://protocol/CONVENTIONS/project-resources`), never a work root. Operator-supplied files are placed there by the operator; documents produced through a research task are declared as `project:resources/<path>` deliverables and persisted with `cartopian write-resource`.
+
 ### 1.3 Produce REQUIREMENTS.md
 
 Authoring `REQUIREMENTS.md` is a **PM-performed** write. The contained PM has no raw `Write` tool, so author it through the mediated writer (use the structure that emerged from the conversation, not a rigid template):

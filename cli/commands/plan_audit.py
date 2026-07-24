@@ -359,7 +359,10 @@ def _check_deliverables(
     machine — a work-root name unmapped in ``cartopian.local.toml`` — the check
     is skipped rather than firing a cross-machine false positive; work-root
     mapping is validated on its own path. ``project``-mode deliverables always
-    resolve (relative to the project root), so they are always checked.
+    resolve (relative to the project root), so they are always checked; one
+    that escapes ``resources/`` (a legacy placement predating CONVENTIONS
+    § Project Resources) additionally emits a ``deliverable-outside-resources``
+    warning.
     """
     blockers: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
@@ -384,6 +387,21 @@ def _check_deliverables(
             deliverable = _resolve_deliverable(project_cfg, project_path, dm.group(1))
             if deliverable is None:
                 continue
+            if deliverable["mode"] == "project" and not deliverable["in_resources"]:
+                # Legacy placement predating CONVENTIONS § Project Resources;
+                # new tasks are blocked at validate-task-readiness instead.
+                warnings.append({
+                    "kind": "deliverable-outside-resources",
+                    "task_id": task_id,
+                    "task_path": str(task_file),
+                    "task_status": status_dir,
+                    "detail": (
+                        f"{task_id} declares project-mode deliverable "
+                        f"'{deliverable['logical']}' outside resources/; "
+                        "supporting artifacts live under resources/ "
+                        "(project:resources/<path>)"
+                    ),
+                })
             absolute = deliverable["absolute_path"]
             if absolute is None:
                 # Work-root name unmapped on this machine — cannot verify; skip.

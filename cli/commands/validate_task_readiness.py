@@ -5,7 +5,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli.commands.resolve_config import _CliError, _load_toml, _resolve_work_roots
+from cli.commands.resolve_config import (
+    _CliError,
+    _DELIVERABLE_SKIP,
+    _load_toml,
+    _relpath_in_resources,
+    _resolve_work_roots,
+)
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
@@ -17,6 +23,7 @@ CHECK_ORDER = (
     "evidence-gate-valid",
     "acceptance-present",
     "work-root-names-valid",
+    "deliverable-valid",
 )
 
 EVIDENCE_GATE_VALUES = ("required", "n/a")
@@ -245,6 +252,57 @@ def _check_work_root(
     return {"name": "work-root-names-valid", "pass": True, "reason": None}
 
 
+def _check_deliverable(
+    project_root: Path, headers: Dict[str, str]
+) -> Dict[str, Any]:
+    """Validate the ``Deliverable:`` field's placement rules.
+
+    A project-mode deliverable must land under ``resources/`` (CONVENTIONS
+    § Project Resources); a work-root deliverable must name a declared work
+    root. Absent / ``n/a`` deliverables pass — most tasks have none.
+    """
+    raw = headers.get("Deliverable", "").strip()
+    if raw.lower() in _DELIVERABLE_SKIP:
+        return {"name": "deliverable-valid", "pass": True, "reason": None}
+
+    root, sep, relpath = raw.partition(":")
+    root, relpath = root.strip(), relpath.strip()
+    if not sep or not relpath:
+        root, relpath = "project", raw
+
+    if relpath.startswith(("/", "\\")) or (len(relpath) > 1 and relpath[1] == ":"):
+        return {
+            "name": "deliverable-valid",
+            "pass": False,
+            "reason": f"deliverable path must be relative: {raw!r}",
+        }
+
+    if root == "project":
+        if _relpath_in_resources(relpath):
+            return {"name": "deliverable-valid", "pass": True, "reason": None}
+        return {
+            "name": "deliverable-valid",
+            "pass": False,
+            "reason": (
+                f"project-mode deliverable must live under resources/ "
+                f"(project:resources/<path>); got: {raw!r}"
+            ),
+        }
+
+    try:
+        project_cfg = _load_toml(project_root / "cartopian.toml", "project config") or {}
+    except _CliError as err:
+        return {"name": "deliverable-valid", "pass": False, "reason": err.message}
+    declared = (project_cfg.get("project", {}) or {}).get("work_roots", []) or []
+    if root not in declared:
+        return {
+            "name": "deliverable-valid",
+            "pass": False,
+            "reason": f"deliverable names an undeclared work root: {root}",
+        }
+    return {"name": "deliverable-valid", "pass": True, "reason": None}
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.task_path
     if not Path(raw_path).is_absolute():
@@ -281,6 +339,7 @@ def handler(args: argparse.Namespace) -> int:
         "work-root-names-valid": _check_work_root(
             project_root, headers, presence, warnings
         ),
+        "deliverable-valid": _check_deliverable(project_root, headers),
     }
     checks = [checks_by_name[name] for name in CHECK_ORDER]
     ready = all(c["pass"] for c in checks)

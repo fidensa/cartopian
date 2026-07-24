@@ -14,6 +14,7 @@ from cli.commands.validate_task_readiness import (
     CHECK_ORDER,
     _check_acceptance,
     _check_blocked_by,
+    _check_deliverable,
     _check_evidence_gate,
     _check_phase,
     _check_plan_ref,
@@ -172,6 +173,7 @@ def _build_validation_checks(
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
         "acceptance-present": _check_acceptance(content),
         "work-root-names-valid": _check_work_root(project_root, headers, presence, warnings),
+        "deliverable-valid": _check_deliverable(project_root, headers),
     }
     return [checks_by_name[name] for name in CHECK_ORDER]
 

@@ -11,7 +11,8 @@ In one fail-closed pass it:
   ``decisions/``. Prompts and reports are *not* touched here — they are
   cleared via the existing ``delete-prompt`` / ``delete-report`` commands.
 - **G14 — recreates the empty lifecycle directories** (including ``prompts/``
-  and ``reports/``).
+  and ``reports/``, and ensuring ``resources/`` exists without ever clearing
+  it — project supporting artifacts carry forward across plans).
 - **G15 — conditionally reseeds** ``STANDARDS.md`` per the carry-forward flag.
   The reseed write goes through the mediated-write primitive; carry-forward
   leaves the file untouched.
@@ -59,11 +60,14 @@ RESET_CLEAR_DIRS = (
 )
 
 # Lifecycle directories recreated empty after the clear (G14). prompts/ and
-# reports/ are recreated but never cleared here (delete-prompt/delete-report).
+# reports/ are recreated but never cleared here (delete-prompt/delete-report);
+# resources/ is ensured but never cleared — project supporting artifacts carry
+# forward across plans (CONVENTIONS § Project Resources).
 RESET_ENSURE_DIRS = (
     "phases",
     "prompts",
     "reports",
+    "resources",
     "tasks/open",
     "tasks/in-progress",
     "tasks/in-review",
