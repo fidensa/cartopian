@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from evaluations.intent import IntentContractEvaluator
 from evaluations.runner import (
     AmbiguousJsonError,
     Diagnostic,
@@ -127,6 +128,7 @@ def default_registry() -> EvaluationRegistry:
 
     return {
         "context-size": ContextSizeEvaluator(),
+        "intent-contract": IntentContractEvaluator(),
         "routing": RoutingEvaluator(),
         "structural": StructuralTextMatchEvaluator(),
     }

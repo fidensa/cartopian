@@ -121,6 +121,11 @@ class CanonicalEvaluationTests(unittest.TestCase):
             [case.identifier for case in aggregate.cases],
             [
                 "context-routing-baseline",
+                "intent-complete",
+                "intent-conflicting",
+                "intent-excluded-scope",
+                "intent-partial",
+                "intent-premature-execution",
                 "routing-adoption-collision",
                 "routing-code-negative",
                 "routing-entry-positive",
@@ -133,9 +138,9 @@ class CanonicalEvaluationTests(unittest.TestCase):
                 "structural-text-mismatch",
             ],
         )
-        self.assertEqual(aggregate.matched, 11)
+        self.assertEqual(aggregate.matched, 16)
         self.assertEqual(aggregate.mismatched, 0)
-        self.assertEqual(aggregate.observed_pass, 10)
+        self.assertEqual(aggregate.observed_pass, 15)
         self.assertEqual(aggregate.observed_fail, 1)
         self.assertTrue(all(case.matched for case in aggregate.cases))
         self.assertEqual(

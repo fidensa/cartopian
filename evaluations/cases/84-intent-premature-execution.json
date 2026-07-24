@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-premature-execution",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-premature-execution.json"
+  },
+  "rationale": "Proves an informational question remains read-only even when automatic initiation is configured."
+}

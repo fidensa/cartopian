@@ -1,0 +1,98 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": false,
+    "can_lock_requirements": false,
+    "confirmed": false,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [
+      {
+        "field": "success_signal",
+        "prompt": "What observable evidence will show the project succeeded?",
+        "state": "missing",
+        "working_assumption": "Success means operators answer no questions for facts already supplied."
+      }
+    ],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "Preserve human authority"
+      },
+      "exclusions": {
+        "state": "present",
+        "value": "No confidence percentages"
+      },
+      "outcome": {
+        "state": "present",
+        "value": "Focus requirements dialogue"
+      },
+      "success_signal": {
+        "state": "missing",
+        "value": null
+      },
+      "why_now": {
+        "state": "present",
+        "value": "The planning boundary needs a compact gate"
+      }
+    },
+    "request_class": "scoped",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "approved-artifact",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "human-authority",
+        "source": "operator",
+        "value": "Preserve human authority"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "confidence-scoring",
+        "source": "operator",
+        "value": "No confidence percentages"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "focused-dialogue",
+        "source": "operator",
+        "value": "Focus requirements dialogue"
+      }
+    ],
+    "success_signal": [],
+    "why_now": [
+      {
+        "meaning": "compact-gate-needed",
+        "source": "approved-artifact",
+        "value": "The planning boundary needs a compact gate"
+      }
+    ]
+  },
+  "operator_confirmation": false,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "scoped",
+    "initiation": "operator",
+    "operation": "plan",
+    "requested_phases": [],
+    "requested_scope": [
+      "intent-dialogue"
+    ]
+  },
+  "working_assumptions": {
+    "success_signal": "Success means operators answer no questions for facts already supplied."
+  }
+}

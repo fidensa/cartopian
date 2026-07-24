@@ -34,6 +34,12 @@ of `fixture` (a repository-relative file below `evaluations/fixtures/`) or
 
 The shipped domain categories are:
 
+- `intent-contract`: structured, model-free planning-intent scenarios covering
+  the six compact fields, `present` / `missing` / `conflicting` resolution,
+  bounded working assumptions, operator confirmation, request-intent
+  side-effect boundaries, and current-phase-only task generation. It tests the
+  contract without treating its structured semantic labels as a production
+  natural-language parser.
 - `structural`: the original text-match seam plus the
   `skill-metadata-surfaces` repository check. The repository check consumes the
   authoritative metadata validator and verifies identifiers, required fields,
@@ -70,6 +76,15 @@ A collision uses `{"type": "collision", "skills": ["first", "second"]}` and
 the same canonical list in `candidates`. A negative uses `{"type": "none"}`.
 Unknown fields, expectation types, skills, unordered candidates, and empty
 utterances fail validation.
+
+Intent fixtures carry six source arrays under `intent`. Each source names its
+human-facing `value`, a deterministic `meaning` label, and whether it came
+from the `operator` or an `approved-artifact`. Equivalent meanings are reused;
+distinct meanings are conflicts. Every unresolved field has exactly one
+`working_assumptions` entry. `request` keeps informational, scoped, and
+execution intent separate, and `expected` declares the complete normalized
+result. Closed schemas reject confidence scores and cross-model confirmation
+fields rather than turning them into planning requirements.
 
 The context-size case names `compact-skill-routing-metadata-v1`: canonical JSON
 containing only each skill's `identity`, `description`, and `applicability`.

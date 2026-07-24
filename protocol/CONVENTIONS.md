@@ -64,6 +64,53 @@ Operator requests fall into three classes. Classifying intent is the PM's first 
 
 An explicit "stop", "pause", or "don't execute" always overrides configuration: it ends any run in progress at the next safe point and suspends automatic initiation until the operator directs execution again.
 
+## Planning Intent Contract
+
+Before requirements or an implementation plan can lock, the PM resolves a
+compact record of six operator-owned facts:
+
+- **outcome** — the observable change the project should produce;
+- **beneficiary** — the primary person or group served;
+- **why now** — the timing or urgency rationale;
+- **success signal** — observable evidence that the outcome has been achieved;
+- **binding constraint** — the most important non-negotiable boundary; and
+- **explicit exclusions** — outcomes, users, or surfaces that are out of scope.
+
+The PM consumes the operator's current input and already approved artifacts.
+It reuses facts found there and never asks the operator to repeat a supplied
+fact. Each field has one resolution state: `present`, `missing`, or
+`conflicting`. Equivalent phrasing does not create a conflict, and an existing
+confirmed fact is not discarded merely because later input phrases it
+differently. Multiple beneficiaries are `present` when their priority is
+explicit. An unobservable success signal is unresolved. An exclusion that
+contradicts requested scope is `conflicting`.
+
+For every unresolved field, the PM states one bounded, labeled working
+assumption and asks only the focused question needed to resolve that missing
+or conflicting fact. This is a conversation, not a blank form. A working
+assumption remains provisional: it does not become operator intent until the
+operator confirms or corrects it. Requirements and implementation planning
+must not lock until all six fields are present and operator confirmation has
+been obtained. The confirmation may cover the complete compact record in one
+exchange; it does not require repeated cross-model confirmation.
+
+The contract has no numerical confidence field. The PM never requests a
+confidence percentage, model agreement score, or repeated cross-model
+confirmation. Uncertainty is represented only by the resolution states and
+the provisional working assumption.
+
+The compact record stores only the six normalized facts, their resolution
+states, and any provisional assumptions. It carries no secrets, unnecessary
+conversation transcript, or unrelated future-phase detail; normal containment
+and deidentification rules continue to apply.
+
+Request Intent remains the separate side-effect authority. An informational
+request stays read-only, a scoped directive authorizes only its named
+planning operation, and an execution directive alone initiates or resumes
+execution. Planning task generation expands only the current active phase and
+does not preload future-phase task detail. Resolving or confirming planning
+intent never changes the request's intent class.
+
 ## Naming
 
 - Tasks: `TASK-NN-NNN-kebab-case-slug.md`. `NN` is the two-digit phase; `NNN` is the three-digit counter within that phase.

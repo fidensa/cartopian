@@ -6,6 +6,11 @@ Running this skill is optional. If you prefer to reference requirements entirely
 
 **Output:** `REQUIREMENTS.md` (and optionally `STANDARDS.md`) in the project directory.
 
+**Protocol reference:** Read
+`cartopian://protocol/CONVENTIONS/planning-intent-contract` before clarifying
+or writing requirements. The Planning Intent Contract is the lock gate for
+this workflow; no separate operator-facing command is introduced.
+
 ---
 
 ## Prerequisites
@@ -75,15 +80,15 @@ A reference stub is a valid output — it preserves traceability without duplica
 
 ## Step 2 — Clarify and Fill Gaps
 
-Review the provided context for completeness. Ask targeted questions only for significant gaps. Do not interrogate the operator if the input is reasonably complete.
+Normalize the operator's input and approved external artifacts through the
+Planning Intent Contract. Reuse supplied facts and follow its focused
+missing-versus-conflicting dialogue without deviation. Do not lock
+requirements until its six-field record is complete and confirmed.
 
-Key things to determine:
-
-- What is the project and what problem does it solve?
-- Who are the primary users?
-- What are the specific functional requirements? (Push for numbered items.)
-- Are there non-functional requirements (performance, security, etc.)?
-- What decisions are explicitly deferred?
+After confirmation, ask targeted questions only for significant functional,
+non-functional, or deferred-decision gaps that the supplied sources do not
+already answer. Do not interrogate the operator if the input is reasonably
+complete.
 
 If working from a JIRA story, subtasks often map directly to functional requirements — extract them as numbered items.
 
@@ -91,7 +96,11 @@ If working from a JIRA story, subtasks often map directly to functional requirem
 
 ## Step 3 — Generate REQUIREMENTS.md
 
-Authoring `REQUIREMENTS.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body using the template in `cartopian://templates/REQUIREMENTS.md` as a structural guide — adapt sections to fit the actual project — and write it through the mediated writer:
+Proceed only with confirmed compact intent. Authoring `REQUIREMENTS.md` is
+**PM-performed**; the contained PM has no raw `Write`, so compose the body
+using the template in `cartopian://templates/REQUIREMENTS.md` as a structural
+guide — including its `Confirmed intent` section, adapted to the actual
+project — and write it through the mediated writer:
 
 ```
 cartopian write-requirements <project-root> --content-file <body-path>
@@ -107,6 +116,15 @@ Not every project needs every section.
 > Requirements for this project are tracked externally.
 >
 > **Source:** <JIRA epic / Confluence page / PRD title — include URL if available> **Last reviewed:** <date>
+
+## Confirmed intent
+
+- **Outcome:** …
+- **Beneficiary:** …
+- **Why now:** …
+- **Success signal:** …
+- **Binding constraint:** …
+- **Explicit exclusions:** …
 
 ## Summary
 
@@ -160,6 +178,7 @@ The body's "What to do next" section reads:
 Report to the operator:
 
 - Source(s) used
+- Confirmed compact intent and any resolved conflicts
 - Number of functional and non-functional requirements captured (or note if stub was generated)
 - Whether `STANDARDS.md` was generated or left as seed stub
 - Suggested next step (`adopt-plan` or `plan-project`)

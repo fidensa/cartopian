@@ -1,0 +1,93 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": true,
+    "can_lock_requirements": true,
+    "confirmed": true,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "Questions stay read-only"
+      },
+      "exclusions": {
+        "state": "present",
+        "value": "No task execution from status requests"
+      },
+      "outcome": {
+        "state": "present",
+        "value": "Report current project status"
+      },
+      "success_signal": {
+        "state": "present",
+        "value": "No lifecycle mutation occurs"
+      },
+      "why_now": {
+        "state": "present",
+        "value": "The operator asked what is next"
+      }
+    },
+    "request_class": "informational",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "approved-artifact",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "questions-read-only",
+        "source": "operator",
+        "value": "Questions stay read-only"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "status-task-execution",
+        "source": "operator",
+        "value": "No task execution from status requests"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "status-report",
+        "source": "operator",
+        "value": "Report current project status"
+      }
+    ],
+    "success_signal": [
+      {
+        "meaning": "no-mutation",
+        "source": "operator",
+        "value": "No lifecycle mutation occurs"
+      }
+    ],
+    "why_now": [
+      {
+        "meaning": "what-next-question",
+        "source": "operator",
+        "value": "The operator asked what is next"
+      }
+    ]
+  },
+  "operator_confirmation": true,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "informational",
+    "initiation": "auto",
+    "operation": "status",
+    "requested_phases": [],
+    "requested_scope": []
+  },
+  "working_assumptions": {}
+}

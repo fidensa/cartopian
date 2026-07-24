@@ -6,6 +6,11 @@ This skill does not require a `REQUIREMENTS.md` or a requirements-gathering conv
 
 **Output:** `IMPLEMENTATION_PLAN.md`, phase files, task files for the first active phase, and an updated `STATE.md`.
 
+**Protocol reference:** Read
+`cartopian://protocol/CONVENTIONS/planning-intent-contract` before locking the
+adopted plan. The Planning Intent Contract remains behind the existing
+`/use-cartopian` entry.
+
 ---
 
 ## Prerequisites
@@ -86,17 +91,32 @@ Ask the operator to provide the external plan:
 
 Accept whatever format the operator provides.
 
-Before generating any files, confirm your interpretation:
+Before generating any files, normalize the operator's input, approved
+requirements or external requirements source, and external plan through the
+Planning Intent Contract. Follow its reuse, resolution-state, focused-question,
+working-assumption, and exclusion-conflict rules. Then summarize the complete
+compact record together with the phase interpretation and obtain operator
+confirmation.
 
-> "Here is how I'm reading your plan: <N> phases, starting with '<Phase 1 name>'. Does this match your intent, or should I adjust anything before I generate the files?"
+For example:
 
-Proceed only after operator confirmation.
+> "Confirmed intent: <compact six-field summary>. I read the supplied plan as
+> <N> phases, starting with '<Phase 1 name>'. Does this match your intent, or
+> should I adjust anything before I generate the files?"
+
+Proceed only after operator confirmation. A working assumption is
+provisional, and the implementation plan must not lock while any compact
+intent field is unresolved or unconfirmed.
 
 ---
 
 ## Stage 3 — Generate IMPLEMENTATION_PLAN.md
 
-Authoring `IMPLEMENTATION_PLAN.md` is **PM-performed**; the contained PM has no raw `Write`, so compose the body following the structure in `cartopian://templates/IMPLEMENTATION_PLAN.md` and write it through the mediated writer:
+Verify the Planning Intent Contract is complete and confirmed. Otherwise
+return to Stage 2. Authoring `IMPLEMENTATION_PLAN.md` is **PM-performed**; the
+contained PM has no raw `Write`, so compose the body following the structure
+in `cartopian://templates/IMPLEMENTATION_PLAN.md` and write it through the
+mediated writer:
 
 ```
 cartopian write-plan <project-root> --content-file <body-path>
@@ -153,7 +173,10 @@ If `reviews.planning.mode` is `required`, run review checkpoint `003 phases`.
 
 ## Stage 5 — Generate Task Files for Active Phase
 
-Generate task files only for the **first active phase** (lowest-numbered phase with open work). Do not generate tasks for future phases — later phases may change as earlier work completes.
+Generate task files only for the **current active phase** (the first active
+phase is the lowest-numbered phase with open work). Do not generate tasks for
+future phases or preload future-phase task detail — later phases may change as
+earlier work completes.
 
 For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
 

@@ -12,6 +12,7 @@ Use this skill when you are starting from scratch and want a guided requirements
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
 - `cartopian://protocol/CONVENTIONS/roles` — role declaration and reviewer resolution (Stage 0).
+- `cartopian://protocol/CONVENTIONS/planning-intent-contract` — compact intent normalization, focused clarification, confirmation, and planning-lock gate (Stages 1-2).
 - `cartopian://protocol/CONVENTIONS/reviews` — review artifact rules behind the checkpoints.
 - `cartopian://protocol/CONVENTIONS/specs` — spec profile selection and the software-spec authoring boundary (Stage 4).
 - `cartopian://protocol/CONVENTIONS/plan-lifecycle` — the plan, phase, task, and spec generation contract (Stages 2-4).
@@ -71,23 +72,27 @@ If a previous closeout carried forward `STANDARDS.md`, treat it as seed context 
 
 Check if a `REQUIREMENTS.md` exists in the project directory.
 
-- If it exists and is populated (including a reference stub from `adopt-requirements`), ask the operator: "Requirements already exist. Do you want to revise them for this planning cycle, or proceed to planning from them?"
-- If the operator wants to proceed from existing requirements, skip Stages 1.2–1.4 and go directly to Stage 2.
-- If it does not exist (or is empty), proceed to gathering.
+- If it exists and is populated (including a reference stub from `adopt-requirements`), treat it as an approved input to compact-intent normalization. Reuse its facts; do not ask the operator to repeat them. Ask whether it remains in force only when its approval or applicability to this planning cycle is genuinely unclear.
+- Whether requirements exist or not, continue through Stage 1.2. Existing requirements do not bypass the intent confirmation and planning-lock gate.
 
-### 1.2 Engage the operator
+### 1.2 Resolve compact intent and engage the operator
 
-Do **not** present a blank form. Be conversational. Draw out requirements through dialogue:
+Read `cartopian://protocol/CONVENTIONS/planning-intent-contract`. Normalize
+the operator's input, populated `REQUIREMENTS.md`, approved supporting
+artifacts, and applicable carried-forward standards into the six-field
+Planning Intent Contract.
 
-1. Start with the thesis: "What is this project? What problem does it solve? Be precise — tell me what it is and what it is not."
-2. Move to users: "Who is this for? Who is it explicitly not for?"
-3. Explore the product model: "How does it work at a high level? Walk me through what a user experiences."
-4. If this is a technical project, explore architecture principles: "What structural rules should govern the build?"
-5. Work through functional requirements: "What must the system do? Let's enumerate specific capabilities." Push for numbered, specific items.
-6. Cover non-functional requirements: "What qualities must it have? Performance, security, reliability — what matters?"
-7. Surface open questions: "What decisions are you deferring for now?"
+Apply that contract exactly: reuse present facts, distinguish missing from
+conflicting fields, state one provisional working assumption per unresolved
+field, and ask only its focused resolution question. Obtain operator
+confirmation of the complete record before either planning lock.
 
-**Adapt the structure to fit the project.** Not every project needs every section. A documentation project doesn't need architecture principles. A CLI tool might not need non-functional requirements beyond "it runs fast." Use judgment.
+After the compact record is confirmed, draw out only the additional detail
+needed for this project's functional requirements, non-functional
+requirements, product model, architecture principles, and explicitly deferred
+decisions. Do not repeat compact-intent questions already answered.
+
+**Adapt the remaining dialogue to fit the project.** Not every project needs every section. A documentation project doesn't need architecture principles. A CLI tool might not need non-functional requirements beyond "it runs fast." Use judgment.
 
 **Challenge vague statements.** If the operator says "it should be fast," ask "how fast? What's the latency target?" Push for specificity, because vague requirements produce vague plans.
 
@@ -95,7 +100,13 @@ Do **not** present a blank form. Be conversational. Draw out requirements throug
 
 ### 1.3 Produce REQUIREMENTS.md
 
-Authoring `REQUIREMENTS.md` is a **PM-performed** write. The contained PM has no raw `Write` tool, so author it through the mediated writer (use the structure that emerged from the conversation, not a rigid template):
+Only after the six-field record is confirmed, author or update
+`REQUIREMENTS.md` with a `Confirmed intent` section that records all six facts.
+An existing populated file may be left byte-for-byte unchanged only when it
+already records the confirmed compact intent. Authoring `REQUIREMENTS.md` is a
+**PM-performed** write. The contained PM has no raw `Write` tool, so author it
+through the mediated writer (use the structure that emerged from the
+conversation, not a rigid operator-facing form):
 
 ```
 cartopian write-requirements <project-root> --content-file <body-path>
@@ -125,7 +136,7 @@ If `reviews.planning.mode` is `required`:
 
 ### 2.1 Read inputs
 
-1. Read the locked `REQUIREMENTS.md`.
+1. Read the locked `REQUIREMENTS.md` and verify that its compact intent is complete and operator-confirmed. If any field is unresolved or confirmation is absent, return to Stage 1.2; do not write or lock an implementation plan.
 2. Read the current-cycle `STANDARDS.md` as the project's standards and constraints.
 3. Read the templates in `cartopian://templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
@@ -203,7 +214,7 @@ If `reviews.planning.mode` is `required`:
 
 ### 4.1 Determine scope
 
-Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if starting fresh). Do not generate tasks for all phases at once — later phases may change as earlier work completes.
+Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if starting fresh). Do not generate tasks for all phases at once or preload future-phase task detail — later phases may change as earlier work completes.
 
 ### 4.2 Generate task files
 

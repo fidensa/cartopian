@@ -1,0 +1,109 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": false,
+    "can_lock_requirements": false,
+    "confirmed": false,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [
+      {
+        "field": "outcome",
+        "prompt": "Which observable project outcome should govern?",
+        "state": "conflicting",
+        "working_assumption": "The narrower dialogue-only outcome governs until the operator resolves the conflict."
+      }
+    ],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "Keep requirements concise"
+      },
+      "exclusions": {
+        "state": "present",
+        "value": "Do not redesign risk policy"
+      },
+      "outcome": {
+        "state": "conflicting",
+        "value": null
+      },
+      "success_signal": {
+        "state": "present",
+        "value": "Focused deterministic cases pass"
+      },
+      "why_now": {
+        "state": "present",
+        "value": "Planning quality is blocked"
+      }
+    },
+    "request_class": "scoped",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "operator",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "concise-requirements",
+        "source": "operator",
+        "value": "Keep requirements concise"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "risk-policy",
+        "source": "approved-artifact",
+        "value": "Do not redesign risk policy"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "dialogue-only",
+        "source": "approved-artifact",
+        "value": "Improve requirements dialogue only"
+      },
+      {
+        "meaning": "new-command-surface",
+        "source": "operator",
+        "value": "Add separate lifecycle commands"
+      }
+    ],
+    "success_signal": [
+      {
+        "meaning": "deterministic-cases-pass",
+        "source": "operator",
+        "value": "Focused deterministic cases pass"
+      }
+    ],
+    "why_now": [
+      {
+        "meaning": "planning-blocked",
+        "source": "operator",
+        "value": "Planning quality is blocked"
+      }
+    ]
+  },
+  "operator_confirmation": false,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "scoped",
+    "initiation": "operator",
+    "operation": "plan",
+    "requested_phases": [],
+    "requested_scope": [
+      "intent-dialogue"
+    ]
+  },
+  "working_assumptions": {
+    "outcome": "The narrower dialogue-only outcome governs until the operator resolves the conflict."
+  }
+}

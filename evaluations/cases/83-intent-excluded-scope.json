@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-excluded-scope",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-excluded-scope.json"
+  },
+  "rationale": "Proves an explicit exclusion that contradicts requested scope is surfaced instead of silently planned."
+}

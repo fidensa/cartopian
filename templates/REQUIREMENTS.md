@@ -4,6 +4,19 @@
      project — add, remove, or rename as needed. This is not a rigid
      form; it's a structure to ensure nothing important is missed. -->
 
+## Confirmed intent
+
+Record the compact intent already established through conversation and
+approved artifacts. Populate every item before requirements lock; do not
+present this section to the operator as a blank form.
+
+- **Outcome:** …
+- **Beneficiary:** …
+- **Why now:** …
+- **Success signal:** …
+- **Binding constraint:** …
+- **Explicit exclusions:** …
+
 ## Thesis
 
 What is this thing? Define it precisely — it is exactly this, and it is surely not that.

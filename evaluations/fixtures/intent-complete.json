@@ -1,0 +1,105 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": true,
+    "can_lock_requirements": true,
+    "confirmed": true,
+    "expanded_future_phases": [],
+    "generated_phases": [
+      "PHASE-01-entry"
+    ],
+    "questions": [],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "Keep one conversational entry"
+      },
+      "exclusions": {
+        "state": "present",
+        "value": "No new lifecycle commands"
+      },
+      "outcome": {
+        "state": "present",
+        "value": "Add focused intent dialogue"
+      },
+      "success_signal": {
+        "state": "present",
+        "value": "Complete intent produces no redundant questions"
+      },
+      "why_now": {
+        "state": "present",
+        "value": "Planning currently over-questions operators"
+      }
+    },
+    "request_class": "scoped",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "operator",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "single-entry",
+        "source": "operator",
+        "value": "Keep one conversational entry"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "new-lifecycle-commands",
+        "source": "operator",
+        "value": "No new lifecycle commands"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "focused-intent-dialogue",
+        "source": "approved-artifact",
+        "value": "Implement compact focused intent dialogue"
+      },
+      {
+        "meaning": "focused-intent-dialogue",
+        "source": "operator",
+        "value": "Add focused intent dialogue"
+      }
+    ],
+    "success_signal": [
+      {
+        "meaning": "no-redundant-questions",
+        "source": "operator",
+        "value": "Complete intent produces no redundant questions"
+      }
+    ],
+    "why_now": [
+      {
+        "meaning": "over-questioning-defect",
+        "source": "operator",
+        "value": "Planning currently over-questions operators"
+      }
+    ]
+  },
+  "operator_confirmation": true,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "scoped",
+    "initiation": "operator",
+    "operation": "generate_tasks",
+    "requested_phases": [
+      "PHASE-01-entry",
+      "PHASE-02-future"
+    ],
+    "requested_scope": [
+      "intent-dialogue"
+    ]
+  },
+  "working_assumptions": {}
+}

@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-partial",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-partial.json"
+  },
+  "rationale": "Proves one missing fact yields one focused question and a bounded working assumption while both planning locks remain closed."
+}

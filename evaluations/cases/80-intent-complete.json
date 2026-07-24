@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-complete",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-complete.json"
+  },
+  "rationale": "Proves complete confirmed intent reuses equivalent approved and operator facts without redundant questions, generates only the active phase, and does not start execution under operator initiation."
+}

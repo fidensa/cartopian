@@ -1,0 +1,104 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": false,
+    "can_lock_requirements": false,
+    "confirmed": false,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [
+      {
+        "field": "exclusions",
+        "prompt": "Which exclusion should govern, and how should it relate to the requested scope?",
+        "state": "conflicting",
+        "working_assumption": "The explicit CLI-entry exclusion holds until the operator resolves the scope conflict."
+      }
+    ],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "Preserve the existing command surface"
+      },
+      "exclusions": {
+        "state": "conflicting",
+        "value": null
+      },
+      "outcome": {
+        "state": "present",
+        "value": "Improve intent quality"
+      },
+      "success_signal": {
+        "state": "present",
+        "value": "Conflicting exclusions block planning"
+      },
+      "why_now": {
+        "state": "present",
+        "value": "Scope drift must be stopped before lock"
+      }
+    },
+    "request_class": "scoped",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "operator",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "existing-command-surface",
+        "source": "approved-artifact",
+        "value": "Preserve the existing command surface"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "cli-entry",
+        "source": "operator",
+        "value": "Do not change the CLI entry"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "intent-quality",
+        "source": "operator",
+        "value": "Improve intent quality"
+      }
+    ],
+    "success_signal": [
+      {
+        "meaning": "conflicts-block",
+        "source": "operator",
+        "value": "Conflicting exclusions block planning"
+      }
+    ],
+    "why_now": [
+      {
+        "meaning": "prevent-scope-drift",
+        "source": "operator",
+        "value": "Scope drift must be stopped before lock"
+      }
+    ]
+  },
+  "operator_confirmation": false,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "scoped",
+    "initiation": "operator",
+    "operation": "plan",
+    "requested_phases": [],
+    "requested_scope": [
+      "cli-entry"
+    ]
+  },
+  "working_assumptions": {
+    "exclusions": "The explicit CLI-entry exclusion holds until the operator resolves the scope conflict."
+  }
+}

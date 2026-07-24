@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-conflicting",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-conflicting.json"
+  },
+  "rationale": "Proves genuinely conflicting meanings are distinguished from missing intent and block locking until resolved."
+}
