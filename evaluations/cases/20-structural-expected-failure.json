@@ -1,0 +1,12 @@
+{
+  "category": "structural",
+  "expected_outcome": {
+    "diagnostic_class": "text_mismatch",
+    "outcome": "fail"
+  },
+  "identifier": "structural-text-mismatch",
+  "input": {
+    "fixture": "evaluations/fixtures/text-mismatch.json"
+  },
+  "rationale": "Proves a declared failure can match without making the suite fail."
+}

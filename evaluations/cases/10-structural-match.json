@@ -1,0 +1,11 @@
+{
+  "category": "structural",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "structural-text-match",
+  "input": {
+    "fixture": "evaluations/fixtures/text-match.json"
+  },
+  "rationale": "Proves a normal deterministic passing evaluation."
+}

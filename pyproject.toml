@@ -15,4 +15,7 @@ cartopian-mcp = "mcp_server.server:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli*", "mcp_server*"]
+include = ["cli*", "evaluations*", "mcp_server*"]
+
+[tool.setuptools.package-data]
+evaluations = ["cases/*.json", "fixtures/*.json"]
