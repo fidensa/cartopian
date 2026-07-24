@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-adoption-collision",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-adoption-collision.json"
+  },
+  "rationale": "Exposes overlapping plan and requirements adoption intent without incidental-order resolution."
+}

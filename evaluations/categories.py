@@ -13,12 +13,18 @@ from evaluations.runner import (
     ObservedResult,
     load_json_document,
 )
+from evaluations.routing import (
+    ContextSizeEvaluator,
+    RepositoryStructuralEvaluator,
+    RoutingEvaluator,
+)
 
 
 class StructuralTextMatchEvaluator:
     """Minimal representative evaluator for the category extension seam."""
 
     _FIELDS = frozenset({"actual", "expected"})
+    _repository_evaluator = RepositoryStructuralEvaluator()
 
     def _load_fixture(self, case: EvaluationCase, repository_root: Path) -> object:
         assert case.input.fixture is not None
@@ -67,6 +73,8 @@ class StructuralTextMatchEvaluator:
             return (
                 Diagnostic("malformed_fixture", "Fixture must be a JSON object."),
             )
+        if "check" in fixture:
+            return self._repository_evaluator.validate(case, repository_root)
         unknown = sorted(set(fixture) - self._FIELDS)
         if unknown:
             return (
@@ -99,6 +107,8 @@ class StructuralTextMatchEvaluator:
     ) -> ObservedResult:
         fixture = self._load_fixture(case, repository_root)
         assert isinstance(fixture, dict)
+        if "check" in fixture:
+            return self._repository_evaluator.evaluate(case, repository_root)
         if fixture["actual"] == fixture["expected"]:
             return ObservedResult("pass")
         return ObservedResult(
@@ -115,4 +125,8 @@ class StructuralTextMatchEvaluator:
 def default_registry() -> EvaluationRegistry:
     """Return a fresh registry so later categories can extend it explicitly."""
 
-    return {"structural": StructuralTextMatchEvaluator()}
+    return {
+        "context-size": ContextSizeEvaluator(),
+        "routing": RoutingEvaluator(),
+        "structural": StructuralTextMatchEvaluator(),
+    }

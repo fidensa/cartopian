@@ -1,0 +1,14 @@
+{
+  "category": "context-size",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "context-routing-baseline",
+  "input": {
+    "fixture": "evaluations/fixtures/context-routing-baseline.json"
+  },
+  "measurement_boundary": {
+    "max_input_bytes": 6141
+  },
+  "rationale": "Compares the exact tested routing projection with the labeled Phase 00 canonicalized use_cartopian resource baseline."
+}

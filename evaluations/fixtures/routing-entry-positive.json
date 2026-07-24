@@ -1,0 +1,9 @@
+{
+  "candidates": null,
+  "expectation": {
+    "skill": "use_cartopian",
+    "type": "selection"
+  },
+  "rationale": "The explicit entry command must win before lifecycle routing remains behind it.",
+  "utterance": "/use-cartopian — please resume the project session and tell me what is next."
+}

@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-code-negative",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-code-negative.json"
+  },
+  "rationale": "Proves ordinary product implementation language selects no Cartopian lifecycle workflow."
+}

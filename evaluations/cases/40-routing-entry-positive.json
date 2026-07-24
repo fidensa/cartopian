@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-entry-positive",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-entry-positive.json"
+  },
+  "rationale": "Protects /use-cartopian as the single conversational entry."
+}

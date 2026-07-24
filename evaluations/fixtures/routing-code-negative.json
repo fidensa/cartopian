@@ -1,0 +1,8 @@
+{
+  "candidates": null,
+  "expectation": {
+    "type": "none"
+  },
+  "rationale": "A direct product-code edit is unrelated to selecting a Cartopian lifecycle workflow.",
+  "utterance": "Refactor the parser to avoid allocating an extra list."
+}

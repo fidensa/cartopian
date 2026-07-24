@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-task-positive",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-task-positive.json"
+  },
+  "rationale": "Protects current-task lifecycle intent expressed without a replacement command."
+}

@@ -119,15 +119,27 @@ class CanonicalEvaluationTests(unittest.TestCase):
 
         self.assertEqual(
             [case.identifier for case in aggregate.cases],
-            ["structural-text-match", "structural-text-mismatch"],
+            [
+                "context-routing-baseline",
+                "routing-adoption-collision",
+                "routing-code-negative",
+                "routing-entry-positive",
+                "routing-plan-positive",
+                "routing-plugin-negative",
+                "routing-task-positive",
+                "routing-update-positive",
+                "structural-skill-surfaces",
+                "structural-text-match",
+                "structural-text-mismatch",
+            ],
         )
-        self.assertEqual(aggregate.matched, 2)
+        self.assertEqual(aggregate.matched, 11)
         self.assertEqual(aggregate.mismatched, 0)
-        self.assertEqual(aggregate.observed_pass, 1)
+        self.assertEqual(aggregate.observed_pass, 10)
         self.assertEqual(aggregate.observed_fail, 1)
         self.assertTrue(all(case.matched for case in aggregate.cases))
         self.assertEqual(
-            aggregate.cases[1].diagnostics[0].diagnostic_class,
+            aggregate.cases[-1].diagnostics[0].diagnostic_class,
             "text_mismatch",
         )
 
@@ -191,6 +203,40 @@ class CanonicalEvaluationTests(unittest.TestCase):
         self.assertEqual(
             [case["identifier"] for case in payload["cases"]],
             ["structural-text-mismatch"],
+        )
+
+    def test_cli_category_and_case_filters_keep_canonical_order(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "evaluations",
+                "--category",
+                "routing",
+                "--case",
+                "routing-update-positive",
+                "--case",
+                "routing-entry-positive",
+                "--case",
+                "routing-code-negative",
+                "--format",
+                "json",
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(
+            [case["identifier"] for case in payload["cases"]],
+            [
+                "routing-code-negative",
+                "routing-entry-positive",
+                "routing-update-positive",
+            ],
         )
 
     def test_cli_returns_one_and_renders_an_outcome_mismatch(self) -> None:

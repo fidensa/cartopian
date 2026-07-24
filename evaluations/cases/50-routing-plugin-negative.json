@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-plugin-negative",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-plugin-negative.json"
+  },
+  "rationale": "Proves an unrelated plugin-install request does not enter a Cartopian lifecycle workflow."
+}

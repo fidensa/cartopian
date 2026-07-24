@@ -1,0 +1,5 @@
+{
+  "baseline_label": "phase-00.use-cartopian-resource.canonicalized",
+  "budget_relation": "not-greater-than",
+  "surface": "compact-skill-routing-metadata-v1"
+}

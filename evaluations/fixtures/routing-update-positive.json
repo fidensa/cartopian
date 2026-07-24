@@ -1,0 +1,9 @@
+{
+  "candidates": null,
+  "expectation": {
+    "skill": "check_for_updates",
+    "type": "selection"
+  },
+  "rationale": "The request explicitly asks to check for a newer release before an approved upgrade.",
+  "utterance": "Check for a newer Cartopian release and upgrade the installed tree only after approval."
+}

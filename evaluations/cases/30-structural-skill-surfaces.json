@@ -1,0 +1,11 @@
+{
+  "category": "structural",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "structural-skill-surfaces",
+  "input": {
+    "fixture": "evaluations/fixtures/structural-skill-surfaces.json"
+  },
+  "rationale": "Validates authoritative skill identities, metadata completeness, references, templates, entry command names, and generated-surface parity."
+}

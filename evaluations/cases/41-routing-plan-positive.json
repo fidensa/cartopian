@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-plan-positive",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-plan-positive.json"
+  },
+  "rationale": "Protects guided planning intent expressed in ordinary operator language."
+}

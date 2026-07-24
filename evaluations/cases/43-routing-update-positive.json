@@ -1,0 +1,11 @@
+{
+  "category": "routing",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "routing-update-positive",
+  "input": {
+    "fixture": "evaluations/fixtures/routing-update-positive.json"
+  },
+  "rationale": "Protects explicit release-check and approved-upgrade intent."
+}

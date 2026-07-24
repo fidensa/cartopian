@@ -1,0 +1,8 @@
+{
+  "candidates": null,
+  "expectation": {
+    "type": "none"
+  },
+  "rationale": "A third-party plugin request is outside Cartopian project governance.",
+  "utterance": "Install the email plugin and connect my mailbox."
+}

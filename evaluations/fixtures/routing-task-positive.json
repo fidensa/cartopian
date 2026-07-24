@@ -1,0 +1,9 @@
+{
+  "candidates": null,
+  "expectation": {
+    "skill": "run_task",
+    "type": "selection"
+  },
+  "rationale": "The request concerns the current task lifecycle, including review and closure.",
+  "utterance": "Continue the current task through its evidence, review, and supported closure."
+}

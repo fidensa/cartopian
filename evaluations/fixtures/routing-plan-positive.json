@@ -1,0 +1,9 @@
+{
+  "candidates": null,
+  "expectation": {
+    "skill": "plan_project",
+    "type": "selection"
+  },
+  "rationale": "The request asks for guided planning from scratch rather than adoption of an existing plan.",
+  "utterance": "Help me build requirements and an implementation plan from scratch for this project."
+}

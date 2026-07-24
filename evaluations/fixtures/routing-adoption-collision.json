@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    "adopt_plan",
+    "adopt_requirements"
+  ],
+  "expectation": {
+    "skills": [
+      "adopt_plan",
+      "adopt_requirements"
+    ],
+    "type": "collision"
+  },
+  "rationale": "Both adoption workflows plausibly apply, so the overlap must be surfaced.",
+  "utterance": "We have external source material with requirements and need a local requirements file; we also have an existing structured plan to convert into project artifacts."
+}
