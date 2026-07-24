@@ -2,9 +2,10 @@
 
 The closed JSON contract at ``skills/skill-metadata.json`` owns skill
 identity, compact outcome, routing applicability, runbook reference, surface
-policy, bounded host qualification, and lifecycle. MCP listings consume the
-records directly. Client bridge templates are deterministic projections that
-this module generates or validates; they are never alternate prose sources.
+policy, bounded host qualification, entry startup actions, and lifecycle. MCP
+listings consume the records directly. Client bridge templates are
+deterministic projections that this module generates or validates; they are
+never alternate prose sources.
 
 Run from the repository or installed root with Python 3.11+::
 
@@ -42,11 +43,25 @@ REQUIRED_RECORD_FIELDS = frozenset({
     "surfaces",
     "lifecycle",
 })
-OPTIONAL_RECORD_FIELDS = frozenset({"host_qualifications"})
+OPTIONAL_RECORD_FIELDS = frozenset({"host_qualifications", "startup"})
 SURFACE_FIELDS = frozenset({"mcp_prompt", "mcp_resource", "client_bridges"})
 HOST_QUALIFICATIONS = frozenset({"direct_command"})
+STARTUP_FIELDS = frozenset({
+    "outcome",
+    "mcp_host_action",
+    "mcp_prompt_action",
+    "mcp_resource_action",
+    "client_bridge_action",
+})
 SUPPORTED_LIFECYCLES = frozenset({"shipped"})
 IDENTITY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+IMPOSSIBLE_THEN_FALLBACK_RE = re.compile(
+    r"\b(?:invoke|run|call)\b[^\r\n]{0,100}\bprompt\b"
+    r"[^\r\n]{0,220}\b(?:cannot|can't|unable|fallback|instead|or\s+read)\b",
+    re.IGNORECASE,
+)
+STARTUP_OUTCOME_PREFIX = "**Startup outcome:** "
+STARTUP_ACTION_PREFIX = "**Startup action:** "
 
 
 @dataclass(frozen=True)
@@ -116,6 +131,20 @@ def bridge_description(record: Mapping[str, Any], bridge_id: str) -> str:
         return discovery_description(record)
     qualifications = record.get("host_qualifications", {})
     return f"{record['description']} {qualifications[target.qualification]}"
+
+
+def startup_projection(record: Mapping[str, Any], surface: str) -> str:
+    """Render the authoritative startup outcome and one surface action."""
+    startup = record["startup"]
+    action_field = {
+        "mcp_prompt": "mcp_prompt_action",
+        "mcp_resource": "mcp_resource_action",
+        "client_bridge": "client_bridge_action",
+    }[surface]
+    return (
+        f"{STARTUP_OUTCOME_PREFIX}{startup['outcome']}\n"
+        f"{STARTUP_ACTION_PREFIX}{startup[action_field]}"
+    )
 
 
 def _read_data(root: Path) -> Tuple[Optional[Dict[str, Any]], List[str]]:
@@ -321,6 +350,66 @@ def _validate_record(
                 "not used by a selected client bridge"
             )
 
+    startup = record.get("startup")
+    if identity == "use_cartopian":
+        if not isinstance(startup, dict):
+            diagnostics.append(f"{location}.startup: required object")
+        else:
+            for field in sorted(set(startup) - STARTUP_FIELDS):
+                diagnostics.append(f"{location}.startup: unknown field '{field}'")
+            for field in sorted(STARTUP_FIELDS - set(startup)):
+                diagnostics.append(
+                    f"{location}.startup.{field}: missing required field"
+                )
+            values: Dict[str, str] = {}
+            for field in sorted(STARTUP_FIELDS):
+                value = _nonempty_string(
+                    startup,
+                    field,
+                    f"{location}.startup",
+                    diagnostics,
+                )
+                if value is not None:
+                    values[field] = value
+                    if len(value) > MAX_DISCOVERY_CHARS:
+                        diagnostics.append(
+                            f"{location}.startup.{field}: exceeds "
+                            f"{MAX_DISCOVERY_CHARS} characters"
+                        )
+                    if IMPOSSIBLE_THEN_FALLBACK_RE.search(value):
+                        diagnostics.append(
+                            f"{location}.startup.{field}: impossible prompt "
+                            "action followed by fallback"
+                        )
+            outcome = values.get("outcome", "").lower()
+            if outcome and "registry-first project selection" not in outcome:
+                diagnostics.append(
+                    f"{location}.startup.outcome: must preserve registry-first "
+                    "project selection"
+                )
+            for field in ("mcp_prompt_action", "mcp_resource_action"):
+                action = values.get(field, "").lower()
+                if action and "follow" not in action:
+                    diagnostics.append(
+                        f"{location}.startup.{field}: must directly tell "
+                        "the host to follow the supplied runbook"
+                    )
+            for field in ("mcp_host_action", "client_bridge_action"):
+                action = values.get(field, "")
+                lowered = action.lower()
+                if action and (
+                    "read" not in lowered
+                    or "cartopian://skills/use_cartopian" not in action
+                ):
+                    diagnostics.append(
+                        f"{location}.startup.{field}: must directly read the "
+                        "authoritative use_cartopian resource"
+                    )
+    elif startup is not None:
+        diagnostics.append(
+            f"{location}.startup: only use_cartopian may define startup guidance"
+        )
+
     return record
 
 
@@ -362,7 +451,39 @@ def _render_projection(
     if not match.group(0).endswith(("\n", "\r")):
         newline = ""
     replacement = _expected_projection_line(record, bridge_id) + newline
-    return text[:match.start()] + replacement + text[match.end():], None
+    rendered = text[:match.start()] + replacement + text[match.end():]
+
+    startup = record.get("startup")
+    if isinstance(startup, dict):
+        expected_lines = startup_projection(record, "client_bridge").splitlines()
+        for prefix, expected in (
+            (STARTUP_OUTCOME_PREFIX, expected_lines[0]),
+            (STARTUP_ACTION_PREFIX, expected_lines[1]),
+        ):
+            pattern = re.compile(
+                rf"^{re.escape(prefix)}[^\r\n]*(?:\r?\n|$)",
+                re.MULTILINE,
+            )
+            line_matches = list(pattern.finditer(rendered))
+            if len(line_matches) != 1:
+                field = "outcome" if prefix == STARTUP_OUTCOME_PREFIX else "action"
+                return None, (
+                    f"bridge[{bridge_id}].startup_{field}: expected exactly one "
+                    f"projection line in {target.path.as_posix()}"
+                )
+            line_match = line_matches[0]
+            line_newline = (
+                "\r\n" if line_match.group(0).endswith("\r\n")
+                else "\n" if line_match.group(0).endswith("\n")
+                else ""
+            )
+            rendered = (
+                rendered[:line_match.start()]
+                + expected
+                + line_newline
+                + rendered[line_match.end():]
+            )
+    return rendered, None
 
 
 def _validated_records(
@@ -520,7 +641,7 @@ def _atomic_write(path: Path, text: str) -> None:
 
 
 def generate_surfaces(root: Path) -> Tuple[str, ...]:
-    """Generate all bridge descriptions after validating every input first."""
+    """Generate bridge discovery and startup projections after validation."""
     root = Path(root)
     data, diagnostics = _read_data(root)
     if data is None:

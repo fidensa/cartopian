@@ -223,17 +223,22 @@ class TestDispatchPositive(unittest.TestCase):
             capture = tmp_path / "capture.json"
 
             work_root = scaffold.project_root / "tool-repo"
+            docs_root = scaffold.project_root / "docs-repo"
             work_root.mkdir()
+            docs_root.mkdir()
             scaffold.write(
                 "cartopian.toml",
                 _toml(
-                    str(stub), work_roots='"tool-repo"',
+                    str(stub), work_roots='"tool-repo", "docs-repo"',
                     model="stub-model-x", effort="high",
                 ),
             )
             scaffold.write(
                 "cartopian.local.toml",
-                f'[work_roots]\ntool-repo = "{work_root}"\n',
+                (
+                    f'[work_roots]\ntool-repo = "{work_root}"\n'
+                    f'docs-repo = "{docs_root}"\n'
+                ),
             )
             task_path = _write_task_and_prompt(scaffold)
             # dispatch resolves the project root and prompt path (symlinks
@@ -275,7 +280,10 @@ class TestDispatchPositive(unittest.TestCase):
             # exports them (CARTOPIAN_WORK_ROOTS) and records them.
             self.assertEqual(Path(rec["cwd"]).resolve(), project_root)
             self.assertTrue(rec["expected_report_path"].endswith("/reports/REPORT-01-004.md"))
-            self.assertEqual(rec["work_roots"], [str(work_root)])
+            self.assertEqual(
+                rec["work_roots"],
+                [str(work_root), str(docs_root)],
+            )
             self.assertNotIn("scope_dirs", rec)
             self.assertNotIn("recapture", rec)
 
@@ -308,7 +316,10 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertEqual(cap["timeout"], "30m")
             self.assertEqual(cap["model"], "stub-model-x")
             self.assertEqual(cap["effort"], "high")
-            self.assertEqual(cap["work_roots"], str(work_root))
+            self.assertEqual(
+                cap["work_roots"],
+                os.pathsep.join((str(work_root), str(docs_root))),
+            )
             # The wrapper actually ran with cwd = the cartopian project root.
             self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
 

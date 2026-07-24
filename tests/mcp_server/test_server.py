@@ -132,7 +132,7 @@ class TestInitializeHandshake(unittest.TestCase):
         # instructions must point at the resource read the model can actually do.
         instructions = single("initialize")["result"].get("instructions", "")
         self.assertIn("cartopian://skills/use_cartopian", instructions)
-        self.assertIn("read the resource", instructions.lower())
+        self.assertIn("resource reader", instructions.lower())
         self.assertNotIn("invoke the `use_cartopian` MCP prompt", instructions)
 
 

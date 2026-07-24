@@ -56,7 +56,7 @@ Read from the emitted record:
 
 - `role_description` — the one-line description for the role being assigned.
 - `handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model`, `effort`, and unset launch settings are serialized as `null`.
-- `work_roots` — the ordered list of `{name, absolute_path}` entries the assignee will receive read/write access to. Use these absolute paths verbatim when composing the prompt; do not re-derive them.
+- `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
 
@@ -112,7 +112,9 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
 
   `--prompt` accepts only an allowlisted planning-checkpoint prompt slot (`<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md`); the command derives the expected report path (`reports/REPORT-PLAN-NNN[-slug].md`), fails closed unless `auto_start_reviews` is true, and otherwise applies the same fail-closed gates, exports, and launch contract as the task-keyed form. Task-scoped handoffs never dispatch via `--prompt`; they dispatch by task path and require `auto_start_tasks = true`.
 
-The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path); access grants cover the union of the project root and any declared work-root absolute paths resolved via `resolve-config`. `dispatch` and the shipped `wrappers/` apply this launch contract automatically; custom agents must honor the same convention.
+The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path). `dispatch` exports declared work-root absolute paths in canonical resolved order through `CARTOPIAN_WORK_ROOTS`; no export is present when the project declares none. The Codex wrapper widens `workspace-write` with those paths, and the Claude wrapper passes each through `--add-dir`. Gemini and Devin sandboxes have no per-path widening surface, so their wrappers warn that declared work roots may be unwritable while those sandboxes are active. Custom agents must state and honor their own equivalent behavior.
+
+The project-root cwd and declared work-root access are filesystem launch facts. Declared work-root access does not grant PM lifecycle authority, relax the prompt's assignment scope, or transfer human-owned product-repository git actions to the assignee. Wrapper widening also does not replace harness capability enforcement.
 
 `dispatch` returns as soon as the wrapper is launched in the background — it does not block to completion and never reaps the child; the PM observes the result through Stage 3's wait primitive. Dispatch only one child handoff at a time. Do not start another handoff until this one has produced an accepted or blocked report outcome.
 

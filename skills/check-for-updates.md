@@ -4,7 +4,7 @@ Check whether a newer Cartopian release is available and, on operator approval, 
 
 **Output:** Either confirmation that Cartopian is current, or a refreshed install at the latest release with operator-owned files (`cartopian.toml`, `projects.json`) preserved.
 
-**How this skill is invoked.** Cartopian skills are **not** native Claude Code skills — `Skill("check_for_updates")` returns *Unknown skill*. They are served by the Cartopian MCP server as a **prompt** (`check_for_updates`) and a **resource** (`cartopian://skills/check_for_updates`). Invoke the MCP prompt, or read the resource and follow it. The installed version is available without any lookup: the `use_cartopian` MCP prompt prepends an authoritative install-context block (install root + installed version + this upgrade skill), so you do not need to scan the filesystem to learn the running version.
+**How this skill is delivered.** Follow the current runbook directly when an MCP prompt supplied it. Otherwise, read `cartopian://skills/check_for_updates` with the host's MCP resource reader and follow it. The installed version is available without any lookup: the `use_cartopian` MCP prompt and resource both prepend an authoritative install-context block (install root + installed version + this upgrade skill), so you do not need to scan the filesystem to learn the running version.
 
 **Corporate / proxied networks.** This skill is designed to work where `raw.githubusercontent.com`, `codeload.github.com`, and the WebFetch tool are blocked (e.g. a Cisco Umbrella gateway). Every step uses only `api.github.com` (unauthenticated) and MCP-shipped content — no raw-content hosts, no `gh` auth, no WebFetch.
 

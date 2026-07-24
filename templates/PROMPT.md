@@ -5,13 +5,17 @@ Branch: <branch or n/a; include only for a git workflow>
 
 ## Paths
 
-- **Project root**: <absolute path to the governing cartopian project directory; NOT in the assignee's scope except the report target below>
+- **Project root**: <absolute path to the governing Cartopian project directory; process launch cwd, but not authority to edit PM lifecycle artifacts>
 - **Work root paths**: <comma-separated absolute paths resolved from `Work root:`, or n/a>
 - **Deliverable path**: <absolute path where the durable work product is written, or n/a; when the deliverable must land inside the governing project, this is n/a and the work product is returned inline in the report instead — see the Deliverable section below>
 - **Report path**: <absolute path to the expected completion report>
 - **Report template path**: <absolute path to templates/REPORT.md>
 
-The assignee CLI is launched with cwd set to the **primary work root** (the first name in `Work root:`), not the governing project. Its filesystem scope is the union of the resolved work-root paths plus only the directory of the **Report path** above — so the governing project's PM artifacts (requirements, decisions, tasks, backlog, STATE, sibling prompts/reports) are out of scope. The launcher (`cartopian dispatch`) resolves each work-root name to an absolute path via `cartopian resolve-config` (merging `<project-root>/cartopian.toml` and the per-machine `<project-root>/cartopian.local.toml`) and passes the scope set to the wrapper; it fails closed if any name is unmapped. The prompt is self-contained — paste the deidentified spec and the relevant report-template variant inline rather than pointing the assignee at protocol files; the assignee's only interaction with the governing project is writing its completion report to the report target.
+The assignee CLI is launched with cwd set to the **Cartopian project root**. That working directory is launch context, not lifecycle authority: product work occurs only through the declared **Work root paths**, and declared work-root access does not grant PM lifecycle authority over requirements, decisions, tasks, backlog, `STATE.md`, prompts, or reports. Unless this assignment explicitly says otherwise, the only authorized write in the governing project is the **Report path** above.
+
+`cartopian dispatch` resolves every declared work-root name through `cartopian resolve-config`, preserves declared order, fails closed on an unmapped or nonexistent path, and exports the absolute paths in `CARTOPIAN_WORK_ROOTS`. The shipped Codex wrapper widens its `workspace-write` sandbox with those paths, and the Claude wrapper adds each path with `--add-dir`. Gemini and Devin sandboxes have no per-path widening surface; when those sandboxes are active, their wrappers warn that declared work roots may be unwritable. The wrappers do not replace harness capability enforcement.
+
+Keep the prompt self-contained: paste the deidentified spec and the relevant report-template variant inline rather than directing the assignee to read PM artifacts.
 
 ## Pull request
 

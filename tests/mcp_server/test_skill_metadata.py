@@ -80,6 +80,41 @@ class TestRepositorySkillMetadata(unittest.TestCase):
             first,
         )
 
+    def test_impossible_prompt_then_resource_fallback_fixture_fails(self):
+        """A model-impossible prompt action may not precede a resource fallback."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copytree(ROOT / "skills", root / "skills")
+            shutil.copytree(ROOT / "templates", root / "templates")
+            shutil.copy2(ROOT / "install-cartopian.md", root / "install-cartopian.md")
+            metadata_path = root / "skills" / "skill-metadata.json"
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+            entry = next(
+                record for record in data["skills"]
+                if record["identity"] == "use_cartopian"
+            )
+            entry["startup"]["client_bridge_action"] = (
+                "Invoke the use_cartopian MCP prompt; if you cannot, "
+                "read `cartopian://skills/use_cartopian` instead."
+            )
+            metadata_path.write_text(
+                json.dumps(data, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            first = validate_repository(root)
+            second = validate_repository(root)
+
+        self.assertEqual(first, second)
+        self.assertEqual(first, sorted(first))
+        self.assertTrue(
+            any(
+                "impossible prompt action followed by fallback" in item
+                for item in first
+            ),
+            first,
+        )
+
     def test_duplicate_unknown_missing_and_invalid_reference_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

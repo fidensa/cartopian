@@ -175,7 +175,14 @@
         ]
       },
       "host_qualifications": {
-        "direct_command": "Delegates to the cartopian MCP server's use_cartopian prompt."
+        "direct_command": "Runs the installed command that loads the authoritative startup runbook."
+      },
+      "startup": {
+        "outcome": "Enter Cartopian PM mode through registry-first project selection.",
+        "mcp_host_action": "Read `cartopian://skills/use_cartopian` with your host's MCP resource reader and follow it.",
+        "mcp_prompt_action": "Follow this supplied startup runbook directly.",
+        "mcp_resource_action": "Follow this supplied startup runbook directly.",
+        "client_bridge_action": "Read `cartopian://skills/use_cartopian` with your host's MCP resource reader and follow it."
       },
       "lifecycle": "shipped"
     }

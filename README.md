@@ -114,7 +114,7 @@ The first command exits 0 with the CLI subcommand list. The second emits a singl
 
 ## Entry point
 
-Registration installs a small **trigger bridge** for each agent that maps an entry trigger to the MCP server's `use_cartopian` prompt. Use it from any directory. It loads the prompt, puts the agent in PM mode, and routes to the first useful action: `start session` if you have a registered project, or `init project` if you do not.
+Registration installs a small **trigger bridge** for each supported agent. Use it from any directory after any client-specific restart. The bridge directly reads the authoritative `cartopian://skills/use_cartopian` resource, enters PM mode through registry-first project selection, and routes to `start session` for a selected project or `init project` when the registry is empty.
 
 The reliable, cross-client form is the **`/use-cartopian`** command. Where a description-matched skill bridge is installed, the bare phrase **"use cartopian"** also works. By client:
 

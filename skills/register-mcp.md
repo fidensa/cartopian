@@ -2,7 +2,7 @@
 
 Register or re-register Cartopian's MCP server (`cartopian-mcp`) with one or more AI agents on the operator's machine. Run this after a fresh install to cover additional agents, or whenever a new agent is added to the operator's workflow.
 
-**Output:** for each selected agent, `cartopian-mcp` is registered in its MCP config **and** a "use cartopian" trigger bridge (skill, prompt, or command) is installed so the entry phrase actually routes to the `use_cartopian` prompt. The operator can then enter Cartopian PM mode from any registered agent in any directory.
+**Output:** for each selected agent, `cartopian-mcp` is registered in its MCP config **and** a "use cartopian" trigger bridge (skill or command) is installed so the entry phrase reads the authoritative `cartopian://skills/use_cartopian` resource. The operator can then enter Cartopian PM mode from any registered agent in any directory after any required restart.
 
 ---
 
@@ -92,7 +92,7 @@ Apply the recipe for each agent the operator selected. Always confirm before wri
 **Every recipe has two parts:**
 
 - **Part A — register the MCP server** so the `cartopian` tools, prompt, and resources are reachable.
-- **Part B — install the "use cartopian" trigger bridge.** Registering the MCP server alone is *not* enough: no agent auto-surfaces the server's `use_cartopian` prompt as a phrase- or slash-invocable command. Each agent needs a small bridge file (a skill, prompt, or command) that maps the operator's entry phrase onto that prompt. The bridge bodies ship as templates under `<install_root>/templates/clients/<agent>/` — copy them verbatim into the agent's command/skill directory. Create any missing parent directories. Do not edit the template content during the copy; operators can tune it in place afterward.
+- **Part B — install the "use cartopian" trigger bridge.** Registering the MCP server alone is *not* enough: the supported bridge clients need a native skill or command for the entry phrase. Each bridge directly tells its host to read the authoritative `cartopian://skills/use_cartopian` resource with that host's MCP resource reader. The bridge bodies ship as templates under `<install_root>/templates/clients/<agent>/` — copy them verbatim into the agent's command/skill directory. Create any missing parent directories. Do not edit the template content during the copy; operators can tune it in place afterward.
 
 The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
 
@@ -372,4 +372,4 @@ Report, per agent the operator selected:
 - Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor). Claude Code needs no restart.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
-Once an agent has both parts, the operator opens it in any directory and uses the entry phrase/command above. That loads the `use_cartopian` prompt, which puts the agent in PM mode and routes to the first useful action (`start_session` if projects exist, `init_project` if not).
+Once an agent has both parts and any required restart is complete, the operator opens it in any directory and uses the entry phrase/command above. The installed bridge reads the `use_cartopian` resource, which enters PM mode through registry-first project selection and routes to `start_session` for a selected project or `init_project` when the registry is empty.

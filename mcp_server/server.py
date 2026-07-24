@@ -49,6 +49,7 @@ from .skill_metadata import (
     MetadataValidationError,
     discovery_description,
     load_metadata,
+    startup_projection,
 )
 
 # ---------------------------------------------------------------------------
@@ -274,6 +275,11 @@ def _server_instructions() -> str:
     connect time, no prompt invocation required.
     """
     version = _server_version()
+    entry = next(
+        record for record in _skill_records()
+        if record["identity"] == "use_cartopian"
+    )
+    startup = entry["startup"]
     return (
         "Cartopian — a filesystem-first project-governance protocol, served over "
         "MCP.\n\n"
@@ -283,29 +289,35 @@ def _server_instructions() -> str:
         f"- Installed version: `{version}`\n"
         "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
         "`cartopian://skills/check_for_updates`\n\n"
-        "To act as a Cartopian project manager (e.g. when the operator says "
-        "\"use cartopian\"), read the resource `cartopian://skills/use_cartopian` "
-        "and follow it literally — it is the authoritative startup runbook. You "
-        "cannot invoke an MCP prompt yourself (that is a human-initiated picker "
-        "action); the identically-named `use_cartopian` prompt is the equivalent "
-        "for that path, so do not wait on a prompt invocation — read the resource. "
-        "Cartopian skills are MCP prompts/resources, not native client skills."
+        f"{startup['outcome']}\n\n"
+        f"{startup['mcp_host_action']} It is the authoritative startup "
+        "runbook. Hosts that expose an MCP prompt picker may instead present "
+        "the identically named `use_cartopian` prompt to the operator."
     )
 
 
-def _use_cartopian_messages() -> List[Dict[str, Any]]:
+def _use_cartopian_messages(
+    record: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     skill_path = SKILL_DIR / "use-cartopian.md"
     context = _install_context_block()
+    if record is None:
+        record = next(
+            item for item in _skill_records()
+            if item["identity"] == "use_cartopian"
+        )
+    startup = startup_projection(record, "mcp_prompt") + "\n\n"
     if skill_path.exists():
         messages = _skill_messages(skill_path)
         # Prepend install context to the skill body so the agent sees it
         # before executing any step.
         first = messages[0]
-        first["content"]["text"] = context + first["content"]["text"]
+        first["content"]["text"] = context + startup + first["content"]["text"]
         return messages
     # Hard fallback if the skill file is missing
     text = (
         context
+        + startup
         + "You are in **Cartopian PM mode**. Execute in order:\n"
         "1. Read `cartopian://protocol/CONVENTIONS`.\n"
         "2. Read `cartopian://skills/start_session`.\n"
@@ -341,7 +353,7 @@ def get_prompt(name: str, _args: Optional[Dict[str, str]] = None) -> Dict[str, A
         if record["identity"] != name:
             continue
         messages = (
-            _use_cartopian_messages()
+            _use_cartopian_messages(record)
             if name == "use_cartopian"
             else _skill_messages(ROOT / record["runbook"])
         )
@@ -930,7 +942,16 @@ def read_resource(uri: str) -> Dict[str, Any]:
     # otherwise get the runbook without the block its Step 0 depends on — so the
     # version appears "missing" and the update check is skipped.
     if namespace == "skills" and _skill_name(resolved_path) == "use_cartopian":
-        text = _install_context_block() + text
+        entry = next(
+            record for record in _skill_records()
+            if record["identity"] == "use_cartopian"
+        )
+        text = (
+            _install_context_block()
+            + startup_projection(entry, "mcp_resource")
+            + "\n\n"
+            + text
+        )
     return {
         "contents": [{
             "uri": uri,

@@ -24,15 +24,19 @@ fields:
   canonically ordered `client_bridges` array.
 - `lifecycle` — currently the closed value `shipped`.
 
-The only optional field is `host_qualifications`. Its only supported key is
+The optional `host_qualifications` field has one supported key,
 `direct_command`, a bounded routing phrase for hosts whose bridge is an
-explicit command rather than a description-matched skill. Unknown fields,
-surface types, bridge identifiers, qualification keys, and lifecycle values
-fail closed. Common MCP and description-matched bridge text is deterministically
-rendered as `<description> <applicability>`; a direct-command bridge replaces
-the applicability clause with its declared host qualification. The combined
-common discovery text is capped at 220 characters, so metadata cannot embed a
-runbook or protocol body.
+explicit command rather than a description-matched skill. The `use_cartopian`
+record also requires `startup`: one common `outcome` and direct actions for
+MCP prompt, MCP resource, and installed client-bridge delivery. Bridge
+descriptions, startup outcome, and startup action lines are deterministic
+projections of this metadata. Unknown fields, surface types, bridge
+identifiers, qualification keys, and lifecycle values fail closed. Common MCP
+and description-matched bridge text is rendered as
+`<description> <applicability>`; a direct-command bridge replaces the
+applicability clause with its declared host qualification. Compact discovery
+text is capped at 220 characters, so metadata cannot embed a runbook or
+protocol body.
 
 Validate checked-in surfaces with:
 
