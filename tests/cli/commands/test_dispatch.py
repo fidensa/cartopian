@@ -7,7 +7,7 @@ Evidence gate (red-before-green):
   all to launch a wrapper.
 - GREEN (``TestDispatchPositive``): the mediated command launches a *stub*
   wrapper with the single absolute-prompt-path argv, ``CARTOPIAN_TIMEOUT``
-  exported from the resolved ``[handoffs.<role>].timeout``, and cwd = the
+  exported from resolved ``roles.<role>.launch.timeout``, and cwd = the
   cartopian project root; the PM then observes completion via
   ``cartopian wait-handoff`` — never spawning a process itself.
 
@@ -150,16 +150,16 @@ def _toml(
     timeout: str = "30m",
     model: str = "",
     effort: str = "",
-    auto_start_tasks: bool = True,
-    auto_start_reviews: "bool | None" = None,
+    auto_launch_tasks: bool = True,
+    auto_launch_reviews: "bool | None" = None,
 ) -> str:
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
     effort_line = f'effort = "{effort}"\n' if effort else ""
     activities = []
-    if auto_start_tasks:
+    if auto_launch_tasks:
         activities.append("task_run")
-    if auto_start_reviews:
+    if auto_launch_reviews:
         activities.append("planning_review")
     auto_launch_line = (
         "auto_launch = ["
@@ -170,7 +170,7 @@ def _toml(
         "\n[reviews]\n"
         'planning = "required"\n'
         'planning_role = "coder"\n'
-        if auto_start_reviews
+        if auto_launch_reviews
         else ""
     )
     return (
@@ -467,7 +467,7 @@ class TestDispatchPositive(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
 
-            # No model/effort in [handoffs.coder] — stale CARTOPIAN_MODEL /
+            # No model/effort in roles.coder.launch — stale CARTOPIAN_MODEL /
             # CARTOPIAN_EFFORT inherited from the parent environment must NOT
             # leak into the wrapper.
             work_root = scaffold.project_root / "tool-repo"
@@ -1236,7 +1236,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertIn("[guard]", stderr)
             self.assertIn("roles.coder.launch.target", stderr)
 
-    def test_task_dispatch_requires_auto_start_tasks(self) -> None:
+    def test_task_dispatch_requires_auto_launch_permission(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
@@ -1244,7 +1244,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             capture = tmp_path / "capture.json"
             scaffold.write(
                 "cartopian.toml",
-                _toml(str(stub), auto_start_tasks=False),
+                _toml(str(stub), auto_launch_tasks=False),
             )
             task_path = _write_task_and_prompt(scaffold)
 
@@ -1397,7 +1397,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
     operator-performed launch — `dispatch` was keyed exclusively on a task
     path, and planning reviews have no task file. GREEN: `--prompt` launches
     the config-bound wrapper for an allowlisted `PROMPT-PLAN-*` slot, gated
-    fail-closed on `[handoffs.<role>].auto_start_reviews` (default off — a
+    fail-closed on `roles.<role>.auto_launch` planning permission (default off — a
     role's task automation never silently extends to planning reviews).
     """
 
@@ -1414,7 +1414,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub), auto_start_reviews=True))
+            scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
             prompt_path = scaffold.write(
                 f"prompts/{self.PLAN_PROMPT}",
                 "# PROMPT-PLAN-001\n\n## Your task\n\nReview the requirements.\n",
@@ -1456,11 +1456,11 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             self.assertEqual(cap["argv"], [str(stub), str(resolved_prompt)])
             self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
 
-    def test_auto_start_reviews_unset_or_false_fails_closed(self) -> None:
+    def test_planning_auto_launch_unset_or_false_fails_closed(self) -> None:
         # Default-off gate: neither an absent key nor an explicit false may
         # launch — planning-review automation is a per-role opt-in.
-        for auto_start_reviews in (None, False):
-            with self.subTest(auto_start_reviews=auto_start_reviews), \
+        for auto_launch_reviews in (None, False):
+            with self.subTest(auto_launch_reviews=auto_launch_reviews), \
                     project_scaffold(cartopian_toml="") as scaffold, \
                     tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
                 tmp_path = Path(tmp)
@@ -1468,7 +1468,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
                 capture = tmp_path / "capture.json"
                 scaffold.write(
                     "cartopian.toml",
-                    _toml(str(stub), auto_start_reviews=auto_start_reviews),
+                    _toml(str(stub), auto_launch_reviews=auto_launch_reviews),
                 )
                 prompt_path = scaffold.write(f"prompts/{self.PLAN_PROMPT}", "# P\n")
 
@@ -1496,7 +1496,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub), auto_start_reviews=True))
+            scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
             prompt_path = scaffold.write("prompts/PROMPT-01-004.md", "# P\n")
 
             with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
@@ -1518,7 +1518,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
-            scaffold.write("cartopian.toml", _toml(str(stub), auto_start_reviews=True))
+            scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
             stray = scaffold.write("PROMPT-PLAN-001-stray.md", "# P\n")
 
             with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
@@ -1537,7 +1537,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
-            scaffold.write("cartopian.toml", _toml(str(stub), auto_start_reviews=True))
+            scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
             missing = scaffold.prompts / self.PLAN_PROMPT
 
             stdout, stderr, rc = _dispatch(
@@ -1554,7 +1554,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
-            scaffold.write("cartopian.toml", _toml(str(stub), auto_start_reviews=True))
+            scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
             task_path = _write_task_and_prompt(scaffold)
             prompt_path = scaffold.write(f"prompts/{self.PLAN_PROMPT}", "# P\n")
             fake_home = self._fake_home(tmp_path)
@@ -1643,7 +1643,7 @@ class TestDispatchNoRawExec(unittest.TestCase):
         self.assertIn('["git", "status", "--porcelain", "--untracked-files=all"]', plan_audit_src)
 
         # And dispatch itself sources its executable from config, never argv:
-        # the launched program is the resolved [handoffs.<role>].agent.
+        # the launched program is the resolved roles.<role>.launch.target.
         dispatch_src = Path(dispatch.__file__).read_text(encoding="utf-8")
         self.assertIn('agent = launch.get("target")', dispatch_src)
 

@@ -129,13 +129,13 @@ if ($Sandbox) {
     }
 }
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
-# resolved [handoffs.<role>].model; translate it into gemini's --model flag.
+# resolved dispatch model; translate it into gemini's --model flag.
 # Unset means gemini's own default model.
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-# gemini has no effort/thinking-level flag: a configured
-# [handoffs.<role>].effort cannot be translated, so it is ignored with a
+# Gemini has no effort/thinking-level flag. The resolved dispatch effort
+# cannot be translated, so it is ignored with a
 # notice and gemini runs at its own default.
 if ($env:CARTOPIAN_EFFORT) {
     [Console]::Error.WriteLine("cartopian-gemini: gemini has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT)")
@@ -145,7 +145,7 @@ $Args += @('-p', $PromptPathAbs)
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
 # at the configured deadline (default 60m). The PM sets CARTOPIAN_TIMEOUT
-# from the resolved [handoffs.<role>].timeout; it does not poll or
+# from the resolved dispatch timeout; it does not poll or
 # watchdog the running process. Exit code 124 signals deadline kill.
 # See protocol/CONVENTIONS.md -> Handoffs.
 function ConvertTo-CartopianTimeoutSeconds([string]$spec) {

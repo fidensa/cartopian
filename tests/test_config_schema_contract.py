@@ -22,7 +22,7 @@ ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 
 
 class TestClosedSchema(unittest.TestCase):
-    def test_contract_owns_scopes_defaults_precedence_aliases_and_identities(self):
+    def test_contract_owns_scopes_defaults_precedence_legacy_vocabulary_and_identities(self):
         self.assertEqual(
             CONFIG_SCHEMA["scopes"],
             ("global", "project", "machine-local"),
@@ -32,15 +32,23 @@ class TestClosedSchema(unittest.TestCase):
             ("protocol-default", "global", "project", "machine-local"),
         )
         self.assertEqual(
-            CONFIG_SCHEMA["migration_source_aliases"],
-            (
-                "project.protocol_version",
-                "handoffs",
-                "handoffs.*",
-                "handoffs.*.auto_start",
-                "handoffs.*.auto_start_tasks",
-                "handoffs.*.auto_start_reviews",
-            ),
+            CONFIG_SCHEMA["legacy_vocabulary"],
+            {
+                "authored_config_paths": (
+                    "project.protocol_version",
+                    "protocol_version",
+                    "handoffs",
+                    "handoffs.*",
+                    "handoffs.*.auto_start",
+                    "handoffs.*.auto_start_tasks",
+                    "handoffs.*.auto_start_reviews",
+                    "handoffs.*.planning_reviews",
+                ),
+                "retired_cli_flags": (
+                    "--set-handoff",
+                    "--remove-handoff",
+                ),
+            },
         )
         self.assertIn("git.default_merge_strategy", CONFIG_SCHEMA["fields"])
         self.assertEqual(

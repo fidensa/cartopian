@@ -28,19 +28,18 @@ Ask the operator about workspace-wide defaults:
 
 1. **Git versioning** — Should project PM data be git-versioned? (`true` or `false`, default `false`)
 2. **Roles** — Which roles should the workspace declare? The protocol-default roster is `pm` and `operator`. For each role the operator wants in the workspace, gather a role name (operator-chosen string) and a one-line description string that names the role's responsibility. `coder`, `reviewer`, `editor`, and `researcher` are illustrative labels, not role types or defaults. Confirm whether any existing role should be renamed or removed.
-3. **Review defaults and assignment** — Choose one workspace preset: **no reviews**, **planning only**, **task closure only**, or **planning and task closure**. For each required loop, choose one of the declared roles to perform it. These are global defaults only: every project can override either loop to `off` or assign another role. Never infer review policy from a role name, description, capability preset, or handoff block.
+3. **Review defaults and assignment** — Choose one workspace preset: **no reviews**, **planning only**, **task closure only**, or **planning and task closure**. For each required loop, choose one of the declared roles to perform it. These are global defaults only: every project can override either loop to `off` or assign another role. Never infer review policy from a role name, description, capability preset, launch target, or permission.
 
 ### Step 3 — Gather CLI handoff targets
 
-For each role that should dispatch automatically, ask the operator:
+For each role that may use CLI launch, ask the operator:
 
 1. **CLI handoff target** — Should this role have a named executable for CLI handoff automation? If yes, what is the executable name? (e.g., `codex`, `gemini`, `claude`)
 2. **Effort** — Should this role pin an effort/thinking level? Valid levels depend on the chosen agent CLI (e.g., claude: `low|medium|high|xhigh|max`; codex: `low|medium|high|xhigh|max|ultra`; gemini/devin: not supported). Unsupported values fall back to the tool's default with a warning at launch. Leave blank to use the tool's default.
-3. **Auto-start** — Should the PM automatically launch this executable after assignment is authorized? (`true` or `false`, default `false`)
-4. **Timeout** — Should this handoff have a custom timeout? Use a duration string such as `30m`, `2h`, or `1h30m`. Leave blank to use the protocol default of `60m`.
-5. **Automatic launch by handoff type** — May the PM automatically launch task-scoped handoffs for this role (`auto_start_tasks`)? May it automatically launch planning-review handoffs (`auto_start_reviews`)? Both default to `false`; the `[reviews]` policy independently decides whether review checkpoints exist.
+3. **Timeout** — Should this handoff have a custom timeout? Use one positive duration such as `30m` or `2h`. Leave blank to use the protocol default of `60m`.
+4. **Automatic-launch permissions** — Which assigned work types may the PM launch automatically for this role: `task_run`, `task_review`, and/or `planning_review`? The list defaults empty; `[reviews]` independently decides whether review checkpoints exist and who owns them.
 
-If the operator does not want automated CLI handoff for a role, skip the `[handoffs.*]` section for that role. The PM will create the prompt and the operator will handle execution manually (plain manual handoff). Whether a role dispatches automatically is inferred from the presence of a `[handoffs.<role>]` block, not from any field on the role itself.
+If the operator does not want a CLI launch target for a role, omit its role-local `launch` table. The PM will create the prompt and the operator will handle execution manually. A target does not itself grant automatic launch; the applicable assigned work type must also appear in `auto_launch`.
 
 ### Step 4 — Gather automation policy
 
@@ -52,7 +51,7 @@ Present the automation choice as two presets, then refine:
 2. **Confirmation mode** — `each-handoff` (stop after each result) or `until-blocked` (continue until a blocker, limit, or failed report)? (default: `each-handoff`)
 3. **Max handoffs per run** — How many handoffs may the PM launch in one session? (default: `1`)
 
-For fully unattended operation the operator must choose each layer explicitly: `initiation = "auto"`, `confirmation = "until-blocked"`, a `max_handoffs_per_run` batch size, and the applicable `auto_start_tasks` / `auto_start_reviews` settings on roles the PM should launch (Step 3). No single answer switches them all on.
+For fully unattended operation the operator must choose each layer explicitly: `initiation = "auto"`, `confirmation = "until-blocked"`, a `max_handoffs_per_run` batch size, and the applicable work types in each role's `auto_launch` list (Step 3). No single answer switches them all on.
 
 ### Step 5 — Generate workspace config
 
@@ -62,15 +61,21 @@ Write `~/.cartopian/cartopian.toml` with the gathered values:
 [defaults]
 git_versioning = <true|false>
 
-[roles]
-# Each value is a one-line description string describing the
-# role's responsibility. A role exists in the workspace iff its
-# key appears here. Whether a role dispatches automatically is
-# inferred from the presence of a `[handoffs.<role>]` block
-# below; there is no kind field on the role itself.
-pm = "<one-line description>"
-operator = "<one-line description>"
-# <additional roles operators chose, e.g. coder / reviewer>
+[roles.pm]
+description = "<one-line description>"
+
+[roles.operator]
+description = "<one-line description>"
+
+# [roles.<additional-role>]
+# description = "<one-line description>"
+# auto_launch = ["<task_run|task_review|planning_review>"]
+#
+# [roles.<additional-role>.launch]
+# target = "<executable name>"
+# model = "<model>"
+# effort = "<level>"
+# timeout = "<duration>"
 
 [reviews]
 planning = "<required|off>"
@@ -78,20 +83,13 @@ planning = "<required|off>"
 task_closure = "<required|off>"
 # task_role = "<declared role>"      # include when task closure is required
 
-# [handoffs.<role>]
-# agent = "<executable name>"
-# effort = "<level>"
-# auto_start_tasks = <true|false>
-# auto_start_reviews = <true|false>
-# timeout = "<duration>"
-
 [automation]
 # initiation = "<operator|auto>"  # omit for the "operator" default
 confirmation = "<each-handoff|until-blocked>"
 max_handoffs_per_run = <number>
 ```
 
-Write both review modes explicitly so the global choice is visible; include role keys only for required loops. Use commented-out lines for optional settings the user did not enable. To remove a role from a project, omit its key from `[roles]`. Reminder: projects may override roles, review policy, assignment, and handoff config independently.
+Write both review modes explicitly so the global choice is visible; include role-assignment keys only for required loops. Use commented-out lines for optional settings the user did not enable. To remove a role from a project, omit its role table. Reminder: projects may override role fields, review policy/assignment, launch target/options, and automatic-launch permissions independently.
 
 Do not generate `[agents.*]` sections.
 

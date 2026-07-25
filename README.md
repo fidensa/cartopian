@@ -33,7 +33,7 @@ Those are the runbooks the PM follows, not commands you memorize. On a new proje
 
 Cartopian has two independent review policies. A project may require planning review only, task-closure review only, both, or neither. Review policy names the role responsible for the checkpoint; role descriptions help assignment, while capability grants independently control what that role may access.
 
-**Plan → optional review.** When `[reviews].planning = "required"`, the role named by `planning_role` gets a checkpoint after each planning stage: requirements, the implementation plan, the phase breakdown, and the tasks/specs. The findings land as a durable review file; the PM integrates them before moving on. Set `auto_start_reviews = true` on that role's handoff block when the PM should launch planning-review handoffs automatically. When planning review is off, the PM advances without manufacturing a reviewer role or an empty review artifact.
+**Plan → optional review.** When `[reviews].planning = "required"`, the role named by `planning_role` gets a checkpoint after each planning stage: requirements, the implementation plan, the phase breakdown, and the tasks/specs. The findings land as a durable review file; the PM integrates them before moving on. Add `"planning_review"` to that role's `auto_launch` list when the PM should launch the checkpoint automatically. When planning review is off, the PM advances without manufacturing a reviewer role or an empty review artifact.
 
 **Outcome → optional review.** During `run task`, the assignee completes the requested outcome and writes a completion report. With `[reviews].task_closure = "required"`, the PM moves the task to `in-review` and hands it to `task_role`; the verdict drives the next move deterministically. With task review off, an accepted report moves directly to `done`. In both modes the CLI verifies the evidence on disk before moving the task.
 
@@ -45,26 +45,21 @@ initiation = "auto"              # runs may begin without you saying "continue"
 confirmation = "until-blocked"   # chain through tasks until something needs a human
 max_handoffs_per_run = 2         # bounded unattended runs
 
-[roles]
-pm = "Surface the evidence and facilitate operator decisions"
-operator = "Designs the product and provides direction to guide implementation"
-coder = "Implements tasks per spec"
-reviewer = "Reviews against acceptance criteria and original operator intent"
-
 [roles.coder]
+description = "Implements tasks per spec"
 grants = ["coder-like"]
+auto_launch = ["task_run"]
+
+[roles.coder.launch]
+target = "cartopian-codex"
 
 [roles.reviewer]
+description = "Reviews against acceptance criteria and original operator intent"
 grants = ["reviewer-like"]
+auto_launch = ["task_review", "planning_review"]
 
-[handoffs.coder]
-agent = "cartopian-codex"
-auto_start_tasks = true
-
-[handoffs.reviewer]
-agent = "cartopian-gemini"
-auto_start_tasks = true
-auto_start_reviews = true
+[roles.reviewer.launch]
+target = "cartopian-gemini"
 
 [reviews]
 planning = "required"
@@ -158,12 +153,14 @@ See `skills/README.md` for the full index.
 The default roster is **PM** and **Operator**, the planner and the decision-maker. From there, you can name whatever roles your project needs: Coder, Reviewer, Designer, Researcher, Photographer, or any other role. Each role gets a one-line description, which the PM uses to match tasks to the appropriate resource. Names and descriptions do not confer protocol authority. Review responsibility comes only from `[reviews]`, and access comes only from capability grants when containment is active. `reviewer` is the conventional example below, although a project may assign the same policy to another role name.
 
 ```toml
-[roles]
-pm        = "Plans phases, dispatches handoffs, integrates results."
-operator  = "Approves locks, unblocks, sets cadence."
-coder     = "Completes assigned outcomes per spec."
-reviewer  = "Checks selected plans and outcomes against acceptance evidence."
-designer  = "Owns visual contracts and design decisions."
+[roles.coder]
+description = "Completes assigned outcomes per spec."
+
+[roles.reviewer]
+description = "Checks selected plans and outcomes against acceptance evidence."
+
+[roles.designer]
+description = "Owns visual contracts and design decisions."
 
 [reviews]
 planning = "required"
@@ -177,20 +174,25 @@ Roles can also carry **capability grants** (`grants = [...]`), which turn the de
 
 ### Automated handoffs (optional)
 
-Add a `[handoffs.<role>]` block and the PM can launch the work itself:
+Give a role a launch target and, separately, the applicable automatic-launch permissions:
 
 ```toml
-[handoffs.coder]
-agent = "cartopian-codex"
+[roles.coder]
+description = "Completes assigned outcomes per spec."
+auto_launch = ["task_run"]
+
+[roles.coder.launch]
+target = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
-auto_start_tasks = true
 timeout = "60m"
 
-[handoffs.reviewer]
-agent = "cartopian-gemini"
-auto_start_tasks = true    # task-closure review handoffs
-auto_start_reviews = true  # planning-review handoffs
+[roles.reviewer]
+description = "Checks selected plans and outcomes against acceptance evidence."
+auto_launch = ["task_review", "planning_review"]
+
+[roles.reviewer.launch]
+target = "cartopian-gemini"
 timeout = "30m"
 ```
 
@@ -200,9 +202,9 @@ The optional `model` key pins the assigned agent to a specific model. Dispatch e
 
 The optional `effort` key sets an effort or thinking level in the same way. Dispatch exports it as `CARTOPIAN_EFFORT`, and the wrapper translates it into the tool-specific flag (`claude --effort`, codex `-c model_reasoning_effort=`). A value outside the wrapper's vocabulary degrades gracefully. The wrapper prints a one-line notice to standard error, omits the flag, and launches the agent at its default effort. The Gemini and Devin CLIs have no effort flag, so those wrappers ignore `CARTOPIAN_EFFORT` with a notice.
 
-`auto_start_tasks` controls automatic task-scoped launches, including task-closure review. `auto_start_reviews` independently controls automatic planning-review launches. Neither setting enables a review stage or makes a role a reviewer; the `[reviews]` policy and assignment do that. Both launch settings are disabled by default and enforced fail-closed by `cartopian dispatch`.
+`auto_launch` accepts only `task_run`, `task_review`, and `planning_review`. Each permission applies to one assigned work type. It never enables a review stage, assigns review responsibility, starts a run, or selects a task; `[reviews]`, `[automation]`, and deterministic task order own those decisions. The list is empty by default and `cartopian dispatch` enforces it fail-closed.
 
-The defaults require your participation: execution starts on your directive, and confirmation occurs for each handoff. Bounded unattended runs are available when you want them. Each layer (`initiation`, `confirmation`, and the applicable `auto_start_*` setting) is a separate opt-in under `[automation]`, as shown above. Manual handoff is always supported, and automation remains optional.
+The defaults require your participation: execution starts on your directive, and confirmation occurs for each handoff. Bounded unattended runs are available when you want them. Each layer (`initiation`, `confirmation`, and the applicable role-local permission) is a separate opt-in, as shown above. Manual handoff is always supported, and automation remains optional.
 
 See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full contract.
 
@@ -220,22 +222,21 @@ Cartopian uses a global configuration file, a committed configuration file for e
 
 | Section | Where it belongs | Purpose |
 | --- | --- | --- |
-| `[project]` | Project | Required project `name`, `id`, and `protocol_version`, plus optional `work_roots` names |
+| `[project]` | Project | Required project `name`, `id`, and `project_schema_version`, plus optional `work_roots` names |
 | `[defaults]` | Global or project | The `git_versioning` switch |
 | `[git]` | Global or project | Optional PM-owned product-branch behavior, branch naming, and merge strategy |
 | `[automation]` | Global or project | Run initiation, confirmation pace, and the handoff limit for each run |
-| `[roles]` and `[roles.<name>]` | Global or project | Role descriptions and optional capability grants |
+| `[roles.<name>]` and `[roles.<name>.launch]` | Global or project | Role descriptions, capability grants, assigned-work launch permissions, and neutral launch target/options |
 | `[reviews]` | Global or project | Independent planning and task-closure policies and the role assigned to each required loop |
-| `[handoffs.<role>]` | Global or project | Agent, model, effort, launch permissions, and timeout for an automated role handoff |
 | `[work_roots]` | Machine-local file only | Absolute path mappings for names declared by `[project].work_roots` |
 
 For sections shared by the global and project files, project values take precedence over global values. Resolution is performed at the key or role level as appropriate for that section. Built-in defaults fill supported values that remain unset, including the `pm` and `operator` roles, attended automation, reviews set to `off`, and Git versioning set to `false`. The `[project]` table comes only from the project file. The machine-local `[work_roots]` table only supplies paths for names declared in that project's `[project].work_roots` list.
 
-`cartopian resolve-config <project-root>` validates these sources together and returns the effective configuration. It fails when, for example, a declared work root has no machine-local path or a handoff names an undeclared role.
+`cartopian resolve-config <project-root>` validates these sources together and returns the effective configuration. It fails when, for example, a declared work root has no machine-local path, a required review names an undeclared role, or an automatic-launch permission is not applicable to the role.
 
 Run `init workspace` to establish global defaults and `init project` to create a project configuration. The PM manages changes inside a project through the validated `cartopian update-config` command after you request them. The workspace setup flow owns the global file, which can also be edited directly by the operator.
 
-The `[project].protocol_version` value records the project's protocol schema version so Cartopian can identify applicable migrations. It is separate from the installed Cartopian release version and is maintained by the migration workflow after operator approval.
+The `[project].project_schema_version` value records the project's configuration format so Cartopian can identify applicable migrations. It is separate from the installed Cartopian release version, the connected server identity, and the MCP wire protocol version. The migration workflow advances it only after operator approval and successful validation.
 
 ## Protocol
 

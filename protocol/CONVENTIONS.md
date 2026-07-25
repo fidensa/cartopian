@@ -348,7 +348,7 @@ The deliverable is the durable record of the work; the report may be cleared and
 
 ## Roles
 
-The `[roles]` section in `cartopian.toml` maps each role name to a one-line description string. Role names are operator-chosen identifiers; descriptions explain what the role is responsible for so the PM can align tasks to roles during assignment.
+Each `[roles.<name>]` table in `cartopian.toml` carries a required one-line `description` and may carry capability grants, role-local launch facts, and automatic-launch permissions. Role names are operator-chosen identifiers; names and descriptions explain responsibility but confer no review, launch, selection, capability, or identity authority.
 
 Roles exist to be assigned, which means a PM who takes on the work rather than assigning it is undermining the system. Assign work to role(s) with appropriate descriptions/permissions.
 
@@ -362,23 +362,24 @@ The PM role is bounded to project-management authoring:
 - **Migration is PM-owned.** A project's internal protocol-schema version is separate from the installed Cartopian application's release version. Bringing that project schema current is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config`, ordinary project authoring through the structured writers, and shipped deterministic filesystem transforms through `cartopian apply-migration-entry`. The migration executor accepts only a registered project root and shipped entry version; its closed registry owns all paths and transformations. Judgment-dependent values return as structured pending PM actions and block the marker bump until resolved. Operators are not expected to edit the version marker or perform file surgery. See `skills/migrate-project.md`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
 
-These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so a `[handoffs.pm]` block has no meaning and must not be configured.
+These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so `roles.pm.launch.target` and `roles.pm.auto_launch` must not be configured.
 
 ```toml
-[roles]
-pm = "Plans phases, dispatches handoffs, integrates results."
-operator = "Approves locks, unblocks, sets cadence."
+[roles.pm]
+description = "Plans phases, dispatches handoffs, integrates results."
+
+[roles.operator]
+description = "Approves locks, unblocks, sets cadence."
 ```
 
 The protocol-default roster is **`pm` and `operator`**. Operators may add any further roles their project needs. Common example labels include `coder`, `reviewer`, `editor`, and `researcher`, but all are illustrative only. Review assignment is configured under `[reviews]`; role names and descriptions carry no protocol behavior, so an operator may use another label if desired.
 
-Dispatch path is inferred from the presence of a matching `[handoffs.<role>]` block, not from a `kind` value:
+Launch and permission remain distinct:
 
-- Role declared in `[roles]` with a configured `[handoffs.<role>]` — automated dispatch via that wrapper.
-- Role declared in `[roles]` with no `[handoffs.<role>]` block — manual dispatch; the PM surfaces the prompt and the operator acts.
-- Role omitted from `[roles]` — role does not exist in this project; tasks may not assign it.
-
-A `[handoffs.<role>]` block whose role name is not declared in `[roles]` is a config error.
+- A declared non-PM role with `launch.target` has a resolved target/options record.
+- A declared role without `launch.target` uses manual handoff; the PM surfaces the prompt and the operator acts.
+- `auto_launch` independently grants automatic launch for listed assigned work types.
+- A role omitted from `[roles]` does not exist in this project; tasks and review policy may not assign it.
 
 ## Handoffs
 
@@ -386,34 +387,39 @@ CLI handoff automation is optional. Manual handoff remains valid for every role.
 
 The reusable handoff procedure is `skills/run-handoff.md`. Planning uses the same contract through `skills/plan-project.md`; task execution uses it through `skills/run-task.md`.
 
-Use `[handoffs.<role>]` only for agent roles that need a named target:
+Use role-local launch facts only for roles that need a named target:
 
 ```toml
-[handoffs.coder]
-agent = "codex"
+[roles.coder]
+description = "Implements tasks per spec."
+auto_launch = ["task_run"]
+
+[roles.coder.launch]
+target = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
-auto_start_tasks = true
 timeout = "60m"
 
-[handoffs.reviewer]
-agent = "gemini"
-auto_start_tasks = true
-auto_start_reviews = true
+[roles.reviewer]
+description = "Reviews assigned checkpoints."
+auto_launch = ["task_review", "planning_review"]
+
+[roles.reviewer.launch]
+target = "cartopian-gemini"
 timeout = "30m"
 ```
 
-Handoff fields are:
+Role launch and permission fields are:
 
-- `agent`: executable name.
+- `target`: executable/wrapper name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `effort`: optional effort/thinking level for the assigned agent, exported to the wrapper as the `CARTOPIAN_EFFORT` environment variable; the wrapper translates it into the tool-specific effort flag. When unset, no variable is exported and the tool's own default effort applies. A value outside the wrapper's CLI-wide vocabulary makes the wrapper warn on stderr and launch at the default; whether a specific model supports a vocabulary-valid level is the tool's own behavior.
-- `auto_start_tasks`: whether the PM may launch this role for task-scoped handoffs, including assigned task work and task-closure review. Default `false`/unset.
-- `auto_start_reviews`: whether the PM may launch this role for planning-review checkpoints, which have no task file. Default `false`/unset. It does not enable planning review; `[reviews].planning` decides whether the checkpoint exists and `planning_role` assigns it.
-- Both `auto_start_*` keys choose launch mode only, after `[automation] initiation` has allowed the run to begin and `confirmation` permits the handoff. Each setting governs only its handoff type; it never initiates a run. `cartopian dispatch` enforces the applicable key fail-closed. Older `auto_start` and `planning_reviews` keys are accepted only as compatibility inputs and resolve to these explicit fields; agents should migrate new edits to the explicit names.
+- `auto_launch`: a closed unique list containing applicable assigned work types from `task_run`, `task_review`, and `planning_review`. The list chooses launch mode only after `[automation].initiation` has allowed the run to begin and `confirmation` permits the handoff; it never initiates a run. It does not assign review, control pace, select a task, or grant capabilities. `cartopian dispatch` enforces the applicable permission fail-closed.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
-`[handoffs.<role>].timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
+Legacy compatibility only: migration tooling recognizes `project.protocol_version`, `[handoffs.<role>]`, `auto_start`, `auto_start_tasks`, `auto_start_reviews`, and `planning_reviews` as migration-source vocabulary. Preferred validation rejects them, and current generation, editing, examples, CLI/MCP schemas, and machine projections never emit them.
+
+`roles.<role>.launch.timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
 
 Every automated handoff follows this argument contract:
 
@@ -433,7 +439,7 @@ Assignee CLIs run with cwd set to the **cartopian project root** — the absolut
 
 **Work-root write grant.** The launched agent must be able to write to the union of the cartopian project root and the project's declared work roots. `cartopian dispatch` resolves the declared work roots fail-closed (an unmapped name or a mapped path missing on this machine refuses the launch) and exports the resolved absolute paths to the wrapper as the `CARTOPIAN_WORK_ROOTS` environment variable (`os.pathsep`-joined: `:` on POSIX, `;` on Windows; not exported when the project declares none, and a stale inherited value is cleared). A wrapper whose agent CLI imposes its own filesystem sandbox rooted at the launch cwd must **widen** that sandbox to cover these paths — the shipped codex wrapper adds them as `sandbox_workspace_write.writable_roots`, and the claude wrapper passes each as `--add-dir`. Widening a tool-imposed sandbox to match the launch contract is not scoping; wrappers still never *confine* the agent below what its own CLI does. Where a tool's sandbox exposes no per-path grant surface (gemini `--sandbox`, devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside that sandbox.
 
-Capability-based gating of what an agent may read or mutate is the **harness's** responsibility, not the launcher's. If approval-in-the-loop behavior is wanted for a role, leave the applicable `auto_start_*` setting false/unset and use the manual path rather than the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
+Capability-based gating of what an agent may read or mutate is the **harness's** responsibility, not the launcher's. If approval-in-the-loop behavior is wanted for a role, omit the applicable work type from `auto_launch` and use the manual path rather than the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
 
 **Note for custom wrapper authors.** The cartopian project root is not automatically a git repository. Tools that refuse to run outside a git repo must be told to skip that check (the shipped wrappers do so unconditionally). The autonomy/permission flags a wrapper passes live at the wrapper layer; capability gating lives in the harness.
 
@@ -443,7 +449,7 @@ Work roots are the protocol mechanism that lets a cartopian project reference fi
 
 - The committed `<project-root>/cartopian.toml` declares a **name set** under `[project].work_roots`: an inline list of operator-chosen, platform-independent identifiers (e.g., `["product", "design"]`). The committed file carries no paths, keeping multi-operator and multi-machine use viable.
 - The per-machine `<project-root>/cartopian.local.toml` carries the **name → absolute-path mapping** for the current operator's machine, under a `[work_roots]` table. It is gitignored by `cartopian scaffold-project` and never committed.
-- `cartopian resolve-config <project>` merges the two files, validates that every declared name has a path mapping, and emits the resolved absolute paths as the single canonical form. Skills and the PM consume the resolved output (e.g. to reference a work root by absolute path in the prompt they author). Unmapped names exit non-zero with a `[work-root]` stderr line.
+- `cartopian resolve-config <project>` merges the two files and validates that every declared name has an absolute path mapping. Path spelling follows one rule across machine records: project, task, spec, dependency, prompt, and report paths are filesystem-resolved absolute paths; machine-local work-root mappings preserve the operator-authored absolute spelling verbatim. This prevents one record from rewriting an authored `/tmp/...` mapping to `/private/tmp/...` while its lifecycle paths use the filesystem-resolved spelling. Skills and the PM consume each emitted path verbatim. Unmapped names exit non-zero with a `[work-root]` stderr line.
 - Tasks reference work roots by **name** in the `Work root:` task-file field (see `templates/TASK.md`). The field is optional, comma-separated multi-valued, and rejects absolute paths, project-relative paths, and `<owner>/<repo>` slugs. Names absent from `[project].work_roots` cause `cartopian validate-task-readiness` to block the task.
 
 Optional automation policy:
@@ -463,18 +469,18 @@ Supported `initiation` values are:
 Supported `confirmation` values are:
 
 - `each-handoff`: stop after each handoff reaches a terminal result and that result is processed.
-- `until-blocked`: continue through handoffs whose applicable `auto_start_tasks` or `auto_start_reviews` setting is true until blocked, failed, rejected, missing evidence, requiring operator judgment, reaching a phase boundary, or hitting `max_handoffs_per_run`.
+- `until-blocked`: continue through handoffs whose applicable role-local `auto_launch` permission is present until blocked, failed, rejected, missing evidence, requiring operator judgment, reaching a phase boundary, or hitting `max_handoffs_per_run`.
 
-Defaults are `initiation = "operator"`, `confirmation = "each-handoff"`, and `max_handoffs_per_run = 1`. `resolve-config` resolves an unrecognized `initiation` value to `operator` (fail-safe: less automation, never more) and emits a `[validation]` warning.
+Defaults are `initiation = "operator"`, `confirmation = "each-handoff"`, and `max_handoffs_per_run = 1`. Values outside the closed domains fail configuration validation.
 
 The automation authorities are disjoint, and each gates a different question:
 
 - `initiation` gates **whether a run begins** when no execution directive was given.
 - `confirmation` gates **pace** within an initiated run: under `each-handoff` the PM stops after the handoff reaches a terminal result and that result is processed, then resumes with the next sequential step when the operator says to continue; under `until-blocked` the initiated run remains active while a launched handoff is working and chains through sequential tasks within the run budget. Neither value authorizes initiation — `until-blocked` describes how far an initiated run chains, not whether one starts.
 - **Selection** is never gated and never an operator question: task order is deterministic per [Task Execution Order](#task-execution-order). Within an initiated run, evidence-supported lifecycle moves (starting the next sequential task, moving a task per a parsed report or review verdict) are applied without a confirmation prompt; the operator is consulted only at the stop conditions named there.
-- `[handoffs.<role>].auto_start_tasks` and `auto_start_reviews` gate **launch mode** for task-scoped and planning-review handoffs respectively; they participate in neither initiation nor pace.
+- `roles.<role>.auto_launch` gates **launch mode** for each listed assigned work type; it participates in neither initiation nor pace.
 
-Full unattended operation is therefore a stack of explicit opt-ins, each an operator choice and none a protocol default: `initiation = "auto"` (runs may begin without a directive), `confirmation = "until-blocked"` (runs chain), `max_handoffs_per_run` sized to the desired batch, and the applicable `auto_start_tasks` / `auto_start_reviews` settings enabled on roles the PM should launch itself.
+Full unattended operation is therefore a stack of explicit opt-ins, each an operator choice and none a protocol default: `initiation = "auto"` (runs may begin without a directive), `confirmation = "until-blocked"` (runs chain), `max_handoffs_per_run` sized to the desired batch, and the applicable work types present in each launched role's `auto_launch` list.
 
 `max_handoffs_per_run` is a launch budget. Only launches consume a handoff budget unit. Re-invoking a wait primitive, receiving a nonterminal observation, or automatically waking/resuming the host to continue observing the same launched assignee consumes no unit and cannot authorize or cause another launch.
 
@@ -484,8 +490,8 @@ Handoffs are sequential. Concurrent child agents are out of scope.
 
 The PM detects handoff completion by observing the filesystem through two canonical read-only wait primitives, which replace all ad-hoc polling, hand-rolled timing loops, manual "tell me when it's done" prompts, and PM-side watchdog timers:
 
-- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the role's configured `[handoffs.<role>].timeout` as the absolute ceiling.
-- `cartopian wait-report <report-path> [--role <role>] [--max-block <duration>]` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file. With `--role` it honors the same resolved `[handoffs.<role>].timeout` ceiling; otherwise the protocol default applies.
+- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the role's configured `launch.timeout` as the absolute ceiling.
+- `cartopian wait-report <report-path> [--role <role>] [--max-block <duration>]` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file. With `--role` it honors the same resolved role launch timeout; otherwise the protocol default applies.
 
 The completion contract is:
 

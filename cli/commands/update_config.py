@@ -54,6 +54,7 @@ from cli.atomic_write import (
 from cli.capabilities import PRESETS, is_known_grant_name
 from cli.config_schema import (
     AUTO_LAUNCH_ACTIVITIES,
+    CONFIG_SCHEMA,
     ConfigDiagnostic,
     resolve_configuration,
 )
@@ -144,6 +145,11 @@ def _v_enum(*allowed: str) -> Callable[[str], str]:
     return check
 
 
+def _schema_enum(field: str) -> Callable[[str], str]:
+    """Build an editor validator from the authoritative accepted-value domain."""
+    return _v_enum(*CONFIG_SCHEMA["fields"][field]["values"])
+
+
 def _v_name_list(raw: str) -> str:
     names = [] if raw == "" else [n.strip() for n in raw.split(",")]
     seen: set = set()
@@ -167,21 +173,35 @@ SCHEMA: Dict[str, Tuple[Tuple[str, ...], str, Callable[[str], str]]] = {
         _v_version,
     ),
     "project.work_roots": (("project",), "work_roots", _v_name_list),
-    "automation.initiation": (("automation",), "initiation", _v_enum("operator", "auto")),
+    "automation.initiation": (
+        ("automation",),
+        "initiation",
+        _schema_enum("automation.initiation"),
+    ),
     "automation.confirmation": (
-        ("automation",), "confirmation", _v_enum("each-handoff", "until-blocked"),
+        ("automation",),
+        "confirmation",
+        _schema_enum("automation.confirmation"),
     ),
     "automation.max_handoffs_per_run": (("automation",), "max_handoffs_per_run", _v_posint),
     "defaults.git_versioning": (("defaults",), "git_versioning", _v_bool),
     "git.pm_owns_product_branches": (("git",), "pm_owns_product_branches", _v_bool),
     "git.default_branch_pattern": (("git",), "default_branch_pattern", _v_nonempty),
     "git.default_merge_strategy": (
-        ("git",), "default_merge_strategy", _v_enum("merge", "squash", "rebase"),
+        ("git",),
+        "default_merge_strategy",
+        _schema_enum("git.default_merge_strategy"),
     ),
-    "reviews.planning": (("reviews",), "planning", _v_enum("required", "off")),
+    "reviews.planning": (
+        ("reviews",),
+        "planning",
+        _schema_enum("reviews.planning"),
+    ),
     "reviews.planning_role": (("reviews",), "planning_role", _v_nonempty),
     "reviews.task_closure": (
-        ("reviews",), "task_closure", _v_enum("required", "off"),
+        ("reviews",),
+        "task_closure",
+        _schema_enum("reviews.task_closure"),
     ),
     "reviews.task_role": (("reviews",), "task_role", _v_nonempty),
 }

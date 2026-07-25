@@ -134,14 +134,14 @@ if [[ "$CLAUDE_SKIP_PERMISSIONS" == "true" ]]; then
 fi
 
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
-# resolved [handoffs.<role>].model; translate it into claude's --model flag.
+# resolved dispatch model; translate it into claude's --model flag.
 # Unset means claude's own default model.
 if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
 
 # Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
-# resolved [handoffs.<role>].effort; translate it into claude's --effort flag.
+# resolved dispatch effort; translate it into claude's --effort flag.
 # Values outside claude's CLI-wide effort vocabulary fall back to the default
 # effort (warn + omit). A vocabulary-valid level a specific model rejects is
 # passed through — that outcome is the tool's own behavior. The vocabulary
@@ -178,7 +178,7 @@ fi
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
 # upstream process at the configured deadline (default 60m). The PM
-# sets CARTOPIAN_TIMEOUT from the resolved [handoffs.<role>].timeout;
+# sets CARTOPIAN_TIMEOUT from the resolved dispatch timeout;
 # it does not poll or watchdog the running process. SIGTERM at deadline
 # returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
 TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"

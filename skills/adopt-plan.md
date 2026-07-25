@@ -50,7 +50,7 @@ If inconsistent state exists (plan artifacts without a plan file, or `STATE.md` 
    cartopian register-project <project-path> [--label "Human-friendly name"]
    ```
 
-3. Resolve the effective configuration for this project (roles, review policy and assignments, handoffs, automation policy, declared work roots) via the Core CLI:
+3. Resolve the effective configuration for this project (canonical role records, review policy and assignments, automation policy, declared work roots, and schema identity) via the Core CLI:
 
    ```
    cartopian resolve-config <project-path>

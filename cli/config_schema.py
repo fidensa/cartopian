@@ -1,9 +1,10 @@
 """Closed Cartopian configuration, resolution, and identity contract.
 
 This module is the executable authority for preferred-form configuration.
-Migration-source names are inventoried here so migration tooling can recognize
-them, but :func:`validate_authored_config` deliberately rejects them during
-normal parsing.
+Legacy authored paths and retired CLI flags are inventoried here in separate
+shapes so migration tooling and parity checks can recognize their ownership,
+but :func:`validate_authored_config` deliberately rejects legacy authored paths
+during normal parsing.
 """
 from __future__ import annotations
 
@@ -27,13 +28,20 @@ AUTO_LAUNCH_ACTIVITIES: Tuple[str, ...] = (
     "task_review",
     "planning_review",
 )
-MIGRATION_SOURCE_ALIASES: Tuple[str, ...] = (
+MACHINE_RECORD_SCHEMA_VERSION = 1
+LEGACY_AUTHORED_CONFIG_PATHS: Tuple[str, ...] = (
     "project.protocol_version",
+    "protocol_version",
     "handoffs",
     "handoffs.*",
     "handoffs.*.auto_start",
     "handoffs.*.auto_start_tasks",
     "handoffs.*.auto_start_reviews",
+    "handoffs.*.planning_reviews",
+)
+RETIRED_CLI_FLAGS: Tuple[str, ...] = (
+    "--set-handoff",
+    "--remove-handoff",
 )
 
 ROLE_DEFAULTS: "OrderedDict[str, str]" = OrderedDict(
@@ -128,7 +136,12 @@ CONFIG_SCHEMA: Dict[str, Any] = {
     "scopes": SCOPES,
     "precedence": PRECEDENCE,
     "attribution_values": ATTRIBUTION_VALUES,
-    "migration_source_aliases": MIGRATION_SOURCE_ALIASES,
+    "legacy_vocabulary": OrderedDict(
+        (
+            ("authored_config_paths", LEGACY_AUTHORED_CONFIG_PATHS),
+            ("retired_cli_flags", RETIRED_CLI_FLAGS),
+        )
+    ),
     "auto_launch": {
         "type": "closed-list",
         "values": AUTO_LAUNCH_ACTIVITIES,
@@ -136,6 +149,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
         "merge": "replace",
     },
     "preferred_output": (
+        "record_schema_version",
         "schema_identity",
         "project_id",
         "project_name",
@@ -1014,6 +1028,7 @@ def resolve_configuration(
 
     return OrderedDict(
         (
+            ("record_schema_version", MACHINE_RECORD_SCHEMA_VERSION),
             ("schema_identity", CONFIG_SCHEMA["schema_identity"]),
             ("project_id", project["id"]),
             ("project_name", project["name"]),

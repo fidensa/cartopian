@@ -58,6 +58,7 @@ from cli.commands.resolve_config import (
     _CliError,
     resolve_project_configuration,
 )
+from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
 from cli.main import (
     EXIT_ENV,
@@ -534,6 +535,9 @@ def handler(args: argparse.Namespace) -> int:
                     pass
 
     record: Dict[str, Any] = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": resolved["schema_identity"],
+        "project_schema_version": resolved["project_schema_version"],
         "task_id": task_id,
         "prompt_id": prompt_path.stem,
         "role": role,

@@ -123,13 +123,13 @@ if ($SkipPermissions) {
     $Args += '--dangerously-skip-permissions'
 }
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
-# resolved [handoffs.<role>].model; translate it into claude's --model flag.
+# resolved dispatch model; translate it into claude's --model flag.
 # Unset means claude's own default model.
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
 # Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
-# resolved [handoffs.<role>].effort; translate it into claude's --effort flag.
+# resolved dispatch effort; translate it into claude's --effort flag.
 # Values outside claude's CLI-wide effort vocabulary fall back to the default
 # effort (warn + omit). A vocabulary-valid level a specific model rejects is
 # passed through — that outcome is the tool's own behavior. The vocabulary
@@ -161,7 +161,7 @@ if ($env:CARTOPIAN_WORK_ROOTS) {
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
 # at the configured deadline (default 60m). The PM sets CARTOPIAN_TIMEOUT
-# from the resolved [handoffs.<role>].timeout; it does not poll or
+# from the resolved dispatch timeout; it does not poll or
 # watchdog the running process. Exit code 124 signals deadline kill.
 # See protocol/CONVENTIONS.md -> Handoffs.
 function ConvertTo-CartopianTimeoutSeconds([string]$spec) {

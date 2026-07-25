@@ -53,39 +53,17 @@ $env:Path = "$PWD\wrappers\ps1;$env:Path"
 )
 ```
 
-### Step 2: Update your project's cartopian.toml
+### Step 2: Update the resolved launch target
 
-Change the `agent` value from the raw CLI name to the wrapper name.
+Use the mediated editor to change a role's launch target from the raw CLI name to the wrapper name:
 
-**Before** (broken — CLIs open interactive sessions):
-
-```toml
-[handoffs.coder]
-agent = "codex"          # opens interactive TUI, blocks
-auto_start = true
-timeout = "10m"
-
-[handoffs.reviewer]
-agent = "gemini"         # opens interactive REPL, blocks
-auto_start = true
-timeout = "10m"
+```bash
+cartopian update-config /absolute/project/path \
+  --set-role-launch coder.target=cartopian-codex \
+  --set-role-launch reviewer.target=cartopian-gemini
 ```
 
-**After** (fixed — wrappers handle non-interactive flags):
-
-```toml
-[handoffs.coder]
-agent = "cartopian-codex"
-auto_start = true
-timeout = "10m"
-
-[handoffs.reviewer]
-agent = "cartopian-gemini"
-auto_start = true
-timeout = "10m"
-```
-
-That's it. The PM now runs `cartopian-codex '/path/to/PROMPT.md'` instead of `codex '/path/to/PROMPT.md'`, and the wrapper handles the rest.
+That changes only resolved target/options. Review policy, role assignment, run automation, automatic-launch permission, capabilities, and identities remain owned by their separate configuration/lifecycle authorities. Dispatch resolves those facts before it invokes a wrapper.
 
 ### Step 3 (optional): Tune security settings
 
@@ -110,7 +88,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
 | Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode <autonomous\|dangerous> --prompt-file <abs path>` (mode spelling depends on the installed CLI's detected permission surface — see [Devin](#devin)) |
 
-By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired for a given role, the simple solution is not to run that role in auto mode (e.g. assign the role to `human` in `cartopian.toml`, or set `auto_start = false` on the handoff). Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
+By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired, use the operator-performed launch path instead of dispatching the wrapper. Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
 ## How a wrapper works
 
@@ -263,7 +241,7 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 
 ## Scope and gating
 
-The wrappers are **neutral launchers**. They do not gate the agent's filesystem access — they run the agent autonomously so the unattended handoff completes, and capability-based gating is the **harness's** responsibility, not the launcher's. If you want approval-in-the-loop behavior for a role, run it manually (`auto_start = false`) instead of through the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
+The wrappers are **neutral launchers**. They translate the resolved dispatch environment into client CLI flags, set cwd, enforce the deadline, and emit an exit signal. They do not parse project configuration or interpret review policy, assignment, run automation, task selection, launch permission, capabilities, schema identity, or application identity. Capability-based gating is the **harness's** responsibility. If you want approval-in-the-loop behavior, use the operator-performed path instead of the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
 
 One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). The launch contract grants the assignee write access to the union of the Cartopian project root and the project's declared work roots, so wrappers widen a tool-imposed sandbox to cover the work roots `cartopian dispatch` exports via `CARTOPIAN_WORK_ROOTS` — widening a sandbox up to the launch contract is not scoping, and wrappers never confine the agent below what its own CLI does. Where a tool's sandbox has no per-path grant surface (gemini `--sandbox`, devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
 
@@ -273,9 +251,9 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline for the dispatched handoff. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). Set by the PM from the resolved `[handoffs.<role>].timeout`. When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
-| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection. Exported by `cartopian dispatch` from the resolved `[handoffs.<role>].model`; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model` — all four shipped wrappers honor it). Unset means the tool's own default model; dispatch never exports a stale inherited value when the handoff sets no model. |
-| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level. Exported by `cartopian dispatch` from the resolved `[handoffs.<role>].effort`; the claude wrapper translates it into `--effort` (CLI-wide vocabulary `low\|medium\|high\|xhigh\|max`) and the codex wrapper into `-c model_reasoning_effort=` (vocabulary `low\|medium\|high\|xhigh\|max\|ultra`). The gemini and devin CLIs have no effort flag, so those wrappers ignore the variable with a stderr notice. Values are lowercased and checked against the wrapper's CLI-wide vocabulary; a value outside it makes the wrapper print a one-line stderr notice and omit the flag, so the agent launches at its default effort. A vocabulary-valid level a specific model rejects is passed through — that outcome is the tool's own behavior. Unset means the tool's own default effort. |
+| `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline from the resolved dispatch record. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
+| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`). Unset means the tool's own default model. |
+| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude and Codex translate it into their tool-specific flags; Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
 | `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
@@ -316,19 +294,17 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 ## Alternative installation
 
-If you don't want to modify PATH, you can reference wrappers by absolute path in `cartopian.toml`:
+If you don't want to modify PATH, set the resolved target to a wrapper's absolute path through the mediated editor:
 
-```toml
-[handoffs.coder]
-agent = "/Users/scott/Projects/cartopian/wrappers/bin/cartopian-codex"
-auto_start = true
-timeout = "10m"
+```bash
+cartopian update-config /absolute/project/path \
+  --set-role-launch coder.target=/absolute/install/wrappers/bin/cartopian-codex
 ```
 
 Or symlink individual wrappers into a directory already on your PATH:
 
 ```bash
-ln -s /Users/scott/Projects/cartopian/wrappers/bin/cartopian-codex /usr/local/bin/
+ln -s /absolute/install/wrappers/bin/cartopian-codex /usr/local/bin/
 ```
 
 ## Adding a new CLI

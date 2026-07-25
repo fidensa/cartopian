@@ -17,6 +17,7 @@ from cli.commands.resolve_config import (
     _require_startup_project_keys,
     resolve_project_configuration,
 )
+from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 from cli.protocol_gate import (
@@ -545,7 +546,10 @@ def handler(args: argparse.Namespace) -> int:
         )
 
     record: Dict[str, Any] = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": resolved["schema_identity"],
         "project_id": project_id,
+        "project_schema_version": declared_schema_version,
         "project_path": str(project_path),
         "phase_id": phase_id,
         "active_task": active_task,

@@ -30,7 +30,7 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
 
 - **PM-mediated (do it yourself):**
   - Operator decisions named by a `migrate-config` pending record are authored through `cartopian update-config`; deterministic reshaping, scope placement, equivalence validation, comment preservation, checkpointing, and the marker update remain owned by `migrate-config`:
-    - scalar/list/role/handoff keys: `cartopian update-config <project-root> --set … --set-role … --set-role-grants … --set-handoff …`
+    - scalar/list/role/launch keys: `cartopian update-config <project-root> --set … --set-role … --set-role-grants … --set-role-launch … --set-role-auto-launch …`
     - per-machine mappings: `cartopian update-config <project-root> --local --set-work-root <name>=<absolute-path>`
   - Registry actions (`cartopian register-project`) and any markdown authoring the mediated writers cover.
   - Preserve each entry's operator-choice points. For example, v0.4.0's initiation opt-in is an explicit operator decision: only set `automation.initiation = "auto"` if the operator chooses "automatically start ready work"; a migration performed without that choice leaves the key unset.

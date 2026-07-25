@@ -16,6 +16,7 @@ from cli.commands.resolve_config import (
     _resolve_deliverable,
     resolve_project_configuration,
 )
+from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.protocol_gate import (
@@ -68,6 +69,13 @@ _INFRA_MARKERS: Tuple[str, ...] = (
 # .github"), defeating the guard. Prefer the marker-scoped form — the blanket
 # `yes` authorizes every marker for that work root and should be rare.
 _INFRA_AUTHORIZED_RE = re.compile(r"^Infra authorized:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+_CARTOPIAN_EXAMPLE_PREFIXES = (
+    "protocol/",
+    "skills/",
+    "templates/",
+    "tests/",
+    "wrappers/",
+)
 
 
 def _infra_hits(changed: List[str]) -> Dict[str, List[str]]:
@@ -611,8 +619,33 @@ def _check_pm_identifier_leaks(
         changed = changed_by_root.get(name)
         if not changed:
             continue
+        root = Path(abs_path)
+        # Cartopian's own protocol repository necessarily teaches its lifecycle
+        # identifier grammar in protocol, skill, template, wrapper, and test
+        # surfaces. Classify only those product-owned example trees, and only
+        # when the work root proves it is the Cartopian source tree. Ordinary
+        # products, and Cartopian code outside those example trees, retain the
+        # full leak detector.
+        registry_path = root / "config-surfaces.json"
+        try:
+            registry_text = registry_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            registry_text = ""
+        is_cartopian_protocol_root = (
+            '"authority": "cli/config_schema.py::CONFIG_SCHEMA"' in registry_text
+            and (root / "cli" / "config_schema.py").is_file()
+            and (root / "protocol" / "CONVENTIONS.md").is_file()
+        )
+        scan_paths = [
+            rel
+            for rel in changed
+            if not (
+                is_cartopian_protocol_root
+                and rel.replace("\\", "/").startswith(_CARTOPIAN_EXAMPLE_PREFIXES)
+            )
+        ]
         # Map absolute candidate path -> the git-relative path for reporting.
-        candidates = {str(Path(abs_path) / rel): rel for rel in changed}
+        candidates = {str(root / rel): rel for rel in scan_paths}
         hits = [
             {
                 "path": candidates.get(h["path"], h["path"]),
@@ -725,7 +758,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("usage", f"project_path must be an absolute path; got: {raw_path}")
         return EXIT_USAGE
 
-    project_path = Path(raw_path)
+    project_path = Path(raw_path).resolve()
     if not project_path.is_dir():
         _stderr("error", f"project path not found: {raw_path}")
         return EXIT_FAIL
@@ -763,9 +796,10 @@ def handler(args: argparse.Namespace) -> int:
             resolution_cfg.setdefault("project", {})[
                 "project_schema_version"
             ] = shipped_schema_version
-        review_policy = resolve_project_configuration(
+        resolved_config = resolve_project_configuration(
             project_path, project_cfg_override=resolution_cfg
-        )["reviews"]
+        )
+        review_policy = resolved_config["reviews"]
     except _CliError as err:
         _stderr(err.prefix, err.message)
         return err.exit_code
@@ -836,6 +870,12 @@ def handler(args: argparse.Namespace) -> int:
         and len(prov_guards) == 0
     )
     record: Dict[str, Any] = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": resolved_config["schema_identity"],
+        # Identity is authored-project truth. ``resolved_config`` may use the
+        # shipped marker only as a temporary review-policy evaluation target on
+        # drifted projects; that substitute must never escape as project truth.
+        "project_schema_version": declared_schema_version,
         "action": "plan-audit",
         "project_path": str(project_path),
         "clean": clean,

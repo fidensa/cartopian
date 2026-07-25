@@ -1,7 +1,7 @@
 """Tests for `cartopian handoff-packet`.
 
 Covers the happy path (NDJSON contract), no-plan project, missing
-config → EXIT_ENV, missing [handoffs.<role>] guard, and read-only invariant.
+config → EXIT_ENV, missing roles.<role>.launch guard, and read-only invariant.
 """
 import argparse
 import contextlib
@@ -303,7 +303,7 @@ class TestHandoffPacketMissingConfig(unittest.TestCase):
 
 
 class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
-    """Requesting a role with no ``[handoffs.<role>]`` block (project or
+    """Requesting a role with no ``roles.<role>.launch`` block (project or
     global) must fail non-zero with a ``[guard]`` stderr line.
     """
 

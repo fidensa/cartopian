@@ -34,19 +34,19 @@ If you do not have the absolute path, run `cartopian discover-projects` and sele
 
 Read from the resolved output:
 
-- The `[roles]` table (name -> one-line description string).
-- The `[handoffs.<role>]` block for the role being assigned.
+- The resolved `[roles.<role>]` records, each carrying a description, effective grants, assigned work types, launch facts, automatic-launch permissions, and attribution.
+- The resolved role record for the role being assigned, including `launch`, `auto_launch`, and attribution.
 - The `[automation]` policy, defaulting to `confirmation = "each-handoff"` and `max_handoffs_per_run = 1` when unset.
 
 If the role being assigned is not declared in the resolved `[roles]` table, stop and return a blocked outcome to the caller ("role not declared in `[roles]`; declare it or assign a different role").
 
-If the role is declared in `[roles]` but no `[handoffs.<role>]` block is configured, return a manual-dispatch outcome to the caller: the PM surfaces the prompt path and expected report path, and the operator handles execution.
+If the role is declared but its resolved `launch.target` is unset, return a manual-dispatch outcome to the caller: the PM surfaces the prompt path and expected report path, and the operator handles execution.
 
 ---
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
-First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role description, the `[handoffs.<role>]` block (`agent`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), resolved `reviews`, the work-root absolute paths the assignee will be granted, the expected absolute report path, and the relevant `[git]` policy keys. The call is read-only; it does not write, move, or delete anything.
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the work-root absolute paths the assignee will be granted; the expected absolute report path; and the relevant Git policy. The call is read-only; it does not write, move, or delete anything.
 
 ```
 cartopian handoff-packet <task-path> --role <role>
@@ -55,7 +55,8 @@ cartopian handoff-packet <task-path> --role <role>
 Read from the emitted record:
 
 - `role_description` — the one-line description for the role being assigned.
-- `handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout` — the resolved `[handoffs.<role>]` block, consumed by Stage 2. `model`, `effort`, and unset launch settings are serialized as `null`.
+- `launch` — resolved `target`, `model`, `effort`, and `timeout`, consumed by Stage 2. Unset optional values are serialized as `null`.
+- `auto_launch` — the closed automatic-launch permission list for assigned work types.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
@@ -92,27 +93,27 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
 
 - **Human role** — *operator-performed*: present the prompt path and expected report path to the operator.
 - **Agent role without handoff config** — *operator-performed*: present the prompt path and expected report path to the operator for manual assignment.
-- **Agent role with the applicable `auto_start_*` setting false or unset** — *operator-performed*: present the exact command for the operator to run (the PM does not launch it):
+- **Agent role without the applicable automatic-launch permission** — *operator-performed*: present the exact command for the operator to run (the PM does not launch it):
   ```text
   <agent> '<absolute prompt path>'
   ```
-- **Agent role with `auto_start_tasks = true`, task-scoped handoff** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
+- **Agent role with the applicable `task_run` or `task_review` permission in `auto_launch`** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
 
   ```
   cartopian dispatch <task-path> --role <role>
   ```
 
-  `dispatch` is the FR-006 mediated launch (TASK-01-004). On the PM's behalf it composes the same `handoff-packet` / `resolve-config` data, fails closed on a missing `[handoffs.<role>]` block, an unmapped or non-existent work root, or a missing prompt, exports `CARTOPIAN_TIMEOUT` from the resolved `[handoffs.<role>].timeout` (the protocol default of `60m` applies when unset), exports `CARTOPIAN_MODEL` from the resolved `[handoffs.<role>].model` (no variable is exported when unset; the wrapper translates it into the tool-specific model flag), exports `CARTOPIAN_EFFORT` from the resolved `[handoffs.<role>].effort` (likewise no variable is exported when unset; the wrapper translates it into the tool-specific effort flag), exports `CARTOPIAN_WORK_ROOTS` as the resolved work-root absolute paths (`os.pathsep`-joined; not exported when the project declares none — wrappers whose agent CLI self-sandboxes at the launch cwd widen that sandbox to cover these paths), and launches the operator-configured `[handoffs.<role>].agent` with the single absolute-prompt-path argv from the cartopian project-root cwd. There is no caller-supplied executable argument, so the contained PM cannot turn dispatch into a raw exec primitive.
+  `dispatch` is the FR-006 mediated launch. It consumes the canonical resolved role record, fails closed on a missing target or permission, an unmapped/non-existent work root, or a missing prompt, and exports only resolved launch context: timeout, model, effort, work roots, project-root cwd, and the prompt/report paths. It launches the resolved `target` with the single absolute-prompt-path argv. There is no caller-supplied executable argument, and the wrapper never receives raw review, automation, capability, schema, or identity policy.
 
-- **Agent role with `auto_start_reviews = true`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *PM-performed*: launch through the prompt-keyed mediated dispatch below. When false or unset, use the operator-performed path.
+- **Agent role with `planning_review` in `auto_launch`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *PM-performed*: launch through the prompt-keyed mediated dispatch below. When the permission is absent, use the operator-performed path.
 
   ```
   cartopian dispatch --prompt <absolute prompt path> --role <role>
   ```
 
-  `--prompt` accepts only an allowlisted planning-checkpoint prompt slot (`<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md`); the command derives the expected report path (`reports/REPORT-PLAN-NNN[-slug].md`), fails closed unless `auto_start_reviews` is true, and otherwise applies the same fail-closed gates, exports, and launch contract as the task-keyed form. Task-scoped handoffs never dispatch via `--prompt`; they dispatch by task path and require `auto_start_tasks = true`.
+  `--prompt` accepts only an allowlisted planning-checkpoint prompt slot (`<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md`); the command derives the expected report path (`reports/REPORT-PLAN-NNN[-slug].md`), fails closed unless `planning_review` is permitted, and otherwise applies the same fail-closed gates, exports, and launch contract as the task-keyed form. Task-scoped handoffs never dispatch via `--prompt`; they dispatch by task path and require the applicable task permission.
 
-The launched wrapper enforces the `CARTOPIAN_TIMEOUT` deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path). `dispatch` exports declared work-root absolute paths in canonical resolved order through `CARTOPIAN_WORK_ROOTS`; no export is present when the project declares none. The Codex wrapper widens `workspace-write` with those paths, and the Claude wrapper passes each through `--add-dir`. Gemini and Devin sandboxes have no per-path widening surface, so their wrappers warn that declared work roots may be unwritable while those sandboxes are active. Custom agents must state and honor their own equivalent behavior.
+The launched wrapper sets its single `CARTOPIAN_TIMEOUT` deadline from the resolved role launch timeout, with the protocol default of `60m` when that value is unset. It enforces the deadline at the OS level (`timeout`/`gtimeout` on POSIX, `Start-Process` + `WaitForExit` on PowerShell) and exits with exit `124` when the deadline elapses. Per FR-012 launch semantics, assignee CLIs run with cwd set to the cartopian project root (the registered project path). `dispatch` exports declared work-root absolute paths in canonical resolved order through `CARTOPIAN_WORK_ROOTS`; no export is present when the project declares none. The Codex wrapper widens `workspace-write` with those paths, and the Claude wrapper passes each through `--add-dir`. Gemini and Devin sandboxes have no per-path widening surface, so their wrappers warn that declared work roots may be unwritable while those sandboxes are active. Custom agents must state and honor their own equivalent behavior.
 
 The project-root cwd and declared work-root access are filesystem launch facts. Declared work-root access does not grant PM lifecycle authority, relax the prompt's assignment scope, or transfer human-owned product-repository git actions to the assignee. Wrapper widening also does not replace harness capability enforcement.
 
@@ -136,7 +137,7 @@ Choose the primitive by handoff kind:
   cartopian wait-handoff <task-path> --role <role>
   ```
 
-  It resolves the same expected report path Stage 1 named, honors the configured `[handoffs.<role>].timeout` as the absolute ceiling, and emits one NDJSON record carrying a `status` flag.
+  It resolves the same expected report path Stage 1 named, honors the resolved role launch timeout as the absolute ceiling, and emits one NDJSON record carrying a `status` flag.
 
 - **Report-path-only handoff** (no task file — for example a planning-checkpoint review): block on the report path directly with
 
@@ -144,7 +145,7 @@ Choose the primitive by handoff kind:
   cartopian wait-report <report-path> --role <role>
   ```
 
-  It watches the single report file and emits `accepted` (done), a `[guard]` failure (a report is present but not acceptable), `timeout` (the resolved ceiling elapsed first), or — only under an explicit `--max-block` slice — `still_running` (the requested budget elapsed first). With `--role` it honors the same resolved `[handoffs.<role>].timeout` ceiling; otherwise the protocol default applies.
+  It watches the single report file and emits `accepted` (done), a `[guard]` failure (a report is present but not acceptable), `timeout` (the resolved ceiling elapsed first), or — only under an explicit `--max-block` slice — `still_running` (the requested budget elapsed first). With `--role` it honors the same resolved role launch timeout; otherwise the protocol default applies.
 
 Interpret the emitted `status`:
 

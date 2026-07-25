@@ -41,7 +41,7 @@ Run the orientation aggregator using the Core CLI for the selected project path:
 cartopian next-action <project-path>
 ```
 
-This emits the orientation record, including resolved `handoffs` and `reviews`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. `handoffs` exposes only the normalized `auto_start_tasks` and `auto_start_reviews` launch keys; never look for legacy `auto_start`. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
+This emits the orientation record, including canonical resolved `roles`, `reviews`, and `automation`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. Each role exposes distinct `assigned_work_types`, `launch`, `auto_launch`, `effective_grants`, and attribution. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
 
 Surface the disagreement and blocker fields to the operator before proposing any action:
 
@@ -92,7 +92,7 @@ Then assemble the prompt-input bundle with a single Core CLI call against the mo
 cartopian handoff-packet <task-path> --role <role>
 ```
 
-`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with the resolved `role_description`, the `[handoffs.<role>]` block (`handoff_target`, `model`, `effort`, `auto_start_tasks`, `auto_start_reviews`, `timeout`), resolved `reviews`, the ordered `work_roots` list (each `{name, absolute_path}`), the `expected_report_path`, and the relevant `[git]` policy keys under `git_policy`. Source every prompt value from this record; do not re-derive paths, roles, or review policy.
+`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with resolved role description, grants, assigned work types, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the ordered `work_roots` list; the `expected_report_path`; and the relevant Git policy. Source every prompt value from this record; do not re-derive paths, roles, or review policy.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
@@ -141,7 +141,7 @@ Use `skills/run-handoff.md` for assignment mechanics.
 
 For manual assignment, present the prompt path and expected report path to the operator and wait for explicit assignment/start confirmation.
 
-For configured task-scoped agent handoff, follow the resolved `auto_start_tasks` value and automation policy. Planning-review handoffs use `auto_start_reviews` through `skills/run-handoff.md`.
+For configured task-scoped agent handoff, require the applicable `task_run` or `task_review` entry in the resolved role's `auto_launch` list and follow the run automation policy. Planning-review handoffs require `planning_review` through `skills/run-handoff.md`.
 
 The task is already in `tasks/in-progress/` from Stage 2. Prompt existence is enforced fail-closed at the handoff boundary: `cartopian dispatch` refuses to launch when `prompts/PROMPT-NN-NNN.md` is missing. The prompt written in Stage 2 satisfies this check.
 
@@ -157,7 +157,7 @@ Wait for the assignee to finish before parsing. Detect task-execution completion
 cartopian wait-handoff <task-path> --role <role>
 ```
 
-The report file is the authoritative completion signal; `wait-handoff` is terminal and event-driven by default — one call blocks read-only until it observes a terminal `status` (`done`, `failed`, `failed-to-parse`, or `timeout` at the resolved `[handoffs.<role>].timeout` ceiling). `--max-block` is an explicit opt-in bounding a single nonterminal observation slice (`still-running`), only for hosts that cannot sustain a blocking call for the full handoff timeout. Treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. An automatic host wake/resume must not itself emit a user-visible message merely because an observation slice ended. The re-wait is read-only, does not launch a second assignee, and does not consume a `max_handoffs_per_run` unit; only the original launch does. Do not ask for operator continuation between slices. If the host cannot keep one turn open, use the automatic wake/resume mechanism. Only proceed once the status is `done`. When assignment runs through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
+The report file is the authoritative completion signal; `wait-handoff` is terminal and event-driven by default — one call blocks read-only until it observes a terminal `status` (`done`, `failed`, `failed-to-parse`, or `timeout` at the resolved role launch timeout). `--max-block` is an explicit opt-in bounding a single nonterminal observation slice (`still-running`), only for hosts that cannot sustain a blocking call for the full handoff timeout. Treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. An automatic host wake/resume must not itself emit a user-visible message merely because an observation slice ended. The re-wait is read-only, does not launch a second assignee, and does not consume a `max_handoffs_per_run` unit; only the original launch does. Do not ask for operator continuation between slices. If the host cannot keep one turn open, use the automatic wake/resume mechanism. Only proceed once the status is `done`. When assignment runs through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
 
 Then parse the assignee's completion report with the Core CLI:
 

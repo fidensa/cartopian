@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
+    _require_project_table,
     _resolve_deliverable,
     _resolve_work_roots,
 )
+from cli.config_schema import CONFIG_SCHEMA, MACHINE_RECORD_SCHEMA_VERSION
 from cli.commands.validate_task_readiness import (
     CHECK_ORDER,
     _check_acceptance,
@@ -23,7 +25,15 @@ from cli.commands.validate_task_readiness import (
     _split_csv,
 )
 from cli.emit import emit_record
-from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
+from cli.main import (
+    EXIT_ENV,
+    EXIT_FAIL,
+    EXIT_OK,
+    EXIT_USAGE,
+    stderr_error,
+    stderr_guard,
+    stderr_usage,
+)
 
 _TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?$")
 _STATUS_DIRS = ("open", "in-progress", "in-review", "done")
@@ -148,7 +158,9 @@ def _collect_work_roots(
     records: List[Dict[str, Any]] = []
     for name in names:
         absolute_path = resolved.get(name)
-        path_obj = Path(absolute_path).resolve() if absolute_path is not None else None
+        # Preserve the canonical absolute spelling emitted by resolution.
+        # Existence checks may use Path without rewriting the machine record.
+        path_obj = Path(absolute_path) if absolute_path is not None else None
         records.append(
             {
                 "name": name,
@@ -222,6 +234,14 @@ def handler(args: argparse.Namespace) -> int:
     if project_cfg is None:
         stderr_error(f"project config not found: {toml_path}")
         return EXIT_ENV
+    try:
+        project_table = _require_project_table(project_cfg, toml_path)
+    except _CliError as err:
+        if err.prefix == "guard":
+            stderr_guard(err.message)
+        else:
+            stderr_error(err.message)
+        return err.exit_code
 
     headers, presence = _parse_headers(content)
     checks = _build_validation_checks(project_root, content, headers, presence)
@@ -243,6 +263,9 @@ def handler(args: argparse.Namespace) -> int:
     nn_nnn = task_id.removeprefix("TASK-")
 
     record = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": CONFIG_SCHEMA["schema_identity"],
+        "project_schema_version": project_table.get("project_schema_version"),
         "task_id": task_id,
         "task_title": task_title,
         "task_path": str(task_path),

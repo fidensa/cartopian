@@ -134,14 +134,14 @@ if [[ "$GEMINI_SANDBOX" == "true" ]]; then
 fi
 
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
-# resolved [handoffs.<role>].model; translate it into gemini's --model flag.
+# resolved dispatch model; translate it into gemini's --model flag.
 # Unset means gemini's own default model.
 if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
   CMD+=(--model "$CARTOPIAN_MODEL")
 fi
 
-# gemini has no effort/thinking-level flag: a configured
-# [handoffs.<role>].effort cannot be translated, so it is ignored with a
+# Gemini has no effort/thinking-level flag. The resolved dispatch effort
+# cannot be translated, so it is ignored with a
 # notice and gemini runs at its own default.
 if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
   echo "cartopian-gemini: gemini has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT" >&2
@@ -152,7 +152,7 @@ CMD+=(-p "$PROMPT_PATH_ABS")
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
 # upstream process at the configured deadline (default 60m). The PM
-# sets CARTOPIAN_TIMEOUT from the resolved [handoffs.<role>].timeout;
+# sets CARTOPIAN_TIMEOUT from the resolved dispatch timeout;
 # it does not poll or watchdog the running process. SIGTERM at deadline
 # returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
 TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"

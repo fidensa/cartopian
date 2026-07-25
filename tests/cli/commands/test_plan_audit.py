@@ -116,7 +116,7 @@ class TestPlanAuditUsage(unittest.TestCase):
             self.assertEqual(proc.stdout, "")
             self.assertEqual(
                 proc.stderr.rstrip("\n"),
-                f"[guard] {project / 'cartopian.toml'} is a Cartopian workspace config, "
+                f"[guard] {project.resolve() / 'cartopian.toml'} is a Cartopian workspace config, "
                 "not a project config. "
                 "Run `cartopian discover-projects` (or call the `discover_projects` MCP tool) "
                 "to list registered projects, then pass a project id or absolute path to this command.",
@@ -653,6 +653,66 @@ class TestPlanAuditPmIdentifierLeaks(unittest.TestCase):
             leaks = [w for w in record["warnings"]
                      if w["kind"] == "pm-identifier-leak"]
             self.assertEqual(leaks, [], record["warnings"])
+
+    def test_cartopian_protocol_example_tree_is_narrowly_classified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                work_root / "config-surfaces.json",
+                '{"authority": "cli/config_schema.py::CONFIG_SCHEMA"}\n',
+            )
+            _write(work_root / "cli" / "config_schema.py", "# authority\n")
+            _write(
+                work_root / "protocol" / "CONVENTIONS.md",
+                "Example lifecycle task: TASK-01-002.\n",
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            leaks = [w for w in record["warnings"]
+                     if w["kind"] == "pm-identifier-leak"]
+            self.assertEqual(leaks, [], record["warnings"])
+
+    def test_cartopian_source_code_still_warns_on_identifier_leak(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                work_root / "config-surfaces.json",
+                '{"authority": "cli/config_schema.py::CONFIG_SCHEMA"}\n',
+            )
+            _write(work_root / "cli" / "config_schema.py", "# authority\n")
+            _write(work_root / "protocol" / "CONVENTIONS.md", "# protocol\n")
+            _write(
+                work_root / "src" / "feature.py",
+                "# acceptance per TASK-01-002\n",
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            leaks = [w for w in record["warnings"]
+                     if w["kind"] == "pm-identifier-leak"]
+            self.assertEqual(len(leaks), 1, record["warnings"])
+            self.assertIn("src/feature.py", leaks[0]["files"])
+
+    def test_ordinary_protocol_named_directory_is_not_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                work_root / "protocol" / "CONVENTIONS.md",
+                "Copied from TASK-01-002.\n",
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            leaks = [w for w in record["warnings"]
+                     if w["kind"] == "pm-identifier-leak"]
+            self.assertEqual(len(leaks), 1, record["warnings"])
 
 
 class TestPlanAuditBacklogInvariants(unittest.TestCase):

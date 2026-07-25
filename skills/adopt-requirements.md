@@ -35,7 +35,7 @@ You must either (a) select the project from the registry using `cartopian discov
    cartopian register-project <project-path> [--label "Human-friendly name"]
    ```
 
-3. Resolve effective configuration for this project (roles, handoffs, automation policy, and declared work roots):
+3. Resolve effective configuration for this project (canonical role records, review policy/assignment, automation policy, declared work roots, and schema identity):
 
    ```
    cartopian resolve-config <project-path>

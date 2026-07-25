@@ -39,6 +39,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
+
 from cli.claude_hook import FILE_MUTATION_TOOLS, READ_TOOLS
 
 from cli.commands.resolve_config import (
@@ -239,7 +241,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("usage", f"project_path must be an absolute path; got: {raw_path}")
         return EXIT_USAGE
 
-    project_path = Path(raw_path)
+    project_path = Path(raw_path).resolve()
     if not project_path.is_dir():
         _stderr("error", f"project path not found: {raw_path}")
         return EXIT_FAIL
@@ -301,6 +303,9 @@ def handler(args: argparse.Namespace) -> int:
         )
 
     record: Dict[str, Any] = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": resolved["schema_identity"],
+        "project_schema_version": resolved["project_schema_version"],
         "action": "containment-matrix",
         "project_path": str(project_path),
         "activated": activated,

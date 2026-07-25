@@ -21,6 +21,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.config_schema import (
     AUTO_LAUNCH_ACTIVITIES,
+    CONFIG_SCHEMA,
     ConfigDiagnostic,
     resolve_configuration,
     validate_authored_config,
@@ -30,6 +31,11 @@ from cli.protocol_gate import read_shipped_project_schema_version
 _ROLE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _WORK_ROOT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _closed_values(field: str) -> Tuple[str, ...]:
+    """Read one accepted-value domain from the authoritative contract."""
+    return tuple(CONFIG_SCHEMA["fields"][field]["values"])
 
 
 def _stderr(prefix: str, msg: str) -> None:
@@ -86,11 +92,11 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            metavar="ROLE=DURATION", help="Repeatable role launch timeout")
     subparser.add_argument("--automation-initiation", default=None,
                            action=_SingleValuedAction,
-                           choices=["operator", "auto"],
+                           choices=_closed_values("automation.initiation"),
                            help="[automation] initiation")
     subparser.add_argument("--automation-confirmation", default=None,
                            action=_SingleValuedAction,
-                           choices=["each-handoff", "until-blocked"],
+                           choices=_closed_values("automation.confirmation"),
                            help="[automation] confirmation")
     subparser.add_argument("--automation-max-handoffs", default=None,
                            action=_SingleValuedAction,
@@ -99,14 +105,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable work-root name")
     subparser.add_argument("--review-planning", default=None,
                            action=_SingleValuedAction,
-                           choices=["required", "off"],
+                           choices=_closed_values("reviews.planning"),
                            help="[reviews] planning policy")
     subparser.add_argument("--review-planning-role", default=None,
                            action=_SingleValuedAction, metavar="ROLE",
                            help="Role assigned to required planning reviews")
     subparser.add_argument("--review-task-closure", default=None,
                            action=_SingleValuedAction,
-                           choices=["required", "off"],
+                           choices=_closed_values("reviews.task_closure"),
                            help="[reviews] task_closure policy")
     subparser.add_argument("--review-task-role", default=None,
                            action=_SingleValuedAction, metavar="ROLE",

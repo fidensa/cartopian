@@ -1559,6 +1559,7 @@ def _render_preserving(
 
 def _semantic_view(record: Mapping[str, Any]) -> Dict[str, Any]:
     view = copy.deepcopy(dict(record))
+    view.pop("record_schema_version", None)
     view.pop("schema_identity", None)
     view.pop("project_schema_version", None)
     return view

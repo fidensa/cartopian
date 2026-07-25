@@ -1,0 +1,579 @@
+{
+  "registry_version": 1,
+  "authority": "cli/config_schema.py::CONFIG_SCHEMA",
+  "migration_authority": "cli/config_migration.py::CONFIGURATION_MIGRATION_ENTRIES",
+  "context_budgets": [
+    {
+      "surface": "resolve-config",
+      "phase_00_baseline": null,
+      "phase_00_status": "not measured in Phase 00",
+      "task_delta_bytes": 26,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
+      "max_output_bytes": 3467
+    },
+    {
+      "surface": "next-action",
+      "phase_00_baseline": {
+        "label": "Phase 00 status/next-action stdout NDJSON",
+        "bytes": 1150
+      },
+      "phase_00_status": "justified exception",
+      "task_delta_bytes": 114,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
+      "max_output_bytes": 2556
+    },
+    {
+      "surface": "task-bundle",
+      "phase_00_baseline": {
+        "label": "Phase 00 task-bundle stdout NDJSON",
+        "bytes": 1099
+      },
+      "phase_00_status": "justified exception",
+      "task_delta_bytes": 106,
+      "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity without introducing a new migration-readiness gate.",
+      "max_output_bytes": 634
+    },
+    {
+      "surface": "handoff-packet",
+      "phase_00_baseline": {
+        "label": "Phase 00 handoff-packet stdout NDJSON",
+        "bytes": 1197
+      },
+      "phase_00_status": "justified exception",
+      "task_delta_bytes": 114,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
+      "max_output_bytes": 1438
+    },
+    {
+      "surface": "containment-matrix",
+      "phase_00_baseline": null,
+      "phase_00_status": "not measured in Phase 00",
+      "task_delta_bytes": 114,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
+      "max_output_bytes": 7199
+    },
+    {
+      "surface": "plan-audit",
+      "phase_00_baseline": null,
+      "phase_00_status": "not measured in Phase 00",
+      "task_delta_bytes": 114,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
+      "max_output_bytes": 573
+    }
+  ],
+  "discovery": [
+    {
+      "globs": [
+        "cli/**/*.py"
+      ],
+      "contains_any": [
+        "CONFIG_SCHEMA",
+        "resolve_project_configuration",
+        "project_schema_version",
+        "roles.<role>.launch",
+        "auto_launch"
+      ]
+    },
+    {
+      "globs": [
+        "mcp_server/**/*.py",
+        "mcp_server/**/*.md",
+        "mcp_server/**/*.json",
+        "mcp_server/**/*.toml",
+        "scripts/**/*.py",
+        "scripts/**/*.md"
+      ],
+      "contains_any": [
+        "cartopian.toml",
+        "project_schema_version",
+        "inputSchema",
+        "version_identities"
+      ]
+    },
+    {
+      "globs": [
+        "*.md",
+        "protocol/*.md",
+        "templates/**/*.md",
+        "templates/*.toml",
+        "skills/*.md",
+        "wrappers/README.md",
+        "wrappers/bin/*",
+        "wrappers/ps1/*"
+      ],
+      "contains_any": [
+        "cartopian.toml",
+        "project_schema_version",
+        "roles.<role>",
+        "[roles",
+        "[reviews]",
+        "[automation]",
+        "CARTOPIAN_TIMEOUT",
+        "resolve-config",
+        "use_cartopian",
+        "/use-cartopian"
+      ]
+    },
+    {
+      "globs": [
+        "tests/**/*.py",
+        "tests/**/*.md",
+        "tests/**/*.json",
+        "tests/**/*.toml"
+      ],
+      "contains_any": [
+        "CONFIG_SCHEMA",
+        "config_schema",
+        "project_schema_version",
+        "roles.<role>",
+        "[roles",
+        "[handoffs",
+        "auto_start",
+        "planning_reviews",
+        "--set-handoff",
+        "CARTOPIAN_TIMEOUT",
+        "resolve-config"
+      ]
+    }
+  ],
+  "guidance_hygiene": [
+    {
+      "paths": [
+        "AGENTS.md",
+        "CAPABILITIES.md",
+        "README.md",
+        "CONFIG-MAPPING.md",
+        "install-cartopian.md",
+        "protocol/*.md",
+        "templates/**/*.md",
+        "templates/**/*.toml",
+        "skills/*.md",
+        "wrappers/README.md",
+        "wrappers/bin/*",
+        "wrappers/ps1/*",
+        "mcp_server/**/*.md"
+      ],
+      "target_context": "host-neutral"
+    }
+  ],
+  "schema_field_parity": [
+    {
+      "surface": "human-configuration-reference",
+      "paths": [
+        "CONFIG-MAPPING.md"
+      ]
+    }
+  ],
+  "test_legacy_compatibility_allowlist": [
+    "tests/cli/commands/test_generate_config.py",
+    "tests/cli/commands/test_migrate_config.py",
+    "tests/cli/commands/test_resolve_config.py",
+    "tests/cli/commands/test_wait_handoff.py",
+    "tests/fixtures/config_migration/annotated/global.toml",
+    "tests/fixtures/config_migration/annotated/project.toml",
+    "tests/fixtures/config_migration/conflict/project.toml",
+    "tests/fixtures/config_migration/empty-handoffs/project.toml",
+    "tests/fixtures/config_migration/legacy/global.toml",
+    "tests/fixtures/config_migration/legacy/project.toml",
+    "tests/fixtures/config_migration/scope-ownership/global.toml",
+    "tests/fixtures/config_migration/split-planning/project.toml",
+    "tests/fixtures/config_migration/transitional/project.toml",
+    "tests/fixtures/config_surfaces/stale-preferred-example.md",
+    "tests/mcp_server/test_server.py",
+    "tests/test_config_schema_contract.py",
+    "tests/test_config_surface_parity.py"
+  ],
+  "surfaces": [
+    {
+      "id": "authoritative-config-contract",
+      "paths": [
+        "cli/config_schema.py",
+        "cli/capabilities.py"
+      ],
+      "owner_contract": "authoritative preferred configuration and capability contracts",
+      "mode": "authority",
+      "facts_consumed": [],
+      "output_projection": [
+        "CONFIG_SCHEMA",
+        "canonical resolved configuration"
+      ],
+      "test_anchor": "tests/test_config_schema_contract.py",
+      "legacy_policy": "compatibility-implementation"
+    },
+    {
+      "id": "migration-contract",
+      "paths": [
+        "cli/config_migration.py",
+        "cli/migrations.py",
+        "cli/commands/migrate_config.py",
+        "cli/commands/apply_migration_entry.py"
+      ],
+      "owner_contract": "authoritative idempotent migration machinery",
+      "mode": "compatibility",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.legacy_vocabulary.authored_config_paths",
+        "project.project_schema_version"
+      ],
+      "output_projection": [
+        "migration plan",
+        "migration diagnostics"
+      ],
+      "test_anchor": "tests/cli/commands/test_migrate_config.py",
+      "legacy_policy": "compatibility-implementation"
+    },
+    {
+      "id": "generated-and-mediated-config",
+      "paths": [
+        "cli/commands/generate_config.py",
+        "cli/commands/update_config.py"
+      ],
+      "owner_contract": "cli/config_schema.py::CONFIG_SCHEMA",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.fields",
+        "CONFIG_SCHEMA.auto_launch"
+      ],
+      "output_projection": [
+        "preferred authored project configuration",
+        "preferred authored machine-local configuration"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestCliMcpContractParity",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "canonical-resolution",
+      "paths": [
+        "cli/commands/resolve_config.py"
+      ],
+      "owner_contract": "cli/config_schema.py::resolve_configuration",
+      "mode": "generated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.preferred_output",
+        "IDENTITY_CONTRACT"
+      ],
+      "output_projection": [
+        "resolve-config"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestProjectionParity",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "lifecycle-projections",
+      "paths": [
+        "cli/commands/next_action.py",
+        "cli/commands/task_bundle.py",
+        "cli/commands/handoff_packet.py",
+        "cli/commands/plan_audit.py",
+        "cli/commands/report_action.py",
+        "cli/commands/wait_handoff.py",
+        "cli/commands/wait_report.py"
+      ],
+      "owner_contract": "cli/config_schema.py::resolve_configuration",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "project.project_schema_version",
+        "roles.*",
+        "reviews.*",
+        "automation.*",
+        "project.work_roots",
+        "defaults.git_versioning",
+        "git.*"
+      ],
+      "output_projection": [
+        "next-action",
+        "task-bundle",
+        "handoff-packet",
+        "diagnostics"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestProjectionParity",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "containment-and-dispatch",
+      "paths": [
+        "cli/commands/containment_matrix.py",
+        "cli/commands/dispatch.py",
+        "cli/claude_hook.py"
+      ],
+      "owner_contract": "canonical resolved capabilities and role launch record",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "capabilities.activated",
+        "roles.*.launch",
+        "roles.*.auto_launch",
+        "roles.*.effective_grants"
+      ],
+      "output_projection": [
+        "containment-matrix",
+        "resolved dispatch environment and arguments"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestWrapperNeutrality",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "cli-mcp-schema",
+      "paths": [
+        "cli/main.py",
+        "mcp_server/*.py"
+      ],
+      "owner_contract": "CLI argparse handler contract",
+      "mode": "generated",
+      "facts_consumed": [
+        "CLI actions"
+      ],
+      "output_projection": [
+        "MCP inputSchema",
+        "MCP CLI invocation"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestCliMcpContractParity",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "version-context",
+      "paths": [
+        "cli/version_identities.py",
+        "cli/protocol_gate.py",
+        "scripts/install.py",
+        "install-cartopian.md",
+        "protocol/INSTALL_VERIFICATION.md"
+      ],
+      "owner_contract": "cli/config_schema.py::IDENTITY_CONTRACT and maintainer release metadata",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "IDENTITY_CONTRACT",
+        "project.project_schema_version"
+      ],
+      "output_projection": [
+        "installer version context",
+        "startup version context"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "human-configuration-reference",
+      "paths": [
+        "README.md",
+        "CONFIG-MAPPING.md",
+        "CAPABILITIES.md",
+        "protocol/CONVENTIONS.md"
+      ],
+      "owner_contract": "cli/config_schema.py::CONFIG_SCHEMA",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.fields",
+        "CONFIG_SCHEMA.scopes",
+        "CONFIG_SCHEMA.precedence",
+        "IDENTITY_CONTRACT"
+      ],
+      "output_projection": [
+        "operator and maintainer guidance"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "compatibility-labeled"
+    },
+    {
+      "id": "configuration-templates-and-examples",
+      "paths": [
+        "templates/global.cartopian.toml"
+      ],
+      "owner_contract": "cli/config_schema.py::CONFIG_SCHEMA",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.fields"
+      ],
+      "output_projection": [
+        "current authored configuration examples"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "guided-workflows",
+      "paths": [
+        "skills/README.md",
+        "skills/adopt-plan.md",
+        "skills/adopt-requirements.md",
+        "skills/check-for-updates.md",
+        "skills/close-plan.md",
+        "skills/init-project.md",
+        "skills/init-workspace.md",
+        "skills/plan-project.md",
+        "skills/register-mcp.md",
+        "skills/run-handoff.md",
+        "skills/run-task.md",
+        "skills/start-session.md",
+        "skills/use-cartopian.md"
+      ],
+      "owner_contract": "canonical resolved configuration and mediated CLI handlers",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "roles.*",
+        "reviews.*",
+        "automation.*",
+        "project.work_roots",
+        "project.project_schema_version"
+      ],
+      "output_projection": [
+        "guided initialization",
+        "mediated editing",
+        "lifecycle launch guidance"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "surface-parity-contract",
+      "paths": [
+        "cli/config_surface_parity.py",
+        "config-surfaces.json"
+      ],
+      "owner_contract": "consumer inventory only; no accepted-value authority",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA surface ownership"
+      ],
+      "output_projection": [
+        "deterministic parity diagnostics"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py",
+      "legacy_policy": "compatibility-implementation"
+    },
+    {
+      "id": "configuration-test-surfaces",
+      "paths": [
+        "tests/**/*.py",
+        "tests/**/*.md",
+        "tests/**/*.json",
+        "tests/**/*.toml"
+      ],
+      "owner_contract": "authoritative configuration contract with forbidden-by-default test vocabulary and an explicit compatibility allowlist",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA fields and shaped legacy vocabulary",
+        "CLI and MCP projections",
+        "guidance vocabulary"
+      ],
+      "output_projection": [
+        "preferred contract regressions",
+        "explicitly labeled compatibility fixtures"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "preferred-configuration-contract-tests",
+      "paths": [
+        "tests/cli/commands/test_plan_audit.py",
+        "tests/cli/commands/test_task_bundle.py",
+        "tests/test_protocol_gate.py",
+        "tests/wrappers/test_timeout_ssot.py"
+      ],
+      "owner_contract": "preferred configuration, schema identity, projection, and roles.<role>.launch.timeout contracts",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "roles.*.launch.timeout",
+        "CARTOPIAN_TIMEOUT"
+      ],
+      "output_projection": [
+        "preferred configuration regressions collected by unittest and pytest"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "maintainer-and-history-guidance",
+      "paths": [
+        "AGENTS.md",
+        "protocol/CHANGELOG.md"
+      ],
+      "owner_contract": "historical record and contributor guidance",
+      "mode": "compatibility",
+      "facts_consumed": [
+        "historical configuration vocabulary"
+      ],
+      "output_projection": [
+        "append-only history and contributor boundaries"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "compatibility-implementation"
+    },
+    {
+      "id": "lifecycle-artifact-templates",
+      "paths": [
+        "templates/PROMPT.md",
+        "templates/REPORT.md",
+        "templates/TASK.md"
+      ],
+      "owner_contract": "canonical lifecycle artifact path and work-root contract",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "project.work_roots"
+      ],
+      "output_projection": [
+        "prompt, report, and task guidance"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "migration-guidance",
+      "paths": [
+        "skills/migrate-project.md"
+      ],
+      "owner_contract": "cli/config_migration.py::CONFIGURATION_MIGRATION_ENTRIES",
+      "mode": "compatibility",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.legacy_vocabulary.authored_config_paths"
+      ],
+      "output_projection": [
+        "operator-approved migration guidance"
+      ],
+      "test_anchor": "tests/cli/test_migrate_project_harness.py",
+      "legacy_policy": "compatibility-implementation"
+    },
+    {
+      "id": "client-entry-guidance",
+      "paths": [
+        "templates/clients/**/*.md",
+        "templates/clients/**/*.toml",
+        "skills/use-cartopian.md",
+        "mcp_server/server.py"
+      ],
+      "owner_contract": "skills/use-cartopian.md and host capability truth",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "IDENTITY_CONTRACT",
+        "canonical startup actions"
+      ],
+      "output_projection": [
+        "/use-cartopian conversational entry",
+        "host-appropriate startup instructions"
+      ],
+      "test_anchor": "tests/test_startup_launch_guidance.py",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "neutral-wrappers",
+      "paths": [
+        "wrappers/README.md",
+        "wrappers/bin/*",
+        "wrappers/ps1/*"
+      ],
+      "owner_contract": "resolved dispatch environment and arguments",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CARTOPIAN_LAUNCH_CWD",
+        "CARTOPIAN_TIMEOUT",
+        "CARTOPIAN_MODEL",
+        "CARTOPIAN_EFFORT",
+        "CARTOPIAN_WORK_ROOTS"
+      ],
+      "output_projection": [
+        "neutral client argv and environment translation"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestWrapperNeutrality",
+      "legacy_policy": "forbidden"
+    }
+  ]
+}

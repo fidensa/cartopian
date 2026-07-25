@@ -1,0 +1,797 @@
+"""Structural parity checks for every configuration/version consumer."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from cli.config_schema import CONFIG_SCHEMA
+from cli.config_surface_parity import (
+    check_surface_registry,
+    guidance_hygiene,
+    legacy_vocabulary,
+    load_registry,
+    schema_field_parity,
+    wrapper_authority_vocabulary,
+)
+from cli.main import build_parser
+from mcp_server import server
+
+ROOT = Path(__file__).resolve().parents[1]
+REGISTRY = ROOT / "config-surfaces.json"
+ENTRYPOINT = ROOT / "bin" / "cartopian"
+
+
+def _subparsers() -> dict[str, argparse.ArgumentParser]:
+    parser = build_parser()
+    action = next(
+        item
+        for item in parser._actions  # noqa: SLF001
+        if isinstance(item, argparse._SubParsersAction)  # noqa: SLF001
+    )
+    return dict(action.choices)
+
+
+def _run_cli(home: Path, *args: str) -> tuple[int, dict, str]:
+    env = {"HOME": str(home), "PATH": os.environ.get("PATH", "")}
+    result = subprocess.run(
+        [sys.executable, str(ENTRYPOINT), *args],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    records = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    if len(records) != 1:
+        raise AssertionError(
+            f"{args[0]} emitted {len(records)} records; stderr={result.stderr!r}"
+        )
+    return result.returncode, records[0], result.stderr
+
+
+def _normalized_projection_bytes(
+    record: object,
+    fixture_root: Path,
+    repository_root: Path = ROOT,
+) -> int:
+    replacements = {
+        str(fixture_root): "<fixture-root>",
+        str(fixture_root.resolve()): "<fixture-root>",
+        str(repository_root): "<install-root>",
+        str(repository_root.resolve()): "<install-root>",
+    }
+
+    def normalize(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if isinstance(value, str):
+            for source, marker in sorted(
+                replacements.items(), key=lambda item: len(item[0]), reverse=True
+            ):
+                value = value.replace(source, marker)
+            return value
+        return value
+
+    payload = json.dumps(
+        normalize(record), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return len(payload.encode("utf-8"))
+
+
+class TestSurfaceRegistry(unittest.TestCase):
+    def test_registry_is_complete_and_aligned(self) -> None:
+        diagnostics = check_surface_registry(ROOT, REGISTRY)
+        self.assertEqual(
+            diagnostics,
+            (),
+            "\n" + "\n".join(json.dumps(item.as_record()) for item in diagnostics),
+        )
+
+    def test_deliberate_stale_preferred_example_is_detected(self) -> None:
+        fixture = (
+            ROOT / "tests" / "fixtures" / "config_surfaces" / "stale-preferred-example.md"
+        )
+        self.assertEqual(
+            legacy_vocabulary(fixture.read_text(encoding="utf-8")),
+            ("handoffs", "handoffs.*.auto_start_tasks"),
+        )
+
+    def test_deliberate_unregistered_consumer_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "cli").mkdir(parents=True)
+            (root / "cli" / "launch_policy.py").write_text(
+                "from cli.config_schema import CONFIG_SCHEMA\n", encoding="utf-8"
+            )
+            registry = {
+                "registry_version": 1,
+                "authority": "cli/config_schema.py::CONFIG_SCHEMA",
+                "migration_authority": "cli/config_migration.py",
+                "discovery": [
+                    {
+                        "globs": ["cli/**/*.py"],
+                        "contains_any": ["CONFIG_SCHEMA"],
+                    }
+                ],
+                "surfaces": [],
+            }
+            path = root / "config-surfaces.json"
+            path.write_text(json.dumps(registry), encoding="utf-8")
+            diagnostics = check_surface_registry(root, path)
+        unregistered = [
+            item for item in diagnostics if item.code == "unregistered-surface"
+        ]
+        self.assertEqual(len(unregistered), 1)
+        self.assertEqual(unregistered[0].surface, "cli/launch_policy.py")
+
+    def test_legacy_vocabulary_follows_any_shaped_authority_change(self) -> None:
+        vocabulary = CONFIG_SCHEMA["legacy_vocabulary"]
+        vocabulary["probe_category"] = ("retired_setting",)
+        try:
+            self.assertIn(
+                "retired_setting",
+                legacy_vocabulary("retired_setting = true"),
+            )
+        finally:
+            del vocabulary["probe_category"]
+
+    def test_preferred_contract_tests_are_registered_fail_closed(self) -> None:
+        registry = load_registry(REGISTRY)
+        preferred = next(
+            item
+            for item in registry["surfaces"]
+            if item["id"] == "preferred-configuration-contract-tests"
+        )
+        self.assertEqual(preferred["legacy_policy"], "forbidden")
+        self.assertIn("tests/wrappers/test_timeout_ssot.py", preferred["paths"])
+        self.assertIn("tests/test_protocol_gate.py", preferred["paths"])
+
+    def test_test_vocabulary_is_forbidden_by_default_with_narrow_allowlist(
+        self,
+    ) -> None:
+        registry = load_registry(REGISTRY)
+        tests_surface = next(
+            item
+            for item in registry["surfaces"]
+            if item["id"] == "configuration-test-surfaces"
+        )
+        self.assertEqual(tests_surface["legacy_policy"], "forbidden")
+        allowlist = registry["test_legacy_compatibility_allowlist"]
+        self.assertTrue(allowlist)
+        self.assertTrue(all(path.startswith("tests/") for path in allowlist))
+        self.assertTrue(all("**" not in path for path in allowlist))
+        self.assertIn(
+            "tests/fixtures/config_surfaces/stale-preferred-example.md",
+            allowlist,
+        )
+
+    def test_new_ordinary_test_and_fixture_fail_on_stale_vocabulary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-test-policy-") as raw:
+            root = Path(raw) / "repo"
+            shutil.copytree(
+                ROOT,
+                root,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            (root / "tests" / "test_new_surface.py").write_text(
+                'CONFIG = "[handoffs.coder] auto_start_tasks = true"\n',
+                encoding="utf-8",
+            )
+            fixture = root / "tests" / "fixtures" / "ordinary" / "legacy.toml"
+            fixture.parent.mkdir()
+            fixture.write_text(
+                "[handoffs.coder]\nauto_start_tasks = true\n",
+                encoding="utf-8",
+            )
+            diagnostics = check_surface_registry(root)
+        stale_details = {
+            item.detail
+            for item in diagnostics
+            if item.code == "stale-vocabulary"
+        }
+        self.assertTrue(
+            any("tests/test_new_surface.py" in detail for detail in stale_details)
+        )
+        self.assertTrue(
+            any(
+                "tests/fixtures/ordinary/legacy.toml" in detail
+                for detail in stale_details
+            )
+        )
+
+    def test_schema_field_reference_rejects_missing_field_and_invented_value(
+        self,
+    ) -> None:
+        reference = (ROOT / "CONFIG-MAPPING.md").read_text(encoding="utf-8")
+        missing = schema_field_parity(
+            reference.replace("max_handoffs_per_run", "REMOVED_FIELD"),
+            surface="CONFIG-MAPPING.md",
+        )
+        self.assertTrue(
+            any(
+                item.code == "schema-field-missing"
+                and "automation.max_handoffs_per_run" in item.detail
+                for item in missing
+            )
+        )
+        invented = schema_field_parity(
+            reference
+            + "\n`automation.initiation` also accepts `semi-auto`.\n",
+            surface="CONFIG-MAPPING.md",
+        )
+        self.assertTrue(
+            any(
+                item.code == "schema-value-invented"
+                and "semi-auto" in item.detail
+                for item in invented
+            )
+        )
+
+    def test_guidance_hygiene_rejects_host_operator_and_secret_values(self) -> None:
+        issues = guidance_hygiene(
+            "path=/Users/alice/work\n"
+            "owner=alice@example.org\n"
+            "api_key=sk-probe0123456789012345\n"
+        )
+        self.assertIn("macos-user-path", issues)
+        self.assertIn("operator-email", issues)
+        self.assertIn("openai-secret", issues)
+
+    def test_guidance_hygiene_allows_placeholders_and_labeled_context(self) -> None:
+        self.assertEqual(
+            guidance_hygiene(
+                "Use /Users/<name>/work or /Users/me/work; "
+                "contact maintainer@example.com."
+            ),
+            (),
+        )
+
+    def test_registry_hygiene_rejects_wrapper_and_installer_leaks(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-hygiene-policy-") as raw:
+            root = Path(raw) / "repo"
+            shutil.copytree(
+                ROOT,
+                root,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            wrapper = root / "wrappers" / "bin" / "cartopian-codex"
+            wrapper.write_text(
+                wrapper.read_text(encoding="utf-8")
+                + "\n# /Users/alice/work alice@operator.invalid "
+                "sk-probe0123456789012345\n",
+                encoding="utf-8",
+            )
+            installer = root / "install-cartopian.md"
+            installer.write_text(
+                installer.read_text(encoding="utf-8")
+                + "\n/home/alice/work owner@operator.invalid "
+                "ghp_012345678901234567890123\n",
+                encoding="utf-8",
+            )
+            diagnostics = check_surface_registry(root)
+        hygiene = {
+            item.surface: item.detail
+            for item in diagnostics
+            if item.code == "output-hygiene"
+        }
+        self.assertIn("wrappers/bin/cartopian-codex", hygiene)
+        self.assertIn("macos-user-path", hygiene["wrappers/bin/cartopian-codex"])
+        self.assertIn("operator-email", hygiene["wrappers/bin/cartopian-codex"])
+        self.assertIn("openai-secret", hygiene["wrappers/bin/cartopian-codex"])
+        self.assertIn("install-cartopian.md", hygiene)
+        self.assertIn("linux-user-path", hygiene["install-cartopian.md"])
+        self.assertIn("operator-email", hygiene["install-cartopian.md"])
+        self.assertIn("github-secret", hygiene["install-cartopian.md"])
+        self.assertEqual(
+            guidance_hygiene(
+                "Host-specific example (macos): /Users/alice/work",
+                target_context="macos",
+            ),
+            (),
+        )
+        self.assertEqual(
+            guidance_hygiene(
+                "Fixture classification: output-hygiene\n"
+                "/Users/alice/work\nsk-probe0123456789012345\n",
+                allow_labeled_fixture=True,
+            ),
+            (),
+        )
+
+    def test_context_ceilings_reconcile_phase_00_and_task_deltas(self) -> None:
+        registry = load_registry(REGISTRY)
+        budgets = {
+            item["surface"]: item for item in registry["context_budgets"]
+        }
+        self.assertEqual(
+            budgets["next-action"]["phase_00_baseline"],
+            {"label": "Phase 00 status/next-action stdout NDJSON", "bytes": 1150},
+        )
+        self.assertEqual(
+            budgets["task-bundle"]["phase_00_baseline"]["bytes"], 1099
+        )
+        self.assertEqual(
+            budgets["handoff-packet"]["phase_00_baseline"]["bytes"], 1197
+        )
+        self.assertEqual(
+            {name: item["task_delta_bytes"] for name, item in budgets.items()},
+            {
+                "resolve-config": 26,
+                "next-action": 114,
+                "task-bundle": 106,
+                "handoff-packet": 114,
+                "containment-matrix": 114,
+                "plan-audit": 114,
+            },
+        )
+        for item in budgets.values():
+            benefit = item["record_versioning_benefit"]
+            self.assertIn("record_schema_version", benefit)
+            self.assertIn("project_schema_version", benefit)
+            self.assertNotIn("aligned canonical fixture", json.dumps(item))
+
+    def test_projection_measurement_is_checkout_location_independent(self) -> None:
+        fixture = Path("/tmp/cartopian-fixture")
+        short_root = Path("/tmp/cartopian")
+        long_root = Path(
+            "/tmp/cartopian-checkout-with-a-deliberately-much-longer-location"
+        )
+        short_record = {
+            "project_path": str(fixture / "project"),
+            "version_identities": {
+                "installed_content": {"loaded_root": str(short_root.resolve())},
+                "running_server": {
+                    "loaded_content": {"loaded_root": str(short_root.resolve())}
+                },
+            },
+        }
+        long_record = {
+            "project_path": str(fixture / "project"),
+            "version_identities": {
+                "installed_content": {"loaded_root": str(long_root.resolve())},
+                "running_server": {
+                    "loaded_content": {"loaded_root": str(long_root.resolve())}
+                },
+            },
+        }
+        self.assertEqual(
+            _normalized_projection_bytes(
+                short_record, fixture, repository_root=short_root
+            ),
+            _normalized_projection_bytes(
+                long_record, fixture, repository_root=long_root
+            ),
+        )
+
+
+class TestCliMcpContractParity(unittest.TestCase):
+    def test_generator_and_editor_represent_every_schema_field(self) -> None:
+        from cli.commands import update_config
+
+        generator_actions = {
+            "project.id": "proj_id",
+            "project.name": "name",
+            "project.project_schema_version": "<derived-shipped-target>",
+            "project.work_roots": "work_root",
+            "roles.*.description": "role",
+            "roles.*.grants": "role_grants",
+            "roles.*.launch.target": "role_launch_target",
+            "roles.*.launch.model": "role_launch_model",
+            "roles.*.launch.effort": "role_launch_effort",
+            "roles.*.launch.timeout": "role_launch_timeout",
+            "roles.*.auto_launch": "role_auto_launch",
+            "reviews.planning": "review_planning",
+            "reviews.planning_role": "review_planning_role",
+            "reviews.task_closure": "review_task_closure",
+            "reviews.task_role": "review_task_role",
+            "automation.initiation": "automation_initiation",
+            "automation.confirmation": "automation_confirmation",
+            "automation.max_handoffs_per_run": "automation_max_handoffs",
+            "defaults.git_versioning": "git_versioning",
+            "git.pm_owns_product_branches": "git_key",
+            "git.default_branch_pattern": "git_key",
+            "git.default_merge_strategy": "git_key",
+        }
+        expected_generator_fields = set(CONFIG_SCHEMA["fields"]) - {"work_roots.*"}
+        self.assertEqual(set(generator_actions), expected_generator_fields)
+        actions = {
+            action.dest
+            for action in _subparsers()["generate-config"]._actions  # noqa: SLF001
+        }
+        self.assertTrue(
+            {
+                action
+                for action in generator_actions.values()
+                if not action.startswith("<")
+            }.issubset(actions)
+        )
+
+        editor_fields = set(update_config.SCHEMA)
+        editor_fields.update(
+            {
+                "roles.*.description",
+                "roles.*.grants",
+                "roles.*.launch.target",
+                "roles.*.launch.model",
+                "roles.*.launch.effort",
+                "roles.*.launch.timeout",
+                "roles.*.auto_launch",
+                "work_roots.*",
+            }
+        )
+        self.assertEqual(editor_fields, set(CONFIG_SCHEMA["fields"]))
+
+    def test_generate_config_closed_values_derive_from_authoritative_contract(self) -> None:
+        generate = _subparsers()["generate-config"]
+        actions = {action.dest: action for action in generate._actions}  # noqa: SLF001
+        fields = CONFIG_SCHEMA["fields"]
+        self.assertEqual(
+            tuple(actions["automation_initiation"].choices),
+            fields["automation.initiation"]["values"],
+        )
+        self.assertEqual(
+            tuple(actions["automation_confirmation"].choices),
+            fields["automation.confirmation"]["values"],
+        )
+        self.assertEqual(
+            tuple(actions["review_planning"].choices),
+            fields["reviews.planning"]["values"],
+        )
+        self.assertEqual(
+            tuple(actions["review_task_closure"].choices),
+            fields["reviews.task_closure"]["values"],
+        )
+
+    def test_mcp_schema_independently_matches_argparse_actions(self) -> None:
+        server._TOOL_CACHE = None
+        subparsers = _subparsers()
+        listed = {item["name"]: item for item in server.list_tools()}
+        self.assertEqual(
+            set(listed),
+            {name.replace("-", "_") for name in subparsers},
+        )
+        for cli_name, sub in subparsers.items():
+            schema = listed[cli_name.replace("-", "_")]["inputSchema"]
+            actions = [
+                action
+                for action in sub._actions  # noqa: SLF001
+                if not isinstance(action, argparse._HelpAction)  # noqa: SLF001
+                and action.dest not in (None, argparse.SUPPRESS)
+            ]
+            self.assertEqual(set(schema["properties"]), {a.dest for a in actions})
+            expected_required = []
+            for action in actions:
+                observed = schema["properties"][action.dest]
+                if isinstance(action, argparse._AppendAction):  # noqa: SLF001
+                    self.assertEqual(observed["type"], "array")
+                elif isinstance(
+                    action,
+                    (argparse._StoreTrueAction, argparse._StoreFalseAction),  # noqa: SLF001
+                ):
+                    self.assertEqual(observed["type"], "boolean")
+                elif action.type is int:
+                    self.assertEqual(observed["type"], "integer")
+                elif action.type is float:
+                    self.assertEqual(observed["type"], "number")
+                else:
+                    self.assertEqual(observed["type"], "string")
+                if action.choices:
+                    self.assertEqual(observed["enum"], list(action.choices))
+                if action.option_strings:
+                    if action.required:
+                        expected_required.append(action.dest)
+                elif action.nargs in (None, 1) or (
+                    isinstance(action.nargs, int) and action.nargs >= 1
+                ):
+                    expected_required.append(action.dest)
+            self.assertEqual(schema.get("required", []), expected_required)
+
+    def test_update_config_enum_domains_match_authoritative_contract(self) -> None:
+        from cli.commands import update_config
+
+        scalar_fields = {
+            name
+            for name in CONFIG_SCHEMA["fields"]
+            if not name.startswith("roles.") and name != "work_roots.*"
+        }
+        self.assertEqual(set(update_config.SCHEMA), scalar_fields)
+        for field in (
+            "automation.initiation",
+            "automation.confirmation",
+            "reviews.planning",
+            "reviews.task_closure",
+            "git.default_merge_strategy",
+        ):
+            values = CONFIG_SCHEMA["fields"][field]["values"]
+            validator = update_config.SCHEMA[field][2]
+            for value in values:
+                self.assertEqual(validator(value), json.dumps(value))
+            with self.assertRaises(Exception):
+                validator("__outside_contract__")
+
+    def test_cli_and_mcp_return_the_same_validation_diagnostic(self) -> None:
+        argv = [
+            "/tmp/config-parity-probe",
+            "--name",
+            "Probe",
+            "--id",
+            "probe",
+            "--automation-initiation",
+            "__outside_contract__",
+        ]
+        direct = subprocess.run(
+            [sys.executable, str(ENTRYPOINT), "generate-config", *argv],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        via_mcp = server._invoke_cli("generate-config", argv)
+        self.assertEqual(via_mcp["exit_code"], direct.returncode)
+        self.assertEqual(via_mcp["stderr_lines"], direct.stderr.splitlines())
+
+
+class TestWrapperNeutrality(unittest.TestCase):
+    def test_deliberate_raw_policy_probe_is_detected(self) -> None:
+        self.assertEqual(
+            wrapper_authority_vocabulary(
+                "read [reviews] and roles.<role>.auto_launch before launch"
+            ),
+            ("raw-review-policy", "raw-role-schema", "launch-policy"),
+        )
+
+
+class TestProjectionParity(unittest.TestCase):
+    _CONFIG = (
+        "[project]\n"
+        'id = "surface-parity"\n'
+        'name = "Surface Parity"\n'
+        'project_schema_version = "v0.6.0"\n'
+        'work_roots = ["tool-repo"]\n'
+        "\n"
+        "[roles.coder]\n"
+        'description = "Implements tasks per spec."\n'
+        'grants = ["coder-like"]\n'
+        'auto_launch = ["task_run"]\n'
+        "\n"
+        "[roles.coder.launch]\n"
+        'target = "cartopian-codex"\n'
+        'model = "gpt-5-codex"\n'
+        'effort = "high"\n'
+        'timeout = "30m"\n'
+        "\n"
+        "[reviews]\n"
+        'planning = "off"\n'
+        'task_closure = "off"\n'
+        "\n"
+        "[automation]\n"
+        'initiation = "operator"\n'
+        'confirmation = "each-handoff"\n'
+        "max_handoffs_per_run = 1\n"
+    )
+
+    def test_bounded_projections_preserve_canonical_facts_and_budgets(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-surface-parity-") as raw:
+            fixture = Path(raw)
+            home = fixture / "home"
+            project = fixture / "project"
+            work_root = fixture / "tool-repo"
+            home.mkdir()
+            project.mkdir()
+            work_root.mkdir()
+            for relative in (
+                "phases",
+                "tasks/open",
+                "tasks/in-progress",
+                "tasks/in-review",
+                "tasks/done",
+                "prompts",
+                "reports",
+                "specs",
+                "decisions",
+                "reviews",
+                "resources",
+            ):
+                (project / relative).mkdir(parents=True, exist_ok=True)
+            (project / "cartopian.toml").write_text(self._CONFIG, encoding="utf-8")
+            (project / "cartopian.local.toml").write_text(
+                f'[work_roots]\ntool-repo = "{work_root}"\n', encoding="utf-8"
+            )
+            (project / "STATE.md").write_text(
+                "# State\n\n## Situation\n\nNone.\n", encoding="utf-8"
+            )
+            (project / "STANDARDS.md").write_text("# Standards\n", encoding="utf-8")
+            (project / "phases" / "PHASE-01-build.md").write_text(
+                "# PHASE-01: Build\n", encoding="utf-8"
+            )
+            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task.write_text(
+                "# TASK-01-001: Build\n\n"
+                "Phase: PHASE-01-build\n"
+                "Plan ref: n/a\n"
+                "Work root: tool-repo\n"
+                "Assignee: coder\n"
+                "Spec: none\n"
+                "Depends on: n/a\n"
+                "Blocked by: n/a\n"
+                "Created: 2026-07-25\n"
+                "Evidence gate: n/a\n\n"
+                "## Goal\n\nBuild the fixture.\n\n"
+                "## Acceptance\n\n- [ ] Fixture is built.\n",
+                encoding="utf-8",
+            )
+
+            commands = {
+                "resolve-config": ("resolve-config", str(project)),
+                "next-action": ("next-action", str(project)),
+                "task-bundle": ("task-bundle", str(task)),
+                "handoff-packet": ("handoff-packet", str(task), "--role", "coder"),
+                "containment-matrix": ("containment-matrix", str(project)),
+                "plan-audit": ("plan-audit", str(project)),
+            }
+            records = {}
+            for name, args in commands.items():
+                code, record, stderr = _run_cli(home, *args)
+                self.assertIn(code, (0, 1), msg=f"{name}: {stderr}")
+                records[name] = record
+
+            canonical = records["resolve-config"]
+            for name, record in records.items():
+                with self.subTest(surface=name):
+                    self.assertEqual(record["record_schema_version"], 1)
+                    self.assertEqual(record["schema_identity"], canonical["schema_identity"])
+                    self.assertEqual(
+                        record["project_schema_version"],
+                        canonical["project_schema_version"],
+                    )
+            self.assertEqual(records["next-action"]["roles"], canonical["roles"])
+            self.assertEqual(records["next-action"]["reviews"], canonical["reviews"])
+            self.assertEqual(records["next-action"]["automation"], canonical["automation"])
+            coder = canonical["roles"]["coder"]
+            packet = records["handoff-packet"]
+            self.assertEqual(packet["launch"], coder["launch"])
+            self.assertEqual(packet["auto_launch"], coder["auto_launch"])
+            self.assertEqual(packet["effective_grants"], coder["effective_grants"])
+            self.assertEqual(packet["reviews"], canonical["reviews"])
+            self.assertEqual(packet["automation_policy"], canonical["automation"])
+            self.assertEqual(
+                records["task-bundle"]["work_roots_resolved"][0]["absolute_path"],
+                canonical["work_roots"]["tool-repo"],
+            )
+            self.assertEqual(
+                records["containment-matrix"]["activated"],
+                canonical["capabilities"]["activated"],
+            )
+
+            registry = load_registry(REGISTRY)
+            budgets = {
+                item["surface"]: item for item in registry["context_budgets"]
+            }
+            self.assertEqual(set(records), set(budgets))
+            for name, record in records.items():
+                measured = _normalized_projection_bytes(record, fixture)
+                with self.subTest(context_budget=name):
+                    self.assertLessEqual(measured, budgets[name]["max_output_bytes"])
+
+    def test_lifecycle_paths_resolve_while_authored_work_root_spelling_is_stable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="cartopian-path-spelling-", dir="/tmp"
+        ) as raw:
+            authored_root = Path(raw)
+            project = authored_root / "project"
+            work_root = authored_root / "tool-repo"
+            home = authored_root / "home"
+            for path in (
+                project / "phases",
+                project / "tasks" / "open",
+                project / "tasks" / "in-progress",
+                project / "tasks" / "in-review",
+                project / "tasks" / "done",
+                project / "prompts",
+                project / "reports",
+                project / "specs",
+                project / "decisions",
+                project / "reviews",
+                project / "resources",
+                work_root,
+                home,
+            ):
+                path.mkdir(parents=True, exist_ok=True)
+            (project / "cartopian.toml").write_text(
+                self._CONFIG, encoding="utf-8"
+            )
+            (project / "cartopian.local.toml").write_text(
+                f'[work_roots]\ntool-repo = "{work_root}"\n', encoding="utf-8"
+            )
+            (project / "STATE.md").write_text(
+                "# State\n\n## Situation\n\nNone.\n", encoding="utf-8"
+            )
+            (project / "STANDARDS.md").write_text(
+                "# Standards\n", encoding="utf-8"
+            )
+            (project / "phases" / "PHASE-01-build.md").write_text(
+                "# PHASE-01: Build\n", encoding="utf-8"
+            )
+            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task.write_text(
+                "# TASK-01-001: Build\n\n"
+                "Phase: PHASE-01-build\nPlan ref: n/a\nWork root: tool-repo\n"
+                "Assignee: coder\nSpec: none\nDepends on: n/a\nBlocked by: n/a\n"
+                "Created: 2026-07-25\nEvidence gate: n/a\n\n"
+                "## Goal\n\nBuild.\n\n## Acceptance\n\n- [ ] Built.\n",
+                encoding="utf-8",
+            )
+            commands = {
+                "resolve-config": ("resolve-config", str(project)),
+                "next-action": ("next-action", str(project)),
+                "task-bundle": ("task-bundle", str(task)),
+                "handoff-packet": (
+                    "handoff-packet",
+                    str(task),
+                    "--role",
+                    "coder",
+                ),
+                "containment-matrix": ("containment-matrix", str(project)),
+                "plan-audit": ("plan-audit", str(project)),
+            }
+            records = {}
+            for name, args in commands.items():
+                code, record, stderr = _run_cli(home, *args)
+                self.assertIn(code, (0, 1), f"{name}: {stderr}")
+                records[name] = record
+
+            resolved_project = str(project.resolve())
+            resolved_task = str(task.resolve())
+            for name in (
+                "resolve-config",
+                "next-action",
+                "containment-matrix",
+                "plan-audit",
+            ):
+                with self.subTest(surface=name, path="project_path"):
+                    self.assertEqual(
+                        records[name]["project_path"],
+                        resolved_project,
+                    )
+            for name in ("task-bundle", "handoff-packet"):
+                with self.subTest(surface=name, path="task_path"):
+                    self.assertEqual(records[name]["task_path"], resolved_task)
+
+            record = records["task-bundle"]
+            self.assertEqual(
+                record["work_roots_resolved"][0]["absolute_path"],
+                str(work_root),
+            )
+            self.assertEqual(
+                records["resolve-config"]["work_roots"]["tool-repo"],
+                str(work_root),
+            )
+            expected_report = str(
+                (project / "reports" / "REPORT-01-001.md").resolve()
+            )
+            self.assertEqual(record["expected_report_path"], expected_report)
+            self.assertEqual(
+                records["handoff-packet"]["expected_report_path"],
+                expected_report,
+            )
+            if str(authored_root) != str(authored_root.resolve()):
+                self.assertTrue(resolved_project.startswith("/private/tmp/"))
+                self.assertTrue(resolved_task.startswith("/private/tmp/"))
+                self.assertTrue(
+                    record["work_roots_resolved"][0]["absolute_path"].startswith(
+                        "/tmp/"
+                    )
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

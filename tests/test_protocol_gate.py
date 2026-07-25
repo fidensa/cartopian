@@ -173,6 +173,7 @@ class TestNextActionGate(unittest.TestCase):
         gate_blockers = [b for b in records[0]["blockers"] if "v0.3.0" in b and "v0.4.0" in b]
         self.assertEqual(len(gate_blockers), 1, records[0]["blockers"])
         self.assertIn("migration", gate_blockers[0].lower())
+        self.assertEqual(records[0]["project_schema_version"], "v0.3.0")
 
     def test_missing_marker_surfaces_migration_not_missing_key(self):
         # A config with no [project].project_schema_version at all must reach the
@@ -246,6 +247,7 @@ class TestPlanAuditGate(unittest.TestCase):
         self.assertEqual(warning["kind"], "project-schema-version-migration")
         self.assertEqual(warning["detected_version"], "v0.3.0")
         self.assertEqual(warning["shipped_version"], "v0.4.0")
+        self.assertEqual(records[0]["project_schema_version"], "v0.3.0")
         self.assertIn("v0.3.0", warning["detail"])
         self.assertIn("v0.4.0", warning["detail"])
         self.assertFalse(records[0]["clean"])
@@ -299,6 +301,7 @@ class TestPlanAuditGate(unittest.TestCase):
         )
         self.assertEqual(blocker["detected_version"], "v9.9.9")
         self.assertEqual(blocker["shipped_version"], "v0.4.0")
+        self.assertEqual(records[0]["project_schema_version"], "v9.9.9")
         self.assertIn(protocol_gate.RESIDUAL_NAME, stderr)
         self.assertEqual(toml_path.read_bytes(), before)
 

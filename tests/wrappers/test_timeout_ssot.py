@@ -1,7 +1,7 @@
 """Timeout single-source-of-truth (SSOT) contract tests.
 
 These tests lock the invariant RM-003 is about: the handoff timeout has exactly
-one source of truth (`[handoffs.<role>].timeout`, resolved project -> global),
+one source of truth (`roles.<role>.launch.timeout`, resolved project -> global),
 passed to the wrapper as `CARTOPIAN_TIMEOUT`, and enforced *solely* by the
 wrapper's OS-level deadline. No competing/second timer may exist.
 
@@ -131,16 +131,27 @@ def _run_packet(task: Path, role: str):
 
 
 def test_launcher_resolves_configured_timeout(tmp_path):
-    """handoff-packet resolves [handoffs.<role>].timeout to the one canonical value."""
+    """handoff-packet resolves roles.<role>.launch.timeout canonically."""
     _root, task = _handoff_packet_project(
         tmp_path,
-        '[handoffs.coder]\nagent = "cartopian-claude"\nauto_start_tasks = true\ntimeout = "17m"\n',
+        '[project]\n'
+        'id = "timeout-probe"\n'
+        'name = "Timeout Probe"\n'
+        'project_schema_version = "v0.6.0"\n'
+        '\n'
+        '[roles.coder]\n'
+        'description = "Implements tasks."\n'
+        'auto_launch = ["task_run"]\n'
+        '\n'
+        '[roles.coder.launch]\n'
+        'target = "cartopian-claude"\n'
+        'timeout = "17m"\n',
         "01-001",
     )
     res = _run_packet(task, "coder")
     assert res.returncode == 0, res.stderr
     rec = json.loads(res.stdout)
-    assert rec["timeout"] == "17m"
+    assert rec["launch"]["timeout"] == "17m"
 
 
 def test_launcher_skill_exports_cartopian_timeout_as_sole_timer(tmp_path):
@@ -155,7 +166,7 @@ def test_launcher_skill_exports_cartopian_timeout_as_sole_timer(tmp_path):
     # The launch contract sets CARTOPIAN_TIMEOUT from the resolved packet timeout,
     # with the protocol 60m default applied by the wrapper.
     assert "CARTOPIAN_TIMEOUT" in text
-    assert "resolved `[handoffs.<role>].timeout`" in text
+    assert "resolved role launch timeout" in text
     assert "protocol default of `60m`" in text
     # The wrapper is the enforcer (OS-level deadline, exit 124) and the PM imposes
     # no separate timer — the SSOT with no competing second timer.

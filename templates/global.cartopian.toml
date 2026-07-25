@@ -85,18 +85,15 @@
 # confirmation = "until-blocked"   # runs chain through sequential tasks
 # max_handoffs_per_run = 5         # bounded batch size per run
 #
-# plus the applicable `auto_start_tasks = true` / `auto_start_reviews = true`
-# on each [handoffs.<role>] the PM should launch.
+# plus the applicable closed `auto_launch` activities on each role the PM
+# should launch.
 
 # -----------------------------------------------------------------------------
 # [roles]
 # -----------------------------------------------------------------------------
-# Per DEC-007: [roles] is a flat name -> one-line description string table.
-# There is no `kind` field. Whether a role dispatches automatically is
-# inferred from the presence (or absence) of a matching [handoffs.<role>]
-# block below — a role with a [handoffs.<role>] block dispatches via that
-# wrapper; a role without one is manual-dispatch (the PM surfaces the
-# prompt and the operator acts).
+# Each role is a table with a required description. Optional grants,
+# role-local launch target/options, and automatic-launch permissions remain
+# distinct fields. A role without `launch.target` is manual-dispatch.
 #
 # Default roster (FR-011, DEC-002 Pick 3): `pm` and `operator` only.
 # `coder` and `reviewer` are common example role labels operators may add
@@ -104,14 +101,19 @@
 # examples. Operators may rename, remove, or add roles freely; role names
 # are operator-chosen identifiers.
 
-# [roles]
-# pm = "Manages the project lifecycle and orchestrates handoffs."
-# operator = "Human direction-setter who approves transitions and resolves judgment calls."
+# [roles.pm]
+# description = "Manages the project lifecycle and orchestrates handoffs."
+#
+# [roles.operator]
+# description = "Human direction-setter who approves transitions and resolves judgment calls."
 #
 # Common example role labels (NOT defaults — uncomment only if you want
 # to declare them at the global level):
-# coder = "Implements tasks per spec."
-# reviewer = "Reviews per acceptance evidence."
+# [roles.coder]
+# description = "Implements tasks per spec."
+#
+# [roles.reviewer]
+# description = "Reviews per acceptance evidence."
 
 # -----------------------------------------------------------------------------
 # [reviews]
@@ -130,16 +132,15 @@
 # task_role = "reviewer"            # required only when task_closure = "required"
 
 # -----------------------------------------------------------------------------
-# [handoffs.<role>]
+# [roles.<role>.launch] and [roles.<role>].auto_launch
 # -----------------------------------------------------------------------------
-# Per DEC-007: the presence of a [handoffs.<role>] block is the dispatch
-# trigger. If a role has a [handoffs.<role>] block here (or in the
-# project's cartopian.toml), the PM dispatches that role automatically
-# via the configured wrapper. If the block is absent, the role is
-# manual-dispatch.
+# A role-local launch table supplies neutral target/options. The role's
+# `auto_launch` list independently allows automatic launch for assigned work
+# types. A launch target without the applicable permission remains available
+# for operator-performed launch.
 #
 # Keys:
-#   agent       — the wrapper script name the PM invokes (e.g. "cartopian-claude").
+#   target      — the wrapper script name the PM invokes (e.g. "cartopian-claude").
 #   model       — optional model identifier for the assigned agent (e.g.
 #                 "gpt-5-codex"). Dispatch exports it to the wrapper as
 #                 CARTOPIAN_MODEL; the wrapper translates it into the
@@ -150,33 +151,27 @@
 #                 tool-specific effort flag. Unset means the tool's own
 #                 default. Values the wrapper's CLI does not recognize are
 #                 dropped with a stderr notice and the default applies.
-#   auto_start_tasks   — if true, the PM launches task-scoped handoffs for
-#                        this role (assigned work and task-closure reviews).
-#   auto_start_reviews — if true, the PM launches planning-review handoffs for
-#                        this role. Neither setting enables review policy or
-#                        initiates a run; each controls launch mode only and
-#                        never initiates a run.
+#   auto_launch — closed unique list containing any applicable assigned work
+#                 types: `task_run`, `task_review`, `planning_review`.
+#                 Automatic launch never initiates a run; run initiation,
+#                 confirmation pace, review assignment, and task selection
+#                 remain separately owned.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #
-# Never configure `[handoffs.pm]`: the PM is the interactive orchestrator of
-# the session and is never itself launched as a handoff (there would be no PM
-# to launch it). A `[handoffs.pm]` block has no meaning.
+# Never configure a PM launch target or automatic-launch permission: the PM is
+# the interactive orchestrator and is never itself launched.
 #
 # Example — uncomment and edit to wire up an automated `coder` dispatch:
 
-# [handoffs.coder]
-# agent = "claude-vscode"
-# auto_start_tasks = false
+# [roles.coder]
+# description = "Implements tasks per spec."
+# auto_launch = ["task_run"]
+#
+# [roles.coder.launch]
+# target = "cartopian-claude"
 # timeout = "60m"
-
-# Additional example for a custom role label:
-
-# [handoffs.coder]
-# agent = "cartopian-claude"
 # model = "claude-opus-4-8"
 # effort = "high"
-# auto_start_tasks = false
-# timeout = "60m"
 
 # -----------------------------------------------------------------------------
 # [project] — schema reference only; rarely set at the global level

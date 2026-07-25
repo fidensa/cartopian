@@ -138,7 +138,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
             [
                 {
                     "name": "tool-repo",
-                    "absolute_path": str(work_root.resolve()),
+                    "absolute_path": str(work_root),
                     "exists": True,
                 }
             ],
@@ -191,6 +191,61 @@ class TestTaskBundleNoPlan(unittest.TestCase):
         self.assertTrue(record["ready"], msg=f"validator_blockers={record.get('validator_blockers')}")
         self.assertEqual(record["validator_blockers"], [])
         self.assertIsNone(record["spec_path"])
+
+
+class TestTaskBundleSchemaIdentityWithoutReadinessGate(unittest.TestCase):
+    def test_pre_migration_project_keeps_prior_read_behavior(self) -> None:
+        stale = _TOML_BASE.replace(
+            'project_schema_version = "v0.6.0"',
+            'project_schema_version = "v0.5.0"',
+        )
+        with project_scaffold(cartopian_toml=stale) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-006-stale-project.md",
+                "# TASK-01-006: Stale project\n\n"
+                "Phase: PHASE-01-foundation\nPlan ref: n/a\n"
+                "Work root: tool-repo\nAssignee: coder\nSpec: none\n"
+                "Depends on: n/a\nBlocked by: n/a\nCreated: 2026-07-25\n"
+                "Evidence gate: n/a\n\n## Goal\n\nRead.\n\n"
+                "## Acceptance\n\n- [ ] Read.\n",
+            )
+            result = _run(str(task_path), scaffold.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["project_schema_version"], "v0.5.0")
+        self.assertEqual(
+            record["schema_identity"],
+            "cartopian-authoritative-config-v1",
+        )
+
+
+class TestTaskBundleProjectGuardParity(unittest.TestCase):
+    def test_missing_project_table_uses_shared_guard_diagnostic(self) -> None:
+        with project_scaffold(
+            cartopian_toml="[defaults]\ngit_versioning = false\n"
+        ) as scaffold:
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-099-workspace-config.md",
+                "# TASK-01-099: Workspace config\n",
+            )
+            result = _run(str(task_path), scaffold.root)
+            toml_path = (scaffold.project_root / "cartopian.toml").resolve()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(
+            result.stderr.rstrip("\n"),
+            f"[guard] {toml_path} is a Cartopian workspace config, "
+            "not a project config. "
+            "Run `cartopian discover-projects` (or call the `discover_projects` MCP tool) "
+            "to list registered projects, then pass a project id or absolute path to this command.",
+        )
 
 
 class TestTaskBundleMissingConfig(unittest.TestCase):
