@@ -5,11 +5,14 @@ root and an entry version.  This module owns the closed registry that maps that
 version to exact project-local filesystem actions; callers cannot provide paths,
 replacement text, or commands.
 
-Config changes remain the responsibility of ``update-config``.  A migration
-whose legacy value needs interpretation returns a structured pending action and
-does not mutate any file.  Deterministic actions are preflighted as a set, then
-applied with the same no-symlink / no-hardlink / parent-identity discipline used
-by Cartopian's mediated writers.
+Configuration compatibility and marker advancement are exclusively owned by
+``cli.config_migration`` / ``migrate-config``.  This older registry is the
+mechanically cross-validated companion for non-configuration filesystem
+actions only.  A filesystem migration whose legacy value needs interpretation
+returns a structured pending action and does not mutate any file.
+Deterministic actions are preflighted as a set, then applied with the same
+no-symlink / no-hardlink / parent-identity discipline used by Cartopian's
+mediated writers.
 """
 from __future__ import annotations
 

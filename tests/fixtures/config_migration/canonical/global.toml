@@ -1,0 +1,10 @@
+[automation]
+initiation = "operator"
+
+[roles.reviewer]
+description = "Reviews completed work."
+grants = ["reviewer-like"]
+
+[roles.reviewer.launch]
+target = "cartopian-review"
+timeout = "30m"

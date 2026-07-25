@@ -1,0 +1,18 @@
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.5.0"
+
+[roles.coder]
+description = "Implements and reviews approved work."
+grants = ["coder-like"]
+
+[handoffs.coder]
+agent = "cartopian-codex"
+auto_start_tasks = true
+planning_reviews = true
+
+[reviews]
+planning = "required"
+planning_role = "coder"
+task_closure = "off"

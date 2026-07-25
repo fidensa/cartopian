@@ -1,0 +1,8 @@
+[roles.reviewer]
+description = "Reviews plans and completed tasks."
+grants = ["reviewer-like"]
+
+[handoffs.reviewer]
+agent = "cartopian-review"
+auto_start = true
+planning_reviews = true

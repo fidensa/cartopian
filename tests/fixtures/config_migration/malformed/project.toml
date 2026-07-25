@@ -1,0 +1,4 @@
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "0.5"

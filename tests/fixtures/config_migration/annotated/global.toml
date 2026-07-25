@@ -1,0 +1,19 @@
+# Operator global configuration. Keep this heading.
+
+[automation]
+# Starts only after the operator's explicit global opt-in.
+initiation = "auto" # deliberate
+confirmation = "until-blocked"
+max_handoffs_per_run = 3
+
+# Review role grouping.
+[roles.reviewer]
+description = "Reviews plans and completed tasks." # role note
+grants = ["reviewer-like"]
+# Reference only: auto_launch = ["task_run"]
+
+# Legacy launch grouping; comments remain useful migration history.
+[handoffs.reviewer]
+agent = "cartopian-review" # target note
+auto_start = true # task permission note
+planning_reviews = false # planning intentionally manual

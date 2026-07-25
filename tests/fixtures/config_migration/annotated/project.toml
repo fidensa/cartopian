@@ -1,0 +1,28 @@
+# Project configuration maintained by the operator.
+
+[project]
+id = "migration-fixture" # stable identity
+name = "Migration Fixture"
+project_schema_version = "v0.5.0" # marker note
+# Reference only: work_roots = ["product"]
+
+[roles]
+# Lightweight documentation role.
+writer = "Writes supporting material." # writer note
+
+[roles.coder]
+description = "Implements approved work." # coder note
+grants = ["coder-like"]
+
+# Keep this handoff grouping visible after migration.
+[handoffs.coder]
+agent = "cartopian-codex" # coder target
+effort = "high"
+auto_start_tasks = true # tasks start automatically
+auto_start_reviews = false # reviews remain manual
+
+[reviews] # review policy
+planning = "required"
+planning_role = "reviewer"
+task_closure = "required"
+task_role = "reviewer"

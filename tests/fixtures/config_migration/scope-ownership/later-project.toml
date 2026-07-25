@@ -1,0 +1,10 @@
+[project]
+id = "later-project"
+name = "Later Project"
+project_schema_version = "v0.6.0"
+
+[reviews]
+planning = "required"
+planning_role = "reviewer"
+task_closure = "required"
+task_role = "reviewer"

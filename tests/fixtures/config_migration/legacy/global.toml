@@ -1,0 +1,18 @@
+[automation]
+initiation = "auto"
+confirmation = "until-blocked"
+max_handoffs_per_run = 4
+
+[roles]
+observer = "Observes project progress."
+
+[roles.reviewer]
+description = "Reviews plans and completed tasks."
+grants = ["reviewer-like"]
+
+[handoffs.reviewer]
+agent = "cartopian-review"
+model = "review-model"
+auto_start = true
+planning_reviews = true
+timeout = "30m"

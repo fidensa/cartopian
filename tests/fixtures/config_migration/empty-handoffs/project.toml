@@ -1,0 +1,7 @@
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.6.0"
+
+# Intentionally empty legacy table.
+[handoffs]

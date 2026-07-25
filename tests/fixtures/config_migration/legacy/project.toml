@@ -1,0 +1,32 @@
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+protocol_version = "v0.4.0"
+work_roots = ["product"]
+
+[defaults]
+git_versioning = true
+
+[git]
+pm_owns_product_branches = true
+default_merge_strategy = "squash"
+
+[roles]
+writer = "Writes supporting material."
+
+[roles.coder]
+description = "Implements approved work."
+grants = ["coder-like"]
+
+[handoffs.coder]
+agent = "cartopian-codex"
+effort = "high"
+auto_start_tasks = true
+auto_start_reviews = false
+timeout = "45m"
+
+[reviews]
+planning = "required"
+planning_role = "reviewer"
+task_closure = "required"
+task_role = "reviewer"

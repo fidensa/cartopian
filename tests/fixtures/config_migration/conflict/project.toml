@@ -1,0 +1,15 @@
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.5.0"
+
+[roles.coder]
+description = "Implements approved work."
+auto_launch = []
+
+[roles.coder.launch]
+target = "cartopian-codex"
+
+[handoffs.coder]
+agent = "cartopian-codex"
+auto_start_tasks = true

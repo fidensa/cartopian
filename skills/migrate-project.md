@@ -1,8 +1,8 @@
 # Skill: Migrate Project
 
-Bring a Cartopian project's internal protocol-schema version up to the schema shipped by the installed Cartopian application by applying the applicable `protocol/CHANGELOG.md` migration entries. The project schema version is not the Cartopian application release version. Migration is **PM-owned orchestration**: the PM drives it, performs config edits through `cartopian update-config`, and performs each shipped deterministic filesystem transform through `cartopian apply-migration-entry`. Judgment-dependent transforms remain explicit PM actions. Migration runs only on the operator's explicit request or approval — never proactively — and never asks the operator to edit the version marker manually.
+Bring a Cartopian project's internal protocol-schema version up to the schema shipped by the installed Cartopian application. The project schema version is not the Cartopian application release version. Migration is **PM-owned orchestration** and has one explicit authority bridge: `cartopian migrate-config` is the sole planner/executor for configuration compatibility and `[project].project_schema_version`, while `protocol/CHANGELOG.md` plus `cartopian apply-migration-entry` remain authoritative only for the older non-configuration filesystem actions. The configuration planner mechanically cross-validates both shipped registries against the changelog and fails closed if they diverge. Judgment-dependent transforms remain explicit PM actions. Migration runs only on the operator's explicit request or approval — never proactively — and never asks the operator to edit the version marker manually.
 
-**Output:** the project's `[project].protocol_version` marker advanced to the shipped version (or as far as every applicable entry could be fully applied and validated), with each entry's changes landed through mediated tooling.
+**Output:** the project's `[project].project_schema_version` marker advanced to the shipped version only by `migrate-config` after applicable configuration and filesystem work validates.
 
 ---
 
@@ -18,18 +18,18 @@ Do not begin without that approval. Migration mutates config and artifacts; it i
 
 ## Step 1 — Determine what applies
 
-1. Read the project's current marker: `<project-root>/cartopian.toml` `[project].protocol_version` (the canonical, only authoritative location — it does not live in `STATE.md`). Treat an absent/missing value as **unset**.
+1. Run `cartopian migrate-config <project-root>` and read its `detected_schema_version`. This is the compatibility interpretation of `<project-root>/cartopian.toml` `[project].project_schema_version`; the historical `protocol_version` name is a migration-source alias only.
 2. Read `~/.cartopian/CHANGELOG.md`. Under `## Entries`, each `### vX.Y.Z` block is a self-contained migration contract with an **applies-when precondition**.
 3. Select every entry whose applies-when matches: an entry applies when the marker is unset, missing, or lexically **less than** that entry's version. An **unset marker means every entry applies.**
-4. Order the selected entries **ascending** by version (oldest first). You apply them in that order; the marker advances one entry at a time.
-5. If nothing applies (the marker already equals the shipped version), report "already current" and stop — this is a no-op.
+4. Order the selected entries **ascending** by version (oldest first). Apply their non-configuration filesystem actions in that order without changing the marker between entries.
+5. If nothing applies and `migrate-config` reports a canonical no-op, report "already current" and stop — this is a no-op.
 
 ## Step 2 — Apply each entry in order
 
 For each applicable entry, oldest first, walk its **Agent-followable migration steps** and classify every step:
 
 - **PM-mediated (do it yourself):**
-  - Config edits — reshaping `[roles]`, adding `[project].work_roots`, setting `[automation]` keys, authoring per-machine `cartopian.local.toml` work-root mappings, and the marker bump — go through `cartopian update-config`:
+  - Operator decisions named by a `migrate-config` pending record are authored through `cartopian update-config`; deterministic reshaping, scope placement, equivalence validation, comment preservation, checkpointing, and the marker update remain owned by `migrate-config`:
     - scalar/list/role/handoff keys: `cartopian update-config <project-root> --set … --set-role … --set-role-grants … --set-handoff …`
     - per-machine mappings: `cartopian update-config <project-root> --local --set-work-root <name>=<absolute-path>`
   - Registry actions (`cartopian register-project`) and any markdown authoring the mediated writers cover.
@@ -52,16 +52,15 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
 
 Do not raw-edit `cartopian.toml` / `cartopian.local.toml` — the harness denies structured raw edits to config, and `update-config` is the only edit path.
 
-## Step 3 — Validate, then bump the marker (conditional)
+## Step 3 — Validate, then let the configuration executor update the marker
 
-The marker bump is the **last** step of each entry and is conditional:
+The marker update is the **last** configuration-migration step and is conditional:
 
 1. Run the entry's **post-migration validation hint** (the grep/file/command checks it documents). For a registry-backed entry, require `apply-migration-entry` to report `status: "complete"` with an empty `pending_actions` list.
-2. Bump the marker **only after every step for that entry has completed and its validation passes**:
-   `cartopian update-config <project-root> --set project.protocol_version=<entry-version>`
-3. If any step is still pending (a structured pending migration action or an operator decision not yet made), **do not bump the marker.** Stop, report exactly what is outstanding, and resume when it is resolved. A half-applied entry must not be recorded as done.
+2. Run `cartopian migrate-config <project-root>` again. If its plan is executable and every applicable filesystem action is complete, run `cartopian migrate-config <project-root> --apply`. This executor performs the only authorized marker update after semantic equivalence and all prior configuration writes validate.
+3. If either executor reports a pending/refused state, **do not write the marker through `update-config`.** Stop, report exactly what is outstanding, and resume when it is resolved. A half-applied migration must not be recorded as done.
 
-Then move to the next entry and repeat Steps 2–3. Because each `update-config` call is idempotent and each entry's steps are idempotent, re-running the whole flow after an interruption is safe — completed steps are no-ops.
+Because each filesystem entry and the configuration executor are idempotent, re-running the whole flow after an interruption is safe: evidenced filesystem steps are no-ops, configuration steps resume from bounded in-progress evidence, and successful configuration completion removes that checkpoint.
 
 ## Step 4 — Summarize
 
