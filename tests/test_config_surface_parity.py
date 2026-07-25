@@ -11,16 +11,19 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cli.config_schema import CONFIG_SCHEMA
+from cli.config_schema import CONFIG_SCHEMA, MACHINE_RECORD_SCHEMA_VERSION
 from cli.config_surface_parity import (
     check_surface_registry,
+    closed_value_parity,
     guidance_hygiene,
     legacy_vocabulary,
     load_registry,
+    registry_inventory_evidence,
     schema_field_parity,
     wrapper_authority_vocabulary,
 )
 from cli.main import build_parser
+from cli.protocol_gate import read_shipped_project_schema_version
 from mcp_server import server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,11 +58,11 @@ def _run_cli(home: Path, *args: str) -> tuple[int, dict, str]:
     return result.returncode, records[0], result.stderr
 
 
-def _normalized_projection_bytes(
+def _normalized_projection_payload(
     record: object,
     fixture_root: Path,
     repository_root: Path = ROOT,
-) -> int:
+) -> bytes:
     replacements = {
         str(fixture_root): "<fixture-root>",
         str(fixture_root.resolve()): "<fixture-root>",
@@ -83,7 +86,64 @@ def _normalized_projection_bytes(
     payload = json.dumps(
         normalize(record), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
-    return len(payload.encode("utf-8"))
+    return payload.encode("utf-8")
+
+
+def _normalized_projection_bytes(
+    record: object,
+    fixture_root: Path,
+    repository_root: Path = ROOT,
+) -> int:
+    return len(
+        _normalized_projection_payload(
+            record,
+            fixture_root,
+            repository_root=repository_root,
+        )
+    )
+
+
+def _additive_identity_delta(project_schema_version: str | None = None) -> int:
+    target = (
+        read_shipped_project_schema_version()
+        if project_schema_version is None
+        else project_schema_version
+    )
+    additive_identity_fields = {
+        "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "schema_identity": CONFIG_SCHEMA["schema_identity"],
+        "project_schema_version": target,
+    }
+    # Adding these fields to an existing non-empty compact JSON object
+    # replaces its final "}" with "," plus the three field encodings.
+    return len(
+        json.dumps(
+            additive_identity_fields,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ) - 1
+
+
+def _run_cli_from_checkout(
+    checkout: Path,
+    home: Path,
+    *args: str,
+) -> tuple[int, dict, str]:
+    env = {"HOME": str(home), "PATH": os.environ.get("PATH", "")}
+    result = subprocess.run(
+        [sys.executable, str(checkout / "bin" / "cartopian"), *args],
+        cwd=checkout,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    records = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    if len(records) != 1:
+        raise AssertionError(
+            f"{args[0]} emitted {len(records)} records; stderr={result.stderr!r}"
+        )
+    return result.returncode, records[0], result.stderr
 
 
 class TestSurfaceRegistry(unittest.TestCase):
@@ -311,6 +371,7 @@ class TestSurfaceRegistry(unittest.TestCase):
         budgets = {
             item["surface"]: item for item in registry["context_budgets"]
         }
+        derived_identity_delta = _additive_identity_delta()
         self.assertEqual(
             budgets["next-action"]["phase_00_baseline"],
             {"label": "Phase 00 status/next-action stdout NDJSON", "bytes": 1150},
@@ -325,11 +386,11 @@ class TestSurfaceRegistry(unittest.TestCase):
             {name: item["task_delta_bytes"] for name, item in budgets.items()},
             {
                 "resolve-config": 26,
-                "next-action": 114,
-                "task-bundle": 106,
-                "handoff-packet": 114,
-                "containment-matrix": 114,
-                "plan-audit": 114,
+                "next-action": derived_identity_delta,
+                "task-bundle": derived_identity_delta,
+                "handoff-packet": derived_identity_delta,
+                "containment-matrix": derived_identity_delta,
+                "plan-audit": derived_identity_delta,
             },
         )
         for item in budgets.values():
@@ -338,38 +399,228 @@ class TestSurfaceRegistry(unittest.TestCase):
             self.assertIn("project_schema_version", benefit)
             self.assertNotIn("aligned canonical fixture", json.dumps(item))
 
-    def test_projection_measurement_is_checkout_location_independent(self) -> None:
-        fixture = Path("/tmp/cartopian-fixture")
-        short_root = Path("/tmp/cartopian")
-        long_root = Path(
-            "/tmp/cartopian-checkout-with-a-deliberately-much-longer-location"
+    def test_identity_delta_tracks_authoritative_marker_length(self) -> None:
+        current_target = read_shipped_project_schema_version()
+        longer_future_target = "v100.200.300"
+        self.assertNotEqual(
+            len(current_target),
+            len(longer_future_target),
         )
-        short_record = {
-            "project_path": str(fixture / "project"),
-            "version_identities": {
-                "installed_content": {"loaded_root": str(short_root.resolve())},
-                "running_server": {
-                    "loaded_content": {"loaded_root": str(short_root.resolve())}
-                },
-            },
+        self.assertNotEqual(
+            _additive_identity_delta(current_target),
+            _additive_identity_delta(longer_future_target),
+        )
+
+    def test_every_schema_claim_declares_a_real_parity_mechanism(self) -> None:
+        registry = load_registry(REGISTRY)
+        table_owners = {
+            rule["surface"] for rule in registry["schema_field_parity"]
         }
-        long_record = {
-            "project_path": str(fixture / "project"),
-            "version_identities": {
-                "installed_content": {"loaded_root": str(long_root.resolve())},
-                "running_server": {
-                    "loaded_content": {"loaded_root": str(long_root.resolve())}
-                },
-            },
+        prose_owners = {
+            rule["surface"] for rule in registry["closed_value_parity"]
         }
+        claiming = [
+            entry
+            for entry in registry["surfaces"]
+            if (
+                "CONFIG_SCHEMA.fields" in entry["facts_consumed"]
+                or "CONFIG_SCHEMA.fields[].values" in entry["facts_consumed"]
+            )
+        ]
+        self.assertTrue(claiming)
+        for entry in claiming:
+            with self.subTest(surface=entry["id"]):
+                mechanism = entry["parity_mechanism"]
+                if mechanism["kind"] == "schema-field-table":
+                    self.assertIn(entry["id"], table_owners)
+                elif mechanism["kind"] == "closed-value-prose":
+                    self.assertIn(entry["id"], prose_owners)
+                else:
+                    self.assertEqual(mechanism["kind"], "executable-contract")
+                    anchor_path, anchor_symbol = mechanism["check"].split("::", 1)
+                    self.assertIn(
+                        f"def {anchor_symbol}(",
+                        (ROOT / anchor_path).read_text(encoding="utf-8"),
+                    )
+
+    def test_real_six_surface_pipeline_is_checkout_root_invariant(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-checkout-invariance-") as raw:
+            root = Path(raw)
+            short_checkout = root / "r"
+            long_checkout = root / ("repository-" + ("x" * 96))
+            self.assertGreater(
+                len(str(long_checkout)) - len(str(short_checkout)),
+                80,
+            )
+            ignore = shutil.ignore_patterns(
+                ".git",
+                "tests",
+                "__pycache__",
+                ".pytest_cache",
+            )
+            for checkout in (short_checkout, long_checkout):
+                shutil.copytree(ROOT, checkout, ignore=ignore)
+
+            fixture = root / "fixture"
+            home = fixture / "home"
+            project = fixture / "project"
+            work_root = fixture / "tool-repo"
+            for path in (
+                home,
+                project / "phases",
+                project / "tasks" / "open",
+                project / "tasks" / "in-progress",
+                project / "tasks" / "in-review",
+                project / "tasks" / "done",
+                project / "prompts",
+                project / "reports",
+                project / "specs",
+                project / "decisions",
+                project / "reviews",
+                project / "resources",
+                work_root,
+            ):
+                path.mkdir(parents=True, exist_ok=True)
+            (project / "cartopian.toml").write_text(
+                TestProjectionParity._CONFIG,
+                encoding="utf-8",
+            )
+            (project / "cartopian.local.toml").write_text(
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+                encoding="utf-8",
+            )
+            (project / "STATE.md").write_text(
+                "# State\n\n## Situation\n\nNone.\n",
+                encoding="utf-8",
+            )
+            (project / "STANDARDS.md").write_text(
+                "# Standards\n",
+                encoding="utf-8",
+            )
+            (project / "phases" / "PHASE-01-build.md").write_text(
+                "# PHASE-01: Build\n",
+                encoding="utf-8",
+            )
+            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task.write_text(
+                "# TASK-01-001: Build\n\n"
+                "Phase: PHASE-01-build\n"
+                "Plan ref: n/a\n"
+                "Work root: tool-repo\n"
+                "Assignee: coder\n"
+                "Spec: none\n"
+                "Depends on: n/a\n"
+                "Blocked by: n/a\n"
+                "Created: 2026-07-25\n"
+                "Evidence gate: n/a\n\n"
+                "## Goal\n\nBuild the fixture.\n",
+                encoding="utf-8",
+            )
+            commands = {
+                "resolve-config": ("resolve-config", str(project)),
+                "next-action": ("next-action", str(project)),
+                "task-bundle": ("task-bundle", str(task)),
+                "handoff-packet": (
+                    "handoff-packet",
+                    str(task),
+                    "--role",
+                    "coder",
+                ),
+                "containment-matrix": ("containment-matrix", str(project)),
+                "plan-audit": ("plan-audit", str(project)),
+            }
+            pipelines = {}
+            for checkout in (short_checkout, long_checkout):
+                checkout_records = {}
+                for name, args in commands.items():
+                    code, record, stderr = _run_cli_from_checkout(
+                        checkout,
+                        home,
+                        *args,
+                    )
+                    self.assertIn(code, (0, 1), msg=f"{name}: {stderr}")
+                    checkout_records[name] = _normalized_projection_payload(
+                        record,
+                        fixture,
+                        repository_root=checkout,
+                    )
+                pipelines[checkout.name] = checkout_records
+            self.assertEqual(
+                pipelines[short_checkout.name],
+                pipelines[long_checkout.name],
+            )
+
+    def test_guidance_hygiene_scopes_hosted_ci_placeholders_to_workspaces(self) -> None:
         self.assertEqual(
-            _normalized_projection_bytes(
-                short_record, fixture, repository_root=short_root
+            guidance_hygiene(
+                "Use $HOME/project, ${HOME}/project, "
+                "/home/runner/work/repository/repository, and "
+                "C:\\Users\\runneradmin\\work\\repository."
             ),
-            _normalized_projection_bytes(
-                long_record, fixture, repository_root=long_root
-            ),
+            (),
         )
+        self.assertEqual(
+            guidance_hygiene(
+                "/home/runner/private /Users/runner/private "
+                "C:\\Users\\runneradmin\\private"
+            ),
+            ("linux-user-path", "macos-user-path", "windows-user-path"),
+        )
+
+    def test_registry_inventory_evidence_fails_on_semantic_declaration(self) -> None:
+        registry = load_registry(REGISTRY)
+        self.assertTrue(registry_inventory_evidence(registry)["inventory_only"])
+        mutated = json.loads(json.dumps(registry))
+        mutated["accepted_values"] = {"automation.initiation": ["invented"]}
+        evidence = registry_inventory_evidence(mutated)
+        self.assertFalse(evidence["inventory_only"])
+        self.assertEqual(
+            evidence["forbidden_semantic_declarations"],
+            ("accepted_values",),
+        )
+
+    def test_closed_value_prose_mutations_are_deterministically_rejected(self) -> None:
+        probes = (
+            ("README.md", "`task_run`", "`teleport_run`"),
+            (
+                "README.md",
+                'initiation = "operator"',
+                'initiation = "instant"',
+            ),
+            (
+                "README.md",
+                'planning = "required"',
+                'planning = "mandatory"',
+            ),
+            (
+                "protocol/CONVENTIONS.md",
+                "`task_run`, `task_review`, and `planning_review`",
+                "`teleport_run`, `task_review`, and `planning_review`",
+            ),
+            (
+                "protocol/CONVENTIONS.md",
+                'confirmation = "each-handoff"',
+                'confirmation = "sometimes"',
+            ),
+            (
+                "protocol/CONVENTIONS.md",
+                'planning = "required"',
+                'planning = "mandatory"',
+            ),
+            ("protocol/CONVENTIONS.md", "`squash`", "`octopus`"),
+        )
+        for relative, old, new in probes:
+            with self.subTest(surface=relative, invented=new):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                mutated = source.replace(old, new, 1)
+                first = closed_value_parity(mutated, surface=relative)
+                second = closed_value_parity(mutated, surface=relative)
+                self.assertEqual(first, second)
+                self.assertTrue(first)
+                self.assertTrue(
+                    all(item.code == "schema-value-invented" for item in first)
+                )
 
 
 class TestCliMcpContractParity(unittest.TestCase):

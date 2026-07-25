@@ -48,6 +48,15 @@ _MACHINE_LOCAL_PATH_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 _SAFE_EXAMPLE_USERS = frozenset({"...", "me", "user", "username"})
+_HOSTED_CI_PATH_PATTERNS: Mapping[str, re.Pattern[str]] = {
+    "linux-user-path": re.compile(
+        r"/home/runner/work/[^/\s'\"`]+(?:/[^/\s'\"`]+)*"
+    ),
+    "windows-user-path": re.compile(
+        r"(?i)\b[A-Z]:\\Users\\runneradmin\\work\\"
+        r"[^\\\s'\"`]+(?:\\[^\\\s'\"`]+)*"
+    ),
+}
 _OPERATOR_IDENTIFIER_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE
 )
@@ -74,6 +83,31 @@ _ACCEPTED_VALUE_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 _BARE_CLOSED_VALUE_RE = re.compile(r"\b[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+\b")
+_ASSIGNED_CLOSED_VALUE_RE = re.compile(
+    r"(?P<field>[A-Za-z][A-Za-z0-9_.<>*]*)\s*=\s*"
+    r"(?P<value>\"[^\"\n]*\"|\[[^\]\n]*\])"
+)
+_SUPPORTED_VALUES_HEADER_RE = re.compile(
+    r"Supported\s+`(?P<field>[^`]+)`\s+values\s+are:\s*$",
+    re.IGNORECASE,
+)
+_PROSE_VALUE_CLAIM_RE = re.compile(
+    r"\b(?:accepts?\s+only|supported\s+values?\s+are|allowed\s+values?\s+are"
+    r"|values?\s+are|modes?\s+are|one\s+of|closed\s+unique\s+list[^.]*?\bfrom)\b",
+    re.IGNORECASE,
+)
+_FORBIDDEN_REGISTRY_SEMANTIC_KEYS = frozenset(
+    {
+        "accepted_values",
+        "allowed_values",
+        "capability_grants",
+        "defaults",
+        "merge_semantics",
+        "precedence",
+        "scope_rules",
+        "values",
+    }
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -262,6 +296,185 @@ def schema_field_parity(
     return tuple(sorted(set(diagnostics)))
 
 
+def _closed_value_domains() -> Dict[str, Tuple[str, Tuple[str, ...]]]:
+    """Return unambiguous prose aliases for schema-owned closed domains."""
+    fields = CONFIG_SCHEMA["fields"]
+    leaf_counts: Dict[str, int] = {}
+    for field, contract in fields.items():
+        if "values" in contract:
+            leaf = field.rsplit(".", 1)[-1]
+            leaf_counts[leaf] = leaf_counts.get(leaf, 0) + 1
+
+    domains: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
+    for field, contract in fields.items():
+        if "values" not in contract:
+            continue
+        expected = tuple(str(value) for value in contract["values"])
+        aliases = {field, _rendered_field_name(field)}
+        leaf = field.rsplit(".", 1)[-1]
+        if leaf_counts[leaf] == 1:
+            aliases.add(leaf)
+        for alias in aliases:
+            domains[alias] = (field, expected)
+    return domains
+
+
+def _closed_domain(
+    authored_name: str,
+) -> Tuple[str, Tuple[str, ...]] | None:
+    normalized = authored_name.strip().strip("`")
+    return _closed_value_domains().get(normalized)
+
+
+def _closed_value_diagnostic(
+    *,
+    surface: str,
+    line_number: int,
+    field: str,
+    expected: Sequence[str],
+    observed: Sequence[str],
+) -> SurfaceDiagnostic | None:
+    invented = tuple(sorted(set(observed) - set(expected)))
+    if not invented:
+        return None
+    return SurfaceDiagnostic(
+        "schema-value-invented",
+        surface,
+        f"line {line_number}, {_rendered_field_name(field)}: {', '.join(invented)}",
+    )
+
+
+def closed_value_parity(
+    text: str,
+    *,
+    surface: str,
+) -> Tuple[SurfaceDiagnostic, ...]:
+    """Reject invented values in prose without requiring a complete field table.
+
+    Assignments and explicit accepted-value claims provide representation and
+    context. Every accepted value is obtained from ``CONFIG_SCHEMA["fields"]``
+    at check time; prose is never required to republish every field or value.
+    """
+    diagnostics: List[SurfaceDiagnostic] = []
+    lines = text.splitlines()
+
+    for line_number, line in enumerate(lines, start=1):
+        for match in _ASSIGNED_CLOSED_VALUE_RE.finditer(line):
+            domain = _closed_domain(match.group("field"))
+            if domain is None:
+                continue
+            field, expected = domain
+            observed = tuple(
+                re.findall(r"[\"']([^\"']+)[\"']", match.group("value"))
+            )
+            diagnostic = _closed_value_diagnostic(
+                surface=surface,
+                line_number=line_number,
+                field=field,
+                expected=expected,
+                observed=observed,
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+
+        header = _SUPPORTED_VALUES_HEADER_RE.search(line)
+        if header is not None:
+            domain = _closed_domain(header.group("field"))
+            if domain is not None:
+                field, expected = domain
+                observed: List[str] = []
+                cursor = line_number
+                while cursor < len(lines) and not lines[cursor].strip():
+                    cursor += 1
+                while cursor < len(lines) and lines[cursor].lstrip().startswith("-"):
+                    tokens = _INLINE_CODE_RE.findall(lines[cursor])
+                    if tokens:
+                        observed.append(tokens[0])
+                    cursor += 1
+                diagnostic = _closed_value_diagnostic(
+                    surface=surface,
+                    line_number=line_number,
+                    field=field,
+                    expected=expected,
+                    observed=observed,
+                )
+                if diagnostic is not None:
+                    diagnostics.append(diagnostic)
+
+        claim = _PROSE_VALUE_CLAIM_RE.search(line)
+        if claim is None:
+            continue
+        preceding = line[:claim.start()]
+        located_domains: List[Tuple[int, Tuple[str, Tuple[str, ...]]]] = []
+        for alias, value in _closed_value_domains().items():
+            matches = list(
+                re.finditer(
+                    rf"(?<![\w.])`?{re.escape(alias)}`?(?![\w.])",
+                    preceding,
+                )
+            )
+            if matches:
+                located_domains.append((matches[-1].end(), value))
+        line_domains = (
+            {max(located_domains, key=lambda item: item[0])[1]}
+            if located_domains
+            else set()
+        )
+        for field, expected in sorted(line_domains):
+            claim_text = line[claim.end():]
+            claim_text = re.split(r"\.\s|,\s+mapping\b", claim_text, maxsplit=1)[0]
+            observed = tuple(_INLINE_CODE_RE.findall(claim_text))
+            diagnostic = _closed_value_diagnostic(
+                surface=surface,
+                line_number=line_number,
+                field=field,
+                expected=expected,
+                observed=observed,
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+
+    return tuple(sorted(set(diagnostics)))
+
+
+def registry_inventory_evidence(
+    registry: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Compute evidence that the registry inventories, but does not define, semantics."""
+    forbidden_paths: List[str] = []
+
+    def walk(value: Any, path: Tuple[str, ...] = ()) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                child = path + (str(key),)
+                if key in _FORBIDDEN_REGISTRY_SEMANTIC_KEYS:
+                    forbidden_paths.append(".".join(child))
+                walk(item, child)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, path + (str(index),))
+
+    walk(registry)
+    authority_reference = (
+        registry.get("authority") == "cli/config_schema.py::CONFIG_SCHEMA"
+    )
+    return {
+        "authority_reference": authority_reference,
+        "forbidden_semantic_declarations": tuple(sorted(forbidden_paths)),
+        "inventory_only": authority_reference and not forbidden_paths,
+    }
+
+
+def _test_anchor_exists(root: Path, anchor: str) -> bool:
+    path_text, separator, symbol = anchor.partition("::")
+    path = root / path_text
+    if not separator or not symbol or not path.is_file():
+        return False
+    leaf = symbol.rsplit("::", 1)[-1]
+    text = path.read_text(encoding="utf-8")
+    return re.search(rf"^\s*(?:def|class)\s+{re.escape(leaf)}\b", text, re.MULTILINE) is not None
+
+
 def _approved_test_compatibility_files(
     root: Path,
     registry: Mapping[str, Any],
@@ -297,6 +510,12 @@ def guidance_hygiene(
     issues = set()
     for name, pattern in _MACHINE_LOCAL_PATH_PATTERNS:
         for match in pattern.finditer(text):
+            hosted_pattern = _HOSTED_CI_PATH_PATTERNS.get(name)
+            if (
+                hosted_pattern is not None
+                and hosted_pattern.match(text, match.start()) is not None
+            ):
+                continue
             user = match.group("user").strip("<>").lower()
             if user in _SAFE_EXAMPLE_USERS or match.group("user").startswith("<"):
                 continue
@@ -439,10 +658,14 @@ def check_surface_registry(
     for rule in schema_rules:
         owner = str(rule.get("surface", ""))
         entry = entries_by_id.get(owner)
+        mechanism = entry.get("parity_mechanism", {}) if entry is not None else {}
         if (
             entry is None
             or entry.get("mode") != "parity-validated"
             or "CONFIG_SCHEMA.fields" not in entry.get("facts_consumed", [])
+            or mechanism.get("kind") != "schema-field-table"
+            or mechanism.get("check")
+            != "cli/config_surface_parity.py::schema_field_parity"
         ):
             diagnostics.append(
                 SurfaceDiagnostic(
@@ -476,10 +699,109 @@ def check_surface_registry(
                     )
                 )
                 continue
+            text = matched_path.read_text(encoding="utf-8")
+            if rule.get("strip_comment_prefix") is True:
+                text = "\n".join(
+                    line[2:] if line.startswith("# ") else line
+                    for line in text.splitlines()
+                )
+            diagnostics.extend(schema_field_parity(text, surface=relative))
+
+    closed_rules = registry.get("closed_value_parity", [])
+    for rule in closed_rules:
+        owner = str(rule.get("surface", ""))
+        entry = entries_by_id.get(owner)
+        mechanism = entry.get("parity_mechanism", {}) if entry is not None else {}
+        if (
+            entry is None
+            or entry.get("mode") != "parity-validated"
+            or "CONFIG_SCHEMA.fields[].values" not in entry.get("facts_consumed", [])
+            or mechanism.get("kind") != "closed-value-prose"
+            or mechanism.get("check")
+            != "cli/config_surface_parity.py::closed_value_parity"
+        ):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "closed-value-parity-registration",
+                    owner or REGISTRY_NAME,
+                    "closed-value prose owner must declare its schema-derived covering check",
+                )
+            )
+            continue
+        owner_paths = {
+            path.relative_to(root).as_posix()
+            for path in _files_for_patterns(root, entry.get("paths", []))
+        }
+        matched = _files_for_patterns(root, rule.get("paths", []))
+        if not matched:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "closed-value-parity-registration",
+                    owner,
+                    "closed-value parity rule matches no repository path",
+                )
+            )
+        for matched_path in matched:
+            relative = matched_path.relative_to(root).as_posix()
+            if relative not in owner_paths:
+                diagnostics.append(
+                    SurfaceDiagnostic(
+                        "closed-value-parity-registration",
+                        owner,
+                        f"{relative} is not registered to the declared parity owner",
+                    )
+                )
+                continue
             diagnostics.extend(
-                schema_field_parity(
+                closed_value_parity(
                     matched_path.read_text(encoding="utf-8"),
                     surface=relative,
+                )
+            )
+
+    schema_rule_owners = {
+        str(rule.get("surface", "")) for rule in schema_rules
+    }
+    closed_rule_owners = {
+        str(rule.get("surface", "")) for rule in closed_rules
+    }
+    for entry in registry.get("surfaces", []):
+        facts = entry.get("facts_consumed", [])
+        if (
+            "CONFIG_SCHEMA.fields" not in facts
+            and "CONFIG_SCHEMA.fields[].values" not in facts
+        ):
+            continue
+        surface = str(entry.get("id", ""))
+        mechanism = entry.get("parity_mechanism")
+        if not isinstance(mechanism, dict):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "parity-mechanism",
+                    surface,
+                    "schema parity claim has no declared parity_mechanism",
+                )
+            )
+            continue
+        kind = mechanism.get("kind")
+        if kind == "schema-field-table":
+            covered = surface in schema_rule_owners
+        elif kind == "closed-value-prose":
+            covered = surface in closed_rule_owners
+        elif kind == "executable-contract":
+            check = str(mechanism.get("check", ""))
+            covered = (
+                entry.get("test_anchor") == check
+                and _test_anchor_exists(root, check)
+            )
+        else:
+            covered = False
+        if not covered:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "parity-mechanism",
+                    surface,
+                    f"declared mechanism {kind!r} has no real covering check",
                 )
             )
 

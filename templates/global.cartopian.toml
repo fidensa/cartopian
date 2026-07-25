@@ -27,6 +27,36 @@
 # metadata file: chosen tools or stack, working standards, and cycle
 # constraints) is unrelated to this global config; it is mentioned here
 # only because operators sometimes confuse the two.
+#
+# Authoritative field inventory. This commented Markdown table is checked
+# against cli/config_schema.py so renamed fields and closed-value drift fail
+# deterministic parity validation while the installed seed remains empty.
+#
+# | Field | Accepted values / type |
+# | --- | --- |
+# | `project.id` | kebab-case string |
+# | `project.name` | non-empty string |
+# | `project.project_schema_version` | `vX.Y.Z` |
+# | `project.work_roots` | unique name list |
+# | `roles.<role>.description` | non-empty string |
+# | `roles.<role>.grants` | closed capability/preset list |
+# | `roles.<role>.launch.target` | non-empty string |
+# | `roles.<role>.launch.model` | non-empty string |
+# | `roles.<role>.launch.effort` | non-empty string |
+# | `roles.<role>.launch.timeout` | positive duration |
+# | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` |
+# | `reviews.planning` | `required`, `off` |
+# | `reviews.planning_role` | role reference |
+# | `reviews.task_closure` | `required`, `off` |
+# | `reviews.task_role` | role reference |
+# | `automation.initiation` | `operator`, `auto` |
+# | `automation.confirmation` | `each-handoff`, `until-blocked` |
+# | `automation.max_handoffs_per_run` | positive integer |
+# | `defaults.git_versioning` | boolean |
+# | `git.pm_owns_product_branches` | boolean |
+# | `git.default_branch_pattern` | non-empty string |
+# | `git.default_merge_strategy` | `merge`, `squash`, `rebase` |
+# | `work_roots.*` | absolute path |
 
 # -----------------------------------------------------------------------------
 # [defaults]

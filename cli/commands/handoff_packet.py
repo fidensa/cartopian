@@ -186,7 +186,12 @@ def handler(args: argparse.Namespace) -> int:
     try:
         resolved = resolve_project_configuration(project_root)
     except _CliError as err:
-        stderr_error(err.message)
+        if err.prefix == "guard":
+            stderr_guard(err.message)
+        elif err.prefix == "usage":
+            stderr_usage(err.message)
+        else:
+            stderr_error(err.message)
         return err.exit_code
 
     roles = resolved["roles"]

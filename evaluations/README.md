@@ -99,3 +99,21 @@ label. Category validation should close its input and fixture schemas;
 evaluation should return only normalized outcomes and safe, deterministic
 diagnostics. Renderers consume normalized records and require no
 category-specific changes.
+
+The Phase 02 configuration compatibility matrix is a separate end-to-end tier:
+
+```sh
+python3 -m evaluations.configuration_matrix
+```
+
+It materializes only temporary fixture copies, invokes the authoritative
+configuration, migration, lifecycle, MCP, version, parity, and hygiene
+interfaces, and emits compact deterministic JSON. Repeated output must be
+byte-identical. Native proprietary clients are labeled `static/unverified`;
+ordinary CI does not launch them. Hygiene deliberately permits shell home
+variables (`$HOME`, `${HOME}`), explicit placeholder users such as `<name>`,
+and only hosted-CI workspace path shapes such as
+`/home/runner/work/<repository>` and
+`C:\Users\runneradmin\work\<repository>`. The same account names elsewhere in
+a home directory remain detectable, as do concrete non-placeholder home
+users, operator email addresses, and secret-shaped values.

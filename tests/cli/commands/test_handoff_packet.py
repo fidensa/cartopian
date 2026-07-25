@@ -176,6 +176,28 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["reviews"]["task_closure"]["mode"], "off")
 
 
+class TestHandoffPacketProjectGuardParity(unittest.TestCase):
+    def test_missing_project_table_preserves_shared_guard_prefix(self) -> None:
+        with project_scaffold(
+            cartopian_toml="[defaults]\ngit_versioning = false\n"
+        ) as scaffold:
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-099-workspace-config.md",
+                "# TASK-01-099: Workspace config\n",
+            )
+            stdout, stderr, rc = _invoke(str(task_path), "coder")
+            toml_path = (scaffold.project_root / "cartopian.toml").resolve()
+        self.assertEqual(rc, EXIT_FAIL)
+        self.assertEqual(stdout, "")
+        self.assertEqual(
+            stderr.rstrip("\n"),
+            f"[guard] {toml_path} is a Cartopian workspace config, "
+            "not a project config. "
+            "Run `cartopian discover-projects` (or call the `discover_projects` MCP tool) "
+            "to list registered projects, then pass a project id or absolute path to this command.",
+        )
+
+
 class TestHandoffPacketNoPlanState(unittest.TestCase):
     """No IMPLEMENTATION_PLAN.md and no role/git/automation extras — every
     nullable field must be serialized as JSON ``null`` rather than elided.

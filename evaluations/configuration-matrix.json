@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "migration-legacy",
+      "probe": "migration",
+      "fixture": "legacy",
+      "expected": "complete",
+      "expected_plan_status": "planned",
+      "expected_classifications": []
+    },
+    {
+      "id": "migration-transitional",
+      "probe": "migration",
+      "fixture": "transitional",
+      "expected": "complete",
+      "expected_plan_status": "planned",
+      "expected_classifications": []
+    },
+    {
+      "id": "migration-canonical",
+      "probe": "migration",
+      "fixture": "canonical",
+      "expected": "noop",
+      "expected_plan_status": "noop",
+      "expected_classifications": []
+    },
+    {
+      "id": "migration-conflict-pending",
+      "probe": "migration",
+      "fixture": "conflict",
+      "expected": "pending",
+      "expected_plan_status": "pending",
+      "expected_classifications": [
+        "pending-operator-decision"
+      ]
+    },
+    {
+      "id": "migration-unknown-grant-refusal",
+      "probe": "migration",
+      "fixture": "unknown-grant",
+      "expected": "refused",
+      "expected_plan_status": "refused",
+      "expected_classifications": [
+        "migration-refusal"
+      ]
+    },
+    {
+      "id": "migration-malformed-marker-refusal",
+      "probe": "migration",
+      "fixture": "malformed",
+      "expected": "refused",
+      "expected_plan_status": "refused",
+      "expected_classifications": [
+        "migration-refusal"
+      ]
+    },
+    {
+      "id": "migration-newer-marker-refusal",
+      "probe": "migration",
+      "fixture": "newer",
+      "expected": "refused",
+      "expected_plan_status": "refused",
+      "expected_classifications": [
+        "migration-refusal"
+      ]
+    },
+    {
+      "id": "migration-interruption-recovery",
+      "probe": "interruption",
+      "fixture": "legacy",
+      "expected": "complete"
+    },
+    {
+      "id": "cross-surface-registry-parity",
+      "probe": "surface-parity",
+      "expected": "complete"
+    },
+    {
+      "id": "launch-authority-separation",
+      "probe": "launch-separation",
+      "expected": "complete"
+    },
+    {
+      "id": "peer-version-identities",
+      "probe": "version-identities",
+      "expected": "complete"
+    },
+    {
+      "id": "missing-project-guard-parity",
+      "probe": "missing-project-guards",
+      "expected": "complete"
+    },
+    {
+      "id": "guidance-hygiene-placeholders",
+      "probe": "hygiene",
+      "expected": "complete"
+    },
+    {
+      "id": "multiple-invalid-diagnostics",
+      "probe": "invalid-diagnostics",
+      "expected": "complete"
+    },
+    {
+      "id": "containment-and-deidentification",
+      "probe": "safety-boundaries",
+      "expected": "complete"
+    }
+  ],
+  "coverage": [
+    {
+      "area": "scope ownership, precedence, attribution, grants, and canonical resolution",
+      "cases": [
+        "migration-legacy",
+        "migration-transitional",
+        "launch-authority-separation"
+      ],
+      "surfaces": [
+        "config migration",
+        "resolve_configuration",
+        "capability resolution"
+      ]
+    },
+    {
+      "area": "deterministic migration, marker-last ordering, no-op rerun, and interruption recovery",
+      "cases": [
+        "migration-legacy",
+        "migration-transitional",
+        "migration-canonical",
+        "migration-interruption-recovery"
+      ],
+      "surfaces": [
+        "plan_configuration_migration",
+        "execute_configuration_migration"
+      ]
+    },
+    {
+      "area": "conflict, unknown grant, malformed marker, and newer marker refusal",
+      "cases": [
+        "migration-conflict-pending",
+        "migration-unknown-grant-refusal",
+        "migration-malformed-marker-refusal",
+        "migration-newer-marker-refusal",
+        "multiple-invalid-diagnostics"
+      ],
+      "surfaces": [
+        "configuration migration planner"
+      ]
+    },
+    {
+      "area": "generation, mediated editing, lifecycle, CLI/MCP, installer, wrapper, bridge, template, protocol, and example parity",
+      "cases": [
+        "cross-surface-registry-parity",
+        "missing-project-guard-parity",
+        "guidance-hygiene-placeholders"
+      ],
+      "surfaces": [
+        "config-surfaces registry",
+        "six lifecycle projections",
+        "MCP CLI adapter",
+        "guidance hygiene"
+      ]
+    },
+    {
+      "area": "launch permission separation and operator control",
+      "cases": [
+        "launch-authority-separation"
+      ],
+      "surfaces": [
+        "resolve_configuration",
+        "protocol guidance parity"
+      ]
+    },
+    {
+      "area": "deidentification, capability activation, work-root containment, manual fallback, PM scope, and human-owned git",
+      "cases": [
+        "containment-and-deidentification",
+        "launch-authority-separation"
+      ],
+      "surfaces": [
+        "deidentify_spec",
+        "resolve_grants",
+        "resolve_configuration"
+      ]
+    },
+    {
+      "area": "release, installed content, project schema, running MCP, and transport identities",
+      "cases": [
+        "peer-version-identities"
+      ],
+      "surfaces": [
+        "version_identities",
+        "protocol_gate"
+      ]
+    }
+  ],
+  "canonical_suites": [
+    "tests/test_config_schema_contract.py",
+    "tests/cli/commands/test_generate_config.py",
+    "tests/cli/commands/test_update_config.py",
+    "tests/cli/commands/test_resolve_config.py",
+    "tests/cli/commands/test_dispatch.py",
+    "tests/cli/commands/test_wait_handoff.py",
+    "tests/cli/commands/test_wait_report.py",
+    "tests/cli/commands/test_containment_matrix.py",
+    "tests/mcp_server/test_server.py",
+    "tests/test_install.py",
+    "tests/wrappers",
+    "tests/test_startup_launch_guidance.py",
+    "tests/test_protocol_gate.py",
+    "tests/cli/test_deidentify.py"
+  ]
+}

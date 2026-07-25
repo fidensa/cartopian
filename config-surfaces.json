@@ -29,7 +29,7 @@
         "bytes": 1099
       },
       "phase_00_status": "justified exception",
-      "task_delta_bytes": 106,
+      "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity without introducing a new migration-readiness gate.",
       "max_output_bytes": 634
     },
@@ -162,6 +162,23 @@
       "paths": [
         "CONFIG-MAPPING.md"
       ]
+    },
+    {
+      "surface": "configuration-templates-and-examples",
+      "paths": [
+        "templates/global.cartopian.toml"
+      ],
+      "strip_comment_prefix": true
+    }
+  ],
+  "closed_value_parity": [
+    {
+      "surface": "configuration-guidance",
+      "paths": [
+        "README.md",
+        "CAPABILITIES.md",
+        "protocol/CONVENTIONS.md"
+      ]
     }
   ],
   "test_legacy_compatibility_allowlist": [
@@ -233,11 +250,15 @@
         "CONFIG_SCHEMA.fields",
         "CONFIG_SCHEMA.auto_launch"
       ],
+      "parity_mechanism": {
+        "kind": "executable-contract",
+        "check": "tests/test_config_surface_parity.py::test_generator_and_editor_represent_every_schema_field"
+      },
       "output_projection": [
         "preferred authored project configuration",
         "preferred authored machine-local configuration"
       ],
-      "test_anchor": "tests/test_config_surface_parity.py::TestCliMcpContractParity",
+      "test_anchor": "tests/test_config_surface_parity.py::test_generator_and_editor_represent_every_schema_field",
       "legacy_policy": "forbidden"
     },
     {
@@ -353,10 +374,7 @@
     {
       "id": "human-configuration-reference",
       "paths": [
-        "README.md",
-        "CONFIG-MAPPING.md",
-        "CAPABILITIES.md",
-        "protocol/CONVENTIONS.md"
+        "CONFIG-MAPPING.md"
       ],
       "owner_contract": "cli/config_schema.py::CONFIG_SCHEMA",
       "mode": "parity-validated",
@@ -366,6 +384,35 @@
         "CONFIG_SCHEMA.precedence",
         "IDENTITY_CONTRACT"
       ],
+      "parity_mechanism": {
+        "kind": "schema-field-table",
+        "check": "cli/config_surface_parity.py::schema_field_parity"
+      },
+      "output_projection": [
+        "operator and maintainer guidance"
+      ],
+      "test_anchor": "tests/test_config_surface_parity.py::TestSurfaceRegistry",
+      "legacy_policy": "compatibility-labeled"
+    },
+    {
+      "id": "configuration-guidance",
+      "paths": [
+        "README.md",
+        "CAPABILITIES.md",
+        "protocol/CONVENTIONS.md"
+      ],
+      "owner_contract": "cli/config_schema.py::CONFIG_SCHEMA and IDENTITY_CONTRACT",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "CONFIG_SCHEMA.fields[].values",
+        "CONFIG_SCHEMA.scopes",
+        "CONFIG_SCHEMA.precedence",
+        "IDENTITY_CONTRACT"
+      ],
+      "parity_mechanism": {
+        "kind": "closed-value-prose",
+        "check": "cli/config_surface_parity.py::closed_value_parity"
+      },
       "output_projection": [
         "operator and maintainer guidance"
       ],
@@ -382,6 +429,10 @@
       "facts_consumed": [
         "CONFIG_SCHEMA.fields"
       ],
+      "parity_mechanism": {
+        "kind": "schema-field-table",
+        "check": "cli/config_surface_parity.py::schema_field_parity"
+      },
       "output_projection": [
         "current authored configuration examples"
       ],

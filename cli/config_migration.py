@@ -2003,6 +2003,7 @@ def plan_configuration_migration(
         has_residual = any(state.changed for state in states)
         entries = _entry_chain(detected, current_version, has_residual)
         steps: List[MigrationStep] = []
+        global_step: Optional[MigrationStep] = None
         global_after: Optional[bytes] = None
         if global_state.changed:
             global_after = _render_preserving(
@@ -2049,18 +2050,16 @@ def plan_configuration_migration(
                         pending=True,
                         affected_projects=impacts,
                     )
-            steps.append(
-                MigrationStep(
-                    "write-global",
-                    "write-global",
-                    "global",
-                    "cartopian.toml",
-                    global_path,
-                    home / ".cartopian",
-                    global_before,
-                    global_after,
-                    ("parse-target", "validate-global-scope", "resolve-equivalence"),
-                )
+            global_step = MigrationStep(
+                "write-global",
+                "write-global",
+                "global",
+                "cartopian.toml",
+                global_path,
+                home / ".cartopian",
+                global_before,
+                global_after,
+                ("parse-target", "validate-global-scope", "resolve-equivalence"),
             )
 
         source_marker = detected or "v0.1.0"
@@ -2095,6 +2094,13 @@ def plan_configuration_migration(
                     ),
                 )
             )
+        # Materialize project-owned compatibility facts before retiring a
+        # global legacy source they depend on. This makes every evidenced
+        # interruption boundary independently replannable without narrowing
+        # effective permissions. The governed-project marker still advances
+        # only after both configuration writes.
+        if global_step is not None:
+            steps.append(global_step)
         if source_marker != current_version:
             marker_before = interim_bytes if structural_change else project_before
             steps.append(

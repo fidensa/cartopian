@@ -85,7 +85,7 @@ class TestConfigurationMigration(unittest.TestCase):
             self.assertEqual(plan.equivalence["status"], "passed")
             self.assertEqual(
                 [step.kind for step in plan.steps],
-                ["write-global", "write-project", "update-marker"],
+                ["write-project", "write-global", "update-marker"],
             )
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
@@ -238,7 +238,7 @@ class TestConfigurationMigration(unittest.TestCase):
             self.assertEqual(evidence["status"], "in-progress")
             self.assertEqual(
                 [item["id"] for item in evidence["completed_steps"]],
-                ["write-global", "write-project"],
+                ["write-project"],
             )
             self.assertTrue(
                 all(
