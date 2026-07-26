@@ -319,8 +319,7 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 f'project_schema_version = "{shipped}"\n\n'
                 "[roles.coder]\n"
                 'description = "Implements assigned work."\n'
-                f"{activities}\n"
-                "[roles.coder.launch]\n"
+                f"{activities}"
                 'target = "cartopian-matrix-agent"\n\n'
                 "[reviews]\n"
                 'planning = "off"\n'
@@ -573,7 +572,7 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
             root,
             project_schema={
                 "value": "v0.5.0",
-                "target": "v0.6.0",
+                "target": "v0.7.0",
                 "state": "older",
                 "authority": "project-config-and-shipped-schema",
                 "verification": "verified",
@@ -582,10 +581,10 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
             mcp_protocol_version="2025-06-18",
         )
     classifications = {
-        value: protocol_gate.classify_project_schema_version(value, "v0.6.0")[
+        value: protocol_gate.classify_project_schema_version(value, "v0.7.0")[
             "status"
         ]
-        for value in ("v0.5.0", "v0.6.0", "v9.0.0", "malformed")
+        for value in ("v0.5.0", "v0.6.0", "v0.7.0", "v9.0.0", "malformed")
     }
     states = {
         "release": peers["release_version"]["state"],
@@ -607,7 +606,8 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
         "mcp_transport": "supported",
         "schema_classifications": {
             "v0.5.0": "older-migratable",
-            "v0.6.0": "current",
+            "v0.6.0": "older-migratable",
+            "v0.7.0": "current",
             "v9.0.0": "unknown-or-newer",
             "malformed": "unknown-or-newer",
         },
@@ -802,7 +802,7 @@ def _invalid_diagnostics(_case: dict[str, Any]) -> dict[str, Any]:
             "project": {
                 "id": "invalid-matrix",
                 "name": "Invalid Matrix",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "coder": {
@@ -873,7 +873,7 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
         "project": {
             "id": "safety-boundaries",
             "name": "Safety Boundaries",
-            "project_schema_version": "v0.6.0",
+            "project_schema_version": "v0.7.0",
             "work_roots": ["product"],
         },
         "roles": {

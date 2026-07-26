@@ -247,7 +247,7 @@ def _build_role_execution(
     timeout_args: List[str],
     declared_roles: Dict[str, str],
 ) -> Dict[str, Dict[str, Any]]:
-    """Build preferred role-local launch and permission fields."""
+    """Build preferred flat role-local execution and permission fields."""
     seen = {
         "target": set(),
         "model": set(),
@@ -322,7 +322,7 @@ def _build_role_execution(
 
     result: Dict[str, Dict[str, Any]] = {}
     for role in declared_roles:
-        launch: Dict[str, Any] = {}
+        block: Dict[str, Any] = {}
         for key, values in (
             ("target", targets),
             ("model", models),
@@ -330,10 +330,7 @@ def _build_role_execution(
             ("timeout", timeouts),
         ):
             if role in values:
-                launch[key] = values[role]
-        block: Dict[str, Any] = {}
-        if launch:
-            block["launch"] = launch
+                block[key] = values[role]
         if role in auto_launch:
             block["auto_launch"] = auto_launch[role]
         if block:

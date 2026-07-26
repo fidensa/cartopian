@@ -37,6 +37,11 @@ class TestClosedSchema(unittest.TestCase):
                 "authored_config_paths": (
                     "project.protocol_version",
                     "protocol_version",
+                    "roles.*.launch",
+                    "roles.*.launch.target",
+                    "roles.*.launch.model",
+                    "roles.*.launch.effort",
+                    "roles.*.launch.timeout",
                     "handoffs",
                     "handoffs.*",
                     "handoffs.*.auto_start",
@@ -78,7 +83,7 @@ class TestClosedSchema(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             }
         }
         with self.assertRaisesRegex(ConfigDiagnostic, "unknown-key.*project.mystery"):
@@ -94,7 +99,7 @@ class TestClosedSchema(unittest.TestCase):
                     "project": {
                         "id": "demo",
                         "name": "Demo",
-                        "protocol_version": "v0.6.0",
+                        "protocol_version": "v0.7.0",
                     }
                 },
                 "project",
@@ -131,13 +136,13 @@ class TestClosedSchema(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "coder": {
                     "description": "Writes code.",
                     "auto_launch": ["task_run"],
-                    "launch": {"target": "cartopian-codex", "timeout": "45m"},
+                    "target": "cartopian-codex", "timeout": "45m",
                 }
             },
         }
@@ -150,9 +155,60 @@ class TestClosedSchema(unittest.TestCase):
         with self.assertRaisesRegex(ConfigDiagnostic, "unknown-value.*auto_launch"):
             validate_authored_config(project, "project")
         project["roles"]["coder"]["auto_launch"] = ["task_run"]
-        project["roles"]["coder"]["launch"]["timeout"] = "soon"
+        project["roles"]["coder"]["timeout"] = "soon"
         with self.assertRaisesRegex(ConfigDiagnostic, "invalid-timeout"):
             validate_authored_config(project, "project")
+        project["roles"]["coder"]["timeout"] = "45m"
+        project["roles"]["coder"]["launch"] = {"target": "cartopian-codex"}
+        with self.assertRaisesRegex(
+            ConfigDiagnostic, "migration-source-only.*roles.coder.launch"
+        ):
+            validate_authored_config(project, "project")
+
+    def test_legacy_launch_diagnostics_are_scoped_to_role_paths(self):
+        role_base = {"description": "Writes code."}
+        for legacy_key in ("launch", "launch.target", "launch.timeout"):
+            with self.subTest(legacy_key=legacy_key):
+                global_cfg = {
+                    "roles": {
+                        "coder": {
+                            **role_base,
+                            legacy_key: (
+                                {"target": "cartopian-codex"}
+                                if legacy_key == "launch"
+                                else "probe"
+                            ),
+                        }
+                    }
+                }
+                with self.assertRaises(ConfigDiagnostic) as caught:
+                    validate_authored_config(global_cfg, "global")
+                self.assertEqual(caught.exception.code, "migration-source-only")
+                self.assertEqual(
+                    caught.exception.recovery,
+                    "run-approved-config-migration",
+                )
+                self.assertTrue(
+                    caught.exception.field.startswith("roles.coder.launch")
+                )
+
+    def test_unrelated_launch_keys_are_actionable_ordinary_unknowns(self):
+        for root in ("git", "automation"):
+            with self.subTest(root=root):
+                with self.assertRaises(ConfigDiagnostic) as caught:
+                    validate_authored_config({root: {"launch": "probe"}}, "global")
+                diagnostic = caught.exception
+                self.assertEqual(diagnostic.code, "unknown-key")
+                self.assertEqual(diagnostic.field, f"{root}.launch")
+                self.assertEqual(
+                    diagnostic.recovery,
+                    "remove-or-correct-unknown-key",
+                )
+                self.assertNotIn("migration", diagnostic.message)
+                self.assertNotEqual(
+                    diagnostic.recovery,
+                    "run-approved-config-migration",
+                )
 
 
 class TestCanonicalResolution(unittest.TestCase):
@@ -163,10 +219,8 @@ class TestCanonicalResolution(unittest.TestCase):
                 "coder": {
                     "description": "Global coder.",
                     "grants": ["coder-like"],
-                    "launch": {
-                        "target": "cartopian-claude",
-                        "timeout": "30m",
-                    },
+                    "target": "cartopian-claude",
+                    "timeout": "30m",
                 }
             },
         }
@@ -174,20 +228,20 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
                 "work_roots": ["tool"],
             },
             "roles": {
                 "coder": {
                     "description": "Project coder.",
                     "auto_launch": ["task_run"],
-                    "launch": {"target": "cartopian-codex", "effort": "high"},
+                    "target": "cartopian-codex", "effort": "high",
                 },
                 "reviewer": {
                     "description": "Reviews work.",
                     "grants": ["reviewer-like"],
                     "auto_launch": ["task_review"],
-                    "launch": {"target": "cartopian-claude"},
+                    "target": "cartopian-claude",
                 },
             },
             "reviews": {
@@ -201,7 +255,7 @@ class TestCanonicalResolution(unittest.TestCase):
             {"work_roots": {"tool": "/tmp/tool"}},
         )
         self.assertEqual(tuple(record), CONFIG_SCHEMA["preferred_output"])
-        self.assertEqual(record["project_schema_version"], "v0.6.0")
+        self.assertEqual(record["project_schema_version"], "v0.7.0")
         self.assertNotIn("protocol_version", record)
         self.assertEqual(record["automation"]["initiation"], "operator")
         self.assertEqual(
@@ -237,13 +291,13 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "reviewer": {
                     "description": "Reviews.",
                     "auto_launch": ["planning_review"],
-                    "launch": {"target": "cartopian-claude"},
+                    "target": "cartopian-claude",
                 }
             },
         }
@@ -257,18 +311,18 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "pm": {
                     "description": "Plans.",
-                    "launch": {"target": "cartopian-codex"},
+                    "target": "cartopian-codex",
                 }
             },
         }
         with self.assertRaisesRegex(ConfigDiagnostic, "pm-launch-forbidden"):
             resolve_configuration({}, project_cfg, {})
-        project_cfg["roles"]["pm"].pop("launch")
+        project_cfg["roles"]["pm"].pop("target")
         project_cfg["reviews"] = {
             "planning": "required",
             "planning_role": "reviewer",
@@ -281,7 +335,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "pm": {
@@ -304,7 +358,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.6.0",
+                "project_schema_version": "v0.7.0",
             },
             "roles": {
                 "coder": {
@@ -324,14 +378,12 @@ class TestCliMcpParity(unittest.TestCase):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Writes code."\n'
         'grants = ["coder-like"]\n'
         'auto_launch = ["task_run"]\n'
-        "\n"
-        "[roles.coder.launch]\n"
         'target = "cartopian-codex"\n'
         'timeout = "45m"\n'
     )
@@ -420,7 +472,9 @@ class TestCliMcpParity(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             text = (project / "cartopian.toml").read_text(encoding="utf-8")
         self.assertIn("project_schema_version", text)
-        self.assertIn("[roles.coder.launch]", text)
+        self.assertEqual(text.count("[roles.coder]"), 1)
+        self.assertNotIn("[roles.coder.launch]", text)
+        self.assertIn('target = "cartopian-codex"', text)
         self.assertIn('auto_launch = [', text)
         self.assertNotIn("protocol_version", text)
         self.assertNotIn("[handoffs", text)

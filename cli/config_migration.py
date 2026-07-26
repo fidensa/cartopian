@@ -42,7 +42,7 @@ from cli.config_schema import (
 from cli.protocol_gate import read_shipped_project_schema_version
 
 
-CURRENT_SCHEMA_IDENTITY = "cartopian-authoritative-config-v1"
+CURRENT_SCHEMA_IDENTITY = "cartopian-authoritative-config-v2"
 CHECKPOINT_IDENTITY = "cartopian-config-migration-checkpoint-v1"
 CHECKPOINT_RELATIVE_PATH = ".cartopian/config-migration.json"
 
@@ -52,6 +52,7 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.3.0",
     "v0.4.0",
     "v0.5.0",
+    "v0.6.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 PRESERVED_FACTS = (
@@ -72,7 +73,10 @@ _ROOT_KEYS = {
     ),
     "machine-local": frozenset(("work_roots",)),
 }
-_ROLE_KEYS = frozenset(("description", "grants", "launch", "auto_launch"))
+_ROLE_EXECUTION_KEYS = ("target", "model", "effort", "timeout")
+_ROLE_KEYS = frozenset(
+    ("description", "grants", *_ROLE_EXECUTION_KEYS, "launch", "auto_launch")
+)
 _HANDOFF_KEYS = frozenset(
     (
         "agent",
@@ -148,14 +152,37 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         recovery="repair the named source fact without changing its intended scope, then rerun",
     ),
     ConfigurationMigrationEntry(
-        identity="config-v0.6-partial-repair",
+        identity="config-v0.6-to-v0.7",
         from_identities=("v0.6.0",),
-        to_identity="v0.6.0",
-        supported_forms=("partial",),
-        transforms=("remove-supported-residual-vocabulary",),
+        to_identity="v0.7.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+            "marker-last-advancement",
+        ),
         validation_gates=(
             "explicit-old-new-agreement",
             "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
+        ),
+        recovery="resolve conflicting old and preferred definitions, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.7-partial-repair",
+        from_identities=("v0.7.0",),
+        to_identity="v0.7.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+        ),
+        validation_gates=(
+            "explicit-old-new-agreement",
+            "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
         ),
         recovery="resolve conflicting old and preferred definitions, then rerun",
     ),
@@ -519,6 +546,42 @@ def _normalize_roles_and_handoffs(
                 "remove the unknown role field",
             )
         role = copy.deepcopy(role_value)
+        nested_launch = role.pop("launch", None)
+        if nested_launch is not None:
+            if not isinstance(nested_launch, dict):
+                _diagnose(
+                    "malformed-source-value",
+                    f"{role_field}.launch",
+                    scope,
+                    "superseded launch definition must be a table",
+                    "repair the launch definition",
+                )
+            unknown_launch = sorted(set(nested_launch) - set(_ROLE_EXECUTION_KEYS))
+            if unknown_launch:
+                _diagnose(
+                    "unknown-source-field",
+                    f"{role_field}.launch.{unknown_launch[0]}",
+                    scope,
+                    "launch field is outside the supported migration inventory",
+                    "remove the unknown launch field",
+                )
+            for key, value in nested_launch.items():
+                if key in role and role[key] != value:
+                    _conflict(
+                        f"{role_field}.{key}",
+                        scope,
+                        f"{role_field}.launch.{key}",
+                        f"{role_field}.{key}",
+                    )
+                role[key] = value
+                facts.append(
+                    {
+                        "scope": scope,
+                        "field": f"{role_field}.launch.{key}",
+                        "form": "superseded-role-launch",
+                    }
+                )
+            changed = True
         grants = role.get("grants")
         if grants is not None:
             if not isinstance(grants, list):
@@ -580,15 +643,6 @@ def _normalize_roles_and_handoffs(
                 "remove the unknown handoff field",
             )
         role = roles.setdefault(role_name, OrderedDict())
-        launch = copy.deepcopy(role.get("launch", {}))
-        if not isinstance(launch, dict):
-            _diagnose(
-                "malformed-source-value",
-                f"roles.{role_name}.launch",
-                scope,
-                "preferred launch definition must be a table",
-                "repair the launch definition",
-            )
         old_target = handoff_value.get("agent")
         handoff_target = handoff_value.get("target")
         if old_target is not None and handoff_target is not None and old_target != handoff_target:
@@ -603,15 +657,15 @@ def _normalize_roles_and_handoffs(
         for key, value in mapped_values.items():
             if value is None:
                 continue
-            current = launch.get(key)
+            current = role.get(key)
             if current is not None and current != value:
                 _conflict(
-                    f"roles.{role_name}.launch.{key}",
+                    f"roles.{role_name}.{key}",
                     scope,
                     field_name,
-                    f"roles.{role_name}.launch",
+                    f"roles.{role_name}",
                 )
-            launch[key] = value
+            role[key] = value
             facts.append(
                 {
                     "scope": scope,
@@ -619,8 +673,6 @@ def _normalize_roles_and_handoffs(
                     "form": "legacy-handoff-launch",
                 }
             )
-        if launch:
-            role["launch"] = launch
         permission_values = {
             key: handoff_value[key]
             for key in (
@@ -644,7 +696,8 @@ def _normalize_roles_and_handoffs(
     if roles:
         target["roles"] = roles
     elif "roles" in target:
-        target["roles"] = {}
+        target.pop("roles")
+        changed = True
     return target, changed, facts, permission_sources
 
 
@@ -723,9 +776,9 @@ def _effective_launch_target(
     global_cfg: Mapping[str, Any],
     project_cfg: Mapping[str, Any],
 ) -> Optional[str]:
-    global_launch = global_cfg.get("roles", {}).get(role_name, {}).get("launch", {})
-    project_launch = project_cfg.get("roles", {}).get(role_name, {}).get("launch", {})
-    return project_launch.get("target", global_launch.get("target"))
+    global_role = global_cfg.get("roles", {}).get(role_name, {})
+    project_role = project_cfg.get("roles", {}).get(role_name, {})
+    return project_role.get("target", global_role.get("target"))
 
 
 def _permission_flags(
@@ -879,8 +932,7 @@ def _safe_global_permission_activities(
         values, role_name, "global"
     )
     global_role = global_cfg.get("roles", {}).get(role_name, {})
-    launch = global_role.get("launch", {})
-    if task_permission and isinstance(launch, dict) and launch.get("target"):
+    if task_permission and global_role.get("target"):
         return ("task_run",)
     return ()
 
@@ -1050,12 +1102,16 @@ def _compatibility_normalize_scope(
         if isinstance(role_value, str):
             roles[role_name] = OrderedDict((("description", role_value),))
         else:
-            roles[role_name] = copy.deepcopy(role_value)
+            role = copy.deepcopy(role_value)
+            nested_launch = role.pop("launch", {})
+            if isinstance(nested_launch, dict):
+                for key, value in nested_launch.items():
+                    role.setdefault(key, value)
+            roles[role_name] = role
     permissions: List[Tuple[str, Dict[str, Any]]] = []
     handoffs = result.pop("handoffs", {})
     for role_name, handoff_value in handoffs.items():
         role = roles.setdefault(role_name, OrderedDict())
-        launch = copy.deepcopy(role.get("launch", {}))
         target = handoff_value.get("agent", handoff_value.get("target"))
         for key, value in (
             ("target", target),
@@ -1064,9 +1120,7 @@ def _compatibility_normalize_scope(
             ("timeout", handoff_value.get("timeout")),
         ):
             if value is not None:
-                launch[key] = value
-        if launch:
-            role["launch"] = launch
+                role[key] = value
         values = {
             key: handoff_value[key]
             for key in (
@@ -1082,7 +1136,7 @@ def _compatibility_normalize_scope(
     if roles:
         result["roles"] = roles
     elif "roles" in result:
-        result["roles"] = {}
+        result.pop("roles")
     return result, permissions
 
 
@@ -1216,8 +1270,7 @@ def _compatibility_safe_global_permission_activities(
         values, role_name, "global"
     )
     global_role = global_cfg.get("roles", {}).get(role_name, {})
-    launch = global_role.get("launch", {})
-    if task_permission and isinstance(launch, dict) and launch.get("target"):
+    if task_permission and global_role.get("target"):
         return ("task_run",)
     return ()
 
@@ -1297,6 +1350,9 @@ _TABLE_LINE_RE = re.compile(
 )
 _KEY_LINE_RE = re.compile(
     r"^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)(.*?)(\r?\n)?$"
+)
+_LEGACY_TOMBSTONE_RE = re.compile(
+    rb"(?m)^[ \t]*# migrated legacy:.*(?:\r?\n|$)"
 )
 
 
@@ -1397,6 +1453,25 @@ class _TomlEditor:
         for index, header, description in reversed(replacements):
             self.lines[index : index + 1] = [header, description]
 
+    def remove_empty_table_header(self, table: str) -> None:
+        bounds = self._bounds(table)
+        if bounds is None:
+            return
+        header, start, end = bounds
+        if any(_KEY_LINE_RE.match(self.lines[index]) for index in range(start, end)):
+            return
+        line = self.lines[header]
+        line_ending = (
+            "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+        )
+        content = line[: -len(line_ending)] if line_ending else line
+        suffix = content[content.find("]") + 1 :].strip()
+        if suffix.startswith("#"):
+            indentation = content[: len(content) - len(content.lstrip())]
+            self.lines[header] = f"{indentation}{suffix}{line_ending}"
+        else:
+            del self.lines[header]
+
     def ensure_table(self, table: str) -> None:
         if self._bounds(table) is not None:
             return
@@ -1424,13 +1499,23 @@ class _TomlEditor:
         block.append(f"[{table}]{self.newline}")
         self.lines[insertion:insertion] = block
 
-    def add_key(self, table: str, key: str, value: Any) -> None:
+    def key_comment(self, table: str, key: str) -> str:
+        index = self._key_index(table, key)
+        if index is None:
+            return ""
+        match = _KEY_LINE_RE.match(self.lines[index])
+        return _inline_comment(match.group(4)) if match is not None else ""
+
+    def add_key(
+        self, table: str, key: str, value: Any, *, comment: str = ""
+    ) -> None:
         self.ensure_table(table)
         if self._key_index(table, key) is not None:
             return
         insertion = self._key_insertion_index(table)
+        suffix = f" {comment}" if comment else ""
         self.lines[insertion:insertion] = [
-            f"{key} = {_toml_value(value)}{self.newline}"
+            f"{key} = {_toml_value(value)}{suffix}{self.newline}"
         ]
 
     def set_key(
@@ -1458,24 +1543,45 @@ class _TomlEditor:
             f"{_toml_value(value)}{suffix}{line_ending}"
         )
 
-    def comment_out_handoffs(self) -> None:
-        headers = [
-            (name, index)
-            for name, index in self._headers()
-            if name == "handoffs" or name.startswith("handoffs.")
+    def remove_table(self, table: str) -> None:
+        bounds = self._bounds(table)
+        if bounds is None:
+            return
+        header, start, end = bounds
+        # Comments immediately preceding a retired header are attached to that
+        # table, including an inline header comment, and retire with it.
+        removal_start = header
+        while (
+            removal_start > 0
+            and self.lines[removal_start - 1].lstrip().startswith("#")
+        ):
+            removal_start -= 1
+        # Keep a trailing standalone comment/blank group that clearly leads
+        # into the following surviving table.
+        removal_end = self._before_leading_comments(end, start)
+        del self.lines[removal_start:removal_end]
+
+    def remove_legacy_tables(self) -> None:
+        names = [
+            name
+            for name, _index in self._headers()
+            if name == "handoffs"
+            or name.startswith("handoffs.")
+            or (
+                name.startswith("roles.")
+                and name.endswith(".launch")
+                and len(name.split(".")) == 3
+            )
         ]
-        for name, _index in reversed(headers):
-            bounds = self._bounds(name)
-            if bounds is None:
-                continue
-            header, start, end = bounds
-            for index in range(header, end):
-                stripped = self.lines[index].lstrip()
-                if not stripped.strip() or stripped.startswith("#"):
-                    continue
-                self.lines[index] = (
-                    "# migrated legacy: " + self.lines[index]
-                )
+        for name in reversed(names):
+            self.remove_table(name)
+
+    def remove_legacy_tombstones(self) -> None:
+        self.lines = [
+            line
+            for line in self.lines
+            if not line.lstrip().startswith("# migrated legacy:")
+        ]
 
     def bytes(self) -> bytes:
         return "".join(self.lines).encode("utf-8")
@@ -1492,6 +1598,10 @@ def _render_preserving(
     target_roles = target.get("roles", {})
     if isinstance(raw_roles, dict):
         editor.convert_role_strings(raw_roles)
+        # A parent [roles] header is never needed once legacy string entries
+        # have become role subtables. Removing only the empty parent leaves
+        # every surviving [roles.<name>] block intact.
+        editor.remove_empty_table_header("roles")
 
     if scope == "project":
         target_project = target["project"]
@@ -1513,16 +1623,41 @@ def _render_preserving(
                 f"roles.{role_name}",
                 "auto_launch",
                 target_role["auto_launch"],
+                comment=next(
+                    (
+                        editor.key_comment(f"handoffs.{role_name}", key)
+                        for key in (
+                            "auto_start_tasks",
+                            "auto_start",
+                            "auto_start_reviews",
+                            "planning_reviews",
+                        )
+                        if editor.key_comment(f"handoffs.{role_name}", key)
+                    ),
+                    "",
+                ),
             )
-        target_launch = target_role.get("launch", {})
         raw_launch = raw_role_table.get("launch", {})
-        if not isinstance(raw_launch, dict):
-            raw_launch = {}
-        for key, value in target_launch.items():
-            if key not in raw_launch:
-                editor.add_key(
-                    f"roles.{role_name}.launch", key, value
+        raw_launch_table = raw_launch if isinstance(raw_launch, dict) else {}
+        for key in _ROLE_EXECUTION_KEYS:
+            if key not in target_role or key in raw_role_table:
+                continue
+            source_table = f"roles.{role_name}.launch"
+            source_key = key
+            if key not in raw_launch_table:
+                source_table = f"handoffs.{role_name}"
+                source_key = (
+                    "agent"
+                    if key == "target"
+                    and editor._key_index(source_table, "agent") is not None
+                    else key
                 )
+            editor.add_key(
+                f"roles.{role_name}",
+                key,
+                target_role[key],
+                comment=editor.key_comment(source_table, source_key),
+            )
 
     target_reviews = target.get("reviews", {})
     raw_reviews = raw.get("reviews", {})
@@ -1532,8 +1667,8 @@ def _render_preserving(
         if key not in raw_reviews:
             editor.add_key("reviews", key, value)
 
-    if "handoffs" in raw:
-        editor.comment_out_handoffs()
+    editor.remove_legacy_tables()
+    editor.remove_legacy_tombstones()
 
     result = editor.bytes()
     try:
@@ -1731,12 +1866,18 @@ def _entry_chain(
     entries: List[ConfigurationMigrationEntry] = []
     if detected is None or detected in ("v0.1.0", "v0.2.0", "v0.3.0", "v0.4.0"):
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[0])
-        if current == "v0.6.0":
+        if _version_tuple(current) >= (0, 6, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
+        if _version_tuple(current) >= (0, 7, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
-    elif detected == current and has_residual:
+        if _version_tuple(current) >= (0, 7, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
+    elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
+    elif detected == current and has_residual:
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
     return tuple(entries)
 
 
@@ -1914,6 +2055,24 @@ def plan_configuration_migration(
         project_canonical, project_changed, project_facts, project_permissions = (
             _normalize_roles_and_handoffs(marker_checked_project, "project")
         )
+        if _LEGACY_TOMBSTONE_RE.search(global_before):
+            global_changed = True
+            global_facts.append(
+                {
+                    "scope": "global",
+                    "field": "<comments>",
+                    "form": "migration-generated-legacy-tombstone",
+                }
+            )
+        if _LEGACY_TOMBSTONE_RE.search(project_before):
+            project_changed = True
+            project_facts.append(
+                {
+                    "scope": "project",
+                    "field": "<comments>",
+                    "form": "migration-generated-legacy-tombstone",
+                }
+            )
         local_canonical = copy.deepcopy(local_raw)
 
         project_changed = project_changed or marker_changed

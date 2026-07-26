@@ -11,8 +11,8 @@ Design:
 - **Closed schema.** Only the dotted keys in :data:`SCHEMA` are settable, each
   with an explicit type/validator — types come from the schema, never inferred
   from value text (so a numeric-looking branch pattern stays a string). Role and
-  launch structure is edited through dedicated ``--set-role`` / ``--set-role-
-  grants`` / ``--set-role-launch`` / ``--remove-*`` flags.
+  role execution fields are edited through dedicated ``--set-role`` /
+  ``--set-role-grants`` / ``--set-role-launch`` / ``--remove-*`` flags.
 - **Comment-preserving surgical edits.** The file is edited as a line model, not
   re-serialized through a TOML dumper: untouched keys, comments, and formatting
   survive byte-for-byte. A targeted edit that would require lexing a construct
@@ -497,15 +497,14 @@ class _Model:
     def set_role_launch_field(
         self, role: str, field: str, value_token: str
     ) -> None:
-        self.set_key(("roles", role, "launch"), field, value_token)
+        self.set_key(("roles", role), field, value_token)
 
     def set_role_auto_launch(self, role: str, value_token: str) -> None:
         self.set_key(("roles", role), "auto_launch", value_token)
 
     def remove_role_launch(self, role: str) -> None:
-        blk = self.find_block(("roles", role, "launch"))
-        if blk is not None:
-            self.blocks.remove(blk)
+        for field in _ROLE_LAUNCH_FIELDS:
+            self.unset_key(("roles", role), field)
 
 
 def _split_value_comment(rhs: str) -> Tuple[str, str]:
@@ -836,11 +835,13 @@ def _changed_labels(ops: List[Tuple]) -> List[str]:
         elif kind in ("set-role", "set-role-grants", "remove-role"):
             out.append(f"roles.{op[1]}")
         elif kind == "set-role-launch":
-            out.append(f"roles.{op[1]}.launch.{op[2]}")
+            out.append(f"roles.{op[1]}.{op[2]}")
         elif kind == "set-role-auto-launch":
             out.append(f"roles.{op[1]}.auto_launch")
         elif kind == "remove-role-launch":
-            out.append(f"roles.{op[1]}.launch")
+            out.extend(
+                f"roles.{op[1]}.{field}" for field in _ROLE_LAUNCH_FIELDS
+            )
         elif kind in ("set-work-root", "unset-work-root"):
             out.append(f"work_roots.{op[1]}")
     return out

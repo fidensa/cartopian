@@ -29,7 +29,7 @@ Use `cartopian resolve-config <project-root>` (or the `resolve_config` MCP tool)
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.6.0"
+project_schema_version = "v0.7.0"
 work_roots = ["product", "design"]
 ```
 
@@ -37,16 +37,16 @@ Project schema identity is distinct from the Cartopian release version, installe
 
 ## Roles, capabilities, launch, and assignment
 
-Each role is a table. Its name and description carry no review, launch, selection, or capability authority.
+Each role is exactly one flat table. Its name and description carry no review, launch, selection, or capability authority.
 
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `roles.<role>.description` | non-empty string | required for user-defined roles | Human description used for assignment context. |
 | `roles.<role>.grants` | closed grant/preset list | capability defaults | Harness-enforced capability input. See `CAPABILITIES.md`. |
-| `roles.<role>.launch.target` | non-empty string | unset | Neutral wrapper/bridge target. An unset target means manual handoff. |
-| `roles.<role>.launch.model` | non-empty string | unset | Agent-neutral model option passed by dispatch. |
-| `roles.<role>.launch.effort` | non-empty string | unset | Agent-neutral effort option passed by dispatch. |
-| `roles.<role>.launch.timeout` | positive `s`, `m`, or `h` duration | `"60m"` resolved fallback | Handoff deadline passed to the wrapper. |
+| `roles.<role>.target` | non-empty string | unset | Neutral wrapper/bridge target. An unset target means manual handoff. |
+| `roles.<role>.model` | non-empty string | unset | Agent-neutral model option passed by dispatch. |
+| `roles.<role>.effort` | non-empty string | unset | Agent-neutral effort option passed by dispatch. |
+| `roles.<role>.timeout` | positive `s`, `m`, or `h` duration | `"60m"` resolved fallback | Handoff deadline passed to the wrapper. |
 | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` | empty | Automatic-launch permission for assigned work types only. |
 
 The `auto_launch` values are `task_run`, `task_review`, and `planning_review`. They are permissions, not assignments: `task_review` is applicable only to the role assigned by `reviews.task_role`, while `planning_review` is applicable only to `reviews.planning_role`. A non-PM role with a launch target is applicable to ordinary task execution. The PM role is interactive and may not have a launch target or automatic-launch permission.
@@ -57,7 +57,6 @@ description = "Implements tasks per spec."
 grants = ["coder-like"]
 auto_launch = ["task_run"]
 
-[roles.coder.launch]
 target = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
@@ -87,7 +86,6 @@ description = "Reviews against acceptance evidence."
 grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
-[roles.reviewer.launch]
 target = "cartopian-gemini"
 timeout = "30m"
 ```
@@ -127,7 +125,7 @@ Project configuration declares names:
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.6.0"
+project_schema_version = "v0.7.0"
 work_roots = ["product"]
 ```
 
@@ -189,11 +187,11 @@ re-resolve it.
 ## Legacy compatibility boundary
 
 The schema authority owns two separate legacy vocabulary shapes. Authored
-migration-source paths cover `project.protocol_version`, `[handoffs.<role>]`,
-`auto_start`, `auto_start_tasks`, `auto_start_reviews`, and
-`planning_reviews`; retired CLI flags cover `--set-handoff` and
-`--remove-handoff`. The authored paths are readable only by the
-compatibility/migration layer. Both classes are deprecated and removed at the
-approved project-format `v0.6.0` boundary. Current generation, mediated
+migration-source paths cover `project.protocol_version`,
+`[roles.<role>.launch]`, `[handoffs.<role>]`, `auto_start`,
+`auto_start_tasks`, `auto_start_reviews`, and `planning_reviews`; retired CLI
+flags cover `--set-handoff` and `--remove-handoff`. The authored paths are
+readable only by the compatibility/migration layer. Both classes are
+deprecated and removed at the approved project-format `v0.7.0` boundary. Current generation, mediated
 editing, examples, templates, CLI/MCP schemas, lifecycle projections, and
 wrappers never emit or teach those forms.

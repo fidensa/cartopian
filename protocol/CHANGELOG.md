@@ -32,6 +32,35 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.7.0 — Flat authored role tables and clean canonical migration output
+
+- **Protocol version:** `v0.7.0`
+- **One-line summary:** Moves role target, model, effort, and timeout into the single authored `[roles.<name>]` table and removes obsolete configuration instead of retaining migration-generated comment tombstones.
+
+#### Breakage description
+
+Authored configuration now has exactly one flat table per role. The optional `target`, `model`, `effort`, and `timeout` fields sit beside `description`, `grants`, and `auto_launch` under `[roles.<name>]`. The superseded `[roles.<name>.launch]` child table is migration input only and normal preferred-schema validation rejects it. Resolved machine records continue to expose a derived `launch` projection for consumer convenience.
+
+Canonical migration output no longer retains removed `[handoffs]`, `[handoffs.<name>]`, or nested role-launch material as `# migrated legacy:` comments. Structured migration results and checkpoints provide recovery evidence; obsolete authored values do not remain in TOML.
+
+#### Applies-when precondition
+
+Applies when the project's `[project].project_schema_version` is less than `v0.7.0`, or when a current-marker file still contains explicitly supported residual migration vocabulary. Projects already at `v0.7.0` in the flat preferred form are skipped.
+
+#### Agent-followable migration steps
+
+1. Run `cartopian migrate-config <project-root>` and review the deterministic plan. Resolve any reported conflict where a flat role field and its nested or legacy source define different values.
+2. Run `cartopian migrate-config <project-root> --apply`. For every role, move supported nested `launch` or legacy `handoffs` target/options directly into `[roles.<name>]`, preserve effective permissions and source attribution, remove the superseded tables and keys, and advance `[project].project_schema_version` to `v0.7.0` only after all earlier writes validate.
+3. Run `cartopian resolve-config <project-root>` and immediately rerun `cartopian migrate-config <project-root>`. Resolution must preserve the prior effective launch behavior and attribution; the migration rerun must report `noop` without changing bytes.
+
+#### Idempotence guarantee
+
+The transform has one canonical flat output. Once the direct fields are present and obsolete tables are absent, rerunning migration plans no work and writes no bytes.
+
+#### Post-migration validation hint
+
+`cartopian resolve-config <project-root>` exits 0 and emits the expected derived `roles.<name>.launch` record. `cartopian migrate-config <project-root>` reports `noop`. The authored TOML contains no `[roles.<name>.launch]`, `[handoffs]`, `[handoffs.<name>]`, or `# migrated legacy:` line.
+
 ### v0.6.0 — Project-level conventions retired; STANDARDS.md finalized as project metadata
 
 - **Protocol version:** `v0.6.0`

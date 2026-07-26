@@ -67,17 +67,25 @@ class MediatedWriterSurfaceTest(unittest.TestCase):
 class MigrationEntryTest(unittest.TestCase):
     """The newest CHANGELOG entry retires the project-level file."""
 
-    def _topmost_entry(self) -> str:
+    def _entry(self, version: str) -> str:
         text = _read(CHANGELOG)
         _, _, body = text.partition("\n## Entries\n")
         headings = list(
             re.finditer(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
         )
         self.assertGreaterEqual(len(headings), 2)
-        return body[headings[0].start() : headings[1].start()]
+        for index, heading in enumerate(headings):
+            if heading.group(1) == version:
+                end = (
+                    headings[index + 1].start()
+                    if index + 1 < len(headings)
+                    else len(body)
+                )
+                return body[heading.start() : end]
+        self.fail(f"missing changelog entry {version}")
 
-    def test_topmost_entry_retires_project_conventions(self) -> None:
-        entry = self._topmost_entry()
+    def test_v060_entry_retires_project_conventions(self) -> None:
+        entry = self._entry("v0.6.0")
         self.assertIn("v0.6.0", entry)
         # The migration ends with no project-level CONVENTIONS.md on disk.
         self.assertIn('test ! -e "$PROJECT_ROOT/CONVENTIONS.md"', entry)
@@ -88,7 +96,7 @@ class MigrationEntryTest(unittest.TestCase):
     def test_shipped_version_gate_follows_topmost_entry(self) -> None:
         from cli.protocol_gate import read_shipped_project_schema_version
 
-        self.assertEqual(read_shipped_project_schema_version(), "v0.6.0")
+        self.assertEqual(read_shipped_project_schema_version(), "v0.7.0")
 
 
 class StandardsMetadataWordingTest(unittest.TestCase):

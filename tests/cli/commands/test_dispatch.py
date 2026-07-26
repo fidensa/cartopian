@@ -7,7 +7,7 @@ Evidence gate (red-before-green):
   all to launch a wrapper.
 - GREEN (``TestDispatchPositive``): the mediated command launches a *stub*
   wrapper with the single absolute-prompt-path argv, ``CARTOPIAN_TIMEOUT``
-  exported from resolved ``roles.<role>.launch.timeout``, and cwd = the
+  exported from resolved ``roles.<role>.timeout``, and cwd = the
   cartopian project root; the PM then observes completion via
   ``cartopian wait-handoff`` — never spawning a process itself.
 
@@ -177,14 +177,12 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
         f"{auto_launch_line}"
-        "\n"
-        "[roles.coder.launch]\n"
         f'target = "{agent}"\n'
         f"{model_line}"
         f"{effort_line}"
@@ -467,7 +465,7 @@ class TestDispatchPositive(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
 
-            # No model/effort in roles.coder.launch — stale CARTOPIAN_MODEL /
+            # No model/effort in roles.coder — stale CARTOPIAN_MODEL /
             # CARTOPIAN_EFFORT inherited from the parent environment must NOT
             # leak into the wrapper.
             work_root = scaffold.project_root / "tool-repo"
@@ -1217,7 +1215,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.6.0"\n'
+            'project_schema_version = "v0.7.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
@@ -1234,7 +1232,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("roles.coder.launch.target", stderr)
+            self.assertIn("roles.coder.target", stderr)
 
     def test_task_dispatch_requires_auto_launch_permission(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
@@ -1283,7 +1281,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[error]", stderr)
-            self.assertIn("roles.coder.launch.model", stderr)
+            self.assertIn("roles.coder.model", stderr)
             self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_empty_effort_fails_closed(self) -> None:
@@ -1309,7 +1307,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[error]", stderr)
-            self.assertIn("roles.coder.launch.effort", stderr)
+            self.assertIn("roles.coder.effort", stderr)
             self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
 
     def test_unmapped_work_root_fails_closed(self) -> None:
@@ -1643,7 +1641,7 @@ class TestDispatchNoRawExec(unittest.TestCase):
         self.assertIn('["git", "status", "--porcelain", "--untracked-files=all"]', plan_audit_src)
 
         # And dispatch itself sources its executable from config, never argv:
-        # the launched program is the resolved roles.<role>.launch.target.
+        # the launched program is the resolved roles.<role>.target.
         dispatch_src = Path(dispatch.__file__).read_text(encoding="utf-8")
         self.assertIn('agent = launch.get("target")', dispatch_src)
 

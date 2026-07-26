@@ -7,7 +7,7 @@ until the deadline elapses.
 
 The wait is terminal by default: called without ``--max-block``, it blocks
 until the report lands (or guard-fails), bounded by the resolved handoff
-timeout as the absolute ceiling — ``roles.<role>.launch.timeout`` when
+timeout as the absolute ceiling — ``roles.<role>.timeout`` when
 ``--role`` is given and resolves from the report's project, the protocol
 default (``60m``) when no project is discoverable or no role is given.
 Invalid discovered configuration fails closed. ``--max-block`` is an explicit opt-in bounding

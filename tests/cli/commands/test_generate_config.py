@@ -96,10 +96,8 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(data["project"]["project_schema_version"], version)
             self.assertEqual(data["roles"]["pm"], {"description": "Plans..."})
             self.assertEqual(data["roles"]["coder"]["description"], "Writes")
-            self.assertEqual(
-                data["roles"]["coder"]["launch"],
-                {"target": "claude-vscode"},
-            )
+            self.assertEqual(data["roles"]["coder"]["target"], "claude-vscode")
+            self.assertNotIn("launch", data["roles"]["coder"])
             self.assertNotIn("handoffs", data)
             # No protocol defaults written
             self.assertNotIn("automation", data)
@@ -145,7 +143,10 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(data["roles"]["pm"], {"description": "Plans things"})
             self.assertEqual(data["roles"]["coder"]["description"], "Writes code")
             self.assertEqual(
-                data["roles"]["coder"]["launch"],
+                {
+                    key: data["roles"]["coder"][key]
+                    for key in ("target", "model", "effort", "timeout")
+                },
                 {
                     "target": "cartopian-claude",
                     "model": "claude-opus-4-8",
@@ -153,6 +154,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                     "timeout": "30m",
                 },
             )
+            self.assertNotIn("launch", data["roles"]["coder"])
             self.assertEqual(data["roles"]["coder"]["auto_launch"], ["task_run"])
             self.assertNotIn("handoffs", data)
             self.assertEqual(

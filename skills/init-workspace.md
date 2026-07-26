@@ -39,7 +39,7 @@ For each role that may use CLI launch, ask the operator:
 3. **Timeout** — Should this handoff have a custom timeout? Use one positive duration such as `30m` or `2h`. Leave blank to use the protocol default of `60m`.
 4. **Automatic-launch permissions** — Which assigned work types may the PM launch automatically for this role: `task_run`, `task_review`, and/or `planning_review`? The list defaults empty; `[reviews]` independently decides whether review checkpoints exist and who owns them.
 
-If the operator does not want a CLI launch target for a role, omit its role-local `launch` table. The PM will create the prompt and the operator will handle execution manually. A target does not itself grant automatic launch; the applicable assigned work type must also appear in `auto_launch`.
+If the operator does not want a CLI launch target for a role, omit `target`, `model`, `effort`, and `timeout` from that role's flat table. The PM will create the prompt and the operator will handle execution manually. A target does not itself grant automatic launch; the applicable assigned work type must also appear in `auto_launch`.
 
 ### Step 4 — Gather automation policy
 
@@ -71,7 +71,6 @@ description = "<one-line description>"
 # description = "<one-line description>"
 # auto_launch = ["<task_run|task_review|planning_review>"]
 #
-# [roles.<additional-role>.launch]
 # target = "<executable name>"
 # model = "<model>"
 # effort = "<level>"

@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'project_schema_version = "v0.6.0"\n'
+    'project_schema_version = "v0.7.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -818,13 +818,11 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'project_schema_version = "v0.6.0"\n'
+            'project_schema_version = "v0.7.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
             'auto_launch = ["task_run"]\n'
-            "\n"
-            "[roles.coder.launch]\n"
             'target = "/bin/true"\n'
             'timeout = "30m"\n'
         )

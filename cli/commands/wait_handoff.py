@@ -28,7 +28,7 @@ Terminal status flags emitted on stdout (one NDJSON record):
 
 The wait is terminal by default: called without ``--max-block``, it blocks
 until one of the terminal signals above, bounded by the resolved
-``roles.<role>.launch.timeout`` (protocol default ``60m``) as the absolute
+``roles.<role>.timeout`` (protocol default ``60m``) as the absolute
 ceiling — a single call, a single record, no nonterminal slices. ``--max-block``
 is an explicit opt-in for hosts that cannot sustain a blocking call for the
 full handoff timeout; when supplied, the effective block budget is
@@ -121,7 +121,7 @@ def _parse_duration(raw: str) -> Optional[int]:
 def _resolve_timeout_seconds(project_root: Path, role: str) -> int:
     """Resolve the configured handoff timeout for ``role`` in whole seconds.
 
-    Reads ``roles.<role>.launch.timeout`` from canonical resolution, falling
+    Reads ``roles.<role>.timeout`` from canonical resolution, falling
     back to the protocol default (``60m``) only when the valid role omits it.
     """
     resolved = resolve_project_configuration(project_root)

@@ -1,14 +1,12 @@
 [project]
 id = "migration-fixture"
 name = "Migration Fixture"
-project_schema_version = "v0.6.0"
+project_schema_version = "v0.7.0"
 work_roots = ["product"]
 
 [roles.coder]
 description = "Implements approved work."
 grants = ["coder-like"]
 auto_launch = ["task_run"]
-
-[roles.coder.launch]
 target = "cartopian-codex"
 timeout = "45m"

@@ -14,7 +14,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.6.0"\n'
+    'project_schema_version = "v0.7.0"\n'
 )
 
 
@@ -138,7 +138,7 @@ class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
             _TOML_BASE
             + '\n[roles.coder]\ndescription = "Implements work."\n'
             + 'auto_launch = ["task_run"]\n'
-            + '\n[roles.coder.launch]\ntarget = "cartopian-claude"\n'
+            + 'target = "cartopian-claude"\n'
             + '\n[roles.reviewer]\ndescription = "Checks work."\n'
             + '\n[reviews]\nplanning = "required"\nplanning_role = "reviewer"\n'
             + 'task_closure = "required"\ntask_role = "reviewer"\n'

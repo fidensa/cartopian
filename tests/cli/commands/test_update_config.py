@@ -17,7 +17,7 @@ BASE_CONFIG = """\
 [project]
 name = "Demo"
 id = "demo"
-project_schema_version = "v0.6.0"
+project_schema_version = "v0.7.0"
 
 [roles.pm]
 description = "Plans phases."
@@ -224,9 +224,8 @@ class TestRoleAndLaunch(_Base):
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
-        self.assertEqual(
-            cfg["roles"]["coder"]["launch"]["target"], "cartopian-claude"
-        )
+        self.assertEqual(cfg["roles"]["coder"]["target"], "cartopian-claude")
+        self.assertNotIn("[roles.coder.launch]", self.cfg.read_text())
         self.assertEqual(cfg["roles"]["coder"]["auto_launch"], ["task_run"])
 
     def test_set_launch_effort_for_declared_role(self):
@@ -237,7 +236,8 @@ class TestRoleAndLaunch(_Base):
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
-        self.assertEqual(cfg["roles"]["coder"]["launch"]["effort"], "high")
+        self.assertEqual(cfg["roles"]["coder"]["effort"], "high")
+        self.assertEqual(self.cfg.read_text().count("[roles.coder]"), 1)
 
     def test_set_review_policy_and_arbitrary_assigned_role(self):
         proc = self.run_uc(

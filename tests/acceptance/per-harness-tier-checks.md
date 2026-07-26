@@ -67,7 +67,7 @@ grants key):
 [project]
 id = "tier-accept"
 name = "Tier Acceptance"
-project_schema_version = "v0.6.0"
+project_schema_version = "v0.7.0"
 work_roots = ["tool-repo"]
 
 [roles.pm]

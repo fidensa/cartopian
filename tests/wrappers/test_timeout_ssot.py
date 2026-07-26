@@ -1,7 +1,7 @@
 """Timeout single-source-of-truth (SSOT) contract tests.
 
 These tests lock the invariant RM-003 is about: the handoff timeout has exactly
-one source of truth (`roles.<role>.launch.timeout`, resolved project -> global),
+one source of truth (`roles.<role>.timeout`, resolved project -> global),
 passed to the wrapper as `CARTOPIAN_TIMEOUT`, and enforced *solely* by the
 wrapper's OS-level deadline. No competing/second timer may exist.
 
@@ -131,19 +131,17 @@ def _run_packet(task: Path, role: str):
 
 
 def test_launcher_resolves_configured_timeout(tmp_path):
-    """handoff-packet resolves roles.<role>.launch.timeout canonically."""
+    """handoff-packet resolves roles.<role>.timeout canonically."""
     _root, task = _handoff_packet_project(
         tmp_path,
         '[project]\n'
         'id = "timeout-probe"\n'
         'name = "Timeout Probe"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         '\n'
         '[roles.coder]\n'
         'description = "Implements tasks."\n'
         'auto_launch = ["task_run"]\n'
-        '\n'
-        '[roles.coder.launch]\n'
         'target = "cartopian-claude"\n'
         'timeout = "17m"\n',
         "01-001",

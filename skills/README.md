@@ -77,7 +77,7 @@ provider credential, or model invocation.
 
 Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff targets, independent planning/task review policy, and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
 
-Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. Each role's closed `auto_launch` list independently permits automatic launch for assigned work types; role-local `launch` provides only neutral target/options. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
+Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. Each role's flat `target`/option fields provide neutral launch facts, while its closed `auto_launch` list independently permits automatic launch for assigned work types. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
 
 ## Session startup
 

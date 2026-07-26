@@ -1,6 +1,6 @@
 """CARTOPIAN_MODEL wrapper-translation contract tests.
 
-`roles.<role>.launch.model` is resolved project -> global and exported by
+`roles.<role>.model` is resolved project -> global and exported by
 `cartopian dispatch` as the agent-neutral `CARTOPIAN_MODEL` environment
 variable. Each shipped wrapper translates it into the tool-specific
 model-selection flag (verified against the upstream CLI surfaces:

@@ -22,7 +22,7 @@ _TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.6.0"\n'
+    'project_schema_version = "v0.7.0"\n'
 )
 
 

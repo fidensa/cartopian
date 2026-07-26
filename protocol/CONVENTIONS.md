@@ -362,7 +362,7 @@ The PM role is bounded to project-management authoring:
 - **Migration is PM-owned.** A project's internal protocol-schema version is separate from the installed Cartopian application's release version. Bringing that project schema current is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config`, ordinary project authoring through the structured writers, and shipped deterministic filesystem transforms through `cartopian apply-migration-entry`. The migration executor accepts only a registered project root and shipped entry version; its closed registry owns all paths and transformations. Judgment-dependent values return as structured pending PM actions and block the marker bump until resolved. Operators are not expected to edit the version marker or perform file surgery. See `skills/migrate-project.md`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
 
-These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so `roles.pm.launch.target` and `roles.pm.auto_launch` must not be configured.
+These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so `roles.pm.target` and `roles.pm.auto_launch` must not be configured.
 
 ```toml
 [roles.pm]
@@ -376,8 +376,8 @@ The protocol-default roster is **`pm` and `operator`**. Operators may add any fu
 
 Launch and permission remain distinct:
 
-- A declared non-PM role with `launch.target` has a resolved target/options record.
-- A declared role without `launch.target` uses manual handoff; the PM surfaces the prompt and the operator acts.
+- A declared non-PM role with `target` has a resolved target/options record.
+- A declared role without `target` uses manual handoff; the PM surfaces the prompt and the operator acts.
 - `auto_launch` independently grants automatic launch for listed assigned work types.
 - A role omitted from `[roles]` does not exist in this project; tasks and review policy may not assign it.
 
@@ -394,7 +394,6 @@ Use role-local launch facts only for roles that need a named target:
 description = "Implements tasks per spec."
 auto_launch = ["task_run"]
 
-[roles.coder.launch]
 target = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
@@ -404,7 +403,6 @@ timeout = "60m"
 description = "Reviews assigned checkpoints."
 auto_launch = ["task_review", "planning_review"]
 
-[roles.reviewer.launch]
 target = "cartopian-gemini"
 timeout = "30m"
 ```
@@ -417,9 +415,9 @@ Role launch and permission fields are:
 - `auto_launch`: a closed unique list containing applicable assigned work types from `task_run`, `task_review`, and `planning_review`. The list chooses launch mode only after `[automation].initiation` has allowed the run to begin and `confirmation` permits the handoff; it never initiates a run. It does not assign review, control pace, select a task, or grant capabilities. `cartopian dispatch` enforces the applicable permission fail-closed.
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
-Legacy compatibility only: migration tooling recognizes `project.protocol_version`, `[handoffs.<role>]`, `auto_start`, `auto_start_tasks`, `auto_start_reviews`, and `planning_reviews` as migration-source vocabulary. Preferred validation rejects them, and current generation, editing, examples, CLI/MCP schemas, and machine projections never emit them.
+Legacy compatibility only: migration tooling recognizes `project.protocol_version`, `[roles.<role>.launch]`, `[handoffs.<role>]`, `auto_start`, `auto_start_tasks`, `auto_start_reviews`, and `planning_reviews` as migration-source vocabulary. Preferred validation rejects them, and current generation, editing, examples, CLI/MCP authored schemas, and canonical TOML never emit them. Resolved machine records may expose a derived `launch` projection.
 
-`roles.<role>.launch.timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
+`roles.<role>.timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
 
 Every automated handoff follows this argument contract:
 
@@ -490,7 +488,7 @@ Handoffs are sequential. Concurrent child agents are out of scope.
 
 The PM detects handoff completion by observing the filesystem through two canonical read-only wait primitives, which replace all ad-hoc polling, hand-rolled timing loops, manual "tell me when it's done" prompts, and PM-side watchdog timers:
 
-- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the role's configured `launch.timeout` as the absolute ceiling.
+- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the configured `roles.<role>.timeout` value as the absolute ceiling.
 - `cartopian wait-report <report-path> [--role <role>] [--max-block <duration>]` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file. With `--role` it honors the same resolved role launch timeout; otherwise the protocol default applies.
 
 The completion contract is:

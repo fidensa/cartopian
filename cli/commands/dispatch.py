@@ -19,9 +19,9 @@ shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
 command performs the launch on the PM's behalf as *per-invocation* Cartopian code
 (no daemon, no broker): it consumes canonical resolution, fails closed on a
 missing role launch target or prompt, exports ``CARTOPIAN_TIMEOUT`` from
-``roles.<role>.launch.timeout``, ``CARTOPIAN_MODEL`` from
-``roles.<role>.launch.model`` (when set), ``CARTOPIAN_EFFORT`` from
-``roles.<role>.launch.effort`` (when set), and
+``roles.<role>.timeout``, ``CARTOPIAN_MODEL`` from
+``roles.<role>.model`` (when set), ``CARTOPIAN_EFFORT`` from
+``roles.<role>.effort`` (when set), and
 ``CARTOPIAN_ROLE`` from the dispatched role (the session-role marker capability
 enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
@@ -75,13 +75,13 @@ from cli.main import (
 DEFAULT_TIMEOUT = "60m"
 
 # Agent-neutral model selection. Exported from the resolved
-# ``roles.<role>.launch.model`` so the wrapper can translate it into the
+# ``roles.<role>.model`` so the wrapper can translate it into the
 # tool-specific model flag; never exported when the handoff sets no model
 # (the tool's own default model applies).
 MODEL_ENV = "CARTOPIAN_MODEL"
 
 # Agent-neutral effort/thinking-level selection. Exported from the resolved
-# ``roles.<role>.launch.effort`` so the wrapper can translate it into the
+# ``roles.<role>.effort`` so the wrapper can translate it into the
 # tool-specific effort flag; never exported when the handoff sets no effort
 # (the tool's own default effort applies). Value validation is the wrapper's
 # job — effort vocabularies differ per agent CLI.
@@ -210,7 +210,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
     Deliberately minimal: a task path (or a planning-checkpoint prompt path)
     and a role. The executable launched is sourced exclusively from
-    ``roles.<role>.launch.target`` in config — there is intentionally no flag to
+    ``roles.<role>.target`` in config — there is intentionally no flag to
     supply an arbitrary command, so the PM cannot turn dispatch into a raw
     exec primitive (containment invariant). ``--prompt`` names an allowlisted
     prompt slot to hand to the config-bound agent, never an executable.
@@ -302,7 +302,7 @@ def handler(args: argparse.Namespace) -> int:
     agent = launch.get("target")
     if not agent:
         stderr_guard(
-            f"roles.{role}.launch.target is not configured — "
+            f"roles.{role}.target is not configured — "
             f"dispatch this role manually"
         )
         return EXIT_FAIL
@@ -314,7 +314,7 @@ def handler(args: argparse.Namespace) -> int:
     # tool's default model while the record claims otherwise.
     if model is not None and not model:
         stderr_guard(
-            f"roles.{role}.launch.model is set but empty — set a model "
+            f"roles.{role}.model is set but empty — set a model "
             f"identifier or remove the key"
         )
         return EXIT_FAIL
@@ -323,7 +323,7 @@ def handler(args: argparse.Namespace) -> int:
     # reported in the record below yet never exported.
     if effort is not None and not effort:
         stderr_guard(
-            f"roles.{role}.launch.effort is set but empty — set an effort "
+            f"roles.{role}.effort is set but empty — set an effort "
             f"level or remove the key"
         )
         return EXIT_FAIL
@@ -449,7 +449,7 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(
             f"handoff agent not found on PATH: {agent} — install the wrapper "
             f"(on native Windows the `.cmd` shim in wrappers/ps1 must be on PATH), "
-            f"or set roles.{role}.launch.target to an absolute path"
+            f"or set roles.{role}.target to an absolute path"
         )
         return EXIT_FAIL
     is_windows = _running_on_windows()
@@ -515,7 +515,7 @@ def handler(args: argparse.Namespace) -> int:
             f"failed to launch handoff agent {agent}: could not start "
             f"{missing!r} (resolved agent: {resolved_agent}). On native Windows "
             f"this is usually the command interpreter — ensure cmd.exe is "
-            f"reachable; otherwise correct roles.{role}.launch.target"
+            f"reachable; otherwise correct roles.{role}.target"
         )
         return EXIT_FAIL
     except OSError as exc:

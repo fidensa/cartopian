@@ -32,6 +32,11 @@ MACHINE_RECORD_SCHEMA_VERSION = 1
 LEGACY_AUTHORED_CONFIG_PATHS: Tuple[str, ...] = (
     "project.protocol_version",
     "protocol_version",
+    "roles.*.launch",
+    "roles.*.launch.target",
+    "roles.*.launch.model",
+    "roles.*.launch.effort",
+    "roles.*.launch.timeout",
     "handoffs",
     "handoffs.*",
     "handoffs.*.auto_start",
@@ -132,7 +137,7 @@ def identity_contract() -> "OrderedDict[str, Dict[str, Any]]":
 # The public metadata object intentionally uses primitive immutable values so it
 # is easy for CLI/MCP parity tests and later surface generation to inspect.
 CONFIG_SCHEMA: Dict[str, Any] = {
-    "schema_identity": "cartopian-authoritative-config-v1",
+    "schema_identity": "cartopian-authoritative-config-v2",
     "scopes": SCOPES,
     "precedence": PRECEDENCE,
     "attribution_values": ATTRIBUTION_VALUES,
@@ -225,7 +230,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "roles.*.launch.target",
+                "roles.*.target",
                 {
                     "scopes": ("global", "project"),
                     "type": "non-empty-string",
@@ -233,7 +238,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "roles.*.launch.model",
+                "roles.*.model",
                 {
                     "scopes": ("global", "project"),
                     "type": "non-empty-string",
@@ -241,7 +246,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "roles.*.launch.effort",
+                "roles.*.effort",
                 {
                     "scopes": ("global", "project"),
                     "type": "non-empty-string",
@@ -249,7 +254,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "roles.*.launch.timeout",
+                "roles.*.timeout",
                 {
                     "scopes": ("global", "project"),
                     "type": "positive-duration",
@@ -385,6 +390,9 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 _DURATION_RE = re.compile(r"^([1-9]\d*)([smh])$")
+_LEGACY_ROLE_LAUNCH_FIELD_RE = re.compile(
+    r"^roles\.[A-Za-z0-9_-]+\.launch(?:\.[A-Za-z0-9_-]+)*$"
+)
 _ROOT_KEYS = {
     "global": frozenset(("defaults", "automation", "roles", "reviews", "git")),
     "project": frozenset(
@@ -392,8 +400,10 @@ _ROOT_KEYS = {
     ),
     "machine-local": frozenset(("work_roots",)),
 }
-_ROLE_KEYS = frozenset(("description", "grants", "launch", "auto_launch"))
-_LAUNCH_KEYS = frozenset(("target", "model", "effort", "timeout"))
+_ROLE_LAUNCH_KEYS = ("target", "model", "effort", "timeout")
+_ROLE_KEYS = frozenset(
+    ("description", "grants", *_ROLE_LAUNCH_KEYS, "auto_launch")
+)
 _REVIEW_KEYS = frozenset(
     ("planning", "planning_role", "task_closure", "task_role")
 )
@@ -468,6 +478,7 @@ def _unknown_keys(
                 field == "project.protocol_version"
                 or field == "handoffs"
                 or field.startswith("handoffs.")
+                or _LEGACY_ROLE_LAUNCH_FIELD_RE.fullmatch(field) is not None
             ):
                 _fail(
                     "migration-source-only",
@@ -488,7 +499,8 @@ def _unknown_keys(
                 "unknown-key",
                 field,
                 scope,
-                "key is outside the closed preferred schema",
+                "key is outside the closed preferred schema; remove it or correct its spelling",
+                "remove-or-correct-unknown-key",
             )
 
 
@@ -560,20 +572,16 @@ def _validate_roles(raw: Any, scope: str) -> None:
                         f"duplicate activity {activity!r}",
                     )
                 seen.add(activity)
-        if "launch" in role:
-            launch = _require_table(role["launch"], f"{field}.launch", scope)
-            _unknown_keys(launch, _LAUNCH_KEYS, f"{field}.launch", scope)
-            for key, launch_value in launch.items():
-                _nonempty_string(launch_value, f"{field}.launch.{key}", scope)
-            if "timeout" in launch and not _DURATION_RE.fullmatch(
-                launch["timeout"]
-            ):
-                _fail(
-                    "invalid-timeout",
-                    f"{field}.launch.timeout",
-                    scope,
-                    "must be a positive duration with s, m, or h suffix",
-                )
+        for key in _ROLE_LAUNCH_KEYS:
+            if key in role:
+                _nonempty_string(role[key], f"{field}.{key}", scope)
+        if "timeout" in role and not _DURATION_RE.fullmatch(role["timeout"]):
+            _fail(
+                "invalid-timeout",
+                f"{field}.timeout",
+                scope,
+                "must be a positive duration with s, m, or h suffix",
+            )
 
 
 def _validate_reviews(raw: Any, scope: str) -> None:
@@ -798,12 +806,10 @@ def _merge_role(
     merged["auto_launch"] = list(auto_launch)
     attribution["auto_launch"] = source
 
-    g_launch = g.get("launch", {})
-    p_launch = p.get("launch", {})
     launch: Dict[str, Any] = {}
     launch_sources: Dict[str, str] = {}
-    for key in ("target", "model", "effort", "timeout"):
-        value, launch_source = _field_value(g_launch, p_launch, key, None)
+    for key in _ROLE_LAUNCH_KEYS:
+        value, launch_source = _field_value(g, p, key, None)
         launch[key] = value
         launch_sources[key] = launch_source
     merged["launch"] = launch
@@ -889,7 +895,7 @@ def resolve_configuration(
         if name == "pm" and merged["launch"]["target"] is not None:
             _fail(
                 "pm-launch-forbidden",
-                "roles.pm.launch.target",
+                "roles.pm.target",
                 "resolved",
                 "the interactive PM role cannot be a launch target",
             )

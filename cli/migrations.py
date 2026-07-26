@@ -89,7 +89,7 @@ class MigrationApplyError(GuardRefusal):
         super().__init__(refusal.rule, refusal.detail)
 
 
-ENTRY_VERSIONS = ("v0.2.0", "v0.3.0", "v0.6.0")
+ENTRY_VERSIONS = ("v0.2.0", "v0.3.0", "v0.6.0", "v0.7.0")
 _VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
 # Shipped exact wrapper migrations.  No currently shipped project wrapper has a
@@ -835,6 +835,18 @@ def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
                 }
             )
         return MigrationPlan(tuple(writes), (), tuple(pending), tuple(wrapper_skips))
+
+    if entry_version == "v0.7.0":
+        return MigrationPlan(
+            skipped=(
+                {
+                    "kind": "entry",
+                    "target": ".",
+                    "status": "skipped",
+                    "reason": "v0.7.0 has configuration-only migration actions",
+                },
+            )
+        )
 
     conventions = root / "CONVENTIONS.md"
     if not os.path.lexists(conventions):

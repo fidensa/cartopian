@@ -281,10 +281,9 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.6.0"\n\n'
+                'project_schema_version = "v0.7.0"\n\n'
                 "[roles.reviewer]\n"
-                'description = "Reviews completed tasks."\n\n'
-                "[roles.reviewer.launch]\n"
+                'description = "Reviews completed tasks."\n'
                 'target = "codex"\n'
                 'timeout = "10s"\n',
             )
@@ -313,7 +312,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.6.0"\n'
+                'project_schema_version = "v0.7.0"\n'
                 "unknown = true\n",
             )
             report_path = scaffold.reports / "REPORT-01-002.md"
@@ -339,10 +338,9 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.6.0"\n\n'
+                'project_schema_version = "v0.7.0"\n\n'
                 "[roles.reviewer]\n"
-                'description = "Reviews completed tasks."\n\n'
-                "[roles.reviewer.launch]\n"
+                'description = "Reviews completed tasks."\n'
                 'target = "codex"\n'
                 'timeout = "10s"\n',
             )

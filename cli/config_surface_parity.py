@@ -194,6 +194,78 @@ def legacy_vocabulary(text: str) -> Tuple[str, ...]:
     return tuple(alias for alias in aliases if _legacy_pattern(alias).search(text))
 
 
+def _retired_nested_role_fields() -> Tuple[str, ...]:
+    """Return retired nested role leaves that now have direct authored fields."""
+    preferred = set(CONFIG_SCHEMA["fields"])
+    leaves = []
+    prefix = "roles.*.launch."
+    for path in CONFIG_SCHEMA["legacy_vocabulary"]["authored_config_paths"]:
+        if not path.startswith(prefix):
+            continue
+        leaf = path[len(prefix) :]
+        if f"roles.*.{leaf}" in preferred:
+            leaves.append(leaf)
+    return tuple(sorted(set(leaves)))
+
+
+def authored_field_prose_parity(
+    text: str,
+    *,
+    surface: str,
+) -> Tuple[SurfaceDiagnostic, ...]:
+    """Reject retired authored role paths used as active configuration guidance.
+
+    The checked spellings are derived from the authoritative preferred field
+    catalog and its separately declared legacy vocabulary. Compatibility prose
+    is allowed only in a paragraph explicitly bounded as legacy/migration
+    material. Derived-record prose is allowed only when ``resolved`` or
+    ``derived`` directly qualifies the retired-looking projection spelling.
+    """
+    leaves = _retired_nested_role_fields()
+    if not leaves:
+        return ()
+    leaf_group = "|".join(re.escape(leaf) for leaf in leaves)
+    role = r"(?:\*|<[^>\n]+>|[A-Za-z0-9_-]+)"
+    retired = re.compile(
+        rf"`?(?:roles\.{role}\.)?launch\.(?:{leaf_group})`?"
+        rf"|`?\[roles\.{role}\.launch\]`?"
+        rf"|`?roles\.{role}\.launch`?(?!\.)"
+    )
+    compatibility_marker = re.compile(
+        r"\b(?:legacy compatibility|legacy|migration-source|migration input"
+        r"|migration tooling|superseded|retired authored|historical)\b",
+        re.IGNORECASE,
+    )
+    projection_qualifier = re.compile(
+        r"\b(?:resolved|derived)\b[^.\n]{0,48}$",
+        re.IGNORECASE,
+    )
+
+    diagnostics: List[SurfaceDiagnostic] = []
+    offset = 0
+    for paragraph in re.split(r"(\n\s*\n)", text):
+        if not paragraph or re.fullmatch(r"\n\s*\n", paragraph):
+            offset += len(paragraph)
+            continue
+        compatibility = compatibility_marker.search(paragraph) is not None
+        for match in retired.finditer(paragraph):
+            if compatibility:
+                continue
+            line_start = paragraph.rfind("\n", 0, match.start()) + 1
+            if projection_qualifier.search(paragraph[line_start : match.start()]):
+                continue
+            line_number = text.count("\n", 0, offset + match.start()) + 1
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "stale-authored-field",
+                    surface,
+                    f"line {line_number}: {match.group(0).strip('`')}",
+                )
+            )
+        offset += len(paragraph)
+    return tuple(sorted(set(diagnostics)))
+
+
 def wrapper_authority_vocabulary(text: str) -> Tuple[str, ...]:
     """Return raw configuration/policy terms a neutral wrapper must not parse."""
     return tuple(
@@ -754,6 +826,34 @@ def check_surface_registry(
                 continue
             diagnostics.extend(
                 closed_value_parity(
+                    matched_path.read_text(encoding="utf-8"),
+                    surface=relative,
+                )
+            )
+
+    authored_field_rules = registry.get("authored_field_prose_parity", [])
+    if not authored_field_rules:
+        diagnostics.append(
+            SurfaceDiagnostic(
+                "authored-field-parity-registration",
+                REGISTRY_NAME,
+                "active guidance must be checked against authored field authority",
+            )
+        )
+    for rule in authored_field_rules:
+        matched = _files_for_patterns(root, rule.get("paths", []))
+        if not matched:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "authored-field-parity-registration",
+                    REGISTRY_NAME,
+                    "authored field prose parity rule matches no repository path",
+                )
+            )
+        for matched_path in matched:
+            relative = matched_path.relative_to(root).as_posix()
+            diagnostics.extend(
+                authored_field_prose_parity(
                     matched_path.read_text(encoding="utf-8"),
                     surface=relative,
                 )

@@ -40,10 +40,10 @@
 # | `project.work_roots` | unique name list |
 # | `roles.<role>.description` | non-empty string |
 # | `roles.<role>.grants` | closed capability/preset list |
-# | `roles.<role>.launch.target` | non-empty string |
-# | `roles.<role>.launch.model` | non-empty string |
-# | `roles.<role>.launch.effort` | non-empty string |
-# | `roles.<role>.launch.timeout` | positive duration |
+# | `roles.<role>.target` | non-empty string |
+# | `roles.<role>.model` | non-empty string |
+# | `roles.<role>.effort` | non-empty string |
+# | `roles.<role>.timeout` | positive duration |
 # | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` |
 # | `reviews.planning` | `required`, `off` |
 # | `reviews.planning_role` | role reference |
@@ -123,7 +123,7 @@
 # -----------------------------------------------------------------------------
 # Each role is a table with a required description. Optional grants,
 # role-local launch target/options, and automatic-launch permissions remain
-# distinct fields. A role without `launch.target` is manual-dispatch.
+# distinct fields. A role without `target` is manual-dispatch.
 #
 # Default roster (FR-011, DEC-002 Pick 3): `pm` and `operator` only.
 # `coder` and `reviewer` are common example role labels operators may add
@@ -162,12 +162,12 @@
 # task_role = "reviewer"            # required only when task_closure = "required"
 
 # -----------------------------------------------------------------------------
-# [roles.<role>.launch] and [roles.<role>].auto_launch
+# [roles.<role>] execution fields and auto_launch
 # -----------------------------------------------------------------------------
-# A role-local launch table supplies neutral target/options. The role's
+# One flat role table supplies neutral target/options and permissions. The
 # `auto_launch` list independently allows automatic launch for assigned work
-# types. A launch target without the applicable permission remains available
-# for operator-performed launch.
+# types. A target without the applicable permission remains available for
+# operator-performed launch.
 #
 # Keys:
 #   target      — the wrapper script name the PM invokes (e.g. "cartopian-claude").
@@ -197,7 +197,6 @@
 # description = "Implements tasks per spec."
 # auto_launch = ["task_run"]
 #
-# [roles.coder.launch]
 # target = "cartopian-claude"
 # timeout = "60m"
 # model = "claude-opus-4-8"

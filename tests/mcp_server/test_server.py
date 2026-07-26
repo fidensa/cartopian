@@ -392,16 +392,14 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.6.0"\n'
+                'project_schema_version = "v0.7.0"\n'
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
-                "\n[roles.coder.launch]\n"
                 'target = "cartopian-claude"\n'
                 "\n[roles.reviewer]\n"
                 'description = "Checks work."\n'
                 'auto_launch = ["task_review", "planning_review"]\n'
-                "\n[roles.reviewer.launch]\n"
                 'target = "cartopian-claude"\n'
                 "\n[reviews]\n"
                 'planning = "required"\n'
@@ -478,7 +476,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.6.0"\n'
+                'project_schema_version = "v0.7.0"\n'
                 "unknown = true\n",
                 encoding="utf-8",
             )

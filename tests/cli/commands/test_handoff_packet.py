@@ -1,7 +1,7 @@
 """Tests for `cartopian handoff-packet`.
 
 Covers the happy path (NDJSON contract), no-plan project, missing
-config → EXIT_ENV, missing roles.<role>.launch guard, and read-only invariant.
+config → EXIT_ENV, missing roles.<role>.target guard, and read-only invariant.
 """
 import argparse
 import contextlib
@@ -21,14 +21,12 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.6.0"\n'
+    'project_schema_version = "v0.7.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles.coder]\n"
     'description = "Implements tasks per spec."\n'
     'auto_launch = ["task_run"]\n'
-    "\n"
-    "[roles.coder.launch]\n"
     'target = "cartopian-claude"\n'
     'model = "claude-opus-4-8"\n'
     'effort = "high"\n'
@@ -208,11 +206,10 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
-        "\n[roles.coder.launch]\n"
         'target = "cartopian-claude"\n'
     )
 
@@ -333,7 +330,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
@@ -352,7 +349,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("roles.coder.launch.target", stderr)
+            self.assertIn("roles.coder.target", stderr)
 
 
 class TestHandoffPacketReadOnlyInvariant(unittest.TestCase):

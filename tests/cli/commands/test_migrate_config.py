@@ -73,6 +73,20 @@ def _attribution_strings(record):
     return values
 
 
+def _run_cli_migration(home: Path, project: Path):
+    args = type(
+        "Args",
+        (),
+        {"project_path": str(project), "apply": True},
+    )()
+    records = []
+    with mock.patch.object(Path, "home", return_value=home), mock.patch.object(
+        migrate_config, "emit_record", side_effect=records.append
+    ):
+        code = migrate_config.handler(args)
+    return code, records
+
+
 class TestConfigurationMigration(unittest.TestCase):
     def test_legacy_first_run_preserves_semantics_attribution_and_scope(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -115,8 +129,17 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.6.0"
+                project_cfg["project"]["project_schema_version"], "v0.7.0"
             )
+            for migrated_text in (
+                (home / ".cartopian" / "cartopian.toml").read_text(),
+                (project / "cartopian.toml").read_text(),
+            ):
+                self.assertNotIn("# migrated legacy:", migrated_text)
+                self.assertNotIn("[handoffs", migrated_text)
+                self.assertNotRegex(
+                    migrated_text, r"(?m)^\[roles\.[^.]+\.launch\]"
+                )
             self.assertEqual(
                 project_cfg["project"]["work_roots"], ["product"]
             )
@@ -174,7 +197,7 @@ class TestConfigurationMigration(unittest.TestCase):
             self.assertEqual(plan.compatibility_state, "transitional")
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.5-to-v0.6"],
+                ["config-v0.5-to-v0.6", "config-v0.6-to-v0.7"],
             )
             config_migration.execute_configuration_migration(
                 project, plan, home_root=home
@@ -187,11 +210,11 @@ class TestConfigurationMigration(unittest.TestCase):
             )
             self.assertNotIn("auto_launch", migrated["roles"]["manual"])
             self.assertEqual(
-                migrated["roles"]["manual"]["launch"]["target"],
+                migrated["roles"]["manual"]["target"],
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.6.0"
+                migrated["project"]["project_schema_version"], "v0.7.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -490,7 +513,8 @@ project_schema_version = "not-a-version"
             )
             self.assertEqual(plan.status, "planned")
             self.assertEqual(
-                [step.kind for step in plan.steps], ["write-project"]
+                [step.kind for step in plan.steps],
+                ["write-project", "update-marker"],
             )
             config_migration.execute_configuration_migration(
                 project, plan, home_root=home
@@ -504,6 +528,272 @@ project_schema_version = "not-a-version"
                     project, home_root=home
                 ).status,
                 "noop",
+            )
+
+    def test_public_migration_omits_empty_roles_parent_and_rerun_is_byte_stable(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "empty-handoffs")
+            path = project / "cartopian.toml"
+            path.write_text(
+                """
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.6.0"
+
+[roles]
+
+[handoffs]
+""".lstrip()
+            )
+
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["result"]["status"], "complete")
+            migrated = path.read_text()
+            self.assertNotRegex(migrated, r"(?m)^\s*\[roles\]\s*$")
+            self.assertNotIn("roles", tomllib.loads(migrated))
+
+            before_rerun = path.read_bytes()
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["plan"]["status"], "noop")
+            self.assertEqual(records[0]["details"]["result"]["status"], "noop")
+            self.assertEqual(path.read_bytes(), before_rerun)
+
+    def test_public_migration_preserves_nonempty_roles_table_in_meaning(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "empty-handoffs")
+            path = project / "cartopian.toml"
+            path.write_text(
+                """
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.6.0"
+
+[roles.reviewer]
+description = "Reviews completed work."
+grants = ["reviewer-like"]
+
+[handoffs]
+""".lstrip()
+            )
+            expected_role = tomllib.loads(path.read_text())["roles"]["reviewer"]
+
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["result"]["status"], "complete")
+            migrated = tomllib.loads(path.read_text())
+            self.assertEqual(migrated["roles"]["reviewer"], expected_role)
+
+    def test_public_v060_migration_flattens_role_launch_and_is_byte_stable(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            path = project / "cartopian.toml"
+            path.write_text(
+                """
+# Unrelated operator heading remains.
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.6.0"
+work_roots = ["product"]
+
+[roles.coder]
+description = "Implements approved work."
+grants = ["coder-like"]
+auto_launch = ["task_run"]
+
+# Retired launch grouping disappears with its table.
+[roles.coder.launch] # retired header note
+target = "cartopian-codex" # target attribution note
+model = "example-model"
+effort = "high"
+timeout = "45m"
+""".lstrip()
+            )
+
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "planned")
+            self.assertEqual(
+                [entry.identity for entry in plan.entries],
+                ["config-v0.6-to-v0.7"],
+            )
+            source = dict(plan.source_effective)
+            target = dict(plan.target_effective)
+            source.pop("project_schema_version")
+            target.pop("project_schema_version")
+            self.assertEqual(source, target)
+
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["result"]["status"], "complete")
+            migrated_text = path.read_text()
+            migrated = tomllib.loads(migrated_text)
+            coder = migrated["roles"]["coder"]
+            self.assertEqual(
+                {
+                    key: coder[key]
+                    for key in ("target", "model", "effort", "timeout")
+                },
+                {
+                    "target": "cartopian-codex",
+                    "model": "example-model",
+                    "effort": "high",
+                    "timeout": "45m",
+                },
+            )
+            self.assertNotIn("launch", coder)
+            self.assertEqual(migrated_text.count("[roles.coder]"), 1)
+            self.assertNotIn("[roles.coder.launch]", migrated_text)
+            self.assertNotIn("# retired header note", migrated_text)
+            self.assertNotIn("# Retired launch grouping", migrated_text)
+            self.assertIn("# target attribution note", migrated_text)
+            self.assertIn("# Unrelated operator heading remains.", migrated_text)
+            self.assertNotIn("# migrated legacy:", migrated_text)
+            self.assertEqual(
+                migrated["project"]["project_schema_version"], "v0.7.0"
+            )
+
+            before_rerun = path.read_bytes()
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["plan"]["status"], "noop")
+            self.assertEqual(records[0]["details"]["result"]["status"], "noop")
+            self.assertEqual(path.read_bytes(), before_rerun)
+
+    def test_current_marker_repairs_preexisting_generated_tombstones(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            global_path = home / ".cartopian" / "cartopian.toml"
+            project_path = project / "cartopian.toml"
+            global_path.write_text(
+                global_path.read_text()
+                + "\n# migrated legacy: [handoffs.reviewer]\n"
+                + '# migrated legacy: agent = "cartopian-review"\n'
+            )
+            project_path.write_text(
+                project_path.read_text()
+                + "\n# migrated legacy: [roles.coder.launch]\n"
+                + '# migrated legacy: target = "cartopian-codex"\n'
+            )
+
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["result"]["status"], "complete")
+            for path in (global_path, project_path):
+                self.assertNotIn("# migrated legacy:", path.read_text())
+            self.assertEqual(
+                records[0]["details"]["plan"]["entries"][0]["identity"],
+                "config-v0.7-partial-repair",
+            )
+
+            before_rerun = _config_bytes(home, project)
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["plan"]["status"], "noop")
+            self.assertEqual(_config_bytes(home, project), before_rerun)
+
+    def test_current_marker_global_nested_launch_metadata_matches_public_apply(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            global_path = home / ".cartopian" / "cartopian.toml"
+            global_path.write_text(
+                """
+[automation]
+initiation = "operator"
+
+[roles.reviewer]
+description = "Reviews completed work."
+grants = ["reviewer-like"]
+
+[roles.reviewer.launch]
+target = "cartopian-review"
+timeout = "30m"
+""".lstrip()
+            )
+
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            public_plan = records[0]["details"]["plan"]
+            public_result = records[0]["details"]["result"]
+            self.assertEqual(public_plan["status"], "planned")
+            self.assertEqual(public_result["status"], "complete")
+            self.assertEqual(
+                public_plan["entries"][0]["identity"],
+                "config-v0.7-partial-repair",
+            )
+            self.assertIn(
+                "superseded-role-launch",
+                public_plan["entries"][0]["supported_forms"],
+            )
+            self.assertIn(
+                "flatten-role-launch-fields",
+                public_plan["entries"][0]["transforms"],
+            )
+            nested_facts = [
+                fact
+                for fact in public_plan["source_facts"]
+                if fact["scope"] == "global"
+                and fact["field"].startswith("roles.reviewer.launch.")
+            ]
+            self.assertTrue(nested_facts)
+            self.assertEqual(
+                {fact["form"] for fact in nested_facts},
+                {"superseded-role-launch"},
+            )
+            self.assertIn(
+                nested_facts[0]["form"],
+                public_plan["entries"][0]["supported_forms"],
+            )
+            migrated_text = global_path.read_text()
+            migrated = tomllib.loads(migrated_text)
+            self.assertEqual(
+                migrated["roles"]["reviewer"]["target"],
+                "cartopian-review",
+            )
+            self.assertEqual(migrated["roles"]["reviewer"]["timeout"], "30m")
+            self.assertNotIn("launch", migrated["roles"]["reviewer"])
+            self.assertNotIn("[roles.reviewer.launch]", migrated_text)
+
+            before_rerun = _config_bytes(home, project)
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["plan"]["status"], "noop")
+            self.assertEqual(records[0]["details"]["result"]["status"], "noop")
+            self.assertEqual(_config_bytes(home, project), before_rerun)
+
+    def test_empty_roles_parent_removal_keeps_surviving_role_subtable(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            path = project / "cartopian.toml"
+            path.write_text(
+                """
+[project]
+id = "migration-fixture"
+name = "Migration Fixture"
+project_schema_version = "v0.6.0"
+work_roots = ["product"]
+
+[roles]
+
+[roles.reviewer]
+description = "Reviews completed work."
+grants = ["reviewer-like"]
+target = "cartopian-review"
+""".lstrip()
+            )
+            code, records = _run_cli_migration(home, project)
+            self.assertEqual(code, 0)
+            self.assertEqual(records[0]["details"]["result"]["status"], "complete")
+            migrated_text = path.read_text()
+            migrated = tomllib.loads(migrated_text)
+            self.assertNotRegex(migrated_text, r"(?m)^\s*\[roles\]\s*$")
+            self.assertEqual(
+                migrated["roles"]["reviewer"]["target"], "cartopian-review"
             )
 
     def test_annotated_global_and_project_files_preserve_comments_and_order(self):
@@ -527,12 +817,12 @@ project_schema_version = "not-a-version"
                 "# Review role grouping.",
                 "# role note",
                 "# Reference only: auto_launch = [\"task_run\"]",
-                "# Legacy launch grouping; comments remain useful migration history.",
                 "# target note",
                 "# task permission note",
-                "# planning intentionally manual",
             ):
                 self.assertIn(comment, global_text)
+            self.assertNotIn("# Legacy launch grouping", global_text)
+            self.assertNotIn("# planning intentionally manual", global_text)
             for comment in (
                 "# Project configuration maintained by the operator.",
                 "# stable identity",
@@ -541,13 +831,15 @@ project_schema_version = "not-a-version"
                 "# Lightweight documentation role.",
                 "# writer note",
                 "# coder note",
-                "# Keep this handoff grouping visible after migration.",
                 "# coder target",
                 "# tasks start automatically",
-                "# reviews remain manual",
                 "[reviews] # review policy",
             ):
                 self.assertIn(comment, project_text)
+            self.assertNotIn("# Keep this handoff grouping", project_text)
+            self.assertNotIn("# reviews remain manual", project_text)
+            self.assertNotIn("# migrated legacy:", global_text)
+            self.assertNotIn("# migrated legacy:", project_text)
             self.assertLess(
                 global_text.index("[automation]"),
                 global_text.index("[roles.reviewer]"),
@@ -562,11 +854,11 @@ project_schema_version = "not-a-version"
             )
             self.assertLess(
                 global_text.index('auto_launch = ["task_run"]'),
-                global_text.index("# Legacy launch grouping"),
+                global_text.index('target = "cartopian-review"'),
             )
             self.assertLess(
                 project_text.index('auto_launch = ["task_run"]'),
-                project_text.index("# Keep this handoff grouping"),
+                project_text.index('target = "cartopian-codex"'),
             )
             self.assertEqual(
                 config_migration.plan_configuration_migration(

@@ -1,6 +1,6 @@
 """CARTOPIAN_EFFORT wrapper-translation contract tests.
 
-`roles.<role>.launch.effort` is resolved project -> global and exported by
+`roles.<role>.effort` is resolved project -> global and exported by
 `cartopian dispatch` as the agent-neutral `CARTOPIAN_EFFORT` environment
 variable. Unlike model (uniform `--model`), the translation is per-agent:
 

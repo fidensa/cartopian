@@ -13,6 +13,7 @@ from pathlib import Path
 
 from cli.config_schema import CONFIG_SCHEMA, MACHINE_RECORD_SCHEMA_VERSION
 from cli.config_surface_parity import (
+    authored_field_prose_parity,
     check_surface_registry,
     closed_value_parity,
     guidance_hygiene,
@@ -294,6 +295,75 @@ class TestSurfaceRegistry(unittest.TestCase):
                 for item in invented
             )
         )
+
+    def test_authored_field_prose_rejects_stale_active_paths(self) -> None:
+        source = (ROOT / "protocol" / "CONVENTIONS.md").read_text(
+            encoding="utf-8"
+        )
+        mutations = (
+            (
+                "with `target` has a resolved target/options record",
+                "with `launch.target` has a resolved target/options record",
+            ),
+            (
+                "configured `roles.<role>.timeout` value",
+                "configured `launch.timeout`",
+            ),
+        )
+        for preferred, stale in mutations:
+            with self.subTest(stale=stale):
+                self.assertIn(preferred, source)
+                probe = source.replace(preferred, stale, 1)
+                first = authored_field_prose_parity(
+                    probe, surface="protocol/CONVENTIONS.md"
+                )
+                second = authored_field_prose_parity(
+                    probe, surface="protocol/CONVENTIONS.md"
+                )
+                self.assertEqual(first, second)
+                stale_diagnostics = [
+                    item for item in first if item.code == "stale-authored-field"
+                ]
+                self.assertEqual(len(stale_diagnostics), 1)
+
+    def test_authored_field_prose_allows_bounded_legacy_and_projection_paths(
+        self,
+    ) -> None:
+        probes = (
+            "Legacy compatibility only: migration tooling recognizes "
+            "`[roles.<role>.launch]` and `launch.timeout` as migration input.",
+            "The resolved `launch.target` is consumed by handoff code.",
+            "The derived `roles.<role>.launch.timeout` projection is read-only.",
+        )
+        for probe in probes:
+            with self.subTest(probe=probe):
+                self.assertEqual(
+                    authored_field_prose_parity(probe, surface="probe.md"),
+                    (),
+                )
+
+    def test_authored_field_prose_follows_both_authoritative_catalogs(self) -> None:
+        fields = CONFIG_SCHEMA["fields"]
+        vocabulary = CONFIG_SCHEMA["legacy_vocabulary"]
+        original_paths = vocabulary["authored_config_paths"]
+        fields["roles.*.probe"] = {
+            "scopes": ("global", "project"),
+            "type": "non-empty-string",
+        }
+        vocabulary["authored_config_paths"] = (
+            *original_paths,
+            "roles.*.launch.probe",
+        )
+        try:
+            diagnostics = authored_field_prose_parity(
+                "Set the active `launch.probe` field.",
+                surface="probe.md",
+            )
+            self.assertEqual(len(diagnostics), 1)
+            self.assertEqual(diagnostics[0].code, "stale-authored-field")
+        finally:
+            vocabulary["authored_config_paths"] = original_paths
+            del fields["roles.*.probe"]
 
     def test_guidance_hygiene_rejects_host_operator_and_secret_values(self) -> None:
         issues = guidance_hygiene(
@@ -634,10 +704,10 @@ class TestCliMcpContractParity(unittest.TestCase):
             "project.work_roots": "work_root",
             "roles.*.description": "role",
             "roles.*.grants": "role_grants",
-            "roles.*.launch.target": "role_launch_target",
-            "roles.*.launch.model": "role_launch_model",
-            "roles.*.launch.effort": "role_launch_effort",
-            "roles.*.launch.timeout": "role_launch_timeout",
+            "roles.*.target": "role_launch_target",
+            "roles.*.model": "role_launch_model",
+            "roles.*.effort": "role_launch_effort",
+            "roles.*.timeout": "role_launch_timeout",
             "roles.*.auto_launch": "role_auto_launch",
             "reviews.planning": "review_planning",
             "reviews.planning_role": "review_planning_role",
@@ -670,10 +740,10 @@ class TestCliMcpContractParity(unittest.TestCase):
             {
                 "roles.*.description",
                 "roles.*.grants",
-                "roles.*.launch.target",
-                "roles.*.launch.model",
-                "roles.*.launch.effort",
-                "roles.*.launch.timeout",
+                "roles.*.target",
+                "roles.*.model",
+                "roles.*.effort",
+                "roles.*.timeout",
                 "roles.*.auto_launch",
                 "work_roots.*",
             }
@@ -804,15 +874,13 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.6.0"\n'
+        'project_schema_version = "v0.7.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
         'grants = ["coder-like"]\n'
         'auto_launch = ["task_run"]\n'
-        "\n"
-        "[roles.coder.launch]\n"
         'target = "cartopian-codex"\n'
         'model = "gpt-5-codex"\n'
         'effort = "high"\n'

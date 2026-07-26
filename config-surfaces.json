@@ -70,7 +70,7 @@
         "CONFIG_SCHEMA",
         "resolve_project_configuration",
         "project_schema_version",
-        "roles.<role>.launch",
+        "roles.<role>.target",
         "auto_launch"
       ]
     },
@@ -178,6 +178,20 @@
         "README.md",
         "CAPABILITIES.md",
         "protocol/CONVENTIONS.md"
+      ]
+    }
+  ],
+  "authored_field_prose_parity": [
+    {
+      "paths": [
+        "README.md",
+        "CONFIG-MAPPING.md",
+        "protocol/*.md",
+        "templates/*.md",
+        "templates/*.toml",
+        "templates/**/*.md",
+        "templates/**/*.toml",
+        "skills/*.md"
       ]
     }
   ],
@@ -520,10 +534,10 @@
         "tests/test_protocol_gate.py",
         "tests/wrappers/test_timeout_ssot.py"
       ],
-      "owner_contract": "preferred configuration, schema identity, projection, and roles.<role>.launch.timeout contracts",
+      "owner_contract": "preferred configuration, schema identity, projection, and roles.<role>.timeout contracts",
       "mode": "parity-validated",
       "facts_consumed": [
-        "roles.*.launch.timeout",
+        "roles.*.timeout",
         "CARTOPIAN_TIMEOUT"
       ],
       "output_projection": [
