@@ -799,6 +799,14 @@ target = "cartopian-review"
     def test_annotated_global_and_project_files_preserve_comments_and_order(self):
         with tempfile.TemporaryDirectory() as raw:
             home, project = _seed(Path(raw), "annotated")
+            fixture_text = (
+                FIXTURES / "annotated" / "project.toml"
+            ).read_text()
+            self.assertIn(
+                "# Retired handoff grouping and its attached comments "
+                "are removed during migration.",
+                fixture_text,
+            )
             plan = config_migration.plan_configuration_migration(
                 project, home_root=home
             )
@@ -836,10 +844,12 @@ target = "cartopian-review"
                 "[reviews] # review policy",
             ):
                 self.assertIn(comment, project_text)
-            self.assertNotIn("# Keep this handoff grouping", project_text)
+            self.assertNotIn("# Retired handoff grouping", project_text)
             self.assertNotIn("# reviews remain manual", project_text)
             self.assertNotIn("# migrated legacy:", global_text)
             self.assertNotIn("# migrated legacy:", project_text)
+            self.assertNotIn("\n\n\n", global_text)
+            self.assertNotIn("\n\n\n", project_text)
             self.assertLess(
                 global_text.index("[automation]"),
                 global_text.index("[roles.reviewer]"),
@@ -848,6 +858,16 @@ target = "cartopian-review"
                 project_text.index('id = "migration-fixture"'),
                 project_text.index('name = "Migration Fixture"'),
             )
+            before_rerun = _config_bytes(home, project)
+            rerun_plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(rerun_plan.status, "noop")
+            rerun_result = config_migration.execute_configuration_migration(
+                project, rerun_plan, home_root=home
+            )
+            self.assertEqual(rerun_result["status"], "noop")
+            self.assertEqual(_config_bytes(home, project), before_rerun)
             self.assertLess(
                 project_text.index('name = "Migration Fixture"'),
                 project_text.index("project_schema_version"),

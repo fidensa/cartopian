@@ -37,26 +37,26 @@ def _write(path: Path, text: str) -> None:
 
 
 CONFIG_BODY = """[project]
-work_roots = ["tool-repo"]
+id = "wait-handoff-fixture"
+name = "Wait Handoff Fixture"
+project_schema_version = "v0.7.0"
 
-[roles]
-coder = "Implements tasks per spec."
-
-[handoffs.coder]
-agent = "codex"
-auto_start_tasks = true
+[roles.coder]
+description = "Implements tasks per spec."
+target = "codex"
+auto_launch = ["task_run"]
 timeout = "{timeout}"
 """
 
 CONFIG_NO_TIMEOUT = """[project]
-work_roots = ["tool-repo"]
+id = "wait-handoff-fixture"
+name = "Wait Handoff Fixture"
+project_schema_version = "v0.7.0"
 
-[roles]
-coder = "Implements tasks per spec."
-
-[handoffs.coder]
-agent = "codex"
-auto_start_tasks = true
+[roles.coder]
+description = "Implements tasks per spec."
+target = "codex"
+auto_launch = ["task_run"]
 """
 
 TASK_BODY = """# TASK-01-003: Implement wait-handoff CLI command

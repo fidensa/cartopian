@@ -82,3 +82,25 @@ class TestScanPmIdentifiers(unittest.TestCase):
             # Neither raises; the missing path is skipped and the binary decode
             # error is swallowed (a binary file is not product source to lint).
             self.assertEqual(scan_pm_identifiers([missing, binary]), [])
+
+    def test_real_identifier_leak_is_never_exempt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            source = self._write(
+                d,
+                "feature.py",
+                "# real product prose leaks TASK-02-002\n",
+            )
+            hits = scan_pm_identifiers([source])
+            self.assertEqual(
+                [hit["match"] for hit in hits],
+                ["TASK-02-002"],
+            )
+
+    def test_shipped_configuration_matrix_needs_no_exemption(self) -> None:
+        matrix = (
+            Path(__file__).resolve().parents[2]
+            / "evaluations"
+            / "configuration_matrix.py"
+        )
+        self.assertEqual(scan_pm_identifiers([matrix]), [])

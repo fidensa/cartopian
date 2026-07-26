@@ -14,7 +14,7 @@ writer = "Writes supporting material." # writer note
 description = "Implements approved work." # coder note
 grants = ["coder-like"]
 
-# Keep this handoff grouping visible after migration.
+# Retired handoff grouping and its attached comments are removed during migration.
 [handoffs.coder]
 agent = "cartopian-codex" # coder target
 effort = "high"

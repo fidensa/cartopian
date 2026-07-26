@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
+from cli.capabilities import is_known_grant_name
 from cli.config_schema import CONFIG_SCHEMA
 
 REGISTRY_NAME = "config-surfaces.json"
@@ -95,6 +96,102 @@ _PROSE_VALUE_CLAIM_RE = re.compile(
     r"\b(?:accepts?\s+only|supported\s+values?\s+are|allowed\s+values?\s+are"
     r"|values?\s+are|modes?\s+are|one\s+of|closed\s+unique\s+list[^.]*?\bfrom)\b",
     re.IGNORECASE,
+)
+_GRANT_ASSIGNMENT_RE = re.compile(r"\bgrants\s*=\s*\[(?P<values>[^\]]*)\]")
+_QUOTED_GRANT_VALUE_RE = re.compile(r"^[\"'](?P<value>[^\"']+)[\"']$")
+_BARE_GRANT_VALUE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9:_-]*$")
+_SENTENCE_END_RE = re.compile(r"[.!?](?P<separator>\s+)")
+_PARAGRAPH_BOUNDARY_RE = re.compile(r"\n\s*\n")
+_MARKDOWN_ITEM_BOUNDARY_RE = re.compile(
+    r"(?m)^[ \t]*(?:[-+*]|\d+[.)])[ \t]+"
+)
+_MARKDOWN_TABLE_ROW_BOUNDARY_RE = re.compile(r"(?m)^[ \t]*\|[ \t]*")
+_PROTECTED_PERIOD_ABBREVIATIONS = frozenset(
+    {
+        "cf.",
+        "dr.",
+        "e.g.",
+        "etc.",
+        "i.e.",
+        "jr.",
+        "mr.",
+        "mrs.",
+        "ms.",
+        "no.",
+        "prof.",
+        "sr.",
+        "st.",
+        "vs.",
+    }
+)
+_PERIOD_TOKEN_RE = re.compile(r"(?i)([a-z][a-z.]*)\.$")
+_DOTTED_INITIALISM_RE = re.compile(r"(?:[A-Za-z]\.){2,}$")
+_SINGLE_INITIAL_RE = re.compile(r"\b[A-Z]\.$")
+_EXPLICIT_COMPATIBILITY_SENTENCE_RE = re.compile(
+    r"(?:"
+    r"^\s*Legacy compatibility only:"
+    r"|^\s*Migration (?:input|source) only:"
+    r"|\bmigration-source paths?\b[\s\S]*?\b(?:cover|include|recognize|accept)\b"
+    r"|\bmigration tooling\b[\s\S]*?\b(?:recognizes?|accepts?|reads?|converts?)\b"
+    r"|\bsuperseded\b[\s\S]*?\bmigration input only\b"
+    r")",
+    re.IGNORECASE,
+)
+_CAPABILITY_DIRECT_MODIFIER_RE = re.compile(
+    r"\b(?:invalid|retired|superseded|deprecated|unsupported|unknown)"
+    r"(?:\s+(?:capability|grant|preset))?"
+    r"\s+(?:value|name|example|entry)\s*[`*_:'\"(\[]*$",
+    re.IGNORECASE,
+)
+_CAPABILITY_NEGATIVE_BEFORE_RE = re.compile(
+    r"(?:"
+    r"\b(?:must|should|do|does)\s+not\s+(?:use|select|author|accept)"
+    r"|\bnever\s+(?:use|select|author|accept)s?"
+    r"|\b(?:rejects?|forbids?)"
+    r")\s*[`*_:'\"(\[]*$",
+    re.IGNORECASE,
+)
+_CAPABILITY_HISTORICAL_ATTRIBUTION_RE = re.compile(
+    r"\b(?:DEC-\d+(?:'s)?|prior decision|earlier example|historical decision)"
+    r"[\s\S]{0,160}?\b(?:used|contained|cited|showed|selected|authored)"
+    r"\s*[`*_:'\"(\[]*$",
+    re.IGNORECASE,
+)
+_CAPABILITY_NEGATIVE_AFTER_RE = re.compile(
+    r"^\s*[`*_)\]}'\",.;:-]*\s*(?:"
+    r"(?:must|should)\s+not\s+be\s+(?:used|selected|authored|accepted)"
+    r"|(?:is|was|remains)\s+(?:an?\s+)?"
+    r"(?:invalid|retired|superseded|deprecated|unsupported|unknown|"
+    r"rejected|forbidden)(?:\s+(?:capability|grant|preset|value|name|example))?"
+    r"|(?:is|was)\s+outside\s+(?:the\s+)?"
+    r"(?:closed\s+)?(?:capability|grant|preset)\s+vocabulary"
+    r")\b",
+    re.IGNORECASE,
+)
+_DIRECT_PROJECTION_QUALIFIER_RE = re.compile(
+    r"(?:\*{0,2})(?:resolved|derived)(?:\*{0,2})\s+$",
+    re.IGNORECASE,
+)
+_DIRECT_NONAUTHORING_QUALIFIER_RE = re.compile(
+    r"(?:"
+    r"\b(?:contains?|has|emits?|authors?|uses?|permits?|allows?)\s+no"
+    r"|\b(?:does|do|must|may|can)\s+not\s+"
+    r"(?:author|emit|use|contain|accept)"
+    r"|\bnever\s+(?:author|emit|use|contain|accept)s?"
+    r"|\b(?:rejects?|forbids?)"
+    r")\s+$",
+    re.IGNORECASE,
+)
+_CANONICAL_SUITE_KEYS = frozenset(
+    {
+        "id",
+        "runner",
+        "collection_command",
+        "execution_command",
+        "collection_executes",
+        "minimum_collected",
+        "required_tests",
+    }
 )
 _FORBIDDEN_REGISTRY_SEMANTIC_KEYS = frozenset(
     {
@@ -208,6 +305,133 @@ def _retired_nested_role_fields() -> Tuple[str, ...]:
     return tuple(sorted(set(leaves)))
 
 
+def _period_ends_sentence(text: str, period_index: int) -> bool:
+    """Return false only for explicit abbreviation shapes ending at a period."""
+    prefix = text[: period_index + 1]
+    token = _PERIOD_TOKEN_RE.search(prefix)
+    if (
+        token is not None
+        and token.group(1).lower() + "." in _PROTECTED_PERIOD_ABBREVIATIONS
+    ):
+        return False
+    if _DOTTED_INITIALISM_RE.search(prefix):
+        return False
+    if _SINGLE_INITIAL_RE.search(prefix):
+        return False
+    return True
+
+
+def _sentence_boundaries(text: str) -> Tuple[Tuple[int, int], ...]:
+    """Return punctuation-end and following-content offsets for sentences."""
+    boundaries = []
+    for match in _SENTENCE_END_RE.finditer(text):
+        if match.group(0).startswith(".") and not _period_ends_sentence(
+            text,
+            match.start(),
+        ):
+            continue
+        boundaries.append((match.start() + 1, match.end()))
+    return tuple(boundaries)
+
+
+def _prose_unit(text: str, start: int, end: int) -> Tuple[int, int]:
+    """Return the exact sentence, paragraph, list item, or table row around a span."""
+    sentence_boundaries = _sentence_boundaries(text)
+    paragraph_boundaries = tuple(_PARAGRAPH_BOUNDARY_RE.finditer(text))
+    item_boundaries = tuple(_MARKDOWN_ITEM_BOUNDARY_RE.finditer(text))
+    table_boundaries = tuple(_MARKDOWN_TABLE_ROW_BOUNDARY_RE.finditer(text))
+    unit_start = max(
+        (
+            *(
+                content_start
+                for _, content_start in sentence_boundaries
+                if content_start <= start
+            ),
+            *(
+                boundary.end()
+                for boundary in paragraph_boundaries
+                if boundary.end() <= start
+            ),
+            *(
+                boundary.end()
+                for boundary in item_boundaries
+                if boundary.end() <= start
+            ),
+            *(
+                boundary.end()
+                for boundary in table_boundaries
+                if boundary.end() <= start
+            ),
+        ),
+        default=0,
+    )
+    unit_end = min(
+        (
+            *(
+                punctuation_end
+                for punctuation_end, _ in sentence_boundaries
+                if punctuation_end >= end
+            ),
+            *(
+                boundary.start()
+                for boundary in paragraph_boundaries
+                if boundary.start() >= end
+            ),
+            *(
+                boundary.start()
+                for boundary in item_boundaries
+                if boundary.start() >= end
+            ),
+            *(
+                boundary.start()
+                for boundary in table_boundaries
+                if boundary.start() >= end
+            ),
+        ),
+        default=len(text),
+    )
+    return unit_start, unit_end
+
+
+def _grant_values(raw_values: str) -> Tuple[str, ...]:
+    """Parse quoted grants and retain bare invalid tokens for negative bite."""
+    without_comments = "\n".join(
+        line.split("#", 1)[0] for line in raw_values.splitlines()
+    )
+    values = []
+    for raw_value in without_comments.split(","):
+        token = raw_value.strip()
+        if not token:
+            continue
+        quoted = _QUOTED_GRANT_VALUE_RE.fullmatch(token)
+        if quoted is not None:
+            values.append(quoted.group("value"))
+        elif _BARE_GRANT_VALUE_RE.fullmatch(token):
+            values.append(token)
+    return tuple(values)
+
+
+def _capability_citation_is_explanatory(
+    text: str,
+    *,
+    unit_start: int,
+    unit_end: int,
+    assignment_start: int,
+    assignment_end: int,
+) -> bool:
+    """Require negative or historical language to bind to this assignment."""
+    preceding = text[unit_start:assignment_start]
+    following = text[assignment_end:unit_end]
+    return any(
+        pattern.search(preceding) is not None
+        for pattern in (
+            _CAPABILITY_DIRECT_MODIFIER_RE,
+            _CAPABILITY_NEGATIVE_BEFORE_RE,
+            _CAPABILITY_HISTORICAL_ATTRIBUTION_RE,
+        )
+    ) or _CAPABILITY_NEGATIVE_AFTER_RE.search(following) is not None
+
+
 def authored_field_prose_parity(
     text: str,
     *,
@@ -217,9 +441,10 @@ def authored_field_prose_parity(
 
     The checked spellings are derived from the authoritative preferred field
     catalog and its separately declared legacy vocabulary. Compatibility prose
-    is allowed only in a paragraph explicitly bounded as legacy/migration
-    material. Derived-record prose is allowed only when ``resolved`` or
-    ``derived`` directly qualifies the retired-looking projection spelling.
+    is allowed only when the sentence containing the spelling declares an
+    explicit migration-only boundary. Derived-record prose is allowed only
+    when ``resolved`` or ``derived`` directly qualifies the retired-looking
+    projection spelling.
     """
     leaves = _retired_nested_role_fields()
     if not leaves:
@@ -231,38 +456,69 @@ def authored_field_prose_parity(
         rf"|`?\[roles\.{role}\.launch\]`?"
         rf"|`?roles\.{role}\.launch`?(?!\.)"
     )
-    compatibility_marker = re.compile(
-        r"\b(?:legacy compatibility|legacy|migration-source|migration input"
-        r"|migration tooling|superseded|retired authored|historical)\b",
-        re.IGNORECASE,
-    )
-    projection_qualifier = re.compile(
-        r"\b(?:resolved|derived)\b[^.\n]{0,48}$",
-        re.IGNORECASE,
-    )
-
     diagnostics: List[SurfaceDiagnostic] = []
-    offset = 0
-    for paragraph in re.split(r"(\n\s*\n)", text):
-        if not paragraph or re.fullmatch(r"\n\s*\n", paragraph):
-            offset += len(paragraph)
+    for match in retired.finditer(text):
+        sentence_start, sentence_end = _prose_unit(
+            text,
+            match.start(),
+            match.end(),
+        )
+        sentence = text[sentence_start:sentence_end]
+        if _EXPLICIT_COMPATIBILITY_SENTENCE_RE.search(sentence):
             continue
-        compatibility = compatibility_marker.search(paragraph) is not None
-        for match in retired.finditer(paragraph):
-            if compatibility:
+        preceding = text[sentence_start:match.start()]
+        if _DIRECT_PROJECTION_QUALIFIER_RE.search(preceding):
+            continue
+        if _DIRECT_NONAUTHORING_QUALIFIER_RE.search(preceding):
+            continue
+        line_number = text.count("\n", 0, match.start()) + 1
+        diagnostics.append(
+            SurfaceDiagnostic(
+                "stale-authored-field",
+                surface,
+                f"line {line_number}: {match.group(0).strip('`')}",
+            )
+        )
+    return tuple(sorted(set(diagnostics)))
+
+
+def capability_example_parity(
+    text: str,
+    *,
+    surface: str,
+) -> Tuple[SurfaceDiagnostic, ...]:
+    """Validate authored ``grants = [...]`` examples against live vocabulary.
+
+    Negative and explanatory prose may cite a retired value. The exemption is
+    bounded to the exact sentence, paragraph, or Markdown item containing the
+    citation; current authored examples remain subject to the live vocabulary.
+    """
+    diagnostics: List[SurfaceDiagnostic] = []
+    for match in _GRANT_ASSIGNMENT_RE.finditer(text):
+        unit_start, unit_end = _prose_unit(
+            text,
+            match.start(),
+            match.end(),
+        )
+        explanatory = _capability_citation_is_explanatory(
+            text,
+            unit_start=unit_start,
+            unit_end=unit_end,
+            assignment_start=match.start(),
+            assignment_end=match.end(),
+        )
+        values = _grant_values(match.group("values"))
+        for value in values:
+            if is_known_grant_name(value) or explanatory:
                 continue
-            line_start = paragraph.rfind("\n", 0, match.start()) + 1
-            if projection_qualifier.search(paragraph[line_start : match.start()]):
-                continue
-            line_number = text.count("\n", 0, offset + match.start()) + 1
+            line_number = text.count("\n", 0, match.start()) + 1
             diagnostics.append(
                 SurfaceDiagnostic(
-                    "stale-authored-field",
+                    "unknown-capability-example",
                     surface,
-                    f"line {line_number}: {match.group(0).strip('`')}",
+                    f"line {line_number}: {value}",
                 )
             )
-        offset += len(paragraph)
     return tuple(sorted(set(diagnostics)))
 
 
@@ -537,6 +793,205 @@ def registry_inventory_evidence(
     }
 
 
+def canonical_suite_manifest_diagnostics(
+    root: Path,
+    registry: Mapping[str, Any],
+) -> Tuple[SurfaceDiagnostic, ...]:
+    """Validate that every canonical suite has one runnable, closed declaration."""
+    diagnostics: List[SurfaceDiagnostic] = []
+    suites = registry.get("canonical_test_suites")
+    if not isinstance(suites, list) or not suites:
+        return (
+            SurfaceDiagnostic(
+                "canonical-suite-registration",
+                REGISTRY_NAME,
+                "at least one canonical test suite must be declared",
+            ),
+        )
+
+    seen = set()
+    for index, suite in enumerate(suites):
+        surface = str(suite.get("id", f"<suite-{index}>")) if isinstance(suite, dict) else f"<suite-{index}>"
+        if not isinstance(suite, dict):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "suite declaration must be an object",
+                )
+            )
+            continue
+        missing = sorted(_CANONICAL_SUITE_KEYS - set(suite))
+        if missing:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    f"missing keys: {', '.join(missing)}",
+                )
+            )
+            continue
+        extra = sorted(set(suite) - _CANONICAL_SUITE_KEYS)
+        if extra:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    f"unknown keys: {', '.join(extra)}",
+                )
+            )
+        if surface in seen:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "suite id is repeated",
+                )
+            )
+        seen.add(surface)
+        if suite["runner"] not in {"unittest", "pytest"}:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    f"unsupported runner: {suite['runner']!r}",
+                )
+            )
+        if not isinstance(suite["collection_executes"], bool):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "collection_executes must be boolean",
+                )
+            )
+        for command_name in ("collection_command", "execution_command"):
+            command = suite[command_name]
+            if (
+                not isinstance(command, list)
+                or not command
+                or any(not isinstance(token, str) or not token for token in command)
+                or command[0] != "{python}"
+                or len(command) < 3
+                or command[1] != "-m"
+                or command[2] != suite["runner"]
+            ):
+                diagnostics.append(
+                    SurfaceDiagnostic(
+                        "canonical-suite-registration",
+                        surface,
+                        f"{command_name} is not a direct {suite['runner']} module invocation",
+                    )
+                )
+        if (
+            not isinstance(suite["minimum_collected"], int)
+            or isinstance(suite["minimum_collected"], bool)
+            or suite["minimum_collected"] < 2
+        ):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "minimum_collected must be a nontrivial integer of at least 2",
+                )
+            )
+        required_tests = suite["required_tests"]
+        if not isinstance(required_tests, list) or not required_tests:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "required_tests must be a non-empty list",
+                )
+            )
+            continue
+        if (
+            suite["runner"] == "unittest"
+            and not any(
+                token in {"-v", "--verbose"}
+                for token in suite["execution_command"]
+            )
+        ):
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "canonical-suite-registration",
+                    surface,
+                    "unittest required_tests need verbose execution output",
+                )
+            )
+        for required in required_tests:
+            if (
+                not isinstance(required, dict)
+                or set(required) != {"path", "count"}
+            ):
+                diagnostics.append(
+                    SurfaceDiagnostic(
+                        "canonical-suite-registration",
+                        surface,
+                        f"invalid required test declaration: {required!r}",
+                    )
+                )
+                continue
+            relative = str(required["path"])
+            path = root / relative
+            count = required.get("count")
+            if (
+                not relative.startswith("tests/")
+                or not relative.endswith(".py")
+                or Path(relative).is_absolute()
+                or ".." in Path(relative).parts
+                or not path.is_file()
+                or not isinstance(count, int)
+                or isinstance(count, bool)
+                or count < 1
+            ):
+                diagnostics.append(
+                    SurfaceDiagnostic(
+                        "canonical-suite-registration",
+                        surface,
+                        f"invalid required test declaration: {required!r}",
+                    )
+                )
+    return tuple(sorted(set(diagnostics)))
+
+
+def canonical_suite_observation(
+    suite: Mapping[str, Any],
+    *,
+    collection_exit_code: int,
+    execution_exit_code: int,
+    collected_total: int,
+    collected_by_path: Mapping[str, int],
+) -> Dict[str, Any]:
+    """Fail closed when a declared suite fails or omits required collection."""
+    issues: List[str] = []
+    if collection_exit_code != 0:
+        issues.append(f"collection-exit-{collection_exit_code}")
+    if execution_exit_code != 0:
+        issues.append(f"execution-exit-{execution_exit_code}")
+    minimum = suite.get("minimum_collected")
+    if (
+        not isinstance(minimum, int)
+        or isinstance(minimum, bool)
+        or minimum < 2
+    ):
+        issues.append("invalid-minimum-collected")
+    elif collected_total < minimum:
+        issues.append(
+            f"collected-{collected_total}-below-minimum-{minimum}"
+        )
+    for required in suite.get("required_tests", ()):
+        path = str(required["path"])
+        expected = int(required["count"])
+        observed = int(collected_by_path.get(path, 0))
+        if observed != expected:
+            issues.append(f"{path}:collected-{observed}-expected-{expected}")
+    return {
+        "green": not issues,
+        "issues": tuple(issues),
+    }
+
+
 def _test_anchor_exists(root: Path, anchor: str) -> bool:
     path_text, separator, symbol = anchor.partition("::")
     path = root / path_text
@@ -636,6 +1091,7 @@ def check_surface_registry(
                 "authority must point to cli/config_schema.py::CONFIG_SCHEMA",
             )
         )
+    diagnostics.extend(canonical_suite_manifest_diagnostics(root, registry))
 
     seen_ids = set()
     approved_test_compatibility = set(
@@ -854,6 +1310,34 @@ def check_surface_registry(
             relative = matched_path.relative_to(root).as_posix()
             diagnostics.extend(
                 authored_field_prose_parity(
+                    matched_path.read_text(encoding="utf-8"),
+                    surface=relative,
+                )
+            )
+
+    capability_rules = registry.get("capability_example_parity", [])
+    if not capability_rules:
+        diagnostics.append(
+            SurfaceDiagnostic(
+                "capability-example-parity-registration",
+                REGISTRY_NAME,
+                "current guidance examples must use the live capability vocabulary",
+            )
+        )
+    for rule in capability_rules:
+        matched = _files_for_patterns(root, rule.get("paths", []))
+        if not matched:
+            diagnostics.append(
+                SurfaceDiagnostic(
+                    "capability-example-parity-registration",
+                    REGISTRY_NAME,
+                    "capability example parity rule matches no repository path",
+                )
+            )
+        for matched_path in matched:
+            relative = matched_path.relative_to(root).as_posix()
+            diagnostics.extend(
+                capability_example_parity(
                     matched_path.read_text(encoding="utf-8"),
                     surface=relative,
                 )

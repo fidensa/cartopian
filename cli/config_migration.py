@@ -1432,6 +1432,21 @@ class _TomlEditor:
             insertion -= 1
         return insertion
 
+    def _normalize_blank_seam(self, insertion: int) -> None:
+        """Collapse only whitespace joined by a structural removal."""
+        left = min(insertion, len(self.lines))
+        while left > 0 and not self.lines[left - 1].strip():
+            left -= 1
+        right = min(insertion, len(self.lines))
+        while right < len(self.lines) and not self.lines[right].strip():
+            right += 1
+        replacement = (
+            [self.newline]
+            if left > 0 and right < len(self.lines)
+            else []
+        )
+        self.lines[left:right] = replacement
+
     def convert_role_strings(self, roles: Mapping[str, Any]) -> None:
         replacements: List[Tuple[int, str, str]] = []
         for role_name, role_value in roles.items():
@@ -1471,6 +1486,7 @@ class _TomlEditor:
             self.lines[header] = f"{indentation}{suffix}{line_ending}"
         else:
             del self.lines[header]
+            self._normalize_blank_seam(header)
 
     def ensure_table(self, table: str) -> None:
         if self._bounds(table) is not None:
@@ -1560,6 +1576,7 @@ class _TomlEditor:
         # into the following surviving table.
         removal_end = self._before_leading_comments(end, start)
         del self.lines[removal_start:removal_end]
+        self._normalize_blank_seam(removal_start)
 
     def remove_legacy_tables(self) -> None:
         names = [

@@ -193,21 +193,5 @@
         "protocol_gate"
       ]
     }
-  ],
-  "canonical_suites": [
-    "tests/test_config_schema_contract.py",
-    "tests/cli/commands/test_generate_config.py",
-    "tests/cli/commands/test_update_config.py",
-    "tests/cli/commands/test_resolve_config.py",
-    "tests/cli/commands/test_dispatch.py",
-    "tests/cli/commands/test_wait_handoff.py",
-    "tests/cli/commands/test_wait_report.py",
-    "tests/cli/commands/test_containment_matrix.py",
-    "tests/mcp_server/test_server.py",
-    "tests/test_install.py",
-    "tests/wrappers",
-    "tests/test_startup_launch_guidance.py",
-    "tests/test_protocol_gate.py",
-    "tests/cli/test_deidentify.py"
   ]
 }

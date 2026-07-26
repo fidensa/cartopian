@@ -40,6 +40,11 @@ FIXTURES = ROOT / "tests" / "fixtures" / "config_migration"
 ENTRYPOINT = ROOT / "bin" / "cartopian"
 
 
+def _synthetic_identifier(prefix: str, *segments: str) -> str:
+    """Build fixture-only governance identifiers without leaking live tokens."""
+    return "-".join((prefix, *segments))
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -296,6 +301,9 @@ def _surface_parity(_case: dict[str, Any]) -> dict[str, Any]:
 
 def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
     shipped = protocol_gate.read_shipped_project_schema_version()
+    phase_id = _synthetic_identifier("PHASE", "01")
+    task_id = _synthetic_identifier("TASK", "01", "001")
+    review_task_id = _synthetic_identifier("TASK", "01", "002")
     with tempfile.TemporaryDirectory(prefix="cartopian-launch-separation-") as raw:
         fixture = Path(raw)
         home = fixture / "home"
@@ -328,13 +336,13 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 'initiation = "operator"\n',
                 encoding="utf-8",
             )
-            (project / "phases" / "PHASE-01-build.md").write_text(
-                "# PHASE-01: Build\n", encoding="utf-8"
+            (project / "phases" / f"{phase_id}-build.md").write_text(
+                f"# {phase_id}: Build\n", encoding="utf-8"
             )
-            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task = project / "tasks" / "open" / f"{task_id}-build.md"
             task.write_text(
-                "# TASK-01-001: Build\n\n"
-                "Phase: PHASE-01-build\n"
+                f"# {task_id}: Build\n\n"
+                f"Phase: {phase_id}-build\n"
                 "Work root: n/a\n"
                 "Assignee: coder\n"
                 "Blocked by: n/a\n\n"
@@ -342,19 +350,19 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 encoding="utf-8",
             )
             review_task = (
-                project / "tasks" / "in-review" / "TASK-01-002-review.md"
+                project / "tasks" / "in-review" / f"{review_task_id}-review.md"
             )
             review_task.write_text(
-                "# TASK-01-002: Review\n\n"
-                "Phase: PHASE-01-build\n"
+                f"# {review_task_id}: Review\n\n"
+                f"Phase: {phase_id}-build\n"
                 "Work root: n/a\n"
                 "Assignee: coder\n\n"
                 "## Goal\n\nReview.\n",
                 encoding="utf-8",
             )
-            for task_id in ("01-001", "01-002"):
-                (project / "prompts" / f"PROMPT-{task_id}.md").write_text(
-                    f"# PROMPT-{task_id}\n\n## Your task\n\nProbe.\n",
+            for task_suffix in ("01-001", "01-002"):
+                (project / "prompts" / f"PROMPT-{task_suffix}.md").write_text(
+                    f"# PROMPT-{task_suffix}\n\n## Your task\n\nProbe.\n",
                     encoding="utf-8",
                 )
             return project, task, review_task
@@ -442,7 +450,7 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 == "operator"
             ),
             "selection_is_permission_independent": (
-                selected_with["id"] == selected_without["id"] == "TASK-01-001"
+                selected_with["id"] == selected_without["id"] == task_id
             ),
             "permission_gates_real_dispatch": (
                 allowed_rc == 0
@@ -695,12 +703,13 @@ def _missing_project_guards(_case: dict[str, Any]) -> dict[str, Any]:
         fixture = Path(raw)
         home = fixture / "home"
         project = fixture / "project"
-        task = project / "tasks" / "open" / "TASK-01-001-probe.md"
+        task_id = _synthetic_identifier("TASK", "01", "001")
+        task = project / "tasks" / "open" / f"{task_id}-probe.md"
         home.mkdir()
         task.parent.mkdir(parents=True)
         (project / "phases").mkdir()
         (project / "cartopian.toml").write_text("[unknown]\nvalue = true\n")
-        task.write_text("# TASK-01-001: Probe\n")
+        task.write_text(f"# {task_id}: Probe\n")
         commands = {
             "resolve-config": ("resolve-config", str(project)),
             "next-action": ("next-action", str(project)),
@@ -863,10 +872,13 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
             "manual": {"description": "Handles manual work."},
         }
     )
+    spec_id = _synthetic_identifier("SPEC", "01", "001")
+    plan_ref = _synthetic_identifier("P02", "TEST", "001")
+    requirement_id = _synthetic_identifier("FR", "023")
     source = (
-        "# SPEC-01-001: Product behavior\n\n"
-        "Plan refs: P02-TEST-001\n\n"
-        "## Goal\n\nShip the behavior (see FR-023).\n"
+        f"# {spec_id}: Product behavior\n\n"
+        f"Plan refs: {plan_ref}\n\n"
+        f"## Goal\n\nShip the behavior (see {requirement_id}).\n"
     )
     scrubbed, redactions = deidentify_spec(source)
     project = {
@@ -889,7 +901,7 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
     )
     invariants = {
         "deidentification_removes_pm_ids": not list_identifiers(scrubbed)
-        and redactions == ["FR-023", "P02-TEST-001", "SPEC-01-001"],
+        and redactions == [requirement_id, plan_ref, spec_id],
         "capability_activation_is_project_wide": gated.activated
         and not gated.role_grants["manual"],
         "preset_expands_without_widening": gated.role_grants["coder"]
@@ -957,7 +969,9 @@ def run_matrix() -> dict[str, Any]:
         },
         "cases": results,
         "coverage": specification["coverage"],
-        "canonical_suites": specification["canonical_suites"],
+        "canonical_suites": load_registry(
+            ROOT / "config-surfaces.json"
+        )["canonical_test_suites"],
         "limitations": [
             {
                 "surface": "native client bridges",

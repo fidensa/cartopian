@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,9 @@ from pathlib import Path
 from cli.config_schema import CONFIG_SCHEMA, MACHINE_RECORD_SCHEMA_VERSION
 from cli.config_surface_parity import (
     authored_field_prose_parity,
+    canonical_suite_manifest_diagnostics,
+    canonical_suite_observation,
+    capability_example_parity,
     check_surface_registry,
     closed_value_parity,
     guidance_hygiene,
@@ -326,12 +330,92 @@ class TestSurfaceRegistry(unittest.TestCase):
                 ]
                 self.assertEqual(len(stale_diagnostics), 1)
 
+    def test_authored_field_prose_rejects_legacy_adjacent_false_negatives(
+        self,
+    ) -> None:
+        probes = (
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                "**Author** `roles.coder.launch.target` here.",
+                "Neutral current guidance. "
+                "**Author** `roles.coder.launch.target` here.",
+            ),
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                "*Author* `roles.coder.launch.model` here.",
+                "Neutral current guidance. "
+                "*Author* `roles.coder.launch.model` here.",
+            ),
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                '"Author `roles.coder.launch.effort` here."',
+                "Neutral current guidance. "
+                '"Author `roles.coder.launch.effort` here."',
+            ),
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                "'Author `roles.coder.launch.timeout` here.'",
+                "Neutral current guidance. "
+                "'Author `roles.coder.launch.timeout` here.'",
+            ),
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                "(Author `roles.coder.launch.target` here.)",
+                "Neutral current guidance. "
+                "(Author `roles.coder.launch.target` here.)",
+            ),
+            (
+                "Migration tooling recognizes the nested legacy form. "
+                "configure `roles.coder.launch.model` here.",
+                "Neutral current guidance. "
+                "configure `roles.coder.launch.model` here.",
+            ),
+            (
+                "| Legacy form | Migration tooling recognizes "
+                "`[roles.<role>.launch]` as migration input only. |\n"
+                "| Current form | Author `roles.<role>.launch.target` here. |",
+                "| Legacy form | Neutral current guidance. |\n"
+                "| Current form | Author `roles.<role>.launch.target` here. |",
+            ),
+            (
+                "- Migration tooling recognizes `[roles.coder.launch]` "
+                "as migration input only.\n"
+                "  Author `roles.coder.launch.target` here.",
+                "- Neutral current guidance.\n"
+                "  Author `roles.coder.launch.target` here.",
+            ),
+            (
+                "Legacy compatibility only: old forms follow.\n\n"
+                "Author `launch.timeout` in current TOML.",
+                "Neutral current guidance.\n\n"
+                "Author `launch.timeout` in current TOML.",
+            ),
+        )
+        for compatibility_probe, neutral_control in probes:
+            with self.subTest(probe=compatibility_probe):
+                for text in (compatibility_probe, neutral_control):
+                    diagnostics = authored_field_prose_parity(
+                        text,
+                        surface="probe.md",
+                    )
+                    self.assertEqual(len(diagnostics), 1)
+                    self.assertEqual(
+                        diagnostics[0].code,
+                        "stale-authored-field",
+                    )
+
     def test_authored_field_prose_allows_bounded_legacy_and_projection_paths(
         self,
     ) -> None:
         probes = (
             "Legacy compatibility only: migration tooling recognizes "
             "`[roles.<role>.launch]` and `launch.timeout` as migration input.",
+            "Authored migration-source paths cover `[roles.<role>.launch]`.",
+            "The superseded `[roles.coder.launch]` table is migration input only.",
+            "Migration tooling, e.g. the compatibility reader, recognizes "
+            "`[roles.<role>.launch]` as migration input only.",
+            "Migration tooling recognizes the U.S. spelling "
+            "`[roles.<role>.launch]` as migration input only.",
             "The resolved `launch.target` is consumed by handoff code.",
             "The derived `roles.<role>.launch.timeout` projection is read-only.",
         )
@@ -340,6 +424,322 @@ class TestSurfaceRegistry(unittest.TestCase):
                 self.assertEqual(
                     authored_field_prose_parity(probe, surface="probe.md"),
                     (),
+                )
+
+    def test_authored_field_prose_covers_every_declared_guidance_file(
+        self,
+    ) -> None:
+        registry = load_registry(REGISTRY)
+        rules = registry["authored_field_prose_parity"]
+        self.assertEqual(len(rules), 1)
+        paths = rules[0]["paths"]
+        for required in (
+            "AGENTS.md",
+            "CAPABILITIES.md",
+            "evaluations/README.md",
+            "install-cartopian.md",
+            "mcp_server/**/*.md",
+            "mcp_server/**/*.py",
+            "scripts/**/*.md",
+            "scripts/**/*.py",
+            "wrappers/*.md",
+        ):
+            self.assertIn(required, paths)
+
+        matched = {
+            path
+            for pattern in paths
+            for path in ROOT.glob(pattern)
+            if path.is_file()
+        }
+        self.assertTrue(matched)
+        for path in sorted(matched):
+            relative = path.relative_to(ROOT).as_posix()
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(surface=relative):
+                self.assertEqual(
+                    authored_field_prose_parity(source, surface=relative),
+                    (),
+                )
+                diagnostics = authored_field_prose_parity(
+                    source + "\n\nAuthor `roles.<role>.launch.target` here.\n",
+                    surface=relative,
+                )
+                self.assertTrue(
+                    any(
+                        item.code == "stale-authored-field"
+                        for item in diagnostics
+                    )
+                )
+                for lead in ("**Author**", '"Author', "(Author", "configure"):
+                    sentence_mutation = (
+                        source
+                        + "\n\nMigration tooling recognizes the nested "
+                        "legacy form. "
+                        + lead
+                        + " `roles.<role>.launch.target` here.\n"
+                    )
+                    sentence_diagnostics = authored_field_prose_parity(
+                        sentence_mutation,
+                        surface=relative,
+                    )
+                    self.assertTrue(
+                        any(
+                            item.code == "stale-authored-field"
+                            for item in sentence_diagnostics
+                        ),
+                        msg=f"{relative} did not bite {lead!r} sentence",
+                    )
+                list_item = re.search(
+                    r"(?m)^(?P<indent>[ \t]*)(?:[-+*]|\d+[.)])[ \t]+",
+                    source,
+                )
+                if list_item is not None:
+                    indent = list_item.group("indent")
+                    insertion = (
+                        f"{indent}- Migration tooling recognizes "
+                        "`[roles.<role>.launch]` as migration input only.\n"
+                        f"{indent}  Author "
+                        "`roles.<role>.launch.target` here.\n"
+                    )
+                    list_mutation = (
+                        source[: list_item.start()]
+                        + insertion
+                        + source[list_item.start() :]
+                    )
+                    list_diagnostics = authored_field_prose_parity(
+                        list_mutation,
+                        surface=relative,
+                    )
+                    self.assertTrue(
+                        any(
+                            item.code == "stale-authored-field"
+                            for item in list_diagnostics
+                        ),
+                        msg=f"{relative} did not bite indented continuation",
+                    )
+                table_row = re.search(r"(?m)^[ \t]*\|", source)
+                if table_row is not None:
+                    table_insertion = (
+                        "| Legacy form | Migration tooling recognizes "
+                        "`[roles.<role>.launch]` as migration input only. |\n"
+                        "| Current form | Author "
+                        "`roles.<role>.launch.target` here. |\n"
+                    )
+                    table_mutation = (
+                        source[: table_row.start()]
+                        + table_insertion
+                        + source[table_row.start() :]
+                    )
+                    table_diagnostics = authored_field_prose_parity(
+                        table_mutation,
+                        surface=relative,
+                    )
+                    self.assertTrue(
+                        any(
+                            item.code == "stale-authored-field"
+                            for item in table_diagnostics
+                        ),
+                        msg=f"{relative} did not bite table row",
+                    )
+
+    def test_capability_examples_follow_live_vocabulary_and_bite_unknowns(
+        self,
+    ) -> None:
+        registry = load_registry(REGISTRY)
+        rules = registry["capability_example_parity"]
+        matched = {
+            path
+            for rule in rules
+            for pattern in rule["paths"]
+            for path in ROOT.glob(pattern)
+            if path.is_file()
+        }
+        self.assertTrue(matched)
+        for path in sorted(matched):
+            relative = path.relative_to(ROOT).as_posix()
+            self.assertEqual(
+                capability_example_parity(
+                    path.read_text(encoding="utf-8"),
+                    surface=relative,
+                ),
+                (),
+            )
+        diagnostics = capability_example_parity(
+            'grants = ["preset:standard"]\n',
+            surface="current-successor.md",
+        )
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(
+            diagnostics[0].code,
+            "unknown-capability-example",
+        )
+        multiline = capability_example_parity(
+            "grants = [\n"
+            '  "coder-like",\n'
+            '  "read:reports",\n'
+            "]\n",
+            surface="current-successor.md",
+        )
+        self.assertEqual(multiline, ())
+        multiline_invalid = capability_example_parity(
+            "grants = [\n"
+            '  "coder-like",\n'
+            '  "preset:standard",\n'
+            "]\n",
+            surface="current-successor.md",
+        )
+        self.assertEqual(len(multiline_invalid), 1)
+        self.assertIn("preset:standard", multiline_invalid[0].detail)
+
+    def test_capability_examples_allow_bounded_explanation_not_authored_use(
+        self,
+    ) -> None:
+        explanatory = (
+            "DEC-002's earlier example used "
+            '`grants = ["preset:standard"]`. That value is outside the '
+            "closed capability vocabulary and is rejected.\n\n"
+            "The retired value `grants = [\n"
+            '  "preset:standard",\n'
+            "]` must not be used.\n\n"
+            "```toml\n"
+            "grants = [\n"
+            '  "coder-like",\n'
+            "]\n"
+            "```\n"
+        )
+        self.assertEqual(
+            capability_example_parity(
+                explanatory,
+                surface="current-successor.md",
+            ),
+            (),
+        )
+        active = (
+            "Use this current authored example:\n\n"
+            "```toml\n"
+            "grants = [\n"
+            '  "preset:standard",\n'
+            "]\n"
+            "```\n"
+        )
+        diagnostics = capability_example_parity(
+            active,
+            surface="current-successor.md",
+        )
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(
+            diagnostics[0].code,
+            "unknown-capability-example",
+        )
+        masking_probes = (
+            "Nothing invalid here: set "
+            "grants = [retired-invalid-value] in your role table.",
+            "Retired handoff fields are removed; author "
+            'grants = ["preset:standard"] in each role.',
+            "```toml\n"
+            "# unsupported keys are ignored\n"
+            'grants = ["preset:standard"]\n'
+            "```\n",
+        )
+        for probe in masking_probes:
+            with self.subTest(probe=probe):
+                diagnostics = capability_example_parity(
+                    probe,
+                    surface="current-successor.md",
+                )
+                self.assertEqual(len(diagnostics), 1)
+                self.assertEqual(
+                    diagnostics[0].code,
+                    "unknown-capability-example",
+                )
+
+        bound_explanations = (
+            "DEC-002's earlier example used "
+            '`grants = ["preset:standard"]`.',
+            "The invalid capability value "
+            '`grants = ["preset:standard"]` is rejected.',
+            "Do not use `grants = [\"preset:standard\"]`.",
+            "`grants = [\"preset:standard\"]` must not be used.",
+        )
+        for probe in bound_explanations:
+            with self.subTest(probe=probe):
+                self.assertEqual(
+                    capability_example_parity(
+                        probe,
+                        surface="current-successor.md",
+                    ),
+                    (),
+                )
+
+    def test_canonical_suite_manifest_and_observations_fail_closed(self) -> None:
+        registry = load_registry(REGISTRY)
+        self.assertEqual(
+            canonical_suite_manifest_diagnostics(ROOT, registry),
+            (),
+        )
+        pytest_suite = next(
+            suite
+            for suite in registry["canonical_test_suites"]
+            if suite["id"] == "pytest"
+        )
+        green = canonical_suite_observation(
+            pytest_suite,
+            collection_exit_code=0,
+            execution_exit_code=0,
+            collected_total=pytest_suite["minimum_collected"],
+            collected_by_path={
+                "tests/cli/commands/test_wait_handoff.py": 18,
+            },
+        )
+        self.assertTrue(green["green"])
+        uncollected = canonical_suite_observation(
+            pytest_suite,
+            collection_exit_code=0,
+            execution_exit_code=0,
+            collected_total=pytest_suite["minimum_collected"],
+            collected_by_path={
+                "tests/cli/commands/test_wait_handoff.py": 17,
+            },
+        )
+        self.assertFalse(uncollected["green"])
+        failing = canonical_suite_observation(
+            pytest_suite,
+            collection_exit_code=0,
+            execution_exit_code=1,
+            collected_total=pytest_suite["minimum_collected"],
+            collected_by_path={
+                "tests/cli/commands/test_wait_handoff.py": 18,
+            },
+        )
+        self.assertFalse(failing["green"])
+        partial_collapse = canonical_suite_observation(
+            pytest_suite,
+            collection_exit_code=0,
+            execution_exit_code=0,
+            collected_total=pytest_suite["minimum_collected"] - 100,
+            collected_by_path={
+                "tests/cli/commands/test_wait_handoff.py": 18,
+            },
+        )
+        self.assertFalse(partial_collapse["green"])
+        for invalid_suite in (
+            {"required_tests": []},
+            {"minimum_collected": 0, "required_tests": []},
+            {"minimum_collected": 1, "required_tests": []},
+        ):
+            with self.subTest(invalid_suite=invalid_suite):
+                bypass = canonical_suite_observation(
+                    invalid_suite,
+                    collection_exit_code=0,
+                    execution_exit_code=0,
+                    collected_total=1,
+                    collected_by_path={},
+                )
+                self.assertFalse(bypass["green"])
+                self.assertIn(
+                    "invalid-minimum-collected",
+                    bypass["issues"],
                 )
 
     def test_authored_field_prose_follows_both_authoritative_catalogs(self) -> None:

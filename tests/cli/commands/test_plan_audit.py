@@ -698,6 +698,45 @@ class TestPlanAuditPmIdentifierLeaks(unittest.TestCase):
             self.assertEqual(len(leaks), 1, record["warnings"])
             self.assertIn("src/feature.py", leaks[0]["files"])
 
+    def test_synthetic_evaluation_data_does_not_mask_real_leak(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project, work_root = self._project_with_work_root(tmp_path)
+            _write(
+                work_root / "config-surfaces.json",
+                '{"authority": "cli/config_schema.py::CONFIG_SCHEMA"}\n',
+            )
+            _write(work_root / "cli" / "config_schema.py", "# authority\n")
+            _write(work_root / "protocol" / "CONVENTIONS.md", "# protocol\n")
+            _write(
+                work_root / "evaluations" / "configuration_matrix.py",
+                'task = "-".join(("TASK", "01", "001"))\n',
+            )
+
+            proc = _run(str(project), home=tmp_path)
+
+            record = json.loads(proc.stdout.strip())
+            leaks = [
+                warning
+                for warning in record["warnings"]
+                if warning["kind"] == "pm-identifier-leak"
+            ]
+            self.assertEqual(leaks, [], record["warnings"])
+
+            _write(
+                work_root / "src" / "feature.py",
+                "# acceptance per TASK-02-002\n",
+            )
+            proc = _run(str(project), home=tmp_path)
+            record = json.loads(proc.stdout.strip())
+            leaks = [
+                warning
+                for warning in record["warnings"]
+                if warning["kind"] == "pm-identifier-leak"
+            ]
+            self.assertEqual(len(leaks), 1, record["warnings"])
+            self.assertEqual(leaks[0]["files"], ["src/feature.py"])
+
     def test_ordinary_protocol_named_directory_is_not_exempt(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

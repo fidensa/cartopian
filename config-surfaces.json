@@ -2,6 +2,71 @@
   "registry_version": 1,
   "authority": "cli/config_schema.py::CONFIG_SCHEMA",
   "migration_authority": "cli/config_migration.py::CONFIGURATION_MIGRATION_ENTRIES",
+  "canonical_test_suites": [
+    {
+      "id": "unittest-discovery",
+      "runner": "unittest",
+      "collection_command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-t",
+        ".",
+        "-v"
+      ],
+      "execution_command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-t",
+        ".",
+        "-v"
+      ],
+      "collection_executes": true,
+      "minimum_collected": 1000,
+      "required_tests": [
+        {
+          "path": "tests/test_config_surface_parity.py",
+          "count": 34
+        },
+        {
+          "path": "tests/evaluations/test_canonical_suites.py",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "id": "pytest",
+      "runner": "pytest",
+      "collection_command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q"
+      ],
+      "execution_command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "collection_executes": false,
+      "minimum_collected": 1200,
+      "required_tests": [
+        {
+          "path": "tests/cli/commands/test_wait_handoff.py",
+          "count": 18
+        }
+      ]
+    }
+  ],
   "context_budgets": [
     {
       "surface": "resolve-config",
@@ -184,14 +249,38 @@
   "authored_field_prose_parity": [
     {
       "paths": [
+        "AGENTS.md",
+        "CAPABILITIES.md",
         "README.md",
         "CONFIG-MAPPING.md",
+        "evaluations/README.md",
+        "install-cartopian.md",
+        "mcp_server/**/*.md",
+        "mcp_server/**/*.py",
         "protocol/*.md",
+        "scripts/**/*.md",
+        "scripts/**/*.py",
         "templates/*.md",
         "templates/*.toml",
         "templates/**/*.md",
         "templates/**/*.toml",
-        "skills/*.md"
+        "skills/*.md",
+        "wrappers/*.md"
+      ]
+    }
+  ],
+  "capability_example_parity": [
+    {
+      "paths": [
+        "CAPABILITIES.md",
+        "CONFIG-MAPPING.md",
+        "README.md",
+        "install-cartopian.md",
+        "protocol/CONVENTIONS.md",
+        "skills/*.md",
+        "templates/**/*.md",
+        "templates/**/*.toml",
+        "wrappers/*.md"
       ]
     }
   ],
@@ -199,7 +288,6 @@
     "tests/cli/commands/test_generate_config.py",
     "tests/cli/commands/test_migrate_config.py",
     "tests/cli/commands/test_resolve_config.py",
-    "tests/cli/commands/test_wait_handoff.py",
     "tests/fixtures/config_migration/annotated/global.toml",
     "tests/fixtures/config_migration/annotated/project.toml",
     "tests/fixtures/config_migration/conflict/project.toml",
@@ -491,7 +579,8 @@
       "id": "surface-parity-contract",
       "paths": [
         "cli/config_surface_parity.py",
-        "config-surfaces.json"
+        "config-surfaces.json",
+        "evaluations/canonical_suites.py"
       ],
       "owner_contract": "consumer inventory only; no accepted-value authority",
       "mode": "parity-validated",

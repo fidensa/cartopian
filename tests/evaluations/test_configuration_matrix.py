@@ -45,6 +45,18 @@ class ConfigurationCompatibilityMatrixTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["mismatched"], 0)
         self.assertNotIn(str(ROOT), first.stdout.decode())
 
+    def test_canonical_suite_inventory_comes_from_surface_registry(self) -> None:
+        registry = matrix.load_registry(ROOT / "config-surfaces.json")
+        result = run_matrix()
+        self.assertEqual(
+            result["canonical_suites"],
+            registry["canonical_test_suites"],
+        )
+        self.assertEqual(
+            {suite["id"] for suite in result["canonical_suites"]},
+            {"unittest-discovery", "pytest"},
+        )
+
     def test_migration_probe_lists_and_recovery_classes_are_exact(self) -> None:
         cases = {item["case"]: item for item in run_matrix()["cases"]}
         executable = [
