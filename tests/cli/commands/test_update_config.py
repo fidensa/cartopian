@@ -17,7 +17,7 @@ BASE_CONFIG = """\
 [project]
 name = "Demo"
 id = "demo"
-project_schema_version = "v0.7.0"
+project_schema_version = "v0.8.0"
 
 [roles.pm]
 description = "Plans phases."

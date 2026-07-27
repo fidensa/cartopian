@@ -11,6 +11,7 @@ Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
 Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none>
 Created: YYYY-MM-DD
 Evidence gate: <required | n/a>
+Intent refs: <ATTEST-NNN, DEC-NNN, OIR-NNN, REQUIREMENTS.md#Confirmed-intent | none>
 
 ## Goal
 
@@ -53,6 +54,15 @@ Use `n/a` (or omit the line) for code tasks and any task with no durable documen
 ## Evidence gate
 
 If `required`, name the concrete before-and-after acceptance evidence (test target, fixture check, validation run, fact-check, approval checklist, inspection, rehearsal, or similar) that demonstrates the outcome. If `n/a`, say why.
+
+## Operator intent
+
+`Intent refs:` is an optional supplemental, additive list. Use only
+`ATTEST-NNN`, `DEC-NNN`, `OIR-NNN`, or
+`REQUIREMENTS.md#Confirmed-intent`; write `none` when there is no supplemental
+reference. The resolver still scans every current attestation whose scope
+matches this task, phase, plan ref, project, or task-closure review. Omitting a
+reference never suppresses automatically applicable evidence.
 
 ## Acceptance
 

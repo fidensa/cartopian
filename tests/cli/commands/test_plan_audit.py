@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cli import operator_intent
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 
@@ -15,7 +17,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.7.0"\n'
+    'project_schema_version = "v0.8.0"\n'
 )
 
 _REVIEW_TOML = (
@@ -153,9 +155,19 @@ class TestPlanAuditClean(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-review" / "TASK-01-004-review-me.md", "# task\n")
-            _write(project / "reviews" / "REVIEW-01-004.md",
-                   "# REVIEW-01-004\n\nVerdict: approve\n")
+            task = project / "tasks" / "in-review" / "TASK-01-004-review-me.md"
+            _write(task, "# task\n")
+            context = operator_intent.context_for_task(project, task)
+            _write(
+                project / "prompts" / "PROMPT-01-004.md",
+                operator_intent.upsert_intent_section("# prompt\n", context.section),
+            )
+            _write(
+                project / "reviews" / "REVIEW-01-004.md",
+                "# REVIEW-01-004\n\nVerdict: approve\n"
+                "Operator-intent alignment: not assessable — none recorded\n"
+                "Operator-intent evidence: none recorded\n",
+            )
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             record = json.loads(proc.stdout.strip())

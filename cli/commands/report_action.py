@@ -440,6 +440,16 @@ def handler(args: argparse.Namespace) -> int:
             stderr_error(err.message)
         return err.exit_code
 
+    alignment_record = parse_report.review_alignment_record(
+        report_path, content, variant
+    )
+    if (
+        verdict == "accepted"
+        and alignment_record is not None
+        and alignment_record["blocking"]
+    ):
+        verdict = "failed-to-parse"
+
     identity = _extract_identity_map(content)
     declared_task_path = _path_from_identity(identity, "Task path")
     declared_review_path = _path_from_identity(identity, "Review file path")
@@ -512,6 +522,7 @@ def handler(args: argparse.Namespace) -> int:
         "report_path": str(report_path),
         "status": status_value,
         "review_verdict": review_verdict,
+        "operator_intent_alignment": alignment_record,
         "target_task_status": target_task_status,
         "requires_pr_step": requires_pr_step,
         "prompt_to_overwrite": prompt_to_overwrite,

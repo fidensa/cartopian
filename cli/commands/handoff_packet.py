@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli import operator_intent
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -224,6 +225,53 @@ def handler(args: argparse.Namespace) -> int:
     task_title = _first_heading(content) or task_path.stem
     expected_report_path = _expected_report_path(project_root, task_id)
 
+    # Manual review handoffs consume exactly the artifact automatic dispatch
+    # does: the same resolved review context and the same binding preflight.
+    # Bypassing `cartopian dispatch` therefore cannot bypass intent resolution.
+    operator_intent_record: Optional[Dict[str, Any]] = None
+    if task_path.parent.name == "in-review":
+        nn_nnn = task_id.removeprefix("TASK-")
+        review_prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
+        try:
+            context = operator_intent.context_for_task(project_root, task_path)
+        except operator_intent.IntentRefusal as refusal:
+            stderr_guard(f"{refusal.rule}: {refusal.detail}")
+            if refusal.recovery:
+                stderr_guard(f"recovery: {refusal.recovery}")
+            return EXIT_FAIL
+        preflight: Optional[Dict[str, Any]] = None
+        if review_prompt.is_file():
+            try:
+                prompt_text = operator_intent.read_contained_text(
+                    project_root, review_prompt, what="review prompt"
+                )
+                prompt_context = operator_intent.context_for_task(
+                    project_root,
+                    task_path,
+                    operator_intent.artifact_supplemental_refs(prompt_text),
+                )
+            except operator_intent.IntentRefusal as refusal:
+                stderr_guard(f"{refusal.rule}: {refusal.detail}")
+                if refusal.recovery:
+                    stderr_guard(f"recovery: {refusal.recovery}")
+                return EXIT_FAIL
+            preflight = operator_intent.preflight_prompt_binding(
+                prompt_context, prompt_text
+            )
+            preflight["prompt_path"] = str(review_prompt)
+            context = prompt_context
+        else:
+            preflight = {
+                "ok": False,
+                "rule": "missing-prompt",
+                "detail": f"review prompt not found: {review_prompt}",
+                "recovery": "prepare the bound review prompt before manual handoff",
+                "context_identity": context.context_identity,
+                "prompt_path": str(review_prompt),
+            }
+        operator_intent_record = context.as_record()
+        operator_intent_record["preflight"] = preflight
+
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
         "schema_identity": resolved["schema_identity"],
@@ -245,6 +293,17 @@ def handler(args: argparse.Namespace) -> int:
         "git_policy": git_policy,
         "automation_policy": resolved["automation"],
         "reviews": resolved["reviews"],
+        "operator_intent": operator_intent_record,
     }
     emit_record(record)
+    if (
+        operator_intent_record is not None
+        and operator_intent_record["preflight"] is not None
+        and not operator_intent_record["preflight"]["ok"]
+    ):
+        failure = operator_intent_record["preflight"]
+        stderr_guard(f"{failure['rule']}: {failure['detail']}")
+        if failure.get("recovery"):
+            stderr_guard(f"recovery: {failure['recovery']}")
+        return EXIT_FAIL
     return EXIT_OK

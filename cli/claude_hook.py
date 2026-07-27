@@ -40,6 +40,10 @@ write for the mutation tools, read for the read tools):
 - ``prompts/`` → ``write:lifecycle`` (the PM lifecycle surface) /
   ``read:prompts`` (the assignee's handoff)
 - ``decisions/`` → ``write:decisions`` / ``read:governance``
+- ``intent/`` → on the **write axis** a structured raw-edit tool is always
+  denied regardless of grants: operator-intent attestations are created and
+  changed only by the operator through ``cartopian attest-intent``. On the read
+  axis they gate as ``read:governance``.
 - ``reports/``, ``reviews/`` → ``write:reports`` / ``read:reports``
 - a declared work root → ``write:worktree`` / ``read:work-roots``
 - any other path inside the project directory → ``write:lifecycle`` /
@@ -108,6 +112,7 @@ if __package__ in (None, ""):  # invoked as a script: `python .../cli/claude_hoo
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cli.capabilities import GrantResolution  # noqa: E402
+from cli.operator_intent import INTENT_DIRNAME  # noqa: E402
 from cli.config_schema import ConfigDiagnostic, resolve_configuration  # noqa: E402
 from cli.commands.resolve_config import (  # noqa: E402
     _CliError,
@@ -151,6 +156,10 @@ WRITE_CLASS_GRANTS: Dict[str, str] = {
     "reports": "write:reports",
     "project-file": "write:lifecycle",
     "work-root": "write:worktree",
+    # No grant unlocks an attestation write: the write axis denies `intent/`
+    # unconditionally before grants are consulted. The entry exists so the
+    # class always resolves to a grant name for reporting.
+    "operator-intent": "write:lifecycle",
 }
 
 READ_CLASS_GRANTS: Dict[str, str] = {
@@ -161,6 +170,7 @@ READ_CLASS_GRANTS: Dict[str, str] = {
     "reports": "read:reports",
     "project-file": "read:governance",
     "work-root": "read:work-roots",
+    "operator-intent": "read:governance",
 }
 
 AXIS_GRANTS: Dict[str, Dict[str, str]] = {
@@ -177,6 +187,10 @@ _DIR_CLASSES: Dict[str, str] = {
     "decisions": "decisions",
     "reports": "reports",
     "reviews": "reports",
+    # Operator-intent attestations read as governance (the PM must be able to
+    # see what constrains it); the write axis is denied outright above, so the
+    # write grant here is never the deciding factor.
+    INTENT_DIRNAME: "operator-intent",
 }
 
 # Named project-root files → class (matched case-insensitively on Windows).
@@ -358,6 +372,17 @@ def _deny_raw_config_write(tool_name: str, target: str, project_id: str) -> Deci
     )
 
 
+def _deny_raw_intent_write(tool_name: str, target: str, project_id: str) -> Decision:
+    return Decision(
+        "deny",
+        f"[guard] {tool_name} denied: {target} — operator-intent attestations in "
+        f"project '{project_id}' are created and changed only by the operator, "
+        f"through `cartopian attest-intent`. No project-management, coder, or "
+        f"reviewer capability grant confers this authority, and no mediated "
+        f"writer and no MCP tool targets this directory.",
+    )
+
+
 def _deny_resolution_failure(
     tool_name: str, target: str, project_id: str, detail: str
 ) -> Decision:
@@ -391,6 +416,15 @@ def _gate_inside_project(
         basename = flavor.normcase(flavor.basename(_norm(target, flavor)))
         if basename in {flavor.normcase(n) for n in _RAW_CONFIG_BASENAMES}:
             return _deny_raw_config_write(tool_name, target, project_id)
+        # Operator-intent attestations are never writable through a structured
+        # raw-edit tool, in any role, gated or ungated. The operator-only
+        # `cartopian attest-intent` command is the sole writer — otherwise a PM
+        # holding write:lifecycle could forge or weaken the evidence channel
+        # that exists to check it.
+        rel = flavor.relpath(_norm(target, flavor), _norm(project_root, flavor))
+        head = [s for s in rel.split(flavor.sep) if s not in ("", ".")]
+        if head and head[0] == flavor.normcase(INTENT_DIRNAME):
+            return _deny_raw_intent_write(tool_name, target, project_id)
 
     try:
         resolution, work_roots = _resolve_project_grants(

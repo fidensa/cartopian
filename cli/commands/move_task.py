@@ -3,9 +3,11 @@ import argparse
 import os
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
+from cli import operator_intent
 from cli.commands.resolve_config import _CliError, resolve_review_policy
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -75,6 +77,94 @@ def _guard_coder_report(project_root: Path, nn_nnn: str, _task_id: str) -> Optio
     return None
 
 
+def _alignment_error(
+    project_root: Path,
+    review: Path,
+    content: str,
+    nn_nnn: Optional[str] = None,
+) -> Optional[str]:
+    """Block approval on drifted or required-but-not-assessable alignment.
+
+    A review artifact records `Operator-intent alignment: aligned | drifted |
+    not assessable`. Drift blocks closure, and required evidence that is not
+    assessable blocks closure — agreement among the task, the spec, the prompt,
+    and the report cannot by itself carry a task to `done`. The one explicitly
+    non-blocking result is `not assessable — none recorded`, which the resolver
+    emits only after a complete applicability scan finds nothing.
+
+    Enforcement is scoped to projects at the schema version that introduced the
+    contract, so historical reviews stay readable and are never rewritten (see
+    ``protocol/CHANGELOG.md`` § v0.8.0).
+    """
+    schema_version = None
+    project_toml = project_root / "cartopian.toml"
+    if project_toml.is_file():
+        try:
+            with project_toml.open("rb") as handle:
+                schema_version = (
+                    tomllib.load(handle).get("project", {}) or {}
+                ).get("project_schema_version")
+        except (OSError, tomllib.TOMLDecodeError):
+            schema_version = None
+    if not operator_intent.alignment_enforced(schema_version):
+        return None
+    required_evidence: Optional[bool] = None
+    if nn_nnn is not None:
+        candidates = sorted(
+            (project_root / "tasks" / "in-review").glob(f"TASK-{nn_nnn}*.md")
+        )
+        if len(candidates) != 1:
+            return (
+                f"cannot resolve one current task for operator-intent alignment "
+                f"(found {len(candidates)} for TASK-{nn_nnn})"
+            )
+        try:
+            prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
+            if not prompt.is_file():
+                return (
+                    "operator-intent review prompt is missing for lifecycle "
+                    f"approval: {prompt}"
+                )
+            try:
+                prompt_text = operator_intent.read_contained_text(
+                    project_root, prompt, what="review prompt"
+                )
+            except operator_intent.IntentRefusal as refusal:
+                return (
+                    f"operator-intent review prompt is unreadable "
+                    f"({refusal.rule}): {refusal.detail}"
+                )
+            context = operator_intent.context_for_task(
+                project_root,
+                candidates[0],
+                operator_intent.artifact_supplemental_refs(prompt_text),
+            )
+            preflight = operator_intent.preflight_prompt_binding(
+                context, prompt_text
+            )
+            if not preflight["ok"]:
+                return (
+                    "operator-intent prompt binding is invalid "
+                    f"({preflight['rule']}): {preflight['detail']}"
+                )
+        except operator_intent.IntentRefusal as refusal:
+            return (
+                f"operator-intent evidence is unresolved ({refusal.rule}): "
+                f"{refusal.detail}"
+            )
+        required_evidence = any(item.required for item in context.evidence)
+    alignment = operator_intent.parse_alignment(
+        content,
+        required_evidence=required_evidence,
+        expected_evidence=[
+            item.attestation.attestation_id for item in context.evidence
+        ] if nn_nnn is not None else None,
+    )
+    if alignment["blocking"]:
+        return f"{alignment['detail']}: {review}"
+    return None
+
+
 def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[str]]:
     def _check(project_root: Path, nn_nnn: str, _task_id: str) -> Optional[str]:
         review = project_root / "reviews" / f"REVIEW-{nn_nnn}.md"
@@ -90,6 +180,8 @@ def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[
         verdict = m.group(1).strip()
         if verdict != required:
             return f"review verdict is '{verdict}', expected '{required}': {review}"
+        if required == "approve":
+            return _alignment_error(project_root, review, content, nn_nnn)
         return None
     return _check
 

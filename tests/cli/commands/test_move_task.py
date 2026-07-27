@@ -10,13 +10,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 
+from cli import operator_intent
+
 STATUSES = ("open", "in-progress", "in-review", "done")
 
 _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.7.0"\n'
+    'project_schema_version = "v0.8.0"\n'
     '\n'
     '[roles.reviewer]\n'
     'description = "Reviews completed work."\n'
@@ -32,7 +34,7 @@ _NO_REVIEW_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.7.0"\n'
+    'project_schema_version = "v0.8.0"\n'
     '\n'
     '[reviews]\n'
     'planning = "off"\n'
@@ -94,13 +96,38 @@ def _seed_coder_report(project: Path, nn_nnn: str, task_id: str) -> Path:
     return p
 
 
-def _seed_review(project: Path, nn_nnn: str, verdict: str) -> Path:
+def _seed_review(
+    project: Path,
+    nn_nnn: str,
+    verdict: str,
+    alignment: str = "not assessable — none recorded",
+) -> Path:
+    """Seed a review artifact.
+
+    The default alignment is the explicitly non-blocking one: a project with no
+    attestations resolves to `none recorded`, which must never stop an
+    otherwise-valid closure.
+    """
     p = project / "reviews" / f"REVIEW-{nn_nnn}.md"
-    _write(p, (
-        f"# REVIEW-{nn_nnn}\n\n"
-        f"Target: TASK-{nn_nnn}-demo\n"
-        f"Verdict: {verdict}\n"
-    ))
+    lines = [
+        f"# REVIEW-{nn_nnn}\n",
+        "\n",
+        f"Target: TASK-{nn_nnn}-demo\n",
+        f"Verdict: {verdict}\n",
+    ]
+    if alignment is not None:
+        lines.append(f"Operator-intent alignment: {alignment}\n")
+        lines.append("Operator-intent evidence: none recorded\n")
+    _write(p, "".join(lines))
+    task_candidates = sorted(
+        (project / "tasks" / "in-review").glob(f"TASK-{nn_nnn}*.md")
+    )
+    if len(task_candidates) == 1:
+        context = operator_intent.context_for_task(project, task_candidates[0])
+        _write(
+            project / "prompts" / f"PROMPT-{nn_nnn}.md",
+            operator_intent.upsert_intent_section("# Review\n", context.section),
+        )
     return p
 
 

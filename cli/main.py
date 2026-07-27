@@ -65,6 +65,26 @@ SUBCOMMANDS: List[str] = [
     "plan-audit",
     # honest per-host containment matrix
     "containment-matrix",
+    # deterministic two-channel review context (operator intent + PM guidance)
+    "review-context",
+    # operator-only intent confirmation surface (see OPERATOR_ONLY_SUBCOMMANDS)
+    "attest-intent",
+]
+
+# ---------------------------------------------------------------------------
+# Operator-only subcommands.
+#
+# These are performed by the operator directly and are never part of any
+# managed agent's tool surface. The MCP server excludes them from its tool
+# registry (``mcp_server.server._tool_registry``), so no project-management,
+# coder, or reviewer session can call them as an MCP tool; the commands
+# themselves additionally refuse to run inside a dispatched handoff or an
+# in-process MCP tool invocation. No capability grant and no shipped role
+# preset confers them — they are not gated by grants, they are absent from the
+# surface.
+# ---------------------------------------------------------------------------
+OPERATOR_ONLY_SUBCOMMANDS: List[str] = [
+    "attest-intent",
 ]
 
 
@@ -113,6 +133,7 @@ def _real_handlers():
     from cli.commands import (
         apply_migration_entry,
         archive_plan,
+        attest_intent,
         close_audit,
         compose_state,
         containment_matrix,
@@ -133,6 +154,7 @@ def _real_handlers():
         render_spec,
         reset_plan,
         resolve_config,
+        review_context,
         scaffold_project,
         task_bundle,
         unregister_project,
@@ -159,6 +181,7 @@ def _real_handlers():
             apply_migration_entry.handler,
         ),
         "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
+        "attest-intent": (attest_intent.configure_parser, attest_intent.handler),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),
@@ -179,6 +202,7 @@ def _real_handlers():
         "render-spec": (render_spec.configure_parser, render_spec.handler),
         "reset-plan": (reset_plan.configure_parser, reset_plan.handler),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
+        "review-context": (review_context.configure_parser, review_context.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),

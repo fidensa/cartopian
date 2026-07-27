@@ -1,9 +1,11 @@
 """`cartopian parse-report <report-path>`."""
 import argparse
 import re
+import tomllib
 from pathlib import Path
 from typing import Optional, Tuple
 
+from cli import operator_intent
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
@@ -176,6 +178,151 @@ def _schema_ok(variant: str, content: str) -> bool:
     return True
 
 
+def _alignment_enforced_for(report_path: Path) -> bool:
+    """True when the enclosing project has migrated to the alignment contract.
+
+    Reports outside any project, and projects below the schema version that
+    introduced the contract, keep their historical behavior — no historical
+    review is rewritten and no legacy report retroactively fails to parse.
+    """
+    root = operator_intent.find_project_root(report_path)
+    if root is None:
+        return False
+    try:
+        with (root / "cartopian.toml").open("rb") as handle:
+            declared = (tomllib.load(handle).get("project", {}) or {}).get(
+                "project_schema_version"
+            )
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return operator_intent.alignment_enforced(declared)
+
+
+def _identity_value(content: str, key: str) -> Optional[str]:
+    match = re.search(
+        rf"^\s*-\s*{re.escape(key)}:\s*(.*?)\s*$",
+        content,
+        re.MULTILINE,
+    )
+    if match is None:
+        return None
+    value = match.group(1).strip().strip("`").strip()
+    return value or None
+
+
+def review_alignment_record(
+    report_path: Path, content: str, variant: str
+) -> Optional[dict]:
+    """Resolve current evidence and classify a review report's alignment.
+
+    Both report parsers consume this helper.  It recomputes the same prompt
+    binding used at dispatch, so a source/attestation/prompt change between
+    launch and completion cannot turn into accepted review evidence.
+    """
+    if variant not in REVIEW_VARIANTS or not _alignment_enforced_for(report_path):
+        return None
+    root = operator_intent.find_project_root(report_path)
+    if root is None:
+        return {
+            "value": None,
+            "reason": None,
+            "present": False,
+            "blocking": True,
+            "detail": "operator-intent project context cannot be resolved",
+            "context_identity": None,
+            "evidence": [],
+        }
+    prompt_value = _identity_value(content, "Prompt path")
+    if prompt_value is None:
+        return {
+            "value": None,
+            "reason": None,
+            "present": False,
+            "blocking": True,
+            "detail": "review report declares no Prompt path for binding preflight",
+            "context_identity": None,
+            "evidence": [],
+        }
+    prompt_path = Path(prompt_value)
+    if not prompt_path.is_absolute() or not prompt_path.is_file():
+        return {
+            "value": None,
+            "reason": None,
+            "present": False,
+            "blocking": True,
+            "detail": f"review prompt is missing or not absolute: {prompt_value}",
+            "context_identity": None,
+            "evidence": [],
+        }
+    try:
+        prompt_text = operator_intent.read_contained_text(
+            root, prompt_path, what="review prompt"
+        )
+        if variant == "review":
+            task_value = _identity_value(content, "Task path")
+            if task_value is None:
+                raise operator_intent.IntentRefusal(
+                    "missing-review-target",
+                    "task review report declares no Task path",
+                    "regenerate the review report from the bound prompt",
+                )
+            task_path = Path(task_value)
+            if not task_path.is_absolute() or not task_path.is_file():
+                raise operator_intent.IntentRefusal(
+                    "missing-review-target",
+                    f"task review target is missing or not absolute: {task_value}",
+                    "regenerate the review report from the bound prompt",
+                )
+            context = operator_intent.context_for_task(
+                root,
+                task_path,
+                operator_intent.artifact_supplemental_refs(prompt_text),
+            )
+        else:
+            checkpoint_id = prompt_path.stem.removeprefix("PROMPT-")
+            context = operator_intent.context_for_checkpoint(
+                root,
+                checkpoint_id,
+                checkpoint_text=prompt_text,
+            )
+        preflight = operator_intent.preflight_prompt_binding(context, prompt_text)
+        if not preflight["ok"]:
+            raise operator_intent.IntentRefusal(
+                preflight["rule"],
+                preflight["detail"],
+                preflight.get("recovery", ""),
+            )
+    except operator_intent.IntentRefusal as refusal:
+        return {
+            "value": None,
+            "reason": None,
+            "present": False,
+            "blocking": True,
+            "detail": f"{refusal.rule}: {refusal.detail}",
+            "context_identity": None,
+            "evidence": [],
+        }
+    alignment = operator_intent.parse_alignment(
+        content,
+        required_evidence=any(item.required for item in context.evidence),
+        expected_evidence=[
+            item.attestation.attestation_id for item in context.evidence
+        ],
+    )
+    return {
+        "value": alignment["value"],
+        "reason": alignment["reason"],
+        "evidence": alignment["evidence"],
+        "present": alignment["present"],
+        "blocking": alignment["blocking"],
+        "detail": alignment["detail"],
+        "context_identity": context.context_identity,
+        "evidence": [
+            item.attestation.attestation_id for item in context.evidence
+        ],
+    }
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.report_path
     if not Path(raw_path).is_absolute():
@@ -228,12 +375,27 @@ def handler(args: argparse.Namespace) -> int:
             else:
                 verdict = STATUS_VERDICT[raw_status]
 
+    # Operator-intent alignment travels with review-shaped reports. It is
+    # surfaced, not inferred: an approving review report whose alignment is
+    # `drifted`, missing, or a non-`none recorded` `not assessable` cannot be
+    # accepted completion evidence, because agreement among management artifacts
+    # must not by itself produce approval. Task reports carry no alignment —
+    # alignment is the reviewer's recorded judgement, not the assignee's.
+    alignment_record = review_alignment_record(report_path, content, variant)
+    if (
+        verdict == "accepted"
+        and alignment_record is not None
+        and alignment_record["blocking"]
+    ):
+        verdict = "failed-to-parse"
+
     record = {
         "verdict": verdict,
         "variant": variant,
         "report_path": str(report_path),
         "status": status_value,
         "review_verdict": review_verdict,
+        "operator_intent_alignment": alignment_record,
     }
     emit_record(record)
     return EXIT_OK

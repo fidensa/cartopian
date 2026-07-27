@@ -154,10 +154,28 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         self._run("move-task", str(task_path), "in-review")
         task_path = proj / "tasks" / "in-review" / "TASK-01-001-do-thing.md"
         self.assertTrue(task_path.is_file())
+        self._run(
+            "write-prompt",
+            ps,
+            "--prompt-id",
+            "PROMPT-01-001",
+            "--content",
+            "# PROMPT-01-001 review\n",
+            "--review-kind",
+            "task-closure",
+            "--task",
+            str(task_path),
+        )
 
         # Dispatched reviewer produces the review verdict (out of scope).
+        # A project with no operator attestations resolves to `none recorded`,
+        # whose `not assessable` result is explicitly non-blocking — the green
+        # lifecycle must still complete end to end.
         (proj / "reviews" / "REVIEW-01-001.md").write_text(
-            "# REVIEW-01-001\n\nVerdict: approve\n", encoding="utf-8",
+            "# REVIEW-01-001\n\nVerdict: approve\n"
+            "Operator-intent alignment: not assessable — none recorded\n"
+            "Operator-intent evidence: none recorded\n",
+            encoding="utf-8",
         )
 
         # Record a decision + index in one command (G9 + G10).

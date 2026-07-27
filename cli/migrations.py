@@ -89,7 +89,7 @@ class MigrationApplyError(GuardRefusal):
         super().__init__(refusal.rule, refusal.detail)
 
 
-ENTRY_VERSIONS = ("v0.2.0", "v0.3.0", "v0.6.0", "v0.7.0")
+ENTRY_VERSIONS = ("v0.2.0", "v0.3.0", "v0.6.0", "v0.7.0", "v0.8.0")
 _VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
 # Shipped exact wrapper migrations.  No currently shipped project wrapper has a
@@ -844,6 +844,28 @@ def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
                     "target": ".",
                     "status": "skipped",
                     "reason": "v0.7.0 has configuration-only migration actions",
+                },
+            )
+        )
+
+    if entry_version == "v0.8.0":
+        # v0.8.0 introduces the operator-intent attestation artifact, but a
+        # migration must never author one: an attestation exists only where the
+        # operator confirmed a source. Existing unattested decisions therefore
+        # stay unattested and are not retroactively treated as operator-
+        # confirmed, and historical reviews are read-only legacy artifacts that
+        # this entry does not touch.
+        return MigrationPlan(
+            skipped=(
+                {
+                    "kind": "entry",
+                    "target": ".",
+                    "status": "skipped",
+                    "reason": (
+                        "v0.8.0 has no filesystem transform: no operator-intent "
+                        "attestation is fabricated, no unattested legacy decision "
+                        "is promoted, and no historical review is rewritten"
+                    ),
                 },
             )
         )

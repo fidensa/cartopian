@@ -107,7 +107,9 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 1438
+      "max_output_bytes": 1445,
+      "operator_intent_channel_delta_bytes": 7,
+      "operator_intent_channel_note": "Measured against the same Phase 00 fixture: adding the operator-intent channel key to handoff-packet costs 7 bytes when no attestation applies. Evidence content never enters this record — the excerpt bounds (8 KiB per source, 24 KiB per review) apply to the generated prompt section, which review-context measures separately."
     },
     {
       "surface": "containment-matrix",
@@ -124,6 +126,32 @@
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
       "max_output_bytes": 573
+    },
+    {
+      "surface": "review-context",
+      "phase_00_baseline": null,
+      "phase_00_status": "not measured in Phase 00",
+      "task_delta_bytes": null,
+      "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
+      "max_output_bytes": 131072,
+      "operator_intent_channel_note": "Phase 00 had no review-context surface, so no baseline is invented. The measured flat-decision fixture carries 196 source/selected bytes, a 1092-byte generated section, and a 726-byte prompt delta over the 366-byte none-recorded section. The exact maximum-content fixture carries three 8192-byte sources (24576 selected bytes), a 26567-byte generated section, a 26201-byte prompt delta, and a 54980-byte NDJSON record. The 128 KiB output ceiling also allows deterministic JSON escaping; excerpt limits remain 8 KiB per source and 24 KiB per review and overflow is refused rather than truncated.",
+      "operator_intent_measurement": {
+        "fixture": "one-flat-decision",
+        "source_bytes": 196,
+        "selected_bytes": 196,
+        "none_recorded_prompt_section_bytes": 366,
+        "prompt_section_bytes": 1092,
+        "total_prompt_delta_bytes": 726,
+        "review_context_output_bytes": 3249,
+        "maximum_fixture": {
+          "fixture": "three-exact-8KiB-sources",
+          "source_bytes": 24576,
+          "selected_bytes": 24576,
+          "prompt_section_bytes": 26567,
+          "total_prompt_delta_bytes": 26201,
+          "review_context_output_bytes": 54980
+        }
+      }
     }
   ],
   "discovery": [
@@ -383,11 +411,13 @@
     {
       "id": "lifecycle-projections",
       "paths": [
-        "cli/commands/next_action.py",
-        "cli/commands/task_bundle.py",
         "cli/commands/handoff_packet.py",
+        "cli/commands/move_task.py",
+        "cli/commands/next_action.py",
+        "cli/commands/parse_report.py",
         "cli/commands/plan_audit.py",
         "cli/commands/report_action.py",
+        "cli/commands/task_bundle.py",
         "cli/commands/wait_handoff.py",
         "cli/commands/wait_report.py"
       ],
@@ -400,7 +430,8 @@
         "automation.*",
         "project.work_roots",
         "defaults.git_versioning",
-        "git.*"
+        "git.*",
+        "operator_intent.alignment"
       ],
       "output_projection": [
         "next-action",
@@ -432,6 +463,58 @@
       ],
       "test_anchor": "tests/test_config_surface_parity.py::TestWrapperNeutrality",
       "legacy_policy": "forbidden"
+    },
+    {
+      "id": "operator-intent-evidence",
+      "paths": [
+        "CONFIG-MAPPING.md",
+        "README.md",
+        "cli/commands/attest_intent.py",
+        "cli/commands/dispatch.py",
+        "cli/commands/handoff_packet.py",
+        "cli/commands/move_task.py",
+        "cli/commands/parse_report.py",
+        "cli/commands/plan_audit.py",
+        "cli/commands/report_action.py",
+        "cli/commands/review_context.py",
+        "cli/commands/validate_task_readiness.py",
+        "cli/commands/write_prompt.py",
+        "cli/operator_intent.py",
+        "mcp_server/server.py",
+        "protocol/CONVENTIONS.md",
+        "skills/README.md",
+        "skills/plan-project.md",
+        "skills/run-handoff.md",
+        "skills/run-task.md",
+        "templates/DECISION.md",
+        "templates/INTENT_ATTESTATION.md",
+        "templates/PHASE.md",
+        "templates/PROMPT.md",
+        "templates/REPORT.md",
+        "templates/REQUIREMENTS.md",
+        "templates/REVIEW.md",
+        "templates/TASK.md",
+        "wrappers/README.md"
+      ],
+      "owner_contract": "cli/operator_intent.py::resolve_review_context",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "project.project_schema_version",
+        "reviews.*",
+        "operator_intent.attestations",
+        "operator_intent.applicability_scopes"
+      ],
+      "parity_mechanism": {
+        "kind": "executable-contract",
+        "check": "tests/test_operator_intent_contract.py"
+      },
+      "output_projection": [
+        "review-context",
+        "generated operator-intent prompt section",
+        "dispatch and manual-handoff preflight"
+      ],
+      "test_anchor": "tests/test_operator_intent_contract.py",
+      "legacy_policy": "compatibility-labeled"
     },
     {
       "id": "cli-mcp-schema",
@@ -657,6 +740,7 @@
       "paths": [
         "templates/PROMPT.md",
         "templates/REPORT.md",
+        "templates/REVIEW.md",
         "templates/TASK.md"
       ],
       "owner_contract": "canonical lifecycle artifact path and work-root contract",

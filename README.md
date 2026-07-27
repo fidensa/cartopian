@@ -234,6 +234,21 @@ Run `init workspace` to establish global defaults and `init project` to create a
 
 The `[project].project_schema_version` value records the project's configuration format so Cartopian can identify applicable migrations. It is separate from the installed Cartopian release version, the connected server identity, and the MCP wire protocol version. The migration workflow advances it only after operator approval and successful validation.
 
+### Independent operator intent in reviews
+
+Planning and task-closure review prompts contain two separate channels:
+operator-confirmed intent and PM-derived guidance. The operator confirms an
+eligible in-project requirements section or locked decision with
+`cartopian attest-intent`; the command binds exact source bytes, closed scope,
+requiredness, and complete section selectors. It is operator-only and is not
+an MCP writer or role capability.
+
+`cartopian review-context` is the read-only CLI/MCP projection. Review prompt
+generation binds its deterministic identity; automatic dispatch and manual
+handoff preflight recompute it. Drift, stale or omitted evidence, and required
+evidence that is not assessable block approval. A complete scan with no
+applicable attestation emits the explicit non-blocking result `none recorded`.
+
 ## Protocol
 
 The contracts are in `protocol/CONVENTIONS.md`, the authoritative reference for project structure, lifecycle, roles, and handoffs. The executable workflows are in `skills/`. Both are plain markdown intended for humans and agents alike.

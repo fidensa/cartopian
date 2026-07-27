@@ -5,10 +5,25 @@ Plan ref: <PNN-KIND-NNN | n/a>
 Work root: <name | name, name | n/a>
 Reviewer: <free text>
 Verdict: <approve | request-changes | reject>
+Operator-intent alignment: <aligned | drifted | not assessable — reason>
+Operator-intent evidence: <ATTEST-NNN, ATTEST-NNN | none recorded>
 
 ## Summary
 
 Two lines. What was reviewed, and what the verdict rests on.
+
+## Operator-intent assessment
+
+Compare the generated `## Operator intent` channel with the separate
+management-derived guidance and the reviewed outcome. Name the evidence
+considered and explain why it is aligned, drifted, or not assessable.
+
+- `drifted` blocks approval.
+- `not assessable` blocks when any applicable evidence is required.
+- Advisory-only evidence may be explicitly not assessable without blocking.
+- With no applicable evidence, record exactly
+  `not assessable — none recorded` and `Operator-intent evidence: none recorded`;
+  that case is non-blocking.
 
 ## Implementation evidence
 

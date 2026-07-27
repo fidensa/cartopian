@@ -29,7 +29,7 @@ Use `cartopian resolve-config <project-root>` (or the `resolve_config` MCP tool)
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.7.0"
+project_schema_version = "v0.8.0"
 work_roots = ["product", "design"]
 ```
 
@@ -90,6 +90,13 @@ target = "cartopian-gemini"
 timeout = "30m"
 ```
 
+Every planning and task-closure review also consumes the independent
+operator-intent artifact contract. It is not configuration and no role field
+grants it: the operator-only `cartopian attest-intent` command creates
+attestations, while the CLI/MCP `review-context` reader projects them into
+bound review prompts. `attest-intent` is excluded from the MCP tool registry
+and all role presets.
+
 ## Run automation
 
 Run initiation, confirmation pace, launch permission, task selection, and review policy are separate authorities.
@@ -125,7 +132,7 @@ Project configuration declares names:
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.7.0"
+project_schema_version = "v0.8.0"
 work_roots = ["product"]
 ```
 

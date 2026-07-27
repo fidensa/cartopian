@@ -287,7 +287,7 @@ Planning — including task generation — is a **scoped directive** (`cartopian
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path>` — to hand off the review work; the contained PM has no raw `Write`. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent operator-intent channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
@@ -300,14 +300,14 @@ The standard checkpoint sequence is:
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Persist `Phase:`, `Plan ref:`, and supplemental `Intent refs:` when they apply. Never hand-author the generated `## Operator intent` section. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN-slug --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
 2. Call `skills/run-handoff.md` with:
    - Role: the exact resolved `reviews.planning.role` value
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`
    - Absolute report path: `<project>/reports/REPORT-PLAN-NNN-slug.md`
    - Expected report variant: planning-review completion
    - Allowed lifecycle action: return outcome to this skill
-3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`.
+3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Operator-intent alignment:` and `Operator-intent evidence:`. Drift, missing/mismatched evidence, and required-but-not-assessable evidence block approval. Advisory-only not-assessable and the exact none-recorded result remain explicit and non-blocking.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
 Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:

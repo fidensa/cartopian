@@ -811,7 +811,7 @@ def _invalid_diagnostics(_case: dict[str, Any]) -> dict[str, Any]:
             "project": {
                 "id": "invalid-matrix",
                 "name": "Invalid Matrix",
-                "project_schema_version": "v0.7.0",
+                "project_schema_version": "v0.8.0",
             },
             "roles": {
                 "coder": {
@@ -885,7 +885,7 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
         "project": {
             "id": "safety-boundaries",
             "name": "Safety Boundaries",
-            "project_schema_version": "v0.7.0",
+            "project_schema_version": "v0.8.0",
             "work_roots": ["product"],
         },
         "roles": {

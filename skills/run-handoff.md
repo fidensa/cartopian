@@ -60,6 +60,20 @@ Read from the emitted record:
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
+- `operator_intent` — for an in-review task, the normalized two-channel review
+  context and `preflight`. A missing prompt, unresolved advisory or required
+  reference, stale binding, or missing/altered generated section makes the
+  command fail closed. Manual task-review handoff consumes this same record.
+
+For a planning-checkpoint review (which has no task file), resolve the same
+artifact directly:
+
+```text
+cartopian review-context <project-root> --review-kind planning \
+  --checkpoint PLAN-NNN-slug --prompt <absolute-prompt-path>
+```
+
+Its `preflight.ok` must be `true` before either manual or automatic launch.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error to the caller and return a blocked outcome; do not fall back to a manual read sequence.
 
@@ -68,10 +82,16 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
 1. Author or update the prompt at the caller-provided absolute prompt path with the Core CLI (never a raw `Write`):
 
    ```
-   cartopian write-prompt <project-root> --prompt-id <PROMPT-id> --content-file <body-path>
+   cartopian write-prompt <project-root> --prompt-id <PROMPT-id> \
+     --content-file <body-path>
+
+   # Review handoffs add the generated binding:
+   cartopian write-prompt <project-root> --prompt-id <PROMPT-id> \
+     --content-file <body-path> \
+     --review-kind <planning|task-closure> <target arguments>
    ```
 
-   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry.
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The prompt persists any supplemental `Intent refs:`. The writer, not the PM, generates exactly one bound `## Operator intent` section.
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
@@ -97,6 +117,10 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
   ```text
   <agent> '<absolute prompt path>'
   ```
+
+Every operator-performed/manual review launch first passes the context
+preflight above. Manual describes who starts the reviewer; it is not an
+operator-intent bypass.
 - **Agent role with the applicable `task_run` or `task_review` permission in `auto_launch`** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
 
   ```
@@ -180,6 +204,12 @@ The emitted record is a strict superset of the legacy `parse-report` record: it 
 If the report is missing, malformed, inconsistent, uses unsupported values, or fails the expected-path check, treat it as `failed-to-parse`.
 
 Treat `failed-to-parse` as blocked for the caller. Preserve the prompt and invalid report for operator inspection.
+
+For review variants, `report-action` recomputes the prompt binding and emits
+`operator_intent_alignment`. `approve` is actionable only when that record is
+non-blocking. Drift, stale/missing evidence, and required-but-not-assessable
+evidence return `failed-to-parse`; advisory-only not-assessable and exact
+none-recorded remain explicit.
 
 ---
 

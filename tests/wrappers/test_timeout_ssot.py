@@ -137,7 +137,7 @@ def test_launcher_resolves_configured_timeout(tmp_path):
         '[project]\n'
         'id = "timeout-probe"\n'
         'name = "Timeout Probe"\n'
-        'project_schema_version = "v0.7.0"\n'
+        'project_schema_version = "v0.8.0"\n'
         '\n'
         '[roles.coder]\n'
         'description = "Implements tasks."\n'

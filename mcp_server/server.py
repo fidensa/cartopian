@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -68,6 +69,11 @@ ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
 URI_SCHEME = "cartopian"
+
+# Set for the duration of every in-process CLI tool invocation. Operator-only
+# surfaces read it to fail closed when reached through a tool call rather than
+# by the operator directly (see ``cli/commands/attest_intent.py``).
+MCP_TOOL_CALL_MARKER = "CARTOPIAN_MCP_TOOL_CALL"
 
 # Hard caps applied before any read_text() of operator/agent-facing files.
 # Skills, protocol docs, templates, and project artifacts are all hand-authored
@@ -482,6 +488,17 @@ def _command_input_schema(sub: argparse.ArgumentParser) -> Tuple[Dict[str, Any],
 _TOOL_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
+def _operator_only_subcommands() -> frozenset:
+    """CLI subcommands the operator performs directly, never exposed as tools.
+
+    Sourced from :data:`cli.main.OPERATOR_ONLY_SUBCOMMANDS` so the exclusion has
+    exactly one authoritative definition.
+    """
+    from cli.main import OPERATOR_ONLY_SUBCOMMANDS
+
+    return frozenset(OPERATOR_ONLY_SUBCOMMANDS)
+
+
 def _tool_registry() -> Dict[str, Dict[str, Any]]:
     """Build (and cache) the tool registry.
 
@@ -496,6 +513,11 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
     subs = _subparsers_map(parser)
     registry: Dict[str, Dict[str, Any]] = {}
     for cli_name, sub in subs.items():
+        # Operator-only subcommands never reach an agent's tool surface. The
+        # operator-intent confirmation surface must not be a management-callable
+        # MCP writer, so it is excluded here rather than merely guarded inside.
+        if cli_name in _operator_only_subcommands():
+            continue
         tool_name = cli_name.replace("-", "_")
         schema, actions = _command_input_schema(sub)
         registry[tool_name] = {
@@ -567,10 +589,33 @@ def _invoke_cli(subcommand: str, argv: List[str]) -> Dict[str, Any]:
     """
     parser = _import_cli_parser()
     full_argv = [subcommand, *argv]
+    del argv
 
     out_buf = io.StringIO()
     err_buf = io.StringIO()
 
+    # Mark the invocation as tool-mediated. Operator-only surfaces are already
+    # absent from the tool registry; this marker is the second, in-process
+    # boundary so an operator-only handler reached by any other route still
+    # fails closed rather than acting on an agent's behalf.
+    prior_marker = os.environ.get(MCP_TOOL_CALL_MARKER)
+    os.environ[MCP_TOOL_CALL_MARKER] = subcommand
+    try:
+        return _invoke_cli_captured(parser, subcommand, full_argv, out_buf, err_buf)
+    finally:
+        if prior_marker is None:
+            os.environ.pop(MCP_TOOL_CALL_MARKER, None)
+        else:
+            os.environ[MCP_TOOL_CALL_MARKER] = prior_marker
+
+
+def _invoke_cli_captured(
+    parser: argparse.ArgumentParser,
+    subcommand: str,
+    full_argv: List[str],
+    out_buf: io.StringIO,
+    err_buf: io.StringIO,
+) -> Dict[str, Any]:
     try:
         with redirect_stdout(out_buf), redirect_stderr(err_buf):
             try:

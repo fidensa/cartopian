@@ -27,7 +27,7 @@ from cli.config_surface_parity import (
     schema_field_parity,
     wrapper_authority_vocabulary,
 )
-from cli.main import build_parser
+from cli.main import OPERATOR_ONLY_SUBCOMMANDS, build_parser
 from cli.protocol_gate import read_shipped_project_schema_version
 from mcp_server import server
 
@@ -861,7 +861,32 @@ class TestSurfaceRegistry(unittest.TestCase):
                 "handoff-packet": derived_identity_delta,
                 "containment-matrix": derived_identity_delta,
                 "plan-audit": derived_identity_delta,
+                # review-context postdates the identity-delta task, so it has
+                # no Phase 00 baseline and no task delta to reconcile. Its
+                # ceiling is set by the operator-intent excerpt contract
+                # instead, and it declares that explicitly rather than
+                # borrowing a baseline it never had.
+                "review-context": None,
             },
+        )
+        self.assertIsNone(budgets["review-context"]["phase_00_baseline"])
+        self.assertIn(
+            "24 KiB", budgets["review-context"]["operator_intent_channel_note"]
+        )
+        measurement = budgets["review-context"]["operator_intent_measurement"]
+        self.assertEqual(measurement["source_bytes"], 196)
+        self.assertEqual(measurement["selected_bytes"], 196)
+        self.assertEqual(measurement["total_prompt_delta_bytes"], 726)
+        self.assertEqual(
+            measurement["maximum_fixture"]["selected_bytes"], 24 * 1024
+        )
+        self.assertEqual(
+            measurement["maximum_fixture"]["review_context_output_bytes"],
+            54980,
+        )
+        self.assertGreaterEqual(
+            budgets["review-context"]["max_output_bytes"],
+            measurement["maximum_fixture"]["review_context_output_bytes"],
         )
         for item in budgets.values():
             benefit = item["record_versioning_benefit"]
@@ -998,6 +1023,14 @@ class TestSurfaceRegistry(unittest.TestCase):
                 ),
                 "containment-matrix": ("containment-matrix", str(project)),
                 "plan-audit": ("plan-audit", str(project)),
+                "review-context": (
+                    "review-context",
+                    str(project),
+                    "--review-kind",
+                    "task-closure",
+                    "--task",
+                    str(task),
+                ),
             }
             pipelines = {}
             for checkout in (short_checkout, long_checkout):
@@ -1175,11 +1208,19 @@ class TestCliMcpContractParity(unittest.TestCase):
         server._TOOL_CACHE = None
         subparsers = _subparsers()
         listed = {item["name"]: item for item in server.list_tools()}
+        # Operator-only subcommands are deliberately absent from the tool
+        # surface: the operator-intent confirmation surface must not be a
+        # management-callable MCP writer.
+        agent_facing = {
+            name: sub
+            for name, sub in subparsers.items()
+            if name not in OPERATOR_ONLY_SUBCOMMANDS
+        }
         self.assertEqual(
             set(listed),
-            {name.replace("-", "_") for name in subparsers},
+            {name.replace("-", "_") for name in agent_facing},
         )
-        for cli_name, sub in subparsers.items():
+        for cli_name, sub in agent_facing.items():
             schema = listed[cli_name.replace("-", "_")]["inputSchema"]
             actions = [
                 action
@@ -1274,7 +1315,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.7.0"\n'
+        'project_schema_version = "v0.8.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"
@@ -1354,6 +1395,14 @@ class TestProjectionParity(unittest.TestCase):
                 "handoff-packet": ("handoff-packet", str(task), "--role", "coder"),
                 "containment-matrix": ("containment-matrix", str(project)),
                 "plan-audit": ("plan-audit", str(project)),
+                "review-context": (
+                    "review-context",
+                    str(project),
+                    "--review-kind",
+                    "task-closure",
+                    "--task",
+                    str(task),
+                ),
             }
             records = {}
             for name, args in commands.items():
@@ -1387,6 +1436,15 @@ class TestProjectionParity(unittest.TestCase):
             self.assertEqual(
                 records["containment-matrix"]["activated"],
                 canonical["capabilities"]["activated"],
+            )
+            # The two review channels stay separate, and an unattested project
+            # resolves to `none recorded` only after a complete scan.
+            intent = records["review-context"]["operator_intent"]
+            self.assertTrue(intent["none_recorded"])
+            self.assertEqual(intent["evidence"], [])
+            self.assertTrue(intent["scan"]["complete"])
+            self.assertIn(
+                "management_guidance", records["review-context"]
             )
 
             registry = load_registry(REGISTRY)

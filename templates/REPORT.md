@@ -67,6 +67,8 @@ Use this section instead of the above when reporting on a review handoff.
 # REPORT-NN-NNN
 
 Status: <complete | blocked | failed>
+Operator-intent alignment: <aligned | drifted | not assessable — reason>
+Operator-intent evidence: <ATTEST-NNN, ATTEST-NNN | none recorded>
 
 ## Identity
 
@@ -78,6 +80,9 @@ Status: <complete | blocked | failed>
 ## Evidence reviewed
 
 <What was inspected: code, specs, test results, etc.>
+
+Include the bound operator-intent context and the separate management guidance.
+The alignment/evidence header fields must match the durable review file.
 
 ## Verdict
 
@@ -96,6 +101,8 @@ Use this section instead of the above when reporting on a planning- checkpoint r
 # REPORT-PLAN-NNN-slug
 
 Status: <complete | blocked | failed>
+Operator-intent alignment: <aligned | drifted | not assessable — reason>
+Operator-intent evidence: <ATTEST-NNN, ATTEST-NNN | none recorded>
 
 ## Identity
 
@@ -106,6 +113,9 @@ Status: <complete | blocked | failed>
 ## Evidence reviewed
 
 <What was inspected: requirements, plan, phases, tasks/specs, etc.>
+
+Include the bound operator-intent context and the separate management guidance.
+The alignment/evidence header fields must match the planning review file.
 
 ## Verdict
 

@@ -256,12 +256,32 @@ class TestPromptSurface(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestToolSurface(unittest.TestCase):
-    def test_every_cli_subcommand_is_a_tool(self):
-        from cli.main import SUBCOMMANDS
+    def test_every_agent_facing_cli_subcommand_is_a_tool(self):
+        from cli.main import OPERATOR_ONLY_SUBCOMMANDS, SUBCOMMANDS
         response = single("tools/list")
         tool_names = {t["name"] for t in response["result"]["tools"]}
         for sub in SUBCOMMANDS:
+            if sub in OPERATOR_ONLY_SUBCOMMANDS:
+                continue
             self.assertIn(sub.replace("-", "_"), tool_names)
+
+    def test_operator_only_subcommands_are_absent_from_the_tool_surface(self):
+        """The operator-intent confirmation surface is not a callable tool.
+
+        Exclusion, not a guard-inside-the-handler: a management session must not
+        even be able to name the writer that creates operator-intent evidence.
+        """
+        from cli.main import OPERATOR_ONLY_SUBCOMMANDS, SUBCOMMANDS
+        self.assertTrue(OPERATOR_ONLY_SUBCOMMANDS)
+        response = single("tools/list")
+        tool_names = {t["name"] for t in response["result"]["tools"]}
+        for sub in OPERATOR_ONLY_SUBCOMMANDS:
+            self.assertIn(sub, SUBCOMMANDS)
+            self.assertNotIn(sub.replace("-", "_"), tool_names)
+            call = single(
+                "tools/call", {"name": sub.replace("-", "_"), "arguments": {}}
+            )
+            self.assertIn("error", call)
 
     def test_move_task_schema_lists_required_positionals(self):
         response = single("tools/list")
@@ -392,7 +412,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.7.0"\n'
+                'project_schema_version = "v0.8.0"\n'
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
@@ -476,7 +496,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.7.0"\n'
+                'project_schema_version = "v0.8.0"\n'
                 "unknown = true\n",
                 encoding="utf-8",
             )

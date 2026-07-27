@@ -53,7 +53,7 @@ holds no write grant of any kind:
 [project]
 id = "entry-accept"
 name = "Entry Containment Acceptance"
-project_schema_version = "v0.7.0"
+project_schema_version = "v0.8.0"
 work_roots = ["tool-repo"]
 
 [roles.pm]

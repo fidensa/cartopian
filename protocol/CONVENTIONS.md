@@ -174,7 +174,7 @@ Guarded transitions and their prerequisites:
 | Transition | Required artifact | Validation |
 | --- | --- | --- |
 | `in-progress → in-review` (task review required) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
-| `in-review → done` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve` |
+| `in-review → done` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve`; current operator-intent context resolves; alignment is non-blocking |
 | `in-review → in-progress` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
 | `in-review → open` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
 | `in-progress → done` (task review off) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
@@ -188,6 +188,10 @@ Guards apply only to task files whose names match the canonical `TASK-NN-NNN` pr
 `cartopian plan-audit <project-path>` is a companion audit that surfaces provenance gaps across the whole project:
 
 - **Artifact chain integrity**: every `TASK-NN-NNN` file in `tasks/in-progress/` must have a matching `prompts/PROMPT-NN-NNN.md`; every file in `tasks/in-review/` must have a matching `reviews/REVIEW-NN-NNN.md` with a `Verdict:` field present.
+- **Operator-intent integrity**: active task and planning-review prompts carry
+  the complete current bound operator-intent section; supplemental references
+  resolve; applicable attestations are not omitted; approval agrees with the
+  recorded alignment. Findings name the failure class and recovery.
 - **Infrastructure-artifact scope guard**: assignees must not add `.github`, CI, or other infrastructure artifacts to a work root unless the task explicitly authorizes them. For every dirty work root, changed files under a top-level infrastructure marker (`.github/`, `.gitlab/`, `.gitlab-ci.yml`, `.circleci/`, `.buildkite/`, `.travis.yml`, `.drone.yml`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`, `Jenkinsfile`) emit an `unauthorized-infra-artifacts` warning unless a task naming that work root carries the explicit task-file field `Infra authorized: <markers>` — a comma-separated list of the markers it authorizes (e.g. `Infra authorized: .github`), or the blanket `Infra authorized: yes`. Prefer the marker-scoped form. Prose mentions of a marker are not authorization, and attribution alone is not authorization. This is a warning for the operator, not a blocker.
 - **Work-root provenance**: for each configured work root, if uncommitted git changes exist and no active task is assigned to that root (or no active prompt exists for the assigned task), the audit's behavior depends on the effective `git.pm_owns_product_branches` setting.
   - When `pm_owns_product_branches = true`, the PM owns product-repo plumbing, so dirty state without an active prompted task is anomalous and the audit emits an `unattributed-work-root-changes` warning.
@@ -273,11 +277,151 @@ Review verdicts are:
 - `request-changes`: task moves to `in-progress/`.
 - `reject`: task moves to `open/`.
 
+## Independent Operator-Intent Evidence
+
+Planning and task-closure reviews carry two explicitly separate channels:
+
+1. **Operator-intent evidence** comes only from current operator attestations.
+2. **Management-derived guidance** names the task, spec, phase, plan,
+   requirements, prompt, report, and review artifacts the PM prepared.
+
+Agreement inside the management channel is not evidence that the approved
+operator outcome was preserved. A reviewer compares both channels, and a
+contradiction is drift even when the task, spec, prompt, implementation, and
+report all agree with one another.
+
+### Operator-only attestation
+
+An attestation is a project-contained
+`intent/ATTEST-NNN-kebab-case-slug.md` artifact. It binds:
+
+- one eligible source kind and canonical source identity/path;
+- the SHA-256 identity of the exact UTF-8 source bytes;
+- operator confirmation and the attestation artifact's own content identity;
+- one or more applicability scopes from the closed union below;
+- `Required: true | false` (the confirmation command defaults to `true`, but
+  an authored attestation with the field missing is invalid);
+- zero or more exact complete named-section selectors; and
+- current/supersession provenance.
+
+Only the operator performs `cartopian attest-intent ... --confirm`. The command
+is the sole writer: it computes the source hash itself, renders the artifact,
+and writes inside `intent/`. It is absent from the MCP tool registry, every
+shipped role preset, and every PM/coder/reviewer capability surface; dispatched
+or MCP-mediated sessions are refused. `intent/` is not a mediated-write
+destination. A PM may draft requirements or a decision, but cannot create,
+change, weaken, or self-certify the attestation.
+
+Eligible sources are:
+
+- the exact complete `## Confirmed intent` section of `REQUIREMENTS.md`;
+- a locked `decisions/DEC-NNN-slug.md` recording an explicit operator choice
+  (a selected-section attestation includes its complete `## Decision` section);
+  or
+- a future mediated `intent/records/OIR-NNN-slug.md` operator-intent record.
+
+`Status: locked`, PM authorship, or an unattested legacy decision never creates
+operator-intent evidence.
+
+### Applicability and supplemental references
+
+Scopes are a closed union:
+
+- `project`
+- `phase:PHASE-NN-slug`
+- `plan-ref:PNN-KIND-NNN`
+- `task:TASK-NN-NNN`
+- `review-kind:planning`
+- `review-kind:task-closure`
+
+The resolver scans every current attestation and includes every matching scope.
+This automatic scan is authoritative. `Intent refs:` on a task, phase, or
+planning-checkpoint prompt are supplemental and additive; omitting a reference
+cannot suppress an applicable attestation or produce a false `none recorded`.
+The closed reference grammar is `ATTEST-NNN`, `DEC-NNN`, `OIR-NNN`,
+`REQUIREMENTS.md#Confirmed-intent`, or `none`.
+
+A missing, malformed, duplicated/ambiguous, open, outside-project, unattested,
+or unresolved superseded reference fails readiness. A superseded decision
+resolves only through one unique current successor with its own valid operator
+attestation. The evidence preserves the complete bounded decision chain.
+Cycles, multiple successors, a broken successor, or an unattested successor
+refuse.
+
+### Deterministic review context and bounds
+
+`cartopian review-context` is the CLI/MCP projection of the one resolver used
+by readiness, prompt generation, dispatch, manual handoff, report parsing,
+lifecycle guards, and plan audit. It emits:
+
+- review kind and canonical target;
+- operator evidence with source identity/path/hash, selected complete content,
+  attestation identity/path/hash/status/confirmation, requiredness, matched
+  scopes, discovery path, supersession state, and provenance;
+- a separate list of management-guidance artifact paths;
+- source, selected-content, and generated-section byte measures; and
+- the deterministic review-context identity.
+
+Identities are `sha256:` followed by lowercase hexadecimal SHA-256 over exact
+UTF-8 bytes or the documented canonical JSON payload. Ordering is stable by
+applicability specificity, source kind, and canonical attestation identity.
+Content is never loaded from conversation history, secrets, unrelated operator
+data, outside-project paths, symlinks, or hardlinks.
+
+A whole eligible source is included only when it is at most 8 KiB. A larger
+source requires exact complete named-section selectors. One source contributes
+at most 8 KiB across all current attestations, and all operator-intent excerpts
+in one review contribute at most 24 KiB. A missing/duplicate selector or any
+overflow refuses; Cartopian never truncates a section, clause, or first-N byte
+prefix.
+
+### Prompt binding, alignment, and approval
+
+Every newly generated planning or task-review prompt contains exactly one
+tool-generated `## Operator intent` section. It embeds the current context
+identity and the complete bounded evidence, or `none recorded` only after the
+complete scan and supplemental-reference resolution find nothing.
+
+Automatic dispatch and manual handoff preflight recompute the target,
+applicability, source/attestation identities, excerpt, and context identity.
+They refuse an unresolved required *or advisory* item, omitted applicable
+evidence, changed source or attestation bytes, altered intent content, stale
+identity, missing prompt, or absent/duplicated operator-intent section.
+
+The review file and review-completion report record:
+
+```text
+Operator-intent alignment: aligned | drifted | not assessable
+Operator-intent evidence: ATTEST-NNN, ... | none recorded
+```
+
+The assessment explains the comparison. `drifted` always blocks approval.
+`not assessable` blocks when any applicable evidence is required. It is
+non-blocking when every applicable item is operator-marked advisory, and
+`not assessable — none recorded` is explicitly non-blocking. Missing or
+malformed alignment fails closed. `report-action`, `move-task`, and planning
+review routing enforce the same result; the task/spec/prompt/report agreeing
+with one another never overrides drift.
+
+`plan-audit` reports invalid supplemental references, omitted applicable
+attestations, missing/stale bindings, and approval inconsistent with alignment
+for both review kinds. Pre-v0.8 historical reviews remain readable and are not
+rewritten. Migration fabricates no attestation, promotes no legacy decision,
+and changes no historical review.
+
 ## Prompts
 
 Prompts are temporary, assignee-directed handoff artifacts in `prompts/`. They restate the requirements, acceptance criteria, context, output expectations, scope boundaries, done criteria, and completion report requirements.
 
 Prompt files follow the canonical field schema in `templates/PROMPT.md`.
+
+Review prompts are produced with `cartopian write-prompt --review-kind ...`.
+The writer resolves the independent operator-intent context and owns the
+generated `## Operator intent` section; authored copies are replaced. Planning
+checkpoint prompts persist their canonical `Phase:`, `Plan ref:`, and
+supplemental `Intent refs:` fields so automatic dispatch, manual
+`review-context --prompt` preflight, report parsing, and audit recompute the
+same target.
 
 Prompts must include complete absolute paths for every resource the assignee is expected to use or produce. They must not rely on relative path interpretation, current working directory assumptions, or vague instructions such as "read the PM system."
 
@@ -296,6 +440,13 @@ The neutral task-report core is `## Identity`, `## Completion evidence`, `## Rem
 Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use `reports/REPORT-NN-NNN.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN-slug.md`.
 
 Task review completion reports declare the absolute `Task path:` in `## Identity`. The path must name the task implied by `REPORT-NN-NNN.md` in its current lifecycle directory; a missing, stale, or wrong task path is invalid completion evidence. This requirement does not apply to deidentified task completion reports or to planning-review completion reports.
+
+Review and planning-review reports also carry the operator-intent alignment and
+evidence fields from the bound prompt. Report parsing recomputes the binding at
+completion time. An approving report with drifted, missing, malformed, stale,
+or required-but-not-assessable evidence is `failed-to-parse`; an advisory-only
+not-assessable result and the exact none-recorded result remain explicit and
+non-blocking.
 
 Reports must not include secrets or unnecessary sensitive environment data such as API keys, credentials, tokens, or private connection strings.
 

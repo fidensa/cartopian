@@ -53,6 +53,7 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.4.0",
     "v0.5.0",
     "v0.6.0",
+    "v0.7.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 PRESERVED_FACTS = (
@@ -170,9 +171,31 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         recovery="resolve conflicting old and preferred definitions, then rerun",
     ),
     ConfigurationMigrationEntry(
-        identity="config-v0.7-partial-repair",
+        identity="config-v0.7-to-v0.8",
         from_identities=("v0.7.0",),
-        to_identity="v0.7.0",
+        to_identity="v0.8.0",
+        supported_forms=("preferred", "superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+            "marker-last-advancement",
+        ),
+        validation_gates=(
+            "effective-semantic-equivalence",
+            "no-fabricated-operator-attestation",
+            "no-promoted-legacy-decision",
+            "no-historical-review-rewrite",
+        ),
+        recovery=(
+            "resolve the reported configuration diagnostic, then rerun; operator-"
+            "intent attestations are never created by migration"
+        ),
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.8-partial-repair",
+        from_identities=("v0.8.0",),
+        to_identity="v0.8.0",
         supported_forms=("superseded-role-launch", "partial"),
         transforms=(
             "flatten-role-launch-fields",
@@ -1887,14 +1910,28 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
+        if _version_tuple(current) >= (0, 8, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
+        if _version_tuple(current) >= (0, 8, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
     elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
+        if _version_tuple(current) >= (0, 8, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
+    elif detected == "v0.7.0":
+        # v0.7 -> v0.8 introduces no configuration key. It advances the marker
+        # after the resolver confirms effective behavior is unchanged — the
+        # operator-intent contract lives in project artifacts, not in config,
+        # and migration never fabricates an attestation or promotes an
+        # unattested legacy decision.
+        if _version_tuple(current) >= (0, 8, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
     elif detected == current and has_residual:
-        entries.append(CONFIGURATION_MIGRATION_ENTRIES[3])
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[4])
     return tuple(entries)
 
 

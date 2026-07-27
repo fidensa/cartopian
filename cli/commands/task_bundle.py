@@ -18,6 +18,7 @@ from cli.commands.validate_task_readiness import (
     _check_blocked_by,
     _check_deliverable,
     _check_evidence_gate,
+    _check_intent_refs,
     _check_phase,
     _check_plan_ref,
     _check_work_root,
@@ -173,6 +174,7 @@ def _collect_work_roots(
 
 def _build_validation_checks(
     project_root: Path,
+    task_path: Path,
     content: str,
     headers: Dict[str, str],
     presence: Dict[str, bool],
@@ -186,6 +188,9 @@ def _build_validation_checks(
         "acceptance-present": _check_acceptance(content),
         "work-root-names-valid": _check_work_root(project_root, headers, presence, warnings),
         "deliverable-valid": _check_deliverable(project_root, headers),
+        # Reuses the readiness validator's own check, which in turn consumes the
+        # single resolver — the bundle never re-derives applicability.
+        "intent-refs-valid": _check_intent_refs(project_root, task_path, headers),
     }
     return [checks_by_name[name] for name in CHECK_ORDER]
 
@@ -244,7 +249,9 @@ def handler(args: argparse.Namespace) -> int:
         return err.exit_code
 
     headers, presence = _parse_headers(content)
-    checks = _build_validation_checks(project_root, content, headers, presence)
+    checks = _build_validation_checks(
+        project_root, task_path, content, headers, presence
+    )
     ready = all(check["pass"] for check in checks)
 
     try:

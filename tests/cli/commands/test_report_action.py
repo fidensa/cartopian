@@ -7,6 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 
+from cli import operator_intent
 from tests.scaffold import project_scaffold
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -16,7 +17,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.7.0"\n'
+    'project_schema_version = "v0.8.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -35,7 +36,7 @@ _PROJECT_TOML_OFF = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.7.0"\n'
+    'project_schema_version = "v0.8.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -117,6 +118,8 @@ def _review_report(
     return (
         f"# {report_stem}\n\n"
         f"Status: {status}\n\n"
+        "Operator-intent alignment: not assessable — none recorded\n\n"
+        "Operator-intent evidence: none recorded\n\n"
         "## Identity\n\n"
         f"- Review ID: {review_id}\n"
         f"- Prompt path: {prompt_path}\n"
@@ -128,6 +131,14 @@ def _review_report(
         f"{verdict_body}\n\n"
         "## Blocking findings\n\n"
         "none.\n"
+    )
+
+
+def _bound_task_prompt(scaffold, task_path: Path, suffix: str) -> Path:
+    context = operator_intent.context_for_task(scaffold.project_root, task_path)
+    return scaffold.write(
+        f"prompts/PROMPT-{suffix}.md",
+        operator_intent.upsert_intent_section("# Review\n", context.section),
     )
 
 
@@ -323,6 +334,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
                 "tasks/in-review/TASK-02-004-demo.md",
                 "# TASK-02-004: demo\n\nWork root: n/a\n",
             )
+            _bound_task_prompt(scaffold, task_path, "02-004")
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
                 "reports/REPORT-02-004.md",
@@ -400,6 +412,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
                 "tasks/in-review/TASK-02-005-other.md",
                 "# TASK-02-005: other\n\nWork root: n/a\n",
             )
+            _bound_task_prompt(scaffold, wrong_task_path, "02-004")
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
                 "reports/REPORT-02-004.md",
@@ -548,12 +561,15 @@ class TestReportActionVariantInference(unittest.TestCase):
                 "tasks/in-review/TASK-01-010-demo.md",
                 "# TASK-01-010: demo\n\nWork root: n/a\n",
             )
+            _bound_task_prompt(scaffold, task_path, "01-010")
             review_path = scaffold.write("reviews/REVIEW-01-010.md", "# REVIEW-01-010\n")
             report_path = scaffold.write(
                 "reports/REPORT-01-010.md",
                 (
                     "# REPORT-01-010\n\n"
                     "Status: complete\n\n"
+                    "Operator-intent alignment: not assessable — none recorded\n\n"
+                    "Operator-intent evidence: none recorded\n\n"
                     "## Identity\n\n"
                     "- Task ID: TASK-01-010\n"
                     "- Review ID: REVIEW-01-010\n"

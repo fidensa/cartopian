@@ -17,6 +17,10 @@ present this section to the operator as a blank form.
 - **Binding constraint:** …
 - **Explicit exclusions:** …
 
+Only this exact complete section is eligible for a
+`requirements-intent` operator attestation. Other requirements sections remain
+management-derived guidance and cannot be selected into that attestation.
+
 ## Thesis
 
 What is this thing? Define it precisely — it is exactly this, and it is surely not that.

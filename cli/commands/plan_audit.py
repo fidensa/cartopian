@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cli import operator_intent
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -725,6 +726,272 @@ def _check_backlog_invariants(
     return blockers, warnings
 
 
+def _check_operator_intent(
+    project_path: Path,
+    declared_schema_version: Optional[str],
+    task_review_required: bool,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Audit the independent operator-intent channel across the live plan.
+
+    Four failure classes, each actionable and each mutation-free:
+
+    - ``invalid-intent-reference`` — a task declares a supplemental reference
+      that is missing, malformed, ambiguous, open, outside the project,
+      unattested, or superseded with no current successor.
+    - ``omitted-applicable-attestation`` — a review prompt omits evidence the
+      applicability scan finds, so the reviewer would never see it.
+    - ``stale-intent-binding`` — the prompt is bound to a review-context
+      identity that is no longer current (a source or attestation changed, or
+      the prompt was edited after generation).
+    - ``approval-inconsistent-with-alignment`` — a review records
+      ``Verdict: approve`` alongside drifted or required-but-not-assessable
+      alignment evidence.
+    """
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    enforced = operator_intent.alignment_enforced(declared_schema_version)
+
+    for status_dir in _ALL_TASK_DIRS:
+        tasks_dir = project_path / "tasks" / status_dir
+        if not tasks_dir.is_dir():
+            continue
+        for task_file in sorted(tasks_dir.iterdir()):
+            if not task_file.is_file() or task_file.suffix != ".md":
+                continue
+            match = _TASK_ID_RE.match(task_file.stem)
+            if not match:
+                continue
+            nn_nnn = match.group(1)
+            task_id = f"TASK-{nn_nnn}"
+            prompt = project_path / "prompts" / f"PROMPT-{nn_nnn}.md"
+            prompt_text: Optional[str] = None
+            prompt_refs: List[str] = []
+            if status_dir == "in-review" and prompt.is_file():
+                try:
+                    prompt_text = prompt.read_text(encoding="utf-8")
+                    prompt_refs = operator_intent.artifact_supplemental_refs(
+                        prompt_text
+                    )
+                except (OSError, UnicodeDecodeError):
+                    prompt_text = ""
+                except operator_intent.IntentRefusal as refusal:
+                    blockers.append({
+                        "kind": "invalid-intent-reference",
+                        "task_id": task_id,
+                        "prompt_path": str(prompt),
+                        "failure_class": refusal.rule,
+                        "recovery": refusal.recovery,
+                        "detail": (
+                            f"review prompt for {task_id} declares invalid "
+                            f"operator-intent evidence ({refusal.rule}): "
+                            f"{refusal.detail}"
+                        ),
+                    })
+                    continue
+            try:
+                context = operator_intent.context_for_task(
+                    project_path, task_file, prompt_refs
+                )
+            except operator_intent.IntentRefusal as refusal:
+                blockers.append({
+                    "kind": "invalid-intent-reference",
+                    "task_id": task_id,
+                    "task_path": str(task_file),
+                    "failure_class": refusal.rule,
+                    "recovery": refusal.recovery,
+                    "detail": (
+                        f"{task_id} cannot resolve its operator-intent evidence "
+                        f"({refusal.rule}): {refusal.detail}"
+                    ),
+                })
+                continue
+
+            if status_dir == "in-review" and task_review_required:
+                if not prompt.is_file():
+                    blockers.append({
+                        "kind": "stale-intent-binding",
+                        "task_id": task_id,
+                        "prompt_path": str(prompt),
+                        "failure_class": "missing-prompt",
+                        "recovery": "prepare the bound review prompt before handoff",
+                        "detail": (
+                            f"review prompt for {task_id} is missing, so the "
+                            "operator-intent context cannot be handed off"
+                        ),
+                    })
+                else:
+                    preflight = operator_intent.preflight_prompt_binding(
+                        context, prompt_text or ""
+                    )
+                    if not preflight["ok"]:
+                        kind = {
+                            "omitted-applicable-evidence": (
+                                "omitted-applicable-attestation"
+                            ),
+                            "missing-operator-intent-section": (
+                                "omitted-applicable-attestation"
+                            ),
+                        }.get(preflight["rule"], "stale-intent-binding")
+                        finding = {
+                            "kind": kind,
+                            "task_id": task_id,
+                            "prompt_path": str(prompt),
+                            "failure_class": preflight["rule"],
+                            "recovery": preflight["recovery"],
+                            "detail": (
+                                f"review prompt for {task_id}: "
+                                f"{preflight['detail']}"
+                            ),
+                        }
+                        blockers.append(finding)
+
+            review = project_path / "reviews" / f"REVIEW-{nn_nnn}.md"
+            if not review.is_file():
+                continue
+            try:
+                review_text = review.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            verdict = _VERDICT_RE.search(review_text)
+            if verdict is None or verdict.group(1).strip() != "approve":
+                continue
+            alignment = operator_intent.parse_alignment(
+                review_text,
+                required_evidence=any(item.required for item in context.evidence),
+                expected_evidence=[
+                    item.attestation.attestation_id for item in context.evidence
+                ],
+            )
+            if not alignment["blocking"]:
+                continue
+            finding = {
+                "kind": "approval-inconsistent-with-alignment",
+                "task_id": task_id,
+                "review_path": str(review),
+                "failure_class": "alignment-blocks-approval",
+                "recovery": (
+                    "record an alignment result the evidence supports, or return "
+                    "the task for another pass"
+                ),
+                "detail": (
+                    f"review for {task_id} records Verdict: approve but "
+                    f"{alignment['detail']}"
+                ),
+            }
+            if enforced:
+                blockers.append(finding)
+            else:
+                finding["detail"] += (
+                    " (advisory: this project has not migrated to the schema "
+                    "version that enforces operator-intent alignment)"
+                )
+                warnings.append(finding)
+
+    # Planning-checkpoint prompts are their own review-target artifacts.  Their
+    # closed Phase / Plan ref / Intent refs fields are parsed from the prompt so
+    # automatic dispatch, manual preflight, and audit all consume one target.
+    prompts_dir = project_path / "prompts"
+    if prompts_dir.is_dir():
+        for prompt in sorted(prompts_dir.glob("PROMPT-PLAN-*.md")):
+            checkpoint_id = prompt.stem.removeprefix("PROMPT-")
+            try:
+                prompt_text = prompt.read_text(encoding="utf-8")
+                context = operator_intent.context_for_checkpoint(
+                    project_path,
+                    checkpoint_id,
+                    checkpoint_text=prompt_text,
+                )
+            except (OSError, UnicodeDecodeError):
+                blockers.append({
+                    "kind": "stale-intent-binding",
+                    "checkpoint_id": checkpoint_id,
+                    "prompt_path": str(prompt),
+                    "failure_class": "unreadable-prompt",
+                    "recovery": "regenerate the planning review prompt",
+                    "detail": f"planning review prompt is unreadable: {prompt}",
+                })
+                continue
+            except operator_intent.IntentRefusal as refusal:
+                blockers.append({
+                    "kind": "invalid-intent-reference",
+                    "checkpoint_id": checkpoint_id,
+                    "prompt_path": str(prompt),
+                    "failure_class": refusal.rule,
+                    "recovery": refusal.recovery,
+                    "detail": (
+                        f"planning checkpoint {checkpoint_id} cannot resolve its "
+                        f"operator-intent evidence ({refusal.rule}): {refusal.detail}"
+                    ),
+                })
+                continue
+
+            preflight = operator_intent.preflight_prompt_binding(
+                context, prompt_text
+            )
+            if not preflight["ok"]:
+                kind = {
+                    "omitted-applicable-evidence": (
+                        "omitted-applicable-attestation"
+                    ),
+                    "missing-operator-intent-section": (
+                        "omitted-applicable-attestation"
+                    ),
+                }.get(preflight["rule"], "stale-intent-binding")
+                blockers.append({
+                    "kind": kind,
+                    "checkpoint_id": checkpoint_id,
+                    "prompt_path": str(prompt),
+                    "failure_class": preflight["rule"],
+                    "recovery": preflight["recovery"],
+                    "detail": (
+                        f"planning review prompt for {checkpoint_id}: "
+                        f"{preflight['detail']}"
+                    ),
+                })
+
+            review = project_path / "reviews" / f"REVIEW-{checkpoint_id}.md"
+            if not review.is_file():
+                continue
+            try:
+                review_text = review.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            verdict = _VERDICT_RE.search(review_text)
+            if verdict is None or verdict.group(1).strip() != "approve":
+                continue
+            alignment = operator_intent.parse_alignment(
+                review_text,
+                required_evidence=any(item.required for item in context.evidence),
+                expected_evidence=[
+                    item.attestation.attestation_id for item in context.evidence
+                ],
+            )
+            if alignment["blocking"]:
+                finding = {
+                    "kind": "approval-inconsistent-with-alignment",
+                    "checkpoint_id": checkpoint_id,
+                    "review_path": str(review),
+                    "failure_class": "alignment-blocks-approval",
+                    "recovery": (
+                        "record an alignment result the evidence supports, or "
+                        "return the checkpoint for another pass"
+                    ),
+                    "detail": (
+                        f"planning review for {checkpoint_id} records Verdict: "
+                        f"approve but {alignment['detail']}"
+                    ),
+                }
+                if enforced:
+                    blockers.append(finding)
+                else:
+                    finding["detail"] += (
+                        " (advisory: this project has not migrated to the schema "
+                        "version that enforces operator-intent alignment)"
+                    )
+                    warnings.append(finding)
+    return blockers, warnings
+
+
 def _check_situation_notes(project_path: Path) -> List[Dict[str, Any]]:
     """Block while STATE.md carries undelivered-mail Situation notes.
 
@@ -824,6 +1091,10 @@ def handler(args: argparse.Namespace) -> int:
     blockers.extend(deliverable_blockers)
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
+    intent_blockers, intent_warnings = _check_operator_intent(
+        project_path, declared_schema_version, task_review_required
+    )
+    blockers.extend(intent_blockers)
 
     work_roots = _load_work_roots(project_path)
     pm_owns_product_branches = _resolve_pm_owns_product_branches(project_path)
@@ -853,6 +1124,7 @@ def handler(args: argparse.Namespace) -> int:
     warnings.extend(review_warnings)
     warnings.extend(deliverable_warnings)
     warnings.extend(backlog_warnings)
+    warnings.extend(intent_warnings)
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI
     # command — no harness interception — so it is the portable floor: it

@@ -32,6 +32,62 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.8.0 — Independent operator-intent evidence in planning and task-closure reviews
+
+- **Protocol version:** `v0.8.0`
+- **One-line summary:** Gives reviewers a second, operator-confirmed evidence channel alongside PM-authored guidance, and makes approval fail closed when the two channels disagree.
+
+#### Breakage description
+
+A review used to see exactly one evidence channel: project-management-authored guidance. When that guidance drifted from what the operator approved, every management artifact could agree with itself and the review could still approve the drifted outcome.
+
+From `v0.8.0` a review carries two separate channels.
+
+1. **Operator-intent attestations.** `<project-root>/intent/ATTEST-NNN-slug.md` binds one eligible in-project source to its exact SHA-256 content identity, operator confirmation, a closed applicability scope set, requiredness, and optional complete named-section selectors. Eligible sources are the confirmed intent section of `REQUIREMENTS.md`, a locked decision recording an explicit operator choice, and a mediated operator-intent record (`intent/records/OIR-NNN-slug.md`). Eligibility is established only by a current attestation — PM authorship or `Status: locked` alone is not enough.
+2. **Operator-only confirmation.** `cartopian attest-intent` is the sole writer. No `dest_kind` maps to `intent/`, so no mediated PM writer reaches it; the subcommand is excluded from the MCP tool registry; it refuses to run when `CARTOPIAN_ROLE` or `CARTOPIAN_MCP_TOOL_CALL` is set; and no capability grant or shipped role preset confers it.
+3. **Automatic applicability.** A review automatically receives every current attestation whose scope matches. Declared `Intent refs:` on a task or planning-checkpoint artifact are supplemental and additive; omitting one can never produce a false `none recorded`.
+4. **Bound review prompts.** Review prompts carry a generated `## Operator intent` section bound to the current review-context identity, or `none recorded` after a complete scan. `cartopian dispatch`, `cartopian handoff-packet`, and `cartopian review-context --prompt` recompute it and refuse omitted evidence, unresolved evidence, changed source or attestation content, a stale binding, or an absent section.
+5. **Alignment blocks approval.** Review artifacts record `Operator-intent alignment: aligned | drifted | not assessable`. Drift blocks closure; required evidence that is not assessable blocks closure; `not assessable — none recorded` is explicitly non-blocking.
+
+Existing unattested decisions are **not** retroactively operator-confirmed, and no attestation is fabricated by migration. Historical reviews remain readable and are never rewritten; the alignment guard applies to projects whose marker is at or beyond `v0.8.0`, and that compatibility window closes at `v0.9.0`.
+
+#### Applies-when precondition
+
+Applies when the project's `[project].project_schema_version` is unset, missing, or lexically less than `v0.8.0`. Projects already at `v0.8.0` are skipped.
+
+#### Agent-followable migration steps
+
+Run these against the project root in order.
+
+1. Run `cartopian migrate-config <project-root>` and review the deterministic plan. The `v0.7`→`v0.8` entry changes no configuration key: it advances the schema marker only, after the resolver confirms effective behavior is unchanged.
+2. Run `cartopian migrate-config <project-root> --apply`. The marker advances last, as always.
+3. Run `cartopian apply-migration-entry <project-root> v0.8.0`. The entry has no filesystem transform: it fabricates no attestation, promotes no unattested legacy decision, and rewrites no historical review. It reports the skip reason and exits 0.
+4. Optionally, have the **operator** attest the intent that should govern current work: `cartopian attest-intent <project-root> --attestation-id ATTEST-NNN --slug <slug> --title <title> --source-kind decision --source decisions/DEC-NNN-<slug>.md --scope <scope> --required true --confirmed-at <YYYY-MM-DD> --confirm`. This step is operator-performed and is never executed by the PM; a project with no attestations resolves to `none recorded`, which is valid and non-blocking.
+
+#### Idempotence guarantee
+
+Step 2 is a fixed-value marker assignment: re-applying it plans no work and writes no bytes. Step 3 has no actions to apply and is a no-op on every run. Step 4 is operator-initiated and is not part of the automated migration at all.
+
+#### Post-migration validation hint
+
+```sh
+PROJECT_ROOT=<project-root>
+
+# 1. Marker is v0.8.0 (or a later entry's version).
+grep -E '^project_schema_version *= *"v0\.8\.0"' \
+  "$PROJECT_ROOT/cartopian.toml"
+# expected: one match
+
+# 2. Migration reports noop and the filesystem entry has no actions.
+cartopian migrate-config "$PROJECT_ROOT"
+cartopian apply-migration-entry "$PROJECT_ROOT" v0.8.0
+# expected: exit status 0 from both
+
+# 3. No attestation was invented by migration.
+ls "$PROJECT_ROOT/intent" 2>/dev/null
+# expected: absent, or only attestations the operator created
+```
+
 ### v0.7.0 — Flat authored role tables and clean canonical migration output
 
 - **Protocol version:** `v0.7.0`
