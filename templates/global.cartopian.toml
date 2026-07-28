@@ -40,7 +40,7 @@
 # | `project.work_roots` | unique name list |
 # | `roles.<role>.description` | non-empty string |
 # | `roles.<role>.grants` | closed capability/preset list |
-# | `roles.<role>.target` | non-empty string |
+# | `roles.<role>.agent` | non-empty string |
 # | `roles.<role>.model` | non-empty string |
 # | `roles.<role>.effort` | non-empty string |
 # | `roles.<role>.timeout` | positive duration |
@@ -122,8 +122,8 @@
 # [roles]
 # -----------------------------------------------------------------------------
 # Each role is a table with a required description. Optional grants,
-# role-local launch target/options, and automatic-launch permissions remain
-# distinct fields. A role without `target` is manual-dispatch.
+# role-local handoff agent/options, and automatic-launch permissions remain
+# distinct fields. A role without `agent` is manual-dispatch.
 #
 # Default roster (FR-011, DEC-002 Pick 3): `pm` and `operator` only.
 # `coder` and `reviewer` are common example role labels operators may add
@@ -164,13 +164,13 @@
 # -----------------------------------------------------------------------------
 # [roles.<role>] execution fields and auto_launch
 # -----------------------------------------------------------------------------
-# One flat role table supplies neutral target/options and permissions. The
+# One flat role table supplies the handoff agent/options and permissions. The
 # `auto_launch` list independently allows automatic launch for assigned work
-# types. A target without the applicable permission remains available for
+# types. An agent without the applicable permission remains available for
 # operator-performed launch.
 #
 # Keys:
-#   target      — the wrapper script name the PM invokes (e.g. "cartopian-claude").
+#   agent       — the agent or Cartopian wrapper the PM invokes (e.g. "cartopian-claude").
 #   model       — optional model identifier for the assigned agent (e.g.
 #                 "gpt-5-codex"). Dispatch exports it to the wrapper as
 #                 CARTOPIAN_MODEL; the wrapper translates it into the
@@ -188,7 +188,7 @@
 #                 remain separately owned.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #
-# Never configure a PM launch target or automatic-launch permission: the PM is
+# Never configure a PM handoff agent or automatic-launch permission: the PM is
 # the interactive orchestrator and is never itself launched.
 #
 # Example — uncomment and edit to wire up an automated `coder` dispatch:
@@ -197,7 +197,7 @@
 # description = "Implements tasks per spec."
 # auto_launch = ["task_run"]
 #
-# target = "cartopian-claude"
+# agent = "cartopian-claude"
 # timeout = "60m"
 # model = "claude-opus-4-8"
 # effort = "high"

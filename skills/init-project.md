@@ -30,7 +30,7 @@ Ask the operator for:
    - **The PM plans** → `pm` gets `pm-solo`.
 
    Suggest `coder-like` for roles assigned execution work and `reviewer-like` for roles assigned task review, regardless of their names. Presets are permission bundles, not role types. Then **show the operator the full role→grants mapping as editable defaults** and apply edits before generating config. Because at least one role declares grants, containment activates project-wide and any role without a declared grant list fails closed.
-7. **Role launch overrides** — for any role with a configured agent, ask for the target, optional model/effort, timeout, and the assigned work types that may launch automatically (`task_run`, `task_review`, `planning_review`). Target/options and permission remain separate from review policy, review assignment, run automation, task selection, and capabilities.
+7. **Role launch overrides** — for any role with a configured agent, ask for the agent or Cartopian wrapper name, optional model/effort, timeout, and the assigned work types that may launch automatically (`task_run`, `task_review`, `planning_review`). Agent/options and permission remain separate from review policy, review assignment, run automation, task selection, and capabilities.
 8. **Automation overrides** — present the initiation choice as two presets: **"Wait for me to start work"** (recommended default; execution begins only on an operator directive — maps to `initiation = "operator"`, the protocol default, so the key may be omitted) or **"Automatically start ready work"** (the PM may begin execution without a directive — maps to `--automation-initiation auto`). Then ask if the project needs a different confirmation policy or max handoffs per run. Fully unattended operation requires each layer chosen explicitly: `initiation = "auto"`, `confirmation = "until-blocked"`, a `max_handoffs_per_run` batch size, and the applicable work types in each launched role's `auto_launch` list.
 9. **Work roots (optional)** — operator-declared external work locations to be surfaced by the config (names that resolve to absolute paths per-machine via `cartopian resolve-config`).
 
@@ -75,7 +75,7 @@ Notes:
 - Include only role overrides; defaults apply when a role key is omitted.
 - Every declared role should get a `--role-grants` entry: declaring any grants activates containment project-wide, and a role without a declared grant list then fails closed. Unknown grant names are rejected at generation time.
 - Review flags are `--review-planning required|off`, `--review-planning-role ROLE`, `--review-task-closure required|off`, and `--review-task-role ROLE`. Role flags are required only for required loops.
-- `--role-launch-target ROLE=TARGET`, `--role-launch-model ROLE=MODEL`, `--role-launch-effort ROLE=EFFORT`, and `--role-launch-timeout ROLE=DURATION` provide neutral target/options.
+- `--role-agent ROLE=AGENT`, `--role-launch-model ROLE=MODEL`, `--role-launch-effort ROLE=EFFORT`, and `--role-launch-timeout ROLE=DURATION` provide the handoff agent and neutral launch options.
 - `--role-auto-launch ROLE=ACTIVITY[,ACTIVITY...]` sets the closed automatic-launch permission list. It never enables or assigns review.
 - Role launch facts are emitted only when provided; omitted fields inherit or remain unset according to the authoritative schema.
 - `[automation]` is emitted only when provided.

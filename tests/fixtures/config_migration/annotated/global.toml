@@ -14,6 +14,6 @@ grants = ["reviewer-like"]
 
 # Legacy launch grouping; comments remain useful migration history.
 [handoffs.reviewer]
-agent = "cartopian-review" # target note
+agent = "cartopian-review" # agent note
 auto_start = true # task permission note
 planning_reviews = false # planning intentionally manual

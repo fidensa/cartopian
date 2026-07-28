@@ -142,7 +142,7 @@ def test_launcher_resolves_configured_timeout(tmp_path):
         '[roles.coder]\n'
         'description = "Implements tasks."\n'
         'auto_launch = ["task_run"]\n'
-        'target = "cartopian-claude"\n'
+        'agent = "cartopian-claude"\n'
         'timeout = "17m"\n',
         "01-001",
     )

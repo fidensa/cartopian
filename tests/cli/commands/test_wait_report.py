@@ -284,7 +284,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 'project_schema_version = "v0.9.0"\n\n'
                 "[roles.reviewer]\n"
                 'description = "Reviews completed tasks."\n'
-                'target = "codex"\n'
+                'agent = "codex"\n'
                 'timeout = "10s"\n',
             )
             report_path = scaffold.reports / "REPORT-01-002.md"
@@ -341,7 +341,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 'project_schema_version = "v0.9.0"\n\n'
                 "[roles.reviewer]\n"
                 'description = "Reviews completed tasks."\n'
-                'target = "codex"\n'
+                'agent = "codex"\n'
                 'timeout = "10s"\n',
             )
             report_path = scaffold.reports / "REPORT-01-002.md"

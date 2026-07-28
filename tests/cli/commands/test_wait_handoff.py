@@ -43,7 +43,7 @@ project_schema_version = "v0.9.0"
 
 [roles.coder]
 description = "Implements tasks per spec."
-target = "codex"
+agent = "codex"
 auto_launch = ["task_run"]
 timeout = "{timeout}"
 """
@@ -55,7 +55,7 @@ project_schema_version = "v0.9.0"
 
 [roles.coder]
 description = "Implements tasks per spec."
-target = "codex"
+agent = "codex"
 auto_launch = ["task_run"]
 """
 

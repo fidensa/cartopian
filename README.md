@@ -50,14 +50,14 @@ description = "Implements tasks per spec"
 grants = ["coder-like"]
 auto_launch = ["task_run"]
 
-target = "cartopian-codex"
+agent = "cartopian-codex"
 
 [roles.reviewer]
 description = "Reviews against acceptance criteria and original operator intent"
 grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
-target = "cartopian-gemini"
+agent = "cartopian-gemini"
 
 [reviews]
 planning = "required"
@@ -172,14 +172,14 @@ Roles can also carry **capability grants** (`grants = [...]`), which turn the de
 
 ### Automated handoffs (optional)
 
-Give a role a launch target and, separately, the applicable automatic-launch permissions:
+Give a role a handoff agent and, separately, the applicable automatic-launch permissions:
 
 ```toml
 [roles.coder]
 description = "Completes assigned outcomes per spec."
 auto_launch = ["task_run"]
 
-target = "cartopian-codex"
+agent = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
 timeout = "60m"
@@ -188,7 +188,7 @@ timeout = "60m"
 description = "Checks selected plans and outcomes against acceptance evidence."
 auto_launch = ["task_review", "planning_review"]
 
-target = "cartopian-gemini"
+agent = "cartopian-gemini"
 timeout = "30m"
 ```
 
@@ -222,7 +222,7 @@ Cartopian uses a global configuration file, a committed configuration file for e
 | `[defaults]` | Global or project | The `git_versioning` switch |
 | `[git]` | Global or project | Optional PM-owned product-branch behavior, branch naming, and merge strategy |
 | `[automation]` | Global or project | Run initiation, confirmation pace, and the handoff limit for each run |
-| `[roles.<name>]` | Global or project | One flat role table containing descriptions, capability grants, neutral target/options, and assigned-work launch permissions |
+| `[roles.<name>]` | Global or project | One flat role table containing descriptions, capability grants, a handoff agent, launch options, and assigned-work launch permissions |
 | `[reviews]` | Global or project | Independent planning and task-closure policies and the role assigned to each required loop |
 | `[work_roots]` | Machine-local file only | Absolute path mappings for names declared by `[project].work_roots` |
 

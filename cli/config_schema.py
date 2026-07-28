@@ -230,7 +230,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "roles.*.target",
+                "roles.*.agent",
                 {
                     "scopes": ("global", "project"),
                     "type": "non-empty-string",
@@ -400,7 +400,7 @@ _ROOT_KEYS = {
     ),
     "machine-local": frozenset(("work_roots",)),
 }
-_ROLE_LAUNCH_KEYS = ("target", "model", "effort", "timeout")
+_ROLE_LAUNCH_KEYS = ("agent", "model", "effort", "timeout")
 _ROLE_KEYS = frozenset(
     ("description", "grants", *_ROLE_LAUNCH_KEYS, "auto_launch")
 )
@@ -474,6 +474,15 @@ def _unknown_keys(
     for key in table:
         field = f"{prefix}.{key}" if prefix else key
         if key not in allowed:
+            if prefix.startswith("roles.") and key == "target":
+                _fail(
+                    "unknown-key",
+                    field,
+                    scope,
+                    "`target` is not a supported role field; use `agent` for "
+                    "the automated handoff agent or wrapper",
+                    "replace-role-target-with-agent",
+                )
             if (
                 field == "project.protocol_version"
                 or field == "handoffs"
@@ -892,12 +901,12 @@ def resolve_configuration(
                 "resolved",
                 "every resolved user-defined role requires a non-empty description",
             )
-        if name == "pm" and merged["launch"]["target"] is not None:
+        if name == "pm" and merged["launch"]["agent"] is not None:
             _fail(
                 "pm-launch-forbidden",
-                "roles.pm.target",
+                "roles.pm.agent",
                 "resolved",
-                "the interactive PM role cannot be a launch target",
+                "the interactive PM role cannot be a handoff agent",
             )
         if name == "pm" and merged["auto_launch"]:
             _fail(
@@ -932,9 +941,9 @@ def resolve_configuration(
         assigned = []
         assigned_sources: Dict[str, str] = OrderedDict()
         # Ordinary task assignment remains task-artifact/PM authority. A
-        # configured non-PM launch target makes the role applicable to that
+        # configured non-PM handoff agent makes the role applicable to that
         # work type without selecting any task or assigning the role.
-        if name != "pm" and role["launch"]["target"] is not None:
+        if name != "pm" and role["launch"]["agent"] is not None:
             assigned.append("task_run")
             assigned_sources["task_run"] = "derived"
         if reviews["task_closure"]["role"] == name:

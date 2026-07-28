@@ -43,13 +43,13 @@ Each role is exactly one flat table. Its name and description carry no review, l
 | --- | --- | --- | --- |
 | `roles.<role>.description` | non-empty string | required for user-defined roles | Human description used for assignment context. |
 | `roles.<role>.grants` | closed grant/preset list | capability defaults | Harness-enforced capability input. See `CAPABILITIES.md`. |
-| `roles.<role>.target` | non-empty string | unset | Neutral wrapper/bridge target. An unset target means manual handoff. |
+| `roles.<role>.agent` | non-empty string | unset | Agent or Cartopian agent wrapper used for automated handoff. An unset agent means manual handoff. |
 | `roles.<role>.model` | non-empty string | unset | Agent-neutral model option passed by dispatch. |
 | `roles.<role>.effort` | non-empty string | unset | Agent-neutral effort option passed by dispatch. |
 | `roles.<role>.timeout` | positive `s`, `m`, or `h` duration | `"60m"` resolved fallback | Handoff deadline passed to the wrapper. |
 | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` | empty | Automatic-launch permission for assigned work types only. |
 
-The `auto_launch` values are `task_run`, `task_review`, and `planning_review`. They are permissions, not assignments: `task_review` is applicable only to the role assigned by `reviews.task_role`, while `planning_review` is applicable only to `reviews.planning_role`. A non-PM role with a launch target is applicable to ordinary task execution. The PM role is interactive and may not have a launch target or automatic-launch permission.
+The `auto_launch` values are `task_run`, `task_review`, and `planning_review`. They are permissions, not assignments: `task_review` is applicable only to the role assigned by `reviews.task_role`, while `planning_review` is applicable only to `reviews.planning_role`. A non-PM role with a configured agent is applicable to ordinary task execution. The PM role is interactive and may not have an agent or automatic-launch permission.
 
 ```toml
 [roles.coder]
@@ -57,7 +57,7 @@ description = "Implements tasks per spec."
 grants = ["coder-like"]
 auto_launch = ["task_run"]
 
-target = "cartopian-codex"
+agent = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
 timeout = "60m"
@@ -86,7 +86,7 @@ description = "Reviews against acceptance evidence."
 grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
-target = "cartopian-gemini"
+agent = "cartopian-gemini"
 timeout = "30m"
 ```
 
@@ -150,7 +150,7 @@ An undeclared mapping, missing mapping, or relative path is invalid. Generated d
 
 - `--role NAME=DESCRIPTION`
 - `--role-grants ROLE=GRANT[,GRANT...]`
-- `--role-launch-target ROLE=TARGET`
+- `--role-agent ROLE=AGENT`
 - `--role-launch-model ROLE=MODEL`
 - `--role-launch-effort ROLE=EFFORT`
 - `--role-launch-timeout ROLE=DURATION`
@@ -181,7 +181,7 @@ The CLI parser is the MCP tool-schema source. MCP `inputSchema` types, enums, de
 13. `git`
 14. `defaults_attribution`
 
-Each resolved role contains `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and `attribution`. Bounded lifecycle projections carry the same `record_schema_version`, `schema_identity`, and `project_schema_version`, then retain only the facts required for their action. Dispatch passes resolved target/options and launch context to wrappers; wrappers do not parse raw configuration or reinterpret review, permission, capability, schema, or identity policy.
+Each resolved role contains `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and `attribution`; the resolved `launch.agent` is the selected agent or wrapper. Bounded lifecycle projections carry the same `record_schema_version`, `schema_identity`, and `project_schema_version`, then retain only the facts required for their action. Dispatch passes the resolved agent/options and launch context to wrappers; wrappers do not parse raw configuration or reinterpret review, permission, capability, schema, or identity policy.
 
 Path spelling is intentionally split by authority, not by command. Project,
 task, spec, dependency, prompt, and report paths are emitted as

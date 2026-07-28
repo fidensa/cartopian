@@ -16,7 +16,7 @@ grants = ["coder-like"]
 
 # Retired handoff grouping and its attached comments are removed during migration.
 [handoffs.coder]
-agent = "cartopian-codex" # coder target
+agent = "cartopian-codex" # coder agent
 effort = "high"
 auto_start_tasks = true # tasks start automatically
 auto_start_reviews = false # reviews remain manual

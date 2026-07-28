@@ -347,14 +347,16 @@ class TestToolSurface(unittest.TestCase):
             self.assertEqual(record["details"]["validation"]["status"], "passed")
             self.assertFalse((project / "CONVENTIONS.md").exists())
 
-    def test_generate_config_schema_exposes_role_launch_effort(self):
+    def test_generate_config_schema_exposes_role_agent_and_launch_options(self):
         # Preferred role-local launch flags propagate into the generated MCP
         # schema; migration-source handoff names do not.
         response = single("tools/list")
         tools = {t["name"]: t for t in response["result"]["tools"]}
         schema = tools["generate_config"]["inputSchema"]
+        self.assertIn("role_agent", schema["properties"])
         self.assertIn("role_launch_effort", schema["properties"])
         self.assertIn("role_launch_model", schema["properties"])
+        self.assertNotIn("role_launch_target", schema["properties"])
         self.assertNotIn("handoff_effort", schema["properties"])
         self.assertNotIn("role_launch_effort", schema.get("required", []))
 
@@ -412,11 +414,11 @@ class TestToolSurface(unittest.TestCase):
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
-                'target = "cartopian-claude"\n'
+                'agent = "cartopian-claude"\n'
                 "\n[roles.reviewer]\n"
                 'description = "Checks work."\n'
                 'auto_launch = ["task_review", "planning_review"]\n'
-                'target = "cartopian-claude"\n'
+                'agent = "cartopian-claude"\n'
                 "\n[reviews]\n"
                 'planning = "required"\n'
                 'planning_role = "reviewer"\n'

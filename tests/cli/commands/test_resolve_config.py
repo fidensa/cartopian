@@ -71,7 +71,7 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
                 _PROJECT
                 + '\n[roles.coder]\ndescription = "Writes code."\n'
                 'auto_launch = ["task_run"]\n'
-                'target = "claude"\n'
+                'agent = "claude"\n'
                 'model = "sonnet"\ntimeout = "60m"\n',
             )
             record = self._record(_run(sb.project, home=sb.home))
@@ -86,7 +86,7 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
         )
         self.assertEqual(coder["assigned_work_types"], ["task_run"])
         self.assertEqual(coder["auto_launch"], ["task_run"])
-        self.assertEqual(coder["launch"]["target"], "claude")
+        self.assertEqual(coder["launch"]["agent"], "claude")
         self.assertEqual(coder["attribution"]["description"], "project")
         self.assertEqual(coder["attribution"]["grants"], "global")
         self.assertEqual(
@@ -110,7 +110,7 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
                 _PROJECT
                 + '\n[roles.reviewer]\ndescription = "Checks work."\n'
                 'auto_launch = ["task_review", "planning_review"]\n'
-                'target = "codex"\n\n'
+                'agent = "codex"\n\n'
                 '[reviews]\nplanning = "required"\n'
                 'planning_role = "reviewer"\n'
                 'task_closure = "required"\ntask_role = "reviewer"\n',
@@ -222,7 +222,7 @@ class TestFailClosedDiagnostics(unittest.TestCase):
                 _PROJECT
                 + '\n[roles.reviewer]\ndescription = "Checks."\n'
                 'auto_launch = ["planning_review"]\n'
-                'target = "codex"\n',
+                'agent = "codex"\n',
             )
             result = _run(sb.project, home=sb.home)
         self.assertEqual(result.returncode, 1)
@@ -246,7 +246,7 @@ class TestFailClosedDiagnostics(unittest.TestCase):
                 sb.project / "cartopian.toml",
                 _PROJECT
                 + '\n[roles.pm]\ndescription = "PM."\n'
-                'target = "codex"\n',
+                'agent = "codex"\n',
             )
             result = _run(sb.project, home=sb.home)
         self.assertEqual(result.returncode, 1)

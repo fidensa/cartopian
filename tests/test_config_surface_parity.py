@@ -306,7 +306,7 @@ class TestSurfaceRegistry(unittest.TestCase):
         )
         mutations = (
             (
-                "with `target` has a resolved target/options record",
+                "with `agent` has a resolved agent/options record",
                 "with `launch.target` has a resolved target/options record",
             ),
             (
@@ -416,7 +416,7 @@ class TestSurfaceRegistry(unittest.TestCase):
             "`[roles.<role>.launch]` as migration input only.",
             "Migration tooling recognizes the U.S. spelling "
             "`[roles.<role>.launch]` as migration input only.",
-            "The resolved `launch.target` is consumed by handoff code.",
+            "The resolved `launch.agent` is consumed by handoff code.",
             "The derived `roles.<role>.launch.timeout` projection is read-only.",
         )
         for probe in probes:
@@ -1142,7 +1142,7 @@ class TestCliMcpContractParity(unittest.TestCase):
             "project.work_roots": "work_root",
             "roles.*.description": "role",
             "roles.*.grants": "role_grants",
-            "roles.*.target": "role_launch_target",
+            "roles.*.agent": "role_agent",
             "roles.*.model": "role_launch_model",
             "roles.*.effort": "role_launch_effort",
             "roles.*.timeout": "role_launch_timeout",
@@ -1178,7 +1178,7 @@ class TestCliMcpContractParity(unittest.TestCase):
             {
                 "roles.*.description",
                 "roles.*.grants",
-                "roles.*.target",
+                "roles.*.agent",
                 "roles.*.model",
                 "roles.*.effort",
                 "roles.*.timeout",
@@ -1327,7 +1327,7 @@ class TestProjectionParity(unittest.TestCase):
         'description = "Implements tasks per spec."\n'
         'grants = ["coder-like"]\n'
         'auto_launch = ["task_run"]\n'
-        'target = "cartopian-codex"\n'
+        'agent = "cartopian-codex"\n'
         'model = "gpt-5-codex"\n'
         'effort = "high"\n'
         'timeout = "30m"\n'

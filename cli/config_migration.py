@@ -60,7 +60,7 @@ ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 PRESERVED_FACTS = (
     "role-descriptions",
     "review-modes-and-roles",
-    "launch-targets-and-options",
+    "role-agents-and-launch-options",
     "automation-values",
     "work-root-declarations-and-mappings",
     "capability-activation",
@@ -75,7 +75,8 @@ _ROOT_KEYS = {
     ),
     "machine-local": frozenset(("work_roots",)),
 }
-_ROLE_EXECUTION_KEYS = ("target", "model", "effort", "timeout")
+_ROLE_EXECUTION_KEYS = ("agent", "model", "effort", "timeout")
+_LEGACY_ROLE_LAUNCH_KEYS = ("target", "model", "effort", "timeout")
 _ROLE_KEYS = frozenset(
     ("description", "grants", *_ROLE_EXECUTION_KEYS, "launch", "auto_launch")
 )
@@ -610,7 +611,9 @@ def _normalize_roles_and_handoffs(
                     "superseded launch definition must be a table",
                     "repair the launch definition",
                 )
-            unknown_launch = sorted(set(nested_launch) - set(_ROLE_EXECUTION_KEYS))
+            unknown_launch = sorted(
+                set(nested_launch) - set(_LEGACY_ROLE_LAUNCH_KEYS)
+            )
             if unknown_launch:
                 _diagnose(
                     "unknown-source-field",
@@ -620,14 +623,15 @@ def _normalize_roles_and_handoffs(
                     "remove the unknown launch field",
                 )
             for key, value in nested_launch.items():
-                if key in role and role[key] != value:
+                preferred_key = "agent" if key == "target" else key
+                if preferred_key in role and role[preferred_key] != value:
                     _conflict(
-                        f"{role_field}.{key}",
+                        f"{role_field}.{preferred_key}",
                         scope,
                         f"{role_field}.launch.{key}",
-                        f"{role_field}.{key}",
+                        f"{role_field}.{preferred_key}",
                     )
-                role[key] = value
+                role[preferred_key] = value
                 facts.append(
                     {
                         "scope": scope,
@@ -676,7 +680,7 @@ def _normalize_roles_and_handoffs(
                 "authority-widening",
                 field_name,
                 scope,
-                "the interactive PM role cannot be a migration launch target",
+                "the interactive PM role cannot be a migration handoff agent",
                 "remove the PM handoff declaration",
             )
         if not isinstance(handoff_value, dict):
@@ -697,13 +701,19 @@ def _normalize_roles_and_handoffs(
                 "remove the unknown handoff field",
             )
         role = roles.setdefault(role_name, OrderedDict())
-        old_target = handoff_value.get("agent")
-        handoff_target = handoff_value.get("target")
-        if old_target is not None and handoff_target is not None and old_target != handoff_target:
+        legacy_agent = handoff_value.get("agent")
+        legacy_target = handoff_value.get("target")
+        if (
+            legacy_agent is not None
+            and legacy_target is not None
+            and legacy_agent != legacy_target
+        ):
             _conflict(f"{field_name}.agent", scope, "agent", "target")
-        mapped_target = old_target if old_target is not None else handoff_target
+        mapped_agent = (
+            legacy_agent if legacy_agent is not None else legacy_target
+        )
         mapped_values = {
-            "target": mapped_target,
+            "agent": mapped_agent,
             "model": handoff_value.get("model"),
             "effort": handoff_value.get("effort"),
             "timeout": handoff_value.get("timeout"),
@@ -720,10 +730,13 @@ def _normalize_roles_and_handoffs(
                     f"roles.{role_name}",
                 )
             role[key] = value
+            source_key = key
+            if key == "agent":
+                source_key = "agent" if legacy_agent is not None else "target"
             facts.append(
                 {
                     "scope": scope,
-                    "field": f"{field_name}.{('agent' if key == 'target' else key)}",
+                    "field": f"{field_name}.{source_key}",
                     "form": "legacy-handoff-launch",
                 }
             )
@@ -825,14 +838,14 @@ def _add_implicit_pre_v050_review(
     return changes
 
 
-def _effective_launch_target(
+def _effective_role_agent(
     role_name: str,
     global_cfg: Mapping[str, Any],
     project_cfg: Mapping[str, Any],
 ) -> Optional[str]:
     global_role = global_cfg.get("roles", {}).get(role_name, {})
     project_role = project_cfg.get("roles", {}).get(role_name, {})
-    return project_role.get("target", global_role.get("target"))
+    return project_role.get("agent", global_role.get("agent"))
 
 
 def _permission_flags(
@@ -937,7 +950,7 @@ def _assigned_activities(
     project_cfg: Dict[str, Any],
 ) -> Tuple[str, ...]:
     assigned: List[str] = []
-    if _effective_launch_target(role_name, global_cfg, project_cfg) is not None:
+    if _effective_role_agent(role_name, global_cfg, project_cfg) is not None:
         assigned.append("task_run")
     task_mode, task_role = _effective_review(
         global_cfg, project_cfg, "task_closure", "task_role"
@@ -952,14 +965,14 @@ def _assigned_activities(
     return tuple(assigned)
 
 
-def _target_permission_activities(
+def _agent_permission_activities(
     values: Mapping[str, Any],
     role_name: str,
     scope: str,
     global_cfg: Dict[str, Any],
     project_cfg: Dict[str, Any],
 ) -> Tuple[str, ...]:
-    """Target-only seam kept independent from compatibility interpretation."""
+    """Agent-only seam kept independent from compatibility interpretation."""
     task_permission, review_permission = _permission_flags(
         values, role_name, scope
     )
@@ -986,12 +999,12 @@ def _safe_global_permission_activities(
         values, role_name, "global"
     )
     global_role = global_cfg.get("roles", {}).get(role_name, {})
-    if task_permission and global_role.get("target"):
+    if task_permission and global_role.get("agent"):
         return ("task_run",)
     return ()
 
 
-def _set_target_auto_launch(
+def _set_agent_auto_launch(
     state: _ScopeState,
     role_name: str,
     expected: Sequence[str],
@@ -1016,7 +1029,7 @@ def _set_target_auto_launch(
     state.changed = True
 
 
-def _map_target_permissions(
+def _map_agent_permissions(
     global_state: _ScopeState,
     project_state: _ScopeState,
     global_cfg: Dict[str, Any],
@@ -1024,13 +1037,13 @@ def _map_target_permissions(
 ) -> None:
     project_mappings: Dict[str, Tuple[str, ...]] = {}
     for role_name, values in global_state.permission_sources:
-        effective = _target_permission_activities(
+        effective = _agent_permission_activities(
             values, role_name, "global", global_cfg, project_cfg
         )
         safe_global = _safe_global_permission_activities(
             values, role_name, global_cfg
         )
-        _set_target_auto_launch(
+        _set_agent_auto_launch(
             global_state,
             role_name,
             safe_global,
@@ -1040,7 +1053,7 @@ def _map_target_permissions(
             project_mappings[role_name] = effective
 
     for role_name, values in project_state.permission_sources:
-        effective = _target_permission_activities(
+        effective = _agent_permission_activities(
             values, role_name, "project", global_cfg, project_cfg
         )
         if role_name in project_mappings and project_mappings[role_name] != effective:
@@ -1053,7 +1066,7 @@ def _map_target_permissions(
         project_mappings[role_name] = effective
 
     for role_name, expected in project_mappings.items():
-        _set_target_auto_launch(
+        _set_agent_auto_launch(
             project_state,
             role_name,
             expected,
@@ -1160,15 +1173,16 @@ def _compatibility_normalize_scope(
             nested_launch = role.pop("launch", {})
             if isinstance(nested_launch, dict):
                 for key, value in nested_launch.items():
-                    role.setdefault(key, value)
+                    preferred_key = "agent" if key == "target" else key
+                    role.setdefault(preferred_key, value)
             roles[role_name] = role
     permissions: List[Tuple[str, Dict[str, Any]]] = []
     handoffs = result.pop("handoffs", {})
     for role_name, handoff_value in handoffs.items():
         role = roles.setdefault(role_name, OrderedDict())
-        target = handoff_value.get("agent", handoff_value.get("target"))
+        agent = handoff_value.get("agent", handoff_value.get("target"))
         for key, value in (
-            ("target", target),
+            ("agent", agent),
             ("model", handoff_value.get("model")),
             ("effort", handoff_value.get("effort")),
             ("timeout", handoff_value.get("timeout")),
@@ -1324,7 +1338,7 @@ def _compatibility_safe_global_permission_activities(
         values, role_name, "global"
     )
     global_role = global_cfg.get("roles", {}).get(role_name, {})
-    if task_permission and global_role.get("target"):
+    if task_permission and global_role.get("agent"):
         return ("task_run",)
     return ()
 
@@ -1714,14 +1728,14 @@ def _render_preserving(
             if key not in target_role or key in raw_role_table:
                 continue
             source_table = f"roles.{role_name}.launch"
-            source_key = key
-            if key not in raw_launch_table:
+            source_key = "target" if key == "agent" else key
+            if source_key not in raw_launch_table:
                 source_table = f"handoffs.{role_name}"
                 source_key = (
                     "agent"
-                    if key == "target"
+                    if key == "agent"
                     and editor._key_index(source_table, "agent") is not None
-                    else key
+                    else "target" if key == "agent" else key
                 )
             editor.add_key(
                 f"roles.{role_name}",
@@ -2216,7 +2230,7 @@ def plan_configuration_migration(
                 for change in attribution_changes
             )
 
-        _map_target_permissions(
+        _map_agent_permissions(
             global_state,
             project_state,
             global_canonical,

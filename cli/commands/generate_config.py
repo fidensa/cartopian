@@ -77,9 +77,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable capability grants for a declared role "
                                 "(capability names and/or preset names; empty value "
                                 "declares an explicitly empty grant list)")
-    subparser.add_argument("--role-launch-target", action="append", default=[],
-                           metavar="ROLE=TARGET",
-                           help="Repeatable role launch target")
+    subparser.add_argument("--role-agent", action="append", default=[],
+                           metavar="ROLE=AGENT",
+                           help="Repeatable role handoff agent or wrapper")
     subparser.add_argument("--role-launch-model", action="append", default=[],
                            metavar="ROLE=MODEL", help="Repeatable role launch model")
     subparser.add_argument("--role-launch-effort", action="append", default=[],
@@ -240,7 +240,7 @@ def _collect_role_launch_field(
 
 
 def _build_role_execution(
-    target_args: List[str],
+    agent_args: List[str],
     model_args: List[str],
     effort_args: List[str],
     auto_launch_args: List[str],
@@ -249,20 +249,20 @@ def _build_role_execution(
 ) -> Dict[str, Dict[str, Any]]:
     """Build preferred flat role-local execution and permission fields."""
     seen = {
-        "target": set(),
+        "agent": set(),
         "model": set(),
         "effort": set(),
         "timeout": set(),
     }
-    targets = _collect_role_launch_field(
-        target_args,
-        "--role-launch-target",
+    agents = _collect_role_launch_field(
+        agent_args,
+        "--role-agent",
         declared_roles,
         seen,
-        "target",
+        "agent",
         lambda value, ctx: value
         if value
-        else (_ for _ in ()).throw(_Usage(f"{ctx}: target must be non-empty")),
+        else (_ for _ in ()).throw(_Usage(f"{ctx}: agent must be non-empty")),
     )
     models = _collect_role_launch_field(
         model_args,
@@ -324,7 +324,7 @@ def _build_role_execution(
     for role in declared_roles:
         block: Dict[str, Any] = {}
         for key, values in (
-            ("target", targets),
+            ("agent", agents),
             ("model", models),
             ("effort", efforts),
             ("timeout", timeouts),
@@ -349,7 +349,7 @@ def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict
     role_grants = _collect_role_grants(args.role_grants, roles)
 
     role_execution = _build_role_execution(
-        args.role_launch_target,
+        args.role_agent,
         args.role_launch_model,
         args.role_launch_effort,
         args.role_auto_launch,

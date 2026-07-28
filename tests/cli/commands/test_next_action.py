@@ -138,7 +138,7 @@ class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
             _TOML_BASE
             + '\n[roles.coder]\ndescription = "Implements work."\n'
             + 'auto_launch = ["task_run"]\n'
-            + 'target = "cartopian-claude"\n'
+            + 'agent = "cartopian-claude"\n'
             + '\n[roles.reviewer]\ndescription = "Checks work."\n'
             + '\n[reviews]\nplanning = "required"\nplanning_role = "reviewer"\n'
             + 'task_closure = "required"\ntask_role = "reviewer"\n'
@@ -152,7 +152,7 @@ class TestNextActionResolvedWorkflowPolicy(unittest.TestCase):
         self.assertEqual(record["reviews"]["task_closure"]["role"], "reviewer")
         self.assertEqual(record["roles"]["coder"]["auto_launch"], ["task_run"])
         self.assertEqual(
-            record["roles"]["coder"]["launch"]["target"],
+            record["roles"]["coder"]["launch"]["agent"],
             "cartopian-claude",
         )
 

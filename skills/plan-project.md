@@ -291,7 +291,7 @@ Print a summary of everything that was produced:
 - Number of phases generated
 - Number of tasks and specs generated
 - Review status (required and completed, or policy off, with any findings)
-- Resolved handoff configuration (which roles have CLI targets)
+- Resolved handoff configuration (which roles have configured agents)
 - Resolved automation policy
 - Suggested first action, including whether to create `prompts/PROMPT-NN-NNN.md` for the first assignment
 

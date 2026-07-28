@@ -486,7 +486,7 @@ The PM role is bounded to project-management authoring:
 - **Migration is PM-owned.** A project's internal protocol-schema version is separate from the installed Cartopian application's release version. Bringing that project schema current is PM-owned orchestration performed on operator approval: the PM applies each applicable `protocol/CHANGELOG.md` entry, doing config edits via `cartopian update-config`, ordinary project authoring through the structured writers, and shipped deterministic filesystem transforms through `cartopian apply-migration-entry`. The migration executor accepts only a registered project root and shipped entry version; its closed registry owns all paths and transformations. Judgment-dependent values return as structured pending PM actions and block the marker bump until resolved. Operators are not expected to edit the version marker or perform file surgery. See `skills/migrate-project.md`.
 - **Authoring discipline.** A PM that implements work rather than assigning it is a protocol violation, regardless of which file types are involved.
 
-These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so `roles.pm.target` and `roles.pm.auto_launch` must not be configured.
+These limits apply to every PM. The PM is always the interactive orchestrator of a session — it is never itself launched as a handoff (there would be no PM to launch it), so `roles.pm.agent` and `roles.pm.auto_launch` must not be configured.
 
 ```toml
 [roles.pm]
@@ -500,8 +500,8 @@ The protocol-default roster is **`pm` and `operator`**. Operators may add any fu
 
 Launch and permission remain distinct:
 
-- A declared non-PM role with `target` has a resolved target/options record.
-- A declared role without `target` uses manual handoff; the PM surfaces the prompt and the operator acts.
+- A declared non-PM role with `agent` has a resolved agent/options record.
+- A declared role without `agent` uses manual handoff; the PM surfaces the prompt and the operator acts.
 - `auto_launch` independently grants automatic launch for listed assigned work types.
 - A role omitted from `[roles]` does not exist in this project; tasks and review policy may not assign it.
 
@@ -511,14 +511,14 @@ CLI handoff automation is optional. Manual handoff remains valid for every role.
 
 The reusable handoff procedure is `skills/run-handoff.md`. Planning uses the same contract through `skills/plan-project.md`; task execution uses it through `skills/run-task.md`.
 
-Use role-local launch facts only for roles that need a named target:
+Use role-local launch facts only for roles that need a named agent or Cartopian agent wrapper:
 
 ```toml
 [roles.coder]
 description = "Implements tasks per spec."
 auto_launch = ["task_run"]
 
-target = "cartopian-codex"
+agent = "cartopian-codex"
 model = "gpt-5-codex"
 effort = "high"
 timeout = "60m"
@@ -527,13 +527,13 @@ timeout = "60m"
 description = "Reviews assigned checkpoints."
 auto_launch = ["task_review", "planning_review"]
 
-target = "cartopian-gemini"
+agent = "cartopian-gemini"
 timeout = "30m"
 ```
 
 Role launch and permission fields are:
 
-- `target`: executable/wrapper name.
+- `agent`: agent or Cartopian agent wrapper name.
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `effort`: optional effort/thinking level for the assigned agent, exported to the wrapper as the `CARTOPIAN_EFFORT` environment variable; the wrapper translates it into the tool-specific effort flag. When unset, no variable is exported and the tool's own default effort applies. A value outside the wrapper's CLI-wide vocabulary makes the wrapper warn on stderr and launch at the default; whether a specific model supports a vocabulary-valid level is the tool's own behavior.
 - `auto_launch`: a closed unique list containing applicable assigned work types from `task_run`, `task_review`, and `planning_review`. The list chooses launch mode only after `[automation].initiation` has allowed the run to begin and `confirmation` permits the handoff; it never initiates a run. It does not assign review, control pace, select a task, or grant capabilities. `cartopian dispatch` enforces the applicable permission fail-closed.

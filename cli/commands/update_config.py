@@ -66,7 +66,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_ROLE_LAUNCH_FIELDS = ("target", "model", "effort", "timeout")
+_ROLE_LAUNCH_FIELDS = ("agent", "model", "effort", "timeout")
 
 
 class _Usage(Exception):
@@ -590,7 +590,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Set a role's capability grants (empty = explicit empty list)")
     subparser.add_argument("--set-role-launch", action="append", default=[],
                            metavar="ROLE.FIELD=VALUE",
-                           help="Set a role launch target/option (repeatable)")
+                           help="Set a role handoff agent/launch option (repeatable)")
     subparser.add_argument("--set-role-auto-launch", action="append", default=[],
                            metavar="ROLE=ACTIVITY[,ACTIVITY...]",
                            help="Set a role's closed automatic-launch permission list")

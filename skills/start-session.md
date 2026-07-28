@@ -58,7 +58,7 @@ Present a short summary to the operator from the returned record:
 - Active work — `active_task` (id, title, status).
 - Open or queued work — `next_open_task` (id, title).
 - Resolved automation policy — `automation` (`initiation`, `confirmation`, `max_handoffs_per_run`).
-- Resolved role records — descriptions, effective grants, assigned work types, launch target/options, closed `auto_launch` permissions, and attribution.
+- Resolved role records — descriptions, effective grants, assigned work types, handoff agent/options, closed `auto_launch` permissions, and attribution.
 - Resolved review policy — `reviews.planning` and `reviews.task_closure`, including their assigned roles and source attribution.
 
 Then check the disagreement and blocker fields before proposing any action:

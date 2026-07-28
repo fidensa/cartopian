@@ -51,7 +51,8 @@ class TestGenerateConfigHelp(unittest.TestCase):
         self.assertIn("--name", proc.stdout)
         self.assertIn("--id", proc.stdout)
         self.assertIn("--role", proc.stdout)
-        self.assertIn("--role-launch-target", proc.stdout)
+        self.assertIn("--role-agent", proc.stdout)
+        self.assertNotIn("--role-launch-target", proc.stdout)
         self.assertIn("--work-root", proc.stdout)
         self.assertIn("--git-versioning", proc.stdout)
         self.assertIn("--git-key", proc.stdout)
@@ -76,7 +77,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--id", "cartopian-manager",
                 "--role", "pm=Plans...",
                 "--role", "coder=Writes",
-                "--role-launch-target", "coder=claude-vscode",
+                "--role-agent", "coder=claude-vscode",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 0, msg=f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
@@ -96,7 +97,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(data["project"]["project_schema_version"], version)
             self.assertEqual(data["roles"]["pm"], {"description": "Plans..."})
             self.assertEqual(data["roles"]["coder"]["description"], "Writes")
-            self.assertEqual(data["roles"]["coder"]["target"], "claude-vscode")
+            self.assertEqual(data["roles"]["coder"]["agent"], "claude-vscode")
             self.assertNotIn("launch", data["roles"]["coder"])
             self.assertNotIn("handoffs", data)
             # No protocol defaults written
@@ -117,7 +118,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--id", "demo",
                 "--role", "pm=Plans things",
                 "--role", "coder=Writes code",
-                "--role-launch-target", "coder=cartopian-claude",
+                "--role-agent", "coder=cartopian-claude",
                 "--role-launch-model", "coder=claude-opus-4-8",
                 "--role-launch-effort", "coder=high",
                 "--role-auto-launch", "coder=task_run",
@@ -145,10 +146,10 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
             self.assertEqual(
                 {
                     key: data["roles"]["coder"][key]
-                    for key in ("target", "model", "effort", "timeout")
+                    for key in ("agent", "model", "effort", "timeout")
                 },
                 {
-                    "target": "cartopian-claude",
+                    "agent": "cartopian-claude",
                     "model": "claude-opus-4-8",
                     "effort": "high",
                     "timeout": "30m",
@@ -201,7 +202,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--review-planning", "required",
                 "--review-planning-role", "quality-checker",
                 "--review-task-closure", "off",
-                "--role-launch-target", "quality-checker=cartopian-claude",
+                "--role-agent", "quality-checker=cartopian-claude",
                 "--role-auto-launch", "quality-checker=planning_review",
                 home=root,
             )
@@ -283,7 +284,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--role-launch-target", "foo=bar",
+                "--role-agent", "foo=bar",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -305,7 +306,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "pm=Plans",
-                "--role-launch-target", "pm=cartopian-claude",
+                "--role-agent", "pm=cartopian-claude",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
@@ -354,7 +355,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "coder=Writes code",
-                "--role-launch-target", "coder=cartopian-claude",
+                "--role-agent", "coder=cartopian-claude",
                 "--role-launch-effort", "coder=",
                 home=tmp_path,
             )
@@ -371,7 +372,7 @@ class TestGenerateConfigGuards(unittest.TestCase):
                 str(proj),
                 "--name", "X", "--id", "x",
                 "--role", "coder=Writes code",
-                "--role-launch-target", "coder=cartopian-claude",
+                "--role-agent", "coder=cartopian-claude",
                 "--role-launch-effort", "coder=high",
                 "--role-launch-effort", "coder=low",
                 home=tmp_path,

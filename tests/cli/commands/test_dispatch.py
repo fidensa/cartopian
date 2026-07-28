@@ -184,7 +184,7 @@ def _toml(
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
         f"{auto_launch_line}"
-        f'target = "{agent}"\n'
+        f'agent = "{agent}"\n'
         f"{model_line}"
         f"{effort_line}"
         f'timeout = "{timeout}"\n'
@@ -279,7 +279,7 @@ class TestDispatchPositive(unittest.TestCase):
             rec = json.loads(lines[0])
             self.assertEqual(rec["status"], "dispatched")
             self.assertEqual(rec["role"], "coder")
-            self.assertEqual(rec["launch"]["target"], str(stub))
+            self.assertEqual(rec["launch"]["agent"], str(stub))
             self.assertEqual(rec["launch"]["model"], "stub-model-x")
             self.assertEqual(rec["launch"]["effort"], "high")
             self.assertEqual(rec["prompt_path"], str(prompt_path))
@@ -1233,7 +1233,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("roles.coder.target", stderr)
+            self.assertIn("roles.coder.agent", stderr)
 
     def test_task_dispatch_requires_auto_launch_permission(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
@@ -1268,8 +1268,8 @@ class TestDispatchFailClosed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             toml = _toml(str(stub)).replace(
-                f'target = "{stub}"\n',
-                f'target = "{stub}"\nmodel = ""\n',
+                f'agent = "{stub}"\n',
+                f'agent = "{stub}"\nmodel = ""\n',
             )
             scaffold.write("cartopian.toml", toml)
             task_path = _write_task_and_prompt(scaffold)
@@ -1294,8 +1294,8 @@ class TestDispatchFailClosed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             toml = _toml(str(stub)).replace(
-                f'target = "{stub}"\n',
-                f'target = "{stub}"\neffort = ""\n',
+                f'agent = "{stub}"\n',
+                f'agent = "{stub}"\neffort = ""\n',
             )
             scaffold.write("cartopian.toml", toml)
             task_path = _write_task_and_prompt(scaffold)
@@ -1657,9 +1657,9 @@ class TestDispatchNoRawExec(unittest.TestCase):
         self.assertIn('["git", "status", "--porcelain", "--untracked-files=all"]', plan_audit_src)
 
         # And dispatch itself sources its executable from config, never argv:
-        # the launched program is the resolved roles.<role>.target.
+        # the launched program is the resolved roles.<role>.agent.
         dispatch_src = Path(dispatch.__file__).read_text(encoding="utf-8")
-        self.assertIn('agent = launch.get("target")', dispatch_src)
+        self.assertIn('agent = launch.get("agent")', dispatch_src)
 
 
 class TestDispatchAgentResolution(unittest.TestCase):

@@ -24,7 +24,7 @@ Use this skill when another Cartopian skill needs to hand work to a human or con
 
 ## Stage 0 - Resolve Effective Configuration
 
-Use the Core CLI to resolve effective roles, handoff targets, automation policy, work roots, and relevant `[git]` keys for the selected project absolute path:
+Use the Core CLI to resolve effective roles, handoff agents, automation policy, work roots, and relevant `[git]` keys for the selected project absolute path:
 
 ```
 cartopian resolve-config <project-path>
@@ -40,7 +40,7 @@ Read from the resolved output:
 
 If the role being assigned is not declared in the resolved `[roles]` table, stop and return a blocked outcome to the caller ("role not declared in `[roles]`; declare it or assign a different role").
 
-If the role is declared but its resolved `launch.target` is unset, return a manual-dispatch outcome to the caller: the PM surfaces the prompt path and expected report path, and the operator handles execution.
+If the role is declared but its resolved `launch.agent` is unset, return a manual-dispatch outcome to the caller: the PM surfaces the prompt path and expected report path, and the operator handles execution.
 
 ---
 
@@ -55,7 +55,7 @@ cartopian handoff-packet <task-path> --role <role>
 Read from the emitted record:
 
 - `role_description` — the one-line description for the role being assigned.
-- `launch` — resolved `target`, `model`, `effort`, and `timeout`, consumed by Stage 2. Unset optional values are serialized as `null`.
+- `launch` — resolved `agent`, `model`, `effort`, and `timeout`, consumed by Stage 2. Unset optional values are serialized as `null`.
 - `auto_launch` — the closed automatic-launch permission list for assigned work types.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
@@ -127,7 +127,7 @@ request-comparison bypass.
   cartopian dispatch <task-path> --role <role>
   ```
 
-  `dispatch` is the FR-006 mediated launch. It consumes the canonical resolved role record, fails closed on a missing target or permission, an unmapped/non-existent work root, or a missing prompt, and exports only resolved launch context: timeout, model, effort, work roots, project-root cwd, and the prompt/report paths. It launches the resolved `target` with the single absolute-prompt-path argv. There is no caller-supplied executable argument, and the wrapper never receives raw review, automation, capability, schema, or identity policy.
+  `dispatch` is the FR-006 mediated launch. It consumes the canonical resolved role record, fails closed on a missing agent or permission, an unmapped/non-existent work root, or a missing prompt, and exports only resolved launch context: timeout, model, effort, work roots, project-root cwd, and the prompt/report paths. It launches the resolved `agent` with the single absolute-prompt-path argv. There is no caller-supplied executable argument, and the wrapper never receives raw review, automation, capability, schema, or identity policy.
 
 - **Agent role with `planning_review` in `auto_launch`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *PM-performed*: launch through the prompt-keyed mediated dispatch below. When the permission is absent, use the operator-performed path.
 

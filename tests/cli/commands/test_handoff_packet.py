@@ -1,7 +1,7 @@
 """Tests for `cartopian handoff-packet`.
 
 Covers the happy path (NDJSON contract), no-plan project, missing
-config → EXIT_ENV, missing roles.<role>.target guard, and read-only invariant.
+config → EXIT_ENV, missing roles.<role>.agent guard, and read-only invariant.
 """
 import argparse
 import contextlib
@@ -27,7 +27,7 @@ _TOML = (
     "[roles.coder]\n"
     'description = "Implements tasks per spec."\n'
     'auto_launch = ["task_run"]\n'
-    'target = "cartopian-claude"\n'
+    'agent = "cartopian-claude"\n'
     'model = "claude-opus-4-8"\n'
     'effort = "high"\n'
     'timeout = "30m"\n'
@@ -143,7 +143,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             self.assertEqual(rec["task_title"], "TASK-01-002: Example")
             self.assertEqual(rec["role"], "coder")
             self.assertEqual(rec["role_description"], "Implements tasks per spec.")
-            self.assertEqual(rec["launch"]["target"], "cartopian-claude")
+            self.assertEqual(rec["launch"]["agent"], "cartopian-claude")
             self.assertEqual(rec["launch"]["model"], "claude-opus-4-8")
             self.assertEqual(rec["launch"]["effort"], "high")
             self.assertEqual(rec["auto_launch"], ["task_run"])
@@ -210,7 +210,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
-        'target = "cartopian-claude"\n'
+        'agent = "cartopian-claude"\n'
     )
 
     def test_emits_null_for_unset_optional_fields(self) -> None:
@@ -238,7 +238,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             self.assertIn('"git_policy":null', raw)
 
             self.assertEqual(rec["role_description"], "Implements tasks.")
-            self.assertEqual(rec["launch"]["target"], "cartopian-claude")
+            self.assertEqual(rec["launch"]["agent"], "cartopian-claude")
             self.assertIsNone(rec["launch"]["model"])
             self.assertIsNone(rec["launch"]["effort"])
             self.assertEqual(rec["auto_launch"], [])
@@ -349,7 +349,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("roles.coder.target", stderr)
+            self.assertIn("roles.coder.agent", stderr)
 
 
 class TestHandoffPacketReadOnlyInvariant(unittest.TestCase):

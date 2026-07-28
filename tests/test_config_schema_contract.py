@@ -142,7 +142,7 @@ class TestClosedSchema(unittest.TestCase):
                 "coder": {
                     "description": "Writes code.",
                     "auto_launch": ["task_run"],
-                    "target": "cartopian-codex", "timeout": "45m",
+                    "agent": "cartopian-codex", "timeout": "45m",
                 }
             },
         }
@@ -164,6 +164,35 @@ class TestClosedSchema(unittest.TestCase):
             ConfigDiagnostic, "migration-source-only.*roles.coder.launch"
         ):
             validate_authored_config(project, "project")
+
+    def test_role_target_is_rejected_and_names_agent_as_the_valid_field(self):
+        base = {
+            "project": {
+                "id": "demo",
+                "name": "Demo",
+                "project_schema_version": "v0.9.0",
+            },
+            "roles": {
+                "coder": {
+                    "description": "Writes code.",
+                    "target": "cartopian-codex",
+                }
+            },
+        }
+        for with_agent in (False, True):
+            with self.subTest(with_agent=with_agent):
+                project = json.loads(json.dumps(base))
+                if with_agent:
+                    project["roles"]["coder"]["agent"] = "cartopian-codex"
+                with self.assertRaises(ConfigDiagnostic) as caught:
+                    validate_authored_config(project, "project")
+                self.assertEqual(caught.exception.code, "unknown-key")
+                self.assertEqual(caught.exception.field, "roles.coder.target")
+                self.assertEqual(
+                    caught.exception.recovery,
+                    "replace-role-target-with-agent",
+                )
+                self.assertIn("use `agent`", caught.exception.message)
 
     def test_legacy_launch_diagnostics_are_scoped_to_role_paths(self):
         role_base = {"description": "Writes code."}
@@ -219,7 +248,7 @@ class TestCanonicalResolution(unittest.TestCase):
                 "coder": {
                     "description": "Global coder.",
                     "grants": ["coder-like"],
-                    "target": "cartopian-claude",
+                    "agent": "cartopian-claude",
                     "timeout": "30m",
                 }
             },
@@ -235,13 +264,13 @@ class TestCanonicalResolution(unittest.TestCase):
                 "coder": {
                     "description": "Project coder.",
                     "auto_launch": ["task_run"],
-                    "target": "cartopian-codex", "effort": "high",
+                    "agent": "cartopian-codex", "effort": "high",
                 },
                 "reviewer": {
                     "description": "Reviews work.",
                     "grants": ["reviewer-like"],
                     "auto_launch": ["task_review"],
-                    "target": "cartopian-claude",
+                    "agent": "cartopian-claude",
                 },
             },
             "reviews": {
@@ -270,7 +299,7 @@ class TestCanonicalResolution(unittest.TestCase):
         self.assertEqual(tuple(coder), CONFIG_SCHEMA["role_output"])
         self.assertEqual(coder["description"], "Project coder.")
         self.assertEqual(coder["assigned_work_types"], ["task_run"])
-        self.assertEqual(coder["launch"]["target"], "cartopian-codex")
+        self.assertEqual(coder["launch"]["agent"], "cartopian-codex")
         self.assertEqual(coder["launch"]["timeout"], "30m")
         self.assertEqual(coder["auto_launch"], ["task_run"])
         self.assertEqual(coder["attribution"]["description"], "project")
@@ -297,7 +326,7 @@ class TestCanonicalResolution(unittest.TestCase):
                 "reviewer": {
                     "description": "Reviews.",
                     "auto_launch": ["planning_review"],
-                    "target": "cartopian-claude",
+                    "agent": "cartopian-claude",
                 }
             },
         }
@@ -316,13 +345,13 @@ class TestCanonicalResolution(unittest.TestCase):
             "roles": {
                 "pm": {
                     "description": "Plans.",
-                    "target": "cartopian-codex",
+                    "agent": "cartopian-codex",
                 }
             },
         }
         with self.assertRaisesRegex(ConfigDiagnostic, "pm-launch-forbidden"):
             resolve_configuration({}, project_cfg, {})
-        project_cfg["roles"]["pm"].pop("target")
+        project_cfg["roles"]["pm"].pop("agent")
         project_cfg["reviews"] = {
             "planning": "required",
             "planning_role": "reviewer",
@@ -384,7 +413,7 @@ class TestCliMcpParity(unittest.TestCase):
         'description = "Writes code."\n'
         'grants = ["coder-like"]\n'
         'auto_launch = ["task_run"]\n'
-        'target = "cartopian-codex"\n'
+        'agent = "cartopian-codex"\n'
         'timeout = "45m"\n'
     )
 
@@ -456,7 +485,7 @@ class TestCliMcpParity(unittest.TestCase):
                     "demo",
                     "--role",
                     "coder=Writes code.",
-                    "--role-launch-target",
+                    "--role-agent",
                     "coder=cartopian-codex",
                     "--role-auto-launch",
                     "coder=task_run",
@@ -474,7 +503,8 @@ class TestCliMcpParity(unittest.TestCase):
         self.assertIn("project_schema_version", text)
         self.assertEqual(text.count("[roles.coder]"), 1)
         self.assertNotIn("[roles.coder.launch]", text)
-        self.assertIn('target = "cartopian-codex"', text)
+        self.assertIn('agent = "cartopian-codex"', text)
+        self.assertNotIn('target = "cartopian-codex"', text)
         self.assertIn('auto_launch = [', text)
         self.assertNotIn("protocol_version", text)
         self.assertNotIn("[handoffs", text)

@@ -18,7 +18,7 @@ The delegation counterpart to the mediated writer. A contained PM has no
 shell or process-exec tool, so it cannot launch an assignee wrapper itself. This
 command performs the launch on the PM's behalf as *per-invocation* Cartopian code
 (no daemon, no broker): it consumes canonical resolution, fails closed on a
-missing role launch target or prompt, exports ``CARTOPIAN_TIMEOUT`` from
+missing role handoff agent or prompt, exports ``CARTOPIAN_TIMEOUT`` from
 ``roles.<role>.timeout``, ``CARTOPIAN_MODEL`` from
 ``roles.<role>.model`` (when set), ``CARTOPIAN_EFFORT`` from
 ``roles.<role>.effort`` (when set), and
@@ -35,7 +35,7 @@ wrapper owns its own background/timeout semantics (it kills the assignee at the
 through ``cartopian wait-handoff`` / ``cartopian wait-report``; this command never
 adds a waiting mechanism and never reaps the child.
 
-The launched executable is always the operator-configured role launch target.
+The launched executable is always the operator-configured role handoff agent.
 There is no caller-supplied command or executable argument, so the PM cannot use
 dispatch to launch an arbitrary process — the mediated, config-bound path is the
 only route a contained PM has. Standard library only (NF-001).
@@ -264,7 +264,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 
     Deliberately minimal: a task path (or a planning-checkpoint prompt path)
     and a role. The executable launched is sourced exclusively from
-    ``roles.<role>.target`` in config — there is intentionally no flag to
+    ``roles.<role>.agent`` in config — there is intentionally no flag to
     supply an arbitrary command, so the PM cannot turn dispatch into a raw
     exec primitive (containment invariant). ``--prompt`` names an allowlisted
     prompt slot to hand to the config-bound agent, never an executable.
@@ -288,7 +288,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--role",
         required=True,
-        help="Role identifier being dispatched (must have a launch target)",
+        help="Role identifier being dispatched (must have a handoff agent)",
     )
 
 
@@ -353,10 +353,10 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
     role_record = resolved["roles"][role]
     launch = role_record["launch"]
-    agent = launch.get("target")
+    agent = launch.get("agent")
     if not agent:
         stderr_guard(
-            f"roles.{role}.target is not configured — "
+            f"roles.{role}.agent is not configured — "
             f"dispatch this role manually"
         )
         return EXIT_FAIL
@@ -515,13 +515,13 @@ def handler(args: argparse.Namespace) -> int:
     # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
     # ignores PATHEXT). `shutil.which` DOES honor PATHEXT, so it finds the `.cmd`
     # on Windows and the extensionless wrapper script on POSIX. An absolute
-    # An absolute role launch target resolves through `shutil.which` unchanged.
+    # role handoff agent resolves through `shutil.which` unchanged.
     resolved_agent = shutil.which(str(agent))
     if resolved_agent is None:
         stderr_error(
             f"handoff agent not found on PATH: {agent} — install the wrapper "
             f"(on native Windows the `.cmd` shim in wrappers/ps1 must be on PATH), "
-            f"or set roles.{role}.target to an absolute path"
+            f"or set roles.{role}.agent to an absolute path"
         )
         return EXIT_FAIL
     is_windows = _running_on_windows()
@@ -587,7 +587,7 @@ def handler(args: argparse.Namespace) -> int:
             f"failed to launch handoff agent {agent}: could not start "
             f"{missing!r} (resolved agent: {resolved_agent}). On native Windows "
             f"this is usually the command interpreter — ensure cmd.exe is "
-            f"reachable; otherwise correct roles.{role}.target"
+            f"reachable; otherwise correct roles.{role}.agent"
         )
         return EXIT_FAIL
     except OSError as exc:
@@ -615,7 +615,7 @@ def handler(args: argparse.Namespace) -> int:
         "role": role,
         "activity": activity,
         "launch": {
-            "target": agent,
+            "agent": agent,
             "model": model,
             "effort": effort,
             "timeout": timeout,

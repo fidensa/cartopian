@@ -215,7 +215,7 @@ class TestConfigurationMigration(unittest.TestCase):
             )
             self.assertNotIn("auto_launch", migrated["roles"]["manual"])
             self.assertEqual(
-                migrated["roles"]["manual"]["target"],
+                migrated["roles"]["manual"]["agent"],
                 "cartopian-manual",
             )
             self.assertEqual(
@@ -487,7 +487,7 @@ project_schema_version = "not-a-version"
             home, project = _seed(Path(raw), "transitional")
             with mock.patch.object(
                 config_migration,
-                "_target_permission_activities",
+                "_agent_permission_activities",
                 return_value=(),
             ):
                 plan = config_migration.plan_configuration_migration(
@@ -612,7 +612,7 @@ auto_launch = ["task_run"]
 
 # Retired launch grouping disappears with its table.
 [roles.coder.launch] # retired header note
-target = "cartopian-codex" # target attribution note
+target = "cartopian-codex" # agent attribution note
 model = "example-model"
 effort = "high"
 timeout = "45m"
@@ -642,10 +642,10 @@ timeout = "45m"
             self.assertEqual(
                 {
                     key: coder[key]
-                    for key in ("target", "model", "effort", "timeout")
+                    for key in ("agent", "model", "effort", "timeout")
                 },
                 {
-                    "target": "cartopian-codex",
+                    "agent": "cartopian-codex",
                     "model": "example-model",
                     "effort": "high",
                     "timeout": "45m",
@@ -656,7 +656,7 @@ timeout = "45m"
             self.assertNotIn("[roles.coder.launch]", migrated_text)
             self.assertNotIn("# retired header note", migrated_text)
             self.assertNotIn("# Retired launch grouping", migrated_text)
-            self.assertIn("# target attribution note", migrated_text)
+            self.assertIn("# agent attribution note", migrated_text)
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
@@ -669,6 +669,29 @@ timeout = "45m"
             self.assertEqual(records[0]["details"]["plan"]["status"], "noop")
             self.assertEqual(records[0]["details"]["result"]["status"], "noop")
             self.assertEqual(path.read_bytes(), before_rerun)
+
+    def test_flat_role_target_is_not_a_migration_source_or_alias(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            path = project / "cartopian.toml"
+            before = path.read_text()
+            path.write_text(
+                before.replace(
+                    'agent = "cartopian-codex"',
+                    'target = "cartopian-codex"',
+                )
+            )
+            authored = path.read_bytes()
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            self.assertEqual(plan.diagnostics[0]["code"], "unknown-source-field")
+            self.assertEqual(
+                plan.diagnostics[0]["field"],
+                "roles.coder.target",
+            )
+            self.assertEqual(path.read_bytes(), authored)
 
     def test_current_marker_repairs_preexisting_generated_tombstones(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -757,7 +780,7 @@ timeout = "30m"
             migrated_text = global_path.read_text()
             migrated = tomllib.loads(migrated_text)
             self.assertEqual(
-                migrated["roles"]["reviewer"]["target"],
+                migrated["roles"]["reviewer"]["agent"],
                 "cartopian-review",
             )
             self.assertEqual(migrated["roles"]["reviewer"]["timeout"], "30m")
@@ -788,7 +811,7 @@ work_roots = ["product"]
 [roles.reviewer]
 description = "Reviews completed work."
 grants = ["reviewer-like"]
-target = "cartopian-review"
+agent = "cartopian-review"
 """.lstrip()
             )
             code, records = _run_cli_migration(home, project)
@@ -798,7 +821,7 @@ target = "cartopian-review"
             migrated = tomllib.loads(migrated_text)
             self.assertNotRegex(migrated_text, r"(?m)^\s*\[roles\]\s*$")
             self.assertEqual(
-                migrated["roles"]["reviewer"]["target"], "cartopian-review"
+                migrated["roles"]["reviewer"]["agent"], "cartopian-review"
             )
 
     def test_annotated_global_and_project_files_preserve_comments_and_order(self):
@@ -830,7 +853,7 @@ target = "cartopian-review"
                 "# Review role grouping.",
                 "# role note",
                 "# Reference only: auto_launch = [\"task_run\"]",
-                "# target note",
+                "# agent note",
                 "# task permission note",
             ):
                 self.assertIn(comment, global_text)
@@ -844,7 +867,7 @@ target = "cartopian-review"
                 "# Lightweight documentation role.",
                 "# writer note",
                 "# coder note",
-                "# coder target",
+                "# coder agent",
                 "# tasks start automatically",
                 "[reviews] # review policy",
             ):
@@ -879,11 +902,11 @@ target = "cartopian-review"
             )
             self.assertLess(
                 global_text.index('auto_launch = ["task_run"]'),
-                global_text.index('target = "cartopian-review"'),
+                global_text.index('agent = "cartopian-review"'),
             )
             self.assertLess(
                 project_text.index('auto_launch = ["task_run"]'),
-                project_text.index('target = "cartopian-codex"'),
+                project_text.index('agent = "cartopian-codex"'),
             )
             self.assertEqual(
                 config_migration.plan_configuration_migration(

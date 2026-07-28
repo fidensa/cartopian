@@ -328,7 +328,7 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 "[roles.coder]\n"
                 'description = "Implements assigned work."\n'
                 f"{activities}"
-                'target = "cartopian-matrix-agent"\n\n'
+                'agent = "cartopian-matrix-agent"\n\n'
                 "[reviews]\n"
                 'planning = "off"\n'
                 'task_closure = "off"\n\n'
@@ -908,12 +908,12 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
         == frozenset({"read:prompts", "read:work-roots", "write:worktree"}),
         "work_root_is_declared_and_mapped": resolved["work_roots"]
         == {"product": "/fixture/product"},
-        "manual_fallback_has_no_launch_target": resolved["roles"]["manual"][
+        "manual_fallback_has_no_handoff_agent": resolved["roles"]["manual"][
             "launch"
-        ]["target"]
+        ]["agent"]
         is None,
-        "pm_scope_has_no_launch_target": resolved["roles"]["pm"]["launch"][
-            "target"
+        "pm_scope_has_no_handoff_agent": resolved["roles"]["pm"]["launch"][
+            "agent"
         ]
         is None,
         "source_git_is_human_owned": not resolved["git_versioning"]

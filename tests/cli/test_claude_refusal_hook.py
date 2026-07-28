@@ -823,7 +823,7 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
             'auto_launch = ["task_run"]\n'
-            'target = "/bin/true"\n'
+            'agent = "/bin/true"\n'
             'timeout = "30m"\n'
         )
         with project_scaffold(cartopian_toml=toml) as scaffold, \

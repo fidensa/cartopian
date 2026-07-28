@@ -300,7 +300,8 @@ def _retired_nested_role_fields() -> Tuple[str, ...]:
         if not path.startswith(prefix):
             continue
         leaf = path[len(prefix) :]
-        if f"roles.*.{leaf}" in preferred:
+        preferred_leaf = "agent" if leaf == "target" else leaf
+        if f"roles.*.{preferred_leaf}" in preferred:
             leaves.append(leaf)
     return tuple(sorted(set(leaves)))
 

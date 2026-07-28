@@ -219,19 +219,19 @@ class TestRoleAndLaunch(_Base):
     def test_valid_launch_for_declared_role(self):
         proc = self.run_uc(
             str(self.proj),
-            "--set-role-launch", "coder.target=cartopian-claude",
+            "--set-role-launch", "coder.agent=cartopian-claude",
             "--set-role-auto-launch", "coder=task_run",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         cfg = tomllib.loads(self.cfg.read_text())
-        self.assertEqual(cfg["roles"]["coder"]["target"], "cartopian-claude")
+        self.assertEqual(cfg["roles"]["coder"]["agent"], "cartopian-claude")
         self.assertNotIn("[roles.coder.launch]", self.cfg.read_text())
         self.assertEqual(cfg["roles"]["coder"]["auto_launch"], ["task_run"])
 
     def test_set_launch_effort_for_declared_role(self):
         proc = self.run_uc(
             str(self.proj),
-            "--set-role-launch", "coder.target=cartopian-claude",
+            "--set-role-launch", "coder.agent=cartopian-claude",
             "--set-role-launch", "coder.effort=high",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -247,7 +247,7 @@ class TestRoleAndLaunch(_Base):
             "--set", "reviews.planning=required",
             "--set", "reviews.planning_role=reviewer",
             "--set", "reviews.task_closure=off",
-            "--set-role-launch", "reviewer.target=cartopian-claude",
+            "--set-role-launch", "reviewer.agent=cartopian-claude",
             "--set-role-auto-launch", "reviewer=planning_review",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -278,16 +278,26 @@ class TestRoleAndLaunch(_Base):
         before = self.cfg.read_bytes()
         proc = self.run_uc(
             str(self.proj),
-            "--set-role-launch", "ghost.target=cartopian-claude",
+            "--set-role-launch", "ghost.agent=cartopian-claude",
         )
         self.assertEqual(proc.returncode, 1)
         self.assertIn("missing-field", proc.stderr)
         self.assertEqual(self.cfg.read_bytes(), before)
 
     def test_launch_pm_forbidden(self):
-        proc = self.run_uc(str(self.proj), "--set-role-launch", "pm.target=x")
+        proc = self.run_uc(str(self.proj), "--set-role-launch", "pm.agent=x")
         self.assertEqual(proc.returncode, 2)
         self.assertIn("pm", proc.stderr)
+
+    def test_role_target_field_is_not_an_editor_alias(self):
+        before = self.cfg.read_bytes()
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-role-launch", "coder.target=cartopian-claude",
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("agent, model, effort, timeout", proc.stderr)
+        self.assertEqual(self.cfg.read_bytes(), before)
 
 
 class TestConflictsAndUsage(_Base):

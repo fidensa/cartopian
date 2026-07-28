@@ -146,7 +146,7 @@
         "CONFIG_SCHEMA",
         "resolve_project_configuration",
         "project_schema_version",
-        "roles.<role>.target",
+        "roles.<role>.agent",
         "auto_launch"
       ]
     },

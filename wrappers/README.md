@@ -53,17 +53,17 @@ $env:Path = "$PWD\wrappers\ps1;$env:Path"
 )
 ```
 
-### Step 2: Update the resolved launch target
+### Step 2: Update the configured handoff agent
 
-Use the mediated editor to change a role's launch target from the raw CLI name to the wrapper name:
+Use the mediated editor to change a role's handoff agent from the raw CLI name to the wrapper name:
 
 ```bash
 cartopian update-config /absolute/project/path \
-  --set-role-launch coder.target=cartopian-codex \
-  --set-role-launch reviewer.target=cartopian-gemini
+  --set-role-launch coder.agent=cartopian-codex \
+  --set-role-launch reviewer.agent=cartopian-gemini
 ```
 
-That changes only resolved target/options. Review policy, role assignment, run automation, automatic-launch permission, capabilities, and identities remain owned by their separate configuration/lifecycle authorities. Dispatch resolves those facts before it invokes a wrapper.
+That changes only the resolved agent/options. Review policy, role assignment, run automation, automatic-launch permission, capabilities, and identities remain owned by their separate configuration/lifecycle authorities. Dispatch resolves those facts before it invokes a wrapper.
 
 ### Step 3 (optional): Tune security settings
 
@@ -305,11 +305,11 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 ## Alternative installation
 
-If you don't want to modify PATH, set the resolved target to a wrapper's absolute path through the mediated editor:
+If you don't want to modify PATH, set the configured agent to a wrapper's absolute path through the mediated editor:
 
 ```bash
 cartopian update-config /absolute/project/path \
-  --set-role-launch coder.target=/absolute/install/wrappers/bin/cartopian-codex
+  --set-role-launch coder.agent=/absolute/install/wrappers/bin/cartopian-codex
 ```
 
 Or symlink individual wrappers into a directory already on your PATH:

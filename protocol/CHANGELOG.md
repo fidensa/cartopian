@@ -150,11 +150,11 @@ ls "$PROJECT_ROOT/intent" 2>/dev/null
 ### v0.7.0 — Flat authored role tables and clean canonical migration output
 
 - **Protocol version:** `v0.7.0`
-- **One-line summary:** Moves role target, model, effort, and timeout into the single authored `[roles.<name>]` table and removes obsolete configuration instead of retaining migration-generated comment tombstones.
+- **One-line summary:** Moves role agent, model, effort, and timeout into the single authored `[roles.<name>]` table and removes obsolete configuration instead of retaining migration-generated comment tombstones.
 
 #### Breakage description
 
-Authored configuration now has exactly one flat table per role. The optional `target`, `model`, `effort`, and `timeout` fields sit beside `description`, `grants`, and `auto_launch` under `[roles.<name>]`. The superseded `[roles.<name>.launch]` child table is migration input only and normal preferred-schema validation rejects it. Resolved machine records continue to expose a derived `launch` projection for consumer convenience.
+Authored configuration now has exactly one flat table per role. The optional `agent`, `model`, `effort`, and `timeout` fields sit beside `description`, `grants`, and `auto_launch` under `[roles.<name>]`. The superseded `[roles.<name>.launch]` child table is migration input only and normal preferred-schema validation rejects it. Resolved machine records continue to expose a derived `launch` projection for consumer convenience.
 
 Canonical migration output no longer retains removed `[handoffs]`, `[handoffs.<name>]`, or nested role-launch material as `# migrated legacy:` comments. Structured migration results and checkpoints provide recovery evidence; obsolete authored values do not remain in TOML.
 
@@ -165,7 +165,7 @@ Applies when the project's `[project].project_schema_version` is less than `v0.7
 #### Agent-followable migration steps
 
 1. Run `cartopian migrate-config <project-root>` and review the deterministic plan. Resolve any reported conflict where a flat role field and its nested or legacy source define different values.
-2. Run `cartopian migrate-config <project-root> --apply`. For every role, move supported nested `launch` or legacy `handoffs` target/options directly into `[roles.<name>]`, preserve effective permissions and source attribution, remove the superseded tables and keys, and advance `[project].project_schema_version` to `v0.7.0` only after all earlier writes validate.
+2. Run `cartopian migrate-config <project-root> --apply`. For every role, move the supported nested `launch` or legacy `handoffs` agent and options into `[roles.<name>]`, preserve effective permissions and source attribution, remove the superseded tables and keys, and advance `[project].project_schema_version` to `v0.7.0` only after all earlier writes validate.
 3. Run `cartopian resolve-config <project-root>` and immediately rerun `cartopian migrate-config <project-root>`. Resolution must preserve the prior effective launch behavior and attribution; the migration rerun must report `noop` without changing bytes.
 
 #### Idempotence guarantee

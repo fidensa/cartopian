@@ -28,18 +28,18 @@ Ask the operator about workspace-wide defaults:
 
 1. **Git versioning** — Should project PM data be git-versioned? (`true` or `false`, default `false`)
 2. **Roles** — Which roles should the workspace declare? The protocol-default roster is `pm` and `operator`. For each role the operator wants in the workspace, gather a role name (operator-chosen string) and a one-line description string that names the role's responsibility. `coder`, `reviewer`, `editor`, and `researcher` are illustrative labels, not role types or defaults. Confirm whether any existing role should be renamed or removed.
-3. **Review defaults and assignment** — Choose one workspace preset: **no reviews**, **planning only**, **task closure only**, or **planning and task closure**. For each required loop, choose one of the declared roles to perform it. These are global defaults only: every project can override either loop to `off` or assign another role. Never infer review policy from a role name, description, capability preset, launch target, or permission.
+3. **Review defaults and assignment** — Choose one workspace preset: **no reviews**, **planning only**, **task closure only**, or **planning and task closure**. For each required loop, choose one of the declared roles to perform it. These are global defaults only: every project can override either loop to `off` or assign another role. Never infer review policy from a role name, description, capability preset, configured agent, or permission.
 
-### Step 3 — Gather CLI handoff targets
+### Step 3 — Gather CLI handoff agents
 
 For each role that may use CLI launch, ask the operator:
 
-1. **CLI handoff target** — Should this role have a named executable for CLI handoff automation? If yes, what is the executable name? (e.g., `codex`, `gemini`, `claude`)
+1. **CLI handoff agent** — Should this role have a named agent executable or Cartopian agent wrapper for CLI handoff automation? If yes, what is its name? (e.g., `cartopian-codex`, `cartopian-gemini`, `cartopian-claude`)
 2. **Effort** — Should this role pin an effort/thinking level? Valid levels depend on the chosen agent CLI (e.g., claude: `low|medium|high|xhigh|max`; codex: `low|medium|high|xhigh|max|ultra`; gemini/devin: not supported). Unsupported values fall back to the tool's default with a warning at launch. Leave blank to use the tool's default.
 3. **Timeout** — Should this handoff have a custom timeout? Use one positive duration such as `30m` or `2h`. Leave blank to use the protocol default of `60m`.
 4. **Automatic-launch permissions** — Which assigned work types may the PM launch automatically for this role: `task_run`, `task_review`, and/or `planning_review`? The list defaults empty; `[reviews]` independently decides whether review checkpoints exist and who owns them.
 
-If the operator does not want a CLI launch target for a role, omit `target`, `model`, `effort`, and `timeout` from that role's flat table. The PM will create the prompt and the operator will handle execution manually. A target does not itself grant automatic launch; the applicable assigned work type must also appear in `auto_launch`.
+If the operator does not want a CLI handoff agent for a role, omit `agent`, `model`, `effort`, and `timeout` from that role's flat table. The PM will create the prompt and the operator will handle execution manually. An agent does not itself grant automatic launch; the applicable assigned work type must also appear in `auto_launch`.
 
 ### Step 4 — Gather automation policy
 
@@ -71,7 +71,7 @@ description = "<one-line description>"
 # description = "<one-line description>"
 # auto_launch = ["<task_run|task_review|planning_review>"]
 #
-# target = "<executable name>"
+# agent = "<agent or Cartopian wrapper name>"
 # model = "<model>"
 # effort = "<level>"
 # timeout = "<duration>"
@@ -88,7 +88,7 @@ confirmation = "<each-handoff|until-blocked>"
 max_handoffs_per_run = <number>
 ```
 
-Write both review modes explicitly so the global choice is visible; include role-assignment keys only for required loops. Use commented-out lines for optional settings the user did not enable. To remove a role from a project, omit its role table. Reminder: projects may override role fields, review policy/assignment, launch target/options, and automatic-launch permissions independently.
+Write both review modes explicitly so the global choice is visible; include role-assignment keys only for required loops. Use commented-out lines for optional settings the user did not enable. To remove a role from a project, omit its role table. Reminder: projects may override role fields, review policy/assignment, handoff agent/options, and automatic-launch permissions independently.
 
 Do not generate `[agents.*]` sections.
 
@@ -117,7 +117,7 @@ If yes:
    - Workspace defaults
    - Role descriptions and declared roles (noting which are defaults vs. explicit)
    - Review defaults and the role assigned to each required loop
-   - CLI handoff targets configured
+   - CLI handoff agents configured
    - Automation policy
    - Install layout presence and `cartopian --help` result
    - Any project initialized via `skills/init-project.md`

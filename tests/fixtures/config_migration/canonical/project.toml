@@ -8,5 +8,5 @@ work_roots = ["product"]
 description = "Implements approved work."
 grants = ["coder-like"]
 auto_launch = ["task_run"]
-target = "cartopian-codex"
+agent = "cartopian-codex"
 timeout = "45m"

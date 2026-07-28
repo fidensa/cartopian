@@ -60,7 +60,7 @@ provider credential, or model invocation.
 | Skill | File | Purpose | CLI Handoff |
 | --- | --- | --- | --- |
 | **Use Cartopian** | `use-cartopian.md` | Entry point for PM mode. Reads the protocol contract and startup runbook, then begins registry-based project selection. Does not inspect the current directory. | None — bootstraps PM mode; no handoff |
-| **Init Workspace** | `init-workspace.md` | Generate workspace and project `cartopian.toml` config files | Configures handoff targets and automation policy |
+| **Init Workspace** | `init-workspace.md` | Generate workspace and project `cartopian.toml` config files | Configures handoff agents and automation policy |
 | **Init Project** | `init-project.md` | Scaffold a new project with the correct directory structure | Scaffolds `reports/` and supports handoff overrides |
 | **Adopt Requirements** | `adopt-requirements.md` | Generate `REQUIREMENTS.md` from external sources (JIRA, Confluence, PRD, etc.) without running the full planning pipeline | None — PM-only skill; no handoff |
 | **Adopt Plan** | `adopt-plan.md` | Migrate an existing implementation plan from any external format into Cartopian artifacts; requirements may be external, stubbed, or adopted inline | Resolves handoff config; launches or instructs CLI handoffs for review checkpoints |
@@ -75,14 +75,14 @@ provider credential, or model invocation.
 
 ## CLI handoff automation
 
-Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff targets, independent planning/task review policy, and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
+Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff agents, independent planning/task review policy, and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
 
 Planning and task-review runbooks also consume `cartopian review-context` and
 the generated verbatim-request and PM-derived channels. The initiating message
 was already captured by the host before PM authoring; no later operator step
 exists.
 
-Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. Each role's flat `target`/option fields provide neutral launch facts, while its closed `auto_launch` list independently permits automatic launch for assigned work types. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
+Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. Each role's flat `agent` and option fields provide neutral launch facts, while its closed `auto_launch` list independently permits automatic launch for assigned work types. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
 
 ## Session startup
 
