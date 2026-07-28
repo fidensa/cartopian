@@ -29,7 +29,7 @@ Use `cartopian resolve-config <project-root>` (or the `resolve_config` MCP tool)
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 work_roots = ["product", "design"]
 ```
 
@@ -90,12 +90,11 @@ target = "cartopian-gemini"
 timeout = "30m"
 ```
 
-Every planning and task-closure review also consumes the independent
-operator-intent artifact contract. It is not configuration and no role field
-grants it: the operator-only `cartopian attest-intent` command creates
-attestations, while the CLI/MCP `review-context` reader projects them into
-bound review prompts. `attest-intent` is excluded from the MCP tool registry
-and all role presets.
+Every planning and task-closure review also consumes the independent request
+trace captured by the host before PM authoring. It is not configurable and no
+role can weaken it. The CLI/MCP `review-context` reader projects the verbatim
+request separately from PM-derived guidance; the configured review role makes
+the comparison.
 
 ## Run automation
 
@@ -132,7 +131,7 @@ Project configuration declares names:
 [project]
 id = "my-project"
 name = "My Project"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 work_roots = ["product"]
 ```
 

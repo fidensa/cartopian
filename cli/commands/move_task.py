@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands.resolve_config import _CliError, resolve_review_policy
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -83,18 +83,10 @@ def _alignment_error(
     content: str,
     nn_nnn: Optional[str] = None,
 ) -> Optional[str]:
-    """Block approval on drifted or required-but-not-assessable alignment.
+    """Block approval on drift or invalid comparison evidence.
 
-    A review artifact records `Operator-intent alignment: aligned | drifted |
-    not assessable`. Drift blocks closure, and required evidence that is not
-    assessable blocks closure — agreement among the task, the spec, the prompt,
-    and the report cannot by itself carry a task to `done`. The one explicitly
-    non-blocking result is `not assessable — none recorded`, which the resolver
-    emits only after a complete applicability scan finds nothing.
-
-    Enforcement is scoped to projects at the schema version that introduced the
-    contract, so historical reviews stay readable and are never rewritten (see
-    ``protocol/CHANGELOG.md`` § v0.8.0).
+    The contract is present only in v0.9-generated prompts. Historical reviews
+    stay readable and are never rewritten or rejudged from the current marker.
     """
     schema_version = None
     project_toml = project_root / "cartopian.toml"
@@ -106,59 +98,70 @@ def _alignment_error(
                 ).get("project_schema_version")
         except (OSError, tomllib.TOMLDecodeError):
             schema_version = None
-    if not operator_intent.alignment_enforced(schema_version):
+    if not request_trace.alignment_enforced(schema_version):
         return None
-    required_evidence: Optional[bool] = None
     if nn_nnn is not None:
         candidates = sorted(
             (project_root / "tasks" / "in-review").glob(f"TASK-{nn_nnn}*.md")
         )
         if len(candidates) != 1:
             return (
-                f"cannot resolve one current task for operator-intent alignment "
+                f"cannot resolve one current task for request-trace alignment "
                 f"(found {len(candidates)} for TASK-{nn_nnn})"
             )
         try:
             prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
             if not prompt.is_file():
                 return (
-                    "operator-intent review prompt is missing for lifecycle "
+                    "request-trace review prompt is missing for lifecycle "
                     f"approval: {prompt}"
                 )
             try:
-                prompt_text = operator_intent.read_contained_text(
+                prompt_text = request_trace.read_contained_text(
                     project_root, prompt, what="review prompt"
                 )
-            except operator_intent.IntentRefusal as refusal:
+            except request_trace.RequestRefusal as refusal:
                 return (
-                    f"operator-intent review prompt is unreadable "
+                    f"request-trace review prompt is unreadable "
                     f"({refusal.rule}): {refusal.detail}"
                 )
-            context = operator_intent.context_for_task(
+            contract_applies = request_trace.review_contract_applies(prompt_text)
+            context = request_trace.context_for_task(
                 project_root,
                 candidates[0],
-                operator_intent.artifact_supplemental_refs(prompt_text),
+                prompt_text=prompt_text,
+                allow_historical_legacy=not contract_applies,
             )
-            preflight = operator_intent.preflight_prompt_binding(
+            if not contract_applies:
+                if context.legacy:
+                    # A trace-less prompt is the creation-era evidence for a
+                    # genuinely historical review.  Migrating the project
+                    # marker must not manufacture new closure requirements.
+                    return None
+                return (
+                    "request-trace prompt binding is invalid "
+                    "(stale-request-context): captured work omits the generated "
+                    "request comparison context"
+                )
+            preflight = request_trace.preflight_prompt_binding(
                 context, prompt_text
             )
             if not preflight["ok"]:
                 return (
-                    "operator-intent prompt binding is invalid "
+                    "request-trace prompt binding is invalid "
                     f"({preflight['rule']}): {preflight['detail']}"
                 )
-        except operator_intent.IntentRefusal as refusal:
+        except request_trace.RequestRefusal as refusal:
             return (
-                f"operator-intent evidence is unresolved ({refusal.rule}): "
+                f"request-trace evidence is unresolved ({refusal.rule}): "
                 f"{refusal.detail}"
             )
-        required_evidence = any(item.required for item in context.evidence)
-    alignment = operator_intent.parse_alignment(
+    alignment = request_trace.parse_alignment(
         content,
-        required_evidence=required_evidence,
         expected_evidence=[
-            item.attestation.attestation_id for item in context.evidence
+            item.record_id for item in context.evidence
         ] if nn_nnn is not None else None,
+        legacy=context.legacy if nn_nnn is not None else False,
     )
     if alignment["blocking"]:
         return f"{alignment['detail']}: {review}"

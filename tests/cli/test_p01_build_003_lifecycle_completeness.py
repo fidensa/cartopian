@@ -94,6 +94,15 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         self.assertEqual(code, 0, msg=f"step {verb} failed (exit {code}): {err}")
         return recs
 
+    def _host_capture(self, *args):
+        fixture_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("CARTOPIAN_ROLE", "CARTOPIAN_MCP_TOOL_CALL")
+        }
+        with mock.patch.dict(os.environ, fixture_env, clear=True):
+            return self._run("capture-request", *args)
+
     def test_plan_assign_review_close_with_only_cartopian_commands(self):
         self.parser = cli_main.build_parser()
         with TemporaryDirectory() as tmp:
@@ -121,6 +130,13 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
 
     def _lifecycle(self, proj, ps):
         # --- PLAN (G1–G7) ---
+        request_source = proj.parent / "operator-request.txt"
+        request_source.write_text("Build the lifecycle demo.", encoding="utf-8")
+        self._host_capture(
+            ps, "--request-id", "REQUEST-001",
+            "--unit", "project", "--content-file", str(request_source),
+            "--captured-at", "2026-07-27T12:00:00Z",
+        )
         self._run("write-requirements", ps, "--content", "# Requirements\n\nFR-1\n")
         self._run("write-plan", ps, "--content", "# Implementation Plan\n\nP01-BUILD-001\n")
         self._run("write-standards", ps, "--content", "# Standards\n")
@@ -132,6 +148,14 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
                   "--content",
                   "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: P01-BUILD-001\n"
                   "Evidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n")
+        task_request_source = proj.parent / "task-operator-request.txt"
+        task_request_source.write_text("Run the planned task.", encoding="utf-8")
+        self._host_capture(
+            ps, "--request-id", "REQUEST-002",
+            "--unit", "task:TASK-01-001",
+            "--content-file", str(task_request_source),
+            "--captured-at", "2026-07-27T12:00:01Z",
+        )
         self._run("write-prompt", ps, "--prompt-id", "PROMPT-01-001",
                   "--content", "# PROMPT-01-001\n")
 
@@ -168,13 +192,12 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         )
 
         # Dispatched reviewer produces the review verdict (out of scope).
-        # A project with no operator attestations resolves to `none recorded`,
-        # whose `not assessable` result is explicitly non-blocking — the green
-        # lifecycle must still complete end to end.
+        # The reviewer compares the generated request trace with the delivered
+        # outcome and cites the immutable intake record.
         (proj / "reviews" / "REVIEW-01-001.md").write_text(
             "# REVIEW-01-001\n\nVerdict: approve\n"
-            "Operator-intent alignment: not assessable — none recorded\n"
-            "Operator-intent evidence: none recorded\n",
+            "Request alignment: aligned\n"
+            "Request evidence: REQUEST-002\n",
             encoding="utf-8",
         )
 

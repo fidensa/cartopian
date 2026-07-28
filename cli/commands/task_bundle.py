@@ -18,7 +18,7 @@ from cli.commands.validate_task_readiness import (
     _check_blocked_by,
     _check_deliverable,
     _check_evidence_gate,
-    _check_intent_refs,
+    _check_request_trace,
     _check_phase,
     _check_plan_ref,
     _check_work_root,
@@ -188,9 +188,7 @@ def _build_validation_checks(
         "acceptance-present": _check_acceptance(content),
         "work-root-names-valid": _check_work_root(project_root, headers, presence, warnings),
         "deliverable-valid": _check_deliverable(project_root, headers),
-        # Reuses the readiness validator's own check, which in turn consumes the
-        # single resolver — the bundle never re-derives applicability.
-        "intent-refs-valid": _check_intent_refs(project_root, task_path, headers),
+        "request-trace-valid": _check_request_trace(project_root, task_path, headers),
     }
     return [checks_by_name[name] for name in CHECK_ORDER]
 

@@ -23,6 +23,26 @@ The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; 
 
 ---
 
+## Host intake precondition
+
+Before review prompt generation, resolve the task's exact operator evidence
+from the three supported source kinds: structurally marked decision quotations,
+supported host chat records, and optional immutable request records. A native
+host adapter is optional when another supported source resolves. The PM must
+not transcribe or reconstruct operator words; ordinary PM prose is excluded
+from operator evidence, including task, spec, phase, plan, prompt, and report
+prose.
+
+At v0.9 the existing task review uses the same resolution. Its mediated writers
+fail closed only when no applicable exact source of any supported kind resolves
+for the governed task unit. Task evidence never silently falls back to the
+project-inception request or another unrelated unit.
+This resolution is infrastructure for the existing review: it requires no
+later operator re-entry, confirmation, safeguard, handoff, or new lifecycle or
+review stage.
+
+---
+
 ## Prerequisites
 
 - The project has an active `IMPLEMENTATION_PLAN.md`.
@@ -234,11 +254,10 @@ The review prompt must include absolute paths to:
 - Relevant implementation evidence.
 - The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
 
-`write-prompt --review-kind task-closure` resolves every automatically
-applicable attestation plus the task/prompt's supplemental `Intent refs:` and
-replaces any authored copy with the generated, context-bound
-`## Operator intent` section. Do not summarize or edit that section. Before a
-manual handoff, require the `operator_intent.preflight` record from
+`write-prompt --review-kind task-closure` resolves the exact request trace
+and replaces authored copies with the generated,
+context-bound request-comparison sections. Do not summarize or edit them. Before a
+manual handoff, require the `request_trace.preflight` record from
 `handoff-packet` to be present and `ok: true`; manual launch does not bypass
 the binding check automatic dispatch performs.
 
@@ -247,11 +266,10 @@ The reviewer produces **two** artifacts, exactly as the coder produces its work 
 - The durable **review file** (`reviews/REVIEW-NN-NNN.md`) is the work product: findings, evidence, and the `Verdict:` header the `in-review → done | in-progress | open` move guard reads.
 - The transient **review-completion report** (`reports/REPORT-NN-NNN.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
 - The review-completion report's `## Identity` block must copy the absolute task-file path from the prompt into `Task path:`. `report-action` cross-checks it against the task implied by `REPORT-NN-NNN.md`; a missing, stale, or wrong task path is not valid completion evidence.
-- Both artifacts record `Operator-intent alignment:` and
-  `Operator-intent evidence:` from the generated channel. Drift blocks
-  approval; required evidence that is not assessable blocks; advisory-only
-  not-assessable and the exact `not assessable — none recorded` result remain
-  explicit and non-blocking.
+- Both artifacts record `Request alignment:` and
+  `Request evidence:` from the generated channel. Drift blocks
+  approval. `unavailable-for-legacy` is non-blocking only when the generated
+  prompt declares that historical state.
 
 The review prompt must also include:
 
@@ -293,10 +311,9 @@ For the `review` variant, the emitted record carries:
 - `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` after an `approve` verdict.
 - `task_id` and `task_path` — the task resolved from the report filename and cross-checked against the report's declared `Task path`.
 - `path_mismatch` — true when any declared handoff path, including `Task path`, disagrees with the report filename's expected paths. Treat `path_mismatch = true` as `failed-to-parse`.
-- `operator_intent_alignment` — the recomputed context identity, evidence ids,
+- `request_alignment` — the recomputed context identity, evidence ids,
   alignment value/reason, and blocking result. An approving report with a
-  stale binding, drift, missing evidence, or required-but-not-assessable
-  evidence is `failed-to-parse`.
+  stale binding, drift, or missing evidence is `failed-to-parse`.
 
 If the verdict is `blocked`, `failed`, or `failed-to-parse`, or if `path_mismatch = true`, stop automation, preserve the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
@@ -309,8 +326,8 @@ Apply the reviewer's verdict without an operator confirmation prompt — the ver
   ```
 
   The CLI verifies that `reviews/REVIEW-NN-NNN.md` exists with
-  `Verdict: approve`, recomputes the current operator-intent context, and
-  refuses drift, missing/mismatched evidence, or required-but-not-assessable
+  `Verdict: approve`, recomputes the current request context, and
+  refuses drift or missing/mismatched evidence
   alignment before executing this rename.
 
 - `approve`, when `git.pm_owns_product_branches = true` and a PR exists: merge with `gh pr merge --<strategy> --delete-branch`, using the effective `git.default_merge_strategy` (`merge`, `squash`, or `rebase`). Capture the merge commit SHA, append it to the review file's existing `Implementation evidence` block as `Merge commit SHA`, append `PR URL` if the review file does not already include it, then `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:

@@ -70,9 +70,8 @@ ERR_INTERNAL = -32603
 
 URI_SCHEME = "cartopian"
 
-# Set for the duration of every in-process CLI tool invocation. Operator-only
-# surfaces read it to fail closed when reached through a tool call rather than
-# by the operator directly (see ``cli/commands/attest_intent.py``).
+# Set for the duration of every in-process CLI tool invocation. Host-boundary
+# surfaces remain excluded from managed-agent tools.
 MCP_TOOL_CALL_MARKER = "CARTOPIAN_MCP_TOOL_CALL"
 
 # Hard caps applied before any read_text() of operator/agent-facing files.
@@ -489,7 +488,7 @@ _TOOL_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 def _operator_only_subcommands() -> frozenset:
-    """CLI subcommands the operator performs directly, never exposed as tools.
+    """Host/operator-boundary subcommands, never exposed as agent tools.
 
     Sourced from :data:`cli.main.OPERATOR_ONLY_SUBCOMMANDS` so the exclusion has
     exactly one authoritative definition.
@@ -513,9 +512,8 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
     subs = _subparsers_map(parser)
     registry: Dict[str, Dict[str, Any]] = {}
     for cli_name, sub in subs.items():
-        # Operator-only subcommands never reach an agent's tool surface. The
-        # operator-intent confirmation surface must not be a management-callable
-        # MCP writer, so it is excluded here rather than merely guarded inside.
+        # Host intake-boundary commands never reach a managed agent's tool
+        # surface, so capture cannot be deferred into PM or review work.
         if cli_name in _operator_only_subcommands():
             continue
         tool_name = cli_name.replace("-", "_")

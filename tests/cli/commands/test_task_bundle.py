@@ -16,7 +16,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
     'work_roots = ["tool-repo"]\n'
 )
 
@@ -96,6 +96,11 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                     "## Acceptance\n\n"
                     "- [ ] Example acceptance.\n"
                 ),
+            )
+            scaffold.capture_request(
+                request_id="REQUEST-001",
+                unit="task:TASK-01-002",
+                text="Run the example task.",
             )
             result = _run(str(task_path), scaffold.root)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -185,6 +190,11 @@ class TestTaskBundleNoPlan(unittest.TestCase):
                     "- [ ] Some acceptance item.\n"
                 ),
             )
+            scaffold.capture_request(
+                request_id="REQUEST-001",
+                unit="task:TASK-01-003",
+                text="Run the no-plan task.",
+            )
             result = _run(str(task_path), scaffold.root)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         record = _parse_single_record(result)
@@ -196,7 +206,7 @@ class TestTaskBundleNoPlan(unittest.TestCase):
 class TestTaskBundleSchemaIdentityWithoutReadinessGate(unittest.TestCase):
     def test_pre_migration_project_keeps_prior_read_behavior(self) -> None:
         stale = _TOML_BASE.replace(
-            'project_schema_version = "v0.8.0"',
+            'project_schema_version = "v0.9.0"',
             'project_schema_version = "v0.5.0"',
         )
         with project_scaffold(cartopian_toml=stale) as scaffold:

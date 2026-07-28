@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
 )
 
 # A schema-valid task body: write-task refuses one that could never pass
@@ -49,6 +49,11 @@ class _Fixture(unittest.TestCase):
         self.scaffold = project_scaffold(cartopian_toml=_TOML)
         self.addCleanup(self.scaffold.cleanup)
         self.root = str(self.scaffold.project_root)
+        self.scaffold.capture_request(
+            request_id="REQUEST-001",
+            unit="project",
+            text="Build the requested project.",
+        )
 
     def all_task_files(self):
         """Every task file currently on disk, as tasks/-relative POSIX paths."""

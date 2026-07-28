@@ -9,6 +9,18 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 **Output:** A fully planned project with `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an up-to-date `STATE.md`.
 
+## Intake precondition
+
+Before deriving planning artifacts, resolve the governed unit's exact operator
+evidence from the three supported source kinds: structurally marked decision
+quotations, supported host chat records, and optional immutable request records.
+A native host adapter is optional when another supported source resolves. The PM
+never copies, paraphrases, or reconstructs operator words; ordinary PM prose is
+excluded from operator evidence. Mediated writers fail closed only when no
+applicable exact source of any supported kind resolves for the governed unit.
+Explicit corrections retain their provenance and deterministic order before PM
+revisions. Do not ask the operator to restate the request later.
+
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
 - `cartopian://protocol/CONVENTIONS/roles` — role declaration and reviewer resolution (Stage 0).
@@ -73,7 +85,7 @@ If a previous closeout carried forward `STANDARDS.md`, treat it as seed context 
 Check if a `REQUIREMENTS.md` exists in the project directory.
 
 - If it exists and is populated (including a reference stub from `adopt-requirements`), treat it as an approved input to compact-intent normalization. Reuse its facts; do not ask the operator to repeat them. Ask whether it remains in force only when its approval or applicability to this planning cycle is genuinely unclear.
-- Whether requirements exist or not, continue through Stage 1.2. Existing requirements do not bypass the intent confirmation and planning-lock gate.
+- Whether requirements exist or not, continue through Stage 1.2. Existing requirements do not bypass the intent confirmation and planning-lock gate. They also do not replace the captured initiating request.
 
 ### 1.2 Resolve compact intent and engage the operator
 
@@ -85,7 +97,9 @@ Planning Intent Contract.
 Apply that contract exactly: reuse present facts, distinguish missing from
 conflicting fields, state one provisional working assumption per unresolved
 field, and ask only its focused resolution question. Obtain operator
-confirmation of the complete record before either planning lock.
+confirmation of the complete record before either planning lock. This is the
+pre-existing check on the PM's normalization, not request-trace evidence and
+not a new review stage.
 
 After the compact record is confirmed, draw out only the additional detail
 needed for this project's functional requirements, non-functional
@@ -287,7 +301,7 @@ Planning — including task generation — is a **scoped directive** (`cartopian
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent operator-intent channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent intake request channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
@@ -300,14 +314,14 @@ The standard checkpoint sequence is:
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Persist `Phase:`, `Plan ref:`, and supplemental `Intent refs:` when they apply. Never hand-author the generated `## Operator intent` section. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN-slug --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN-slug --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
 2. Call `skills/run-handoff.md` with:
    - Role: the exact resolved `reviews.planning.role` value
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`
    - Absolute report path: `<project>/reports/REPORT-PLAN-NNN-slug.md`
    - Expected report variant: planning-review completion
    - Allowed lifecycle action: return outcome to this skill
-3. Require the reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Operator-intent alignment:` and `Operator-intent evidence:`. Drift, missing/mismatched evidence, and required-but-not-assessable evidence block approval. Advisory-only not-assessable and the exact none-recorded result remain explicit and non-blocking.
+3. Require the configured reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Request alignment:` and `Request evidence:`. Drift or missing/mismatched evidence blocks approval; only generated `unavailable-for-legacy` is non-blocking.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
 Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:

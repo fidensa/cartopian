@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -726,30 +726,20 @@ def _check_backlog_invariants(
     return blockers, warnings
 
 
-def _check_operator_intent(
+def _check_request_trace(
     project_path: Path,
     declared_schema_version: Optional[str],
     task_review_required: bool,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Audit the independent operator-intent channel across the live plan.
+    """Audit active v0.9 request bindings without rejudging old reviews.
 
-    Four failure classes, each actionable and each mutation-free:
-
-    - ``invalid-intent-reference`` — a task declares a supplemental reference
-      that is missing, malformed, ambiguous, open, outside the project,
-      unattested, or superseded with no current successor.
-    - ``omitted-applicable-attestation`` — a review prompt omits evidence the
-      applicability scan finds, so the reviewer would never see it.
-    - ``stale-intent-binding`` — the prompt is bound to a review-context
-      identity that is no longer current (a source or attestation changed, or
-      the prompt was edited after generation).
-    - ``approval-inconsistent-with-alignment`` — a review records
-      ``Verdict: approve`` alongside drifted or required-but-not-assessable
-      alignment evidence.
+    A completed review is governed by the generated context in its own prompt.
+    If that prompt predates request capture, the review is historical and is
+    left untouched regardless of the project's current marker.
     """
     blockers: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
-    enforced = operator_intent.alignment_enforced(declared_schema_version)
+    enforced = request_trace.request_capture_enforced(declared_schema_version)
 
     for status_dir in _ALL_TASK_DIRS:
         tasks_dir = project_path / "tasks" / status_dir
@@ -764,76 +754,66 @@ def _check_operator_intent(
             nn_nnn = match.group(1)
             task_id = f"TASK-{nn_nnn}"
             prompt = project_path / "prompts" / f"PROMPT-{nn_nnn}.md"
-            prompt_text: Optional[str] = None
-            prompt_refs: List[str] = []
-            if status_dir == "in-review" and prompt.is_file():
+            prompt_text = ""
+            if prompt.is_file():
                 try:
                     prompt_text = prompt.read_text(encoding="utf-8")
-                    prompt_refs = operator_intent.artifact_supplemental_refs(
-                        prompt_text
-                    )
                 except (OSError, UnicodeDecodeError):
                     prompt_text = ""
-                except operator_intent.IntentRefusal as refusal:
-                    blockers.append({
-                        "kind": "invalid-intent-reference",
-                        "task_id": task_id,
-                        "prompt_path": str(prompt),
-                        "failure_class": refusal.rule,
-                        "recovery": refusal.recovery,
-                        "detail": (
-                            f"review prompt for {task_id} declares invalid "
-                            f"operator-intent evidence ({refusal.rule}): "
-                            f"{refusal.detail}"
-                        ),
-                    })
-                    continue
+
+            # Historical completed reviews have no v0.9 generated section.
+            # Their own creation-era schema wins over the current marker.
+            contract_applies = request_trace.review_contract_applies(prompt_text)
+            if status_dir == "done" and not contract_applies:
+                continue
             try:
-                context = operator_intent.context_for_task(
-                    project_path, task_file, prompt_refs
+                context = request_trace.context_for_task(
+                    project_path,
+                    task_file,
+                    prompt_text=prompt_text if contract_applies else None,
+                    allow_historical_legacy=not contract_applies,
                 )
-            except operator_intent.IntentRefusal as refusal:
+            except request_trace.RequestRefusal as refusal:
                 blockers.append({
-                    "kind": "invalid-intent-reference",
+                    "kind": "invalid-request-trace",
                     "task_id": task_id,
                     "task_path": str(task_file),
                     "failure_class": refusal.rule,
                     "recovery": refusal.recovery,
                     "detail": (
-                        f"{task_id} cannot resolve its operator-intent evidence "
+                        f"{task_id} cannot resolve its request trace "
                         f"({refusal.rule}): {refusal.detail}"
                     ),
                 })
                 continue
 
-            if status_dir == "in-review" and task_review_required:
+            # A prompt with no v0.9 section and no governing request record is
+            # creation-era evidence for a historical in-review unit.  Do not
+            # impose a post-migration ceremony on it.  Captured work cannot use
+            # this path: its non-empty trace keeps the normal fail-closed check.
+            if prompt.is_file() and not contract_applies and context.legacy:
+                continue
+
+            if status_dir == "in-review" and task_review_required and enforced:
                 if not prompt.is_file():
                     blockers.append({
-                        "kind": "stale-intent-binding",
+                        "kind": "stale-request-context",
                         "task_id": task_id,
                         "prompt_path": str(prompt),
                         "failure_class": "missing-prompt",
                         "recovery": "prepare the bound review prompt before handoff",
                         "detail": (
                             f"review prompt for {task_id} is missing, so the "
-                            "operator-intent context cannot be handed off"
+                            "request-trace context cannot be handed off"
                         ),
                     })
                 else:
-                    preflight = operator_intent.preflight_prompt_binding(
+                    preflight = request_trace.preflight_prompt_binding(
                         context, prompt_text or ""
                     )
                     if not preflight["ok"]:
-                        kind = {
-                            "omitted-applicable-evidence": (
-                                "omitted-applicable-attestation"
-                            ),
-                            "missing-operator-intent-section": (
-                                "omitted-applicable-attestation"
-                            ),
-                        }.get(preflight["rule"], "stale-intent-binding")
                         finding = {
-                            "kind": kind,
+                            "kind": "stale-request-context",
                             "task_id": task_id,
                             "prompt_path": str(prompt),
                             "failure_class": preflight["rule"],
@@ -855,12 +835,12 @@ def _check_operator_intent(
             verdict = _VERDICT_RE.search(review_text)
             if verdict is None or verdict.group(1).strip() != "approve":
                 continue
-            alignment = operator_intent.parse_alignment(
+            if not contract_applies:
+                continue
+            alignment = request_trace.parse_alignment(
                 review_text,
-                required_evidence=any(item.required for item in context.evidence),
-                expected_evidence=[
-                    item.attestation.attestation_id for item in context.evidence
-                ],
+                expected_evidence=context.evidence_ids,
+                legacy=context.legacy,
             )
             if not alignment["blocking"]:
                 continue
@@ -878,32 +858,25 @@ def _check_operator_intent(
                     f"{alignment['detail']}"
                 ),
             }
-            if enforced:
-                blockers.append(finding)
-            else:
-                finding["detail"] += (
-                    " (advisory: this project has not migrated to the schema "
-                    "version that enforces operator-intent alignment)"
-                )
-                warnings.append(finding)
+            blockers.append(finding)
 
-    # Planning-checkpoint prompts are their own review-target artifacts.  Their
-    # closed Phase / Plan ref / Intent refs fields are parsed from the prompt so
-    # automatic dispatch, manual preflight, and audit all consume one target.
+    # Planning checkpoints use the same prompt-bound, versioned contract.
     prompts_dir = project_path / "prompts"
     if prompts_dir.is_dir():
         for prompt in sorted(prompts_dir.glob("PROMPT-PLAN-*.md")):
             checkpoint_id = prompt.stem.removeprefix("PROMPT-")
             try:
                 prompt_text = prompt.read_text(encoding="utf-8")
-                context = operator_intent.context_for_checkpoint(
+                if not request_trace.review_contract_applies(prompt_text):
+                    continue
+                context = request_trace.context_for_checkpoint(
                     project_path,
                     checkpoint_id,
                     checkpoint_text=prompt_text,
                 )
             except (OSError, UnicodeDecodeError):
                 blockers.append({
-                    "kind": "stale-intent-binding",
+                    "kind": "stale-request-context",
                     "checkpoint_id": checkpoint_id,
                     "prompt_path": str(prompt),
                     "failure_class": "unreadable-prompt",
@@ -911,34 +884,26 @@ def _check_operator_intent(
                     "detail": f"planning review prompt is unreadable: {prompt}",
                 })
                 continue
-            except operator_intent.IntentRefusal as refusal:
+            except request_trace.RequestRefusal as refusal:
                 blockers.append({
-                    "kind": "invalid-intent-reference",
+                    "kind": "invalid-request-trace",
                     "checkpoint_id": checkpoint_id,
                     "prompt_path": str(prompt),
                     "failure_class": refusal.rule,
                     "recovery": refusal.recovery,
                     "detail": (
                         f"planning checkpoint {checkpoint_id} cannot resolve its "
-                        f"operator-intent evidence ({refusal.rule}): {refusal.detail}"
+                        f"request-trace evidence ({refusal.rule}): {refusal.detail}"
                     ),
                 })
                 continue
 
-            preflight = operator_intent.preflight_prompt_binding(
+            preflight = request_trace.preflight_prompt_binding(
                 context, prompt_text
             )
             if not preflight["ok"]:
-                kind = {
-                    "omitted-applicable-evidence": (
-                        "omitted-applicable-attestation"
-                    ),
-                    "missing-operator-intent-section": (
-                        "omitted-applicable-attestation"
-                    ),
-                }.get(preflight["rule"], "stale-intent-binding")
                 blockers.append({
-                    "kind": kind,
+                    "kind": "stale-request-context",
                     "checkpoint_id": checkpoint_id,
                     "prompt_path": str(prompt),
                     "failure_class": preflight["rule"],
@@ -959,12 +924,10 @@ def _check_operator_intent(
             verdict = _VERDICT_RE.search(review_text)
             if verdict is None or verdict.group(1).strip() != "approve":
                 continue
-            alignment = operator_intent.parse_alignment(
+            alignment = request_trace.parse_alignment(
                 review_text,
-                required_evidence=any(item.required for item in context.evidence),
-                expected_evidence=[
-                    item.attestation.attestation_id for item in context.evidence
-                ],
+                expected_evidence=context.evidence_ids,
+                legacy=context.legacy,
             )
             if alignment["blocking"]:
                 finding = {
@@ -981,14 +944,7 @@ def _check_operator_intent(
                         f"approve but {alignment['detail']}"
                     ),
                 }
-                if enforced:
-                    blockers.append(finding)
-                else:
-                    finding["detail"] += (
-                        " (advisory: this project has not migrated to the schema "
-                        "version that enforces operator-intent alignment)"
-                    )
-                    warnings.append(finding)
+                blockers.append(finding)
     return blockers, warnings
 
 
@@ -1091,7 +1047,7 @@ def handler(args: argparse.Namespace) -> int:
     blockers.extend(deliverable_blockers)
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
-    intent_blockers, intent_warnings = _check_operator_intent(
+    intent_blockers, intent_warnings = _check_request_trace(
         project_path, declared_schema_version, task_review_required
     )
     blockers.extend(intent_blockers)

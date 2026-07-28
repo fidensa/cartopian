@@ -91,11 +91,15 @@ Full environment variable reference is in the [Configuration](#configuration) se
 By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired, use the operator-performed launch path instead of dispatching the wrapper. Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
 Review integrity is enforced before a wrapper starts. `cartopian dispatch`
-recomputes the bound operator-intent context and refuses a stale, missing, or
-altered `## Operator intent` section. Manual launches use
+recomputes the bound request context and refuses stale, missing, or altered
+generated review channels. Manual launches use
 `handoff-packet`/`review-context --prompt` for the same preflight. Dispatch
-also exports `CARTOPIAN_ROLE`; the operator-only `cartopian attest-intent`
-surface refuses dispatched sessions and is never a wrapper capability.
+also exports `CARTOPIAN_ROLE`; optional host intake is not part of a dispatched
+role session. Exact evidence may instead resolve from applicable decisions or
+supported host chat records. The CLI enforces the direct-capture boundary:
+`capture-request` refuses while `CARTOPIAN_ROLE` or
+`CARTOPIAN_MCP_TOOL_CALL` is set. These neutral assignee wrappers never receive
+or reconstruct operator-message bytes.
 
 ## How a wrapper works
 

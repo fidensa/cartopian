@@ -1,11 +1,10 @@
 """`cartopian parse-report <report-path>`."""
 import argparse
 import re
-import tomllib
 from pathlib import Path
 from typing import Optional, Tuple
 
-from cli import operator_intent
+from cli import request_trace
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
@@ -178,26 +177,6 @@ def _schema_ok(variant: str, content: str) -> bool:
     return True
 
 
-def _alignment_enforced_for(report_path: Path) -> bool:
-    """True when the enclosing project has migrated to the alignment contract.
-
-    Reports outside any project, and projects below the schema version that
-    introduced the contract, keep their historical behavior — no historical
-    review is rewritten and no legacy report retroactively fails to parse.
-    """
-    root = operator_intent.find_project_root(report_path)
-    if root is None:
-        return False
-    try:
-        with (root / "cartopian.toml").open("rb") as handle:
-            declared = (tomllib.load(handle).get("project", {}) or {}).get(
-                "project_schema_version"
-            )
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
-    return operator_intent.alignment_enforced(declared)
-
-
 def _identity_value(content: str, key: str) -> Optional[str]:
     match = re.search(
         rf"^\s*-\s*{re.escape(key)}:\s*(.*?)\s*$",
@@ -216,19 +195,19 @@ def review_alignment_record(
     """Resolve current evidence and classify a review report's alignment.
 
     Both report parsers consume this helper.  It recomputes the same prompt
-    binding used at dispatch, so a source/attestation/prompt change between
+    binding used at dispatch, so a request-record/prompt change between
     launch and completion cannot turn into accepted review evidence.
     """
-    if variant not in REVIEW_VARIANTS or not _alignment_enforced_for(report_path):
+    if variant not in REVIEW_VARIANTS:
         return None
-    root = operator_intent.find_project_root(report_path)
+    root = request_trace.find_project_root(report_path)
     if root is None:
         return {
             "value": None,
             "reason": None,
             "present": False,
             "blocking": True,
-            "detail": "operator-intent project context cannot be resolved",
+            "detail": "request-trace project context cannot be resolved",
             "context_identity": None,
             "evidence": [],
         }
@@ -255,44 +234,46 @@ def review_alignment_record(
             "evidence": [],
         }
     try:
-        prompt_text = operator_intent.read_contained_text(
+        prompt_text = request_trace.read_contained_text(
             root, prompt_path, what="review prompt"
         )
+        if not request_trace.review_contract_applies(prompt_text):
+            return None
         if variant == "review":
             task_value = _identity_value(content, "Task path")
             if task_value is None:
-                raise operator_intent.IntentRefusal(
+                raise request_trace.RequestRefusal(
                     "missing-review-target",
                     "task review report declares no Task path",
                     "regenerate the review report from the bound prompt",
                 )
             task_path = Path(task_value)
             if not task_path.is_absolute() or not task_path.is_file():
-                raise operator_intent.IntentRefusal(
+                raise request_trace.RequestRefusal(
                     "missing-review-target",
                     f"task review target is missing or not absolute: {task_value}",
                     "regenerate the review report from the bound prompt",
                 )
-            context = operator_intent.context_for_task(
+            context = request_trace.context_for_task(
                 root,
                 task_path,
-                operator_intent.artifact_supplemental_refs(prompt_text),
+                prompt_text=prompt_text,
             )
         else:
             checkpoint_id = prompt_path.stem.removeprefix("PROMPT-")
-            context = operator_intent.context_for_checkpoint(
+            context = request_trace.context_for_checkpoint(
                 root,
                 checkpoint_id,
                 checkpoint_text=prompt_text,
             )
-        preflight = operator_intent.preflight_prompt_binding(context, prompt_text)
+        preflight = request_trace.preflight_prompt_binding(context, prompt_text)
         if not preflight["ok"]:
-            raise operator_intent.IntentRefusal(
+            raise request_trace.RequestRefusal(
                 preflight["rule"],
                 preflight["detail"],
                 preflight.get("recovery", ""),
             )
-    except operator_intent.IntentRefusal as refusal:
+    except request_trace.RequestRefusal as refusal:
         return {
             "value": None,
             "reason": None,
@@ -302,12 +283,12 @@ def review_alignment_record(
             "context_identity": None,
             "evidence": [],
         }
-    alignment = operator_intent.parse_alignment(
+    alignment = request_trace.parse_alignment(
         content,
-        required_evidence=any(item.required for item in context.evidence),
         expected_evidence=[
-            item.attestation.attestation_id for item in context.evidence
+            item.record_id for item in context.evidence
         ],
+        legacy=context.legacy,
     )
     return {
         "value": alignment["value"],
@@ -318,7 +299,7 @@ def review_alignment_record(
         "detail": alignment["detail"],
         "context_identity": context.context_identity,
         "evidence": [
-            item.attestation.attestation_id for item in context.evidence
+            item.record_id for item in context.evidence
         ],
     }
 
@@ -375,10 +356,10 @@ def handler(args: argparse.Namespace) -> int:
             else:
                 verdict = STATUS_VERDICT[raw_status]
 
-    # Operator-intent alignment travels with review-shaped reports. It is
+    # Request alignment travels with review-shaped reports. It is
     # surfaced, not inferred: an approving review report whose alignment is
-    # `drifted`, missing, or a non-`none recorded` `not assessable` cannot be
-    # accepted completion evidence, because agreement among management artifacts
+    # `drifted` or missing evidence cannot be accepted completion evidence,
+    # because agreement among management artifacts
     # must not by itself produce approval. Task reports carry no alignment —
     # alignment is the reviewer's recorded judgement, not the assignee's.
     alignment_record = review_alignment_record(report_path, content, variant)
@@ -395,7 +376,7 @@ def handler(args: argparse.Namespace) -> int:
         "report_path": str(report_path),
         "status": status_value,
         "review_verdict": review_verdict,
-        "operator_intent_alignment": alignment_record,
+        "request_alignment": alignment_record,
     }
     emit_record(record)
     return EXIT_OK

@@ -33,7 +33,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 from tests.scaffold import project_scaffold
@@ -178,7 +178,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.8.0"\n'
+        'project_schema_version = "v0.9.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
@@ -1216,7 +1216,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.8.0"\n'
+            'project_schema_version = "v0.9.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
@@ -1414,16 +1414,21 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
+            scaffold.capture_request(
+                request_id="REQUEST-001",
+                unit="project",
+                text="Review the project plan.",
+            )
             # A planning review prompt carries the generated, bound
             # `## Operator intent` section; dispatch recomputes it. Build it
             # through the real generator so the fixture cannot drift from the
             # contract dispatch enforces.
-            context = operator_intent.context_for_checkpoint(
+            context = request_trace.context_for_checkpoint(
                 scaffold.project_root, "PLAN-001-requirements-and-standards"
             )
             prompt_path = scaffold.write(
                 f"prompts/{self.PLAN_PROMPT}",
-                operator_intent.upsert_intent_section(
+                request_trace.upsert_request_sections(
                     "# PROMPT-PLAN-001\n\n## Your task\n\nReview the requirements.\n",
                     context.section,
                 ),

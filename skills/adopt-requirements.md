@@ -68,6 +68,18 @@ Ask the operator to provide the external requirements in any form:
 - Describe the requirements conversationally
 - Any combination of the above
 
+Before deriving requirements, resolve the governed unit's exact operator
+evidence from the three supported source kinds: structurally marked decision
+quotations, supported host chat records, and optional immutable request records.
+A native host adapter is optional when another supported source resolves. The PM
+must not call `capture-request`, copy a message into a file, or treat a
+paraphrase as request evidence; ordinary PM prose is excluded from operator
+evidence. Explicit corrections retain their provenance and deterministic order,
+and task-specific resolution never substitutes unrelated project intent.
+Mediated writers fail closed only when no applicable exact source of any
+supported kind resolves for the governed unit; resolution adds no later
+operator re-entry, confirmation, safeguard, or new stage.
+
 Accept whatever format the operator provides. The goal is to extract the information, not enforce a format on the input.
 
 If the operator provides a reference (e.g., "JIRA story HUB-123") without content, ask:

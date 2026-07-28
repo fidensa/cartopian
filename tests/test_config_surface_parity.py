@@ -863,7 +863,7 @@ class TestSurfaceRegistry(unittest.TestCase):
                 "plan-audit": derived_identity_delta,
                 # review-context postdates the identity-delta task, so it has
                 # no Phase 00 baseline and no task delta to reconcile. Its
-                # ceiling is set by the operator-intent excerpt contract
+                # ceiling is set by the exact request-record contract
                 # instead, and it declares that explicitly rather than
                 # borrowing a baseline it never had.
                 "review-context": None,
@@ -871,22 +871,11 @@ class TestSurfaceRegistry(unittest.TestCase):
         )
         self.assertIsNone(budgets["review-context"]["phase_00_baseline"])
         self.assertIn(
-            "24 KiB", budgets["review-context"]["operator_intent_channel_note"]
-        )
-        measurement = budgets["review-context"]["operator_intent_measurement"]
-        self.assertEqual(measurement["source_bytes"], 196)
-        self.assertEqual(measurement["selected_bytes"], 196)
-        self.assertEqual(measurement["total_prompt_delta_bytes"], 726)
-        self.assertEqual(
-            measurement["maximum_fixture"]["selected_bytes"], 24 * 1024
-        )
-        self.assertEqual(
-            measurement["maximum_fixture"]["review_context_output_bytes"],
-            54980,
+            "24 KiB", budgets["review-context"]["request_trace_channel_note"]
         )
         self.assertGreaterEqual(
             budgets["review-context"]["max_output_bytes"],
-            measurement["maximum_fixture"]["review_context_output_bytes"],
+            24 * 1024,
         )
         for item in budgets.values():
             benefit = item["record_versioning_benefit"]
@@ -1011,6 +1000,22 @@ class TestSurfaceRegistry(unittest.TestCase):
                 "## Goal\n\nBuild the fixture.\n",
                 encoding="utf-8",
             )
+            request_source = fixture / "operator-message.txt"
+            request_source.write_text("Build the fixture.", encoding="utf-8")
+            capture_code, _, capture_stderr = _run_cli(
+                home,
+                "capture-request",
+                str(project),
+                "--request-id",
+                "REQUEST-001",
+                "--unit",
+                "task:TASK-01-001",
+                "--content-file",
+                str(request_source),
+                "--captured-at",
+                "2026-07-27T12:00:00Z",
+            )
+            self.assertEqual(capture_code, 0, capture_stderr)
             commands = {
                 "resolve-config": ("resolve-config", str(project)),
                 "next-action": ("next-action", str(project)),
@@ -1209,7 +1214,7 @@ class TestCliMcpContractParity(unittest.TestCase):
         subparsers = _subparsers()
         listed = {item["name"]: item for item in server.list_tools()}
         # Operator-only subcommands are deliberately absent from the tool
-        # surface: the operator-intent confirmation surface must not be a
+        # surface: host intake capture must not become a dispatched handoff
         # management-callable MCP writer.
         agent_facing = {
             name: sub
@@ -1315,7 +1320,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.8.0"\n'
+        'project_schema_version = "v0.9.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"
@@ -1387,6 +1392,22 @@ class TestProjectionParity(unittest.TestCase):
                 "## Acceptance\n\n- [ ] Fixture is built.\n",
                 encoding="utf-8",
             )
+            request_source = fixture / "operator-message.txt"
+            request_source.write_text("Build the fixture.", encoding="utf-8")
+            capture_code, _, capture_stderr = _run_cli(
+                home,
+                "capture-request",
+                str(project),
+                "--request-id",
+                "REQUEST-001",
+                "--unit",
+                "task:TASK-01-001",
+                "--content-file",
+                str(request_source),
+                "--captured-at",
+                "2026-07-27T12:00:00Z",
+            )
+            self.assertEqual(capture_code, 0, capture_stderr)
 
             commands = {
                 "resolve-config": ("resolve-config", str(project)),
@@ -1437,12 +1458,11 @@ class TestProjectionParity(unittest.TestCase):
                 records["containment-matrix"]["activated"],
                 canonical["capabilities"]["activated"],
             )
-            # The two review channels stay separate, and an unattested project
-            # resolves to `none recorded` only after a complete scan.
-            intent = records["review-context"]["operator_intent"]
-            self.assertTrue(intent["none_recorded"])
-            self.assertEqual(intent["evidence"], [])
-            self.assertTrue(intent["scan"]["complete"])
+            # The two review channels stay separate and task provenance is
+            # explicit rather than silently inherited from project intake.
+            trace = records["review-context"]["request_trace"]
+            self.assertEqual(trace["state"], "resolved")
+            self.assertEqual(trace["records"][0]["unit"]["kind"], "task")
             self.assertIn(
                 "management_guidance", records["review-context"]
             )

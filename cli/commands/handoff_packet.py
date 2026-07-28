@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -228,13 +228,13 @@ def handler(args: argparse.Namespace) -> int:
     # Manual review handoffs consume exactly the artifact automatic dispatch
     # does: the same resolved review context and the same binding preflight.
     # Bypassing `cartopian dispatch` therefore cannot bypass intent resolution.
-    operator_intent_record: Optional[Dict[str, Any]] = None
+    request_trace_record: Optional[Dict[str, Any]] = None
     if task_path.parent.name == "in-review":
         nn_nnn = task_id.removeprefix("TASK-")
         review_prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
         try:
-            context = operator_intent.context_for_task(project_root, task_path)
-        except operator_intent.IntentRefusal as refusal:
+            context = request_trace.context_for_task(project_root, task_path)
+        except request_trace.RequestRefusal as refusal:
             stderr_guard(f"{refusal.rule}: {refusal.detail}")
             if refusal.recovery:
                 stderr_guard(f"recovery: {refusal.recovery}")
@@ -242,20 +242,20 @@ def handler(args: argparse.Namespace) -> int:
         preflight: Optional[Dict[str, Any]] = None
         if review_prompt.is_file():
             try:
-                prompt_text = operator_intent.read_contained_text(
+                prompt_text = request_trace.read_contained_text(
                     project_root, review_prompt, what="review prompt"
                 )
-                prompt_context = operator_intent.context_for_task(
+                prompt_context = request_trace.context_for_task(
                     project_root,
                     task_path,
-                    operator_intent.artifact_supplemental_refs(prompt_text),
+                    prompt_text=prompt_text,
                 )
-            except operator_intent.IntentRefusal as refusal:
+            except request_trace.RequestRefusal as refusal:
                 stderr_guard(f"{refusal.rule}: {refusal.detail}")
                 if refusal.recovery:
                     stderr_guard(f"recovery: {refusal.recovery}")
                 return EXIT_FAIL
-            preflight = operator_intent.preflight_prompt_binding(
+            preflight = request_trace.preflight_prompt_binding(
                 prompt_context, prompt_text
             )
             preflight["prompt_path"] = str(review_prompt)
@@ -269,8 +269,8 @@ def handler(args: argparse.Namespace) -> int:
                 "context_identity": context.context_identity,
                 "prompt_path": str(review_prompt),
             }
-        operator_intent_record = context.as_record()
-        operator_intent_record["preflight"] = preflight
+        request_trace_record = context.as_record()
+        request_trace_record["preflight"] = preflight
 
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
@@ -293,15 +293,15 @@ def handler(args: argparse.Namespace) -> int:
         "git_policy": git_policy,
         "automation_policy": resolved["automation"],
         "reviews": resolved["reviews"],
-        "operator_intent": operator_intent_record,
+        "request_trace": request_trace_record,
     }
     emit_record(record)
     if (
-        operator_intent_record is not None
-        and operator_intent_record["preflight"] is not None
-        and not operator_intent_record["preflight"]["ok"]
+        request_trace_record is not None
+        and request_trace_record["preflight"] is not None
+        and not request_trace_record["preflight"]["ok"]
     ):
-        failure = operator_intent_record["preflight"]
+        failure = request_trace_record["preflight"]
         stderr_guard(f"{failure['rule']}: {failure['detail']}")
         if failure.get("recovery"):
             stderr_guard(f"recovery: {failure['recovery']}")

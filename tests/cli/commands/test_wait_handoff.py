@@ -39,7 +39,7 @@ def _write(path: Path, text: str) -> None:
 CONFIG_BODY = """[project]
 id = "wait-handoff-fixture"
 name = "Wait Handoff Fixture"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 
 [roles.coder]
 description = "Implements tasks per spec."
@@ -51,7 +51,7 @@ timeout = "{timeout}"
 CONFIG_NO_TIMEOUT = """[project]
 id = "wait-handoff-fixture"
 name = "Wait Handoff Fixture"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 
 [roles.coder]
 description = "Implements tasks per spec."

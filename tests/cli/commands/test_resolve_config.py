@@ -47,7 +47,7 @@ _PROJECT = (
     '[project]\n'
     'id = "demo"\n'
     'name = "Demo"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
 )
 
 
@@ -165,8 +165,8 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
             _write(
                 sb.project / "cartopian.toml",
                 _PROJECT.replace(
-                    'project_schema_version = "v0.8.0"\n',
-                    'project_schema_version = "v0.8.0"\nwork_roots = ["site"]\n',
+                    'project_schema_version = "v0.9.0"\n',
+                    'project_schema_version = "v0.9.0"\nwork_roots = ["site"]\n',
                 ),
             )
             _write(
@@ -257,8 +257,8 @@ class TestFailClosedDiagnostics(unittest.TestCase):
             _write(
                 sb.project / "cartopian.toml",
                 _PROJECT.replace(
-                    'project_schema_version = "v0.8.0"\n',
-                    'project_schema_version = "v0.8.0"\nwork_roots = ["site"]\n',
+                    'project_schema_version = "v0.9.0"\n',
+                    'project_schema_version = "v0.9.0"\nwork_roots = ["site"]\n',
                 ),
             )
             _write(

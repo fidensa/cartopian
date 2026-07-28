@@ -41,7 +41,7 @@ holds neither `write:lifecycle` nor `write:worktree`:
 [project]
 id = "guard-accept"
 name = "Guard Acceptance"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 work_roots = ["tool-repo"]
 
 [roles.pm]

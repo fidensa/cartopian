@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands.resolve_config import (
     _CliError,
     _DELIVERABLE_SKIP,
@@ -25,7 +25,7 @@ CHECK_ORDER = (
     "acceptance-present",
     "work-root-names-valid",
     "deliverable-valid",
-    "intent-refs-valid",
+    "request-trace-valid",
 )
 
 EVIDENCE_GATE_VALUES = ("required", "n/a")
@@ -305,35 +305,21 @@ def _check_deliverable(
     return {"name": "deliverable-valid", "pass": True, "reason": None}
 
 
-def _check_intent_refs(
+def _check_request_trace(
     project_root: Path, task_path: Path, headers: Dict[str, str]
 ) -> Dict[str, Any]:
-    """Validate the task's supplemental ``Intent refs:`` declarations.
-
-    Supplemental references are additive and closed. A missing, malformed,
-    ambiguous, open, outside-project, unattested, or superseded-without-current-
-    successor reference fails readiness — the reference is verified at the
-    lifecycle transition that consumes it, like every other cross-artifact
-    reference field. Declaring nothing is always valid: applicability is
-    resolved by scanning current attestations, so an omitted reference can never
-    produce a false ``none recorded``.
-    """
-    name = "intent-refs-valid"
+    """Validate the automatically selected immutable request trace."""
+    del headers
+    name = "request-trace-valid"
     try:
-        refs = operator_intent.parse_intent_refs(
-            headers.get(operator_intent.INTENT_REFS_FIELD)
-        )
-    except operator_intent.IntentRefusal as refusal:
-        return {"name": name, "pass": False, "reason": f"{refusal.rule}: {refusal.detail}"}
-    try:
-        operator_intent.context_for_task(project_root, task_path)
-    except operator_intent.IntentRefusal as refusal:
+        request_trace.context_for_task(project_root, task_path)
+    except request_trace.RequestRefusal as refusal:
         return {
             "name": name,
             "pass": False,
             "reason": f"{refusal.rule}: {refusal.detail}",
         }
-    return {"name": name, "pass": True, "reason": None, "references": refs}
+    return {"name": name, "pass": True, "reason": None}
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -373,7 +359,7 @@ def handler(args: argparse.Namespace) -> int:
             project_root, headers, presence, warnings
         ),
         "deliverable-valid": _check_deliverable(project_root, headers),
-        "intent-refs-valid": _check_intent_refs(project_root, task_path, headers),
+        "request-trace-valid": _check_request_trace(project_root, task_path, headers),
     }
     checks = [checks_by_name[name] for name in CHECK_ORDER]
     ready = all(c["pass"] for c in checks)

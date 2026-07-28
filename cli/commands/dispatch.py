@@ -52,7 +52,7 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple
 if os.name != "nt":
     import fcntl
 
-from cli import operator_intent
+from cli import request_trace
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
@@ -206,7 +206,7 @@ def _open_launch_log(path: str) -> Optional[BinaryIO]:
         return None
 
 
-def _preflight_operator_intent(
+def _preflight_request_trace(
     project_root: Path,
     activity: str,
     task_path: Optional[Path],
@@ -214,9 +214,8 @@ def _preflight_operator_intent(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Recompute review context and validate the prompt's binding.
 
-    Refuses omitted applicable evidence, unresolved required or advisory
-    evidence, a changed source or attestation, a stale prompt binding, and an
-    absent operator-intent section. Every refusal is fail-closed: no launch
+    Refuses omitted evidence, a changed request record, a stale prompt binding, and an
+    absent request-trace section. Every refusal is fail-closed: no launch
     happens, and the reason names the operator-actionable recovery.
     """
     try:
@@ -224,25 +223,26 @@ def _preflight_operator_intent(
     except (OSError, UnicodeDecodeError) as exc:
         return False, {
             "ok": False,
-            "rule": "missing-operator-intent-section",
+            "rule": "missing-request-trace-section",
             "detail": f"review prompt is unreadable: {prompt_path} — {exc}",
             "recovery": "regenerate the review prompt",
             "context_identity": None,
         }
     try:
-        prompt_refs = operator_intent.artifact_supplemental_refs(prompt_text)
         if activity == "task_review":
-            context = operator_intent.context_for_task(
-                project_root, task_path, prompt_refs
+            context = request_trace.context_for_task(
+                project_root,
+                task_path,
+                prompt_text=prompt_text,
             )
         else:
             checkpoint_id = prompt_path.stem.removeprefix("PROMPT-")
-            context = operator_intent.context_for_checkpoint(
+            context = request_trace.context_for_checkpoint(
                 project_root,
                 checkpoint_id,
                 checkpoint_text=prompt_text,
             )
-    except operator_intent.IntentRefusal as refusal:
+    except request_trace.RequestRefusal as refusal:
         return False, {
             "ok": False,
             "rule": refusal.rule,
@@ -250,11 +250,11 @@ def _preflight_operator_intent(
             "recovery": refusal.recovery,
             "context_identity": None,
         }
-    result = operator_intent.preflight_prompt_binding(context, prompt_text)
+    result = request_trace.preflight_prompt_binding(context, prompt_text)
     result["evidence"] = [
-        item.attestation.attestation_id for item in context.evidence
+        item.record_id for item in context.evidence
     ]
-    result["none_recorded"] = context.none_recorded
+    result["legacy_unavailable"] = context.legacy
     result["measures"] = context.measures
     return bool(result["ok"]), result
 
@@ -438,22 +438,22 @@ def handler(args: argparse.Namespace) -> int:
             project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
         ).resolve()
 
-    # --- Fail-closed: operator-intent evidence is present and current --------
+    # --- Fail-closed: request-trace evidence is present and current --------
     # Review handoffs recompute applicability and the review-context identity at
     # the handoff boundary. Bypassing automatic launch must not bypass intent
     # resolution, so the identical preflight runs on the manual path through
     # `cartopian handoff-packet` / `cartopian review-context --prompt`.
-    intent_record: Optional[Dict[str, Any]] = None
+    request_record: Optional[Dict[str, Any]] = None
     if activity in ("task_review", "planning_review"):
-        ok, intent_record = _preflight_operator_intent(
+        ok, request_record = _preflight_request_trace(
             project_root, activity, task_path, prompt_path
         )
         if not ok:
             stderr_guard(
-                f"{intent_record['rule']}: {intent_record['detail']}"
+                f"{request_record['rule']}: {request_record['detail']}"
             )
-            if intent_record.get("recovery"):
-                stderr_guard(f"recovery: {intent_record['recovery']}")
+            if request_record.get("recovery"):
+                stderr_guard(f"recovery: {request_record['recovery']}")
             return EXIT_FAIL
 
     # --- Fail-closed: declared work roots resolve and exist ------------------
@@ -628,7 +628,7 @@ def handler(args: argparse.Namespace) -> int:
         "launch_log_path": launch_log_path,
         "pid": proc.pid,
         "status": "dispatched",
-        "operator_intent": intent_record,
+        "request_trace": request_record,
     }
     emit_record(record)
     return EXIT_OK

@@ -5,25 +5,23 @@ Plan ref: <PNN-KIND-NNN | n/a>
 Work root: <name | name, name | n/a>
 Reviewer: <free text>
 Verdict: <approve | request-changes | reject>
-Operator-intent alignment: <aligned | drifted | not assessable — reason>
-Operator-intent evidence: <ATTEST-NNN, ATTEST-NNN | none recorded>
+Request alignment: <aligned | drifted | unavailable-for-legacy>
+Request evidence: <ordered evidence identities | none>
+Request-context identity: <sha256:...>
 
 ## Summary
 
 Two lines. What was reviewed, and what the verdict rests on.
 
-## Operator-intent assessment
+## Request comparison
 
-Compare the generated `## Operator intent` channel with the separate
-management-derived guidance and the reviewed outcome. Name the evidence
-considered and explain why it is aligned, drifted, or not assessable.
+Compare the generated verbatim original-request channel with the separate
+PM-derived guidance and the reviewed outcome. Explain why it is aligned or
+drifted. The configured reviewer makes this judgment; the operator does not.
 
 - `drifted` blocks approval.
-- `not assessable` blocks when any applicable evidence is required.
-- Advisory-only evidence may be explicitly not assessable without blocking.
-- With no applicable evidence, record exactly
-  `not assessable — none recorded` and `Operator-intent evidence: none recorded`;
-  that case is non-blocking.
+- `unavailable-for-legacy` is non-blocking only when the generated context says
+  this genuinely historical unit predates request-evidence resolution.
 
 ## Implementation evidence
 

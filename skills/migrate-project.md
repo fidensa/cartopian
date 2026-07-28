@@ -50,6 +50,20 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
 
   For a substantive retired `CONVENTIONS.md`, the first application records a hash-pinned pending receipt and leaves the file unchanged. Preserve appropriate metadata with `cartopian write-standards`, or use `cartopian write-decision` to record the PM/operator determination that nothing should be retained. Then re-run `apply-migration-entry v0.6.0` without editing `CONVENTIONS.md`; the executor requires the same reviewed bytes plus the later mediated standards/decision record before it retires the exact file. Governance rules are not salvaged into project metadata.
 
+  During the v0.9 transition, an active task already in `in-review` can retain a
+  review prompt generated under the prior schema. Once exact request evidence
+  resolves, the expected audit result is `stale-request-context`. Regenerate
+  that existing prompt through the ordinary mediated review-prompt writer:
+
+  ```sh
+  cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --review-kind task-closure --task <absolute-in-review-task-path> --content-file <review-prompt-body>
+  cartopian plan-audit <project-root>
+  ```
+
+  This is prompt regeneration inside the existing review, not a new review
+  stage. Do not rewrite historical review files and do not fabricate request
+  evidence.
+
 Do not raw-edit `cartopian.toml` / `cartopian.local.toml` — the harness denies structured raw edits to config, and `update-config` is the only edit path.
 
 ## Step 3 — Validate, then let the configuration executor update the marker

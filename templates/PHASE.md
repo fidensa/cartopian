@@ -3,15 +3,10 @@
 Plan ref section: `## Phase NN: <name>` in `IMPLEMENTATION_PLAN.md`
 Source: <BL-NNN | n/a>
 Created: YYYY-MM-DD
-Intent refs: <ATTEST-NNN, DEC-NNN, OIR-NNN, REQUIREMENTS.md#Confirmed-intent | none>
 
 ## Goal
 
 One or two sentences. What does this phase exist to accomplish?
-
-`Intent refs:` is supplemental planning-checkpoint evidence. It uses the closed
-reference grammar from `protocol/CONVENTIONS.md`; automatic phase/project/
-review-kind applicability remains authoritative.
 
 ## Plan refs covered
 

@@ -65,17 +65,18 @@ SUBCOMMANDS: List[str] = [
     "plan-audit",
     # honest per-host containment matrix
     "containment-matrix",
-    # deterministic two-channel review context (operator intent + PM guidance)
+    # deterministic two-channel review context (original request + PM guidance)
     "review-context",
-    # operator-only intent confirmation surface (see OPERATOR_ONLY_SUBCOMMANDS)
-    "attest-intent",
+    # host intake-boundary capture; excluded from managed-agent MCP tools
+    "capture-request",
 ]
 
 # ---------------------------------------------------------------------------
 # Operator-only subcommands.
 #
-# These are performed by the operator directly and are never part of any
-# managed agent's tool surface. The MCP server excludes them from its tool
+# These belong to the host/operator boundary and are never part of any managed
+# agent's tool surface. Request intake is automatic host plumbing; it is not a
+# second command the operator performs. The MCP server excludes them from its tool
 # registry (``mcp_server.server._tool_registry``), so no project-management,
 # coder, or reviewer session can call them as an MCP tool; the commands
 # themselves additionally refuse to run inside a dispatched handoff or an
@@ -84,7 +85,7 @@ SUBCOMMANDS: List[str] = [
 # surface.
 # ---------------------------------------------------------------------------
 OPERATOR_ONLY_SUBCOMMANDS: List[str] = [
-    "attest-intent",
+    "capture-request",
 ]
 
 
@@ -133,7 +134,7 @@ def _real_handlers():
     from cli.commands import (
         apply_migration_entry,
         archive_plan,
-        attest_intent,
+        capture_request,
         close_audit,
         compose_state,
         containment_matrix,
@@ -181,7 +182,7 @@ def _real_handlers():
             apply_migration_entry.handler,
         ),
         "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
-        "attest-intent": (attest_intent.configure_parser, attest_intent.handler),
+        "capture-request": (capture_request.configure_parser, capture_request.handler),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),

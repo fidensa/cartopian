@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
 )
 
 
@@ -44,6 +44,17 @@ class _Fixture(unittest.TestCase):
         self.scaffold = project_scaffold(cartopian_toml=_TOML)
         self.addCleanup(self.scaffold.cleanup)
         self.root = str(self.scaffold.project_root)
+        self.scaffold.capture_request(
+            request_id="REQUEST-001",
+            unit="project",
+            text="Build the requested project.",
+        )
+        self.scaffold.capture_request(
+            request_id="REQUEST-002",
+            unit="task:TASK-01-001",
+            text="Run task 01-001.",
+            captured_at="2026-07-27T12:00:01Z",
+        )
 
 
 class TestRegistration(unittest.TestCase):

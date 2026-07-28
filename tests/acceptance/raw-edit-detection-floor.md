@@ -54,7 +54,7 @@ which **activates** containment project-wide:
 [project]
 id = "floor-accept"
 name = "Detection Floor Acceptance"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 work_roots = ["tool-repo"]
 
 [roles.pm]

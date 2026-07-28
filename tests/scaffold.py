@@ -22,11 +22,18 @@ Example::
 """
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence, Union
+from unittest import mock
+
+from cli.commands import capture_request as capture_request_command
 
 
 TASK_STATUS_DIRS: tuple[str, ...] = ("open", "in-progress", "in-review", "done")
@@ -105,6 +112,44 @@ class ProjectScaffold:
         target.write_text(contents, encoding="utf-8")
         return target
 
+    def capture_request(
+        self,
+        *,
+        request_id: str,
+        unit: str,
+        text: str,
+        captured_at: str = "2026-07-27T12:00:00Z",
+    ) -> Path:
+        """Invoke the real host-boundary command for a test fixture."""
+        source = self.root / f"{request_id}-operator-message.txt"
+        source.write_text(text, encoding="utf-8")
+        args = argparse.Namespace(
+            project_root=str(self.project_root),
+            request_id=request_id,
+            unit=unit,
+            content_file=str(source),
+            correction_of=None,
+            captured_at=captured_at,
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        fixture_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in capture_request_command.NON_OPERATOR_MARKERS
+        }
+        with (
+            mock.patch.dict(os.environ, fixture_env, clear=True),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            code = capture_request_command.handler(args)
+        if code != 0:
+            raise AssertionError(
+                f"capture-request failed (exit {code}): {stderr.getvalue()}"
+            )
+        return self.project_root / "requests" / f"{request_id}.json"
+
     def cleanup(self) -> None:
         """Remove the scaffold's temp directory. Idempotent and leak-safe.
 
@@ -157,7 +202,7 @@ def project_scaffold(
         else (
             "[project]\n"
             f'name = "{project_name}"\n'
-            'project_schema_version = "v0.8.0"\n'
+            'project_schema_version = "v0.9.0"\n'
         )
     )
     (project_root / "cartopian.toml").write_text(toml_text, encoding="utf-8")
@@ -170,6 +215,22 @@ def project_scaffold(
     (project_root / "STATE.md").write_text(state_text, encoding="utf-8")
 
     return ProjectScaffold(root=root, project_root=project_root)
+
+
+def capture_request_for_test(
+    project_root: Path,
+    *,
+    request_id: str,
+    unit: str,
+    text: str,
+) -> Path:
+    """Use the real capture handler for an independently built fixture."""
+    fixture = ProjectScaffold(root=project_root.parent, project_root=project_root)
+    return fixture.capture_request(
+        request_id=request_id,
+        unit=unit,
+        text=text,
+    )
 
 
 def write_disagreement_layout(

@@ -83,7 +83,7 @@ class TestClosedSchema(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             }
         }
         with self.assertRaisesRegex(ConfigDiagnostic, "unknown-key.*project.mystery"):
@@ -136,7 +136,7 @@ class TestClosedSchema(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             },
             "roles": {
                 "coder": {
@@ -228,7 +228,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
                 "work_roots": ["tool"],
             },
             "roles": {
@@ -255,7 +255,7 @@ class TestCanonicalResolution(unittest.TestCase):
             {"work_roots": {"tool": "/tmp/tool"}},
         )
         self.assertEqual(tuple(record), CONFIG_SCHEMA["preferred_output"])
-        self.assertEqual(record["project_schema_version"], "v0.8.0")
+        self.assertEqual(record["project_schema_version"], "v0.9.0")
         self.assertNotIn("protocol_version", record)
         self.assertEqual(record["automation"]["initiation"], "operator")
         self.assertEqual(
@@ -291,7 +291,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             },
             "roles": {
                 "reviewer": {
@@ -311,7 +311,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             },
             "roles": {
                 "pm": {
@@ -335,7 +335,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             },
             "roles": {
                 "pm": {
@@ -358,7 +358,7 @@ class TestCanonicalResolution(unittest.TestCase):
             "project": {
                 "id": "demo",
                 "name": "Demo",
-                "project_schema_version": "v0.8.0",
+                "project_schema_version": "v0.9.0",
             },
             "roles": {
                 "coder": {
@@ -378,7 +378,7 @@ class TestCliMcpParity(unittest.TestCase):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.8.0"\n'
+        'project_schema_version = "v0.9.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Writes code."\n'

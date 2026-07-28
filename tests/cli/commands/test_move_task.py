@@ -10,7 +10,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
 
-from cli import operator_intent
+from cli import request_trace
+from tests.scaffold import capture_request_for_test
 
 STATUSES = ("open", "in-progress", "in-review", "done")
 
@@ -18,7 +19,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
     '\n'
     '[roles.reviewer]\n'
     'description = "Reviews completed work."\n'
@@ -34,7 +35,7 @@ _NO_REVIEW_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
     '\n'
     '[reviews]\n'
     'planning = "off"\n'
@@ -100,15 +101,24 @@ def _seed_review(
     project: Path,
     nn_nnn: str,
     verdict: str,
-    alignment: str = "not assessable — none recorded",
+    alignment: str = "aligned",
 ) -> Path:
     """Seed a review artifact.
 
-    The default alignment is the explicitly non-blocking one: a project with no
-    attestations resolves to `none recorded`, which must never stop an
-    otherwise-valid closure.
+    The helper uses the real task-unit capture path and binds an aligned review
+    to that immutable record.
     """
     p = project / "reviews" / f"REVIEW-{nn_nnn}.md"
+    task_candidates = sorted(
+        (project / "tasks" / "in-review").glob(f"TASK-{nn_nnn}*.md")
+    )
+    if len(task_candidates) == 1:
+        capture_request_for_test(
+            project,
+            request_id="REQUEST-001",
+            unit=f"task:TASK-{nn_nnn}",
+            text="Review this task outcome.",
+        )
     lines = [
         f"# REVIEW-{nn_nnn}\n",
         "\n",
@@ -116,17 +126,14 @@ def _seed_review(
         f"Verdict: {verdict}\n",
     ]
     if alignment is not None:
-        lines.append(f"Operator-intent alignment: {alignment}\n")
-        lines.append("Operator-intent evidence: none recorded\n")
+        lines.append(f"Request alignment: {alignment}\n")
+        lines.append("Request evidence: REQUEST-001\n")
     _write(p, "".join(lines))
-    task_candidates = sorted(
-        (project / "tasks" / "in-review").glob(f"TASK-{nn_nnn}*.md")
-    )
     if len(task_candidates) == 1:
-        context = operator_intent.context_for_task(project, task_candidates[0])
+        context = request_trace.context_for_task(project, task_candidates[0])
         _write(
             project / "prompts" / f"PROMPT-{nn_nnn}.md",
-            operator_intent.upsert_intent_section("# Review\n", context.section),
+            request_trace.upsert_request_sections("# Review\n", context.section),
         )
     return p
 

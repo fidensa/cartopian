@@ -55,7 +55,7 @@ which **activates** containment project-wide, and deliberately holds neither
 [project]
 id = "boundary-accept"
 name = "Boundary Acceptance"
-project_schema_version = "v0.8.0"
+project_schema_version = "v0.9.0"
 work_roots = ["tool-repo"]
 
 [roles.pm]

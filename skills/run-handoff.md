@@ -60,9 +60,9 @@ Read from the emitted record:
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
-- `operator_intent` — for an in-review task, the normalized two-channel review
-  context and `preflight`. A missing prompt, unresolved advisory or required
-  reference, stale binding, or missing/altered generated section makes the
+- `request_trace` — for an in-review task, the normalized two-channel review
+  context and `preflight`. A missing prompt, stale binding, or missing/altered
+  generated section makes the
   command fail closed. Manual task-review handoff consumes this same record.
 
 For a planning-checkpoint review (which has no task file), resolve the same
@@ -91,7 +91,7 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
      --review-kind <planning|task-closure> <target arguments>
    ```
 
-   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The prompt persists any supplemental `Intent refs:`. The writer, not the PM, generates exactly one bound `## Operator intent` section.
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections.
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
@@ -120,7 +120,7 @@ Issuing the handoff is **PM-performed**. The contained PM has no shell or proces
 
 Every operator-performed/manual review launch first passes the context
 preflight above. Manual describes who starts the reviewer; it is not an
-operator-intent bypass.
+request-comparison bypass.
 - **Agent role with the applicable `task_run` or `task_review` permission in `auto_launch`** — *PM-performed*: launch the configured wrapper through the mediated dispatch command, only when the current automation policy allows it:
 
   ```
@@ -206,10 +206,9 @@ If the report is missing, malformed, inconsistent, uses unsupported values, or f
 Treat `failed-to-parse` as blocked for the caller. Preserve the prompt and invalid report for operator inspection.
 
 For review variants, `report-action` recomputes the prompt binding and emits
-`operator_intent_alignment`. `approve` is actionable only when that record is
-non-blocking. Drift, stale/missing evidence, and required-but-not-assessable
-evidence return `failed-to-parse`; advisory-only not-assessable and exact
-none-recorded remain explicit.
+`request_alignment`. `approve` is actionable only when that record is
+non-blocking. Drift or stale/missing evidence returns `failed-to-parse`;
+generated historical unavailability remains explicit.
 
 ---
 

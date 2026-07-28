@@ -136,6 +136,22 @@ class TestFr004Smoke(unittest.TestCase):
             (project / "IMPLEMENTATION_PLAN.md").write_text(
                 "P99-SMOKE-001\n", encoding="utf-8",
             )
+            request_source = tmp_path / "operator-message.txt"
+            request_source.write_text("Run the smoke task.", encoding="utf-8")
+            capture = _run_cli(
+                "capture-request",
+                str(project),
+                "--request-id",
+                "REQUEST-001",
+                "--unit",
+                "task:TASK-99-999",
+                "--content-file",
+                str(request_source),
+                "--captured-at",
+                "2026-07-27T12:00:00Z",
+                home=home,
+            )
+            self.assertEqual(capture.returncode, 0, msg=capture.stderr)
             validate = _run_cli(
                 "validate-task-readiness", str(task_path), home=home,
             )

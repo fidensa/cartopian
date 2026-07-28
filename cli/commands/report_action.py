@@ -522,7 +522,7 @@ def handler(args: argparse.Namespace) -> int:
         "report_path": str(report_path),
         "status": status_value,
         "review_verdict": review_verdict,
-        "operator_intent_alignment": alignment_record,
+        "request_alignment": alignment_record,
         "target_task_status": target_task_status,
         "requires_pr_step": requires_pr_step,
         "prompt_to_overwrite": prompt_to_overwrite,

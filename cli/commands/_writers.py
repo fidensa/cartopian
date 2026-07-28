@@ -216,6 +216,17 @@ def perform_write(
             stderr("usage", cerr)
             return EXIT_USAGE
 
+    # v0.9+ establishes the request trace before any model-authored derivative.
+    # Historical projects remain readable until their next real intake.
+    from cli.request_trace import RequestRefusal, require_request_before_derivative
+    try:
+        require_request_before_derivative(root, dest_kind, relative_target)
+    except RequestRefusal as refusal:
+        stderr("guard", f"{refusal.rule}: {refusal.detail}")
+        if refusal.recovery:
+            stderr("guard", f"recovery: {refusal.recovery}")
+        return EXIT_FAIL
+
     try:
         result = mediated_write(root, dest_kind, relative_target, content)
     except GuardRefusal as refusal:

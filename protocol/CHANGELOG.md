@@ -32,6 +32,65 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.9.0 — Up-front operator request review evidence
+
+- **Protocol version:** `v0.9.0`
+- **One-line summary:** Resolves exact operator request excerpts from attributable sources and gives them to the configured reviewer beside PM guidance and delivery evidence.
+
+#### Breakage description
+
+The v0.8 design attempted to establish intent after planning or delivery. That
+inverted authorship and timing: the original request already existed, and the
+operator was incorrectly asked to perform a later review ceremony. v0.9 removes
+that workflow. Exact request excerpts now resolve from applicable decision
+quotations, supported host chat records, and optional immutable intake records.
+A native host callback is not required when adequate exact evidence already
+exists. Explicit follow-up corrections retain source identity and deterministic
+order; unrelated conversation history is never read.
+
+Planning and task-closure prompts contain `## Original operator request
+(verbatim)` and `## PM-derived guidance and delivered outcome`. The configured
+review role records `Request alignment: aligned | drifted |
+unavailable-for-legacy`; drift blocks approval. The operator supplies the
+request but is not assigned review work.
+
+Historical reviews are evaluated under the contract carried by their own
+prompt, not the project's current marker. Old review and legacy evidence bytes
+are never rewritten. `unavailable-for-legacy` is non-blocking only for a unit
+whose prompt predates request-evidence resolution; new mediated PM derivatives
+at v0.9 are refused until an applicable exact source resolves.
+
+The released v0.8 entry remains unchanged below as shipped history; v0.9
+supersedes its active behavior rather than rewriting it. Existing
+`intent/ATTEST-*.md` and `intent/records/OIR-*.md` files are retained as inert
+legacy evidence, are not request records, and never govern v0.9 approval.
+
+#### Applies-when precondition
+
+Applies when `[project].project_schema_version` is less than `v0.9.0`.
+
+#### Agent-followable migration steps
+
+1. Run `cartopian migrate-config <project-root> --apply`; only the schema marker changes, and it changes last.
+2. Run `cartopian apply-migration-entry <project-root> v0.9.0`; it performs no project-artifact rewrite.
+3. Run `cartopian plan-audit <project-root>`. Completed historical approvals remain valid without adding fields.
+4. An active `in-review` prompt created under the old schema may now produce the expected `stale-request-context` blocker when exact evidence resolves under v0.9. Regenerate that existing review prompt through the normal mediated review-prompt writer (`cartopian write-prompt ... --review-kind task-closure --task ...`), then rerun `cartopian plan-audit`. Do not rewrite a historical review or fabricate request evidence.
+5. At the next real unit of work, resolve exact evidence from applicable decisions or supported host chat; a host may optionally capture the raw initiating message before invoking a PM writer. Migration never fabricates evidence.
+
+#### Idempotence guarantee
+
+The configuration migration is a fixed marker advancement. The filesystem
+entry is always a no-op. Neither step creates a request or changes a review.
+
+#### Post-migration validation hint
+
+`cartopian migrate-config <project-root>` reports `noop` after application;
+`cartopian plan-audit <project-root>` does not demand new fields from completed
+historical reviews; and new v0.9 authoring without any applicable exact source
+fails with `request-not-captured`. An old active review prompt with newly
+resolvable evidence reports `stale-request-context` until the same prompt is
+regenerated through `write-prompt --review-kind` and `plan-audit` is rerun.
+
 ### v0.8.0 — Independent operator-intent evidence in planning and task-closure reviews
 
 - **Protocol version:** `v0.8.0`

@@ -266,11 +266,7 @@ class TestToolSurface(unittest.TestCase):
             self.assertIn(sub.replace("-", "_"), tool_names)
 
     def test_operator_only_subcommands_are_absent_from_the_tool_surface(self):
-        """The operator-intent confirmation surface is not a callable tool.
-
-        Exclusion, not a guard-inside-the-handler: a management session must not
-        even be able to name the writer that creates operator-intent evidence.
-        """
+        """Host intake capture is not deferred into a managed handoff."""
         from cli.main import OPERATOR_ONLY_SUBCOMMANDS, SUBCOMMANDS
         self.assertTrue(OPERATOR_ONLY_SUBCOMMANDS)
         response = single("tools/list")
@@ -412,7 +408,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.8.0"\n'
+                'project_schema_version = "v0.9.0"\n'
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
@@ -496,7 +492,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.8.0"\n'
+                'project_schema_version = "v0.9.0"\n'
                 "unknown = true\n",
                 encoding="utf-8",
             )

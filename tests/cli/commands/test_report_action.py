@@ -7,7 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from cli import operator_intent
+from cli import request_trace
 from tests.scaffold import project_scaffold
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -17,7 +17,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -36,7 +36,7 @@ _PROJECT_TOML_OFF = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.8.0"\n'
+    'project_schema_version = "v0.9.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -115,11 +115,14 @@ def _review_report(
 ) -> str:
     verdict_body = verdict if verdict is not None else ""
     task_identity = f"- Task path: {task_path}\n" if task_path is not None else ""
+    bound = prompt_path.is_file()
+    alignment = "aligned" if bound else "unavailable-for-legacy"
+    evidence = "REQUEST-001" if bound else "none"
     return (
         f"# {report_stem}\n\n"
         f"Status: {status}\n\n"
-        "Operator-intent alignment: not assessable — none recorded\n\n"
-        "Operator-intent evidence: none recorded\n\n"
+        f"Request alignment: {alignment}\n\n"
+        f"Request evidence: {evidence}\n\n"
         "## Identity\n\n"
         f"- Review ID: {review_id}\n"
         f"- Prompt path: {prompt_path}\n"
@@ -135,10 +138,16 @@ def _review_report(
 
 
 def _bound_task_prompt(scaffold, task_path: Path, suffix: str) -> Path:
-    context = operator_intent.context_for_task(scaffold.project_root, task_path)
+    task_id = "-".join(task_path.stem.split("-")[:3])
+    scaffold.capture_request(
+        request_id="REQUEST-001",
+        unit=f"task:{task_id}",
+        text="Review this task outcome.",
+    )
+    context = request_trace.context_for_task(scaffold.project_root, task_path)
     return scaffold.write(
         f"prompts/PROMPT-{suffix}.md",
-        operator_intent.upsert_intent_section("# Review\n", context.section),
+        request_trace.upsert_request_sections("# Review\n", context.section),
     )
 
 
@@ -568,8 +577,8 @@ class TestReportActionVariantInference(unittest.TestCase):
                 (
                     "# REPORT-01-010\n\n"
                     "Status: complete\n\n"
-                    "Operator-intent alignment: not assessable — none recorded\n\n"
-                    "Operator-intent evidence: none recorded\n\n"
+                    "Request alignment: aligned\n\n"
+                    "Request evidence: REQUEST-001\n\n"
                     "## Identity\n\n"
                     "- Task ID: TASK-01-010\n"
                     "- Review ID: REVIEW-01-010\n"

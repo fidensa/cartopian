@@ -91,12 +91,21 @@ Ask the operator to provide the external plan:
 
 Accept whatever format the operator provides.
 
-Before generating any files, normalize the operator's input, approved
-requirements or external requirements source, and external plan through the
-Planning Intent Contract. Follow its reuse, resolution-state, focused-question,
-working-assumption, and exclusion-conflict rules. Then summarize the complete
-compact record together with the phase interpretation and obtain operator
-confirmation.
+Before deriving artifacts, resolve the governed unit's exact operator evidence
+from the three supported source kinds: structurally marked decision quotations,
+supported host chat records, and optional immutable request records. A native
+host adapter is optional when another supported source resolves. The PM never
+copies or reconstructs that channel; ordinary PM prose is excluded from operator
+evidence. Task-specific resolution never substitutes unrelated project intent.
+Mediated writers fail closed only when no applicable exact source of any
+supported kind resolves for the governed unit; resolution adds no later operator
+re-entry, confirmation, safeguard, or new stage. Then normalize the operator's
+input, approved requirements or external requirements source, and external plan
+through the Planning Intent Contract. Follow its reuse, resolution-state,
+focused-question, working-assumption, and exclusion-conflict rules. Then
+summarize the complete compact record together with the phase interpretation and
+obtain operator confirmation. The normalized record is PM-derived guidance and
+never substitutes for resolved request evidence.
 
 For example:
 
@@ -106,7 +115,8 @@ For example:
 
 Proceed only after operator confirmation. A working assumption is
 provisional, and the implementation plan must not lock while any compact
-intent field is unresolved or unconfirmed.
+intent field is unresolved or unconfirmed. Explicit corrections retain their
+source provenance and deterministic order before artifacts are revised.
 
 ---
 

@@ -30,7 +30,7 @@ class CompactIntentRunbookTests(unittest.TestCase):
         self.assertIn("operator confirmation", text)
         self.assertIn("must not lock", text)
         self.assertIn("numerical confidence", text)
-        self.assertIn("cross-model confirmation", text)
+        self.assertIn("repeated cross-model\nconfirmation", text)
 
     def test_all_planning_entries_apply_the_contract(self) -> None:
         for relative in (
@@ -42,6 +42,7 @@ class CompactIntentRunbookTests(unittest.TestCase):
                 text = (ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("Planning Intent Contract", text)
                 self.assertIn("confirmed", text)
+                self.assertIn("host", text.lower())
 
     def test_task_generation_remains_current_phase_only_and_bounded(self) -> None:
         for relative in ("skills/plan-project.md", "skills/adopt-plan.md"):

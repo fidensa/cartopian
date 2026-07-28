@@ -8,7 +8,9 @@
 
 Record the compact intent already established through conversation and
 approved artifacts. Populate every item before requirements lock; do not
-present this section to the operator as a blank form.
+present this section to the operator as a blank form. This remains PM-derived
+planning guidance; the independent review request channel comes only from the
+host intake record.
 
 - **Outcome:** …
 - **Beneficiary:** …
@@ -16,10 +18,6 @@ present this section to the operator as a blank form.
 - **Success signal:** …
 - **Binding constraint:** …
 - **Explicit exclusions:** …
-
-Only this exact complete section is eligible for a
-`requirements-intent` operator attestation. Other requirements sections remain
-management-derived guidance and cannot be selected into that attestation.
 
 ## Thesis
 

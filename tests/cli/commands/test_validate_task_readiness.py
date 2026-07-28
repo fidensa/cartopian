@@ -130,7 +130,7 @@ CHECK_NAMES_IN_ORDER = [
     "acceptance-present",
     "work-root-names-valid",
     "deliverable-valid",
-    "intent-refs-valid",
+    "request-trace-valid",
 ]
 
 

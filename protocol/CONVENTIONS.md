@@ -92,7 +92,9 @@ assumption remains provisional: it does not become operator intent until the
 operator confirms or corrects it. Requirements and implementation planning
 must not lock until all six fields are present and operator confirmation has
 been obtained. The confirmation may cover the complete compact record in one
-exchange; it does not require repeated cross-model confirmation.
+exchange; it does not require repeated cross-model confirmation. This
+pre-existing planning-normalization check is PM-derived guidance: it neither
+creates nor substitutes for independently resolved request evidence used by review.
 
 The contract has no numerical confidence field. The PM never requests a
 confidence percentage, model agreement score, or repeated cross-model
@@ -174,7 +176,7 @@ Guarded transitions and their prerequisites:
 | Transition | Required artifact | Validation |
 | --- | --- | --- |
 | `in-progress → in-review` (task review required) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
-| `in-review → done` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve`; current operator-intent context resolves; alignment is non-blocking |
+| `in-review → done` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: approve`; current request context resolves; alignment is non-blocking |
 | `in-review → in-progress` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: request-changes` |
 | `in-review → open` (task review required) | `reviews/REVIEW-NN-NNN.md` | `Verdict: reject` |
 | `in-progress → done` (task review off) | `reports/REPORT-NN-NNN.md` | report exists at this task's `NN-NNN` filename; `Status: complete` |
@@ -188,10 +190,10 @@ Guards apply only to task files whose names match the canonical `TASK-NN-NNN` pr
 `cartopian plan-audit <project-path>` is a companion audit that surfaces provenance gaps across the whole project:
 
 - **Artifact chain integrity**: every `TASK-NN-NNN` file in `tasks/in-progress/` must have a matching `prompts/PROMPT-NN-NNN.md`; every file in `tasks/in-review/` must have a matching `reviews/REVIEW-NN-NNN.md` with a `Verdict:` field present.
-- **Operator-intent integrity**: active task and planning-review prompts carry
-  the complete current bound operator-intent section; supplemental references
-  resolve; applicable attestations are not omitted; approval agrees with the
-  recorded alignment. Findings name the failure class and recovery.
+- **Request-trace integrity**: active task and planning-review prompts carry
+  the complete bound verbatim request and separately named PM-derived channel;
+  approval agrees with the configured reviewer's comparison. Historical
+  reviews without the v0.9 generated context are not rejudged.
 - **Infrastructure-artifact scope guard**: assignees must not add `.github`, CI, or other infrastructure artifacts to a work root unless the task explicitly authorizes them. For every dirty work root, changed files under a top-level infrastructure marker (`.github/`, `.gitlab/`, `.gitlab-ci.yml`, `.circleci/`, `.buildkite/`, `.travis.yml`, `.drone.yml`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`, `Jenkinsfile`) emit an `unauthorized-infra-artifacts` warning unless a task naming that work root carries the explicit task-file field `Infra authorized: <markers>` — a comma-separated list of the markers it authorizes (e.g. `Infra authorized: .github`), or the blanket `Infra authorized: yes`. Prefer the marker-scoped form. Prose mentions of a marker are not authorization, and attribution alone is not authorization. This is a warning for the operator, not a blocker.
 - **Work-root provenance**: for each configured work root, if uncommitted git changes exist and no active task is assigned to that root (or no active prompt exists for the assigned task), the audit's behavior depends on the effective `git.pm_owns_product_branches` setting.
   - When `pm_owns_product_branches = true`, the PM owns product-repo plumbing, so dirty state without an active prompted task is anomalous and the audit emits an `unattributed-work-root-changes` warning.
@@ -277,137 +279,111 @@ Review verdicts are:
 - `request-changes`: task moves to `in-progress/`.
 - `reject`: task moves to `open/`.
 
-## Independent Operator-Intent Evidence
+## Up-front Operator Request Evidence
 
-Planning and task-closure reviews carry two explicitly separate channels:
+Before an existing planning or task-closure review, Cartopian resolves exact
+operator excerpts from three provenance-bearing sources: explicitly attributed
+verbatim quotations in applicable decisions, supported host-provided chat
+records, and optional immutable request-store records. A native host callback
+is one possible intake adapter, not a completion gate when adequate exact
+evidence already exists. Resolution is infrastructure behavior, not a later
+confirmation, restatement, review step, scope choice, or requiredness choice.
 
-1. **Operator-intent evidence** comes only from current operator attestations.
-2. **Management-derived guidance** names the task, spec, phase, plan,
-   requirements, prompt, report, and review artifacts the PM prepared.
-
-Agreement inside the management channel is not evidence that the approved
-operator outcome was preserved. A reviewer compares both channels, and a
-contradiction is drift even when the task, spec, prompt, implementation, and
-report all agree with one another.
-
-### Operator-only attestation
-
-An attestation is a project-contained
-`intent/ATTEST-NNN-kebab-case-slug.md` artifact. It binds:
-
-- one eligible source kind and canonical source identity/path;
-- the SHA-256 identity of the exact UTF-8 source bytes;
-- operator confirmation and the attestation artifact's own content identity;
-- one or more applicability scopes from the closed union below;
-- `Required: true | false` (the confirmation command defaults to `true`, but
-  an authored attestation with the field missing is invalid);
-- zero or more exact complete named-section selectors; and
-- current/supersession provenance.
-
-Only the operator performs `cartopian attest-intent ... --confirm`. The command
-is the sole writer: it computes the source hash itself, renders the artifact,
-and writes inside `intent/`. It is absent from the MCP tool registry, every
-shipped role preset, and every PM/coder/reviewer capability surface; dispatched
-or MCP-mediated sessions are refused. `intent/` is not a mediated-write
-destination. A PM may draft requirements or a decision, but cannot create,
-change, weaken, or self-certify the attestation.
-
-Eligible sources are:
-
-- the exact complete `## Confirmed intent` section of `REQUIREMENTS.md`;
-- a locked `decisions/DEC-NNN-slug.md` recording an explicit operator choice
-  (a selected-section attestation includes its complete `## Decision` section);
-  or
-- a future mediated `intent/records/OIR-NNN-slug.md` operator-intent record.
-
-`Status: locked`, PM authorship, or an unattested legacy decision never creates
-operator-intent evidence.
-
-### Applicability and supplemental references
-
-Scopes are a closed union:
-
-- `project`
-- `phase:PHASE-NN-slug`
-- `plan-ref:PNN-KIND-NNN`
-- `task:TASK-NN-NNN`
-- `review-kind:planning`
-- `review-kind:task-closure`
-
-The resolver scans every current attestation and includes every matching scope.
-This automatic scan is authoritative. `Intent refs:` on a task, phase, or
-planning-checkpoint prompt are supplemental and additive; omitting a reference
-cannot suppress an applicable attestation or produce a false `none recorded`.
-The closed reference grammar is `ATTEST-NNN`, `DEC-NNN`, `OIR-NNN`,
-`REQUIREMENTS.md#Confirmed-intent`, or `none`.
-
-A missing, malformed, duplicated/ambiguous, open, outside-project, unattested,
-or unresolved superseded reference fails readiness. A superseded decision
-resolves only through one unique current successor with its own valid operator
-attestation. The evidence preserves the complete bounded decision chain.
-Cycles, multiple successors, a broken successor, or an unattested successor
-refuse.
-
-### Deterministic review context and bounds
-
-`cartopian review-context` is the CLI/MCP projection of the one resolver used
-by readiness, prompt generation, dispatch, manual handoff, report parsing,
-lifecycle guards, and plan audit. It emits:
-
-- review kind and canonical target;
-- operator evidence with source identity/path/hash, selected complete content,
-  attestation identity/path/hash/status/confirmation, requiredness, matched
-  scopes, discovery path, supersession state, and provenance;
-- a separate list of management-guidance artifact paths;
-- source, selected-content, and generated-section byte measures; and
-- the deterministic review-context identity.
-
-Identities are `sha256:` followed by lowercase hexadecimal SHA-256 over exact
-UTF-8 bytes or the documented canonical JSON payload. Ordering is stable by
-applicability specificity, source kind, and canonical attestation identity.
-Content is never loaded from conversation history, secrets, unrelated operator
-data, outside-project paths, symlinks, or hardlinks.
-
-A whole eligible source is included only when it is at most 8 KiB. A larger
-source requires exact complete named-section selectors. One source contributes
-at most 8 KiB across all current attestations, and all operator-intent excerpts
-in one review contribute at most 24 KiB. A missing/duplicate selector or any
-overflow refuses; Cartopian never truncates a section, clause, or first-N byte
-prefix.
-
-### Prompt binding, alignment, and approval
-
-Every newly generated planning or task-review prompt contains exactly one
-tool-generated `## Operator intent` section. It embeds the current context
-identity and the complete bounded evidence, or `none recorded` only after the
-complete scan and supplemental-reference resolution find nothing.
-
-Automatic dispatch and manual handoff preflight recompute the target,
-applicability, source/attestation identities, excerpt, and context identity.
-They refuse an unresolved required *or advisory* item, omitted applicable
-evidence, changed source or attestation bytes, altered intent content, stale
-identity, missing prompt, or absent/duplicated operator-intent section.
-
-The review file and review-completion report record:
+New decision evidence uses one exact structural marker immediately before its
+Markdown block quote:
 
 ```text
-Operator-intent alignment: aligned | drifted | not assessable
-Operator-intent evidence: ATTEST-NNN, ... | none recorded
+Operator request quote for: project:project
+
+> <unmodified operator quotation>
 ```
 
-The assessment explains the comparison. `drifted` always blocks approval.
-`not assessable` blocks when any applicable evidence is required. It is
-non-blocking when every applicable item is operator-marked advisory, and
-`not assessable — none recorded` is explicitly non-blocking. Missing or
-malformed alignment fails closed. `report-action`, `move-task`, and planning
-review routing enforce the same result; the task/spec/prompt/report agreeing
-with one another never overrides drift.
+The value is exactly one governed unit: `project:project`,
+`planning:PLAN-NNN[-slug]`, or `task:TASK-NN-NNN`. The unit-bearing marker makes
+a decision self-selecting and lets a fresh project establish exact evidence
+before requirements exist. Malformed or ambiguous markers fail closed.
+Ordinary block quotes, loosely adjacent PM attribution, and ordinary plan,
+phase, spec, task, prompt, report, or decision prose remain PM-derived. Bounded
+backward compatibility recognizes the exact existing DEC-007, DEC-008, and
+DEC-009 attribution wording only when an applicable artifact explicitly
+selects those decisions through `## Operator intent`, `## Original request
+evidence`, or `## Request evidence`; it is not a general prose heuristic.
 
-`plan-audit` reports invalid supplemental references, omitted applicable
-attestations, missing/stale bindings, and approval inconsistent with alignment
-for both review kinds. Pre-v0.8 historical reviews remain readable and are not
-rewritten. Migration fabricates no attestation, promotes no legacy decision,
-and changes no historical review.
+Decisions are evidence containers, not PM derivatives that require earlier
+request evidence. Writing one does not make later optional direct host capture
+late. Decision-first and capture-first intake orderings are both valid. Later
+requirements, plans, phases, tasks, specs, and prompts still fail closed when
+neither an applicable exact decision/chat source nor an optional request record
+resolves. There is no raw decision-deletion recovery path.
+
+Supported host chat records are UTF-8 JSON files below `requests/chat/` with
+schema `cartopian-host-chat-v1`. They identify the operator role, governed unit,
+original-or-correction kind, contiguous order, exact text hash, host,
+conversation, and message identities. Records for unrelated units are not
+selected. Optional `cartopian capture-request` records keep their existing
+original/correction ordering and immutable exact-text identity.
+
+The enforceable CLI boundary is deliberately precise. `capture-request` is
+absent from the managed-agent MCP registry and refuses whenever
+`CARTOPIAN_ROLE` (a dispatched role) or `CARTOPIAN_MCP_TOOL_CALL` (an in-process
+managed tool call) is set. The local CLI does not cryptographically authenticate
+a human or prove the authorship of bytes supplied by an otherwise unmarked
+process. Content identity proves exact preservation *after host intake*, not
+human authorship by itself. Accordingly, a PM-transcribed or paraphrased file
+is never valid proof of verbatim operator origin; a host integration that uses
+direct intake must pass its raw operator-message payload rather than a
+model-produced copy.
+
+Multiple exact excerpts may express the initiating ask and later explicit
+corrections. Each selected excerpt retains its source kind, stable source
+identity and path, full-source SHA-256 identity, exact-text SHA-256 identity,
+governed unit, and deterministic evidence order. Duplicate content is emitted
+once. Assistant messages, unattributed quotations, and unrelated conversation
+history are never promoted into the trace.
+
+Planning and task-closure reviews carry two generated channels:
+
+1. `## Original operator request (verbatim)` contains the resolved exact
+   excerpts and ordered explicit corrections.
+2. `## PM-derived guidance and delivered outcome` names the requirements, plan,
+   task, spec, prompt, report, and other delivery evidence prepared later.
+
+`cartopian review-context` is the common read-only projection used by prompt
+generation, dispatch, manual handoff, report parsing, lifecycle guards, and
+audit. The context identity covers the review target, ordered evidence and
+source identities, legacy state, and PM artifact paths. The PM/delivery channel
+contains only artifacts that exist when the prompt snapshot is generated,
+including real slugged specs and applicable phase and prior-review artifacts.
+Later lifecycle outputs do not retroactively alter that snapshot; regenerating
+a review prompt takes a new snapshot. Any selected-source mutation or prompt
+omission makes the binding stale. Exact content is bounded to 24 KiB per
+excerpt and is never truncated.
+
+Generated text names both the review target and every excerpt's governed unit.
+Planning checkpoints may explicitly consume project-planning evidence. Task
+closure never silently falls back to unrelated project intent: when no
+applicable decision quote, host chat turn, or optional task record resolves at
+v0.9, `unit-request-not-captured` fails closed.
+
+The configured review role compares the two channels. The operator supplies the
+request but is not the reviewer. Review files and completion reports record:
+
+```text
+Request alignment: aligned | drifted | unavailable-for-legacy
+Request evidence: <ordered evidence identities> | none
+```
+
+Contradiction, narrowing, widening, omission, or substitution is `drifted` and
+blocks approval even when every PM artifact agrees with the implementation.
+`unavailable-for-legacy` is non-blocking only when the prompt itself proves the
+unit predates v0.9 capture. Missing or malformed comparison evidence fails
+closed for new work.
+
+Migration from v0.8 fabricates no request and rewrites no review. Historical
+reviews are evaluated according to the generated context present in their own
+prompt; changing the project marker never retroactively invalidates them.
+Legacy `intent/ATTEST-*.md` attestations and `intent/records/OIR-*.md` records
+remain inert historical files and do not govern approval.
 
 ## Prompts
 
@@ -416,10 +392,8 @@ Prompts are temporary, assignee-directed handoff artifacts in `prompts/`. They r
 Prompt files follow the canonical field schema in `templates/PROMPT.md`.
 
 Review prompts are produced with `cartopian write-prompt --review-kind ...`.
-The writer resolves the independent operator-intent context and owns the
-generated `## Operator intent` section; authored copies are replaced. Planning
-checkpoint prompts persist their canonical `Phase:`, `Plan ref:`, and
-supplemental `Intent refs:` fields so automatic dispatch, manual
+The writer resolves the intake trace and owns both generated review-context
+sections; authored copies are replaced. Automatic dispatch, manual
 `review-context --prompt` preflight, report parsing, and audit recompute the
 same target.
 
@@ -441,12 +415,11 @@ Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion r
 
 Task review completion reports declare the absolute `Task path:` in `## Identity`. The path must name the task implied by `REPORT-NN-NNN.md` in its current lifecycle directory; a missing, stale, or wrong task path is invalid completion evidence. This requirement does not apply to deidentified task completion reports or to planning-review completion reports.
 
-Review and planning-review reports also carry the operator-intent alignment and
+Review and planning-review reports also carry the request alignment and
 evidence fields from the bound prompt. Report parsing recomputes the binding at
-completion time. An approving report with drifted, missing, malformed, stale,
-or required-but-not-assessable evidence is `failed-to-parse`; an advisory-only
-not-assessable result and the exact none-recorded result remain explicit and
-non-blocking.
+completion time. An approving report with drifted, missing, malformed, or stale
+evidence is `failed-to-parse`; genuine historical unavailability is explicit
+and non-blocking.
 
 Reports must not include secrets or unnecessary sensitive environment data such as API keys, credentials, tokens, or private connection strings.
 
