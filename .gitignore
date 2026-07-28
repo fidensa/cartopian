@@ -12,6 +12,9 @@ __pycache__/
 # Personal Agents
 .claude/
 .gemini/
+AGENTS.md
+CLAUDE.md
+
 # Cartopian codex PM contained runtime (generated; symlinks auth — never commit)
 /wrappers/var/codex-pm-home/
 /wrappers/var/codex-pm-surface/

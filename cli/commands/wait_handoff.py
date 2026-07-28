@@ -29,22 +29,34 @@ Terminal status flags emitted on stdout (one NDJSON record):
 The wait is terminal by default: called without ``--max-block``, it blocks
 until one of the terminal signals above, bounded by the resolved
 ``roles.<role>.timeout`` (protocol default ``60m``) as the absolute
-ceiling — a single call, a single record, no nonterminal slices. ``--max-block``
-is an explicit opt-in for hosts that cannot sustain a blocking call for the
-full handoff timeout; when supplied, the effective block budget is
-``min(--max-block, configured timeout)``. Read-only: never writes to the
-project tree, never moves tasks, never launches processes. Standard library
-only (see STANDARDS.md § Wait Command Standards).
+ceiling — a single call, a single record, no nonterminal slices. That blocking
+call is the entire completion mechanism; there is no wake or resume behind it.
+``dispatch`` refuses to launch when the host's ``tools/call`` ceiling is
+shorter than the role timeout (``cli/host_capability.py``), so by the time this
+command runs the host has already been shown able to sustain it. The resolved
+budget is echoed in the emitted record as ``host_wait_budget``.
+
+``--max-block`` bounds a single nonterminal observation slice, for the one case
+the gate cannot fix: a host ceiling that will not move. When supplied, the
+effective block budget is ``min(--max-block, configured timeout)``.
+
+Each poll emits an MCP progress notification through the host's progress
+channel when one is installed — a no-op otherwise. This is liveness for hosts
+that abort a call that goes silent, not user-facing output: it never touches
+stdout, so the NDJSON contract is identical either way.
+
+Read-only: never writes to the project tree, never moves tasks, never launches
+processes. Standard library only (see STANDARDS.md § Wait Command Standards).
 """
 import argparse
-import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from cli import host_capability
 from cli.commands import handoff_packet, report_action
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
-from cli.emit import emit_record
+from cli.emit import emit_progress, emit_record
 from cli.main import (
     EXIT_ENV,
     EXIT_FAIL,
@@ -53,10 +65,6 @@ from cli.main import (
     stderr_error,
     stderr_usage,
 )
-
-# Duration grammar: a positive integer followed by a unit suffix.
-_DURATION_RE = re.compile(r"^(\d+)([smhd])$")
-_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 # Protocol default handoff timeout (CONVENTIONS.md § Handoffs).
 DEFAULT_TIMEOUT = "60m"
@@ -107,15 +115,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 def _parse_duration(raw: str) -> Optional[int]:
     """Return the duration in whole seconds, or None if malformed.
 
-    Accepts ``<positive-int><unit>`` where unit is one of s/m/h/d.
+    Accepts ``<positive-int><unit>`` where unit is one of s/m/h/d — the same
+    grammar ``roles.<role>.timeout`` uses, so both read from one parser.
     """
-    match = _DURATION_RE.match(raw.strip())
-    if not match:
-        return None
-    value = int(match.group(1))
-    if value <= 0:
-        return None
-    return value * _UNIT_SECONDS[match.group(2)]
+    return host_capability.parse_duration(raw)
 
 
 def _resolve_timeout_seconds(project_root: Path, role: str) -> int:
@@ -332,6 +335,17 @@ def handler(args: argparse.Namespace) -> int:
                          timeout_seconds=timeout_seconds,
                          effective_seconds=effective_seconds)
 
+        # Prove liveness to a host that aborts silent calls. This is not a
+        # user-facing heartbeat and not a PM-chosen rhythm: it rides the
+        # existing poll, goes to the host's progress channel rather than
+        # stdout, and is a no-op when no host installed one.
+        elapsed = effective_seconds - max(0.0, deadline - now)
+        emit_progress(
+            elapsed,
+            float(effective_seconds),
+            f"waiting on {report_path.name}",
+        )
+
         time.sleep(min(poll_interval, deadline - now))
 
 
@@ -349,6 +363,7 @@ def _emit(
     effective_seconds: int,
 ) -> int:
     """Emit the single terminal NDJSON record and return the mapped exit code."""
+    budget = host_capability.resolve_host_budget()
     record: Dict[str, Any] = {
         "task_id": task_id,
         "task_path": str(task_path),
@@ -360,6 +375,9 @@ def _emit(
         "max_block_seconds": max_block_seconds,
         "timeout_seconds": timeout_seconds,
         "effective_block_seconds": effective_seconds,
+        # What the host would have allowed this call, for the record. `null`
+        # outside an MCP host, where no tools/call ceiling applies.
+        "host_wait_budget": budget.record() if budget is not None else None,
     }
     emit_record(record)
     return _EXIT_FOR_STATUS[status]

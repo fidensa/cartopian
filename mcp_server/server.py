@@ -45,6 +45,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cli import emit
 from cli.version_identities import version_identities
 
 from .skill_metadata import (
@@ -73,6 +74,19 @@ URI_SCHEME = "cartopian"
 # Set for the duration of every in-process CLI tool invocation. Host-boundary
 # surfaces remain excluded from managed-agent tools.
 MCP_TOOL_CALL_MARKER = "CARTOPIAN_MCP_TOOL_CALL"
+
+# The connected host's identity, captured from the `initialize` handshake's
+# `clientInfo` and exported into every in-process CLI invocation. It is what
+# lets `cli/host_capability.py` resolve the host's tools/call ceiling from
+# evidence instead of guessing, and its absence is the honest signal that the
+# CLI is not running under an MCP host at all.
+_client_info: Dict[str, Any] = {}
+
+# The real stdout writer and framing, captured by `run()`. Progress
+# notifications bypass the captured stdout that tool handlers write their
+# NDJSON to and go straight out on the wire.
+_wire_writer: Any = None
+_wire_framing: Optional[str] = None
 
 # Hard caps applied before any read_text() of operator/agent-facing files.
 # Skills, protocol docs, templates, and project artifacts are all hand-authored
@@ -598,13 +612,47 @@ def _invoke_cli(subcommand: str, argv: List[str]) -> Dict[str, Any]:
     # fails closed rather than acting on an agent's behalf.
     prior_marker = os.environ.get(MCP_TOOL_CALL_MARKER)
     os.environ[MCP_TOOL_CALL_MARKER] = subcommand
+    prior_client = _export_client_identity()
     try:
         return _invoke_cli_captured(parser, subcommand, full_argv, out_buf, err_buf)
     finally:
+        _restore_env(prior_client)
         if prior_marker is None:
             os.environ.pop(MCP_TOOL_CALL_MARKER, None)
         else:
             os.environ[MCP_TOOL_CALL_MARKER] = prior_marker
+
+
+def _export_client_identity() -> Dict[str, Optional[str]]:
+    """Publish the connected host's identity to the CLI; return prior values.
+
+    Handlers read these through ``cli.host_capability`` to resolve the host's
+    tools/call ceiling. Exported per invocation rather than once at startup so
+    the markers never outlive a tool call into unrelated in-process code.
+    """
+    from cli import host_capability
+
+    values = {
+        host_capability.CLIENT_ENV: _client_info.get("name"),
+        host_capability.CLIENT_VERSION_ENV: _client_info.get("version"),
+        host_capability.CLIENT_TITLE_ENV: _client_info.get("title"),
+    }
+    prior: Dict[str, Optional[str]] = {}
+    for key, value in values.items():
+        prior[key] = os.environ.get(key)
+        if isinstance(value, str) and value.strip():
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+    return prior
+
+
+def _restore_env(prior: Dict[str, Optional[str]]) -> None:
+    for key, value in prior.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def _invoke_cli_captured(
@@ -664,13 +712,53 @@ def _build_invoke_result(code: int, out_buf: io.StringIO, err_buf: io.StringIO) 
     }
 
 
-def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _progress_sink(token: Any):
+    """Build a sink that writes one ``notifications/progress`` per call.
+
+    Only ever installed when the client supplied a ``progressToken``: the MCP
+    spec correlates progress by that token, so an unsolicited notification has
+    nothing to attach to and is dropped (or faulted) by the host.
+    """
+
+    def sink(progress: float, total: Optional[float], message: Optional[str]) -> None:
+        if _wire_writer is None or _wire_framing is None:
+            return
+        params: Dict[str, Any] = {"progressToken": token, "progress": progress}
+        if total is not None:
+            params["total"] = total
+        if message:
+            params["message"] = message
+        _write(
+            _wire_writer,
+            _wire_framing,
+            {"jsonrpc": "2.0", "method": "notifications/progress", "params": params},
+        )
+
+    return sink
+
+
+def call_tool(
+    name: str,
+    arguments: Optional[Dict[str, Any]],
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     registry = _tool_registry()
     if name not in registry:
         raise McpError(ERR_INVALID_PARAMS, f"unknown tool: {name}")
     entry = registry[name]
     argv = _kwargs_to_argv(entry["actions"], arguments or {})
-    result = _invoke_cli(entry["subcommand"], argv)
+
+    # A long wait that says nothing is indistinguishable from a hung server, and
+    # some hosts abort a call on exactly that silence. When the client asked for
+    # progress, give the blocking wait primitives a channel to prove liveness on.
+    token = (meta or {}).get("progressToken")
+    prior_sink = emit.set_progress_sink(
+        _progress_sink(token) if token is not None else None
+    )
+    try:
+        result = _invoke_cli(entry["subcommand"], argv)
+    finally:
+        emit.set_progress_sink(prior_sink)
 
     # MCP tool result: structuredContent + text fallback.
     text_lines: List[str] = []
@@ -1053,6 +1141,13 @@ def _capabilities() -> Dict[str, Any]:
 
 def handle_request(method: str, params: Dict[str, Any]) -> Any:
     if method == "initialize":
+        # Record who connected. The host's tools/call ceiling is a property of
+        # the client, and this handshake is the only place it identifies
+        # itself; without it the wait-budget gate cannot tell an unrecognized
+        # host from no host at all.
+        global _client_info
+        client = params.get("clientInfo")
+        _client_info = client if isinstance(client, dict) else {}
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "serverInfo": _server_info(),
@@ -1075,7 +1170,7 @@ def handle_request(method: str, params: Dict[str, Any]) -> Any:
         name = params.get("name")
         if not isinstance(name, str):
             raise McpError(ERR_INVALID_PARAMS, "params.name (string) required")
-        return call_tool(name, params.get("arguments"))
+        return call_tool(name, params.get("arguments"), params.get("_meta"))
     if method == "resources/list":
         return {"resources": list_resources()}
     if method == "resources/read":
@@ -1237,9 +1332,18 @@ def _read_content_length(first_line: bytes, reader) -> Optional[int]:
 
 
 def run(stdin=None, stdout=None) -> int:
-    """Serve MCP requests on stdin/stdout until EOF, in either framing."""
+    """Serve MCP requests on stdin/stdout until EOF, in either framing.
+
+    One message at a time, start to finish: a tool call that blocks — a wait
+    primitive holding out for a report — holds this loop for its whole
+    duration, so no other Cartopian tool can be serviced until it returns. See
+    ``protocol/CONVENTIONS.md § Handoffs`` on why a blocking wait occupies the
+    session rather than running beside it.
+    """
+    global _wire_writer, _wire_framing
     reader = _byte_reader(stdin)
     writer = _byte_writer(stdout)
+    _wire_writer = writer
 
     while True:
         line = reader.readline()
@@ -1271,6 +1375,9 @@ def run(stdin=None, stdout=None) -> int:
         if not isinstance(message, dict):
             _write(writer, framing, _error_response(None, ERR_INVALID_REQUEST, "message must be a JSON object"))
             continue
+        # Notifications sent from inside a handler must use the same framing as
+        # the request that triggered them; the client picks it per message.
+        _wire_framing = framing
         response = handle_message(message)
         if response is not None:
             _write(writer, framing, response)

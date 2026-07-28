@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from cli import emit, host_capability  # noqa: E402
 from mcp_server import server  # noqa: E402
 
 
@@ -979,6 +980,117 @@ class TestSubprocessSmoke(unittest.TestCase):
         response = json.loads(proc.stdout.splitlines()[0])
         self.assertEqual(response["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual(response["result"]["serverInfo"]["name"], "cartopian")
+
+
+class TestHostIdentityAndProgress(unittest.TestCase):
+    """The server tells the CLI who connected, and proves liveness on request.
+
+    Two host-boundary facts the wait primitives depend on: the connected
+    client's identity (so ``cli.host_capability`` can resolve that host's
+    ``tools/call`` ceiling from evidence rather than guessing), and a progress
+    channel (so a long wait is not mistaken for a hung server by a host that
+    aborts silent calls).
+    """
+
+    def setUp(self) -> None:
+        # `initialize` mutates module state; keep tests independent of order.
+        self._prior = server._client_info
+        server._client_info = {}
+
+    def tearDown(self) -> None:
+        server._client_info = self._prior
+        emit.set_progress_sink(None)
+
+    def test_initialize_captures_client_info(self):
+        rpc([{
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"clientInfo": {"name": "codex-mcp-client", "version": "1.2"}},
+        }])
+        self.assertEqual(server._client_info.get("name"), "codex-mcp-client")
+
+    def test_client_identity_is_exported_only_during_a_tool_call(self):
+        server._client_info = {"name": "codex-mcp-client", "version": "9.9"}
+        seen: Dict[str, Optional[str]] = {}
+
+        def capture(*_args, **_kwargs):
+            seen["name"] = os.environ.get(host_capability.CLIENT_ENV)
+            seen["version"] = os.environ.get(host_capability.CLIENT_VERSION_ENV)
+            return {"exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": ""}
+
+        with patch.object(server, "_invoke_cli_captured", side_effect=capture):
+            server.call_tool("discover_projects", {})
+
+        self.assertEqual(seen["name"], "codex-mcp-client")
+        self.assertEqual(seen["version"], "9.9")
+        # The marker must not leak past the call it describes.
+        self.assertIsNone(os.environ.get(host_capability.CLIENT_ENV))
+
+    def test_no_client_info_means_no_exported_marker(self):
+        """Absent clientInfo must read as "no host", not as an unknown one."""
+        server._client_info = {}
+        seen: Dict[str, Optional[str]] = {}
+
+        def capture(*_args, **_kwargs):
+            seen["name"] = os.environ.get(host_capability.CLIENT_ENV)
+            return {"exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": ""}
+
+        with patch.object(server, "_invoke_cli_captured", side_effect=capture):
+            server.call_tool("discover_projects", {})
+
+        self.assertIsNone(seen["name"])
+
+    def test_progress_token_installs_a_channel_that_reaches_the_wire(self):
+        stdout = io.StringIO()
+        server._wire_writer = server._byte_writer(stdout)
+        server._wire_framing = server.FRAMING_NEWLINE
+
+        def emit_two(*_args, **_kwargs):
+            emit.emit_progress(1.0, 10.0, "waiting on REPORT-01-001.md")
+            emit.emit_progress(2.0, 10.0, "waiting on REPORT-01-001.md")
+            return {"exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": ""}
+
+        with patch.object(server, "_invoke_cli_captured", side_effect=emit_two):
+            server.call_tool("discover_projects", {}, {"progressToken": "tok-7"})
+
+        notes = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(notes[0]["method"], "notifications/progress")
+        self.assertEqual(notes[0]["params"]["progressToken"], "tok-7")
+        self.assertEqual(notes[0]["params"]["progress"], 1.0)
+        self.assertEqual(notes[0]["params"]["total"], 10.0)
+        # Progress is a notification: never an id-bearing request.
+        self.assertNotIn("id", notes[0])
+
+    def test_no_progress_token_means_no_notifications(self):
+        """Unsolicited progress has no token to correlate to, so none is sent."""
+        stdout = io.StringIO()
+        server._wire_writer = server._byte_writer(stdout)
+        server._wire_framing = server.FRAMING_NEWLINE
+
+        def emit_one(*_args, **_kwargs):
+            emit.emit_progress(1.0, 10.0, "waiting")
+            return {"exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": ""}
+
+        with patch.object(server, "_invoke_cli_captured", side_effect=emit_one):
+            server.call_tool("discover_projects", {})
+
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_progress_sink_is_cleared_after_the_call(self):
+        stdout = io.StringIO()
+        server._wire_writer = server._byte_writer(stdout)
+        server._wire_framing = server.FRAMING_NEWLINE
+
+        with patch.object(
+            server,
+            "_invoke_cli_captured",
+            return_value={
+                "exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": "",
+            },
+        ):
+            server.call_tool("discover_projects", {}, {"progressToken": 4})
+
+        self.assertFalse(emit.progress_available())
 
 
 if __name__ == "__main__":

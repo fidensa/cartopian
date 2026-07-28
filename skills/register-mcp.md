@@ -353,7 +353,50 @@ If the operator names an agent not covered above, provide the registration facts
 
 ---
 
-## Stage 4 — Summarize
+## Stage 4 — Raise the tool-call wait ceiling
+
+Registration alone is not enough to run handoffs. Cartopian waits for an assignee by holding one `tools/call` open until the report file lands — up to `roles.<role>.timeout`, protocol default `60m`. Every host caps a single tool call, and **some hosts cap it well below that default**. When the cap is the smaller number the wait is killed mid-handoff, the assignee keeps working unobserved, and the PM sees a transport error instead of a protocol outcome.
+
+`cartopian dispatch` refuses to launch when the role timeout does not fit the host's ceiling, so an unconfigured host surfaces as a fail-closed guard at dispatch rather than a dead wait. Raising the ceiling here is what makes handoffs work at all on the affected hosts.
+
+Apply the setting for each agent the operator registered, sizing it above the largest `roles.<role>.timeout` any governed project uses (`3900` seconds comfortably clears the `60m` default):
+
+| Agent | Setting | Default | Where |
+| --- | --- | --- | --- |
+| Codex | `tool_timeout_sec` (seconds) | **300** — below the protocol default | `[mcp_servers.cartopian]` in `~/.codex/config.toml` |
+| Gemini | `timeout` (milliseconds) | **600000** — below the protocol default | `mcpServers.cartopian` in `~/.gemini/settings.json` |
+| Claude Code | `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` (milliseconds; `0` disables) | **1800000** idle — below the protocol default | the environment Claude Code launches with |
+| Claude Desktop, Cursor, Windsurf, Devin | no documented per-server tool-call timeout | unknown | see the note below |
+
+Codex — add the key under the existing entry, then restart Codex:
+
+```toml
+[mcp_servers.cartopian]
+command = "/path/to/.cartopian/bin/cartopian-mcp"
+tool_timeout_sec = 3900
+```
+
+Gemini — add the key under the existing entry in `~/.gemini/settings.json`, then restart Gemini:
+
+```json
+"cartopian": { "command": "/path/to/.cartopian/bin/cartopian-mcp", "timeout": 3900000 }
+```
+
+Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is already generous, but a stdio server that goes silent for 30 minutes is aborted for idleness. Cartopian's wait primitives emit MCP progress notifications, which count as traffic and hold the idle window open, so this ceiling only bites on a client that does not request progress. Raise or disable it explicitly when a role timeout exceeds 30 minutes.
+
+**Hosts with no documented setting.** Do not guess a value and do not assume a long blocking call survives. Cartopian resolves an unrecognized host to an *unknown* budget, which fails the dispatch gate by design. On such a host, either lower `roles.<role>.timeout` to a duration confirmed to survive, or dispatch that role manually and monitor the report path — never fall back to periodic status checks.
+
+Verify the result from inside a session on that host:
+
+```
+cartopian host-capability --role <role> --project <project-path>
+```
+
+`fits: true` means a full-length wait will survive. `fits: false` carries the mismatch and its remedies in `refusal`.
+
+---
+
+## Stage 5 — Summarize
 
 Report, per agent the operator selected:
 

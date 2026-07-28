@@ -126,6 +126,8 @@ Run `skills/register-mcp.md`. The install root is already resolved — pass it s
 
 `register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate recipe for each agent the operator selects. For Claude Code, Codex, Gemini, Devin, and Windsurf it does the full two-part hookup — registers the MCP server **and** installs a "use cartopian" trigger bridge (skill or command) so the entry phrase reads the authoritative `cartopian://skills/use_cartopian` resource. Claude Desktop and Cursor are MCP-only (no local bridge mechanism); any other agent is handled via a generic fallback.
 
+Do not stop at registration. That skill's Stage 4 raises each host's tool-call ceiling, which is what makes handoffs work at all: Cartopian waits for an assignee by holding one `tools/call` open for up to `roles.<role>.timeout` (default `60m`), and Codex and Gemini both cap that call **below** the default out of the box. Without Stage 4, `cartopian dispatch` fails closed on those hosts rather than launching a handoff whose wait cannot survive.
+
 ### Step 7 — Summarize
 
 Print:

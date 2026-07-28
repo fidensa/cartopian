@@ -1388,6 +1388,135 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertFalse(capture.exists())
 
 
+class TestDispatchHostWaitBudgetGate(unittest.TestCase):
+    """The host must be able to wait out the handoff, or nothing is launched.
+
+    Dispatch is only half a handoff: the PM has to still be waiting when the
+    report lands. Every MCP host caps a single ``tools/call``, and on some
+    hosts that cap is below the protocol's default 60m role timeout — so a
+    launch that clears every other gate still produces an orphaned assignee and
+    a killed wait. An unlaunched handoff is recoverable; an orphaned one is
+    not, so the mismatch is refused here rather than discovered mid-wait.
+    """
+
+    def _fake_home(self, tmp_path: Path) -> Path:
+        home = tmp_path / "home"
+        home.mkdir()
+        return home
+
+    def _codex_home(self, tmp_path: Path, body: str = "") -> Path:
+        home = tmp_path / "codex"
+        home.mkdir()
+        (home / "config.toml").write_text(body, encoding="utf-8")
+        return home
+
+    def test_role_timeout_over_host_ceiling_fails_closed(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            # 60m role timeout against Codex's 300s default tools/call ceiling.
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="60m"))
+            task_path = _write_task_and_prompt(scaffold)
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CLIENT": "codex-mcp-client",
+                "CODEX_HOME": str(self._codex_home(tmp_path)),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("tool_timeout_sec", stderr)
+            # Nothing was launched: the stub never ran.
+            self.assertFalse(capture.exists())
+
+    def test_raised_host_ceiling_permits_the_launch(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="60m"))
+            task_path = _write_task_and_prompt(scaffold)
+            codex_home = self._codex_home(
+                tmp_path,
+                '[mcp_servers.cartopian]\n'
+                'command = "/x/cartopian-mcp"\n'
+                "tool_timeout_sec = 3900\n",
+            )
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CLIENT": "codex-mcp-client",
+                "CODEX_HOME": str(codex_home),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads([ln for ln in stdout.split("\n") if ln][0])
+            self.assertEqual(rec["status"], "dispatched")
+            # The launch record carries the budget it was cleared against.
+            budget = rec["host_wait_budget"]
+            self.assertEqual(budget["host"], "codex")
+            self.assertEqual(budget["effective_wait_budget_seconds"], 3900)
+
+    def test_unrecognized_host_fails_closed(self) -> None:
+        """An unreadable ceiling is not an unbounded one."""
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="1m"))
+            task_path = _write_task_and_prompt(scaffold)
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CLIENT": "some-brand-new-ide",
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("[guard]", stderr)
+            self.assertIn("manually", stderr)
+            self.assertFalse(capture.exists())
+
+    def test_no_mcp_host_means_no_gate(self) -> None:
+        """A plain shell invocation has no tools/call ceiling to violate."""
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="60m"))
+            task_path = _write_task_and_prompt(scaffold)
+
+            env = {"STUB_CAPTURE": str(capture)}
+            with mock.patch.dict(os.environ, env, clear=False):
+                os.environ.pop("CARTOPIAN_MCP_CLIENT", None)
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads([ln for ln in stdout.split("\n") if ln][0])
+            self.assertIsNone(rec["host_wait_budget"])
+
+
 class TestDispatchPromptKeyed(unittest.TestCase):
     """Prompt-keyed (report-path-only) dispatch for planning-checkpoint reviews.
 

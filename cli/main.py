@@ -18,6 +18,7 @@ SUBCOMMANDS: List[str] = [
     "apply-migration-entry",
     "discover-projects",
     "generate-config",
+    "install-state-contract",
     "migrate-config",
     "move-task",
     "report-action",
@@ -65,6 +66,8 @@ SUBCOMMANDS: List[str] = [
     "plan-audit",
     # honest per-host containment matrix
     "containment-matrix",
+    # host tools/call wait budget behind the dispatch gate
+    "host-capability",
     # deterministic two-channel review context (original request + PM guidance)
     "review-context",
     # host intake-boundary capture; excluded from managed-agent MCP tools
@@ -145,6 +148,8 @@ def _real_handlers():
         discover_projects,
         generate_config,
         handoff_packet,
+        host_capability,
+        install_state_contract,
         list_tasks,
         migrate_config,
         move_task,
@@ -193,6 +198,11 @@ def _real_handlers():
         "discover-projects": (discover_projects.configure_parser, discover_projects.handler),
         "generate-config": (generate_config.configure_parser, generate_config.handler),
         "handoff-packet": (handoff_packet.configure_parser, handoff_packet.handler),
+        "host-capability": (host_capability.configure_parser, host_capability.handler),
+        "install-state-contract": (
+            install_state_contract.configure_parser,
+            install_state_contract.handler,
+        ),
         "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
         "migrate-config": (migrate_config.configure_parser, migrate_config.handler),
         "move-task": (move_task.configure_parser, move_task.handler),

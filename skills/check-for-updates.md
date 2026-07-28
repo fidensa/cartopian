@@ -2,6 +2,14 @@
 
 Check whether a newer Cartopian release is available and, on operator approval, re-run the install skill to upgrade the operator's install root in place.
 
+Install/update observations and completion language are governed by the
+authoritative machine contract emitted by
+`cartopian install-state-contract` (MCP: `install_state_contract`). This
+runbook preserves the contract's peer identities and never treats a repair
+offer as authorization, installed files as running-process activation, or a
+project migration offer as migration completion. Coordinated mutation and
+persisted resume mechanics remain separate workflows.
+
 **Output:** Either confirmation that Cartopian is current, or a refreshed install at the latest release with operator-owned files (`cartopian.toml`, `projects.json`) preserved.
 
 **How this skill is delivered.** Follow the current runbook directly when an MCP prompt supplied it. Otherwise, read `cartopian://skills/check_for_updates` with the host's MCP resource reader and follow it. The installed version is available without any lookup: the `use_cartopian` MCP prompt and resource both prepend an authoritative install-context block (install root + installed version + this upgrade skill), so you do not need to scan the filesystem to learn the running version.

@@ -52,7 +52,7 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple
 if os.name != "nt":
     import fcntl
 
-from cli import request_trace
+from cli import host_capability, request_trace
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
@@ -74,6 +74,7 @@ from cli.main import (
 # Protocol default handoff timeout (CONVENTIONS.md § Handoffs). Exported to the
 # wrapper as CARTOPIAN_TIMEOUT when the role block omits an explicit timeout.
 DEFAULT_TIMEOUT = "60m"
+DEFAULT_TIMEOUT_SECONDS = 3600
 
 # Agent-neutral model selection. Exported from the resolved
 # ``roles.<role>.model`` so the wrapper can translate it into the
@@ -382,6 +383,21 @@ def handler(args: argparse.Namespace) -> int:
         )
         return EXIT_FAIL
 
+    # --- Fail-closed: the host must be able to wait out this handoff ---------
+    # Launching is only half a handoff; the PM has to stay attached until the
+    # report lands (run-handoff Stage 3). Every MCP host caps a single
+    # tools/call, and on some hosts that cap is shorter than the protocol's
+    # default 60m role timeout — so the wait dies mid-handoff and the assignee
+    # keeps running unobserved. Refuse here, before the launch, rather than
+    # discover it partway through the wait: an unlaunched handoff is
+    # recoverable, an orphaned one is not.
+    host_ok, host_budget, host_refusal = host_capability.check_wait_budget(
+        role, host_capability.parse_duration(str(timeout)) or DEFAULT_TIMEOUT_SECONDS
+    )
+    if not host_ok:
+        stderr_guard(host_refusal)
+        return EXIT_FAIL
+
     task_id: Optional[str]
     if task_path is not None:
         activity = (
@@ -629,6 +645,9 @@ def handler(args: argparse.Namespace) -> int:
         "pid": proc.pid,
         "status": "dispatched",
         "request_trace": request_record,
+        # The wait budget this launch was cleared against. `null` when the CLI
+        # ran outside an MCP host, where no tools/call ceiling applies.
+        "host_wait_budget": host_budget.record() if host_budget is not None else None,
     }
     emit_record(record)
     return EXIT_OK

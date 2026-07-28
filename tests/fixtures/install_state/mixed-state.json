@@ -1,0 +1,151 @@
+{
+  "operation": "update",
+  "run_marker": "mixed-state-001",
+  "source": {
+    "kind": "release",
+    "value": "v1",
+    "state": "known",
+    "authority": "maintainer-release-metadata"
+  },
+  "versions": [
+    {
+      "kind": "release_version",
+      "value": "v1",
+      "state": "known",
+      "authority": "maintainer-release-metadata",
+      "verification": "verified"
+    },
+    {
+      "kind": "installed_content",
+      "value": "v1",
+      "state": "verified",
+      "authority": "installed-or-materialized-content",
+      "verification": "verified"
+    },
+    {
+      "kind": "project_schema_version",
+      "value": "v0",
+      "state": "older",
+      "authority": "project-config-and-shipped-schema",
+      "verification": "verified"
+    },
+    {
+      "kind": "running_server",
+      "value": "v0",
+      "state": "stale-runtime",
+      "authority": "connected-mcp-process",
+      "verification": "verified"
+    },
+    {
+      "kind": "mcp_protocol_version",
+      "value": "2024-11-05",
+      "state": "supported",
+      "authority": "mcp-wire-handshake",
+      "verification": "verified"
+    }
+  ],
+  "surfaces": [
+    {
+      "kind": "core-files",
+      "locator": "installed:core-files",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": true,
+      "required": true
+    },
+    {
+      "kind": "mcp-server-files",
+      "locator": "installed:mcp-server-files",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": true,
+      "required": true
+    },
+    {
+      "kind": "wrappers",
+      "locator": "installed:wrappers",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": false,
+      "required": true
+    },
+    {
+      "kind": "bridges",
+      "locator": "client:codex:bridge",
+      "desired_identity": "v1",
+      "observed_identity": "v0",
+      "state": "declined",
+      "affected": true,
+      "required": true
+    },
+    {
+      "kind": "client-registrations",
+      "locator": "client:codex:registration",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": false,
+      "required": true
+    },
+    {
+      "kind": "client-configuration",
+      "locator": "client:codex:configuration",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": false,
+      "required": true
+    },
+    {
+      "kind": "verification-content",
+      "locator": "installed:verification-content",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "verified",
+      "affected": true,
+      "required": true
+    },
+    {
+      "kind": "project-schema-migration-offers",
+      "locator": "registered-project:schema",
+      "desired_identity": "v1",
+      "observed_identity": "v0",
+      "state": "offered",
+      "affected": true,
+      "required": true
+    }
+  ],
+  "state": "restart-required",
+  "choices": [
+    {
+      "id": "bridge-repair",
+      "surface": "bridges",
+      "offered_action": "repair",
+      "state": "declined",
+      "provenance": "interactive-operator"
+    }
+  ],
+  "restarts": [
+    {
+      "client": "codex",
+      "installed_identity": "v1",
+      "running_identity": "v0",
+      "state": "required",
+      "instruction_class": "restart-client",
+      "proof_state": "unverified"
+    }
+  ],
+  "migrations": [
+    {
+      "project_identity": "registered-project",
+      "current_schema": "v0",
+      "target_schema": "v1",
+      "applicability": "applicable",
+      "choice_state": "offered",
+      "result": "not-run"
+    }
+  ]
+}

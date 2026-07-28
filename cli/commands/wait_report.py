@@ -29,24 +29,20 @@ is judged via the ``report-action`` aggregator, not the deprecated public
 ``parse-report`` surface.
 """
 import argparse
-import re
 import sys
 import time
 from pathlib import Path
 from typing import Optional
 
+from cli import host_capability
 from cli.commands import handoff_packet, report_action
 from cli.commands.resolve_config import _CliError
 from cli.commands.wait_handoff import (
     DEFAULT_TIMEOUT_SECONDS,
     _resolve_timeout_seconds,
 )
-from cli.emit import emit_record
+from cli.emit import emit_progress, emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
-
-# Duration grammar: a positive integer followed by a unit suffix.
-_DURATION_RE = re.compile(r"^(\d+)([smhd])$")
-_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 DEFAULT_POLL_SECONDS = 5.0
 
@@ -87,15 +83,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 def _parse_duration(raw: str) -> Optional[int]:
     """Return the duration in whole seconds, or None if malformed.
 
-    Accepts ``<positive-int><unit>`` where unit is one of s/m/h/d.
+    Accepts ``<positive-int><unit>`` where unit is one of s/m/h/d — the same
+    grammar ``roles.<role>.timeout`` uses, so both read from one parser.
     """
-    match = _DURATION_RE.match(raw.strip())
-    if not match:
-        return None
-    value = int(match.group(1))
-    if value <= 0:
-        return None
-    return value * _UNIT_SECONDS[match.group(2)]
+    return host_capability.parse_duration(raw)
 
 
 def _report_verdict(report_path: Path) -> Optional[str]:
@@ -119,6 +110,12 @@ def _report_verdict(report_path: Path) -> Optional[str]:
     except _CliError:
         return "failed-to-parse"
     return verdict
+
+
+def _host_budget_record():
+    """The host's tools/call ceiling for this record, or None outside a host."""
+    budget = host_capability.resolve_host_budget()
+    return budget.record() if budget is not None else None
 
 
 def _resolve_ceiling_seconds(report_path: Path, role: Optional[str]) -> int:
@@ -190,6 +187,7 @@ def handler(args: argparse.Namespace) -> int:
                         "verdict": verdict,
                         "accepted": True,
                         "still_running": False,
+                        "host_wait_budget": _host_budget_record(),
                     }
                 )
                 return EXIT_OK
@@ -209,8 +207,17 @@ def handler(args: argparse.Namespace) -> int:
                 "max_block_seconds": max_block_seconds,
                 "timeout_seconds": timeout_seconds,
                 "effective_block_seconds": effective_seconds,
+                "host_wait_budget": _host_budget_record(),
             }
             emit_record(record)
             return EXIT_OK if deadline_still_running else EXIT_FAIL
+
+        # Prove liveness to a host that aborts silent calls — the host's
+        # progress channel, not stdout, and a no-op when none is installed.
+        emit_progress(
+            effective_seconds - max(0.0, deadline - now),
+            float(effective_seconds),
+            f"waiting on {report_path.name}",
+        )
 
         time.sleep(min(poll_interval, deadline - now))

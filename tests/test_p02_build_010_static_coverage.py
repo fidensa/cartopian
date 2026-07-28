@@ -246,18 +246,27 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         "timeout/failure",
         "meaningful new progress evidence",
         "deliberately throttled long-running threshold",
-        "automatic host wake/resume",
-        "must not itself emit a user-visible message",
     )
 
-    # The wait primitives are terminal/event-driven by default; a nonterminal
-    # observation slice exists only when `--max-block` is explicitly requested
-    # (a host-constraint opt-in), so no doc may present slicing as the default
-    # calling convention.
-    TERMINAL_DEFAULT_NEEDLES = (
-        "terminal and event-driven by default",
-        "explicit opt-in",
+    # Cartopian has no wake, resume, or callback mechanism, and no host is
+    # assumed to supply one; a blocking call that survives to the report is the
+    # entire completion mechanism. Earlier revisions of these docs instructed
+    # the PM to "use the host's automatic wake/resume mechanism" for a host
+    # that could not sustain the call — a capability no supported host exposes.
+    # Prose cannot conjure a transport feature, so the invented mechanisms are
+    # forbidden outright rather than merely unused.
+    FORBIDDEN_INVENTED_WAKE_PATTERNS = (
+        r"wake/resume",
+        r"filesystem-change wake",
+        r"\bwake mechanism\b",
+        r"\bheartbeat\b",
     )
+
+    # The wait primitives are terminal by default; a nonterminal observation
+    # slice exists only when `--max-block` is explicitly requested to fit a
+    # host ceiling that cannot be raised, so no doc may present slicing as the
+    # default calling convention.
+    TERMINAL_DEFAULT_NEEDLES = ("terminal by default",)
 
     # A fenced wait command (the command template at line start) must not
     # carry `--max-block` — the documented default call is the terminal form;
@@ -315,6 +324,20 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
                 body,
                 msg=f"{label} must pin the silent re-wait contract: {needle!r}",
             )
+        self._assert_no_invented_wake(label, body)
+
+    def _assert_no_invented_wake(self, label: str, body: str) -> None:
+        for pattern in self.FORBIDDEN_INVENTED_WAKE_PATTERNS:
+            self.assertIsNone(
+                re.search(pattern, body, re.IGNORECASE),
+                msg=(
+                    f"{label} must not promise a wake/resume or heartbeat "
+                    f"mechanism no host provides; matched /{pattern}/. The "
+                    f"supported shapes are a blocking wait the host can "
+                    f"sustain, an explicit --max-block slice, or declared "
+                    f"manual monitoring"
+                ),
+            )
 
     def _assert_terminal_default_contract(self, label: str, body: str) -> None:
         for needle in self.TERMINAL_DEFAULT_NEEDLES:
@@ -350,7 +373,8 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
             "same canonical wait primitive",
             "does not launch",
             "Only launches consume",
-            "automatic host wake/resume",
+            # The pre-launch gate is what makes a terminal wait safe to promise.
+            "host-capability",
         ):
             self.assertIn(needle, text)
 
@@ -389,7 +413,6 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
             "internal observation boundary",
             "same canonical wait primitive",
             "Only launches consume",
-            "automatic host wake/resume",
         ):
             self.assertIn(needle, section)
         self.assertRegex(section, r"each-handoff.*terminal result.*processed")
@@ -400,10 +423,14 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
         )
         self._assert_silent_rewait_contract("CONVENTIONS.md § Handoffs", section)
         self._assert_terminal_default_contract("CONVENTIONS.md § Handoffs", section)
-        # The host-constraint escape hatch is a wake mechanism, not skill
-        # wording: a host that cannot sustain the terminal call must supply a
-        # filesystem-change wake (or equivalent) to re-invoke the wait.
-        self.assertIn("filesystem-change wake", section)
+        # The host constraint is resolved before launch, not worked around
+        # after it: dispatch refuses when the role timeout exceeds the host's
+        # tools/call ceiling, and an unrecognized host fails that gate closed
+        # rather than inheriting another host's numbers.
+        self.assertIn("tools/call", section)
+        self.assertIn("refuses to launch", section)
+        self.assertIn("host-capability", section)
+        self.assertRegex(section, r"unknown.*fails the gate|not recognized")
 
 
 class SectionUriStaticCoverageTest(unittest.TestCase):
