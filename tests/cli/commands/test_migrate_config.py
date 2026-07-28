@@ -691,6 +691,29 @@ timeout = "45m"
                 plan.diagnostics[0]["field"],
                 "roles.coder.target",
             )
+            self.assertIn("agent", plan.diagnostics[0]["message"])
+            self.assertIn("agent", plan.diagnostics[0]["recovery"])
+            self.assertEqual(path.read_bytes(), authored)
+
+    def test_legacy_handoff_target_is_not_a_migration_source_or_alias(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = _seed(Path(raw), "canonical")
+            path = project / "cartopian.toml"
+            path.write_text(
+                path.read_text()
+                + "\n[handoffs.reviewer]\n"
+                + 'target = "cartopian-review"\n'
+            )
+            authored = path.read_bytes()
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            self.assertEqual(plan.diagnostics[0]["code"], "unknown-source-field")
+            self.assertEqual(
+                plan.diagnostics[0]["field"],
+                "handoffs.reviewer.target",
+            )
             self.assertEqual(path.read_bytes(), authored)
 
     def test_current_marker_repairs_preexisting_generated_tombstones(self):

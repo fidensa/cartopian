@@ -83,7 +83,6 @@ _ROLE_KEYS = frozenset(
 _HANDOFF_KEYS = frozenset(
     (
         "agent",
-        "target",
         "model",
         "effort",
         "timeout",
@@ -593,12 +592,15 @@ def _normalize_roles_and_handoffs(
             )
         unknown = sorted(set(role_value) - _ROLE_KEYS)
         if unknown:
+            recovery = "remove the unknown role field"
+            if unknown[0] == "target":
+                recovery = "remove the unsupported role field; author role handoffs with agent"
             _diagnose(
                 "unknown-source-field",
                 f"{role_field}.{unknown[0]}",
                 scope,
-                "role field is outside the supported migration inventory",
-                "remove the unknown role field",
+                "role field is outside the supported migration inventory; the role handoff field is agent",
+                recovery,
             )
         role = copy.deepcopy(role_value)
         nested_launch = role.pop("launch", None)
@@ -702,18 +704,8 @@ def _normalize_roles_and_handoffs(
             )
         role = roles.setdefault(role_name, OrderedDict())
         legacy_agent = handoff_value.get("agent")
-        legacy_target = handoff_value.get("target")
-        if (
-            legacy_agent is not None
-            and legacy_target is not None
-            and legacy_agent != legacy_target
-        ):
-            _conflict(f"{field_name}.agent", scope, "agent", "target")
-        mapped_agent = (
-            legacy_agent if legacy_agent is not None else legacy_target
-        )
         mapped_values = {
-            "agent": mapped_agent,
+            "agent": legacy_agent,
             "model": handoff_value.get("model"),
             "effort": handoff_value.get("effort"),
             "timeout": handoff_value.get("timeout"),
@@ -730,13 +722,10 @@ def _normalize_roles_and_handoffs(
                     f"roles.{role_name}",
                 )
             role[key] = value
-            source_key = key
-            if key == "agent":
-                source_key = "agent" if legacy_agent is not None else "target"
             facts.append(
                 {
                     "scope": scope,
-                    "field": f"{field_name}.{source_key}",
+                    "field": f"{field_name}.{key}",
                     "form": "legacy-handoff-launch",
                 }
             )
