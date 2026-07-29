@@ -92,6 +92,20 @@ _EXIT_FOR_STATUS = {
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     """Add arguments for wait-handoff."""
+    # Reaches the model through the MCP `tools/list` surface. The docstring
+    # above addresses a developer reading the source; this addresses a PM
+    # choosing between one blocking call and a series of slices, because that
+    # choice is where handoff observation actually goes wrong.
+    subparser.description = (
+        "Block until a dispatched assignee's report lands, then return one "
+        "terminal NDJSON record. Call this WITHOUT `max_block` and let it "
+        "block; it returns the moment the report lands. Its silence is "
+        "expected and is not a lapse in commentary: no model turn is in "
+        "progress while the call is pending, so an instruction to narrate "
+        "ongoing work does not govern it. `max_block` is only for a host "
+        "ceiling that cannot be raised, and `dispatch` already refused to "
+        "launch if that were the case. See CONVENTIONS.md § Handoffs."
+    )
     subparser.add_argument(
         "task_path",
         help="Absolute path to the task file whose handoff to monitor",

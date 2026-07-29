@@ -55,6 +55,19 @@ DEFAULT_POLL_SECONDS = 5.0
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     """Add arguments for wait-report."""
+    # The model-facing counterpart to the docstring above; see `wait_handoff`
+    # for why the two audiences get different prose.
+    subparser.description = (
+        "Block until a report lands at a known path, then return one terminal "
+        "NDJSON record. Use for a report with no task file, such as a planning "
+        "checkpoint review; for a task-scoped handoff use `wait_handoff`. Call "
+        "this WITHOUT `max_block` and let it block; it returns the moment the "
+        "report lands. Its silence is expected and is not a lapse in "
+        "commentary: no model turn is in progress while the call is pending, "
+        "so an instruction to narrate ongoing work does not govern it. "
+        "`max_block` is only for a host ceiling that cannot be raised. See "
+        "CONVENTIONS.md § Handoffs."
+    )
     subparser.add_argument(
         "report_path",
         help="Absolute path to the report file to wait for",

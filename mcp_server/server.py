@@ -536,7 +536,9 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
             "subcommand": cli_name,
             "schema": schema,
             "actions": actions,
-            "description": (sub.description or sub.prog or cli_name).strip(),
+            # No `sub.prog` fallback: a command with no prose has an empty
+            # description, not a restatement of its own invocation.
+            "description": (sub.description or "").strip(),
         }
     _TOOL_CACHE = registry
     return registry
@@ -545,9 +547,17 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
 def list_tools() -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for tool_name, entry in sorted(_tool_registry().items()):
+        # The registry's description is the command module's own prose (see
+        # `cli.main._command_description`). It is the only semantic guidance a
+        # model gets before choosing a tool, so it is carried through verbatim
+        # rather than replaced by a restatement of the tool's own name.
         items.append({
             "name": tool_name,
-            "description": f"Run `cartopian {entry['subcommand']}`.",
+            "description": (
+                f"Run `cartopian {entry['subcommand']}`.\n\n{entry['description']}"
+                if entry["description"]
+                else f"Run `cartopian {entry['subcommand']}`."
+            ),
             "inputSchema": entry["schema"],
         })
     return items

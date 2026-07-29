@@ -250,6 +250,12 @@ def build_parser() -> _UsageParser:
     real = _real_handlers()
     for name in SUBCOMMANDS:
         configure, handler = real[name]
+        # A command that needs prose sets `subparser.description` in its own
+        # `configure_parser`; that string is what the MCP `tools/list` surface
+        # carries. It is deliberately opt-in rather than derived from the module
+        # docstring: every connected session pays for `tools/list` whether or
+        # not it ever enters PM mode, so only a command whose behavior the model
+        # routinely gets wrong is worth that standing cost.
         sub = subparsers.add_parser(name, help=name)
         configure(sub)
         sub.set_defaults(_handler=handler)
