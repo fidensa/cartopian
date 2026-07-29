@@ -21,6 +21,9 @@ Outcomes:
 - Incomplete report while the wrapper can still publish → remain nonterminal.
 - Wrapper exit with malformed bytes or no report → deterministic exit 1
   classification matching ``wait-handoff``.
+- Output-supervisor overflow → deterministic exit 1
+  ``classification=output-overflow`` with bounded status metadata; the wait
+  never opens the retained launch log.
 - The resolved timeout ceiling elapses first → exit 1, emit one NDJSON
   ``timeout`` record (terminal; the handoff blew its absolute limit).
 - An explicit ``--max-block`` slice elapses before the ceiling → exit 0, emit

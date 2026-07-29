@@ -121,6 +121,34 @@ The bash wrappers run `timeout <duration> <real-cli> ...` so the OS owns the dea
 
 The wrappers no longer `exec` into the CLI: they run it as a child, capture its exit code, write the [status file](#status-file-early-crash-detection) below, and then exit with the assignee's exit code (so signals/exit codes still reach the PM faithfully).
 
+### Automated stream and launch-log bounds
+
+`cartopian dispatch` places the configured wrapper inside the common
+standard-library output supervisor before detaching it. This outer boundary
+is agent-neutral: all Codex, Claude, Gemini, and Devin wrappers use it on both
+POSIX and native PowerShell/CMD launch paths. It enforces the cumulative
+wrapper-stream byte/line limits, contains the wrapper process tree on
+overflow, and publishes only an independently bounded
+`<report-path>.launch.log`. The detached supervisor itself uses null stdio, so
+agent output can neither inherit the short-lived CLI/MCP caller's pipes nor
+enter its JSON-RPC stream.
+
+The shipped cumulative defaults are 256 KiB / 2,000 lines for the observed
+wrapper stream and 64 KiB / 400 lines for retained diagnostics. Dispatch
+exports the normalized values as `CARTOPIAN_STREAM_BYTE_LIMIT`,
+`CARTOPIAN_STREAM_LINE_LIMIT`, `CARTOPIAN_LOG_BYTE_LIMIT`, and
+`CARTOPIAN_LOG_LINE_LIMIT`. Invalid operator overrides fail before launch.
+Crossing a stream limit exits `125` with `classification=output-overflow` and
+bounded status metadata; ordinary nonzero exits and timeout `124` remain
+distinct.
+
+The supervisor's guarantee is `observable-wrapper-stream` in the host
+runtime. It is not pre-model interception, and bounded retention does not
+prove that output was excluded from an agent provider's private model
+context. Direct manual invocation of a wrapper does not pass through this
+automated-dispatch supervisor; use `cartopian dispatch` when this cumulative
+guarantee is required.
+
 ### Clean exit on report-complete (handoff exit contract)
 
 Some assignee CLIs keep running after they have written the report — MCP stdio servers that are not torn down, an inherited open stdin, or a trailing turn leave the process alive with no work left to do. If the wrapper only waited for that process, a *finished* handoff would sit idle until `timeout` killed it (exit `124`, `reason=timeout`) — a success that always read as a deadline failure.
@@ -133,7 +161,7 @@ The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedR
 
 ## Status file (early-crash detection)
 
-Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper atomically replaces it with exit facts while preserving that identity and variant. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
+Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper writes exit facts and the outer automated-dispatch supervisor atomically publishes the final clean/error/timeout result as a fallback; on stream overflow the supervisor publishes the distinct bounded overflow record. Identity and variant are preserved. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
 
 **The report file remains the authoritative completion signal.** The status file is never a hard requirement — if it is missing (helper absent, unwritable directory, prompt outside a project layout), wait-handoff degrades gracefully to the report-only path. Wrappers therefore write it best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
 
@@ -196,7 +224,7 @@ Only bounded lifecycle, exit, launch-identity, role/activity, and expected-varia
 The status file is transient and must never outlive the handoff it describes. Its full lifecycle is:
 
 1. **Publish current launch.** Automatic dispatch clears old report/status signals, then atomically writes `state=running` with the new launch identity and expected variant. If child creation fails, dispatch removes its own marker.
-2. **Replace on assignee exit.** Every wrapper writes `state=exited` after termination, preserving dispatch identity/variant when present. Clean, error, and timeout exits all publish best-effort.
+2. **Replace on assignee exit.** Every wrapper writes `state=exited` after termination, preserving dispatch identity/variant when present. Under automatic dispatch the outer supervisor publishes the final clean, error, timeout, launch-failure, or overflow outcome, so a custom wrapper that omits the optional helper cannot strand `state=running`.
 3. **Consume during wait.** Both canonical waits use it as secondary evidence. The report remains authoritative; absence leaves report-only observation, and a variant-mismatched stale status cannot terminate the current handoff.
 4. **Remove at report-clear / task-close.** `cartopian delete-report` removes the companion before slot reuse or at close.
 
@@ -275,6 +303,10 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
 | `CARTOPIAN_EXPECTED_REPORT_VARIANT` | _(inferred on manual launch)_ | `task`, `review`, or `planning-review`; prevents another handoff kind's stale content from satisfying supervision/observation. |
 | `CARTOPIAN_EXPECTED_REPORT_PATH` | _(unset on manual launch)_ | Exact bounded report slot recorded by dispatch for custom wrapper integration. |
+| `CARTOPIAN_COMMAND_OUTPUT_GUIDANCE` | generated by dispatch | The centrally generated 200-line / 32 KiB per-command operational rule already projected into the prompt. Exposed for custom-wrapper diagnostics; wrappers do not redefine it. |
+| `CARTOPIAN_STREAM_BYTE_LIMIT` / `CARTOPIAN_STREAM_LINE_LIMIT` | `262144` / `2000` | Normalized cumulative observable-wrapper-stream ceilings enforced outside the wrapper by automated dispatch. |
+| `CARTOPIAN_LOG_BYTE_LIMIT` / `CARTOPIAN_LOG_LINE_LIMIT` | `65536` / `400` | Independent retained launch-log ceilings. |
+| `CARTOPIAN_LAUNCH_LOG_PATH` | _(unset when unavailable)_ | Safe destination selected for the bounded retained representation. Wait/status paths never read its body. |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
 

@@ -12,11 +12,10 @@ its report:
 - ``<report-path>.status`` — early-crash-detection enrichment written by the
   agent wrappers and consumed by ``cartopian wait-handoff`` (see
   ``wrappers/README.md`` and ``protocol/CONVENTIONS.md`` § Handoffs);
-- ``<report-path>.launch.log`` — the diagnostic sidecar ``cartopian
-  dispatch`` points the detached child's stdout/stderr at on POSIX (see
-  ``cli/commands/dispatch.py``; native-Windows dispatch deliberately uses
-  the null device and writes no sidecar, so its absence there is the
-  ordinary no-op).
+- ``<report-path>.launch.log`` — the independently bounded diagnostic
+  representation atomically published by the common output supervisor on
+  POSIX and native Windows (see ``cli/output_safety.py``). Its absence is an
+  ordinary no-op when the destination was unavailable.
 
 Both are per-handoff transients that must never outlive the handoff they
 describe. Because the PM is markdown-only, this command is the PM-sanctioned

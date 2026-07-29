@@ -647,19 +647,21 @@ class TestDispatchDetachedStdio(unittest.TestCase):
             self.assertIs(captured["stderr"], subprocess.STDOUT)
             self.assertTrue(captured["start_new_session"])
 
-            # stdout is the dispatch-owned launch log next to the expected
-            # report; the parent's handle is closed once the child owns it.
-            log_handle = captured["stdout"]
-            self.assertTrue(
-                log_handle.name.endswith(
-                    os.path.join("reports", "REPORT-01-004.md.launch.log")
-                ),
-                msg=f"launch log at unexpected path: {log_handle.name}",
-            )
-            self.assertTrue(log_handle.closed, "parent kept the launch log open")
-
+            # Dispatch detaches the common supervisor on explicit null stdio.
+            # The supervisor owns the wrapper pipe and atomically publishes
+            # the independently bounded log named in its argv.
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
+            self.assertTrue(captured["argv"][1].endswith("cli/output_safety.py"))
             rec = json.loads(stdout.strip())
-            self.assertEqual(rec["launch_log_path"], log_handle.name)
+            self.assertIn("--log-path", captured["argv"])
+            self.assertIn(rec["launch_log_path"], captured["argv"])
+            self.assertEqual(
+                rec["output_safety"]["guarantee_scope"],
+                "observable-wrapper-stream",
+            )
+            self.assertFalse(
+                rec["output_safety"]["pre_model_ingestion_guaranteed"]
+            )
 
     @unittest.skipUnless(os.name == "posix", "pipe-lifetime semantics are POSIX-specific here")
     def test_detached_child_survives_caller_and_captured_pipe_exit(self) -> None:
@@ -861,10 +863,10 @@ class TestDispatchLaunchLogSink(unittest.TestCase):
             self.assertEqual(
                 Path(rec["launch_log_path"]).resolve(), log_path.resolve()
             )
-            self.assertEqual(
-                log_path.read_bytes(), b"",
-                msg="prior-run diagnostics survived into the new dispatch's "
-                    "sink — runs appended into one file",
+            self.assertFalse(
+                log_path.exists(),
+                msg="prior-run diagnostics survived before the supervisor "
+                    "published this launch's bounded representation",
             )
 
     @unittest.skipUnless(os.name == "posix", "umask/mode semantics are POSIX-specific")
@@ -890,10 +892,9 @@ class TestDispatchLaunchLogSink(unittest.TestCase):
                 os.umask(old_umask)
 
             self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
-            mode = stat.S_IMODE(log_path.stat().st_mode)
-            self.assertEqual(
-                mode, 0o600,
-                msg=f"launch log created mode {oct(mode)}; must be owner-only 0600",
+            self.assertFalse(
+                log_path.exists(),
+                msg="dispatch must not expose a log before bounded supervisor publication",
             )
 
     @unittest.skipUnless(os.name == "posix", "chmod semantics are POSIX-specific")
@@ -917,9 +918,10 @@ class TestDispatchLaunchLogSink(unittest.TestCase):
                 stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
 
             self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
-            mode = stat.S_IMODE(log_path.stat().st_mode)
-            self.assertEqual(mode, 0o600, msg=f"pre-existing log kept mode {oct(mode)}")
-            self.assertEqual(log_path.read_bytes(), b"")
+            self.assertFalse(
+                log_path.exists(),
+                msg="pre-existing log must be removed before bounded publication",
+            )
 
     def test_symlink_launch_log_not_followed(self) -> None:
         # A leaf symlink planted at the predictable sidecar path must never
@@ -1033,30 +1035,12 @@ class TestDispatchLaunchLogSink(unittest.TestCase):
 
 
 class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
-    """Native-Windows output policy, exercised through the real handler with
-    the ``_running_on_windows`` platform seam patched — the exact predicate
-    the handler branches on. The branch under test performs no filesystem
-    work at all, so driving it on a POSIX host is faithful (unlike simulating
-    Windows *rename semantics* under POSIX, which these tests replaced).
+    """Native-Windows wrapper routing under the common bounded supervisor.
 
-    The POSIX sidecar's hardened open has no native-Windows equivalent that
-    has been validated on Windows: the CRT open lacks ``O_NOFOLLOW``, and the
-    exclusive-temp-plus-``os.replace`` alternative renames a still-open
-    ``mkstemp`` descriptor — opened without ``FILE_SHARE_DELETE``, so on real
-    Windows that rename is expected to fail with a sharing violation on every
-    normal launch, silently degrading to the null device while the code and
-    its POSIX-hosted tests claimed otherwise. Native Windows therefore
-    deliberately gets safe detached null output: explicit ``stdin=DEVNULL``,
-    ``stdout=DEVNULL``, stderr folded, ``launch_log_path`` recorded as null,
-    and the sidecar path never created, opened, replaced, truncated, or
-    cleaned — so no planted node there can redirect anything and no
-    share-mode assumption exists.
-
-    RED framing: before this policy, the nt branch built the sink via
-    mkstemp+``os.replace`` — under POSIX rename semantics that *appears* to
-    work, so with ``os.name`` patched the handler handed Popen a log handle
-    (not ``DEVNULL``), truncated a planted sidecar, and unlinked it again on
-    a failed launch. GREEN: the nt branch touches nothing and pins DEVNULL.
+    Dispatch itself always detaches the supervisor on null stdio.  The
+    supervisor captures the wrapper through its own pipe and publishes a
+    closed, bounded file atomically, so the same safe retention contract now
+    applies without renaming an open Windows descriptor.
     """
 
     LOG_NAME = "REPORT-01-004.md.launch.log"
@@ -1081,12 +1065,7 @@ class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
 
         return fake_popen
 
-    def test_nt_launch_uses_devnull_and_records_null_log(self) -> None:
-        # The deliberate policy: on native Windows the detached child gets
-        # explicit null-device stdio (stderr folded), the record says
-        # launch_log_path null, and a planted sidecar — plus the directory
-        # around it — is left byte-for-byte alone (no create/open/replace/
-        # truncate/clean, no temp-file residue).
+    def test_nt_launch_uses_common_supervisor_and_records_bounded_log(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
@@ -1108,27 +1087,21 @@ class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
             self.assertIs(captured["stdin"], subprocess.DEVNULL)
-            self.assertIs(
-                captured["stdout"], subprocess.DEVNULL,
-                msg="native-Windows launch must use explicit DEVNULL stdout, "
-                    "not a launch-log handle",
-            )
+            self.assertIs(captured["stdout"], subprocess.DEVNULL)
             self.assertIs(captured["stderr"], subprocess.STDOUT)
             self.assertTrue(captured["start_new_session"])
 
             rec = json.loads(stdout.strip())
-            self.assertIsNone(
-                rec["launch_log_path"],
-                msg="native-Windows record must state the honest policy: no log",
+            self.assertEqual(rec["launch_log_path"], str(planted.resolve()))
+            self.assertFalse(
+                planted.exists(),
+                msg="prior retained bytes must be cleared before this launch",
             )
-            self.assertEqual(
-                planted.read_bytes(), b"planted sidecar content\n",
-                msg="nt branch touched the planted sidecar (truncated/replaced)",
-            )
+            self.assertIn("--log-path", captured["argv"])
             self.assertEqual(
                 sorted(os.listdir(scaffold.reports)),
-                [self.LOG_NAME, "REPORT-01-004.md.status"],
-                msg="nt branch left unexpected residue in reports/",
+                ["REPORT-01-004.md.status"],
+                msg="only the running status exists until supervisor publication",
             )
             status_text = (
                 scaffold.reports / "REPORT-01-004.md.status"
@@ -1202,10 +1175,7 @@ class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
                 "node at the sidecar path must be left exactly as planted",
             )
 
-    def test_nt_failed_launch_leaves_planted_sidecar_alone(self) -> None:
-        # The failed-launch orphan cleanup is a POSIX-sidecar concern. On
-        # native Windows no sink was created, so nothing may be unlinked — a
-        # planted file at the sidecar path survives a Popen failure.
+    def test_nt_failed_launch_leaves_no_stale_sidecar(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
@@ -1226,10 +1196,9 @@ class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertIn("failed to launch handoff agent", stderr)
-            self.assertEqual(
-                planted.read_bytes(), b"planted sidecar content\n",
-                msg="nt failed-launch cleanup deleted or truncated a file it "
-                    "never created",
+            self.assertFalse(
+                planted.exists(),
+                msg="failed launch must not leave a prior run's sidecar in the slot",
             )
 
 

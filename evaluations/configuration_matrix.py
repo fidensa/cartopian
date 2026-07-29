@@ -396,7 +396,7 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                     return_value=_FakeProcess(),
                 ) as popen,
                 mock.patch(
-                    "cli.commands.dispatch._open_launch_log",
+                    "cli.commands.dispatch.output_safety.usable_log_path",
                     return_value=None,
                 ),
                 contextlib.redirect_stdout(stdout),

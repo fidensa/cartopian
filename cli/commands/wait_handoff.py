@@ -18,6 +18,9 @@ Terminal status flags emitted on stdout (one NDJSON record):
   permanently invalid. A present but incomplete report remains nonterminal
   while the wrapper is still running.
 - ``failed``: the wrapper exited non-zero and no report appeared.
+- ``output-overflow``: the common supervisor crossed a cumulative byte/line
+  ceiling, contained the wrapper process tree, and supplied bounded counters
+  and retention metadata without reading the launch-log body.
 - ``exited-without-report`` is carried in the common ``classification`` field
   when the wrapper exited cleanly without publishing a report (the legacy
   task-scoped ``status`` remains ``failed``).

@@ -38,6 +38,7 @@ class WrapperObservation:
     launch_id: Optional[str]
     expected_variant: Optional[str]
     variant_matches: bool
+    metadata: Dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,7 @@ def observe_wrapper(
         launch_id=fields.get("launch_id") or None,
         expected_variant=status_variant,
         variant_matches=variant_matches,
+        metadata=fields,
     )
 
 
@@ -156,6 +158,8 @@ def observe_once(
 
     # A stale status record from another variant cannot terminate this launch.
     if wrapper.state == "exited" and wrapper.variant_matches:
+        if wrapper.metadata.get("classification") == "output-overflow":
+            return HandoffObservation(True, "output-overflow", report, wrapper)
         if report.present:
             return HandoffObservation(True, "failed-to-parse", report, wrapper)
         classification = (
@@ -170,7 +174,7 @@ def observe_once(
 
 def record_fields(observation: HandoffObservation) -> Dict[str, Any]:
     """Common machine fields emitted unchanged by both wait surfaces."""
-    return {
+    fields = {
         "terminal": observation.terminal,
         "classification": observation.classification,
         "publication_state": observation.report.publication_state,
@@ -184,3 +188,38 @@ def record_fields(observation: HandoffObservation) -> Dict[str, Any]:
         "status_expected_variant": observation.wrapper.expected_variant,
         "status_variant_matches": observation.wrapper.variant_matches,
     }
+    if observation.wrapper.metadata.get("classification") == "output-overflow":
+        metadata = observation.wrapper.metadata
+
+        def integer(name: str) -> Optional[int]:
+            try:
+                return int(metadata[name])
+            except (KeyError, ValueError):
+                return None
+
+        fields["output_overflow"] = {
+            "classification": "output-overflow",
+            "stream_byte_limit": integer("stream_byte_limit"),
+            "stream_line_limit": integer("stream_line_limit"),
+            "log_byte_limit": integer("log_byte_limit"),
+            "log_line_limit": integer("log_line_limit"),
+            "observed_bytes": integer("observed_bytes"),
+            "observed_lines": integer("observed_lines"),
+            "retained_log_path": metadata.get("retained_log_path"),
+            "retained_bytes": integer("retained_bytes"),
+            "retained_lines": integer("retained_lines"),
+            "termination_result": metadata.get("termination_result"),
+            "terminated": metadata.get("terminated") == "true",
+            "report_present": metadata.get("report_present") == "true",
+            "guarantee_scope": metadata.get("guarantee_scope"),
+            "pre_model_ingestion_guaranteed": (
+                metadata.get("pre_model_ingestion_guaranteed") == "true"
+            ),
+            "provider_private_context_exclusion_guaranteed": (
+                metadata.get("provider_private_context_exclusion_guaranteed")
+                == "true"
+            ),
+        }
+    else:
+        fields["output_overflow"] = None
+    return fields

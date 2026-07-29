@@ -41,19 +41,16 @@ dispatch to launch an arbitrary process — the mediated, config-bound path is t
 only route a contained PM has. Standard library only (NF-001).
 """
 import argparse
-import errno
 import os
 import secrets
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-if os.name != "nt":
-    import fcntl
-
-from cli import host_capability, request_trace
+from cli import host_capability, output_safety, request_trace
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
@@ -148,67 +145,40 @@ def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) 
     return [resolved_agent, prompt_path]
 
 
-def _open_launch_log(path: str) -> Optional[BinaryIO]:
-    """Open the dispatch-owned launch-log sidecar as a safe, fresh sink.
-
-    POSIX-only, and deliberately so — native Windows dispatch never calls
-    this (see the output-policy comment in ``handler``).
-
-    Returns an open binary handle to an empty regular file created (or
-    truncated) at ``path`` with owner-only permissions, or ``None`` when the
-    path cannot be used safely — the caller then falls back to the null
-    device. The sidecar path is predictable, so a pre-existing node there is
-    treated as untrusted:
-
-    - a leaf symlink is never followed (a planted link would redirect the
-      child's diagnostics into an arbitrary file);
-    - only a regular file is ever handed to the child — a FIFO would block
-      the open (or the child's writes) and a device/directory/socket is not
-      a log;
-    - the file is truncated per dispatch so each handoff starts with a fresh
-      sink and one run's diagnostics are never appended onto a prior run's;
-    - permissions are forced owner-only (``0600``) whether the file is new
-      or pre-existing (diagnostics may echo paths, env, and tracebacks).
-
-    The open is atomic against path substitution: ``O_NOFOLLOW`` fails a
-    leaf symlink at open time (ELOOP) and ``O_NONBLOCK`` turns a
-    reader-less-FIFO open into ENXIO instead of a hang; the fd is then
-    verified regular before it is normalized, truncated, and handed out.
-    Native Windows has neither flag, so no equivalently hardened open of the
-    sidecar path exists there — which is exactly why the Windows policy is
-    to have no sidecar at all rather than an unhardened one.
-    """
-
-    def _posix_opener(p: str, _flags: int) -> int:
-        fd = os.open(
-            p,
-            os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
-            0o600,
-        )
-        try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                # Opened without blocking, but a FIFO-with-reader, device,
-                # or socket must still never become the diagnostic sink.
-                raise OSError(errno.EINVAL, "launch-log sink is not a regular file", p)
-            # O_CREAT's mode is narrowed by the umask and cannot fix a
-            # pre-existing file; force owner-only either way.
-            os.fchmod(fd, 0o600)
-            # O_NONBLOCK was only needed to make a FIFO collision fail fast;
-            # the child's regular-file writes must not inherit it.
-            fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
-            os.ftruncate(fd, 0)
-        except OSError:
-            os.close(fd)
-            raise
-        return fd
-
-    # open() with an opener keeps the handle's .name as the path (recorded in
-    # the NDJSON launch record) while the opener supplies the hardened flags;
-    # the mode-derived flags open() passes down are deliberately ignored.
+def _ensure_prompt_output_guidance(prompt_path: Path) -> None:
+    """Project the central command budget into one automated assignment."""
+    tmp: Optional[Path] = None
     try:
-        return open(path, "wb", opener=_posix_opener)
-    except OSError:
-        return None
+        info = prompt_path.lstat()
+        if prompt_path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
+            raise OSError("prompt is not a safe single-link regular file")
+        original = prompt_path.read_text(encoding="utf-8")
+        updated = output_safety.upsert_command_output_guidance(original)
+        if updated == original:
+            return
+        tmp = prompt_path.parent / (
+            f".{prompt_path.name}.output-safety.{os.getpid()}.{secrets.token_hex(8)}"
+        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, stat.S_IMODE(info.st_mode))
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(updated)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, prompt_path)
+    except (OSError, UnicodeDecodeError) as exc:
+        try:
+            if tmp is not None:
+                tmp.unlink()
+        except OSError:
+            pass
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"cannot project the central command-output budget into prompt "
+            f"{prompt_path}: {exc}",
+        ) from exc
 
 
 def _preflight_request_trace(
@@ -488,6 +458,11 @@ def handler(args: argparse.Namespace) -> int:
             f"level or remove the key"
         )
         return EXIT_FAIL
+    try:
+        output_limits = output_safety.limits_from_environment(dict(os.environ))
+    except output_safety.OutputSafetyError as exc:
+        stderr_guard(f"invalid automated-handoff output contract: {exc}")
+        return EXIT_FAIL
 
     # --- Fail-closed: the host must be able to wait out this handoff ---------
     # Launching is only half a handoff; the PM has to stay attached until the
@@ -561,6 +536,15 @@ def handler(args: argparse.Namespace) -> int:
             project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
         ).resolve()
         expected_variant = "planning-review"
+
+    # Every automated assignment receives the same generated per-command rule.
+    # Dispatch also performs this idempotent projection so a legacy prompt
+    # written before the current mediated writer cannot silently omit it.
+    try:
+        _ensure_prompt_output_guidance(prompt_path)
+    except _CliError as err:
+        stderr_guard(err.message)
+        return err.exit_code
 
     # --- Fail-closed: request-trace evidence is present and current --------
     # Review handoffs recompute applicability and the review-context identity at
@@ -677,54 +661,46 @@ def handler(args: argparse.Namespace) -> int:
         return err.exit_code
     is_windows = _running_on_windows()
     launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), is_windows)
-    # Explicit stable stdio for the detached child. The wrapper outlives this
-    # short-lived invocation, so no stream may be implicitly inherited from the
-    # caller: a captured CLI or MCP caller exits at launch and its pipes die
-    # with it — the child's first write after that is EPIPE, killing the
-    # handoff mid-run before any report exists (and an inherited stdout would
-    # interleave agent output into an MCP server's JSON-RPC stream). stdin
-    # comes from the null device; the output policy is per-platform and
-    # deliberate:
-    #
-    # - POSIX: stdout goes to a dispatch-owned launch log, a sidecar of the
-    #   expected report (like the wrapper status file), with stderr folded in
-    #   so wrapper/agent diagnostics survive the caller. Diagnostics are
-    #   best-effort; detachment is not — an unsafe or unopenable log falls
-    #   back to the null device rather than failing the handoff, blocking, or
-    #   inheriting. The sink is opened hardened (fresh-truncated, owner-only,
-    #   symlink/non-regular collisions refused) — see _open_launch_log.
-    # - Native Windows: stdout/stderr go straight to the null device and
-    #   launch_log_path is recorded as null. No launch-log sink is ever
-    #   created, opened, replaced, truncated, or cleaned, so no planted node
-    #   at the predictable sidecar path can redirect diagnostics and no
-    #   file-share-mode assumption exists. This is honesty, not neglect: the
-    #   CRT open has no O_NOFOLLOW, and the exclusive-temp-plus-os.replace
-    #   alternative renames a still-open mkstemp descriptor — opened without
-    #   FILE_SHARE_DELETE, so on real Windows the rename is expected to fail
-    #   with a sharing violation on every normal launch, silently degrading
-    #   to the null device while pretending to provide a log. Until a native
-    #   delete-sharing implementation can be validated on Windows, safe
-    #   detached null output is the policy.
-    launch_log: Optional[BinaryIO] = None
-    launch_log_path: Optional[str] = None
-    if not is_windows:
-        launch_log_path = str(expected_report_path) + ".launch.log"
-        try:
-            os.makedirs(expected_report_path.parent, exist_ok=True)
-        except OSError:
-            launch_log = None
-        else:
-            launch_log = _open_launch_log(launch_log_path)
-        if launch_log is None:
-            launch_log_path = None
+    # The detached supervisor, not the log file, is the stream boundary.  It
+    # reads the configured wrapper through a pipe, enforces the cumulative
+    # byte/line ceiling, contains the wrapper process tree on overflow, and
+    # atomically publishes only the independently bounded retained log.
+    launch_log = output_safety.usable_log_path(
+        Path(str(expected_report_path) + ".launch.log")
+    )
+    launch_log_path = str(launch_log) if launch_log is not None else None
+    output_safety.project_environment(env, output_limits, launch_log)
+    supervisor_argv = [
+        sys.executable,
+        str(Path(output_safety.__file__).resolve()),
+        "--status-path",
+        str(status_path),
+        "--report-path",
+        str(expected_report_path),
+        "--launch-id",
+        launch_id,
+        "--expected-variant",
+        expected_variant,
+        "--stream-bytes",
+        str(output_limits.stream_bytes),
+        "--stream-lines",
+        str(output_limits.stream_lines),
+        "--log-bytes",
+        str(output_limits.log_bytes),
+        "--log-lines",
+        str(output_limits.log_lines),
+    ]
+    if launch_log_path is not None:
+        supervisor_argv.extend(["--log-path", launch_log_path])
+    supervisor_argv.extend(["--", *launch_argv])
     proc = None
     try:
         proc = subprocess.Popen(  # noqa: S603 — agent is operator-configured, not PM input
-            launch_argv,
+            supervisor_argv,
             cwd=launch_cwd,
             env=env,
             stdin=subprocess.DEVNULL,
-            stdout=launch_log if launch_log is not None else subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
@@ -746,18 +722,6 @@ def handler(args: argparse.Namespace) -> int:
         _remove_own_running_status(status_path, launch_id)
         stderr_error(f"failed to launch handoff agent {agent}: {exc}")
         return EXIT_FAIL
-    finally:
-        # The child holds its own descriptor after Popen; the parent's handle
-        # must not outlive the launch (the caller may exit immediately).
-        if launch_log is not None:
-            launch_log.close()
-            if proc is None:
-                # Failed launch: no handoff exists, so the just-created
-                # (empty) sink must not linger as an orphan sidecar.
-                try:
-                    os.unlink(launch_log_path)
-                except OSError:
-                    pass
 
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
@@ -779,6 +743,16 @@ def handler(args: argparse.Namespace) -> int:
         "timeout": timeout,
         "cwd": launch_cwd,
         "launch_log_path": launch_log_path,
+        "output_safety": {
+            **output_limits.as_record(),
+            "command_byte_limit": output_safety.COMMAND_OUTPUT_BYTE_LIMIT,
+            "command_line_limit": output_safety.COMMAND_OUTPUT_LINE_LIMIT,
+            "overflow_classification": output_safety.OUTPUT_OVERFLOW_CLASSIFICATION,
+            "overflow_exit_code": output_safety.OUTPUT_OVERFLOW_EXIT,
+            "guarantee_scope": output_safety.GUARANTEE_SCOPE,
+            "pre_model_ingestion_guaranteed": False,
+            "provider_private_context_exclusion_guaranteed": False,
+        },
         "pid": proc.pid,
         "launch_id": launch_id,
         "expected_report_variant": expected_variant,

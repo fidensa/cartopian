@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+from cli import output_safety
 from cli.commands import _writers
 from cli.request_trace import (
     CHECKPOINT_ID_RE, PHASE_ID_RE, PLAN_REF_RE, REVIEW_KINDS, RequestRefusal,
@@ -25,20 +26,22 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr("usage", "--prompt-id has invalid grammar")
         return _writers.EXIT_USAGE
     variant = "planning" if args.prompt_id.startswith("PROMPT-PLAN-") else "task"
-    content: Optional[object] = None
+    root, error = _writers.validated_root(args.project_root)
+    body, body_error = _writers.resolve_content(args)
+    if error or body_error:
+        _writers.stderr("usage", error or body_error or "invalid input")
+        return _writers.EXIT_USAGE
+    if isinstance(body, bytes):
+        try:
+            body = body.decode("utf-8")
+        except UnicodeDecodeError:
+            _writers.stderr("usage", "prompt body must be valid UTF-8")
+            return _writers.EXIT_USAGE
+    assert root is not None
+    assert isinstance(body, str)
+    content: Optional[object] = body
     details = {"prompt_id": args.prompt_id, "variant": variant}
     if args.review_kind:
-        root, error = _writers.validated_root(args.project_root)
-        body, body_error = _writers.resolve_content(args)
-        if error or body_error:
-            _writers.stderr("usage", error or body_error or "invalid input")
-            return _writers.EXIT_USAGE
-        if isinstance(body, bytes):
-            try:
-                body = body.decode("utf-8")
-            except UnicodeDecodeError:
-                _writers.stderr("usage", "review prompt must be valid UTF-8")
-                return _writers.EXIT_USAGE
         try:
             if args.review_kind == "task-closure":
                 task = Path(args.task or "")
@@ -64,4 +67,9 @@ def handler(args: argparse.Namespace) -> int:
             "request_state": "unavailable-for-legacy" if context.legacy else "resolved",
             "request_measures": context.as_record()["measures"],
         })
+    content = output_safety.upsert_command_output_guidance(str(content))
+    details["command_output_budget"] = {
+        "bytes": output_safety.COMMAND_OUTPUT_BYTE_LIMIT,
+        "lines": output_safety.COMMAND_OUTPUT_LINE_LIMIT,
+    }
     return _writers.perform_write(args, action="write-prompt", dest_kind="prompt", relative_target=f"{args.prompt_id}.md", content=content, extra_details=details)
