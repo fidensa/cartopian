@@ -33,10 +33,24 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cli import request_trace
+import pytest
+
+from cli import host_capability, request_trace
 from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 from tests.scaffold import project_scaffold
+
+
+@pytest.fixture(autouse=True)
+def _direct_cli_host_environment(monkeypatch):
+    """Most dispatch tests exercise direct CLI execution, not an MCP host."""
+    for name in (
+        host_capability.CONNECTED_ENV,
+        host_capability.CLIENT_ENV,
+        host_capability.CLIENT_VERSION_ENV,
+        host_capability.CLIENT_TITLE_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 # A minimal task-completion report the stub wrapper writes so `wait-handoff`
 # observes a terminal `done`. Must satisfy parse_report's task-variant schema
@@ -92,6 +106,11 @@ if capture:
                 "model": os.environ.get("CARTOPIAN_MODEL"),
                 "effort": os.environ.get("CARTOPIAN_EFFORT"),
                 "work_roots": os.environ.get("CARTOPIAN_WORK_ROOTS"),
+                "mcp_connected": os.environ.get("CARTOPIAN_MCP_CONNECTED"),
+                "mcp_client": os.environ.get("CARTOPIAN_MCP_CLIENT"),
+                "mcp_client_version": os.environ.get("CARTOPIAN_MCP_CLIENT_VERSION"),
+                "mcp_client_title": os.environ.get("CARTOPIAN_MCP_CLIENT_TITLE"),
+                "mcp_tool_call": os.environ.get("CARTOPIAN_MCP_TOOL_CALL"),
                 "cwd": os.getcwd(),
             },
             fh,
@@ -331,6 +350,11 @@ class TestDispatchPositive(unittest.TestCase):
                 cap["work_roots"],
                 os.pathsep.join((str(work_root), str(docs_root))),
             )
+            self.assertIsNone(cap["mcp_connected"])
+            self.assertIsNone(cap["mcp_client"])
+            self.assertIsNone(cap["mcp_client_version"])
+            self.assertIsNone(cap["mcp_client_title"])
+            self.assertIsNone(cap["mcp_tool_call"])
             # The wrapper actually ran with cwd = the cartopian project root.
             self.assertEqual(Path(cap["cwd"]).resolve(), project_root)
 
@@ -1102,9 +1126,15 @@ class TestDispatchWindowsDevnullPolicy(unittest.TestCase):
                 msg="nt branch touched the planted sidecar (truncated/replaced)",
             )
             self.assertEqual(
-                sorted(os.listdir(scaffold.reports)), [self.LOG_NAME],
-                msg="nt branch left residue in reports/ (temp file or cleanup)",
+                sorted(os.listdir(scaffold.reports)),
+                [self.LOG_NAME, "REPORT-01-004.md.status"],
+                msg="nt branch left unexpected residue in reports/",
             )
+            status_text = (
+                scaffold.reports / "REPORT-01-004.md.status"
+            ).read_text(encoding="utf-8")
+            self.assertIn("state=running", status_text)
+            self.assertIn("expected_variant=task", status_text)
 
     @unittest.skipUnless(os.name == "posix", "planting a symlink needs POSIX")
     def test_nt_launch_leaves_planted_symlink_and_target_untouched(self) -> None:
@@ -1422,6 +1452,7 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
 
             env = {
                 "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CONNECTED": "1",
                 "CARTOPIAN_MCP_CLIENT": "codex-mcp-client",
                 "CODEX_HOME": str(self._codex_home(tmp_path)),
             }
@@ -1454,6 +1485,7 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
 
             env = {
                 "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CONNECTED": "1",
                 "CARTOPIAN_MCP_CLIENT": "codex-mcp-client",
                 "CODEX_HOME": str(codex_home),
             }
@@ -1482,6 +1514,7 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
 
             env = {
                 "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CONNECTED": "1",
                 "CARTOPIAN_MCP_CLIENT": "some-brand-new-ide",
             }
             with mock.patch.dict(os.environ, env, clear=False):
@@ -1507,6 +1540,7 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
 
             env = {"STUB_CAPTURE": str(capture)}
             with mock.patch.dict(os.environ, env, clear=False):
+                os.environ.pop("CARTOPIAN_MCP_CONNECTED", None)
                 os.environ.pop("CARTOPIAN_MCP_CLIENT", None)
                 stdout, stderr, rc = _dispatch(
                     str(task_path), "coder", self._fake_home(tmp_path)

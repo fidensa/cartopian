@@ -233,7 +233,11 @@ def handler(args: argparse.Namespace) -> int:
         nn_nnn = task_id.removeprefix("TASK-")
         review_prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
         try:
-            context = request_trace.context_for_task(project_root, task_path)
+            context = request_trace.context_for_task(
+                project_root,
+                task_path,
+                require_completion_evidence=True,
+            )
         except request_trace.RequestRefusal as refusal:
             stderr_guard(f"{refusal.rule}: {refusal.detail}")
             if refusal.recovery:
@@ -249,6 +253,7 @@ def handler(args: argparse.Namespace) -> int:
                     project_root,
                     task_path,
                     prompt_text=prompt_text,
+                    require_completion_evidence=True,
                 )
             except request_trace.RequestRefusal as refusal:
                 stderr_guard(f"{refusal.rule}: {refusal.detail}")

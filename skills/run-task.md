@@ -246,7 +246,10 @@ The review prompt must include absolute paths to:
 - The task file.
 - The spec file, when present.
 - The deliverable, when the task declares one — the absolute `deliverable.absolute_path`, named as the **primary artifact to review** (the durable work product, not a summary of it). For a `project`-mode deliverable this is the copy the PM persisted in Stage 4.
-- The coder's completion report — the input the reviewer reads.
+- The generated `## Captured coder completion evidence` section — the full,
+  content-hashed coder report snapshot the reviewer reads after the shared
+  report filename is cleared. Do not direct the reviewer to reopen that
+  transient report path.
 - The expected review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`), carrying findings and the `Verdict:` header.
 - The expected report path the reviewer writes its review-completion report to (the `expected_report_path` from the handoff record — the same `reports/REPORT-NN-NNN.md` slot the coder report used, cleared below before the review handoff).
 - The report template path, directing the reviewer to the **review-completion variant** of `cartopian://templates/REPORT.md`.
@@ -254,10 +257,13 @@ The review prompt must include absolute paths to:
 - Relevant implementation evidence.
 - The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
 
-`write-prompt --review-kind task-closure` resolves the exact request trace
-and replaces authored copies with the generated,
-context-bound request-comparison sections. Do not summarize or edit them. Before a
-manual handoff, require the `request_trace.preflight` record from
+`write-prompt --review-kind task-closure` resolves the exact request trace,
+captures and verifies the still-present coder completion report, and replaces
+authored copies with generated context-bound sections. The resulting identity
+binds operator evidence, PM-derived artifacts, captured coder evidence, task,
+prompt, and review target. Do not summarize or edit those sections. Before
+clearing the slot, require `captured_completion_evidence` to be present. Before
+a manual handoff, require the `request_trace.preflight` record from
 `handoff-packet` to be present and `ok: true`; manual launch does not bypass
 the binding check automatic dispatch performs.
 
@@ -277,7 +283,9 @@ The review prompt must also include:
 - A reminder that reviewers do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When the reviewed task is **verification-only**, carry the assignment prompt's effective git operating model into the review prompt. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), state explicitly that an already-dirty work root containing prior completed tasks' deliverables is the expected steady state, not a review defect and not proof that the verification handoff changed files. The reviewer evaluates whether this handoff introduced changes using the coder report and task evidence; it must not issue `request-changes` merely because `git status` shows pre-existing modifications or untracked deliverables.
 
-After task completion evidence has been captured in the review prompt, task file, or review context, remove any stale review handoff report using the Core CLI when issuing a distinct review handoff that expects the same report path:
+After task completion evidence has been captured in the generated review
+context, remove the coder report and its wrapper status using the Core CLI
+before issuing the distinct review handoff that reuses the same report path:
 
 ```text
 cartopian delete-report <report-path>

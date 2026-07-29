@@ -36,10 +36,16 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cli import emit
+
 # Exported by mcp_server.server around each in-process tool invocation. Absent
 # means "not running under an MCP host", which is distinct from "running under
 # an unrecognized one" — the first has no host ceiling, the second has an
 # unknown one.
+# Presence marks an in-process MCP tool invocation even when the connected
+# client omitted ``clientInfo``.  That omission is an *unknown connected host*,
+# not a direct shell invocation.
+CONNECTED_ENV = "CARTOPIAN_MCP_CONNECTED"
 CLIENT_ENV = "CARTOPIAN_MCP_CLIENT"
 CLIENT_VERSION_ENV = "CARTOPIAN_MCP_CLIENT_VERSION"
 CLIENT_TITLE_ENV = "CARTOPIAN_MCP_CLIENT_TITLE"
@@ -75,6 +81,7 @@ class HostBudget:
         idle_source: str,
         progress_resets_wall_clock: bool,
         progress_resets_idle: bool,
+        progress_channel_available: bool,
         evidence: List[str],
         remediation: List[str],
     ) -> None:
@@ -88,22 +95,38 @@ class HostBudget:
         self.idle_source = idle_source
         self.progress_resets_wall_clock = progress_resets_wall_clock
         self.progress_resets_idle = progress_resets_idle
+        self.progress_channel_available = progress_channel_available
         self.evidence = evidence
         self.remediation = remediation
 
+    def _applicable_ceilings(self) -> List[Tuple[str, int]]:
+        """Ceilings that can terminate this invocation's canonical wait."""
+        ceilings: List[Tuple[str, int]] = []
+        if self.wall_clock_seconds is not None and not (
+            self.progress_channel_available and self.progress_resets_wall_clock
+        ):
+            ceilings.append(("wall-clock", self.wall_clock_seconds))
+        if self.idle_seconds is not None and not (
+            self.progress_channel_available and self.progress_resets_idle
+        ):
+            ceilings.append(("idle", self.idle_seconds))
+        return ceilings
+
     @property
     def effective_seconds(self) -> Optional[int]:
-        """The smaller of the two ceilings — either one ends the call.
+        """The sustainable fixed ceiling for one canonical wait.
 
-        ``None`` means the budget is unknown (an unrecognized host), which is
-        not the same as unbounded. Callers must fail closed on ``None``.
+        A documented progress-resettable idle window is still reported in the
+        capability record, but does not cap total wait duration only when this
+        invocation actually has an MCP progress channel. Without that channel,
+        the raw idle window remains applicable. Progress never extends a fixed
+        wall-clock ceiling.
+
+        ``None`` means either unknown (``host == "unknown"``) or no fixed
+        ceiling for a known host.  Callers distinguish those through ``known``.
         """
-        candidates = [
-            value
-            for value in (self.wall_clock_seconds, self.idle_seconds)
-            if value is not None
-        ]
-        return min(candidates) if candidates else None
+        candidates = self._applicable_ceilings()
+        return min(seconds for _label, seconds in candidates) if candidates else None
 
     @property
     def known(self) -> bool:
@@ -111,14 +134,20 @@ class HostBudget:
 
     def limiting_ceiling(self) -> Optional[str]:
         """Which ceiling is the binding constraint: ``wall-clock`` or ``idle``."""
-        effective = self.effective_seconds
-        if effective is None:
+        candidates = self._applicable_ceilings()
+        if not candidates:
             return None
-        if self.idle_seconds is not None and self.idle_seconds == effective:
-            return "idle"
-        return "wall-clock"
+        # Stable wall-first ordering makes equal applicable ceilings report the
+        # fixed wall constraint, while excluded resettable ceilings never label
+        # a budget they did not determine.
+        return min(candidates, key=lambda item: item[1])[0]
 
     def record(self) -> Dict[str, Any]:
+        raw_candidates = [
+            value
+            for value in (self.wall_clock_seconds, self.idle_seconds)
+            if value is not None
+        ]
         return {
             "host": self.host,
             "host_display": self.display,
@@ -128,10 +157,14 @@ class HostBudget:
             "wall_clock_source": self.wall_clock_source,
             "idle_seconds": self.idle_seconds,
             "idle_source": self.idle_source,
+            "raw_smallest_ceiling_seconds": (
+                min(raw_candidates) if raw_candidates else None
+            ),
             "effective_wait_budget_seconds": self.effective_seconds,
             "limiting_ceiling": self.limiting_ceiling(),
             "progress_resets_wall_clock": self.progress_resets_wall_clock,
             "progress_resets_idle": self.progress_resets_idle,
+            "progress_channel_available": self.progress_channel_available,
             "evidence": self.evidence,
             "remediation": self.remediation,
         }
@@ -149,9 +182,17 @@ def _positive_int(raw: Any) -> Optional[int]:
     headroom the host does not grant. Idle-disabling zeros are handled by their
     own host-specific reader.
     """
-    try:
-        value = int(float(raw))
-    except (TypeError, ValueError):
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, float):
+        if not raw.is_integer():
+            return None
+        value = int(raw)
+    elif isinstance(raw, str) and re.fullmatch(r"\d+", raw.strip()):
+        value = int(raw.strip())
+    else:
         return None
     return value if value > 0 else None
 
@@ -282,6 +323,7 @@ def _resolve_codex(client_name: str, client_version: Optional[str]) -> HostBudge
         idle_source="not-imposed",
         progress_resets_wall_clock=False,
         progress_resets_idle=False,
+        progress_channel_available=emit.progress_available(),
         evidence=evidence,
         remediation=[
             f"raise the ceiling: add `tool_timeout_sec = <seconds>` under "
@@ -339,6 +381,7 @@ def _resolve_claude_code(client_name: str, client_version: Optional[str]) -> Hos
         # A progress notification counts as traffic for the idle check, so a
         # wait that emits them keeps the call alive against the idle ceiling.
         progress_resets_idle=True,
+        progress_channel_available=emit.progress_available(),
         evidence=[wall_evidence, idle_evidence],
         remediation=[
             "raise the idle window: set CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT to a "
@@ -398,6 +441,7 @@ def _resolve_gemini(client_name: str, client_version: Optional[str]) -> HostBudg
         idle_source="not-imposed",
         progress_resets_wall_clock=False,
         progress_resets_idle=False,
+        progress_channel_available=emit.progress_available(),
         evidence=evidence,
         remediation=[
             f"raise the ceiling: set `mcpServers.{name}.timeout` (milliseconds) "
@@ -419,6 +463,7 @@ def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBud
         idle_source="unknown",
         progress_resets_wall_clock=False,
         progress_resets_idle=False,
+        progress_channel_available=emit.progress_available(),
         evidence=[
             f"MCP client {client_name!r} is not in the known-host table, so its "
             f"tool-call ceilings cannot be read"
@@ -446,7 +491,7 @@ _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
 
 def under_mcp_host() -> bool:
     """True when this CLI call is an in-process MCP tool invocation."""
-    return bool(os.environ.get(CLIENT_ENV, "").strip())
+    return bool(os.environ.get(CONNECTED_ENV, "").strip())
 
 
 def resolve_host_budget() -> Optional[HostBudget]:
@@ -458,9 +503,11 @@ def resolve_host_budget() -> Optional[HostBudget]:
     client yields the ``unknown`` budget, whose ``effective_seconds`` is
     ``None`` and which callers must treat as fail-closed.
     """
+    if not under_mcp_host():
+        return None
     client_name = os.environ.get(CLIENT_ENV, "").strip()
     if not client_name:
-        return None
+        return _resolve_unknown("", None)
     client_version = os.environ.get(CLIENT_VERSION_ENV, "").strip() or None
     haystack = f"{client_name} {os.environ.get(CLIENT_TITLE_ENV, '')}".lower()
     for pattern, resolver in _HOST_MATCHERS:
@@ -510,7 +557,7 @@ def check_wait_budget(
         return True, None, None
 
     effective = budget.effective_seconds
-    if effective is None:
+    if effective is None and not budget.known:
         detail = "; ".join(budget.evidence)
         options = "\n".join(f"  - {item}" for item in budget.remediation)
         return (
@@ -523,7 +570,7 @@ def check_wait_budget(
             ),
         )
 
-    if role_timeout_seconds <= effective:
+    if effective is None or role_timeout_seconds <= effective:
         return True, budget, None
 
     ceiling = budget.limiting_ceiling()

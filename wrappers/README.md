@@ -125,7 +125,7 @@ The wrappers no longer `exec` into the CLI: they run it as a child, capture its 
 
 Some assignee CLIs keep running after they have written the report — MCP stdio servers that are not torn down, an inherited open stdin, or a trailing turn leave the process alive with no work left to do. If the wrapper only waited for that process, a *finished* handoff would sit idle until `timeout` killed it (exit `124`, `reason=timeout`) — a success that always read as a deadline failure.
 
-The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one `wait-handoff` parses); once it appears complete — present, non-empty, carrying a top-level `Status: <complete|blocked|failed>` line — the supervisor grants the child a brief grace to exit on its own and then reaps it, so the wrapper exits `0` / `reason=clean` promptly.
+The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one the wait commands parse); the supervisor requires the expected task/review/planning-review terminal structure, not merely path appearance or an early `Status:` line. Once that publication shape is complete, it grants the child a brief grace to exit on its own and then reaps it. A partially written report remains nonterminal and cannot cause the wrapper to kill its writer.
 
 This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); no per-tool CLI timeout flag is introduced.
 
@@ -133,7 +133,7 @@ The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedR
 
 ## Status file (early-crash detection)
 
-When the assignee process exits, every wrapper writes a small **status file** capturing the exit outcome. This is the optional early-crash-detection signal `cartopian wait-handoff` polls for: if the assignee dies before producing a report, wait-handoff can return `failed` immediately instead of blocking to the deadline.
+Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper atomically replaces it with exit facts while preserving that identity and variant. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
 
 **The report file remains the authoritative completion signal.** The status file is never a hard requirement — if it is missing (helper absent, unwritable directory, prompt outside a project layout), wait-handoff degrades gracefully to the report-only path. Wrappers therefore write it best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
 
@@ -143,6 +143,7 @@ The status file lives at the expected report path with a `.status` suffix — ex
 
 ```text
 <project-root>/reports/REPORT-NN-NNN.md.status
+<project-root>/reports/REPORT-PLAN-NNN[-slug].md.status
 ```
 
 The `NN-NNN` id comes from the prompt filename (`PROMPT-NN-NNN.md`), and the project root is the prompt's grandparent directory (`<project-root>/prompts/PROMPT-NN-NNN.md`). Wrappers compute this from the prompt path *before* changing the launch cwd, so a relative prompt path still resolves.
@@ -152,14 +153,18 @@ The `NN-NNN` id comes from the prompt filename (`PROMPT-NN-NNN.md`), and the pro
 Newline-separated `key=value` lines, UTF-8:
 
 ```text
-state=exited
+state=running|exited
+launch_id=<current launch identity>
+expected_variant=task|review|planning-review
 exit_code=<int>
 reason=clean|error|timeout
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `state` | Always `exited` once the assignee process has terminated. `state=exited` is itself terminal for the consumer: the process is gone, so if no report is present none is coming. |
+| `state` | `running` is published by automatic dispatch before child creation; `exited` is published by the wrapper after termination. |
+| `launch_id` | Fresh dispatch identity binding the running/exited signal to one launch. Omitted for a manual wrapper launch without dispatch context. |
+| `expected_variant` | The only report variant this launch may publish. Task-scoped waits also derive it from task lifecycle status. |
 | `exit_code` | The assignee's exit code. A **non-zero** code is the crash signal (`wait-handoff` reports `failed`). A `0` (clean) exit is not a crash, but it is still terminal — see the outcome table below. |
 | `reason` | Human/diagnostic distinction only — **ignored by the consumer**, which keys off `state`/`exit_code` alone. One of `clean` (exit 0), `error` (any other non-zero exit), or `timeout` (the OS deadline killed the assignee). |
 
@@ -174,7 +179,7 @@ The report file is always the authoritative signal: when a valid report is prese
 | Non-zero exit | `exited` | `<n≠0>` | `error` | `failed` |
 | Timeout kill | `exited` | `124` | `timeout` | `failed` |
 
-A clean exit with no report is treated as terminal (not a wait-to-deadline) because `state=exited` means the assignee process is gone — a report that was never written will never appear. This closes the "exited-without-report zombie": a reviewer that wrote `reviews/REVIEW-NN-NNN.md` but forgot the `reports/REPORT-NN-NNN.md` used to leave `wait-handoff` blocking until its deadline; now it returns `failed` promptly so the PM can retry the handoff.
+A clean exit with no report is terminal (`classification=exited-without-report`) because `state=exited` means the process is gone. A malformed report is not failed immediately while `state=running`; after exit it deterministically becomes `failed-to-parse`.
 
 A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout` returns when it kills the child at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
 
@@ -184,15 +189,16 @@ The producer (the shared helpers `bin/_cartopian-status.sh` and `ps1/CartopianSt
 
 ### Security
 
-Only the three fields above are ever written — all derived from the exit outcome. No environment variables, prompt content, credentials, tokens, or connection strings are written to the status file.
+Only bounded lifecycle, exit, launch-identity, role/activity, and expected-variant fields are written. No prompt content, host conversation, credentials, tokens, connection strings, or arbitrary environment content is written.
 
 ### Lifecycle (write → consume → remove)
 
 The status file is transient and must never outlive the handoff it describes. Its full lifecycle is:
 
-1. **Write on assignee exit.** Every wrapper — all of `wrappers/bin/*` and `wrappers/ps1/*` — writes the file under the same condition: once the assignee process has exited and a status path could be derived from the prompt (a prompt inside a `…/prompts/PROMPT-NN-NNN.md` layout). Emission does not depend on the exit code — clean, error, and timeout exits all produce a file — and it does not depend on whether `cartopian resolve-config` succeeds (an unregistered or ad-hoc project still emits). Writing is best-effort, so a genuinely unwritable target degrades to no file rather than a wrapper failure.
-2. **Consume during wait.** `cartopian wait-handoff` reads it as the optional early-crash signal while it blocks. The report file remains the authoritative completion signal; an absent `.status` simply leaves the wait on its report-only path.
-3. **Remove at report-clear / task-close.** `cartopian delete-report <report-path>` removes the companion `<report-path>.status` together with the report at report-clear (before a slot is reused), and `cartopian delete-report <report-path> --status-only` removes just the status file at task close, when the report `.md` is retained as evidence. The PM lifecycle (`skills/run-task.md`, `skills/run-handoff.md`) calls these at the right stages; absence of the file is always a no-op.
+1. **Publish current launch.** Automatic dispatch clears old report/status signals, then atomically writes `state=running` with the new launch identity and expected variant. If child creation fails, dispatch removes its own marker.
+2. **Replace on assignee exit.** Every wrapper writes `state=exited` after termination, preserving dispatch identity/variant when present. Clean, error, and timeout exits all publish best-effort.
+3. **Consume during wait.** Both canonical waits use it as secondary evidence. The report remains authoritative; absence leaves report-only observation, and a variant-mismatched stale status cannot terminate the current handoff.
+4. **Remove at report-clear / task-close.** `cartopian delete-report` removes the companion before slot reuse or at close.
 
 Because emission is uniform across every wrapper, a `.status` left behind always traces to step 3 not yet having run — not to which wrapper produced it.
 
@@ -266,6 +272,9 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`). Unset means the tool's own default model. |
 | `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude and Codex translate it into their tool-specific flags; Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
 | `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
+| `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
+| `CARTOPIAN_EXPECTED_REPORT_VARIANT` | _(inferred on manual launch)_ | `task`, `review`, or `planning-review`; prevents another handoff kind's stale content from satisfying supervision/observation. |
+| `CARTOPIAN_EXPECTED_REPORT_PATH` | _(unset on manual launch)_ | Exact bounded report slot recorded by dispatch for custom wrapper integration. |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
 

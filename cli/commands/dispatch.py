@@ -43,6 +43,7 @@ only route a contained PM has. Standard library only (NF-001).
 import argparse
 import errno
 import os
+import secrets
 import shutil
 import stat
 import subprocess
@@ -97,6 +98,9 @@ EFFORT_ENV = "CARTOPIAN_EFFORT"
 # wrapper needs the resolved paths to widen that sandbox to cover them. Never
 # exported when the project declares no work roots.
 WORK_ROOTS_ENV = "CARTOPIAN_WORK_ROOTS"
+HANDOFF_ID_ENV = "CARTOPIAN_HANDOFF_ID"
+EXPECTED_VARIANT_ENV = "CARTOPIAN_EXPECTED_REPORT_VARIANT"
+EXPECTED_REPORT_ENV = "CARTOPIAN_EXPECTED_REPORT_PATH"
 
 def _running_on_windows() -> bool:
     """Platform seam for the two native-Windows launch branches (argv routing
@@ -235,6 +239,7 @@ def _preflight_request_trace(
                 project_root,
                 task_path,
                 prompt_text=prompt_text,
+                require_completion_evidence=True,
             )
         else:
             checkpoint_id = prompt_path.stem.removeprefix("PROMPT-")
@@ -257,7 +262,108 @@ def _preflight_request_trace(
     ]
     result["legacy_unavailable"] = context.legacy
     result["measures"] = context.measures
+    result["captured_completion_evidence"] = (
+        context.captured_completion.as_record()
+        if context.captured_completion is not None
+        else None
+    )
     return bool(result["ok"]), result
+
+
+def _clear_handoff_signal(path: Path) -> bool:
+    """Remove one bounded report-slot signal, refusing unsafe leaf types."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"handoff signal cannot be inspected before launch: {path} — {exc}",
+        )
+    if path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"handoff signal is not a safe single-link regular file: {path}",
+        )
+    try:
+        path.unlink()
+    except OSError as exc:
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"handoff signal cannot be cleared before launch: {path} — {exc}",
+        )
+    return True
+
+
+def _clear_handoff_slot(report_path: Path) -> Dict[str, bool]:
+    """Clear authoritative and secondary signals before one new launch."""
+    return {
+        "report_deleted": _clear_handoff_signal(report_path),
+        "status_deleted": _clear_handoff_signal(Path(str(report_path) + ".status")),
+    }
+
+
+def _publish_running_status(
+    status_path: Path,
+    *,
+    launch_id: str,
+    role: str,
+    activity: str,
+    expected_variant: str,
+) -> None:
+    """Atomically publish the secondary running marker for the current launch."""
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = status_path.parent / (
+        f"{status_path.name}.tmp.{os.getpid()}.{secrets.token_hex(8)}"
+    )
+    payload = (
+        "state=running\n"
+        f"launch_id={launch_id}\n"
+        f"role={role}\n"
+        f"activity={activity}\n"
+        f"expected_variant={expected_variant}\n"
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(tmp_path, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, status_path)
+    except OSError as exc:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise _CliError(
+            EXIT_FAIL,
+            "guard",
+            f"cannot publish current handoff status before launch: {status_path} — {exc}",
+        )
+
+
+def _remove_own_running_status(status_path: Path, launch_id: str) -> None:
+    """Remove a marker created for a launch that never started."""
+    try:
+        fields = {}
+        for line in status_path.read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                fields[key] = value
+        if (
+            fields.get("state") == "running"
+            and fields.get("launch_id") == launch_id
+            and not status_path.is_symlink()
+        ):
+            status_path.unlink()
+    except (OSError, UnicodeDecodeError):
+        pass
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -423,6 +529,7 @@ def handler(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
         expected_report_path = handoff_packet._expected_report_path(project_root, task_id)
+        expected_variant = "review" if activity == "task_review" else "task"
     else:
         # --- Fail-closed: --prompt names an allowlisted planning slot only ---
         # Task prompts (PROMPT-NN-NNN) must dispatch by task path, which
@@ -453,6 +560,7 @@ def handler(args: argparse.Namespace) -> int:
         expected_report_path = (
             project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
         ).resolve()
+        expected_variant = "planning-review"
 
     # --- Fail-closed: request-trace evidence is present and current --------
     # Review handoffs recompute applicability and the review-context identity at
@@ -500,6 +608,17 @@ def handler(args: argparse.Namespace) -> int:
     # imposes its own sandbox can widen it to cover the declared work roots.
     launch_cwd = str(project_root)
     env = dict(os.environ)
+    # Connected-host identity belongs to the MCP boundary.  It is evidence for
+    # this preflight only and must not leak into the detached assignee.
+    for private_host_marker in (
+        host_capability.CONNECTED_ENV,
+        host_capability.CLIENT_ENV,
+        host_capability.CLIENT_VERSION_ENV,
+        host_capability.CLIENT_TITLE_ENV,
+        "CARTOPIAN_MCP_TOOL_CALL",
+    ):
+        env.pop(private_host_marker, None)
+    launch_id = secrets.token_hex(16)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
     env["CARTOPIAN_LAUNCH_CWD"] = launch_cwd
     # Session-role marker for capability enforcement points (e.g. the Claude
@@ -507,6 +626,9 @@ def handler(args: argparse.Namespace) -> int:
     # wrapper stays a neutral launcher and never keys behavior on it; the
     # enforcement point maps the role to grants via the resolved config.
     env["CARTOPIAN_ROLE"] = role
+    env[HANDOFF_ID_ENV] = launch_id
+    env[EXPECTED_VARIANT_ENV] = expected_variant
+    env[EXPECTED_REPORT_ENV] = str(expected_report_path)
     # Agent-neutral model selection from the resolved role launch record.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.
@@ -540,6 +662,19 @@ def handler(args: argparse.Namespace) -> int:
             f"or set roles.{role}.agent to an absolute path"
         )
         return EXIT_FAIL
+    try:
+        slot_clear = _clear_handoff_slot(expected_report_path)
+        status_path = Path(str(expected_report_path) + ".status")
+        _publish_running_status(
+            status_path,
+            launch_id=launch_id,
+            role=role,
+            activity=activity,
+            expected_variant=expected_variant,
+        )
+    except _CliError as err:
+        stderr_guard(err.message)
+        return err.exit_code
     is_windows = _running_on_windows()
     launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), is_windows)
     # Explicit stable stdio for the detached child. The wrapper outlives this
@@ -594,6 +729,7 @@ def handler(args: argparse.Namespace) -> int:
             start_new_session=True,
         )
     except FileNotFoundError as exc:
+        _remove_own_running_status(status_path, launch_id)
         # `which` already resolved the agent, so a FileNotFoundError here points
         # at the *launch chain*, not the agent: most often the Windows command
         # interpreter (an absent COMSPEC / unreachable cmd.exe) when routing a
@@ -607,6 +743,7 @@ def handler(args: argparse.Namespace) -> int:
         )
         return EXIT_FAIL
     except OSError as exc:
+        _remove_own_running_status(status_path, launch_id)
         stderr_error(f"failed to launch handoff agent {agent}: {exc}")
         return EXIT_FAIL
     finally:
@@ -643,6 +780,9 @@ def handler(args: argparse.Namespace) -> int:
         "cwd": launch_cwd,
         "launch_log_path": launch_log_path,
         "pid": proc.pid,
+        "launch_id": launch_id,
+        "expected_report_variant": expected_variant,
+        "slot_clear": slot_clear,
         "status": "dispatched",
         "request_trace": request_record,
         # The wait budget this launch was cleared against. `null` when the CLI

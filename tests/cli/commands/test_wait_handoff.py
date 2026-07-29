@@ -182,14 +182,17 @@ def test_done_when_report_accepted(tmp_path, capsys, fake_clock):
     assert record["report_path"].endswith("reports/REPORT-01-003.md")
 
 
-def test_failed_to_parse_when_report_invalid(tmp_path, capsys, fake_clock):
+def test_incomplete_report_remains_nonterminal_while_writer_can_finish(
+    tmp_path, capsys, fake_clock
+):
     task_path = _make_project(tmp_path)
     _write(_report_path(task_path), INVALID_REPORT)
 
     exit_code = _run(task_path)
     record = json.loads(capsys.readouterr().out.strip())
-    assert exit_code == EXIT_FAIL
-    assert record["status"] == "failed-to-parse"
+    assert exit_code == EXIT_OK
+    assert record["status"] == "still-running"
+    assert record["classification"] == "still-running"
     assert record["report_verdict"] == "failed-to-parse"
 
 
@@ -332,15 +335,20 @@ def test_blocks_until_report_appears(tmp_path, capsys, fake_clock, monkeypatch):
     """It blocks across polls and reports `done` once the report materializes."""
     task_path = _make_project(tmp_path)
     calls = {"n": 0}
-    real_verdict = wait_handoff._report_verdict
+    real_observe = wait_handoff.handoff_observer.observe_once
 
-    def staged_verdict(report_path):
+    def staged_observe(report_path, *, expected_variant=None):
         calls["n"] += 1
         if calls["n"] < 3:
-            return None  # report not present yet — assignee still running
-        return "accepted"  # assignee finished; report now parses
+            return real_observe(report_path, expected_variant=expected_variant)
+        _write(report_path, ACCEPTED_REPORT)
+        return real_observe(report_path, expected_variant=expected_variant)
 
-    monkeypatch.setattr(wait_handoff, "_report_verdict", staged_verdict)
+    monkeypatch.setattr(
+        wait_handoff.handoff_observer,
+        "observe_once",
+        staged_observe,
+    )
 
     exit_code = _run(task_path, max_block="5m")
     record = json.loads(capsys.readouterr().out.strip())
@@ -348,7 +356,7 @@ def test_blocks_until_report_appears(tmp_path, capsys, fake_clock, monkeypatch):
     assert record["status"] == "done"
     assert calls["n"] >= 3  # polled multiple times before the state change
     assert fake_clock["t"] > 0  # blocked (clock advanced) before returning
-    assert real_verdict is not staged_verdict
+    assert real_observe is not staged_observe
 
 
 # --- usage / environment guards ---------------------------------------------

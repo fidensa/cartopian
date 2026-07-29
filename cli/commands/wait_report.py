@@ -1,9 +1,8 @@
 """`cartopian wait-report <report-path> [--role <role>] [--max-block <duration>]`.
 
-Filesystem-polls until a handoff report file exists and reaches an
-``accepted`` outcome under the ``report-action`` aggregator's verdict
-semantics (``accepted`` / ``blocked`` / ``failed`` / ``failed-to-parse``), or
-until the deadline elapses.
+Uses the same canonical observer as ``wait-handoff`` until the report reaches
+a complete report-action outcome, the wrapper exits leaving a permanently
+malformed or absent publication, or the deadline elapses.
 
 The wait is terminal by default: called without ``--max-block``, it blocks
 until the report lands (or guard-fails), bounded by the resolved handoff
@@ -16,8 +15,12 @@ full handoff timeout.
 
 Outcomes:
 
-- Report present and ``accepted`` → exit 0, emit one NDJSON ``accepted`` record.
-- Report present but not ``accepted`` → exit 1 with a ``[guard]`` stderr line.
+- Complete report (accepted, blocked, failed, changes-requested, or rejected)
+  → exit 0 and emit its terminal classification. Observation succeeded; the
+  caller routes the report verdict.
+- Incomplete report while the wrapper can still publish → remain nonterminal.
+- Wrapper exit with malformed bytes or no report → deterministic exit 1
+  classification matching ``wait-handoff``.
 - The resolved timeout ceiling elapses first → exit 1, emit one NDJSON
   ``timeout`` record (terminal; the handoff blew its absolute limit).
 - An explicit ``--max-block`` slice elapses before the ceiling → exit 0, emit
@@ -34,8 +37,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from cli import host_capability
-from cli.commands import handoff_packet, report_action
+from cli import handoff_observer, host_capability
+from cli.commands import handoff_packet
 from cli.commands.resolve_config import _CliError
 from cli.commands.wait_handoff import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -59,6 +62,15 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Optional role whose configured launch timeout bounds "
             "the wait (protocol default 60m when omitted or outside a project)"
+        ),
+    )
+    subparser.add_argument(
+        "--variant",
+        choices=list(handoff_observer.VALID_VARIANTS),
+        default=None,
+        help=(
+            "Expected report variant. Planning report filenames imply "
+            "planning-review when omitted; other unmarked slots default to task"
         ),
     )
     subparser.add_argument(
@@ -95,21 +107,10 @@ def _report_verdict(report_path: Path) -> Optional[str]:
     A present-but-unreadable or variant-unresolvable report is reported as
     ``failed-to-parse`` — present, but not ``accepted``.
     """
-    if not report_path.is_file():
+    observation = handoff_observer.observe_report(report_path, None)
+    if not observation.present:
         return None
-    try:
-        content = report_path.read_text(encoding="utf-8")
-    except OSError:
-        return "failed-to-parse"
-    try:
-        verdict = report_action._parse_report_state(
-            report_path,
-            content,
-            None,
-        )[0]
-    except _CliError:
-        return "failed-to-parse"
-    return verdict
+    return observation.verdict or "failed-to-parse"
 
 
 def _host_budget_record():
@@ -172,28 +173,57 @@ def handler(args: argparse.Namespace) -> int:
     else:
         effective_seconds = min(max_block_seconds, timeout_seconds)
         deadline_still_running = max_block_seconds < timeout_seconds
+    host_ok, _host_budget, host_refusal = host_capability.check_wait_budget(
+        args.role or "unspecified",
+        effective_seconds,
+    )
+    if not host_ok:
+        stderr_guard(host_refusal)
+        return EXIT_FAIL
 
     deadline = time.monotonic() + effective_seconds
+    explicit_variant = getattr(args, "variant", None)
+    status_variant = handoff_observer.observe_wrapper(
+        Path(str(report_path) + ".status"),
+        None,
+    ).expected_variant
+    expected_variant = (
+        explicit_variant
+        or status_variant
+        or (
+            "planning-review"
+            if report_path.name.startswith("REPORT-PLAN-")
+            else "task"
+        )
+    )
 
     while True:
-        verdict = _report_verdict(report_path)
-        if verdict is not None:
-            resolved = str(report_path.resolve())
-            if verdict == "accepted":
-                emit_record(
-                    {
-                        "report_path": resolved,
-                        "status": "accepted",
-                        "verdict": verdict,
-                        "accepted": True,
-                        "still_running": False,
-                        "host_wait_budget": _host_budget_record(),
-                    }
-                )
-                return EXIT_OK
-            stderr_guard(
-                f"report present but not accepted (verdict={verdict}): {resolved}"
+        observation = handoff_observer.observe_once(
+            report_path,
+            expected_variant=expected_variant,
+        )
+        if observation.terminal:
+            classification = observation.classification
+            common = handoff_observer.record_fields(observation)
+            emit_record(
+                {
+                    "report_path": str(report_path.resolve()),
+                    "status": classification,
+                    "verdict": observation.report.verdict,
+                    "accepted": classification == "accepted",
+                    "still_running": False,
+                    "expected_report_variant": expected_variant,
+                    **common,
+                    "max_block_seconds": max_block_seconds,
+                    "timeout_seconds": timeout_seconds,
+                    "effective_block_seconds": effective_seconds,
+                    "host_wait_budget": _host_budget_record(),
+                }
             )
+            # A complete report is successful observation regardless of its
+            # verdict; Stage 4 routes accepted/blocked/failed deterministically.
+            if observation.report.publication_state == "complete":
+                return EXIT_OK
             return EXIT_FAIL
 
         now = time.monotonic()
@@ -204,6 +234,21 @@ def handler(args: argparse.Namespace) -> int:
                 "verdict": None,
                 "accepted": False,
                 "still_running": deadline_still_running,
+                "terminal": not deadline_still_running,
+                "classification": (
+                    "still-running" if deadline_still_running else "timeout"
+                ),
+                "publication_state": observation.report.publication_state,
+                "report_verdict": observation.report.verdict,
+                "report_variant": observation.report.variant,
+                "report_content_identity": observation.report.content_identity,
+                "expected_report_variant": expected_variant,
+                "wrapper_state": observation.wrapper.state,
+                "exit_code": observation.wrapper.exit_code,
+                "wrapper_reason": observation.wrapper.reason,
+                "launch_id": observation.wrapper.launch_id,
+                "status_expected_variant": observation.wrapper.expected_variant,
+                "status_variant_matches": observation.wrapper.variant_matches,
                 "max_block_seconds": max_block_seconds,
                 "timeout_seconds": timeout_seconds,
                 "effective_block_seconds": effective_seconds,

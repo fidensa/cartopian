@@ -11,10 +11,9 @@
     CONSUMER CONTRACT (cli/commands/wait_handoff.py :: _status_exit_code):
       - Path:   <project-root>\reports\REPORT-<NN-NNN>.md.status
                 (the expected report path with a ".status" suffix).
-      - Format: newline-separated `key=value` lines. The consumer parses
-                `state` and `exit_code`; it treats `state=exited` with a
-                NON-ZERO `exit_code` as the crash signal (status `failed`)
-                and ignores every other key. A zero exit_code is NOT a crash.
+      - Format: newline-separated key=value lines carrying state, exit facts,
+                launch_id, and expected_variant. Dispatch may publish running;
+                this helper atomically replaces it on exit.
       - Absence is valid: wait-handoff falls back to the report-only path, so
         this helper NEVER fails the wrapper -- all errors degrade to a no-op.
 
@@ -23,8 +22,8 @@
       exit_code=<int>        the assignee exit code (124 for a timeout kill)
       reason=clean|error|timeout
 
-    No secrets or environment data are ever written -- only the three fields
-    above, all derived from the exit outcome.
+    No secrets or prompt content are written. Optional identity/variant fields
+    come only from bounded dispatch exports.
 #>
 
 # Derive the status-file path wait-handoff expects from the prompt path.
@@ -42,7 +41,7 @@ function Get-CartopianStatusPath {
     if ((Split-Path -Leaf $promptsDir) -ne 'prompts') { return $null }
     $projectDir = Split-Path -Parent $promptsDir
     $base = Split-Path -Leaf $promptAbs
-    if ($base -match '(\d{2}-\d{3})') {
+    if ($base -match '^PROMPT-(PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?|\d{2}-\d{3})\.md$') {
         $id = $Matches[1]
     } else {
         return $null
@@ -70,8 +69,47 @@ function Test-CartopianReportComplete {
     } catch {
         return $false
     }
+    $hasStatus = $false
     foreach ($line in $lines) {
-        if ($line -match '^(?i)Status:\s*(complete|blocked|failed)(\s|$)') { return $true }
+        if ($line -match '^(?i)Status:\s*(complete|blocked|failed)(\s|$)') {
+            $hasStatus = $true
+            break
+        }
+    }
+    if (-not $hasStatus) { return $false }
+
+    $text = $lines -join "`n"
+    $variant = $env:CARTOPIAN_EXPECTED_REPORT_VARIANT
+    if (-not $variant) {
+        if ($text -match '(?m)^- Review ID:\s*REVIEW-PLAN-') {
+            $variant = 'planning-review'
+        } elseif ($text -match '(?m)^- Review ID:\s*REVIEW-') {
+            $variant = 'review'
+        } else {
+            $variant = 'task'
+        }
+    }
+    if ($variant -eq 'task') {
+        return (
+            $text -match '(?m)^##\s+Identity\s*$' -and
+            $text -match '(?m)^##\s+Remaining risks\s*$' -and
+            $text -match '(?m)^##\s+(Completion evidence|Files changed|Deliverable)\s*$' -and
+            $text -match '(?ms)^##\s+(Ready to close|Ready for review)\s*$.*?^\s*(yes|no)\s*$'
+        )
+    }
+    if ($variant -in @('review', 'planning-review')) {
+        return (
+            $text -match '(?m)^##\s+Identity\s*$' -and
+            $text -match '(?m)^- Review ID:\s*REVIEW-' -and
+            $text -match '(?m)^- Prompt path:\s*\S' -and
+            $text -match '(?m)^- Review file path:\s*\S' -and
+            ($variant -ne 'review' -or $text -match '(?m)^- Task path:\s*\S') -and
+            $text -match '(?m)^Request alignment:\s*(aligned|drifted|unavailable-for-legacy)\s*$' -and
+            $text -match '(?m)^Request evidence:\s*\S' -and
+            $text -match '(?m)^##\s+Evidence reviewed\s*$' -and
+            $text -match '(?ms)^##\s+Verdict\s*$.*?^\s*(approve|request-changes|reject)\s*$' -and
+            $text -match '(?ms)^##\s+Blocking findings\s*$.*?^\s*\S'
+        )
     }
     return $false
 }
@@ -243,6 +281,12 @@ function Write-CartopianStatus {
         # Newline-delimited key=value; "`n" only -- the consumer's splitlines()
         # accepts LF and the format must match the Bash producer byte-for-byte.
         $content = "state=exited`nexit_code=$code`nreason=$reason`n"
+        if ($env:CARTOPIAN_HANDOFF_ID) {
+            $content += "launch_id=$($env:CARTOPIAN_HANDOFF_ID)`n"
+        }
+        if ($env:CARTOPIAN_EXPECTED_REPORT_VARIANT) {
+            $content += "expected_variant=$($env:CARTOPIAN_EXPECTED_REPORT_VARIANT)`n"
+        }
         $tmp = "$StatusPath.tmp"
         Set-Content -LiteralPath $tmp -Value $content -NoNewline -Encoding utf8
         Move-Item -LiteralPath $tmp -Destination $StatusPath -Force

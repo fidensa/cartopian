@@ -47,6 +47,13 @@ coder = "Implements tasks per spec."
 """
 
 
+@pytest.fixture(autouse=True)
+def isolate_dispatch_identity(monkeypatch):
+    """Unit subprocesses own their launch identity instead of inheriting one."""
+    monkeypatch.delenv("CARTOPIAN_HANDOFF_ID", raising=False)
+    monkeypatch.delenv("CARTOPIAN_EXPECTED_REPORT_VARIANT", raising=False)
+
+
 def _make_project(tmp_path: Path) -> Path:
     """Scaffold a minimal project with a prompt and return the prompt path."""
     project = tmp_path / "proj"
@@ -126,6 +133,24 @@ def test_helper_status_path_matches_report_suffix(tmp_path):
     assert Path(out) == expected
     # The path is exactly the report path with a ".status" suffix.
     assert out.endswith("reports/REPORT-01-007.md.status")
+
+
+def test_helper_status_path_supports_planning_report_slots(tmp_path):
+    project = tmp_path / "proj"
+    (project / "prompts").mkdir(parents=True)
+    prompt = project / "prompts" / "PROMPT-PLAN-001-baseline.md"
+    prompt.write_text("review the plan\n", encoding="utf-8")
+    out = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{STATUS_HELPER}"; cartopian_status_path "{prompt}"',
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert out.endswith("reports/REPORT-PLAN-001-baseline.md.status")
 
 
 # --- end-to-end: every wrapper writes the status file on assignee exit -------

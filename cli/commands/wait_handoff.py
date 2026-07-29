@@ -14,12 +14,13 @@ Terminal status flags emitted on stdout (one NDJSON record):
 - ``done``: a report is present and parses successfully (report-action verdict
   ``accepted``/``blocked``/``failed``). The PM reads the report verdict to
   decide lifecycle action.
-- ``failed-to-parse``: a report is present but invalid.
-- ``failed``: the wrapper status file reports the assignee process exited and
-  no valid report appeared — either a non-zero (crash/timeout) exit, or a
-  clean exit that nonetheless produced no report. In both cases the assignee
-  process is gone, so no report will ever appear; wait-handoff reports the
-  terminal failure now instead of blocking to the deadline.
+- ``failed-to-parse``: the wrapper has exited and the report publication is
+  permanently invalid. A present but incomplete report remains nonterminal
+  while the wrapper is still running.
+- ``failed``: the wrapper exited non-zero and no report appeared.
+- ``exited-without-report`` is carried in the common ``classification`` field
+  when the wrapper exited cleanly without publishing a report (the legacy
+  task-scoped ``status`` remains ``failed``).
 - ``timeout``: the configured handoff timeout (the maximum absolute limit) was
   reached before any terminal signal.
 - ``still-running``: the explicitly requested ``--max-block`` observation-slice
@@ -33,8 +34,11 @@ ceiling — a single call, a single record, no nonterminal slices. That blocking
 call is the entire completion mechanism; there is no wake or resume behind it.
 ``dispatch`` refuses to launch when the host's ``tools/call`` ceiling is
 shorter than the role timeout (``cli/host_capability.py``), so by the time this
-command runs the host has already been shown able to sustain it. The resolved
-budget is echoed in the emitted record as ``host_wait_budget``.
+command runs the host has already been shown able to sustain it. The wait
+rechecks this call's observation duration against its own progress-channel
+availability so a token on an earlier call cannot stand in for progress on
+this one. The resolved budget is echoed in the emitted record as
+``host_wait_budget``.
 
 ``--max-block`` bounds a single nonterminal observation slice, for the one case
 the gate cannot fix: a host ceiling that will not move. When supplied, the
@@ -53,7 +57,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import host_capability
+from cli import handoff_observer, host_capability
 from cli.commands import handoff_packet, report_action
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.emit import emit_progress, emit_record
@@ -63,6 +67,7 @@ from cli.main import (
     EXIT_OK,
     EXIT_USAGE,
     stderr_error,
+    stderr_guard,
     stderr_usage,
 )
 
@@ -142,21 +147,10 @@ def _report_verdict(report_path: Path) -> Optional[str]:
     A present-but-unreadable or variant-unresolvable report classifies as
     ``failed-to-parse``.
     """
-    if not report_path.is_file():
+    observation = handoff_observer.observe_report(report_path, None)
+    if not observation.present:
         return None
-    try:
-        content = report_path.read_text(encoding="utf-8")
-    except OSError:
-        return "failed-to-parse"
-    try:
-        verdict = report_action._parse_report_state(
-            report_path,
-            content,
-            None,
-        )[0]
-    except _CliError:
-        return "failed-to-parse"
-    return verdict
+    return observation.verdict or "failed-to-parse"
 
 
 def _read_status_fields(status_path: Path) -> Optional[Dict[str, str]]:
@@ -165,20 +159,7 @@ def _read_status_fields(status_path: Path) -> Optional[Dict[str, str]]:
     Returns None when the file is absent or unreadable (both valid: the report
     remains the authoritative signal). Malformed lines are skipped.
     """
-    if not status_path.is_file():
-        return None
-    try:
-        text = status_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fields: Dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        fields[key.strip()] = value.strip()
-    return fields
+    return handoff_observer._read_status_fields(status_path)
 
 
 def _status_exit_code(status_path: Path) -> Optional[int]:
@@ -284,53 +265,47 @@ def handler(args: argparse.Namespace) -> int:
         deadline_status = (
             "timeout" if timeout_seconds <= max_block_seconds else "still-running"
         )
+    host_ok, _host_budget, host_refusal = host_capability.check_wait_budget(
+        args.role,
+        effective_seconds,
+    )
+    if not host_ok:
+        stderr_guard(host_refusal)
+        return EXIT_FAIL
 
     deadline = time.monotonic() + effective_seconds
+    expected_variant = "review" if task_path.parent.name == "in-review" else "task"
 
     while True:
-        verdict = _report_verdict(report_path)
-        if verdict is not None and verdict != "failed-to-parse":
-            return _emit(args.role, task_id, task_path, report_path,
-                         "done", report_verdict=verdict,
-                         max_block_seconds=max_block_seconds,
-                         timeout_seconds=timeout_seconds,
-                         effective_seconds=effective_seconds)
-
-        crash_code = _status_exit_code(status_path)
-        if crash_code is not None:
-            return _emit(args.role, task_id, task_path, report_path,
-                         "failed", report_verdict=verdict, exit_code=crash_code,
-                         max_block_seconds=max_block_seconds,
-                         timeout_seconds=timeout_seconds,
-                         effective_seconds=effective_seconds)
-
-        if verdict == "failed-to-parse":
-            return _emit(args.role, task_id, task_path, report_path,
-                         "failed-to-parse", report_verdict=verdict,
-                         max_block_seconds=max_block_seconds,
-                         timeout_seconds=timeout_seconds,
-                         effective_seconds=effective_seconds)
-
-        # The wrapper reports the assignee process exited but no report ever
-        # appeared (verdict is None here — a present-but-invalid report was
-        # already classified as failed-to-parse above, and a non-zero crash as
-        # failed at the crash check). A clean exit that wrote no report is still
-        # terminal: the process is gone, so no report is coming. Fail now rather
-        # than block to the deadline (the "exited-without-report zombie" — e.g. a
-        # reviewer that wrote reviews/REVIEW-NN-NNN.md but not the
-        # reports/REPORT-NN-NNN.md the PM waits on).
-        exited, exited_code = _status_reports_exit(status_path)
-        if verdict is None and exited:
-            return _emit(args.role, task_id, task_path, report_path,
-                         "failed", report_verdict=verdict, exit_code=exited_code,
-                         max_block_seconds=max_block_seconds,
-                         timeout_seconds=timeout_seconds,
-                         effective_seconds=effective_seconds)
+        observation = handoff_observer.observe_once(
+            report_path,
+            expected_variant=expected_variant,
+        )
+        if observation.terminal:
+            if observation.report.publication_state == "complete":
+                legacy_status = "done"
+            elif observation.classification == "failed-to-parse":
+                legacy_status = "failed-to-parse"
+            else:
+                legacy_status = "failed"
+            return _emit(
+                args.role,
+                task_id,
+                task_path,
+                report_path,
+                legacy_status,
+                observation=observation,
+                expected_variant=expected_variant,
+                max_block_seconds=max_block_seconds,
+                timeout_seconds=timeout_seconds,
+                effective_seconds=effective_seconds,
+            )
 
         now = time.monotonic()
         if now >= deadline:
             return _emit(args.role, task_id, task_path, report_path,
-                         deadline_status, report_verdict=verdict,
+                         deadline_status, observation=observation,
+                         expected_variant=expected_variant,
                          max_block_seconds=max_block_seconds,
                          timeout_seconds=timeout_seconds,
                          effective_seconds=effective_seconds)
@@ -356,22 +331,26 @@ def _emit(
     report_path: Path,
     status: str,
     *,
-    report_verdict: Optional[str] = None,
-    exit_code: Optional[int] = None,
+    observation: handoff_observer.HandoffObservation,
+    expected_variant: str,
     max_block_seconds: Optional[int],
     timeout_seconds: int,
     effective_seconds: int,
 ) -> int:
     """Emit the single terminal NDJSON record and return the mapped exit code."""
     budget = host_capability.resolve_host_budget()
+    common = handoff_observer.record_fields(observation)
+    if status in {"timeout", "still-running"}:
+        common["terminal"] = status == "timeout"
+        common["classification"] = status
     record: Dict[str, Any] = {
         "task_id": task_id,
         "task_path": str(task_path),
         "role": role,
         "report_path": str(report_path),
         "status": status,
-        "report_verdict": report_verdict,
-        "exit_code": exit_code,
+        "expected_report_variant": expected_variant,
+        **common,
         "max_block_seconds": max_block_seconds,
         "timeout_seconds": timeout_seconds,
         "effective_block_seconds": effective_seconds,

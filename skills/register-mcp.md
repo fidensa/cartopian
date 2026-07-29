@@ -382,7 +382,7 @@ Gemini — add the key under the existing entry in `~/.gemini/settings.json`, th
 "cartopian": { "command": "/path/to/.cartopian/bin/cartopian-mcp", "timeout": 3900000 }
 ```
 
-Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is already generous, but a stdio server that goes silent for 30 minutes is aborted for idleness. Cartopian's wait primitives emit MCP progress notifications, which count as traffic and hold the idle window open, so this ceiling only bites on a client that does not request progress. Raise or disable it explicitly when a role timeout exceeds 30 minutes.
+Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait.
 
 **Hosts with no documented setting.** Do not guess a value and do not assume a long blocking call survives. Cartopian resolves an unrecognized host to an *unknown* budget, which fails the dispatch gate by design. On such a host, either lower `roles.<role>.timeout` to a duration confirmed to survive, or dispatch that role manually and monitor the report path — never fall back to periodic status checks.
 

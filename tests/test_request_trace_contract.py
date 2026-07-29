@@ -638,6 +638,15 @@ class RequestTraceContract(unittest.TestCase):
         blockers, _ = plan_audit._check_request_trace(self.root, "v0.9.0", True)
         self.assertEqual([item["kind"] for item in blockers], ["stale-request-context"])
 
+        (self.root / "reports/REPORT-02-010.md").write_text(
+            "# REPORT-02-010\n\n"
+            "Status: complete\n\n"
+            "## Identity\n\n- Work root: n/a\n\n"
+            "## Completion evidence\n\nHistorical task completed.\n\n"
+            "## Remaining risks\n\nNone.\n\n"
+            "## Ready to close\n\nyes\n",
+            encoding="utf-8",
+        )
         code, _, error = self.run_cli(
             "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
             "--review-kind", "task-closure", "--task", str(self.task),

@@ -174,15 +174,13 @@ class TestWaitReportGuard(unittest.TestCase):
             )
             result = _run(str(report_path), "--max-block", "30s")
 
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stdout, "")
-        self.assertTrue(
-            result.stderr.startswith("[guard]"),
-            msg=f"expected [guard] prefix, got: {result.stderr!r}",
-        )
-        self.assertIn("blocked", result.stderr)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["classification"], "blocked")
+        self.assertEqual(record["verdict"], "blocked")
+        self.assertFalse(record["accepted"])
 
-    def test_unparseable_report_exits_one_with_guard_prefix(self) -> None:
+    def test_unparseable_report_is_nonterminal_while_writer_can_finish(self) -> None:
         with project_scaffold() as scaffold:
             # Present but missing required sections → report-action verdict
             # is `failed-to-parse`, which is not `accepted`.
@@ -190,11 +188,18 @@ class TestWaitReportGuard(unittest.TestCase):
                 "reports/REPORT-01-002.md",
                 "# REPORT-01-002\n\nStatus: complete\n\n## Identity\n\n- Task ID: TASK-01-002\n",
             )
-            result = _run(str(report_path), "--max-block", "30s")
+            result = _run(
+                str(report_path),
+                "--max-block",
+                "1s",
+                "--poll-interval",
+                "0.05",
+            )
 
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stdout, "")
-        self.assertTrue(result.stderr.startswith("[guard]"))
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertEqual(record["classification"], "still-running")
+        self.assertEqual(record["publication_state"], "partial")
 
 
 class TestWaitReportArgParsing(unittest.TestCase):

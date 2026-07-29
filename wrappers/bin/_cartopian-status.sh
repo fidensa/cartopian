@@ -13,10 +13,9 @@
 # CONSUMER CONTRACT (cli/commands/wait_handoff.py :: _status_exit_code):
 #   - Path:   <project-root>/reports/REPORT-<NN-NNN>.md.status
 #             (i.e. the expected report path with a ".status" suffix).
-#   - Format: newline-separated `key=value` lines. The consumer parses
-#             `state` and `exit_code`; it treats `state=exited` with a
-#             NON-ZERO `exit_code` as the crash signal (status `failed`) and
-#             ignores every other key. A zero exit_code is NOT a crash.
+#   - Format: newline-separated key=value lines carrying state, exit facts,
+#             launch_id, and expected_variant. Dispatch may publish running;
+#             this helper atomically replaces it on exit.
 #   - Absence is valid: wait-handoff falls back to the report-only path, so
 #     this helper NEVER fails the wrapper — all errors degrade to a no-op.
 #
@@ -27,8 +26,8 @@
 #                          human/diagnostic distinction; ignored by the
 #                          consumer, which keys off exit_code alone
 #
-# No secrets or environment data are ever written — only the three fields
-# above, all derived from the exit outcome.
+# No secrets or prompt content are written. Optional identity/variant values
+# come only from bounded dispatch exports.
 
 # Derive the status-file path wait-handoff expects from the prompt path.
 # Echoes the absolute "<report-path>.status" path, or an empty string when
@@ -50,7 +49,7 @@ cartopian_status_path() {
   [ "$(basename "$prompts_dir")" = "prompts" ] || { echo ""; return 0; }
 
   base="$(basename "$prompt_abs")"
-  if [[ "$base" =~ ([0-9]{2}-[0-9]{3}) ]]; then
+  if [[ "$base" =~ ^PROMPT-(PLAN-[0-9]{3}(-[a-z0-9][a-z0-9-]*)?|[0-9]{2}-[0-9]{3})\.md$ ]]; then
     id="${BASH_REMATCH[1]}"
   else
     echo ""
@@ -69,12 +68,63 @@ cartopian_status_path() {
 # The `<` of the template placeholder (`Status: <complete | ...>`) does NOT match,
 # so an unfilled template is not mistaken for a finished report. Pure, no side
 # effects; any error degrades to "not complete" (return 1).
+cartopian_section_has_value() {
+  local report_path="$1" heading="$2" value="$3"
+  awk -v heading="$heading" -v value="$value" '
+    $0 ~ heading { inside=1; next }
+    inside && /^##[[:space:]]/ { exit }
+    inside && $0 ~ value { ok=1; exit }
+    END { exit(ok ? 0 : 1) }
+  ' "$report_path" 2>/dev/null
+}
+
 cartopian_report_complete() {
   local report_path="$1"
   [ -n "$report_path" ] || return 1
   [ -s "$report_path" ] || return 1
   grep -Eqi '^Status:[[:space:]]*(complete|blocked|failed)([[:space:]]|$)' \
-    "$report_path" 2>/dev/null
+    "$report_path" 2>/dev/null || return 1
+
+  local variant="${CARTOPIAN_EXPECTED_REPORT_VARIANT:-}"
+  if [ -z "$variant" ]; then
+    if grep -Eq '^- Review ID:[[:space:]]*REVIEW-PLAN-' "$report_path" 2>/dev/null; then
+      variant="planning-review"
+    elif grep -Eq '^- Review ID:[[:space:]]*REVIEW-' "$report_path" 2>/dev/null; then
+      variant="review"
+    else
+      variant="task"
+    fi
+  fi
+  case "$variant" in
+    task)
+      grep -Eq '^##[[:space:]]+Identity[[:space:]]*$' "$report_path" 2>/dev/null &&
+        grep -Eq '^##[[:space:]]+Remaining risks[[:space:]]*$' "$report_path" 2>/dev/null &&
+        grep -Eq '^##[[:space:]]+(Completion evidence|Files changed|Deliverable)[[:space:]]*$' "$report_path" 2>/dev/null &&
+        cartopian_section_has_value "$report_path" \
+          '^##[[:space:]]+(Ready to close|Ready for review)[[:space:]]*$' \
+          '^[[:space:]]*(yes|no)[[:space:]]*$'
+      ;;
+    review|planning-review)
+      grep -Eq '^##[[:space:]]+Identity[[:space:]]*$' "$report_path" 2>/dev/null &&
+        grep -Eq '^- Review ID:[[:space:]]*REVIEW-' "$report_path" 2>/dev/null &&
+        grep -Eq '^- Prompt path:[[:space:]]*[^[:space:]]' "$report_path" 2>/dev/null &&
+        grep -Eq '^- Review file path:[[:space:]]*[^[:space:]]' "$report_path" 2>/dev/null &&
+        { [ "$variant" != "review" ] ||
+          grep -Eq '^- Task path:[[:space:]]*[^[:space:]]' "$report_path" 2>/dev/null; } &&
+        grep -Eq '^Request alignment:[[:space:]]*(aligned|drifted|unavailable-for-legacy)[[:space:]]*$' "$report_path" 2>/dev/null &&
+        grep -Eq '^Request evidence:[[:space:]]*[^[:space:]]' "$report_path" 2>/dev/null &&
+        grep -Eq '^##[[:space:]]+Evidence reviewed[[:space:]]*$' "$report_path" 2>/dev/null &&
+        cartopian_section_has_value "$report_path" \
+          '^##[[:space:]]+Verdict[[:space:]]*$' \
+          '^[[:space:]]*(approve|request-changes|reject)[[:space:]]*$' &&
+        cartopian_section_has_value "$report_path" \
+          '^##[[:space:]]+Blocking findings[[:space:]]*$' \
+          '[^[:space:]]'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # Run the assignee command under the SSOT timeout, supervising for the
@@ -201,6 +251,12 @@ cartopian_write_status() {
     printf 'state=exited\n'
     printf 'exit_code=%s\n' "$code"
     printf 'reason=%s\n' "$reason"
+    if [ -n "${CARTOPIAN_HANDOFF_ID:-}" ]; then
+      printf 'launch_id=%s\n' "$CARTOPIAN_HANDOFF_ID"
+    fi
+    if [ -n "${CARTOPIAN_EXPECTED_REPORT_VARIANT:-}" ]; then
+      printf 'expected_variant=%s\n' "$CARTOPIAN_EXPECTED_REPORT_VARIANT"
+    fi
   } >"$tmp" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }
   # Atomic publish so wait-handoff never observes a half-written file.
   mv -f "$tmp" "$status_path" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }

@@ -633,6 +633,7 @@ def _export_client_identity() -> Dict[str, Optional[str]]:
     from cli import host_capability
 
     values = {
+        host_capability.CONNECTED_ENV: "1",
         host_capability.CLIENT_ENV: _client_info.get("name"),
         host_capability.CLIENT_VERSION_ENV: _client_info.get("version"),
         host_capability.CLIENT_TITLE_ENV: _client_info.get("title"),

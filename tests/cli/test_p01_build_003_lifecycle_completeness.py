@@ -171,7 +171,11 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         # NOT a PM operation — stands in for the assignee agent.
         (proj / "reports" / "REPORT-01-001.md").write_text(
             "# REPORT-01-001\n\nStatus: complete\n\n## Identity\n\n"
-            "- Task ID: TASK-01-001\n", encoding="utf-8",
+            "- Work root: n/a\n\n"
+            "## Completion evidence\n\nThe requested lifecycle fixture is complete.\n\n"
+            "## Remaining risks\n\nNone.\n\n"
+            "## Ready to close\n\nyes\n",
+            encoding="utf-8",
         )
 
         # --- REVIEW (G9, G10, G11) ---

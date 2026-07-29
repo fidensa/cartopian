@@ -54,7 +54,15 @@ def handler(args: argparse.Namespace) -> int:
         resolved = resolve_project_configuration(root)
         if prompt is not None:
             prompt_text = read_contained_text(root, prompt, what="review prompt")
-        context = (context_for_task(root, task, prompt_text=prompt_text) if task else context_for_checkpoint(
+        context = (context_for_task(
+            root,
+            task,
+            prompt_text=prompt_text,
+            # A projection over an open task is useful before implementation
+            # has produced a report. Once the task is actually in review, the
+            # shared-slot lifecycle requires a durable coder snapshot.
+            require_completion_evidence=task.parent.name == "in-review",
+        ) if task else context_for_checkpoint(
             root, args.checkpoint, phase_id=args.phase, plan_ref=args.plan_ref,
             checkpoint_text=prompt_text,
         ))

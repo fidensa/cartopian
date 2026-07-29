@@ -91,17 +91,17 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
      --review-kind <planning|task-closure> <target arguments>
    ```
 
-   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections.
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections. A task-closure writer reads the still-present coder report, validates its task-completion publication shape, and embeds a content-hashed, full coder-evidence snapshot in the generated context. That snapshot is the review input after the transient shared report slot is cleared; review preflight does not depend on the coder report remaining at that filename.
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
-5. Remove any stale report at the expected report path using the Core CLI before issuing the handoff:
+5. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. Then remove the coder report from the shared expected-report slot using the Core CLI before issuing the reviewer handoff:
 
    ```
    cartopian delete-report <report-path>
    ```
 
-   `delete-report` also removes the companion `<report-path>.status` wrapper status file when present, clearing any early-crash signal a prior handoff left in the same slot.
+   `delete-report` also removes the companion `<report-path>.status` wrapper status file when present, clearing any early-crash signal a prior handoff left in the same slot. Automatic `dispatch` repeats this bounded slot clear immediately before launch, after review-context preflight, so the launch cannot inherit a stale report or status even if a caller omitted the cleanup step.
 
 Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet`. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
@@ -127,7 +127,7 @@ request-comparison bypass.
   cartopian dispatch <task-path> --role <role>
   ```
 
-  `dispatch` is the FR-006 mediated launch. It consumes the canonical resolved role record, fails closed on a missing agent or permission, an unmapped/non-existent work root, or a missing prompt, and exports only resolved launch context: timeout, model, effort, work roots, project-root cwd, and the prompt/report paths. It launches the resolved `agent` with the single absolute-prompt-path argv. There is no caller-supplied executable argument, and the wrapper never receives raw review, automation, capability, schema, or identity policy.
+  `dispatch` is the FR-006 mediated launch. It consumes the canonical resolved role record, fails closed on a missing agent or permission, an unmapped/non-existent work root, or a missing prompt, and exports only resolved launch context: timeout, model, effort, work roots, project-root cwd, prompt/report paths, the expected report variant, and a fresh launch identity. After every preflight and before child creation it clears the bounded report/status slot and atomically publishes `state=running` for that launch. A child-creation failure removes its own running marker. It launches the resolved `agent` with the single absolute-prompt-path argv. There is no caller-supplied executable argument, and the wrapper never receives raw review, automation, capability, or schema policy.
 
 - **Agent role with `planning_review` in `auto_launch`, report-path-only handoff** (no task file — e.g. a planning-checkpoint review) — *PM-performed*: launch through the prompt-keyed mediated dispatch below. When the permission is absent, use the operator-performed path.
 
@@ -177,9 +177,10 @@ Choose the primitive by handoff kind:
 
 Interpret the emitted `status`:
 
-- `done` / `accepted`: a report is present and parses. Proceed to Stage 4 to read its verdict.
-- `failed-to-parse`: a report is present but invalid. Treat as blocked; preserve the prompt and report for inspection.
-- `failed`: the wrapper status file reports the assignee process exited and no valid report appeared — a crash/timeout exit, or a clean exit that nonetheless wrote no report (a common reviewer failure: it writes `reviews/REVIEW-NN-NNN.md` but not the `reports/REPORT-NN-NNN.md` the wait watches). The process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
+- `done` / `accepted`, or common `classification` values `accepted`, `blocked`, `failed`, `changes-requested`, or `rejected`: a complete well-shaped report publication is present. Proceed to Stage 4 to route its actual verdict.
+- An incomplete or temporarily malformed report while the current wrapper is still running is nonterminal. Path appearance alone is not completion; keep the same canonical wait active so publication can finish.
+- `failed-to-parse`: the current wrapper exited and left a permanently malformed report (including content of the wrong expected variant, such as a stale coder report in a reviewer slot). Treat as blocked; preserve the prompt and report for inspection.
+- `failed`: the current wrapper exited non-zero and no report appeared. `exited-without-report`: it exited cleanly without a report (the task-scoped legacy `status` field remains `failed`, while `classification` is precise). In either case the process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
 - `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
 - `still-running` / `still_running`: reachable only under an explicitly requested `--max-block` slice — that budget elapsed before the configured timeout, so the assignee may still be working. Treat this as a nonterminal internal observation boundary, not as a blocker, completion result, or operator-confirmation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. A wait is read-only and does not launch an assignee, so do not return to Stage 2, call `dispatch`, or consume another `max_handoffs_per_run` unit. Continue until the wait reports a terminal result or the configured deadline; do not request operator continuation merely because an observation slice ended.
 

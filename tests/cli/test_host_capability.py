@@ -16,14 +16,16 @@ import json
 
 import pytest
 
-from cli import host_capability
+from cli import emit, host_capability
 from cli.main import EXIT_OK, build_parser
 
 
 @pytest.fixture(autouse=True)
 def clean_host_env(monkeypatch):
     """Start every test outside an MCP host, with no host config leaking in."""
+    prior_sink = emit.set_progress_sink(None)
     for name in (
+        host_capability.CONNECTED_ENV,
         host_capability.CLIENT_ENV,
         host_capability.CLIENT_VERSION_ENV,
         host_capability.CLIENT_TITLE_ENV,
@@ -33,9 +35,12 @@ def clean_host_env(monkeypatch):
         "CODEX_HOME",
     ):
         monkeypatch.delenv(name, raising=False)
+    yield
+    emit.set_progress_sink(prior_sink)
 
 
 def _as_client(monkeypatch, name, *, title=None, version=None):
+    monkeypatch.setenv(host_capability.CONNECTED_ENV, "1")
     monkeypatch.setenv(host_capability.CLIENT_ENV, name)
     if title is not None:
         monkeypatch.setenv(host_capability.CLIENT_TITLE_ENV, title)
@@ -131,22 +136,74 @@ def test_codex_unreadable_config_falls_back_to_the_documented_default(
     assert budget.wall_clock_source == "host-default"
 
 
+@pytest.mark.parametrize("invalid_value", ("true", "3.5", "-1", "0"))
+def test_codex_invalid_tool_timeout_falls_back_to_documented_default(
+    monkeypatch, tmp_path, invalid_value
+):
+    home = _codex_home(
+        tmp_path,
+        "[mcp_servers.cartopian]\n"
+        'command = "/x/cartopian-mcp"\n'
+        f"tool_timeout_sec = {invalid_value}\n",
+    )
+    _as_client(monkeypatch, "codex-mcp-client")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+
+    budget = host_capability.resolve_host_budget()
+    assert budget.effective_seconds == 300
+    assert budget.wall_clock_source == "host-default"
+
+
 # --- Claude Code -----------------------------------------------------------
 
 
-def test_claude_code_idle_window_is_the_binding_ceiling(monkeypatch):
-    """Claude Code's wall clock is generous; its 30m stdio idle window is not."""
+def test_claude_code_progress_maintains_idle_without_extending_wall_clock(monkeypatch):
+    """Resettable idle is reported but does not cap a progress-bearing wait."""
     _as_client(monkeypatch, "claude-code")
+    emit.set_progress_sink(lambda _progress, _total, _message: None)
 
     budget = host_capability.resolve_host_budget()
     assert budget.host == "claude-code"
     assert budget.wall_clock_seconds == 100_800
     assert budget.idle_seconds == 1_800
-    assert budget.effective_seconds == 1_800
-    assert budget.limiting_ceiling() == "idle"
+    assert budget.effective_seconds == 100_800
+    assert budget.limiting_ceiling() == "wall-clock"
     # Progress notifications count as traffic against the idle timer only.
     assert budget.progress_resets_idle is True
     assert budget.progress_resets_wall_clock is False
+    assert budget.record()["progress_channel_available"] is True
+
+
+def test_claude_code_without_progress_retains_idle_ceiling(monkeypatch):
+    """A role beyond the idle default is refused when progress is unavailable."""
+    _as_client(monkeypatch, "claude-code")
+
+    budget = host_capability.resolve_host_budget()
+    assert budget.progress_channel_available is False
+    assert budget.effective_seconds == 1_800
+    assert budget.limiting_ceiling() == "idle"
+    assert budget.record()["progress_channel_available"] is False
+
+    ok, _budget, refusal = host_capability.check_wait_budget("reviewer", 2_700)
+    assert ok is False
+    assert "45m" in refusal and "30m" in refusal
+    assert "idle ceiling" in refusal
+
+
+def test_equal_resettable_idle_and_wall_reports_wall_as_binding(monkeypatch):
+    """An excluded equal idle value must not mislabel the fixed wall ceiling."""
+    _as_client(monkeypatch, "claude-code")
+    monkeypatch.setenv("MCP_TOOL_TIMEOUT", "1800000")
+    emit.set_progress_sink(lambda _progress, _total, _message: None)
+
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == budget.idle_seconds == 1_800
+    assert budget.effective_seconds == 1_800
+    assert budget.limiting_ceiling() == "wall-clock"
+
+    ok, _budget, refusal = host_capability.check_wait_budget("reviewer", 2_700)
+    assert ok is False
+    assert "wall-clock ceiling" in refusal
 
 
 def test_claude_code_idle_window_can_be_raised(monkeypatch):
@@ -174,8 +231,13 @@ def test_claude_code_zero_idle_timeout_disables_the_check(monkeypatch):
 # --- Gemini ----------------------------------------------------------------
 
 
-def test_gemini_default_ceiling(monkeypatch):
+def test_gemini_default_ceiling(monkeypatch, tmp_path):
     _as_client(monkeypatch, "gemini-cli")
+    monkeypatch.setattr(
+        host_capability,
+        "_gemini_settings_paths",
+        lambda: [tmp_path / "missing-settings.json"],
+    )
     budget = host_capability.resolve_host_budget()
     assert budget.host == "gemini-cli"
     assert budget.effective_seconds == 600
@@ -193,6 +255,14 @@ def test_unrecognized_host_resolves_to_unknown_not_to_a_default(monkeypatch):
     # Unknown is not unbounded: no number may be invented for it.
     assert budget.effective_seconds is None
     assert budget.wall_clock_seconds is None
+
+
+def test_connected_mcp_without_client_identity_is_unknown(monkeypatch):
+    monkeypatch.setenv(host_capability.CONNECTED_ENV, "1")
+    budget = host_capability.resolve_host_budget()
+    assert budget is not None
+    assert budget.host == "unknown"
+    assert host_capability.under_mcp_host() is True
 
 
 def test_unknown_host_fails_the_gate_closed(monkeypatch):

@@ -31,12 +31,15 @@ REVIEW_KINDS = ("planning", "task-closure")
 UNIT_KINDS = ("project", "planning", "task")
 REQUEST_SECTION_HEADING = "## Original operator request (verbatim)"
 MANAGEMENT_SECTION_HEADING = "## PM-derived guidance and delivered outcome"
+CAPTURED_COMPLETION_HEADING = "## Captured coder completion evidence"
+CAPTURED_REPORT_MARKER = "Captured report:"
 LEGACY_STATE = "unavailable-for-legacy"
 ALIGNMENT_VALUES = ("aligned", "drifted", LEGACY_STATE)
 ALIGNMENT_FIELD = "Request alignment"
 ALIGNMENT_EVIDENCE_FIELD = "Request evidence"
 REQUEST_CAPTURE_FROM = (0, 9, 0)
 MAX_REQUEST_BYTES = 24 * 1024
+MAX_COMPLETION_EVIDENCE_BYTES = 256 * 1024
 DECISION_QUOTE_MARKER = "Operator request quote for:"
 DECISION_QUOTE_MARKER_RE = re.compile(
     r"^Operator request quote for:\s*"
@@ -874,6 +877,242 @@ def _management_artifacts(
     return [path.relative_to(project_root).as_posix() for _, path in artifacts]
 
 
+@dataclass(frozen=True)
+class CapturedCompletionEvidence:
+    source_path: str
+    content_identity: str
+    content_bytes: int
+    status: Optional[str]
+    ready_to_close: Optional[bool]
+    content: str
+
+    def as_record(self, *, include_content: bool = False) -> Dict[str, Any]:
+        record: Dict[str, Any] = {
+            "source_path": self.source_path,
+            "content_identity": self.content_identity,
+            "content_bytes": self.content_bytes,
+            "status": self.status,
+            "ready_to_close": self.ready_to_close,
+        }
+        if include_content:
+            record["content"] = self.content
+        return record
+
+
+def _task_report_path(project_root: Path, task_path: Path) -> Path:
+    match = re.match(r"^TASK-(\d{2}-\d{3})", task_path.stem)
+    if match is None:
+        raise RequestRefusal(
+            "malformed-review-target",
+            f"invalid task name: {task_path.name}",
+        )
+    return Path(project_root) / "reports" / f"REPORT-{match.group(1)}.md"
+
+
+def _report_status(text: str) -> Optional[str]:
+    match = re.search(r"^Status:\s*(complete|blocked|failed)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _report_ready(text: str) -> Optional[bool]:
+    match = re.search(
+        r"^##\s+(?:Ready to close|Ready for review)\s*$"
+        r"(.*?)(?=^##\s+|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        return None
+    lines = [line.strip().lower() for line in match.group(1).splitlines() if line.strip()]
+    if not lines:
+        return None
+    if lines[0] == "yes":
+        return True
+    if lines[0] == "no":
+        return False
+    return None
+
+
+def _capture_completion_file(
+    project_root: Path,
+    task_path: Path,
+) -> CapturedCompletionEvidence:
+    # Import lazily to avoid the parse_report -> request_trace module cycle
+    # while still validating against the canonical publication schema.
+    from cli.commands import parse_report
+
+    report_path = _task_report_path(project_root, task_path)
+    if not report_path.is_file():
+        raise RequestRefusal(
+            "missing-coder-completion-evidence",
+            f"task-closure review requires the coder report before slot reuse: "
+            f"{report_path.relative_to(project_root).as_posix()}",
+            "capture the accepted coder report while it is still present, then prepare the review prompt",
+        )
+    content = read_contained_text(
+        project_root,
+        report_path,
+        what="coder completion report",
+    )
+    raw = content.encode("utf-8")
+    if len(raw) > MAX_COMPLETION_EVIDENCE_BYTES:
+        raise RequestRefusal(
+            "coder-completion-evidence-too-large",
+            f"coder report exceeds {MAX_COMPLETION_EVIDENCE_BYTES} bytes",
+        )
+    status = _report_status(content)
+    ready = _report_ready(content)
+    inferred_variant, _variant_error = parse_report._infer_variant(
+        report_path,
+        content,
+    )
+    if (
+        inferred_variant != "task"
+        or not parse_report._schema_ok("task", content)
+        or status != "complete"
+        or ready is not True
+    ):
+        raise RequestRefusal(
+            "malformed-coder-completion-evidence",
+            "coder report is not an accepted task-completion publication",
+            "repair or rerun the coder handoff before preparing task-closure review",
+        )
+    return CapturedCompletionEvidence(
+        source_path=report_path.relative_to(project_root).as_posix(),
+        content_identity=content_identity(raw),
+        content_bytes=len(raw),
+        status=status,
+        ready_to_close=ready,
+        content=content,
+    )
+
+
+def _parse_bound_completion(
+    project_root: Path,
+    prompt_text: str,
+) -> Optional[CapturedCompletionEvidence]:
+    if CAPTURED_COMPLETION_HEADING not in prompt_text:
+        return None
+    lines = prompt_text.splitlines()
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if line == CAPTURED_COMPLETION_HEADING
+    ]
+    if len(starts) != 1:
+        raise RequestRefusal(
+            "stale-request-context",
+            "generated context has an ambiguous captured coder-evidence section",
+        )
+    start = starts[0] + 1
+    try:
+        end = lines.index(MANAGEMENT_SECTION_HEADING, start)
+    except ValueError:
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder evidence has no management-channel boundary",
+        )
+    fields: Dict[str, str] = {}
+    marker: Optional[int] = None
+    for index in range(start, end):
+        line = lines[index]
+        if line == CAPTURED_REPORT_MARKER:
+            marker = index
+            break
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip()
+    if marker is None:
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder evidence has no report body",
+        )
+    quoted: List[str] = []
+    for line in lines[marker + 1:end]:
+        if not line:
+            continue
+        if line == ">":
+            quoted.append("")
+        elif line.startswith("> "):
+            quoted.append(line[2:])
+        else:
+            raise RequestRefusal(
+                "stale-request-context",
+                "captured coder report body is not a generated block quote",
+            )
+    content = "\n".join(quoted)
+    if fields.get("Trailing newline") == "yes":
+        content += "\n"
+    source = fields.get("Source path", "")
+    candidate = Path(source)
+    if (
+        not source
+        or candidate.is_absolute()
+        or ".." in candidate.parts
+        or candidate.parent.as_posix() != "reports"
+        or not re.fullmatch(r"REPORT-\d{2}-\d{3}\.md", candidate.name)
+    ):
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder evidence source path is unsafe or malformed",
+        )
+    raw = content.encode("utf-8")
+    identity = content_identity(raw)
+    try:
+        declared_bytes = int(fields.get("Content bytes", ""))
+    except ValueError:
+        declared_bytes = -1
+    if (
+        fields.get("Content identity") != identity
+        or declared_bytes != len(raw)
+        or len(raw) > MAX_COMPLETION_EVIDENCE_BYTES
+    ):
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder evidence content binding does not verify",
+        )
+    status = fields.get("Coder status")
+    ready_raw = fields.get("Ready to close")
+    ready = True if ready_raw == "yes" else False if ready_raw == "no" else None
+    if status != _report_status(content) or ready != _report_ready(content):
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder outcome fields do not match the bound report",
+        )
+    # The source path is an identity, not a live dependency.  It may have been
+    # cleared for reviewer publication, but it must remain within this project.
+    absolute = Path(project_root) / candidate
+    if not _within(os.path.realpath(absolute.parent), os.path.realpath(project_root)):
+        raise RequestRefusal(
+            "stale-request-context",
+            "captured coder evidence source escapes the project",
+        )
+    return CapturedCompletionEvidence(
+        source_path=candidate.as_posix(),
+        content_identity=identity,
+        content_bytes=len(raw),
+        status=status,
+        ready_to_close=ready,
+        content=content,
+    )
+
+
+def _captured_completion_evidence(
+    project_root: Path,
+    task_path: Path,
+    prompt_text: Optional[str],
+    *,
+    required: bool,
+) -> Optional[CapturedCompletionEvidence]:
+    if prompt_text and REQUEST_SECTION_HEADING in prompt_text:
+        bound = _parse_bound_completion(project_root, prompt_text)
+        if bound is not None:
+            return bound
+    if required:
+        return _capture_completion_file(project_root, task_path)
+    return None
+
+
 def _fence(text: str) -> str:
     longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
     return "`" * max(3, longest + 1)
@@ -886,6 +1125,7 @@ def render_sections(
     *,
     target: GovernedUnit,
     legacy: bool,
+    captured_completion: Optional[CapturedCompletionEvidence] = None,
 ) -> str:
     lines = [
         REQUEST_SECTION_HEADING,
@@ -919,7 +1159,28 @@ def render_sections(
             if record.observed_at:
                 lines.append(f"Observed at: {record.observed_at}")
             lines += ["", fence + "text", record.text, fence]
-    lines += ["", MANAGEMENT_SECTION_HEADING, "", "The configured reviewer compares the verbatim request above with these PM-derived artifacts and the delivered outcome. The operator is the request source, not the reviewer.", ""]
+    if captured_completion is not None:
+        lines += [
+            "",
+            CAPTURED_COMPLETION_HEADING,
+            "",
+            f"Source path: {captured_completion.source_path}",
+            f"Content identity: {captured_completion.content_identity}",
+            f"Content bytes: {captured_completion.content_bytes}",
+            f"Coder status: {captured_completion.status}",
+            "Ready to close: "
+            + ("yes" if captured_completion.ready_to_close else "no"),
+            "Trailing newline: "
+            + ("yes" if captured_completion.content.endswith("\n") else "no"),
+            "",
+            CAPTURED_REPORT_MARKER,
+            "",
+        ]
+        lines.extend(
+            ">" if line == "" else f"> {line}"
+            for line in captured_completion.content.splitlines()
+        )
+    lines += ["", MANAGEMENT_SECTION_HEADING, "", "The configured reviewer compares the verbatim request above with these PM-derived artifacts, the captured coder completion evidence, and the delivered outcome. The operator is the request source, not the reviewer.", ""]
     lines.extend(f"- {path}" for path in management)
     return "\n".join(lines).rstrip() + "\n"
 
@@ -933,6 +1194,7 @@ class ReviewContext:
     context_identity: str
     section: str
     legacy: bool
+    captured_completion: Optional[CapturedCompletionEvidence] = None
 
     @property
     def evidence_ids(self) -> List[str]:
@@ -953,6 +1215,11 @@ class ReviewContext:
                 "records": [record.as_record() for record in self.trace],
             },
             "management_guidance": {"artifact_paths": self.management_artifacts},
+            "captured_completion_evidence": (
+                self.captured_completion.as_record()
+                if self.captured_completion is not None
+                else None
+            ),
             "review_kind": self.review_kind,
             "target": self.target.as_record(),
             "context_identity": self.context_identity,
@@ -970,6 +1237,7 @@ def _context(
     plan_ref: Optional[str] = None,
     checkpoint_text: Optional[str] = None,
     allow_historical_legacy: bool = False,
+    require_completion_evidence: bool = False,
 ) -> ReviewContext:
     del plan_ref
     target = _target_unit(review_kind, task_path, checkpoint_id)
@@ -1001,6 +1269,16 @@ def _context(
             "provide an applicable exact decision quotation, supported host chat record, or host intake record",
         )
     legacy = not trace
+    captured_completion = (
+        _captured_completion_evidence(
+            project_root,
+            task_path,
+            checkpoint_text,
+            required=require_completion_evidence,
+        )
+        if review_kind == "task-closure" and task_path is not None
+        else None
+    )
     management = _management_artifacts(
         project_root,
         review_kind,
@@ -1009,6 +1287,11 @@ def _context(
         phase_id=phase_id,
         checkpoint_text=checkpoint_text,
     )
+    if captured_completion is not None:
+        management = [
+            path for path in management
+            if path != captured_completion.source_path
+        ]
     payload = {
         "schema": "cartopian-review-context-v3",
         "review_kind": review_kind,
@@ -1027,10 +1310,31 @@ def _context(
         ],
         "legacy": legacy,
         "management_artifacts": management,
+        "captured_completion_evidence": (
+            captured_completion.as_record()
+            if captured_completion is not None
+            else None
+        ),
     }
     identity = content_identity(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    section = render_sections(trace, management, identity, target=target, legacy=legacy)
-    return ReviewContext(review_kind, target, list(trace), management, identity, section, legacy)
+    section = render_sections(
+        trace,
+        management,
+        identity,
+        target=target,
+        legacy=legacy,
+        captured_completion=captured_completion,
+    )
+    return ReviewContext(
+        review_kind,
+        target,
+        list(trace),
+        management,
+        identity,
+        section,
+        legacy,
+        captured_completion,
+    )
 
 
 def context_for_task(
@@ -1039,6 +1343,7 @@ def context_for_task(
     *_ignored: object,
     prompt_text: Optional[str] = None,
     allow_historical_legacy: bool = False,
+    require_completion_evidence: bool = False,
 ) -> ReviewContext:
     return _context(
         Path(project_root),
@@ -1047,6 +1352,7 @@ def context_for_task(
         None,
         checkpoint_text=prompt_text,
         allow_historical_legacy=allow_historical_legacy,
+        require_completion_evidence=require_completion_evidence,
     )
 
 
@@ -1069,7 +1375,11 @@ def _section_bounds(lines: Sequence[str]) -> Optional[Tuple[int, int]]:
     start = starts[0]
     end = len(lines)
     for i in range(start + 1, len(lines)):
-        if lines[i].startswith("## ") and lines[i].rstrip("\r\n") not in (MANAGEMENT_SECTION_HEADING,):
+        if (
+            lines[i].startswith("## ")
+            and lines[i].rstrip("\r\n")
+            not in (CAPTURED_COMPLETION_HEADING, MANAGEMENT_SECTION_HEADING)
+        ):
             end = i
             break
     return start, end

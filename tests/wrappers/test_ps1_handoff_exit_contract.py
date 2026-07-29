@@ -66,6 +66,14 @@ Status: complete
 
 - Task ID: TASK-01-007
 
+## Completion evidence
+
+The handoff completed.
+
+## Remaining risks
+
+None.
+
 ## Ready for review
 
 yes

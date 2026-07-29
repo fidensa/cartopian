@@ -44,7 +44,11 @@ def handler(args: argparse.Namespace) -> int:
                 task = Path(args.task or "")
                 if not task.is_absolute() or not task.is_file():
                     raise RequestRefusal("missing-review-target", "--task must name an existing absolute task")
-                context = context_for_task(root, task.resolve())
+                context = context_for_task(
+                    root,
+                    task.resolve(),
+                    require_completion_evidence=True,
+                )
             else:
                 if not args.checkpoint or not CHECKPOINT_ID_RE.fullmatch(args.checkpoint):
                     raise RequestRefusal("missing-review-target", "--checkpoint must match PLAN-NNN[-slug]")

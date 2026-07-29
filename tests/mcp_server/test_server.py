@@ -996,6 +996,14 @@ class TestHostIdentityAndProgress(unittest.TestCase):
         # `initialize` mutates module state; keep tests independent of order.
         self._prior = server._client_info
         server._client_info = {}
+        self._prior_env = {
+            name: os.environ.get(name)
+            for name in (
+                host_capability.CONNECTED_ENV,
+                host_capability.CLIENT_ENV,
+                host_capability.CLIENT_VERSION_ENV,
+            )
+        }
 
     def tearDown(self) -> None:
         server._client_info = self._prior
@@ -1023,21 +1031,30 @@ class TestHostIdentityAndProgress(unittest.TestCase):
         self.assertEqual(seen["name"], "codex-mcp-client")
         self.assertEqual(seen["version"], "9.9")
         # The marker must not leak past the call it describes.
-        self.assertIsNone(os.environ.get(host_capability.CLIENT_ENV))
+        self.assertEqual(
+            os.environ.get(host_capability.CLIENT_ENV),
+            self._prior_env[host_capability.CLIENT_ENV],
+        )
+        self.assertEqual(
+            os.environ.get(host_capability.CONNECTED_ENV),
+            self._prior_env[host_capability.CONNECTED_ENV],
+        )
 
-    def test_no_client_info_means_no_exported_marker(self):
-        """Absent clientInfo must read as "no host", not as an unknown one."""
+    def test_no_client_info_still_marks_a_connected_unknown_host(self):
+        """Absent clientInfo is unknown connected capability, never direct CLI."""
         server._client_info = {}
         seen: Dict[str, Optional[str]] = {}
 
         def capture(*_args, **_kwargs):
             seen["name"] = os.environ.get(host_capability.CLIENT_ENV)
+            seen["connected"] = os.environ.get(host_capability.CONNECTED_ENV)
             return {"exit_code": 0, "records": [], "stderr_lines": [], "stdout_raw": ""}
 
         with patch.object(server, "_invoke_cli_captured", side_effect=capture):
             server.call_tool("discover_projects", {})
 
         self.assertIsNone(seen["name"])
+        self.assertEqual(seen["connected"], "1")
 
     def test_progress_token_installs_a_channel_that_reaches_the_wire(self):
         stdout = io.StringIO()
@@ -1091,6 +1108,30 @@ class TestHostIdentityAndProgress(unittest.TestCase):
             server.call_tool("discover_projects", {}, {"progressToken": 4})
 
         self.assertFalse(emit.progress_available())
+
+    def test_host_budget_evidence_tracks_this_calls_progress_channel(self):
+        """A progress token changes only resettable ceilings and is recorded."""
+        server._client_info = {"name": "claude-code", "version": "1.0"}
+
+        without_progress = server.call_tool("host_capability", {})
+        raw_budget = without_progress["structuredContent"]["records"][0][
+            "host_wait_budget"
+        ]
+        self.assertFalse(raw_budget["progress_channel_available"])
+        self.assertEqual(raw_budget["effective_wait_budget_seconds"], 1_800)
+        self.assertEqual(raw_budget["limiting_ceiling"], "idle")
+
+        with_progress = server.call_tool(
+            "host_capability",
+            {},
+            {"progressToken": "host-budget-check"},
+        )
+        progress_budget = with_progress["structuredContent"]["records"][0][
+            "host_wait_budget"
+        ]
+        self.assertTrue(progress_budget["progress_channel_available"])
+        self.assertEqual(progress_budget["effective_wait_budget_seconds"], 100_800)
+        self.assertEqual(progress_budget["limiting_ceiling"], "wall-clock")
 
 
 if __name__ == "__main__":
