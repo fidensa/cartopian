@@ -657,11 +657,13 @@ class TestDispatchDetachedStdio(unittest.TestCase):
             self.assertIn(rec["launch_log_path"], captured["argv"])
             self.assertEqual(
                 rec["output_safety"]["guarantee_scope"],
-                "observable-wrapper-stream",
+                "retained-launch-log",
             )
-            self.assertFalse(
-                rec["output_safety"]["pre_model_ingestion_guaranteed"]
-            )
+            self.assertEqual(rec["output_safety"]["log_byte_limit"], 65536)
+            self.assertEqual(rec["output_safety"]["log_line_limit"], 400)
+            self.assertNotIn("stream_byte_limit", rec["output_safety"])
+            self.assertNotIn("stream_line_limit", rec["output_safety"])
+            self.assertNotIn("overflow_classification", rec["output_safety"])
 
     @unittest.skipUnless(os.name == "posix", "pipe-lifetime semantics are POSIX-specific here")
     def test_detached_child_survives_caller_and_captured_pipe_exit(self) -> None:

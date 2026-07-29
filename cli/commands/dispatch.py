@@ -145,42 +145,6 @@ def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) 
     return [resolved_agent, prompt_path]
 
 
-def _ensure_prompt_output_guidance(prompt_path: Path) -> None:
-    """Project the central command budget into one automated assignment."""
-    tmp: Optional[Path] = None
-    try:
-        info = prompt_path.lstat()
-        if prompt_path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
-            raise OSError("prompt is not a safe single-link regular file")
-        original = prompt_path.read_text(encoding="utf-8")
-        updated = output_safety.upsert_command_output_guidance(original)
-        if updated == original:
-            return
-        tmp = prompt_path.parent / (
-            f".{prompt_path.name}.output-safety.{os.getpid()}.{secrets.token_hex(8)}"
-        )
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(tmp, flags, stat.S_IMODE(info.st_mode))
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(updated)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, prompt_path)
-    except (OSError, UnicodeDecodeError) as exc:
-        try:
-            if tmp is not None:
-                tmp.unlink()
-        except OSError:
-            pass
-        raise _CliError(
-            EXIT_FAIL,
-            "guard",
-            f"cannot project the central command-output budget into prompt "
-            f"{prompt_path}: {exc}",
-        ) from exc
-
-
 def _preflight_request_trace(
     project_root: Path,
     activity: str,
@@ -537,15 +501,6 @@ def handler(args: argparse.Namespace) -> int:
         ).resolve()
         expected_variant = "planning-review"
 
-    # Every automated assignment receives the same generated per-command rule.
-    # Dispatch also performs this idempotent projection so a legacy prompt
-    # written before the current mediated writer cannot silently omit it.
-    try:
-        _ensure_prompt_output_guidance(prompt_path)
-    except _CliError as err:
-        stderr_guard(err.message)
-        return err.exit_code
-
     # --- Fail-closed: request-trace evidence is present and current --------
     # Review handoffs recompute applicability and the review-context identity at
     # the handoff boundary. Bypassing automatic launch must not bypass intent
@@ -661,10 +616,10 @@ def handler(args: argparse.Namespace) -> int:
         return err.exit_code
     is_windows = _running_on_windows()
     launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), is_windows)
-    # The detached supervisor, not the log file, is the stream boundary.  It
-    # reads the configured wrapper through a pipe, enforces the cumulative
-    # byte/line ceiling, contains the wrapper process tree on overflow, and
-    # atomically publishes only the independently bounded retained log.
+    # The detached supervisor continuously drains the configured wrapper
+    # through a pipe and atomically publishes only the bounded retained log.
+    # Bytes outside that representation are discarded without affecting the
+    # wrapper process or its lifecycle result.
     launch_log = output_safety.usable_log_path(
         Path(str(expected_report_path) + ".launch.log")
     )
@@ -681,10 +636,6 @@ def handler(args: argparse.Namespace) -> int:
         launch_id,
         "--expected-variant",
         expected_variant,
-        "--stream-bytes",
-        str(output_limits.stream_bytes),
-        "--stream-lines",
-        str(output_limits.stream_lines),
         "--log-bytes",
         str(output_limits.log_bytes),
         "--log-lines",
@@ -745,13 +696,7 @@ def handler(args: argparse.Namespace) -> int:
         "launch_log_path": launch_log_path,
         "output_safety": {
             **output_limits.as_record(),
-            "command_byte_limit": output_safety.COMMAND_OUTPUT_BYTE_LIMIT,
-            "command_line_limit": output_safety.COMMAND_OUTPUT_LINE_LIMIT,
-            "overflow_classification": output_safety.OUTPUT_OVERFLOW_CLASSIFICATION,
-            "overflow_exit_code": output_safety.OUTPUT_OVERFLOW_EXIT,
             "guarantee_scope": output_safety.GUARANTEE_SCOPE,
-            "pre_model_ingestion_guaranteed": False,
-            "provider_private_context_exclusion_guaranteed": False,
         },
         "pid": proc.pid,
         "launch_id": launch_id,

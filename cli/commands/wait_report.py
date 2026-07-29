@@ -21,18 +21,15 @@ Outcomes:
 - Incomplete report while the wrapper can still publish → remain nonterminal.
 - Wrapper exit with malformed bytes or no report → deterministic exit 1
   classification matching ``wait-handoff``.
-- Output-supervisor overflow → deterministic exit 1
-  ``classification=output-overflow`` with bounded status metadata; the wait
-  never opens the retained launch log.
 - The resolved timeout ceiling elapses first → exit 1, emit one NDJSON
   ``timeout`` record (terminal; the handoff blew its absolute limit).
 - An explicit ``--max-block`` slice elapses before the ceiling → exit 0, emit
   one NDJSON ``still_running`` record (nonterminal; reachable only when
   ``--max-block`` was supplied).
 
-Read-only: never writes to the project tree. Standard library only. Validity
-is judged via the ``report-action`` aggregator, not the deprecated public
-``parse-report`` surface.
+Read-only: never writes to the project tree or reads the retained launch-log
+body. Standard library only. Validity is judged via the ``report-action``
+aggregator, not the deprecated public ``parse-report`` surface.
 """
 import argparse
 import sys

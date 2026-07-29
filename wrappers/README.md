@@ -121,33 +121,29 @@ The bash wrappers run `timeout <duration> <real-cli> ...` so the OS owns the dea
 
 The wrappers no longer `exec` into the CLI: they run it as a child, capture its exit code, write the [status file](#status-file-early-crash-detection) below, and then exit with the assignee's exit code (so signals/exit codes still reach the PM faithfully).
 
-### Automated stream and launch-log bounds
+### Automated launch-log retention
 
 `cartopian dispatch` places the configured wrapper inside the common
 standard-library output supervisor before detaching it. This outer boundary
 is agent-neutral: all Codex, Claude, Gemini, and Devin wrappers use it on both
-POSIX and native PowerShell/CMD launch paths. It enforces the cumulative
-wrapper-stream byte/line limits, contains the wrapper process tree on
-overflow, and publishes only an independently bounded
-`<report-path>.launch.log`. The detached supervisor itself uses null stdio, so
-agent output can neither inherit the short-lived CLI/MCP caller's pipes nor
-enter its JSON-RPC stream.
+POSIX and native PowerShell/CMD launch paths. It continuously drains combined
+wrapper output so the child cannot block on a full pipe and publishes only a
+bounded `<report-path>.launch.log`; excess bytes are discarded without
+signaling, terminating, failing, or otherwise constraining the assignee. The
+detached supervisor itself uses null stdio, so agent output can neither inherit
+the short-lived CLI/MCP caller's pipes nor enter its JSON-RPC stream.
 
-The shipped cumulative defaults are 256 KiB / 2,000 lines for the observed
-wrapper stream and 64 KiB / 400 lines for retained diagnostics. Dispatch
-exports the normalized values as `CARTOPIAN_STREAM_BYTE_LIMIT`,
-`CARTOPIAN_STREAM_LINE_LIMIT`, `CARTOPIAN_LOG_BYTE_LIMIT`, and
-`CARTOPIAN_LOG_LINE_LIMIT`. Invalid operator overrides fail before launch.
-Crossing a stream limit exits `125` with `classification=output-overflow` and
-bounded status metadata; ordinary nonzero exits and timeout `124` remain
-distinct.
+The shipped retained-diagnostic defaults are 64 KiB / 400 lines. Dispatch
+exports the normalized values as `CARTOPIAN_LOG_BYTE_LIMIT` and
+`CARTOPIAN_LOG_LINE_LIMIT`; invalid operator overrides fail before launch.
+Truncation is explicit in the retained representation and status metadata, but
+is never a lifecycle outcome. Ordinary nonzero exits, timeout `124`, and valid
+report completion remain distinct and unchanged.
 
-The supervisor's guarantee is `observable-wrapper-stream` in the host
-runtime. It is not pre-model interception, and bounded retention does not
-prove that output was excluded from an agent provider's private model
+The supervisor's guarantee is `retained-launch-log`: it bounds storage only,
+not execution output, artifacts, reports, model context, or provider-private
 context. Direct manual invocation of a wrapper does not pass through this
-automated-dispatch supervisor; use `cartopian dispatch` when this cumulative
-guarantee is required.
+automated-dispatch retention supervisor.
 
 ### Clean exit on report-complete (handoff exit contract)
 
@@ -161,7 +157,7 @@ The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedR
 
 ## Status file (early-crash detection)
 
-Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper writes exit facts and the outer automated-dispatch supervisor atomically publishes the final clean/error/timeout result as a fallback; on stream overflow the supervisor publishes the distinct bounded overflow record. Identity and variant are preserved. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
+Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper writes exit facts and the outer automated-dispatch supervisor atomically publishes the final clean/error/timeout result as a fallback together with retained-log facts. Identity and variant are preserved. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
 
 **The report file remains the authoritative completion signal.** The status file is never a hard requirement — if it is missing (helper absent, unwritable directory, prompt outside a project layout), wait-handoff degrades gracefully to the report-only path. Wrappers therefore write it best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
 
@@ -303,9 +299,7 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
 | `CARTOPIAN_EXPECTED_REPORT_VARIANT` | _(inferred on manual launch)_ | `task`, `review`, or `planning-review`; prevents another handoff kind's stale content from satisfying supervision/observation. |
 | `CARTOPIAN_EXPECTED_REPORT_PATH` | _(unset on manual launch)_ | Exact bounded report slot recorded by dispatch for custom wrapper integration. |
-| `CARTOPIAN_COMMAND_OUTPUT_GUIDANCE` | generated by dispatch | The centrally generated 200-line / 32 KiB per-command operational rule already projected into the prompt. Exposed for custom-wrapper diagnostics; wrappers do not redefine it. |
-| `CARTOPIAN_STREAM_BYTE_LIMIT` / `CARTOPIAN_STREAM_LINE_LIMIT` | `262144` / `2000` | Normalized cumulative observable-wrapper-stream ceilings enforced outside the wrapper by automated dispatch. |
-| `CARTOPIAN_LOG_BYTE_LIMIT` / `CARTOPIAN_LOG_LINE_LIMIT` | `65536` / `400` | Independent retained launch-log ceilings. |
+| `CARTOPIAN_LOG_BYTE_LIMIT` / `CARTOPIAN_LOG_LINE_LIMIT` | `65536` / `400` | Retained launch-log ceilings; they do not limit wrapper execution or artifacts. |
 | `CARTOPIAN_LAUNCH_LOG_PATH` | _(unset when unavailable)_ | Safe destination selected for the bounded retained representation. Wait/status paths never read its body. |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
