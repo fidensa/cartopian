@@ -20,7 +20,17 @@ import tempfile
 import tomllib
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    AbstractSet,
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from cli.config_schema import identity_contract
 from cli.install_state import (
@@ -37,6 +47,25 @@ from cli.restart_state import (
     normalize_client_context,
     restart_record,
     running_server_from_environment,
+)
+from cli.resume_state import (
+    ProgressRefusal,
+    acquire_lease,
+    advance_cleanup,
+    advance_completion,
+    assess_resume,
+    begin_progress,
+    carry_preserved_evidence,
+    commit_checkpoint,
+    new_owner_token,
+    open_boundary,
+    preserve_progress,
+    quarantine_progress,
+    read_progress,
+    recoverable_write_text,
+    record_failure,
+    recovery_note as resume_recovery_note,
+    release_lease,
 )
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -188,12 +217,94 @@ _CHOICE_MAP = {
     "decline": "declined",
     "defer": "deferred",
 }
+# Only a migration offer may be deferred here; running a migration stays with
+# the separately authorized `migrate-project` workflow, so `accept` is refused
+# rather than silently reinterpreted as authorization.
+_MIGRATION_SURFACE = "project-schema-migration-offers"
+_MIGRATION_DISPOSITIONS = ("defer",)
+
+# Each surface adapter declares how safely its action may be repeated and how
+# much of its result can be re-observed on resume.  Resume assessment consumes
+# these; it never infers repeatability from the action name.
+#
+# Tool-owned content is replaced through a staged, digest-verified boundary, so
+# repeating it converges.  Client registration and configuration merge into
+# operator-owned files whose non-Cartopian siblings cannot be fully re-derived,
+# so a partial merge must be inspected rather than replayed.  A project schema
+# migration is externally visible and not idempotent, so resume never replays
+# it; it can only be re-offered.
+_SURFACE_RETRY_PROFILES: Dict[str, Tuple[str, str]] = {
+    "core-files": ("idempotent", "observable"),
+    "mcp-server-files": ("idempotent", "observable"),
+    "wrappers": ("idempotent", "observable"),
+    "bridges": ("idempotent", "observable"),
+    "client-registrations": ("inspect-before-retry", "partially-observable"),
+    "client-configuration": ("inspect-before-retry", "partially-observable"),
+    "verification-content": ("idempotent", "observable"),
+    _MIGRATION_SURFACE: ("refuse-replay", "unobservable"),
+}
+_RETRY_RANK = {
+    "idempotent": 0,
+    "inspect-before-retry": 1,
+    "refuse-replay": 2,
+}
+
+# Resume classifications whose persisted record is intact and meaningful but
+# belongs to a different source, run, or installation.  Each is the last useful
+# recovery evidence for something this run is not, so it is preserved verbatim
+# before a new envelope may take its place.  `corrupted` and `evidence-missing`
+# are handled separately: those records are unusable in themselves and follow
+# the quarantine rule instead.
+_PRESERVE_BEFORE_REPLACEMENT = (
+    "source-mismatch",
+    "run-conflict",
+    "orphaned",
+)
+
+# Resume classifications this workflow has a defined disposition for once the
+# lease is held: reusable, preserved before replacement, or quarantined.  A
+# classification that appears only *after* the plan was computed and is not one
+# of these is a fact this run cannot reconcile, so it fails closed instead of
+# guessing at a disposition.
+_RECONCILABLE_POST_LEASE = frozenset(
+    (
+        "absent",
+        "compatible",
+        "stale",
+        "source-mismatch",
+        "run-conflict",
+        "orphaned",
+        "corrupted",
+        "evidence-missing",
+    )
+)
 _TRANSIENT_NAMES = frozenset((".DS_Store", "__pycache__"))
 _MAX_PRIOR_STATE_BYTES = 2 * 1024 * 1024
 
 
 class WorkflowRefusal(ValueError):
     """Fail-closed validation or apply error."""
+
+
+def surface_retry_profile(kind: str) -> Dict[str, str]:
+    """Return the adapter-declared retry and observation facts for a surface."""
+    if kind not in _SURFACE_RETRY_PROFILES:
+        raise WorkflowRefusal(f"unknown surface kind: {kind}")
+    retry_safety, observation = _SURFACE_RETRY_PROFILES[kind]
+    return {
+        "surface": kind,
+        "retry_safety": retry_safety,
+        "observation": observation,
+    }
+
+
+def surface_retry_profiles() -> List[Dict[str, str]]:
+    """Return every surface profile in closed contract order."""
+    return [surface_retry_profile(kind) for kind in SURFACE_KINDS]
+
+
+def _escalate_retry(*values: str) -> str:
+    return max(values, key=lambda value: _RETRY_RANK.get(value, 1))
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:
@@ -239,7 +350,9 @@ def _validate_clients(clients: Iterable[str]) -> Tuple[str, ...]:
 
 def _validate_decisions(decisions: Mapping[str, str]) -> Dict[str, str]:
     normalized = {str(key): str(value) for key, value in decisions.items()}
-    unknown_surfaces = sorted(set(normalized) - set(_OPTIONAL_SURFACES))
+    unknown_surfaces = sorted(
+        set(normalized) - set(_OPTIONAL_SURFACES) - {_MIGRATION_SURFACE}
+    )
     if unknown_surfaces:
         raise WorkflowRefusal(
             "decisions target unsupported or non-optional surfaces: "
@@ -249,6 +362,14 @@ def _validate_decisions(decisions: Mapping[str, str]) -> Dict[str, str]:
     if unknown_values:
         raise WorkflowRefusal(
             "unsupported repair disposition(s): " + ", ".join(unknown_values)
+        )
+    migration = normalized.get(_MIGRATION_SURFACE)
+    if migration is not None and migration not in _MIGRATION_DISPOSITIONS:
+        raise WorkflowRefusal(
+            "project schema migration is separately authorized through the "
+            "migrate-project workflow; only "
+            + "|".join(_MIGRATION_DISPOSITIONS)
+            + " is accepted here"
         )
     shared = {
         normalized[surface]
@@ -971,6 +1092,233 @@ def _prior_declined_contexts(
     return contexts
 
 
+def _persisted_source_identity(prior: Mapping[str, Any]) -> str:
+    """Return the source identity a persisted record is bound to, if any."""
+    envelope = prior.get("envelope")
+    if not isinstance(envelope, Mapping):
+        return ""
+    run = envelope.get("run")
+    if not isinstance(run, Mapping):
+        return ""
+    source = run.get("source")
+    if not isinstance(source, Mapping):
+        return ""
+    return str(source.get("value", ""))
+
+
+def _source_bound_envelope(
+    prior: Mapping[str, Any], source_identity: str
+) -> Optional[Mapping[str, Any]]:
+    """Return the persisted envelope only when it is *this* source's record.
+
+    Everything the planner carries forward from a prior run — declines,
+    migration deferrals — is an answer to a question that a particular source
+    asked.  Schema compatibility alone does not make that answer transferable,
+    so the envelope is withheld entirely once the source identity differs.
+    """
+    if prior.get("classification") != "compatible":
+        return None
+    envelope = prior.get("envelope")
+    if not isinstance(envelope, Mapping):
+        return None
+    if _persisted_source_identity(prior) != source_identity:
+        return None
+    return envelope
+
+
+def _progress_declined_contexts(
+    envelope: Optional[Mapping[str, Any]],
+) -> Dict[str, Mapping[str, Any]]:
+    """Declines carried by the persisted progress envelope, keyed by surface."""
+    if not isinstance(envelope, Mapping):
+        return {}
+    projection = envelope.get("progress")
+    if not isinstance(projection, Mapping):
+        return {}
+    if projection.get("schema_identity") != SCHEMA_IDENTITY or projection.get(
+        "record_schema_version"
+    ) != RECORD_SCHEMA_VERSION:
+        return {}
+    contexts: Dict[str, Mapping[str, Any]] = {}
+    for item in projection.get("choices", []):
+        if (
+            isinstance(item, Mapping)
+            and item.get("state") == "declined"
+            and isinstance(item.get("decision_context"), Mapping)
+        ):
+            contexts[str(item.get("surface"))] = item["decision_context"]
+    return contexts
+
+
+def _progress_deferred_migrations(
+    envelope: Optional[Mapping[str, Any]],
+) -> Dict[str, Mapping[str, Any]]:
+    """Migration deferrals carried by the persisted progress envelope."""
+    if not isinstance(envelope, Mapping):
+        return {}
+    projection = envelope.get("progress")
+    if not isinstance(projection, Mapping):
+        return {}
+    deferred: Dict[str, Mapping[str, Any]] = {}
+    for item in projection.get("migrations", []):
+        if isinstance(item, Mapping) and item.get("choice_state") == "deferred":
+            deferred[str(item.get("project_identity"))] = item
+    return deferred
+
+
+def _progress_migration_context(
+    envelope: Optional[Mapping[str, Any]],
+) -> Optional[Mapping[str, Any]]:
+    """The decision context the persisted migration deferral was made under."""
+    if not isinstance(envelope, Mapping):
+        return None
+    projection = envelope.get("progress")
+    if not isinstance(projection, Mapping):
+        return None
+    for item in projection.get("choices", []):
+        if (
+            isinstance(item, Mapping)
+            and item.get("surface") == _MIGRATION_SURFACE
+            and item.get("state") == "deferred"
+            and isinstance(item.get("decision_context"), Mapping)
+        ):
+            return item["decision_context"]
+    return None
+
+
+def _apply_migration_deferrals(
+    migrations: List[Dict[str, Any]],
+    *,
+    prior_deferrals: Mapping[str, Mapping[str, Any]],
+    prior_context: Optional[Mapping[str, Any]],
+    decision_context: Mapping[str, Any],
+    explicit_defer: bool,
+) -> None:
+    """Carry a migration deferral only while its whole decision is unchanged.
+
+    Two conditions must hold, and the first is what binds the answer to who
+    asked.  A deferral is a decision about one offer made against one source; a
+    changed source is a different authority proposing different content, so its
+    offer must be answered afresh even when the schema numbers coincide.
+
+    1. The recorded decision context must equal the context this run would
+       produce.  That context names the validated source identity, the target
+       schema, and the full offer set, so a changed source or a materially
+       changed offer invalidates reuse outright.
+    2. Each individual offer must still match on both schema identities, the
+       applicability, and the named supported workflow — a per-project guard
+       against a project changing underneath an otherwise-equal offer set.
+    """
+    reusable = prior_context is not None and _stable_context(
+        prior_context
+    ) == _stable_context(decision_context)
+    for offer in migrations:
+        if explicit_defer:
+            offer["choice_state"] = "deferred"
+            continue
+        if not reusable:
+            continue
+        prior = prior_deferrals.get(str(offer.get("project_identity")))
+        if prior is None:
+            continue
+        if all(
+            str(prior.get(field)) == str(offer.get(field))
+            for field in (
+                "current_schema",
+                "target_schema",
+                "applicability",
+                "supported_workflow",
+            )
+        ):
+            offer["choice_state"] = "deferred"
+
+
+def _stable_context(context: Any) -> str:
+    """Return a comparison form that ignores key order but nothing else."""
+    return json.dumps(
+        context, sort_keys=True, separators=(",", ":"), default=str
+    )
+
+
+def _migration_decision_context(
+    migrations: Sequence[Mapping[str, Any]],
+    *,
+    source_identity: str,
+    target_schema: str,
+) -> Dict[str, Any]:
+    return {
+        "context_schema": "coordinated-migration-offer-v1",
+        "surface": _MIGRATION_SURFACE,
+        "target_schema": target_schema,
+        "offers": [
+            [
+                str(item.get("project_identity")),
+                str(item.get("current_schema")),
+                str(item.get("applicability")),
+                str(item.get("supported_workflow")),
+            ]
+            for item in migrations
+        ],
+        "source": {
+            "kind": "local-checkout",
+            "value": source_identity,
+            "authority": "maintainer-source-content",
+        },
+    }
+
+
+def _migration_choice(
+    migrations: Sequence[Mapping[str, Any]],
+    *,
+    source_identity: str,
+    target_schema: str,
+    provenance: str,
+) -> Dict[str, Any]:
+    """The provenance-backed deferral record for the migration-offer surface."""
+    return {
+        "id": f"{_MIGRATION_SURFACE}-migrate",
+        "surface": _MIGRATION_SURFACE,
+        "offered_action": "migrate",
+        "state": "deferred",
+        "provenance": provenance,
+        "decision_context": _migration_decision_context(
+            migrations,
+            source_identity=source_identity,
+            target_schema=target_schema,
+        ),
+    }
+
+
+def _carry_verified_migration_deferrals(
+    migrations: List[Dict[str, Any]], record: Mapping[str, Any]
+) -> bool:
+    """Re-apply the in-run migration deferral while its offer is unchanged."""
+    prior = {
+        str(item.get("project_identity")): item
+        for item in record.get("migrations", [])
+        if isinstance(item, Mapping) and item.get("choice_state") == "deferred"
+    }
+    if not prior:
+        return False
+    for offer in migrations:
+        match = prior.get(str(offer.get("project_identity")))
+        if match is None:
+            continue
+        if all(
+            str(match.get(field)) == str(offer.get(field))
+            for field in (
+                "current_schema",
+                "target_schema",
+                "applicability",
+                "supported_workflow",
+            )
+        ):
+            offer["choice_state"] = "deferred"
+    return bool(migrations) and all(
+        item.get("choice_state") == "deferred" for item in migrations
+    )
+
+
 def _plan_actions(
     surfaces: Sequence[Mapping[str, Any]],
     choices: Sequence[Mapping[str, Any]],
@@ -981,7 +1329,11 @@ def _plan_actions(
         surface = next(item for item in surfaces if item["kind"] == kind)
         choice = choice_by_surface.get(kind)
         if kind == "project-schema-migration-offers":
-            action = "offer-migration" if surface["affected"] else "none"
+            action = (
+                "offer-migration"
+                if surface["affected"] and surface["state"] != "deferred"
+                else "none"
+            )
             authorization = "separate-project-approval"
             restart = "none"
         elif kind in _OPTIONAL_SURFACES and surface["affected"]:
@@ -1079,10 +1431,17 @@ def plan_workflow(
         selected = tuple(detected)
 
     source_identity = _source_identity(source)
+    # Reading persisted progress is the only prior-state input the planner
+    # takes; it stays read-only here so planning remains side-effect free.
+    prior_progress = read_progress(install)
+    prior_envelope = _source_bound_envelope(prior_progress, source_identity)
     prior_declines = (
         {}
         if operation == "fresh-install"
-        else _prior_declined_contexts(install)
+        else {
+            **_prior_declined_contexts(install),
+            **_progress_declined_contexts(prior_envelope),
+        }
     )
     registration_facts = _registration_observations(selected, home, install)
     bridge_facts = _bridge_observations(selected, source, home)
@@ -1125,6 +1484,29 @@ def plan_workflow(
 
     migrations, migration_state = _migration_offers(install, source)
     target_schema = _target_schema(source) or "unknown"
+    migration_context = _migration_decision_context(
+        migrations,
+        source_identity=source_identity,
+        target_schema=target_schema,
+    )
+    _apply_migration_deferrals(
+        migrations,
+        prior_deferrals=(
+            {}
+            if operation == "fresh-install"
+            else _progress_deferred_migrations(prior_envelope)
+        ),
+        prior_context=(
+            None
+            if operation == "fresh-install"
+            else _progress_migration_context(prior_envelope)
+        ),
+        decision_context=migration_context,
+        explicit_defer=dispositions.get(_MIGRATION_SURFACE) == "defer",
+    )
+    migrations_deferred = bool(migrations) and all(
+        item.get("choice_state") == "deferred" for item in migrations
+    )
     surfaces.append(
         {
             "kind": "project-schema-migration-offers",
@@ -1133,7 +1515,11 @@ def plan_workflow(
             "observed_identity": (
                 target_schema if not migrations else f"{len(migrations)}-offer(s)"
             ),
-            "state": "offered" if migrations else "not-applicable",
+            "state": (
+                "deferred"
+                if migrations_deferred
+                else ("offered" if migrations else "not-applicable")
+            ),
             "affected": bool(migrations),
             "required": False,
         }
@@ -1198,6 +1584,20 @@ def plan_workflow(
         elif choice["state"] == "offered":
             surface["state"] = "offered"
 
+    if migrations_deferred:
+        choices.append(
+            _migration_choice(
+                migrations,
+                source_identity=source_identity,
+                target_schema=target_schema,
+                provenance=(
+                    "bounded-caller-disposition"
+                    if dispositions.get(_MIGRATION_SURFACE) == "defer"
+                    else "prior-run-matched-deferral"
+                ),
+            )
+        )
+
     marker_payload = json.dumps(
         {
             "operation": operation,
@@ -1224,6 +1624,34 @@ def plan_workflow(
         separators=(",", ":"),
     ).encode("utf-8")
     run_marker = "run:" + hashlib.sha256(marker_payload).hexdigest()[:20]
+    plan_actions = _plan_actions(surfaces, choices)
+    installed_identity = _surface_digest(install, CORE_TARGETS)
+    resume_assessment = assess_resume(
+        prior=prior_progress,
+        current={
+            "operation": operation,
+            "marker": run_marker,
+            "source_identity": source_identity,
+            "installed_identity": (
+                None if installed_identity == "absent" else installed_identity
+            ),
+            "surfaces": surfaces,
+            "choices": choices,
+            "migrations": migrations,
+            "plan_actions": plan_actions,
+            "restart": (
+                {
+                    "state": str(prior_restart.get("state")),
+                    "instruction_class": str(
+                        prior_restart.get("instruction_class", "none")
+                    ),
+                }
+                if prior_restart is not None
+                else {}
+            ),
+        },
+        profiles=surface_retry_profiles(),
+    )
     record = build_record(
         operation=operation,
         run_marker=run_marker,
@@ -1257,9 +1685,18 @@ def plan_workflow(
             "client_context": current_client,
             "mcp_affecting_change": mcp_affecting_change,
             "prior_process": restart_baseline,
-            "affected_surface_plan": _plan_actions(surfaces, choices),
+            "affected_surface_plan": plan_actions,
             "registration_observations": registration_facts,
             "bridge_observations": bridge_facts,
+            "surface_retry_profiles": surface_retry_profiles(),
+            "progress_read": OrderedDict(
+                (
+                    ("classification", prior_progress["classification"]),
+                    ("detail", prior_progress["detail"]),
+                    ("lease_state", prior_progress["lease_state"]),
+                )
+            ),
+            "resume_assessment": resume_assessment,
         },
     )
     return record
@@ -1484,7 +1921,7 @@ def _write_state(record: Mapping[str, Any]) -> None:
     if not isinstance(internal, Mapping):
         return
     install_root = Path(str(internal["install_root"]))
-    _atomic_write_text(
+    recoverable_write_text(
         install_root / STATE_FILE,
         json.dumps(
             stable_projection(record),
@@ -1493,6 +1930,238 @@ def _write_state(record: Mapping[str, Any]) -> None:
         )
         + "\n",
     )
+
+
+def _seeded_checkpoints(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """One pending checkpoint per planned surface, before any mutation.
+
+    Seeding up front is what lets a mutation boundary be persisted as
+    ``in-progress``: a crash inside the window then reads back as uncertain
+    instead of as absent work that a later run would silently redo.
+    """
+    rows: List[Dict[str, Any]] = []
+    for surface in plan.get("surfaces", []):
+        if not isinstance(surface, Mapping):
+            continue
+        kind = str(surface.get("kind"))
+        profile = surface_retry_profile(kind)
+        rows.append(
+            {
+                "id": f"verify-{kind}",
+                "phase": (
+                    "migration-offer" if kind == _MIGRATION_SURFACE else "verify"
+                ),
+                "surface": kind,
+                "status": "pending",
+                "evidence": {},
+                "verification": "unknown",
+                "retry_safety": profile["retry_safety"],
+                "observation": profile["observation"],
+            }
+        )
+    rows.sort(key=lambda item: str(item["id"]))
+    return rows
+
+
+def _seeded_projection(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
+    projection = stable_projection(plan)
+    projection["checkpoints"] = _seeded_checkpoints(plan)
+    return projection
+
+
+def _uncertain_rows(assessment: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Return the assessed boundaries that may not be replayed uninspected."""
+    return [
+        dict(item)
+        for item in assessment.get("uncertain", [])
+        if isinstance(item, Mapping)
+        and item.get("disposition")
+        in ("inspect-before-retry", "refuse-replay")
+    ]
+
+
+def _uncertain_boundaries(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    internal = plan.get("internal")
+    assessment = (
+        internal.get("resume_assessment")
+        if isinstance(internal, Mapping)
+        else None
+    )
+    if not isinstance(assessment, Mapping):
+        return []
+    return _uncertain_rows(assessment)
+
+
+def _current_resume_facts(
+    plan: Mapping[str, Any], *, install_root: Path
+) -> Dict[str, Any]:
+    """Rebuild the observation side of the resume assessment for apply.
+
+    The surfaces, choices, migrations, and planned actions are this run's own
+    authorized plan, so they are carried verbatim: apply may not widen what was
+    authorized.  The installed-content identity is re-read from disk instead,
+    because it is the authoritative observation another invocation can change
+    between planning and lease acquisition, and the classification of a
+    persisted record depends on whether the content it claims still exists.
+    """
+    internal = plan.get("internal")
+    internal = internal if isinstance(internal, Mapping) else {}
+    assessment = internal.get("resume_assessment")
+    assessment = assessment if isinstance(assessment, Mapping) else {}
+    restart = assessment.get("restart")
+    run = plan.get("run")
+    run = run if isinstance(run, Mapping) else {}
+    source = run.get("source")
+    source = source if isinstance(source, Mapping) else {}
+    installed_identity = _surface_digest(install_root, CORE_TARGETS)
+    return {
+        "operation": str(run.get("operation")),
+        "marker": str(run.get("marker")),
+        "source_identity": str(source.get("value")),
+        "installed_identity": (
+            None if installed_identity == "absent" else installed_identity
+        ),
+        "surfaces": copy.deepcopy(list(plan.get("surfaces", []))),
+        "choices": copy.deepcopy(list(plan.get("choices", []))),
+        "migrations": copy.deepcopy(list(plan.get("migrations", []))),
+        "plan_actions": copy.deepcopy(
+            list(internal.get("affected_surface_plan", []))
+        ),
+        "restart": (
+            copy.deepcopy(dict(restart))
+            if isinstance(restart, Mapping)
+            else {}
+        ),
+    }
+
+
+def _prior_without_own_lease(
+    held: Mapping[str, Any], *, owner: str
+) -> "OrderedDict[str, Any]":
+    """Drop this run's own lease from the freshly reread prior facts.
+
+    A lease is evidence about some *other* invocation's claim on the root.
+    This run acquired the lease it is holding, so leaving it in the prior facts
+    would make every ordinary apply classify itself as recovering from its own
+    orphan.
+    """
+    prior = OrderedDict(held)
+    lease = prior.get("lease")
+    if isinstance(lease, Mapping) and str(lease.get("owner", "")) == owner:
+        prior["lease"] = None
+        prior["lease_state"] = "absent"
+    return prior
+
+
+def _post_lease_assessment(
+    plan: Mapping[str, Any],
+    held: Mapping[str, Any],
+    *,
+    install_root: Path,
+    owner: str,
+    profiles: Sequence[Mapping[str, Any]],
+) -> "OrderedDict[str, Any]":
+    """Recompute the complete resume assessment under the acquired lease."""
+    return assess_resume(
+        prior=_prior_without_own_lease(held, owner=owner),
+        current=_current_resume_facts(plan, install_root=install_root),
+        profiles=profiles,
+    )
+
+
+def _foreign_open_boundary(held: Mapping[str, Any], *, run_marker: str) -> str:
+    """Return the surface of another run's still-open mutation boundary."""
+    envelope = held.get("envelope")
+    if not isinstance(envelope, Mapping) or envelope.get("status") != "active":
+        return ""
+    boundary = envelope.get("boundary")
+    if not isinstance(boundary, Mapping) or not boundary.get("surface"):
+        return ""
+    run = envelope.get("run")
+    run = run if isinstance(run, Mapping) else {}
+    if str(run.get("marker", "")) == run_marker:
+        return ""
+    return str(boundary.get("surface"))
+
+
+def _gate_post_lease_resume(
+    assessment: Mapping[str, Any],
+    held: Mapping[str, Any],
+    *,
+    acknowledged: AbstractSet[str],
+    run_marker: str,
+    plan_compatibility: str,
+) -> None:
+    """Refuse a stale plan against the record it is actually about to replace.
+
+    The plan-time gates ran against the progress record as it stood *before*
+    the lease existed.  Another invocation can persist an open mutation
+    boundary and crash in that window, so every gate is applied again here,
+    against the reread record and the current observations, before anything is
+    preserved, quarantined, or written over.
+    """
+    compatibility = str(assessment.get("compatibility", ""))
+    detail = str(assessment.get("compatibility_detail", ""))
+    if compatibility == "unsupported-newer":
+        raise ProgressRefusal(
+            "unsupported-newer",
+            "persisted install progress was written by a newer schema than "
+            "this tool supports; it is preserved untouched. Migrate progress "
+            "with the newer tool before applying.",
+        )
+    if compatibility == "lease-conflict":
+        raise ProgressRefusal(
+            "lease-conflict",
+            detail
+            or "another invocation holds the progress lease for this root",
+        )
+    uncertain = _uncertain_rows(assessment)
+    outstanding = {str(item.get("surface")) for item in uncertain}
+    # An open boundary under a different run identity is uncertain even when
+    # its projection carries no checkpoint row to describe it.
+    foreign = _foreign_open_boundary(held, run_marker=run_marker)
+    if foreign:
+        outstanding.add(foreign)
+    unacknowledged = sorted(outstanding - set(acknowledged))
+    if unacknowledged:
+        raise ProgressRefusal(
+            "uncertain-boundary",
+            "an interrupted run left uncertain work at "
+            + ", ".join(unacknowledged)
+            + "; it was discovered under the progress lease after this plan "
+            "was computed, so the plan no longer describes the persisted "
+            "record. That boundary must be inspected before retry rather "
+            "than replaced or replayed",
+        )
+    refuse_replay = sorted(
+        {
+            str(item.get("surface"))
+            for item in uncertain
+            if item.get("disposition") == "refuse-replay"
+        }
+        & set(acknowledged)
+    )
+    if refuse_replay:
+        raise ProgressRefusal(
+            "refuse-replay",
+            "prior work at "
+            + ", ".join(refuse_replay)
+            + " is not repeatable and cannot be replayed by resume; use its "
+            "separately authorized workflow",
+        )
+    if (
+        compatibility != plan_compatibility
+        and compatibility not in _RECONCILABLE_POST_LEASE
+    ):
+        raise ProgressRefusal(
+            "resume-unreconcilable",
+            "persisted install progress changed between planning and lease "
+            f"acquisition ({plan_compatibility or 'unknown'} -> "
+            f"{compatibility or 'unknown'}) and the new facts cannot be "
+            "reconciled with this plan"
+            + (f": {detail}" if detail else "")
+            + "; re-plan against the current record",
+        )
 
 
 def _blocked_apply_record(
@@ -1531,8 +2200,17 @@ def _blocked_apply_record(
     return evaluate_record(updated)
 
 
-def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
-    """Apply authorized plan work, then verify every surface."""
+def apply_workflow(
+    plan: Mapping[str, Any], *, inspected: Sequence[str] = ()
+) -> "OrderedDict[str, Any]":
+    """Apply authorized plan work, then verify every surface.
+
+    Progress is persisted around every mutation boundary: intent before the
+    mutation, verified evidence after it, and the schema, completion, and
+    cleanup markers last.  ``inspected`` names the closed surfaces whose
+    uncertain boundary the caller asserts it has inspected; without it, an
+    interrupted prior run is refused rather than blindly replayed.
+    """
     internal = plan.get("internal")
     if not isinstance(internal, Mapping):
         raise WorkflowRefusal("workflow plan has no trusted adapter context")
@@ -1554,6 +2232,206 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
         if isinstance(item, Mapping)
     }
 
+    acknowledged = set()
+    for value in inspected:
+        name = str(value)
+        if name not in SURFACE_KINDS:
+            raise WorkflowRefusal(f"unknown inspected surface: {name}")
+        acknowledged.add(name)
+    uncertain = _uncertain_boundaries(plan)
+    outstanding = sorted(
+        {str(item.get("surface")) for item in uncertain} - acknowledged
+    )
+    if outstanding:
+        raise WorkflowRefusal(
+            "an interrupted prior run left uncertain work at "
+            + ", ".join(outstanding)
+            + "; that boundary is uncertain and must be inspected before "
+            "retry rather than replayed"
+        )
+    refuse_replay = sorted(
+        {
+            str(item.get("surface"))
+            for item in uncertain
+            if item.get("disposition") == "refuse-replay"
+        }
+        & acknowledged
+    )
+    if refuse_replay:
+        raise WorkflowRefusal(
+            "prior work at "
+            + ", ".join(refuse_replay)
+            + " is not repeatable and cannot be replayed by resume; use its "
+            "separately authorized workflow"
+        )
+
+    progress_read = internal.get("progress_read")
+    progress_read = progress_read if isinstance(progress_read, Mapping) else {}
+    classification = str(progress_read.get("classification", "absent"))
+    # The intrinsic read classification only describes whether the stored bytes
+    # are usable.  Whether they may be *replaced* is a comparison against
+    # current observations, which is what the resume assessment carries; apply
+    # gates on the assessment so a changed source cannot walk past a record the
+    # planner already judged incompatible.
+    assessment = internal.get("resume_assessment")
+    assessment = assessment if isinstance(assessment, Mapping) else {}
+    compatibility = str(assessment.get("compatibility") or classification)
+    compatibility_detail = str(
+        assessment.get("compatibility_detail")
+        or progress_read.get("detail", "")
+    )
+    if "unsupported-newer" in (classification, compatibility):
+        raise WorkflowRefusal(
+            "persisted install progress was written by a newer schema than "
+            "this tool supports; it is preserved untouched. Migrate progress "
+            "with the newer tool before applying."
+        )
+    profiles = internal.get("surface_retry_profiles")
+    if not isinstance(profiles, list) or not profiles:
+        profiles = surface_retry_profiles()
+
+    owner = new_owner_token()
+    run_marker = str(plan["run"]["marker"])
+    try:
+        install_root.mkdir(parents=True, exist_ok=True)
+        # Claim the root before touching any persisted evidence, so two runs
+        # cannot quarantine or supersede each other's record concurrently.
+        lease = acquire_lease(
+            install_root, run_marker=run_marker, owner=owner
+        )
+    except ProgressRefusal as exc:
+        raise WorkflowRefusal(exc.detail) from exc
+    try:
+        # Re-read under the lease.  The gate must act on the record that is
+        # actually about to be replaced, not on the plan-time snapshot: between
+        # planning and applying, another run may have written a record bound to
+        # a different source — or left an open mutation boundary and died.
+        held = read_progress(install_root)
+        held_envelope = held.get("envelope")
+        held_recovery = (
+            held_envelope.get("recovery")
+            if isinstance(held_envelope, Mapping)
+            else None
+        )
+        held_classification = str(held.get("classification") or classification)
+        held_detail = str(
+            held.get("detail") or progress_read.get("detail", "")
+        )
+        if held_classification == "unsupported-newer":
+            raise ProgressRefusal(
+                "unsupported-newer",
+                "persisted install progress was written by a newer schema "
+                "than this tool supports; it is preserved untouched. Migrate "
+                "progress with the newer tool before applying.",
+            )
+        # The plan's assessment describes a record that may no longer be the
+        # one on disk.  Recompute the *complete* assessment against the reread
+        # record and the current observations, then run every gate against it,
+        # so a plan computed against different facts cannot walk past work it
+        # never saw.
+        post_lease = _post_lease_assessment(
+            plan,
+            held,
+            install_root=install_root,
+            owner=owner,
+            profiles=profiles,
+        )
+        _gate_post_lease_resume(
+            post_lease,
+            held,
+            acknowledged=acknowledged,
+            run_marker=run_marker,
+            plan_compatibility=compatibility,
+        )
+        compatibility = str(post_lease.get("compatibility") or compatibility)
+        compatibility_detail = str(
+            post_lease.get("compatibility_detail") or compatibility_detail
+        )
+        held_source = _persisted_source_identity(held)
+        if (
+            held_source
+            and held_source != str(plan["run"]["source"]["value"])
+            and compatibility not in _PRESERVE_BEFORE_REPLACEMENT
+        ):
+            compatibility = "source-mismatch"
+            compatibility_detail = (
+                "persisted progress is bound to a different source identity "
+                "and cannot drive new mutations"
+            )
+        progress_recovery = None
+        if held_classification in ("corrupted", "evidence-missing"):
+            progress_recovery = quarantine_progress(
+                install_root,
+                classification=held_classification,
+                detail=held_detail,
+            )
+        elif compatibility in _PRESERVE_BEFORE_REPLACEMENT:
+            # Intact, meaningful, and not this run's to consume.  It is retained
+            # verbatim before any new envelope is written over it.
+            progress_recovery = preserve_progress(
+                install_root,
+                classification=compatibility,
+                detail=compatibility_detail,
+            )
+        elif lease.get("takeover"):
+            progress_recovery = resume_recovery_note(
+                "orphaned",
+                "released a progress lease whose holder is no longer running",
+            )
+        # Evidence preserved by an earlier run keeps its provenance: it is
+        # superseded only by terminal proof, and this run may be the one that
+        # reaches it.
+        progress_recovery = carry_preserved_evidence(
+            install_root, progress_recovery, prior_recovery=held_recovery
+        )
+    except ProgressRefusal as exc:
+        release_lease(install_root, owner)
+        raise WorkflowRefusal(exc.detail) from exc
+
+    try:
+        return _apply_under_lease(
+            plan,
+            source_root=source_root,
+            install_root=install_root,
+            client_home=client_home,
+            clients=clients,
+            mode=mode,
+            choices=choices,
+            surfaces=surfaces,
+            profiles=profiles,
+            owner=owner,
+            progress_recovery=progress_recovery,
+        )
+    finally:
+        release_lease(install_root, owner)
+
+
+def _apply_under_lease(
+    plan: Mapping[str, Any],
+    *,
+    source_root: Path,
+    install_root: Path,
+    client_home: Path,
+    clients: Sequence[str],
+    mode: str,
+    choices: Mapping[str, Mapping[str, Any]],
+    surfaces: Mapping[str, Mapping[str, Any]],
+    profiles: Sequence[Mapping[str, Any]],
+    owner: str,
+    progress_recovery: Optional[Mapping[str, Any]],
+) -> "OrderedDict[str, Any]":
+    try:
+        progress = begin_progress(
+            install_root,
+            record=plan,
+            projection=_seeded_projection(plan),
+            surface_profiles=profiles,
+            owner=owner,
+            recovery=progress_recovery,
+        )
+    except ProgressRefusal as exc:
+        raise WorkflowRefusal(exc.detail) from exc
+
     refused_surface = "core-files"
     attempted_action = "install-tool-owned-content"
     recovery = (
@@ -1562,7 +2440,6 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     )
     recovery_artifact = "tool-owned-content-preserved-or-recoverable"
     try:
-        install_root.mkdir(parents=True, exist_ok=True)
         for surface_kind in ("core-files", "mcp-server-files", "wrappers"):
             surface = surfaces[surface_kind]
             if not surface.get("affected"):
@@ -1574,6 +2451,13 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
                 else "install-tool-owned-content"
             )
             recovery_artifact = f"installed:{surface_kind}:replacement-boundary"
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface=surface_kind,
+                action=attempted_action,
+                owner=owner,
+            )
             for target_rel in _SURFACE_ROWS[surface_kind]:
                 source = _source_for_target(source_root, target_rel)
                 _replace_tool_path(
@@ -1589,6 +2473,16 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
             "was not overwritten"
         )
         recovery_artifact = "operator-files:preserved"
+        if any(
+            not (install_root / name).exists() for name in OPERATOR_FILES
+        ):
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface="core-files",
+                action=attempted_action,
+                owner=owner,
+            )
         _seed_operator_files(source_root, install_root)
 
         bridge_choice = choices.get("bridges", {})
@@ -1599,6 +2493,14 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
                 "inspect the derived client bridge replacement boundary before retry"
             )
             recovery_artifact = "supported-client-bridge:replacement-boundary"
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface="bridges",
+                action=attempted_action,
+                phase="repair",
+                owner=owner,
+            )
             _apply_bridges(clients, source_root, client_home)
 
         registration_authorized = any(
@@ -1613,6 +2515,14 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
                 "under operator authority, then retry the bounded repair"
             )
             recovery_artifact = "operator-client-configuration:preserved"
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface="client-configuration",
+                action=attempted_action,
+                phase="repair",
+                owner=owner,
+            )
             _apply_registrations(clients, client_home, install_root)
     except (WorkflowRefusal, OSError) as exc:
         os_failure = isinstance(exc, OSError)
@@ -1642,6 +2552,14 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
                 mutation_status=mutation_status,
             )
             _write_state(blocked)
+            record_failure(
+                install_root,
+                progress,
+                projection=stable_projection(blocked),
+                owner=owner,
+                detail=failure_recovery,
+                mutation_status=mutation_status,
+            )
         except Exception:
             # Persistence is best-effort on an already-failing apply boundary.
             # The original refusal or OS error remains the truthful cause.
@@ -1649,7 +2567,36 @@ def apply_workflow(plan: Mapping[str, Any]) -> "OrderedDict[str, Any]":
         raise
 
     result = verify_workflow(plan)
-    _write_state(result)
+    try:
+        # Evidence first: every checkpoint reaches disk before any marker moves.
+        for checkpoint in result["checkpoints"]:
+            progress = commit_checkpoint(
+                install_root, progress, checkpoint=checkpoint, owner=owner
+            )
+        progress = advance_completion(
+            install_root,
+            progress,
+            projection=stable_projection(result),
+            owner=owner,
+        )
+        # The visible mirror publishes between the completion and cleanup
+        # markers, so a failure here leaves cleanup pending and the run
+        # explicitly resumable rather than silently half-published.
+        _write_state(result)
+        terminal = progress.get("terminal")
+        if (
+            isinstance(terminal, Mapping)
+            and terminal.get("completion") == "advanced"
+        ):
+            advance_cleanup(install_root, progress, owner=owner)
+    except ProgressRefusal as exc:
+        raise WorkflowRefusal(exc.detail) from exc
+    except OSError as exc:
+        raise WorkflowRefusal(
+            "install progress could not be persisted "
+            f"({exc.__class__.__name__}); no completion marker was advanced "
+            "beyond the verified work and the run remains resumable"
+        ) from exc
     return result
 
 
@@ -1685,6 +2632,7 @@ def _verification_checkpoint(
         "verification": verification,
         "path_class": str(surface["locator"]),
     }
+    profile = surface_retry_profile(str(surface["kind"]))
     return {
         "id": f"verify-{surface['kind']}",
         "phase": (
@@ -1696,9 +2644,16 @@ def _verification_checkpoint(
         "status": status,
         "evidence": evidence,
         "verification": verification,
+        # The adapter's declared retry class is the floor; an unfinished or
+        # failed boundary can only make replay less safe, never more.
         "retry_safety": (
-            "idempotent" if completed and not failed else "inspect-before-retry"
+            profile["retry_safety"]
+            if completed and not failed
+            else _escalate_retry(
+                profile["retry_safety"], "inspect-before-retry"
+            )
         ),
+        "observation": profile["observation"],
     }
 
 
@@ -1782,6 +2737,9 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     verified_surfaces.append(verification)
 
     migrations, migration_state = _migration_offers(install_root, source_root)
+    migrations_deferred = _carry_verified_migration_deferrals(
+        migrations, record
+    )
     target_schema = _target_schema(source_root) or "unknown"
     verified_surfaces.append(
         {
@@ -1791,7 +2749,11 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
             "observed_identity": (
                 target_schema if not migrations else f"{len(migrations)}-offer(s)"
             ),
-            "state": "offered" if migrations else "not-applicable",
+            "state": (
+                "deferred"
+                if migrations_deferred
+                else ("offered" if migrations else "not-applicable")
+            ),
             "affected": bool(migrations),
             "required": False,
         }

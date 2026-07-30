@@ -54,7 +54,19 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         metavar="SURFACE=accept|decline|defer",
         help=(
             "bounded caller disposition for one optional affected surface; "
-            "registration and configuration share one disposition"
+            "registration and configuration share one disposition, and the "
+            "project schema migration surface accepts only defer"
+        ),
+    )
+    subparser.add_argument(
+        "--inspected",
+        action="append",
+        default=[],
+        metavar="SURFACE",
+        help=(
+            "assert that an interrupted run's uncertain boundary on this "
+            "closed surface has been inspected; without it, uncertain work is "
+            "refused rather than replayed"
         ),
     )
 
@@ -94,7 +106,11 @@ def handler(args: argparse.Namespace) -> int:
             running_server_fact=running_fact,
             client_context=current_client,
         )
-        result = apply_workflow(plan) if args.apply else plan
+        result = (
+            apply_workflow(plan, inspected=tuple(args.inspected))
+            if args.apply
+            else plan
+        )
     except WorkflowRefusal as exc:
         stderr_error(str(exc))
         return EXIT_FAIL
@@ -103,6 +119,7 @@ def handler(args: argparse.Namespace) -> int:
             "affected_surface_plan": result["internal"][
                 "affected_surface_plan"
             ],
+            "resume": result["internal"]["resume_assessment"],
             "workflow": stable_projection(result),
         }
     )

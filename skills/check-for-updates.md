@@ -8,7 +8,9 @@ authoritative machine contract emitted by
 runbook preserves the contract's peer identities and never treats a repair
 offer as authorization, installed files as running-process activation, or a
 project migration offer as migration completion. Coordinated mutation and
-persisted resume mechanics remain separate workflows.
+persisted resume mechanics remain separate workflows. Persisted progress is
+diagnosed — never mutated — with `cartopian resume-install` (MCP:
+`resume_install`).
 
 **Output:** Either confirmation that Cartopian is current, or a refreshed install at the latest release with operator-owned files (`cartopian.toml`, `projects.json`) preserved.
 
@@ -116,8 +118,27 @@ The next run consumes a prior decline from a schema-valid completed,
 blocked/failed, or `repair-offered` record only when the selected clients,
 source, desired identity, observed identity, and other material decision
 context still match. It does not prompt again for that unchanged drift, even
-when a different repair adapter remains offered. A defer is deliberately
+when a different repair adapter remains offered. A repair defer is deliberately
 re-offered, and any material context change invalidates a carried decline.
+
+A `project-schema-migration-offers` deferral is the exception: it carries while
+the project identity, current and target schema identities, applicability, and
+supported workflow are unchanged, so a deferred migration is not re-solicited
+every run. Pass it as `--repair project-schema-migration-offers=defer`. That
+surface accepts only `defer`; running a migration stays with `migrate-project`.
+
+**If a prior run was interrupted.** Before re-running the installer, diagnose
+the persisted progress:
+
+```text
+cartopian resume-install <source_root> <install_root>
+```
+
+It performs no mutation. Verified work is skipped on the next run, and a
+surface reported as uncertain is refused until the operator inspects that
+boundary and re-runs with `--inspected <surface>`. Report the uncertain surface
+and its recovery guidance to the operator; do not assert the boundary was
+inspected on their behalf.
 
 For detailed per-client explanation, use `skills/register-mcp.md`, but do not
 run a second independent detection or invent a different disposition. The

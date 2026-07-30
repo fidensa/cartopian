@@ -1237,17 +1237,20 @@ def _validate_checkpoints(
                             "obtain explicit authorization before repair",
                         )
                     )
-        if (
-            item.get("status") == "unverified"
-            and item.get("retry_safety") != "inspect-before-retry"
+        if item.get("status") == "unverified" and item.get("retry_safety") not in (
+            "inspect-before-retry",
+            "refuse-replay",
         ):
+            # `refuse-replay` is strictly stronger than inspection, so it
+            # satisfies the same invariant: no unverified work is replayed
+            # blindly.
             diagnostics.append(
                 _diagnostic(
                     "checkpoint-replay-unsafe",
                     "error",
                     path,
                     "unverified checkpoint must be inspected before replay",
-                    "classify it inspect-before-retry and inspect the target",
+                    "classify it inspect-before-retry or refuse-replay and inspect the target",
                 )
             )
         if (

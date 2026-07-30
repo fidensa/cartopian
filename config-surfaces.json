@@ -526,6 +526,8 @@
       "paths": [
         "cli/install_workflow.py",
         "cli/commands/install_workflow.py",
+        "cli/resume_state.py",
+        "cli/commands/resume_install.py",
         "cli/version_identities.py",
         "cli/protocol_gate.py",
         "scripts/install.py",
@@ -541,6 +543,7 @@
       ],
       "output_projection": [
         "coordinated affected-surface plan and verified run state",
+        "bounded resumable progress, resume assessment, and portable evidence",
         "installer version context",
         "startup version context"
       ],

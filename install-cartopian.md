@@ -151,6 +151,19 @@ surface must have verified portable evidence. An `offered`, `declined`, or
 project schema difference appears only as a migration offer with `result =
 not-run`; do not run project migration from the installer.
 
+If the install or update was interrupted, diagnose it before retrying:
+
+```text
+cartopian resume-install <source_root> <install_root> --portable-evidence
+```
+
+That command mutates nothing. It reports what prior work is reusable, what is
+uncertain, what recovery actions apply, and the remaining-work plan, plus a
+portable evidence record you can hand to a support operator. A surface reported
+as uncertain is refused on the next apply until you inspect that boundary and
+re-run with `--inspected <surface>`; the installer accepts the same flag. Work
+classified `refuse-replay` is never resumed — use its own authorized workflow.
+
 ### Step 6 — Register the MCP server with the operator's agent(s)
 
 Run `skills/register-mcp.md`. The install root is already resolved — pass it so Stage 0 of that skill is skipped.

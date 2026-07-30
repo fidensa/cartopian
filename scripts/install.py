@@ -714,7 +714,19 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SURFACE=accept|decline|defer",
         help=(
             "explicitly disposition an affected bridges, "
-            "client-registrations, or client-configuration surface"
+            "client-registrations, or client-configuration surface; the "
+            "project-schema-migration-offers surface accepts only defer"
+        ),
+    )
+    p.add_argument(
+        "--inspected",
+        action="append",
+        default=[],
+        metavar="SURFACE",
+        help=(
+            "assert that an interrupted run's uncertain boundary on this "
+            "surface has been inspected; without it, uncertain work is "
+            "refused rather than replayed"
         ),
     )
     p.add_argument(
@@ -805,8 +817,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             return EXIT_OK
 
+        resume = workflow_plan["internal"]["resume_assessment"]
+        if not args.quiet and resume["uncertain"]:
+            for item in resume["uncertain"]:
+                _eprint(
+                    "[residual] uncertain boundary at "
+                    f"{item['surface']}: {item['detail']} "
+                    f"({item['disposition']})"
+                )
         try:
-            workflow_result = apply_workflow(workflow_plan)
+            workflow_result = apply_workflow(
+                workflow_plan, inspected=tuple(args.inspected)
+            )
         except WorkflowRefusal as exc:
             _eprint(f"[error] coordinated install/update refused: {exc}")
             return EXIT_FAIL

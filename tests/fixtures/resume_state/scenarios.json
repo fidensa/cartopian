@@ -1,0 +1,133 @@
+{
+  "surface_retry_profiles": {
+    "core-files": ["idempotent", "observable"],
+    "mcp-server-files": ["idempotent", "observable"],
+    "wrappers": ["idempotent", "observable"],
+    "bridges": ["idempotent", "observable"],
+    "client-registrations": ["inspect-before-retry", "partially-observable"],
+    "client-configuration": ["inspect-before-retry", "partially-observable"],
+    "verification-content": ["idempotent", "observable"],
+    "project-schema-migration-offers": ["refuse-replay", "unobservable"]
+  },
+  "verified-partial-resume": {
+    "drifted_path": ["wrappers", "bin", "cartopian-codex"],
+    "expected_compatibility": "stale",
+    "expected_reused": [
+      "bridges",
+      "client-configuration",
+      "client-registrations",
+      "core-files",
+      "mcp-server-files",
+      "project-schema-migration-offers",
+      "verification-content"
+    ],
+    "expected_incompatible": [["wrappers", "evidence-superseded"]],
+    "expected_remaining": [["wrappers", "install", "replan"]],
+    "expected_diagnosis": {
+      "core-files": "current",
+      "mcp-server-files": "current",
+      "wrappers": "pending",
+      "bridges": "current",
+      "client-registrations": "current",
+      "client-configuration": "current",
+      "verification-content": "current",
+      "project-schema-migration-offers": "current"
+    }
+  },
+  "crash-window": {
+    "exit_code": 70,
+    "expected_compatibility": "compatible",
+    "expected_boundary": {
+      "phase": "apply",
+      "surface": "core-files",
+      "mutation_status": "intended"
+    },
+    "expected_checkpoint_status": "in-progress",
+    "expected_uncertain": [["core-files", "inspect-before-retry"]],
+    "expected_terminal": {
+      "schema": "pending",
+      "completion": "pending",
+      "cleanup": "pending"
+    },
+    "expected_lease_state": "orphaned"
+  },
+  "recovery_by_classification": {
+    "compatible": ["resume-remaining-work"],
+    "absent": ["replan-from-current-observations"],
+    "stale": ["replan-from-current-observations", "resume-remaining-work"],
+    "source-mismatch": ["replan-from-current-observations"],
+    "run-conflict": [
+      "inspect-uncertain-boundary",
+      "replan-from-current-observations"
+    ],
+    "lease-conflict": ["await-active-run", "release-orphaned-lease"],
+    "orphaned": [
+      "discard-quarantined-progress",
+      "replan-from-current-observations"
+    ],
+    "evidence-missing": [
+      "inspect-uncertain-boundary",
+      "replan-from-current-observations"
+    ],
+    "corrupted": [
+      "discard-quarantined-progress",
+      "replan-from-current-observations"
+    ],
+    "unsupported-newer": ["migrate-progress-with-newer-tool"]
+  },
+  "portable_evidence": {
+    "expected_fields": [
+      "evidence_schema",
+      "record_schema_identity",
+      "record_schema_version",
+      "operation",
+      "source",
+      "predecessor",
+      "version_identities",
+      "surfaces",
+      "restarts",
+      "restart_required",
+      "remaining_work",
+      "outcome",
+      "exclusions"
+    ],
+    "expected_version_kinds": [
+      "release_version",
+      "installed_content",
+      "project_schema_version",
+      "running_server",
+      "mcp_protocol_version"
+    ],
+    "forbidden_substrings": [
+      "task_id",
+      "phase_id",
+      "plan_ref",
+      "spec_id",
+      "decision_id",
+      "prompt_id",
+      "report_id",
+      "review_id",
+      "executable_path",
+      "destination_path",
+      "conversation",
+      "\"sequence\"",
+      "\"retention\"",
+      "\"boundary\"",
+      "quarantin"
+    ],
+    "forbidden_patterns": [
+      "\\b(?:TASK|SPEC|PHASE|PROMPT|REVIEW|REPORT|DEC|FR|NF|PLAN)-[0-9]",
+      "\\bP[0-9]{2}-[A-Z]"
+    ]
+  },
+  "migration-deferral": {
+    "stale_schema": "v0.1.0",
+    "changed_schema": "v0.2.0",
+    "expected_choice_provenance": [
+      "bounded-caller-disposition",
+      "prior-run-matched-deferral"
+    ],
+    "expected_surface_state": "deferred",
+    "expected_reoffered_state": "offered"
+  }
+}
