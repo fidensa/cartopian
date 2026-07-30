@@ -152,6 +152,14 @@ def observe_once(
     report = observe_report(report_path, expected_variant)
 
     if report.publication_state == "complete":
+        retention_pending = (
+            wrapper.metadata.get("guarantee_scope") == "retained-launch-log"
+            and wrapper.metadata.get("retained_log_ready") != "true"
+            and wrapper.state == "running"
+            and wrapper.variant_matches
+        )
+        if retention_pending:
+            return HandoffObservation(False, None, report, wrapper)
         return HandoffObservation(True, report.verdict, report, wrapper)
     if report.permanently_invalid:
         return HandoffObservation(True, "failed-to-parse", report, wrapper)

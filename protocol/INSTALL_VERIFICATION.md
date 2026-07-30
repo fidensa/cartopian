@@ -1,10 +1,15 @@
 # Cartopian Install Verification
 
-This is the FR-015 post-install / post-upgrade verification checklist. Run it once immediately after the first install or after each upgrade to confirm `~/.cartopian/` is laid out correctly and the Core CLI is usable.
+This is the portable post-install / post-upgrade verification checklist. Run it once immediately after the first install or after each upgrade to confirm `~/.cartopian/` is laid out correctly and the Core CLI is usable.
 
 The install/upgrade flow itself is documented in `README.md` and the "Build / Distribution" section of `STANDARDS.md`. This checklist verifies the result of that flow; it does not perform the install.
 
-V1 ships this as documentation only — there is no `cartopian verify-install` command. An operator (or an end-to-end test driver) executes the steps below by hand.
+The coordinated installer now verifies the closed installed-surface set and
+writes portable evidence to
+`<install-root>/install-update-state.json`. The manual probes below remain
+useful as independent checks and as static parity evidence on a platform where
+native execution is unavailable. Static parity evidence must not be described
+as native execution proof.
 
 ## Conventions
 
@@ -17,7 +22,7 @@ V1 ships this as documentation only — there is no `cartopian verify-install` c
 
 ## 0. Runtime preflight (Python 3.11+)
 
-The Core CLI requires Python 3.11+ per DEC-001 (stdlib `tomllib` is the floor; the entrypoint at `bin/cartopian` enforces this). Verify first — every step below depends on it.
+The Core CLI requires Python 3.11+ (`tomllib` is the standard-library floor; the entrypoint at `bin/cartopian` enforces this). Verify first — every step below depends on it.
 
 **macOS / Linux / WSL:**
 
@@ -43,7 +48,7 @@ brew install python@3.11
 
 Then either re-shim your shell so a ≥3.11 interpreter resolves first on `PATH`, or invoke the Homebrew interpreter explicitly (`/opt/homebrew/bin/python3.11`). Re-run step 0 before continuing.
 
-## 1. Install layout matches FR-002
+## 1. Install layout is complete
 
 Confirm every tool-shipped and operator-owned path from `STANDARDS.md`'s install-behavior table is present.
 
@@ -83,7 +88,7 @@ Test-Path $env:USERPROFILE\.cartopian\projects.json -PathType Leaf
 
 Pass when: every `test`/`Test-Path` returns success (`True` on PowerShell, exit 0 on POSIX). A missing path means the install or upgrade did not complete.
 
-## 2. Vendored TOML writer is present at the DEC-001 path
+## 2. Vendored TOML writer is present
 
 The Core CLI does not run `pip install`; the only third-party module it depends on is the vendored single-file `tomli_w` shipped under `cli/_vendor/tomli_w.py`. A missing file here breaks every command that writes TOML (e.g., `generate-config`). Open / stat it explicitly:
 
@@ -101,7 +106,7 @@ Test-Path $env:USERPROFILE\.cartopian\cli\_vendor\tomli_w.py -PathType Leaf
 Get-Content $env:USERPROFILE\.cartopian\cli\_vendor\tomli_w.py -TotalCount 1
 ```
 
-Pass when: the file exists and reading the first line succeeds (any non-empty content is fine — the check is "the file is on disk and readable at the DEC-001-locked path").
+Pass when: the file exists and reading the first line succeeds (any non-empty content is fine — the check is "the file is on disk and readable at the shipped path").
 
 ## 3. Core CLI entrypoint runs
 
@@ -119,9 +124,9 @@ Pass when: the help text prints (subcommands listed, including at least `resolve
 
 If `cartopian` is not on `PATH`, add `~/.cartopian/bin` (POSIX) or `%USERPROFILE%\.cartopian\bin` (Windows) to `PATH` per the README install steps, then re-run. On native Windows the bare command resolves via the shipped `bin/cartopian.cmd` shim (verified in Section 1); if PowerShell still fails to find `cartopian`, confirm `.CMD` is in `PATHEXT` (it is by default).
 
-## 4. Registry parses cleanly (JSON, DEC-009)
+## 4. Registry parses cleanly
 
-The registry is JSON per DEC-009; a fresh install seeds it as `[]\n` and an upgrade preserves whatever the operator has registered.
+The registry is JSON; a fresh install seeds it as `[]\n` and an upgrade preserves whatever the operator has registered.
 
 **macOS / Linux / WSL:**
 

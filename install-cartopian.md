@@ -74,8 +74,34 @@ What the flags do:
 - `--patch-path` — idempotently adds `<install_root>/bin` and the platform wrapper directory (`wrappers/bin` on Unix, `wrappers\ps1` on Windows) to the user PATH: the registry-backed user PATH on Windows, the login shell's rc file (`~/.zshrc` or `~/.bashrc`) on Unix. For an unrecognized shell it prints the exact line for the operator to add manually.
 - `--prefix <path>` — non-default install root; add it if the operator wants one, and reuse the same `--prefix` on every future upgrade.
 - `--quiet` — suppress the per-action log; keep it off so the operator sees what was copied, preserved, and patched.
+- `--plan-only` — inventory all core and client surfaces and print the
+  deterministic affected-surface plan without writing anything.
+- `--client <id>` — select one of the installer-reported supported clients for
+  bounded fresh registration and trigger-bridge setup; repeat for more than
+  one client.
+- `--repair <surface>=accept|decline|defer` — record one explicit disposition
+  for an affected optional surface. The only accepted surfaces are `bridges`,
+  `client-registrations`, and `client-configuration`. Registration and
+  configuration share one bounded adapter, so a disposition for either governs
+  both surface records; contradictory paired dispositions are refused.
 
-The installer preserves operator-owned files (`cartopian.toml`, `projects.json`) on upgrade, and ships itself to `<install_root>/scripts/install.py` — so the *next* upgrade is Step 2A: one command, no bootstrap.
+Before any write, the installer prints every surface in dependency order with
+its action, authorization class, verification method, and restart impact.
+Required tool-owned paths are staged behind a recoverable replacement
+boundary. Operator-owned files (`cartopian.toml`, `projects.json`) are
+preserved. Client configuration is changed only for a selected client and an
+authorized surface; malformed or customized configuration that cannot be
+safely merged is preserved and reported. A refusal writes a blocked latest-run
+record, and an operating-system apply failure writes a failed latest-run
+record, including attempted-action, preservation, and recovery evidence,
+before the installer exits non-zero whenever the state destination remains
+writable. A secondary state-write failure never replaces the original apply
+error, and the installer reports either class without a Python traceback.
+Unchanged prior declines are remembered even when another repair adapter
+remains offered. Defers and materially changed decision contexts are offered
+again. The installer ships itself to
+`<install_root>/scripts/install.py`, so the *next* upgrade is Step 2A: one
+command, no bootstrap.
 
 If the installer exits non-zero, stop and surface its stderr to the operator.
 
@@ -119,12 +145,17 @@ Also confirm `<install_root>/VERSION` contains the ref the installer reported in
 - PowerShell: `Get-Content "$env:USERPROFILE\.cartopian\VERSION"`
 
 Point the operator at the install verification checklist: `<install_root>/protocol/INSTALL_VERIFICATION.md`.
+Also inspect `<install_root>/install-update-state.json`. Every completed
+surface must have verified portable evidence. An `offered`, `declined`, or
+`deferred` repair prevents an unqualified fully-updated claim. A governed
+project schema difference appears only as a migration offer with `result =
+not-run`; do not run project migration from the installer.
 
 ### Step 6 — Register the MCP server with the operator's agent(s)
 
 Run `skills/register-mcp.md`. The install root is already resolved — pass it so Stage 0 of that skill is skipped.
 
-`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate recipe for each agent the operator selects. For Claude Code, Codex, Gemini, Devin, and Windsurf it does the full two-part hookup — registers the MCP server **and** installs a "use cartopian" trigger bridge (skill or command) so the entry phrase reads the authoritative `cartopian://skills/use_cartopian` resource. Claude Desktop and Cursor are MCP-only (no local bridge mechanism); any other agent is handled via a generic fallback.
+`register-mcp` detects which supported agents are present on the machine, shows which are already registered, and applies the appropriate recipe for each agent the operator selects. For Claude Code, Codex, Gemini, Devin, and Windsurf it does the full two-part hookup — registers the MCP server **and** installs a "use cartopian" trigger bridge (skill or command) so the entry phrase reads the authoritative `cartopian://skills/use_cartopian` resource. Claude Desktop and Cursor are MCP-only (no local bridge mechanism). Unsupported client identifiers are refused; there is no caller-defined executable, configuration path, bridge destination, or generic registration fallback.
 
 Do not stop at registration. That skill's Stage 4 raises each host's tool-call ceiling, which is what makes handoffs work at all: Cartopian waits for an assignee by holding one `tools/call` open for up to `roles.<role>.timeout` (default `60m`), and Codex and Gemini both cap that call **below** the default out of the box. Without Stage 4, `cartopian dispatch` fails closed on those hosts rather than launching a handoff whose wait cannot survive.
 

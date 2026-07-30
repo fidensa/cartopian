@@ -257,6 +257,11 @@ cartopian_write_status() {
     if [ -n "${CARTOPIAN_EXPECTED_REPORT_VARIANT:-}" ]; then
       printf 'expected_variant=%s\n' "$CARTOPIAN_EXPECTED_REPORT_VARIANT"
     fi
+    if [ -n "${CARTOPIAN_LAUNCH_LOG_PATH:-}" ] \
+      && [ "${status_path%.status}.launch.log" = "$CARTOPIAN_LAUNCH_LOG_PATH" ]; then
+      printf 'guarantee_scope=retained-launch-log\n'
+      printf 'retained_log_ready=false\n'
+    fi
   } >"$tmp" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }
   # Atomic publish so wait-handoff never observes a half-written file.
   mv -f "$tmp" "$status_path" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }

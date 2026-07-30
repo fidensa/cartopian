@@ -35,7 +35,7 @@ from unittest import mock
 
 import pytest
 
-from cli import host_capability, request_trace
+from cli import handoff_observer, host_capability, request_trace
 from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 from tests.scaffold import project_scaffold
@@ -739,17 +739,30 @@ class TestDispatchDetachedStdio(unittest.TestCase):
 
             report = scaffold.reports / "REPORT-01-004.md"
             deadline = time.monotonic() + 20.0
-            while not report.is_file() and time.monotonic() < deadline:
+            observation = handoff_observer.observe_once(
+                report,
+                expected_variant="task",
+            )
+            while not observation.terminal and time.monotonic() < deadline:
                 time.sleep(0.05)
+                observation = handoff_observer.observe_once(
+                    report,
+                    expected_variant="task",
+                )
             self.assertTrue(
                 report.is_file(),
                 "detached handoff died after the caller and its captured "
                 "pipes exited — it never reached a terminal status (no report)",
             )
+            self.assertTrue(
+                observation.terminal,
+                "complete report became visible but the retained-log "
+                "publication boundary never became observable",
+            )
 
             # Diagnostics survived the caller: the probe output landed in the
-            # dispatch-owned launch log (the report exists, so the probe —
-            # which runs first — has already been flushed).
+            # dispatch-owned launch log before the canonical reader exposed
+            # report completion.
             log_path = Path(rec["launch_log_path"])
             log_text = log_path.read_text(encoding="utf-8")
             self.assertIn("stub-stdout-probe", log_text)

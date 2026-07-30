@@ -66,6 +66,7 @@ SURFACE_STATES: Tuple[str, ...] = (
     "pending",
     "offered",
     "declined",
+    "deferred",
     "missing",
     "dirty",
     "symlink-divergent",
@@ -111,6 +112,7 @@ OPERATOR_CHOICE_STATES: Tuple[str, ...] = (
     "offered",
     "authorized",
     "declined",
+    "deferred",
 )
 OFFERED_ACTIONS: Tuple[str, ...] = (
     "repair",
@@ -301,6 +303,8 @@ DIAGNOSTIC_CODES: Tuple[str, ...] = (
     "checkpoint-evidence-missing",
     "checkpoint-verification-missing",
     "checkpoint-replay-unsafe",
+    "apply-refused",
+    "apply-failed",
     "prior-checkpoint-evidence-missing",
     "duplicate-choice",
     "choice-not-authorized",
@@ -1243,6 +1247,41 @@ def _validate_checkpoints(
                     "classify it inspect-before-retry and inspect the target",
                 )
             )
+        if (
+            item.get("status") in ("blocked", "failed")
+            and item.get("attempted_action")
+        ):
+            mutation_status = str(item.get("mutation_status", ""))
+            os_failure = mutation_status.startswith("os-error-")
+            diagnostic_code = "apply-failed" if os_failure else "apply-refused"
+            diagnostic_verb = "failed" if os_failure else "refused"
+            recovery = str(item.get("recovery", "")).strip()
+            recovery_artifact = str(
+                item.get("recovery_artifact", "")
+            ).strip()
+            if not recovery or not recovery_artifact:
+                diagnostics.append(
+                    _diagnostic(
+                        "missing-field",
+                        "error",
+                        path,
+                        "apply outcome lacks recovery guidance or a recovery artifact",
+                        "record the attempted action, retry safety, recovery guidance, and preserved or backup artifact",
+                    )
+                )
+            diagnostics.append(
+                _diagnostic(
+                    diagnostic_code,
+                    "error",
+                    path,
+                    (
+                        f"{item.get('surface')} {diagnostic_verb} "
+                        f"{item.get('attempted_action')}"
+                    ),
+                    recovery
+                    or "inspect the affected surface and preserved content before retry",
+                )
+            )
     for checkpoint_id, count in ids.items():
         if not checkpoint_id or count > 1:
             diagnostics.append(
@@ -1339,7 +1378,8 @@ def _validate_choices(
         if (
             isinstance(surface, Mapping)
             and surface.get("affected") is False
-            and item.get("state") in ("offered", "authorized", "declined")
+            and item.get("state")
+            in ("offered", "declined", "deferred")
         ):
             diagnostics.append(
                 _diagnostic(
@@ -1351,12 +1391,13 @@ def _validate_choices(
                 )
             )
     for surface_kind, surface in surfaces.items():
-        if surface.get("state") != "declined":
+        if surface.get("state") not in ("declined", "deferred"):
             continue
+        disposition = surface.get("state")
         provenance_backed = any(
             isinstance(choice, Mapping)
             and choice.get("surface") == surface_kind
-            and choice.get("state") == "declined"
+            and choice.get("state") == disposition
             and bool(choice.get("provenance"))
             for choice in choices
         )
@@ -1366,8 +1407,8 @@ def _validate_choices(
                     "decline-provenance-missing",
                     "error",
                     f"surfaces.{surface_kind}",
-                    "declined surface has no provenance-backed operator choice",
-                    "record the observed decline and its provenance before claiming it",
+                    f"{disposition} surface has no provenance-backed operator choice",
+                    "record the observed disposition and its provenance before claiming it",
                 )
             )
     for choice_id, count in ids.items():
@@ -1652,7 +1693,7 @@ def _terminal_diagnostics(
         if not isinstance(item, Mapping):
             continue
         state = item.get("state")
-        if state in _SAFE_SURFACE_STATES or state == "declined":
+        if state in _SAFE_SURFACE_STATES or state in ("declined", "deferred"):
             continue
         if (
             item.get("kind") == "project-schema-migration-offers"
@@ -1715,6 +1756,11 @@ def _derive_outcome(
         for item in surfaces
         if item.get("state") == "declined"
     ]
+    deferred = [
+        str(item.get("kind"))
+        for item in surfaces
+        if item.get("state") == "deferred"
+    ]
     blocked = [
         str(item.get("kind"))
         for item in surfaces
@@ -1742,6 +1788,7 @@ def _derive_outcome(
     lifecycle = record.get("state")
     qualified = bool(
         declined
+        or deferred
         or pending
         or blocked
         or warnings
@@ -1784,6 +1831,7 @@ def _derive_outcome(
             ("pending_surfaces", pending),
             ("blocked_surfaces", blocked),
             ("declined_surfaces", declined),
+            ("deferred_surfaces", deferred),
             ("restart_required", restart_required),
             ("recovery_guidance", recovery),
         )

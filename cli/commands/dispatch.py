@@ -248,6 +248,7 @@ def _publish_running_status(
     role: str,
     activity: str,
     expected_variant: str,
+    launch_log_path: Optional[str],
 ) -> None:
     """Atomically publish the secondary running marker for the current launch."""
     status_path.parent.mkdir(parents=True, exist_ok=True)
@@ -261,6 +262,11 @@ def _publish_running_status(
         f"activity={activity}\n"
         f"expected_variant={expected_variant}\n"
     )
+    if launch_log_path is not None:
+        payload += (
+            f"guarantee_scope={output_safety.GUARANTEE_SCOPE}\n"
+            "retained_log_ready=false\n"
+        )
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -604,12 +610,17 @@ def handler(args: argparse.Namespace) -> int:
     try:
         slot_clear = _clear_handoff_slot(expected_report_path)
         status_path = Path(str(expected_report_path) + ".status")
+        launch_log = output_safety.usable_log_path(
+            Path(str(expected_report_path) + ".launch.log")
+        )
+        launch_log_path = str(launch_log) if launch_log is not None else None
         _publish_running_status(
             status_path,
             launch_id=launch_id,
             role=role,
             activity=activity,
             expected_variant=expected_variant,
+            launch_log_path=launch_log_path,
         )
     except _CliError as err:
         stderr_guard(err.message)
@@ -620,10 +631,6 @@ def handler(args: argparse.Namespace) -> int:
     # through a pipe and atomically publishes only the bounded retained log.
     # Bytes outside that representation are discarded without affecting the
     # wrapper process or its lifecycle result.
-    launch_log = output_safety.usable_log_path(
-        Path(str(expected_report_path) + ".launch.log")
-    )
-    launch_log_path = str(launch_log) if launch_log is not None else None
     output_safety.project_environment(env, output_limits, launch_log)
     supervisor_argv = [
         sys.executable,

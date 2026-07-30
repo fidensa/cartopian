@@ -81,17 +81,37 @@ The upgrade itself is normally **one single-line command** that behaves identica
 
 To pin to a specific tag instead of latest, pass `--ref <tag>` to the installer.
 
-### Step 6 — Check and repair agent registrations
+### Step 6 — Resolve coordinated client repair offers
 
 The file refresh in Step 5 does not touch any agent's MCP config. New supported agents may have been added since the operator last registered (for example, Codex registration shipped in v0.3.x), and existing registrations may need re-verification.
 
-Ask the operator:
+The installer has already inventoried bridges, registrations, and client
+configuration and persisted the shared run result. Read
+`$install_root/install-update-state.json`. If those surfaces are current, skip
+to Step 7. If they are affected, present the installer-recorded offers and ask
+the operator for one `accept`, `decline`, or `defer` disposition per bounded
+repair adapter. Registration and client configuration share one adapter, so
+one answer governs both surface records:
 
-> Want me to check your agent registrations and repair any that are missing? This will look at each supported agent (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Devin), show you what's registered, and only change configs you approve.
+> Cartopian found client-facing install drift. Want me to repair it now,
+> decline it for this run, or defer it to a later run? I will only inspect the
+> supported clients and only change the surfaces you accept.
 
-If no, skip to Step 7.
+Record a no as `decline` or `defer`; do not silently turn it into a skipped
+fact. Re-run the same installer source and install root with the affected
+`--repair <surface>=<disposition>` arguments. Pass one or more `--client`
+identifiers only from the installer's supported-client list.
 
-If yes, run `skills/register-mcp.md` and pass `$install_root` through so Stage 0 is skipped. That skill detects which agents are present, shows current registration status, and asks the operator which (if any) to register or re-register. It will not modify any config the operator does not explicitly select.
+The next run consumes a prior decline from a schema-valid completed,
+blocked/failed, or `repair-offered` record only when the selected clients,
+source, desired identity, observed identity, and other material decision
+context still match. It does not prompt again for that unchanged drift, even
+when a different repair adapter remains offered. A defer is deliberately
+re-offered, and any material context change invalidates a carried decline.
+
+For detailed per-client explanation, use `skills/register-mcp.md`, but do not
+run a second independent detection or invent a different disposition. The
+installer plan and result remain authoritative for the run.
 
 ### Step 7 — Verify
 

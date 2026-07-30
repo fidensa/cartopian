@@ -287,6 +287,12 @@ function Write-CartopianStatus {
         if ($env:CARTOPIAN_EXPECTED_REPORT_VARIANT) {
             $content += "expected_variant=$($env:CARTOPIAN_EXPECTED_REPORT_VARIANT)`n"
         }
+        $expectedLaunchLog = "$($StatusPath.Substring(0, $StatusPath.Length - '.status'.Length)).launch.log"
+        if ($env:CARTOPIAN_LAUNCH_LOG_PATH -and
+                $env:CARTOPIAN_LAUNCH_LOG_PATH -eq $expectedLaunchLog) {
+            $content += "guarantee_scope=retained-launch-log`n"
+            $content += "retained_log_ready=false`n"
+        }
         $tmp = "$StatusPath.tmp"
         Set-Content -LiteralPath $tmp -Value $content -NoNewline -Encoding utf8
         Move-Item -LiteralPath $tmp -Destination $StatusPath -Force

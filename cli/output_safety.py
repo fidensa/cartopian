@@ -10,10 +10,13 @@ from __future__ import annotations
 import argparse
 from collections import deque
 import os
+import queue
+import selectors
 import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,12 +25,16 @@ from typing import Dict, Iterable, Optional, Sequence
 
 DEFAULT_LOG_LINE_LIMIT = 400
 DEFAULT_LOG_BYTE_LIMIT = 64 * 1024
+DEFAULT_REPORT_POLL_SECONDS = 2.0
+DEFAULT_REPORT_GRACE_POLLS = 3
 
 GUARANTEE_SCOPE = "retained-launch-log"
 
 LOG_BYTE_LIMIT_ENV = "CARTOPIAN_LOG_BYTE_LIMIT"
 LOG_LINE_LIMIT_ENV = "CARTOPIAN_LOG_LINE_LIMIT"
 LAUNCH_LOG_PATH_ENV = "CARTOPIAN_LAUNCH_LOG_PATH"
+REPORT_POLL_ENV = "CARTOPIAN_REPORT_POLL"
+REPORT_GRACE_POLLS_ENV = "CARTOPIAN_REPORT_GRACE_POLLS"
 
 OUTPUT_SAFETY_ENV_VARS = (
     LOG_BYTE_LIMIT_ENV,
@@ -47,6 +54,7 @@ _RETIRED_OUTPUT_SAFETY_ENV_VARS = (
 _LOG_TRUNCATION_MARKER = (
     b"[cartopian: retained launch log truncated; bounded tail follows]\n"
 )
+_REPORT_OBSERVER = None
 
 
 class OutputSafetyError(ValueError):
@@ -314,7 +322,15 @@ def _publish_exit_status(
         ("retention_state", result.retention_state),
         ("report_present", str(result.report_present).lower()),
         ("guarantee_scope", result.guarantee_scope),
+        ("retained_log_ready", "true"),
     )
+    _publish_status_fields(status_path, fields)
+
+
+def _publish_status_fields(
+    status_path: Path,
+    fields: Iterable[tuple[str, object]],
+) -> None:
     payload = "".join(
         f"{key}={_status_value(value)}\n" for key, value in fields
     )
@@ -339,20 +355,190 @@ def _publish_exit_status(
         raise
 
 
+def _publish_retention_ready_status(
+    status_path: Path,
+    *,
+    launch_id: str,
+    expected_variant: str,
+    limits: OutputLimits,
+    published: Optional[Path],
+    payload: bytes,
+    retained: _BoundedLog,
+) -> None:
+    """Publish the automated-reader boundary after the retained snapshot."""
+    existing: Dict[str, str] = {}
+    if _safe_log_target(status_path):
+        try:
+            existing = {
+                key.strip(): value.strip()
+                for line in status_path.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+                for key, value in (line.split("=", 1),)
+                if key.strip()
+            }
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeDecodeError):
+            return
+    if existing.get("launch_id") not in (None, launch_id):
+        return
+
+    fields: list[tuple[str, object]] = [
+        ("state", "running"),
+        ("launch_id", launch_id),
+    ]
+    for key in ("role", "activity"):
+        if existing.get(key):
+            fields.append((key, existing[key]))
+    fields.extend(
+        (
+            ("expected_variant", expected_variant),
+            ("log_byte_limit", limits.log_bytes),
+            ("log_line_limit", limits.log_lines),
+            ("retained_log_path", str(published) if published else "unavailable"),
+            ("retained_bytes", len(payload) if published else 0),
+            ("retained_lines", count_lines(payload) if published else 0),
+            (
+                "retention_state",
+                (
+                    "truncated" if published and retained.truncated
+                    else "complete" if published
+                    else "unavailable"
+                ),
+            ),
+            ("report_present", "true"),
+            ("guarantee_scope", GUARANTEE_SCOPE),
+            ("retained_log_ready", "true"),
+        )
+    )
+    _publish_status_fields(status_path, fields)
+
+
+def _load_report_observer():
+    """Import report parsing after script-path bootstrap, before child launch."""
+    global _REPORT_OBSERVER
+    if _REPORT_OBSERVER is None:
+        from cli import handoff_observer
+
+        _REPORT_OBSERVER = handoff_observer
+    return _REPORT_OBSERVER
+
+
 def _report_complete(report_path: Optional[Path], expected_variant: str) -> bool:
     if report_path is None:
         return False
     try:
-        from cli import handoff_observer
-
+        observer = _load_report_observer()
         return (
-            handoff_observer.observe_report(
+            observer.observe_report(
                 report_path, expected_variant
             ).publication_state
             == "complete"
         )
     except (ImportError, OSError):
         return False
+
+
+def _report_timing(environ: Dict[str, str]) -> tuple[float, int]:
+    """Resolve the shipped wrapper's report poll and grace tunables.
+
+    These values govern observation cadence and post-report grace only. They
+    are not another handoff deadline; the configured wrapper remains the role
+    timeout authority.
+    """
+    try:
+        poll = float(environ.get(REPORT_POLL_ENV, DEFAULT_REPORT_POLL_SECONDS))
+    except (TypeError, ValueError):
+        poll = DEFAULT_REPORT_POLL_SECONDS
+    if poll <= 0:
+        poll = DEFAULT_REPORT_POLL_SECONDS
+    poll = max(0.05, poll)
+
+    try:
+        grace_polls = int(
+            environ.get(REPORT_GRACE_POLLS_ENV, DEFAULT_REPORT_GRACE_POLLS)
+        )
+    except (TypeError, ValueError):
+        grace_polls = DEFAULT_REPORT_GRACE_POLLS
+    return poll, max(0, grace_polls)
+
+
+class _ReportCompletionPoller:
+    """Time-bound report parsing independently of output chunk volume."""
+
+    def __init__(
+        self,
+        report_path: Optional[Path],
+        expected_variant: str,
+        interval: float,
+    ) -> None:
+        self.report_path = report_path
+        self.expected_variant = expected_variant
+        self.interval = interval
+        self.next_check = 0.0
+
+    def complete(self, now: float) -> bool:
+        if now < self.next_check:
+            return False
+        self.next_check = now + self.interval
+        return _report_complete(self.report_path, self.expected_variant)
+
+
+class _PipeReadiness:
+    """Read one pipe chunk without hiding report and grace deadlines.
+
+    POSIX pipes participate directly in ``selectors``. Native Windows cannot
+    select anonymous pipes, so one daemon reader feeds a single-slot queue;
+    that keeps memory bounded while giving the supervisor the same timed wait
+    surface on both launch paths.
+    """
+
+    def __init__(self, fd: int) -> None:
+        self.fd = fd
+        self.selector: Optional[selectors.BaseSelector] = None
+        self.chunks: Optional[queue.Queue[object]] = None
+        if os.name == "posix":
+            self.selector = selectors.DefaultSelector()
+            self.selector.register(fd, selectors.EVENT_READ)
+        else:
+            self.chunks = queue.Queue(maxsize=1)
+            threading.Thread(
+                target=self._read_chunks,
+                name="cartopian-output-drain",
+                daemon=True,
+            ).start()
+
+    def _read_chunks(self) -> None:
+        assert self.chunks is not None
+        while True:
+            try:
+                chunk: object = os.read(self.fd, 4096)
+            except OSError as exc:
+                chunk = exc
+            self.chunks.put(chunk)
+            if not chunk or isinstance(chunk, OSError):
+                return
+
+    def read(self, timeout: float) -> Optional[bytes]:
+        timeout = max(0.0, timeout)
+        if self.selector is not None:
+            if not self.selector.select(timeout):
+                return None
+            return os.read(self.fd, 4096)
+
+        assert self.chunks is not None
+        try:
+            item = self.chunks.get(timeout=timeout)
+        except queue.Empty:
+            return None
+        if isinstance(item, OSError):
+            raise item
+        assert isinstance(item, bytes)
+        return item
+
+    def close(self) -> None:
+        if self.selector is not None:
+            self.selector.close()
 
 
 def _terminate_process_tree(proc: subprocess.Popen[bytes]) -> tuple[bool, str]:
@@ -420,6 +606,9 @@ def supervise(
     """Drain one wrapper continuously while retaining a bounded diagnostic."""
     if not command:
         raise ValueError("command must not be empty")
+    # Preload the canonical parser before child creation so the first visible
+    # report does not pay a cold import cost ahead of retained-log publication.
+    _load_report_observer()
     creationflags = (
         getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         if os.name == "nt"
@@ -465,50 +654,69 @@ def supervise(
         return result
     assert proc.stdout is not None
     retained = _BoundedLog(limits.log_bytes, limits.log_lines)
+    report_poll, report_grace_polls = _report_timing(dict(os.environ))
+    report_observer = _ReportCompletionPoller(
+        report_path,
+        expected_variant,
+        report_poll,
+    )
+    report_complete = False
+    report_grace_deadline: Optional[float] = None
+    readiness = _PipeReadiness(proc.stdout.fileno())
+    try:
+        while True:
+            now = time.monotonic()
+            next_wakeup = (
+                report_grace_deadline
+                if report_complete and report_grace_deadline is not None
+                else report_observer.next_check
+            )
+            chunk = readiness.read(max(0.0, next_wakeup - now))
+            pipe_eof = chunk == b""
+            if chunk:
+                for byte in chunk:
+                    retained.add(byte)
 
-    while True:
-        chunk = os.read(proc.stdout.fileno(), 4096)
-        if not chunk:
-            break
-        for byte in chunk:
-            retained.add(byte)
-        # Preserve report-completion supervision without coupling it to stream
-        # volume. Shipped wrappers also observe quiet post-report processes;
-        # this check covers wrappers that continue emitting after publication.
-        if _report_complete(report_path, expected_variant):
-            _terminate_process_tree(proc)
-            try:
-                proc.stdout.close()
-            except OSError:
-                pass
-            payload = retained.representation()
-            published = _publish_log(log_path, payload)
-            result = SupervisionResult(
-                exit_code=0,
-                retained_log_path=str(published) if published else None,
-                retained_bytes=len(payload) if published else 0,
-                retained_lines=count_lines(payload) if published else 0,
-                retention_state=(
-                    "truncated" if published and retained.truncated
-                    else "complete" if published
-                    else "unavailable"
-                ),
-                report_present=True,
-            )
-            _publish_exit_status(
-                status_path,
-                launch_id=launch_id,
-                expected_variant=expected_variant,
-                limits=limits,
-                result=result,
-            )
-            return result
+            now = time.monotonic()
+            # Report checks advance on selector/queue timeouts as well as pipe
+            # readiness, so a silent wrapper cannot stall retained publication
+            # or the post-report grace deadline.
+            if not report_complete and report_observer.complete(now):
+                payload = retained.representation()
+                # Publish the reader-visible retained representation before any
+                # grace, termination, or reap work. Further output is still
+                # drained and the final bounded representation replaces this
+                # snapshot atomically below.
+                published = _publish_log(log_path, payload)
+                _publish_retention_ready_status(
+                    status_path,
+                    launch_id=launch_id,
+                    expected_variant=expected_variant,
+                    limits=limits,
+                    published=published,
+                    payload=payload,
+                    retained=retained,
+                )
+                report_complete = True
+                report_grace_deadline = now + report_poll * report_grace_polls
+            if (
+                report_complete
+                and report_grace_deadline is not None
+                and now >= report_grace_deadline
+            ):
+                _terminate_process_tree(proc)
+                break
+            if pipe_eof:
+                break
+    finally:
+        readiness.close()
 
     try:
         proc.stdout.close()
     except OSError:
         pass
-    exit_code = proc.wait()
+    raw_exit_code = proc.wait()
+    exit_code = 0 if report_complete else raw_exit_code
     payload = retained.representation()
     published = _publish_log(log_path, payload)
     result = SupervisionResult(

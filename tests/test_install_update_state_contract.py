@@ -364,6 +364,36 @@ class CheckpointChoiceRestartMigrationTests(unittest.TestCase):
         self.assertIn("checkpoint-verification-missing", codes)
         self.assertEqual(record["outcome"]["status"], "blocked")
 
+    def test_apply_refusal_checkpoint_exposes_recovery_guidance(self):
+        checkpoint = {
+            "id": "apply-client-configuration",
+            "phase": "apply",
+            "surface": "client-configuration",
+            "status": "blocked",
+            "evidence": {
+                "identity": "sha256:preserved",
+                "kind": "configuration-fingerprint",
+                "verification": "failed",
+            },
+            "verification": "failed",
+            "retry_safety": "inspect-before-retry",
+            "attempted_action": "reconfigure-registration",
+            "mutation_status": "refused-preserved",
+            "recovery": "repair the malformed operator configuration before retry",
+            "recovery_artifact": "operator-client-configuration:preserved",
+        }
+        record = _base_record(
+            state="blocked", checkpoints=[checkpoint]
+        )
+        self.assertIn(
+            "apply-refused",
+            [item["code"] for item in record["diagnostics"]],
+        )
+        self.assertEqual(
+            record["outcome"]["recovery_guidance"],
+            ["repair the malformed operator configuration before retry"],
+        )
+
     def test_resume_names_only_incomplete_or_unverified_work(self):
         evidence = {
             "identity": "sha256:abc",

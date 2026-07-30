@@ -6,14 +6,18 @@ logic used by ``handoff-packet``) and filesystem-polls two signals:
 
 - the expected report file (the authoritative completion signal), classified
   with ``report-action`` verdict semantics; and
-- the optional wrapper status file at ``<report-path>.status`` (an early-exit
-  optimization for crash detection — see ``wrappers/README.md``).
+- the optional wrapper status file at ``<report-path>.status`` (early-exit
+  evidence plus the live automated retained-publication boundary — see
+  ``wrappers/README.md``).
 
 Terminal status flags emitted on stdout (one NDJSON record):
 
 - ``done``: a report is present and parses successfully (report-action verdict
   ``accepted``/``blocked``/``failed``). The PM reads the report verdict to
-  decide lifecycle action.
+  decide lifecycle action. A matching automated ``state=running`` status with
+  ``retained_log_ready=false`` briefly defers this result; missing status is
+  the manual/report-only path, and ``state=exited`` fails that diagnostic
+  publication barrier open.
 - ``failed-to-parse``: the wrapper has exited and the report publication is
   permanently invalid. A present but incomplete report remains nonterminal
   while the wrapper is still running.
@@ -102,7 +106,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "progress while the call is pending, so an instruction to narrate "
         "ongoing work does not govern it. `max_block` is only for a host "
         "ceiling that cannot be raised, and `dispatch` already refused to "
-        "launch if that were the case. See CONVENTIONS.md § Handoffs."
+        "launch if that were the case. A live automated retained-log marker "
+        "may briefly coordinate publication; manual or exited-wrapper reports "
+        "do not wait on it. See CONVENTIONS.md § Handoffs."
     )
     subparser.add_argument(
         "task_path",

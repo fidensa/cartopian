@@ -685,6 +685,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="suppress per-action stdout; print only the final summary line.",
     )
     p.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="emit the affected-surface plan without mutating any surface.",
+    )
+    p.add_argument(
+        "--client",
+        action="append",
+        default=[],
+        choices=(
+            "claude-code",
+            "codex",
+            "gemini",
+            "devin",
+            "windsurf",
+            "claude-desktop",
+            "cursor",
+        ),
+        help=(
+            "select a supported client for fresh registration/bridge setup; "
+            "repeat to select more than one"
+        ),
+    )
+    p.add_argument(
+        "--repair",
+        action="append",
+        default=[],
+        metavar="SURFACE=accept|decline|defer",
+        help=(
+            "explicitly disposition an affected bridges, "
+            "client-registrations, or client-configuration surface"
+        ),
+    )
+    p.add_argument(
         "--claude-hook",
         type=Path,
         default=None,
@@ -724,7 +757,74 @@ def main(argv: Optional[List[str]] = None) -> int:
             source_root = _resolve_source_root(args.source)
             ref = args.ref
 
-        actions = install(source_root, install_root, mode=mode)
+        # Load the coordinated planner from the intended source.  The source
+        # root is inserted only after its fixed Cartopian identity has been
+        # validated above; callers cannot select an adapter executable or a
+        # per-surface destination.
+        if str(source_root) not in sys.path:
+            sys.path.insert(0, str(source_root))
+        from cli.install_workflow import (
+            WorkflowRefusal,
+            apply_workflow,
+            plan_workflow,
+        )
+
+        decisions = {}
+        for raw in args.repair:
+            if "=" not in raw:
+                parser.error(
+                    f"invalid --repair {raw!r}; expected SURFACE=DISPOSITION"
+                )
+            surface, disposition = raw.split("=", 1)
+            if surface in decisions:
+                parser.error(f"duplicate --repair surface: {surface}")
+            decisions[surface] = disposition
+        operation = "fresh-install" if not install_root.exists() else "update"
+        try:
+            workflow_plan = plan_workflow(
+                source_root=source_root,
+                install_root=install_root,
+                operation=operation,
+                mode=mode,
+                clients=tuple(args.client),
+                decisions=decisions,
+                release_ref=ref,
+            )
+        except WorkflowRefusal as exc:
+            parser.error(str(exc))
+        if not args.quiet:
+            for item in workflow_plan["internal"]["affected_surface_plan"]:
+                print(
+                    "plan       "
+                    f"{item['surface']}: {item['action']} "
+                    f"({item['authorization']}; restart={item['restart_impact']})"
+                )
+        if args.plan_only:
+            print(
+                "cartopian install/update plan complete; no surfaces were mutated."
+            )
+            return EXIT_OK
+
+        try:
+            workflow_result = apply_workflow(workflow_plan)
+        except WorkflowRefusal as exc:
+            _eprint(f"[error] coordinated install/update refused: {exc}")
+            return EXIT_FAIL
+        except OSError:
+            _eprint(
+                "[error] coordinated install/update failed at an "
+                "operating-system boundary; inspect destination access and "
+                "the latest-run state record if it was writable, then retry."
+            )
+            return EXIT_FAIL
+        actions = [
+            (
+                f"verified   {item['kind']}"
+                if item["state"] in ("verified", "current", "not-applicable")
+                else f"{item['state']:<10} {item['kind']}"
+            )
+            for item in workflow_result["surfaces"]
+        ]
         gate_residuals = reconcile_registered_projects(install_root, source_root, actions)
         if ref:
             write_version_marker(install_root, ref, actions)
@@ -742,6 +842,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         for line in actions:
             print(line)
     print(f"cartopian installed at {install_root} (mode={mode}).")
+    if workflow_result["outcome"]["status"] == "complete-qualified":
+        print(
+            "cartopian install/update result is qualified; see "
+            f"{install_root / 'install-update-state.json'} for explicit "
+            "declined, deferred, migration-offer, or verification facts."
+        )
+    elif workflow_result["outcome"]["status"] == "in-progress":
+        print(
+            "cartopian core installation is verified; client repair offers "
+            f"remain pending in {install_root / 'install-update-state.json'}."
+        )
+    elif workflow_result["outcome"]["status"] in ("blocked", "failed"):
+        _eprint(
+            "[residual] coordinated install/update verification did not "
+            f"complete safely ({workflow_result['outcome']['status']})."
+        )
+        return EXIT_FAIL
     coreutils_note = _check_optional_coreutils()
     if coreutils_note:
         print(coreutils_note)

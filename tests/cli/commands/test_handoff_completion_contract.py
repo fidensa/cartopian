@@ -264,6 +264,110 @@ def test_report_path_wait_classifies_clean_exit_without_report(capsys):
     assert record["exit_code"] == 0
 
 
+@pytest.mark.parametrize("wait_kind", ("task", "report"))
+@pytest.mark.parametrize("status_mode", ("manual", "exited-pending"))
+def test_wait_surfaces_accept_complete_report_without_live_retention_barrier(
+    capsys,
+    wait_kind,
+    status_mode,
+):
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task_path = _task(scaffold)
+        report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        if status_mode == "exited-pending":
+            Path(str(report_path) + ".status").write_text(
+                "state=exited\n"
+                "exit_code=0\n"
+                "reason=clean\n"
+                "launch_id=launch-current\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
+
+        if wait_kind == "task":
+            args = argparse.Namespace(
+                task_path=str(task_path),
+                role="coder",
+                max_block="1s",
+                poll_interval=0.01,
+            )
+            rc = wait_handoff.handler(args)
+        else:
+            args = argparse.Namespace(
+                report_path=str(report_path),
+                role="coder",
+                variant="task",
+                max_block="1s",
+                poll_interval=0.01,
+            )
+            rc = wait_report.handler(args)
+
+    record = json.loads(capsys.readouterr().out)
+    assert rc == EXIT_OK
+    assert record["classification"] == "accepted"
+    assert record["publication_state"] == "complete"
+    assert record["wrapper_state"] == (
+        None if status_mode == "manual" else "exited"
+    )
+
+
+@pytest.mark.parametrize("wait_kind", ("task", "report"))
+def test_wait_surfaces_hold_complete_report_at_live_retention_barrier(
+    capsys,
+    wait_kind,
+):
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task_path = _task(scaffold)
+        report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        Path(str(report_path) + ".status").write_text(
+            "state=running\n"
+            "launch_id=launch-current\n"
+            "expected_variant=task\n"
+            "guarantee_scope=retained-launch-log\n"
+            "retained_log_ready=false\n",
+            encoding="utf-8",
+        )
+        if wait_kind == "task":
+            module = wait_handoff
+            argv = [
+                "wait-handoff",
+                str(task_path),
+                "--role",
+                "coder",
+                "--max-block",
+                "1s",
+                "--poll-interval",
+                "1",
+            ]
+        else:
+            module = wait_report
+            argv = [
+                "wait-report",
+                str(report_path),
+                "--role",
+                "coder",
+                "--variant",
+                "task",
+                "--max-block",
+                "1s",
+                "--poll-interval",
+                "1",
+            ]
+        rc = _run_with_staged_publication(module, argv, lambda: None)
+
+    record = json.loads(capsys.readouterr().out)
+    assert rc == EXIT_OK
+    assert record["classification"] == "still-running"
+    assert record["publication_state"] == "complete"
+    assert record["wrapper_state"] == "running"
+    if wait_kind == "task":
+        assert record["status"] == "still-running"
+    else:
+        assert record["still_running"] is True
+
+
 def test_report_path_wait_without_variant_rejects_stale_review_content(capsys):
     """An unmarked ordinary report slot defaults to task, not its own bytes."""
     with project_scaffold(cartopian_toml=_config()) as scaffold:

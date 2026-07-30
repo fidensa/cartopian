@@ -1,0 +1,30 @@
+{
+  "fresh-install": {
+    "operation": "fresh-install",
+    "expected_affected": [
+      "core-files",
+      "mcp-server-files",
+      "wrappers",
+      "bridges",
+      "client-registrations",
+      "client-configuration",
+      "verification-content"
+    ]
+  },
+  "no-op-update": {
+    "operation": "update",
+    "expected_required_actions": []
+  },
+  "multi-surface-update": {
+    "operation": "update",
+    "drift": [
+      "wrappers",
+      "bridges",
+      "client-registrations"
+    ]
+  },
+  "migration-offer": {
+    "operation": "update",
+    "migration_result": "not-run"
+  }
+}

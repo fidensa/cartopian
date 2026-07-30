@@ -76,7 +76,9 @@ Cursor          not detected
 Ask:
 - Which agents (detected as present and **not registered**) should Cartopian be registered with?
 - Which agents marked **bridge update available** should have their trigger bridge refreshed? This re-copies the current bridge template over the installed copy; it does **not** touch the already-working MCP registration.
-- Are there agents not in this list the operator wants to configure?
+- If the requested client is not in this list, report it as unsupported and
+  stop for that client. Do not accept a caller-supplied executable, config
+  path, bridge destination, or generic registration recipe.
 
 Fold both selections into the same confirmation so an operator upgrading Cartopian is asked **once**, not twice — and offer a select-all so every drifted bridge can be refreshed in one step. Do not modify any config without the operator explicitly selecting it. Agents marked **bridge current** need no action — say so and move on.
 
@@ -345,11 +347,11 @@ The bridge skill carries `triggers: [user, model]`, so the operator can say "use
 
 ### Other agents
 
-If the operator names an agent not covered above, provide the registration facts and direct them to that agent's MCP documentation:
-
-- **Command:** `<install_root>/bin/cartopian-mcp` (Unix) or `<installRoot>\bin\cartopian-mcp.cmd` (Windows)
-- **Transport:** stdio (newline-delimited JSON-RPC, no Content-Length headers)
-- **Protocol version:** MCP 2024-11-05
+Agents not covered above are outside the coordinated registration vocabulary.
+Do not construct or execute a generic registration recipe, accept a
+caller-selected executable or destination, or report that Cartopian registered
+the unsupported client. Direct the operator to that client's own MCP
+documentation and record Cartopian registration as unsupported/not performed.
 
 ---
 

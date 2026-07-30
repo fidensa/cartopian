@@ -140,6 +140,15 @@ Truncation is explicit in the retained representation and status metadata, but
 is never a lifecycle outcome. Ordinary nonzero exits, timeout `124`, and valid
 report completion remain distinct and unchanged.
 
+The outer supervisor preloads canonical report parsing before the wrapper is
+launched and throttles report observation by elapsed time rather than output
+chunks. Its pipe-readiness wait advances on the next report poll or grace
+deadline even when stdout stays open and silent. Once a wrapper publishes a
+complete report, the supervisor atomically publishes the current bounded
+representation before any grace or reap work, keeps draining during the shared
+post-report grace, and atomically replaces the snapshot with the final bounded
+representation afterward.
+
 The supervisor's guarantee is `retained-launch-log`: it bounds storage only,
 not execution output, artifacts, reports, model context, or provider-private
 context. Direct manual invocation of a wrapper does not pass through this
@@ -151,15 +160,15 @@ Some assignee CLIs keep running after they have written the report — MCP stdio
 
 The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one the wait commands parse); the supervisor requires the expected task/review/planning-review terminal structure, not merely path appearance or an early `Status:` line. Once that publication shape is complete, it grants the child a brief grace to exit on its own and then reaps it. A partially written report remains nonterminal and cannot cause the wrapper to kill its writer.
 
-This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); no per-tool CLI timeout flag is introduced.
+This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); the outer launch-log supervisor reuses those values when it observes report completion from any still-running wrapper, including one whose stdout remains open and silent. No per-tool CLI timeout flag is introduced.
 
 The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedRun` / `Test-CartopianReportComplete` in `ps1/CartopianStatus.ps1` (BL-006 parity). There is no external `timeout` binary on that path, so the supervisor itself is the single `CARTOPIAN_TIMEOUT` enforcer: the deadline is computed once and never extended, the report watch reuses the same wait loop, stdin is redirected to immediate EOF, and a complete report is authoritative (exit `0`/`reason=clean`) while a genuine hang still exits `124`/`reason=timeout`. Static + behavioral parity is pinned by `tests/wrappers/test_ps1_handoff_exit_contract.py` (behavioral cases run where `pwsh` is available; Windows-host execution evidence is tracked separately).
 
 ## Status file (early-crash detection)
 
-Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When the assignee exits, every wrapper writes exit facts and the outer automated-dispatch supervisor atomically publishes the final clean/error/timeout result as a fallback together with retained-log facts. Identity and variant are preserved. This is secondary evidence for both canonical waits: it distinguishes incomplete publication from malformed-after-exit and lets a wait terminate promptly when no report can still arrive.
+Automatic dispatch first writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When a safe retained-log destination exists, it also writes `guarantee_scope=retained-launch-log` and `retained_log_ready=false`. Wrappers preserve that pending marker in their exit status. The outer supervisor publishes the bounded snapshot first, then atomically changes the marker to `retained_log_ready=true` with retained facts; while the matching status remains `running`, canonical waits expose the report's terminal verdict only after that status boundary and never open the log body. The supervisor later publishes the final clean/error/timeout result as a fallback. If the wrapper has already published `state=exited`, a pending retention marker fails open and cannot strand a complete authoritative report after supervisor loss. Identity and variant are preserved.
 
-**The report file remains the authoritative completion signal.** The status file is never a hard requirement — if it is missing (helper absent, unwritable directory, prompt outside a project layout), wait-handoff degrades gracefully to the report-only path. Wrappers therefore write it best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
+**The report file remains the authoritative completion signal.** The retention-ready marker coordinates diagnostic visibility only for a matching live automated launch; it never changes the report verdict. With no status file (the normal manual/report-only case), a complete report is immediately terminal. With `state=exited`, a complete report is also terminal even if `retained_log_ready=false` remains. Wrappers write status best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
 
 ### Path
 
@@ -194,7 +203,7 @@ reason=clean|error|timeout
 
 ### Outcome → fields
 
-The report file is always the authoritative signal: when a valid report is present, `wait-handoff` reports `done` regardless of the status file. The status file only changes what happens when **no** report is present.
+The report file is always the authoritative signal. A valid report is immediately `done` for manual/report-only observation and after wrapper exit. During a matching automated launch that is still `running`, `retained_log_ready=false` briefly delays visibility until the bounded retained snapshot is published; it never changes the report verdict.
 
 | Outcome | `state` | `exit_code` | `reason` | wait-handoff verdict (no valid report present) |
 | --- | --- | --- | --- | --- |
@@ -220,8 +229,8 @@ Only bounded lifecycle, exit, launch-identity, role/activity, and expected-varia
 The status file is transient and must never outlive the handoff it describes. Its full lifecycle is:
 
 1. **Publish current launch.** Automatic dispatch clears old report/status signals, then atomically writes `state=running` with the new launch identity and expected variant. If child creation fails, dispatch removes its own marker.
-2. **Replace on assignee exit.** Every wrapper writes `state=exited` after termination, preserving dispatch identity/variant when present. Under automatic dispatch the outer supervisor publishes the final clean, error, timeout, launch-failure, or overflow outcome, so a custom wrapper that omits the optional helper cannot strand `state=running`.
-3. **Consume during wait.** Both canonical waits use it as secondary evidence. The report remains authoritative; absence leaves report-only observation, and a variant-mismatched stale status cannot terminate the current handoff.
+2. **Replace on assignee exit.** Every wrapper writes `state=exited` after termination, preserving dispatch identity/variant when present. Under automatic dispatch the outer supervisor publishes the final clean, error, timeout, or launch-failure outcome, so a custom wrapper that omits the optional helper cannot strand `state=running`.
+3. **Consume during wait.** Both canonical waits use it as secondary evidence. The report remains authoritative; absence leaves report-only observation, an exited wrapper fails any pending retention barrier open, and a variant-mismatched stale status cannot terminate or delay the current handoff.
 4. **Remove at report-clear / task-close.** `cartopian delete-report` removes the companion before slot reuse or at close.
 
 Because emission is uniform across every wrapper, a `.status` left behind always traces to step 3 not yet having run — not to which wrapper produced it.

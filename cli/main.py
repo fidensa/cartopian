@@ -18,6 +18,7 @@ SUBCOMMANDS: List[str] = [
     "apply-migration-entry",
     "discover-projects",
     "generate-config",
+    "install-workflow",
     "install-state-contract",
     "migrate-config",
     "move-task",
@@ -149,6 +150,7 @@ def _real_handlers():
         generate_config,
         handoff_packet,
         host_capability,
+        install_workflow,
         install_state_contract,
         list_tasks,
         migrate_config,
@@ -199,6 +201,10 @@ def _real_handlers():
         "generate-config": (generate_config.configure_parser, generate_config.handler),
         "handoff-packet": (handoff_packet.configure_parser, handoff_packet.handler),
         "host-capability": (host_capability.configure_parser, host_capability.handler),
+        "install-workflow": (
+            install_workflow.configure_parser,
+            install_workflow.handler,
+        ),
         "install-state-contract": (
             install_state_contract.configure_parser,
             install_state_contract.handler,

@@ -17,7 +17,10 @@ Outcomes:
 
 - Complete report (accepted, blocked, failed, changes-requested, or rejected)
   → exit 0 and emit its terminal classification. Observation succeeded; the
-  caller routes the report verdict.
+  caller routes the report verdict. A matching automated ``state=running``
+  status with ``retained_log_ready=false`` briefly defers this result; missing
+  status is the manual/report-only path, and ``state=exited`` fails that
+  diagnostic-publication barrier open.
 - Incomplete report while the wrapper can still publish → remain nonterminal.
 - Wrapper exit with malformed bytes or no report → deterministic exit 1
   classification matching ``wait-handoff``.
@@ -58,8 +61,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "Block until a report lands at a known path, then return one terminal "
         "NDJSON record. Use for a report with no task file, such as a planning "
         "checkpoint review; for a task-scoped handoff use `wait_handoff`. Call "
-        "this WITHOUT `max_block` and let it block; it returns the moment the "
-        "report lands. Its silence is expected and is not a lapse in "
+        "this WITHOUT `max_block` and let it block; it returns when report "
+        "completion is observable. A live automated retained-log marker may "
+        "briefly coordinate publication; manual or exited-wrapper reports do "
+        "not wait on it. Its silence is expected and is not a lapse in "
         "commentary: no model turn is in progress while the call is pending, "
         "so an instruction to narrate ongoing work does not govern it. "
         "`max_block` is only for a host ceiling that cannot be raised. See "

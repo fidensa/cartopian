@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -206,17 +207,190 @@ class OutputSafetySupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="cartopian-retention-report-") as tmp:
             root = Path(tmp)
             report = root / "REPORT-01-001.md"
-            result = self._supervise_script(
-                root,
-                f"open({str(report)!r}, 'w', encoding='utf-8').write({REPORT_TEXT!r})\n"
-                "import os\n"
-                "while True:\n"
-                "    os.write(1, b'post-report output\\n')\n",
-                report_path=report,
-                limits=output_safety.OutputLimits(log_bytes=256, log_lines=4),
-            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    output_safety.REPORT_POLL_ENV: "0.05",
+                    output_safety.REPORT_GRACE_POLLS_ENV: "1",
+                },
+            ):
+                result = self._supervise_script(
+                    root,
+                    f"open({str(report)!r}, 'w', encoding='utf-8').write({REPORT_TEXT!r})\n"
+                    "import os\n"
+                    "while True:\n"
+                    "    os.write(1, b'post-report output\\n')\n",
+                    report_path=report,
+                    limits=output_safety.OutputLimits(log_bytes=256, log_lines=4),
+                )
             self.assertEqual(result.exit_code, 0)
             self.assertTrue(result.report_present)
+
+    def test_report_completion_publishes_retained_log_before_reap(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-retention-order-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            log_path = Path(str(report) + ".launch.log")
+            original_terminate = output_safety._terminate_process_tree
+            publication_seen = []
+
+            def assert_published_then_terminate(proc):
+                self.assertTrue(
+                    log_path.is_file(),
+                    "report-completion reap began before retained-log publication",
+                )
+                self.assertIn(b"before-report", log_path.read_bytes())
+                status = Path(str(report) + ".status").read_text(encoding="utf-8")
+                self.assertIn("guarantee_scope=retained-launch-log\n", status)
+                self.assertIn("retained_log_ready=true\n", status)
+                publication_seen.append(True)
+                return original_terminate(proc)
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    output_safety.REPORT_POLL_ENV: "0.05",
+                    output_safety.REPORT_GRACE_POLLS_ENV: "0",
+                },
+            ), mock.patch(
+                "cli.output_safety._terminate_process_tree",
+                side_effect=assert_published_then_terminate,
+            ):
+                result = self._supervise_script(
+                    root,
+                    "import os\n"
+                    f"report = {str(report)!r}\n"
+                    "os.write(1, b'before-report\\n')\n"
+                    f"open(report, 'w', encoding='utf-8').write({REPORT_TEXT!r})\n"
+                    "while True:\n"
+                    "    os.write(1, b'post-report output\\n')\n",
+                    report_path=report,
+                    limits=output_safety.OutputLimits(log_bytes=512, log_lines=8),
+                )
+
+            self.assertEqual(publication_seen, [True])
+            self.assertEqual(result.exit_code, 0)
+            self.assertTrue(result.report_present)
+
+    @unittest.skipUnless(
+        os.name == "posix",
+        "silent pipe-readiness regression is POSIX-specific",
+    )
+    def test_silent_post_report_progresses_publication_and_reap_without_output(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-retention-silent-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            terminated = root / "terminated"
+            child_source = (
+                "import signal\n"
+                "import time\n"
+                f"report = {str(report)!r}\n"
+                f"terminated = {str(terminated)!r}\n"
+                "def stop(_signum, _frame):\n"
+                "    open(terminated, 'w', encoding='utf-8').write('reaped')\n"
+                "    raise SystemExit(0)\n"
+                "signal.signal(signal.SIGTERM, stop)\n"
+                f"open(report, 'w', encoding='utf-8').write({REPORT_TEXT!r})\n"
+                "time.sleep(5)\n"
+            )
+
+            started = time.monotonic()
+            with mock.patch.dict(
+                os.environ,
+                {
+                    output_safety.REPORT_POLL_ENV: "0.05",
+                    output_safety.REPORT_GRACE_POLLS_ENV: "1",
+                },
+            ):
+                result = self._supervise_script(
+                    root,
+                    child_source,
+                    report_path=report,
+                    limits=output_safety.OutputLimits(log_bytes=512, log_lines=8),
+                )
+            elapsed = time.monotonic() - started
+
+            self.assertTrue(
+                terminated.is_file(),
+                "silent child reached its natural exit instead of being reaped "
+                "after report grace",
+            )
+            self.assertLess(
+                elapsed,
+                2.0,
+                "report polling and grace advanced only after stdout activity",
+            )
+            self.assertEqual(result.exit_code, 0)
+            status = Path(str(report) + ".status").read_text(encoding="utf-8")
+            self.assertIn("state=exited\n", status)
+            self.assertIn("retained_log_ready=true\n", status)
+
+    def test_automated_reader_waits_for_retained_publication_boundary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-retention-reader-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            status = Path(str(report) + ".status")
+            report.write_text(REPORT_TEXT, encoding="utf-8")
+            status.write_text(
+                "state=running\n"
+                "launch_id=synthetic\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
+
+            pending = handoff_observer.observe_once(
+                report,
+                expected_variant="task",
+            )
+            self.assertFalse(pending.terminal)
+            self.assertEqual(pending.report.publication_state, "complete")
+
+            status.write_text(
+                "state=running\n"
+                "launch_id=synthetic\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=true\n",
+                encoding="utf-8",
+            )
+            ready = handoff_observer.observe_once(
+                report,
+                expected_variant="task",
+            )
+            self.assertTrue(ready.terminal)
+            self.assertEqual(ready.classification, "accepted")
+
+    def test_exited_wrapper_fails_open_complete_report_with_pending_retention(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(prefix="cartopian-retention-fail-open-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            status = Path(str(report) + ".status")
+            report.write_text(REPORT_TEXT, encoding="utf-8")
+            status.write_text(
+                "state=exited\n"
+                "exit_code=0\n"
+                "reason=clean\n"
+                "launch_id=synthetic\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
+
+            observation = handoff_observer.observe_once(
+                report,
+                expected_variant="task",
+            )
+
+            self.assertTrue(observation.terminal)
+            self.assertEqual(observation.classification, "accepted")
+            self.assertEqual(observation.report.publication_state, "complete")
 
     def test_observer_does_not_read_launch_log_body(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cartopian-retention-observer-") as tmp:
@@ -247,6 +421,25 @@ class OutputSafetySupervisorTests(unittest.TestCase):
 
 
 class OutputSafetyAccountingTests(unittest.TestCase):
+    def test_report_observation_is_throttled_independently_of_output_chunks(
+        self,
+    ) -> None:
+        poller = output_safety._ReportCompletionPoller(
+            Path("REPORT-01-001.md"),
+            "task",
+            2.0,
+        )
+        with mock.patch(
+            "cli.output_safety._report_complete",
+            return_value=False,
+        ) as observe:
+            self.assertFalse(poller.complete(10.0))
+            self.assertFalse(poller.complete(10.1))
+            self.assertFalse(poller.complete(11.9))
+            self.assertFalse(poller.complete(12.0))
+
+        self.assertEqual(observe.call_count, 2)
+
     def test_newline_rule_is_lf_based_and_counts_one_trailing_fragment(self) -> None:
         cases = {
             b"": 0,
