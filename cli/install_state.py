@@ -12,6 +12,7 @@ from collections import OrderedDict
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cli.config_schema import identity_contract
+from cli.restart_state import RESTART_REASON_CODES, RESTART_STATUSES
 
 SCHEMA_IDENTITY = "cartopian-install-update-state-v1"
 RECORD_SCHEMA_VERSION = 1
@@ -428,6 +429,8 @@ def _ordered_vocabulary() -> "OrderedDict[str, List[str]]":
             ("operator_choice_states", list(OPERATOR_CHOICE_STATES)),
             ("offered_actions", list(OFFERED_ACTIONS)),
             ("restart_states", list(RESTART_STATES)),
+            ("restart_statuses", list(RESTART_STATUSES)),
+            ("restart_reason_codes", list(RESTART_REASON_CODES)),
             ("restart_instruction_classes", list(RESTART_INSTRUCTION_CLASSES)),
             ("migration_applicability", list(MIGRATION_APPLICABILITY)),
             ("migration_results", list(MIGRATION_RESULTS)),
@@ -1478,6 +1481,61 @@ def _validate_restarts(
         identities_match = (
             item.get("installed_identity") == item.get("running_identity")
         )
+        status = item.get("status")
+        reason_code = item.get("reason_code")
+        if status is not None and status not in RESTART_STATUSES:
+            diagnostics.append(
+                _diagnostic(
+                    "unknown-vocabulary",
+                    "error",
+                    f"{path}.status",
+                    f"unknown restart status: {status!r}",
+                    "use the closed restart status vocabulary",
+                )
+            )
+        if reason_code is not None and reason_code not in RESTART_REASON_CODES:
+            diagnostics.append(
+                _diagnostic(
+                    "unknown-vocabulary",
+                    "error",
+                    f"{path}.reason_code",
+                    f"unknown restart reason code: {reason_code!r}",
+                    "use the closed restart reason vocabulary",
+                )
+            )
+        if status in (
+            "restart_required",
+            "restart_instructed",
+            "verification_pending",
+            "unverified",
+        ):
+            instruction = item.get("instruction")
+            if not isinstance(instruction, Mapping) or not instruction.get(
+                "action"
+            ) or not instruction.get("expected_proof"):
+                diagnostics.append(
+                    _diagnostic(
+                        "restart-fact-missing",
+                        "error",
+                        path,
+                        "restart-needed state lacks one direct instruction and proof condition",
+                        "select the supported current client instruction",
+                    )
+                )
+        if item.get("activation_claim_allowed") is True and (
+            status != "current"
+            or item.get("proof_state") != "verified"
+            or not identities_match
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "restart-proof-missing",
+                    "error",
+                    path,
+                    "activation is claimed without verified fresh matching process proof",
+                    "withhold activation until a new matching process is observed",
+                )
+            )
         if item.get("state") in ("required", "pending") and item.get(
             "instruction_class"
         ) == "none":
@@ -1515,9 +1573,13 @@ def _validate_restarts(
                     "observe the new process identity after the client action",
                 )
             )
-        if not identities_match and item.get("state") in (
+        if (
+            not identities_match
+            and item.get("state") in (
             "not-required",
             "verified",
+            )
+            and reason_code != "mcp_surface_unaffected"
         ):
             diagnostics.append(
                 _diagnostic(

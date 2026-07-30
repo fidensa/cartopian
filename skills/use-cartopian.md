@@ -2,6 +2,13 @@
 
 Entry point for Cartopian PM mode. Activate when the operator says "use cartopian" or an equivalent phrase.
 
+The MCP-supplied install-context prelude reports installed MCP content,
+connected running-server content, restart status/reason, and any single
+current-client instruction separately. When it says restart is required or
+verification is pending, preserve that wording and do not claim the newly
+installed behavior is active. Only fresh-process matching-content proof may
+close the status; never restart or control the client on the operator's behalf.
+
 ---
 
 ## Your role
@@ -13,6 +20,13 @@ Execute the steps below in order.
 ## Step 0 — Quick update check (best-effort)
 
 The MCP prelude above this skill carries an **install context** block naming the install root and the installed version (e.g. `v1.2.6`, or the literal `main` for branch installs). Use those values — do not re-derive them by scanning the filesystem.
+
+Before the network check, honor the prelude's restart state. When it is
+`restart_required` or `verification_pending`, give the operator its one direct
+current-client action and expected proof condition, state that activation is
+not proven, and stop. When it is `blocked`, report the unsupported guidance
+boundary and stop. Do not restart or control the client. Continue with the
+release comparison only for `no_restart_needed` or `current`.
 
 If the installed version is a release tag (starts with `v`), issue a plain **unauthenticated** GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name`. Do not use `gh api` (it needs `gh auth login`) or the WebFetch tool (often blocked); a direct call works without credentials — `curl -s <url>` on Unix, `Invoke-RestMethod -Uri <url> -UseBasicParsing` on Windows PowerShell.
 

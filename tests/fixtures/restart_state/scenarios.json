@@ -1,0 +1,313 @@
+{
+  "installed-current-running-stale": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": "sha256:old",
+      "state": "stale-runtime",
+      "verification": "verified",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": [
+      {
+        "kind": "mcp-server-files",
+        "affected": true,
+        "verification": "verified"
+      }
+    ],
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "running_content_stale",
+    "activation_claim_allowed": false
+  },
+  "installed-current-running-unknown": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": null,
+      "state": "unknown",
+      "verification": "unknown",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": [
+      {
+        "kind": "mcp-server-files",
+        "affected": true,
+        "verification": "verified"
+      }
+    ],
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "running_content_unknown",
+    "activation_claim_allowed": false
+  },
+  "fresh-process-current": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4200,
+      "instance_id": "process:4200:new",
+      "loaded_identity": "sha256:current",
+      "state": "current",
+      "verification": "verified",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": [
+      {
+        "kind": "mcp-server-files",
+        "affected": true,
+        "verification": "verified"
+      }
+    ],
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "current",
+    "expected_reason": "fresh_process_current",
+    "activation_claim_allowed": true
+  },
+  "fresh-process-still-stale": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4200,
+      "instance_id": "process:4200:new",
+      "loaded_identity": "sha256:old",
+      "state": "stale-runtime",
+      "verification": "verified",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": [
+      {
+        "kind": "mcp-server-files",
+        "affected": true,
+        "verification": "verified"
+      }
+    ],
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "fresh_process_content_stale",
+    "activation_claim_allowed": false
+  },
+  "mcp-unrelated-change": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": null,
+      "state": "unknown",
+      "verification": "unknown",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": [
+      {
+        "kind": "core-files",
+        "affected": true,
+        "verification": "verified"
+      },
+      {
+        "kind": "mcp-server-files",
+        "affected": false,
+        "verification": "verified"
+      }
+    ],
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": null,
+    "expected_status": "no_restart_needed",
+    "expected_reason": "mcp_surface_unaffected",
+    "activation_claim_allowed": false
+  },
+  "installed-content-unverified": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "unverified",
+      "verification": "unverified",
+      "completeness": "complete",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": "sha256:current",
+      "state": "current",
+      "verification": "verified",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": {
+      "mcp_affecting_change": true,
+      "verification": "verified"
+    },
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "installed_content_unverified",
+    "activation_claim_allowed": false
+  },
+  "running-content-unverified": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "completeness": "complete",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": "sha256:current",
+      "state": "unknown",
+      "verification": "unverified",
+      "completeness": "complete",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": {
+      "mcp_affecting_change": true,
+      "verification": "verified"
+    },
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "running_content_unverified",
+    "activation_claim_allowed": false
+  },
+  "affected-surface-unknown": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "completeness": "complete",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old",
+      "loaded_identity": "sha256:current",
+      "state": "current",
+      "verification": "verified",
+      "completeness": "complete",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": {
+      "mcp_affecting_change": true,
+      "verification": "unverified"
+    },
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "restart_required",
+    "expected_reason": "affected_surface_unknown",
+    "activation_claim_allowed": false
+  },
+  "fresh-process-verification-pending": {
+    "installed": {
+      "identity": "sha256:current",
+      "state": "verified",
+      "verification": "verified",
+      "completeness": "complete",
+      "authority": "installed-or-materialized-content"
+    },
+    "running": {
+      "process_id": 4200,
+      "instance_id": "process:4200:new",
+      "loaded_identity": null,
+      "state": "unknown",
+      "verification": "unknown",
+      "authority": "connected-mcp-process"
+    },
+    "affected_surfaces": {
+      "mcp_affecting_change": true,
+      "verification": "verified"
+    },
+    "client": {
+      "id": "codex",
+      "state": "supported",
+      "source": "mcp-handshake"
+    },
+    "prior_process": {
+      "process_id": 4100,
+      "instance_id": "process:4100:old"
+    },
+    "expected_status": "verification_pending",
+    "expected_reason": "fresh_process_content_unknown",
+    "activation_claim_allowed": false
+  }
+}

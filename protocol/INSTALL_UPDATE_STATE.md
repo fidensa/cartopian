@@ -68,6 +68,19 @@ A repair offer is not authorization. A disk update is not running-process
 activation. A project migration offer is not migration completion. A terminal
 outcome is fully updated only when verified evidence supports every claim.
 
+Restart state is projected by `cli.restart_state` from four independent
+inputs: installed MCP identity, connected process and loaded-content identity,
+verified affected-surface evidence, and current client identity. Its
+`status`/`reason_code` pair is deterministic. A restart-needed record carries
+one direct instruction for the current supported client and one expected proof
+condition. It never authorizes client control.
+
+Fresh proof requires both a new process/instance identity relative to the
+persisted baseline and verified loaded MCP content matching the installed MCP
+identity. A new process serving old or unknown content remains restart
+required. A verified `mcp-server-files` unaffected fact is the only
+affected-surface boundary that can suppress restart without process proof.
+
 Client registration and client configuration are separately visible surfaces
 owned by one bounded configuration adapter. A disposition supplied for either
 surface governs both records; contradictory paired dispositions are refused.

@@ -20,6 +20,7 @@ SUBCOMMANDS: List[str] = [
     "generate-config",
     "install-workflow",
     "install-state-contract",
+    "verify-restart-state",
     "migrate-config",
     "move-task",
     "report-action",
@@ -168,6 +169,7 @@ def _real_handlers():
         unregister_project,
         update_config,
         validate_task_readiness as vtr,
+        verify_restart_state,
         wait_handoff,
         wait_report,
         write_backlog,
@@ -208,6 +210,10 @@ def _real_handlers():
         "install-state-contract": (
             install_state_contract.configure_parser,
             install_state_contract.handler,
+        ),
+        "verify-restart-state": (
+            verify_restart_state.configure_parser,
+            verify_restart_state.handler,
         ),
         "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
         "migrate-config": (migrate_config.configure_parser, migrate_config.handler),

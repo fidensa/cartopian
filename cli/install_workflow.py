@@ -31,6 +31,13 @@ from cli.install_state import (
     evaluate_record,
     stable_projection,
 )
+from cli.restart_state import (
+    client_context_from_environment,
+    evaluate_restart,
+    normalize_client_context,
+    restart_record,
+    running_server_from_environment,
+)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 STATE_FILE = "install-update-state.json"
@@ -677,6 +684,7 @@ def _version_records(
     migration_state: str,
     *,
     release_ref: Optional[str] = None,
+    running_fact: Optional[Mapping[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     authorities = identity_contract()
     release = release_ref or _release_version(source_root)
@@ -693,6 +701,21 @@ def _version_records(
         project_schema_value = None
     installed_exists = any((install_root / target).exists() for target in CORE_TARGETS)
     installed_identity = _surface_digest(install_root, CORE_TARGETS)
+    running = (
+        running_server_from_environment()
+        if running_fact is None
+        else copy.deepcopy(dict(running_fact))
+    )
+    running_loaded = running.get("loaded_content")
+    loaded = running_loaded if isinstance(running_loaded, Mapping) else {}
+    running_value = running.get("loaded_identity")
+    if running_value is None:
+        running_value = loaded.get("mcp_identity", loaded.get("identity"))
+    running_verification = running.get("verification")
+    if running_verification is None:
+        running_verification = loaded.get(
+            "mcp_verification", loaded.get("verification", "unknown")
+        )
     return [
         {
             "kind": "release_version",
@@ -707,6 +730,9 @@ def _version_records(
             "state": "verified" if installed_exists else "unknown",
             "authority": authorities["installed_content"]["authority"],
             "verification": "verified" if installed_exists else "unknown",
+            "mcp_identity": _surface_digest(
+                install_root, MCP_TARGETS
+            ) if installed_exists else None,
         },
         {
             "kind": "project_schema_version",
@@ -717,10 +743,13 @@ def _version_records(
         },
         {
             "kind": "running_server",
-            "value": None,
-            "state": "unknown",
+            "value": running_value,
+            "state": running.get("state", "unknown"),
             "authority": authorities["running_server"]["authority"],
-            "verification": "unknown",
+            "verification": running_verification or "unknown",
+            "process_id": running.get("process_id"),
+            "instance_id": running.get("instance_id"),
+            "loaded_content": copy.deepcopy(running_loaded),
         },
         {
             "kind": "mcp_protocol_version",
@@ -736,12 +765,20 @@ def _required_surface(
     kind: str, source_root: Path, install_root: Path, *, mode: str
 ) -> Dict[str, Any]:
     targets = _SURFACE_ROWS[kind]
-    desired_content = _surface_digest(
-        source_root, targets, source_root=source_root
-    )
-    observed_content = _observed_surface_digest(
-        source_root, install_root, targets, mode=mode
-    )
+    try:
+        desired_content = _surface_digest(
+            source_root, targets, source_root=source_root
+        )
+        observed_content = _observed_surface_digest(
+            source_root, install_root, targets, mode=mode
+        )
+        content_completeness = "complete"
+        verification = "verified"
+    except OSError:
+        desired_content = "unknown"
+        observed_content = "unknown"
+        content_completeness = "incomplete"
+        verification = "unverified"
     desired_materialization = _materialization_identity(
         install_root, targets, mode=mode, desired=True
     )
@@ -755,17 +792,85 @@ def _required_surface(
     materialization_mismatch = (
         desired_materialization != observed_materialization
     )
-    affected = desired != observed
+    affected = verification != "verified" or desired != observed
     return {
         "kind": kind,
         "locator": f"installed:{kind}",
         "desired_identity": desired,
         "observed_identity": observed,
+        "desired_content_identity": desired_content,
+        "observed_content_identity": observed_content,
         "state": "pending" if affected else "current",
         "affected": affected,
         "required": True,
         "materialization_mismatch": materialization_mismatch,
+        "verification": verification,
+        "completeness": content_completeness,
     }
+
+
+def _prior_restart(
+    install_root: Path, client_id: str
+) -> Optional[Dict[str, Any]]:
+    path = install_root / STATE_FILE
+    try:
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size > _MAX_PRIOR_STATE_BYTES
+        ):
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, Mapping):
+        return None
+    rows = raw.get("restarts")
+    if not isinstance(rows, list):
+        return None
+    candidates = [
+        dict(item)
+        for item in rows
+        if isinstance(item, Mapping)
+        and item.get("state") in ("required", "pending")
+        and (
+            item.get("client") == client_id
+            or client_id == "unsupported"
+            or len(rows) == 1
+        )
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _restart_projection_for_result(
+    *,
+    mcp_surface: Mapping[str, Any],
+    mcp_affecting_change: bool,
+    running_fact: Mapping[str, Any],
+    client_context: Mapping[str, Any],
+    prior_process: Optional[Mapping[str, Any]],
+) -> "OrderedDict[str, Any]":
+    verified_install = (
+        mcp_surface.get("state") in ("current", "verified")
+        and mcp_surface.get("verification") == "verified"
+    )
+    return evaluate_restart(
+        installed={
+            "identity": mcp_surface.get("observed_content_identity"),
+            "state": "verified" if verified_install else "unverified",
+            "verification": "verified" if verified_install else "unverified",
+            "completeness": mcp_surface.get("completeness", "unknown"),
+            "authority": identity_contract()["installed_content"]["authority"],
+        },
+        running=running_fact,
+        affected_surfaces={
+            "mcp_affecting_change": mcp_affecting_change,
+            "verification": mcp_surface.get("verification", "unknown"),
+            "source": "affected-surface-plan",
+        },
+        client=client_context,
+        prior_process=prior_process,
+    )
 
 
 def _choice(
@@ -926,6 +1031,9 @@ def plan_workflow(
     clients: Sequence[str] = (),
     decisions: Optional[Mapping[str, str]] = None,
     release_ref: Optional[str] = None,
+    running_server_fact: Optional[Mapping[str, Any]] = None,
+    client_context: Optional[Mapping[str, Any]] = None,
+    prior_process: Optional[Mapping[str, Any]] = None,
 ) -> "OrderedDict[str, Any]":
     """Inventory all supported surfaces and return a deterministic plan.
 
@@ -941,6 +1049,19 @@ def plan_workflow(
     selected = _validate_clients(clients)
     dispositions = _validate_decisions(decisions or {})
     home = (client_home or Path.home()).expanduser().resolve()
+    restart_observation_available = running_server_fact is not None
+    running_observation = (
+        copy.deepcopy(dict(running_server_fact))
+        if running_server_fact is not None
+        else {
+            "process_id": None,
+            "instance_id": None,
+            "loaded_identity": None,
+            "state": "unknown",
+            "verification": "unknown",
+            "authority": identity_contract()["running_server"]["authority"],
+        }
+    )
 
     # When no client was explicitly selected, detect only clients with an
     # existing closed registration or bridge location.
@@ -1017,6 +1138,38 @@ def plan_workflow(
             "required": False,
         }
     )
+    current_client = (
+        copy.deepcopy(dict(client_context))
+        if client_context is not None
+        else (
+            normalize_client_context(
+                selected[0], source="explicit-client-selection"
+            )
+            if len(selected) == 1
+            else normalize_client_context(None, source="unavailable")
+        )
+    )
+    prior_restart = _prior_restart(install, str(current_client.get("id")))
+    mcp_surface = next(
+        item for item in surfaces if item["kind"] == "mcp-server-files"
+    )
+    mcp_affecting_change = bool(
+        mcp_surface["affected"] or prior_restart is not None
+    )
+    if prior_process is not None:
+        restart_baseline = copy.deepcopy(dict(prior_process))
+    elif prior_restart is not None:
+        restart_baseline = {
+            "process_id": prior_restart.get("process_id"),
+            "instance_id": prior_restart.get("instance_id"),
+        }
+    elif mcp_surface["affected"] and restart_observation_available:
+        restart_baseline = {
+            "process_id": running_observation.get("process_id"),
+            "instance_id": running_observation.get("instance_id"),
+        }
+    else:
+        restart_baseline = None
 
     choices: List[Dict[str, str]] = []
     for surface in surfaces:
@@ -1056,6 +1209,16 @@ def plan_workflow(
             "choices": [
                 (item["surface"], item["state"]) for item in choices
             ],
+            "restart_context": {
+                "mcp_affecting_change": mcp_affecting_change,
+                "running_process_id": running_observation.get("process_id"),
+                "running_instance_id": running_observation.get("instance_id"),
+                "running_loaded_identity": running_observation.get(
+                    "loaded_identity"
+                ),
+                "client": current_client.get("id"),
+                "prior_process": restart_baseline,
+            },
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -1076,6 +1239,7 @@ def plan_workflow(
             source_identity,
             migration_state,
             release_ref=release_ref,
+            running_fact=running_observation,
         ),
         surfaces=surfaces,
         state="planned",
@@ -1088,6 +1252,11 @@ def plan_workflow(
             "clients": list(selected),
             "mode": mode,
             "release_ref": release_ref,
+            "running_server_fact": running_observation,
+            "restart_observation_available": restart_observation_available,
+            "client_context": current_client,
+            "mcp_affecting_change": mcp_affecting_change,
+            "prior_process": restart_baseline,
             "affected_surface_plan": _plan_actions(surfaces, choices),
             "registration_observations": registration_facts,
             "bridge_observations": bridge_facts,
@@ -1639,10 +1808,12 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     )
     state = "failed" if failed_kinds else ("repair-offered" if has_offer else "complete")
     updated = copy.deepcopy(dict(record))
-    updated["state"] = state
     updated["surfaces"] = verified_surfaces
     updated["checkpoints"] = checkpoints
     updated["migrations"] = migrations
+    running_fact = internal.get("running_server_fact")
+    if not isinstance(running_fact, Mapping):
+        running_fact = running_server_from_environment()
     updated["versions"] = _version_records(
         source_root,
         install_root,
@@ -1653,10 +1824,66 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
             if internal.get("release_ref")
             else None
         ),
+        running_fact=running_fact,
     )
+    restart_projection = None
+    restart_observation_available = bool(
+        internal.get("restart_observation_available")
+    )
+    prior_process = internal.get("prior_process")
+    if not isinstance(prior_process, Mapping):
+        prior_process = None
+    if restart_observation_available or prior_process is not None:
+        mcp_surface = next(
+            item
+            for item in verified_surfaces
+            if item["kind"] == "mcp-server-files"
+        )
+        current_client = internal.get("client_context")
+        if not isinstance(current_client, Mapping):
+            current_client = client_context_from_environment(clients)
+        restart_projection = _restart_projection_for_result(
+            mcp_surface=mcp_surface,
+            mcp_affecting_change=bool(
+                internal.get("mcp_affecting_change")
+            ),
+            running_fact=running_fact,
+            client_context=current_client,
+            prior_process=prior_process,
+        )
+        updated["restarts"] = [restart_record(restart_projection)]
+        running_version = next(
+            item
+            for item in updated["versions"]
+            if item["kind"] == "running_server"
+        )
+        if restart_projection["status"] == "current":
+            running_version["state"] = "current"
+        elif restart_projection["reason_code"] in (
+            "running_content_stale",
+            "fresh_process_content_stale",
+        ):
+            running_version["state"] = "stale-runtime"
+        else:
+            running_version["state"] = "unknown"
+        if not failed_kinds:
+            if restart_projection["status"] in (
+                "restart_required",
+                "restart_instructed",
+                "verification_pending",
+                "unverified",
+            ):
+                state = "restart-required"
+            elif restart_projection["status"] == "blocked":
+                state = "blocked"
+    else:
+        updated["restarts"] = []
+    updated["state"] = state
     updated_internal = dict(internal)
     updated_internal["registration_observations"] = registration_facts
     updated_internal["bridge_observations"] = bridge_facts
+    if restart_projection is not None:
+        updated_internal["restart_projection"] = restart_projection
     updated["internal"] = updated_internal
     return evaluate_record(updated)
 
@@ -1671,5 +1898,10 @@ def portable_verification_document() -> str:
         "registration evidence records only a closed path class and whether "
         "the fixed Cartopian MCP command matches; it never records credentials, "
         "caller-selected executables, or arbitrary destinations. A static "
-        "cross-platform check is parity evidence, not native execution proof.\n"
+        "cross-platform check is parity evidence, not native execution proof.\n\n"
+        "After an MCP-affecting update, installed and running identities remain "
+        "separate. Restart state closes only when a new process or instance "
+        "reports verified loaded MCP content matching the installed identity. "
+        "Old or unknown content on a new process remains restart-required, and "
+        "no activation claim is permitted before that proof.\n"
     )

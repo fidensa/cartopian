@@ -40,13 +40,23 @@ import os
 import re
 import subprocess
 import sys
+import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from cli import emit
-from cli.version_identities import version_identities
+from cli.restart_state import (
+    RUNNING_SERVER_ENV,
+    evaluate_restart,
+    normalize_client_context,
+)
+from cli.version_identities import (
+    installed_content,
+    running_server,
+    version_identities,
+)
 
 from .skill_metadata import (
     MetadataValidationError,
@@ -176,6 +186,12 @@ def _resolve_install_root() -> Path:
 
 
 ROOT = _resolve_install_root()
+_PROCESS_STARTED_NS = time.time_ns()
+_RUNNING_SERVER_FACT = running_server(
+    installed_content(ROOT),
+    process_id=os.getpid(),
+    instance_id=f"process:{os.getpid()}:started-ns:{_PROCESS_STARTED_NS}",
+)
 
 
 def _read_installed_version(root: Path) -> Optional[str]:
@@ -218,7 +234,182 @@ def _identity_records() -> Dict[str, Dict[str, Any]]:
         ROOT,
         mcp_protocol_version=PROTOCOL_VERSION,
         include_running_server=True,
+        running_server_fact=_RUNNING_SERVER_FACT,
     )
+
+
+def _persisted_restart_baseline(
+    root: Path, client_id: str
+) -> Optional[Dict[str, Any]]:
+    """Read only the portable pending restart fact from the last update."""
+    path = root / "install-update-state.json"
+    try:
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size > 2 * 1024 * 1024
+        ):
+            return None
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    restarts = record.get("restarts") if isinstance(record, dict) else None
+    if not isinstance(restarts, list):
+        return None
+    candidates = [
+        item
+        for item in restarts
+        if isinstance(item, dict)
+        and item.get("state") in ("required", "pending", "verified")
+        and (
+            item.get("client") == client_id
+            or client_id == "unsupported"
+            or len(restarts) == 1
+        )
+    ]
+    if len(candidates) != 1:
+        return None
+    item = candidates[0]
+    verified = item.get("state") == "verified"
+    return {
+        "process_id": (
+            item.get("previous_process_id")
+            if verified
+            else item.get("process_id")
+        ),
+        "instance_id": (
+            item.get("previous_instance_id")
+            if verified
+            else item.get("instance_id")
+        ),
+        "installed_identity": item.get("installed_identity"),
+        "installed_verification": item.get(
+            "installed_verification", "unknown"
+        ),
+        "installed_completeness": item.get(
+            "installed_completeness", "unknown"
+        ),
+    }
+
+
+def _restart_projection() -> Dict[str, Any]:
+    """Evaluate current disk/process divergence for this connected client."""
+    identities = _identity_records()
+    content = identities["installed_content"]
+    runtime = identities["running_server"]
+    client = normalize_client_context(
+        _client_info.get("name"),
+        title=_client_info.get("title"),
+    )
+    prior = _persisted_restart_baseline(ROOT, str(client["id"]))
+    running_loaded = runtime.get("loaded_content")
+    loaded = running_loaded if isinstance(running_loaded, dict) else {}
+    installed_identity = content.get("mcp_identity")
+    running_identity = loaded.get("mcp_identity")
+    installed_verification = content.get(
+        "mcp_verification", "unknown"
+    )
+    installed_state = content.get("mcp_state", "unknown")
+    if (
+        prior is not None
+        and prior.get("installed_identity") == installed_identity
+        and prior.get("installed_verification") == "verified"
+        and content.get("mcp_completeness") == "complete"
+    ):
+        installed_verification = "verified"
+        installed_state = "verified"
+    comparison_proven = (
+        installed_identity is not None and running_identity is not None
+    )
+    divergence = (
+        prior is not None
+        or installed_identity is None
+        or running_identity is None
+        or installed_identity != running_identity
+    )
+    return evaluate_restart(
+        installed={
+            "identity": installed_identity,
+            "state": installed_state,
+            "verification": installed_verification,
+            "completeness": content.get("mcp_completeness", "unknown"),
+            "authority": content.get("authority"),
+        },
+        running=runtime,
+        affected_surfaces={
+            "mcp_affecting_change": divergence,
+            "verification": (
+                "verified"
+                if prior is not None or comparison_proven
+                else "unknown"
+            ),
+            "source": (
+                "persisted-update-restart"
+                if prior is not None
+                else "installed-running-observation"
+            ),
+        },
+        client=client,
+        prior_process=prior,
+    )
+
+
+def _install_context_lines() -> List[str]:
+    identities = _identity_records()
+    release = identities["release_version"]
+    content = identities["installed_content"]
+    runtime = identities["running_server"]
+    loaded = (
+        runtime["loaded_content"]
+        if isinstance(runtime.get("loaded_content"), dict)
+        else {}
+    )
+    restart = _restart_projection()
+    lines = [
+        "**Cartopian install context** (authoritative — do not re-derive by "
+        "scanning the filesystem):",
+        f"- Install root: `{ROOT}`",
+        f"- Release version: `{release['value'] or 'unknown'}` "
+        f"({release['state']})",
+        f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
+        f"materialization `{content['materialization']}`, verification "
+        f"`{content['verification']}`",
+        f"- Installed MCP content: identity "
+        f"`{content.get('mcp_identity') or 'unknown'}`, verification "
+        f"`{content.get('mcp_verification', 'unknown')}`, completeness "
+        f"`{content.get('mcp_completeness', 'unknown')}`",
+        f"- Running server: process `{runtime['process_id']}`, instance "
+        f"`{runtime.get('instance_id') or 'unknown'}`, loaded MCP identity "
+        f"`{loaded.get('mcp_identity') or 'unknown'}`, verification "
+        f"`{loaded.get('mcp_verification', 'unknown')}`, completeness "
+        f"`{loaded.get('mcp_completeness', 'unknown')}`",
+        f"- Restart status: `{restart['status']}`; reason "
+        f"`{restart['reason_code']}`",
+    ]
+    instruction = restart.get("instruction")
+    if isinstance(instruction, dict):
+        lines.append(f"- Required action: {instruction['action']}")
+        lines.append(
+            f"- Expected post-restart proof: {instruction['expected_proof']}"
+        )
+    if restart["activation_claim_allowed"]:
+        lines.append(
+            "- Activation: `active`, proven by a fresh process with matching "
+            "verified loaded MCP content"
+        )
+    elif restart["status"] != "no_restart_needed":
+        lines.append(
+            "- Activation: `not claimed`; fresh-process loaded-content proof "
+            "is incomplete"
+        )
+    lines.extend(
+        (
+            f"- MCP protocol version: `{PROTOCOL_VERSION}`",
+            "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
+            "`cartopian://skills/check_for_updates`",
+        )
+    )
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -282,23 +473,9 @@ def _install_context_block() -> str:
     or which version is running, and cannot answer "where does cartopian
     live?" or run upgrade flows without scanning the filesystem.
     """
-    identities = _identity_records()
-    release = identities["release_version"]
-    content = identities["installed_content"]
-    runtime = identities["running_server"]
     return (
-        "**Cartopian install context** (authoritative — do not re-derive by "
-        "scanning the filesystem):\n"
-        f"- Install root: `{ROOT}`\n"
-        f"- Release version: `{release['value'] or 'unknown'}` "
-        f"({release['state']})\n"
-        f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
-        f"materialization `{content['materialization']}`, verification "
-        f"`{content['verification']}`\n"
-        f"- Running server: process `{runtime['process_id']}`, state "
-        f"`{runtime['state']}`\n"
-        f"- MCP protocol version: `{PROTOCOL_VERSION}`\n"
-        f"- Upgrade skill: `cartopian://skills/check_for_updates`\n\n"
+        "\n".join(_install_context_lines())
+        + "\n\n"
         "Use this whenever the operator asks about upgrading, updating, or "
         "where Cartopian is installed.\n\n---\n\n"
     )
@@ -314,10 +491,6 @@ def _server_instructions() -> str:
     appeared "missing" at session start. Surfacing it here makes it available at
     connect time, no prompt invocation required.
     """
-    identities = _identity_records()
-    release = identities["release_version"]
-    content = identities["installed_content"]
-    runtime = identities["running_server"]
     entry = next(
         record for record in _skill_records()
         if record["identity"] == "use_cartopian"
@@ -326,19 +499,8 @@ def _server_instructions() -> str:
     return (
         "Cartopian — a filesystem-first project-governance protocol, served over "
         "MCP.\n\n"
-        "**Cartopian install context** (authoritative — do not re-derive by "
-        "scanning the filesystem):\n"
-        f"- Install root: `{ROOT}`\n"
-        f"- Release version: `{release['value'] or 'unknown'}` "
-        f"({release['state']})\n"
-        f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
-        f"materialization `{content['materialization']}`, verification "
-        f"`{content['verification']}`\n"
-        f"- Running server: process `{runtime['process_id']}`, state "
-        f"`{runtime['state']}`\n"
-        f"- MCP protocol version: `{PROTOCOL_VERSION}`\n"
-        "- Upgrade skill (MCP prompt/resource): `check_for_updates` / "
-        "`cartopian://skills/check_for_updates`\n\n"
+        + "\n".join(_install_context_lines())
+        + "\n\n"
         f"{startup['outcome']}\n\n"
         f"{startup['mcp_host_action']} It is the authoritative startup "
         "runbook. Hosts that expose an MCP prompt picker may instead present "
@@ -647,6 +809,9 @@ def _export_client_identity() -> Dict[str, Optional[str]]:
         host_capability.CLIENT_ENV: _client_info.get("name"),
         host_capability.CLIENT_VERSION_ENV: _client_info.get("version"),
         host_capability.CLIENT_TITLE_ENV: _client_info.get("title"),
+        RUNNING_SERVER_ENV: json.dumps(
+            _RUNNING_SERVER_FACT, sort_keys=True, separators=(",", ":")
+        ),
     }
     prior: Dict[str, Optional[str]] = {}
     for key, value in values.items():
@@ -1163,6 +1328,7 @@ def handle_request(method: str, params: Dict[str, Any]) -> Any:
             "protocolVersion": PROTOCOL_VERSION,
             "serverInfo": _server_info(),
             "cartopianIdentities": _identity_records(),
+            "cartopianRestartState": _restart_projection(),
             "capabilities": _capabilities(),
             "instructions": _server_instructions(),
         }

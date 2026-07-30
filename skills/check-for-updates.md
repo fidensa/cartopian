@@ -28,6 +28,16 @@ persisted resume mechanics remain separate workflows.
 
 ## Steps
 
+### Step 0 — Honor pending restart state
+
+Read the authoritative install-context prelude before comparing release refs.
+If its restart status is `restart_required` or `verification_pending`, report
+the recorded reason, present its one current-client action and expected proof,
+and stop. The on-disk release may already be current while the connected
+process is stale; do not collapse those facts into "up to date." If status is
+`blocked`, report the unsupported/unknown client guidance boundary and stop.
+Continue only for `no_restart_needed` or `current`.
+
 ### Step 1 — Resolve the install root
 
 Cartopian supports a non-default install root (`scripts/install.py --prefix <path>`); a wrong root here would have this skill read one install and upgrade another. Establish the install root **before** touching anything else:
@@ -63,7 +73,7 @@ Parse the JSON response and extract `tag_name`.
   - If `installed_ref` is also `main`, report "no upstream releases yet; install tracks `main` and matches upstream" and stop. Do not offer an upgrade.
   - If `installed_ref` is `"unknown"`, proceed to Step 5 so the operator can re-run the installer to write a `VERSION` marker.
   - Otherwise (installed a tag, but no releases exist upstream — anomalous), report both refs and ask the operator whether to reinstall.
-- If `installed_ref` equals `latest_ref` and both are tag values, report "Cartopian is up to date (`<ref>`)" and stop.
+- If `installed_ref` equals `latest_ref` and both are tag values, report "The installed Cartopian release is up to date (`<ref>`)" and stop.
 - If `installed_ref` is `main` and `latest_ref` is a tag, report that the install is tracking `main` and a tagged release (`<latest_ref>`) is available, then continue.
 - Otherwise, report both refs side by side and continue.
 
@@ -120,6 +130,26 @@ After the upgrade, continue using the `$install_root` resolved in Step 1 (the in
 1. Read `$install_root/VERSION` and confirm it now matches the expected ref.
 2. Run `cartopian --help` and confirm it exits 0. The bare command resolves on Unix via the shebang on `bin/cartopian` and on native Windows via the shipped `bin/cartopian.cmd` shim, in both cases provided `$install_root/bin` is on PATH.
 3. Read `$install_root/CHANGELOG.md`. Enumerate the operator's projects with `cartopian discover-projects` — each NDJSON record carries an absolute `path` field. For each record, read the internal project protocol-schema marker from `<path>/cartopian.toml`; this marker is separate from the Cartopian application release version and does not live in `STATE.md`. If absent, treat it as unset. If newer schema entries apply, tell the operator which projects need an internal project migration without presenting the marker as another Cartopian release version. Do not run project migrations from this install-upgrade skill. Hand stale projects to the PM-owned `migrate project` flow, which the operator can approve per project; never tell the operator to hand-edit project config.
+4. Read the persisted workflow's single restart record for the current client.
+   First call the MCP `verify_restart_state` tool with the resolved
+   `install_root`. Pass `mcp_affecting_change = true` only when the installer's
+   authoritative affected-surface plan reported an install or materialization
+   change for `mcp-server-files`; when that row reported `verify`, omit the
+   flag. This observation/persistence call performs no restart. Do not shell
+   out to the command from an unrelated process: the MCP tool call is what
+   supplies the connected server's process-scoped loaded-content fact.
+   Preserve its installed MCP identity, connected process/loaded-content
+   identity, `status`, and `reason_code` exactly. If it reports
+   `restart_required` or `verification_pending`, present its one `instruction`
+   action and expected proof condition verbatim. Do not describe the update as
+   active, current, complete, or verified.
+5. Do not restart or control the client. After the operator performs the
+   instruction, proof must come from a newly connected Cartopian server:
+   its process or instance identity differs from the recorded baseline and its
+   verified loaded MCP content matches the installed MCP identity. A new
+   process serving old or unknown content remains restart-required. Only a
+   `current` restart status with `activation_claim_allowed = true` supports an
+   activation claim.
 
 ### Step 8 — Summarize
 
@@ -130,4 +160,12 @@ Print a brief summary:
 - New installed ref.
 - `cartopian --help` exit status.
 - Agent registration check: skipped, or — per agent — already registered / newly registered / not selected.
+- Restart status and reason code for the current client, with either no action
+  or exactly the one recorded direct action and its expected proof condition.
+- Installed MCP identity, running process/instance identity, and loaded MCP
+  identity as separate facts.
 - Any project migrations recommended per `CHANGELOG.md`.
+
+If restart remains required, call the result "installed on disk; activation
+not yet proven." Do not use "upgrade complete", "active", "current", or
+"verified" for the running MCP behavior.

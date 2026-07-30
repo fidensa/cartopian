@@ -9,4 +9,7 @@ description: Enter Cartopian PM mode. Use when the operator says "use cartopian"
 **Startup action:** Read `cartopian://skills/use_cartopian` with your host's MCP resource reader and follow it.
 
 Read every step before acting. The resource carries the authoritative install
-context, startup boundaries, and registry-first runbook.
+context, including truthful installed-versus-running restart state, startup
+boundaries, and registry-first runbook. Follow its one Codex restart
+instruction when present; do not claim activation until the resource reports
+fresh-process matching-content proof.

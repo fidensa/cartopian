@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict
 
 from cli.emit import emit_record
+from cli import host_capability
 from cli.install_state import stable_projection
 from cli.install_workflow import (
     WorkflowRefusal,
@@ -13,6 +14,10 @@ from cli.install_workflow import (
     plan_workflow,
 )
 from cli.main import EXIT_FAIL, EXIT_OK, stderr_error
+from cli.restart_state import (
+    client_context_from_environment,
+    running_server_from_environment,
+)
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -70,6 +75,15 @@ def _decisions(values: list[str]) -> Dict[str, str]:
 
 def handler(args: argparse.Namespace) -> int:
     try:
+        connected_apply = args.apply and host_capability.under_mcp_host()
+        running_fact = (
+            running_server_from_environment() if connected_apply else None
+        )
+        current_client = (
+            client_context_from_environment(tuple(args.client))
+            if connected_apply
+            else None
+        )
         plan = plan_workflow(
             source_root=args.source_root,
             install_root=args.install_root,
@@ -77,6 +91,8 @@ def handler(args: argparse.Namespace) -> int:
             mode=args.mode,
             clients=tuple(args.client),
             decisions=_decisions(args.decision),
+            running_server_fact=running_fact,
+            client_context=current_client,
         )
         result = apply_workflow(plan) if args.apply else plan
     except WorkflowRefusal as exc:

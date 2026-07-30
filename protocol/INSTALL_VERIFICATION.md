@@ -40,6 +40,28 @@ py -3 --version
 
 Pass when: output is `Python 3.11.x` or any later 3.x (e.g., `Python 3.12.5`, `Python 3.13.0`).
 
+## Restart-state proof after an MCP-affecting update
+
+The installed files and the connected MCP process are separate authorities.
+Read the workflow restart record or the MCP install-context block and confirm:
+
+1. `installed_identity` names the verified on-disk MCP content.
+2. `running_identity`, `process_id`, and `instance_id` name what the connected
+   process actually loaded.
+3. `status = restart_required` or `verification_pending` carries exactly one
+   current-client action plus its expected proof; it never supports an active,
+   current, complete, or verified running-behavior claim.
+4. After the operator performs that action, `fresh_proof.new_process` is true,
+   `fresh_proof.loaded_content_matches` is true, and
+   `fresh_proof.verification = verified`.
+5. Only then may `status = current` and
+   `activation_claim_allowed = true`.
+
+A new process with old or unknown loaded content fails this check. Do not kill
+processes, control a GUI, execute an arbitrary restart command, or fabricate
+the observation. Cross-platform instruction checks performed without the
+native client are static-only evidence and retain native-execution risk.
+
 **macOS-specific failure mode.** The stock `/usr/bin/python3` on macOS is 3.9.x. It is on `PATH` by default and silently fails the canonical CLI invocations and the `python3 -m unittest discover -s tests -t .` test runner (both require `tomllib` and the Python-3.11 guard at `bin/cartopian`). If `python3 --version` reports 3.9.x or 3.10.x:
 
 ```sh
