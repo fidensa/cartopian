@@ -44,7 +44,7 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from cli import emit
 from cli.restart_state import (
@@ -53,8 +53,15 @@ from cli.restart_state import (
     normalize_client_context,
 )
 from cli.version_identities import (
+    INSTALL_STATE_UNUSABLE,
+    RESTART_EVIDENCE_UNUSABLE,
+    connected_running_server,
+    content_bound_restart_candidate,
+    install_state_evidence,
     installed_content,
+    restart_evidence_withheld,
     running_server,
+    set_connected_running_server,
     version_identities,
 )
 
@@ -238,38 +245,60 @@ def _identity_records() -> Dict[str, Dict[str, Any]]:
     )
 
 
+def _install_record_evidence(root: Path) -> Dict[str, Any]:
+    """The one gate this server reads persisted install evidence through.
+
+    Restart facts are siblings of the installed-content row inside a single
+    record: they carry no authority of their own, so they may be read only from
+    a record whose schema identity, schema version, and installed-content row
+    this runtime can positively interpret.
+    """
+    return install_state_evidence(root)
+
+
+def _persisted_restart_candidate(
+    evidence: Mapping[str, Any],
+    client_id: str,
+    observed_mcp_identity: Optional[str],
+) -> Dict[str, Any]:
+    """Select the persisted restart row this MCP content may be projected from.
+
+    The shared content-binding rule decides: a record this runtime cannot
+    interpret as proven install evidence, or whose own MCP identity names other
+    content, supplies no row at all — the withholding happens before any
+    process, instance, or freshness fact is derived, not after the installed
+    verdict has already been strengthened.
+    """
+    return content_bound_restart_candidate(
+        evidence,
+        observed_mcp_identity=observed_mcp_identity,
+        client_id=client_id,
+        states=("required", "pending", "verified"),
+    )
+
+
 def _persisted_restart_baseline(
-    root: Path, client_id: str
+    evidence: Mapping[str, Any],
+    client_id: str,
+    *,
+    observed_mcp_identity: Optional[str] = None,
+    candidate: Optional[Mapping[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Read only the portable pending restart fact from the last update."""
-    path = root / "install-update-state.json"
-    try:
-        if (
-            not path.is_file()
-            or path.is_symlink()
-            or path.stat().st_size > 2 * 1024 * 1024
-        ):
-            return None
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return None
-    restarts = record.get("restarts") if isinstance(record, dict) else None
-    if not isinstance(restarts, list):
-        return None
-    candidates = [
-        item
-        for item in restarts
-        if isinstance(item, dict)
-        and item.get("state") in ("required", "pending", "verified")
-        and (
-            item.get("client") == client_id
-            or client_id == "unsupported"
-            or len(restarts) == 1
+    """Read only the portable pending restart fact from the last update.
+
+    A record this runtime cannot interpret as proven install evidence answers
+    nothing: its restart row can neither attest installed verification nor
+    supply the prior process identity a fresh-process proof is measured
+    against. Neither can a record whose MCP identity does not name the content
+    being projected.
+    """
+    if candidate is None:
+        candidate = _persisted_restart_candidate(
+            evidence, client_id, observed_mcp_identity
         )
-    ]
-    if len(candidates) != 1:
+    item = candidate.get("row")
+    if not isinstance(item, Mapping):
         return None
-    item = candidates[0]
     verified = item.get("state") == "verified"
     return {
         "process_id": (
@@ -301,20 +330,40 @@ def _restart_projection() -> Dict[str, Any]:
         _client_info.get("name"),
         title=_client_info.get("title"),
     )
-    prior = _persisted_restart_baseline(ROOT, str(client["id"]))
+    evidence = _install_record_evidence(ROOT)
+    record_unusable = evidence.get("status") == INSTALL_STATE_UNUSABLE
     running_loaded = runtime.get("loaded_content")
     loaded = running_loaded if isinstance(running_loaded, dict) else {}
     installed_identity = content.get("mcp_identity")
     running_identity = loaded.get("mcp_identity")
+    # The prior process is read only through the content-binding rule, so a
+    # record naming other MCP content exposes no process, instance, or
+    # freshness fact here.
+    candidate = _persisted_restart_candidate(
+        evidence, str(client["id"]), installed_identity
+    )
+    prior = _persisted_restart_baseline(
+        evidence, str(client["id"]), candidate=candidate
+    )
+    # The shared authority reports a refused record and an unbindable
+    # candidate as the same withheld class. This projection keeps its own
+    # record check too, so the classification can only add to what is already
+    # treated as divergence here, never subtract from it.
+    restart_evidence_withheld_here = restart_evidence_withheld(candidate)
     installed_verification = content.get(
         "mcp_verification", "unknown"
     )
     installed_state = content.get("mcp_state", "unknown")
+    recorded_mcp = evidence.get("mcp_identity")
     if (
         prior is not None
         and prior.get("installed_identity") == installed_identity
         and prior.get("installed_verification") == "verified"
         and content.get("mcp_completeness") == "complete"
+        # A positive record that names its own MCP subset identity must name
+        # the content this projection is about; otherwise it attests something
+        # else and cannot strengthen this verdict.
+        and (recorded_mcp is None or recorded_mcp == installed_identity)
     ):
         installed_verification = "verified"
         installed_state = "verified"
@@ -323,6 +372,12 @@ def _restart_projection() -> Dict[str, Any]:
     )
     divergence = (
         prior is not None
+        # A record exists that this runtime cannot interpret, or whose restart
+        # evidence this content cannot claim: the MCP surface may have been
+        # changed by whatever wrote it, so it is treated as affected rather
+        # than assumed unchanged.
+        or record_unusable
+        or restart_evidence_withheld_here
         or installed_identity is None
         or running_identity is None
         or installed_identity != running_identity
@@ -346,7 +401,24 @@ def _restart_projection() -> Dict[str, Any]:
             "source": (
                 "persisted-update-restart"
                 if prior is not None
-                else "installed-running-observation"
+                else (
+                    "unusable-install-record"
+                    if record_unusable
+                    else (
+                        # The refusal classes stay separately attributable:
+                        # a record this runtime declined to read, and a
+                        # candidate it declined to bind, are diagnosed as the
+                        # different observations they are.
+                        "unusable-restart-evidence"
+                        if candidate.get("status")
+                        == RESTART_EVIDENCE_UNUSABLE
+                        else (
+                            "unbound-restart-evidence"
+                            if restart_evidence_withheld_here
+                            else "installed-running-observation"
+                        )
+                    )
+                )
             ),
         },
         client=client,
@@ -1517,11 +1589,25 @@ def run(stdin=None, stdout=None) -> int:
     ``protocol/CONVENTIONS.md § Handoffs`` on why a blocking wait occupies the
     session rather than running beside it.
     """
-    global _wire_writer, _wire_framing
+    global _wire_writer
     reader = _byte_reader(stdin)
     writer = _byte_writer(stdout)
     _wire_writer = writer
+    # Tools dispatched below run in this process. Publishing the connected
+    # fact lets a CLI command invoked as a tool (e.g. `resolve_config`) report
+    # the process actually serving the call instead of projecting
+    # "not-connected-context" from inside the connected server.
+    prior_connected = connected_running_server()
+    set_connected_running_server(_RUNNING_SERVER_FACT)
+    try:
+        return _serve_messages(reader, writer)
+    finally:
+        set_connected_running_server(prior_connected)
 
+
+def _serve_messages(reader, writer) -> int:
+    """Read framed messages until EOF, answering each in its own framing."""
+    global _wire_framing
     while True:
         line = reader.readline()
         if not line:

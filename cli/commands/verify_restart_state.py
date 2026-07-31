@@ -5,7 +5,8 @@ import argparse
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from collections import OrderedDict
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from cli.emit import emit_record
 from cli.install_state import evaluate_record, stable_projection
@@ -17,7 +18,14 @@ from cli.restart_state import (
     restart_record,
     running_server_from_environment,
 )
-from cli.version_identities import installed_content, mcp_content_identity
+from cli.version_identities import (
+    INSTALL_STATE_PRESENT,
+    content_bound_restart_candidate,
+    install_record_evidence,
+    installed_content,
+    mcp_content_identity,
+    restart_evidence_withheld,
+)
 
 _MAX_STATE_BYTES = 2 * 1024 * 1024
 
@@ -57,24 +65,37 @@ def _read_state(path: Path) -> Dict[str, Any]:
     return raw
 
 
+def _record_authority(record: Any) -> Tuple[bool, Optional[str]]:
+    """Report whether persisted evidence in ``record`` may strengthen at all.
+
+    File and JSON shape say nothing about whether a record was written by a
+    supported adapter or ever proved the content it describes. Pending restart
+    rows and persisted surface proofs are siblings of the installed-content
+    row, so they are readable only through the same authority the installed
+    identity itself is read through.
+    """
+    evidence = install_record_evidence(record)
+    return (
+        evidence["status"] == INSTALL_STATE_PRESENT,
+        evidence["mcp_identity"],
+    )
+
+
 def _pending_restart(
-    record: Mapping[str, Any], client_id: str
-) -> Optional[Dict[str, Any]]:
-    rows = record.get("restarts")
-    if not isinstance(rows, list):
-        return None
-    candidates = [
-        dict(item)
-        for item in rows
-        if isinstance(item, Mapping)
-        and item.get("state") in ("required", "pending")
-        and (
-            item.get("client") == client_id
-            or client_id == "unsupported"
-            or len(rows) == 1
-        )
-    ]
-    return candidates[0] if len(candidates) == 1 else None
+    record: Any, client_id: str, observed_mcp_identity: Optional[str]
+) -> "OrderedDict[str, Any]":
+    """Select the pending restart row this observed content may be read with.
+
+    The row is withheld — not merely discounted later — unless the same
+    record's MCP identity names the content being verified, so no process,
+    instance, or freshness fact can be attributed from a record that attests
+    other content.
+    """
+    return content_bound_restart_candidate(
+        install_record_evidence(record),
+        observed_mcp_identity=observed_mcp_identity,
+        client_id=client_id,
+    )
 
 
 def _persisted_installed_proof(
@@ -150,8 +171,25 @@ def handler(args: argparse.Namespace) -> int:
 
     running = running_server_from_environment()
     client = client_context_from_environment()
-    pending = _pending_restart(raw, str(client["id"]))
-    affected = bool(args.mcp_affecting_change or pending is not None)
+    record_usable, recorded_mcp = _record_authority(raw)
+    installed_observation = mcp_content_identity(root)
+    observed_identity = installed_observation.get("identity")
+    restart_evidence = _pending_restart(
+        raw, str(client["id"]), observed_identity
+    )
+    pending = restart_evidence["row"]
+    # An uninterpretable record — or one whose restart evidence this content
+    # cannot claim — is not evidence that nothing changed: whatever wrote it
+    # may have touched the MCP surface, so the surface stays affected. The
+    # shared authority now reports both refusals as withheld evidence; this
+    # command keeps its own record check as well, so the classification can
+    # only ever add to what is already treated as affected here.
+    affected = bool(
+        args.mcp_affecting_change
+        or pending is not None
+        or not record_usable
+        or restart_evidence_withheld(restart_evidence)
+    )
     prior = (
         {
             "process_id": pending.get("process_id"),
@@ -167,23 +205,27 @@ def handler(args: argparse.Namespace) -> int:
             else None
         )
     )
-    installed_observation = mcp_content_identity(root)
     installed_provenance = installed_content(root)
     installed_verification = installed_provenance.get(
         "mcp_verification", "unknown"
     )
     installed_state = installed_provenance.get("mcp_state", "unknown")
     if (
-        (
-            pending is not None
-            and pending.get("installed_identity")
-            == installed_observation.get("identity")
-            and pending.get("installed_verification") == "verified"
+        record_usable
+        # A positive record that names its own MCP subset identity must name
+        # the observed content; otherwise it attests other content and cannot
+        # strengthen this verdict.
+        and (recorded_mcp is None or recorded_mcp == observed_identity)
+        and installed_observation.get("completeness") == "complete"
+        and (
+            (
+                pending is not None
+                and pending.get("installed_identity") == observed_identity
+                and pending.get("installed_verification") == "verified"
+            )
+            or _persisted_installed_proof(raw, observed_identity)
         )
-        or _persisted_installed_proof(
-            raw, installed_observation.get("identity")
-        )
-    ) and installed_observation.get("completeness") == "complete":
+    ):
         installed_verification = "verified"
         installed_state = "verified"
     installed = {

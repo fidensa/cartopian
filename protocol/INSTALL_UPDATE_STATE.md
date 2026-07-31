@@ -30,6 +30,77 @@ validated independently, so one cannot prove another. Every installed surface
 is also accounted for exactly once. Unknown or unsupported facts remain
 explicit; an adapter may not omit them to obtain a stronger outcome.
 
+The installed-content identity a run records covers the whole shipped surface
+set, alongside the narrower MCP subset identity the restart projection
+compares. A later runtime reading this record for verification therefore
+compares the same surfaces it reports as the installed revision, and drift
+outside the MCP subset cannot remain `verified`.
+
+A consumer reading a persisted record for verification reads it under the
+closed schema and fails closed. A record whose `schema_identity` or
+`record_schema_version` is missing, unsupported, or newer than the installed
+contract, that does not account for the installed-content identity exactly
+once, that attributes it to another identity's authority, or that records an
+identity outside the digest grammar, is evidence the consumer cannot
+interpret: it never strengthens verification, and no weaker evidence class is
+substituted for it. `record_schema_version` is the integer the contract
+declares, matched by type as well as by value: a boolean or a numerically
+equal float is not that version.
+
+Reading a record is also not the same as reading a *positive* record. A
+recorded identity strengthens a consumer's verdict only when the row carrying
+it says so in the contract's own vocabulary: a state that is neither outside
+the closed state vocabulary, nor one that contradicts the identity, nor one
+that leaves it unresolved; a `verification` of `verified`; and the identity
+value the row claims to have proven. A row that is unknown, unverified,
+dirty, symlink-divergent, malformed, or described in values the vocabulary
+does not contain attests only that content the run never proved is still
+unproved. Such a record is unusable on the same terms as an unreadable one —
+it fails closed, and no weaker evidence class is substituted for it.
+
+That authority is one gate, not one reader's habit. Every fact in the record
+is a sibling of the installed-content row and carries no authority of its own,
+so a consumer may read a persisted restart row, a persisted surface proof, or
+a prior process identity only from a record the same gate accepts. When the
+record is unusable, no such sibling fact — and no release receipt or weaker
+observation offered in its place — confers installed verification, MCP
+verification, `current` state, activation permission, a successful
+complete-qualified outcome, or a premature activation claim; the affected
+surface is treated as changed rather than assumed unchanged. A compatible,
+positive record still answers only for the content it names: one that records
+an MCP subset identity other than the observed one attests different content
+and cannot strengthen a verdict about this install. That binding is applied to
+a persisted restart candidate before any of it is read, not after a verdict has
+already been strengthened: the row is prior-process evidence only when the
+record's own MCP identity is present, well formed, and equal to the MCP content
+being projected. A missing, malformed, substituted, or otherwise inconsistent
+recorded MCP identity yields no prior process at all — no `previous_instance_id`,
+no verified fresh proof, no `current`/no-restart state, no activation
+permission, and no successful complete-qualified outcome — and, as with an
+unusable record, the affected surface is treated as changed rather than assumed
+unchanged. Every consumer of a persisted restart row applies that one rule, so
+no surface can reintroduce the split between record authority and content
+authority.
+
+Refusing to read persisted evidence is not the same observation as finding
+none, and the two must stay distinguishable to every consumer. A persisted
+restart candidate therefore carries one of four verdicts. It is *absent* when
+no record was written, or when a compatible record persisted no restart
+candidate for this caller: nothing was recorded for the caller to read, other
+evidence may still apply, and the surface may still be reported as unchanged.
+It is *unusable* when evidence was persisted and this runtime refuses to read
+it — the record fails the gate above, or its restart section cannot be resolved
+to a single candidate. It is *unbound* when a single candidate exists but the
+record's MCP identity does not name the content being projected. It is *bound*
+only when the candidate may be read as prior-process evidence about this
+content. Both refusal classes withhold the row entirely and make the MCP
+surface restart-relevant, because whatever wrote the record may have changed
+that surface; neither may be reported, planned, or persisted as absence. The
+MCP-scoped verdict
+stays its own fact throughout — drift elsewhere in the shipped surface set
+leaves it unproven rather than restating a wider verdict a restart could not
+repair.
+
 ## Internal diagnostic detail
 
 The top-level `internal` field is outside the stable projection. It may carry
@@ -77,8 +148,10 @@ condition. It never authorizes client control.
 
 Fresh proof requires both a new process/instance identity relative to the
 persisted baseline and verified loaded MCP content matching the installed MCP
-identity. A new process serving old or unknown content remains restart
-required. A verified `mcp-server-files` unaffected fact is the only
+identity. The baseline itself is admissible only when the record it comes from
+is bound to the MCP content being projected; otherwise the projection carries
+no prior process and no freshness claim. A new process serving old or unknown
+content remains restart required. A verified `mcp-server-files` unaffected fact is the only
 affected-surface boundary that can suppress restart without process proof.
 
 Client registration and client configuration are separately visible surfaces

@@ -57,6 +57,23 @@ Read the workflow restart record or the MCP install-context block and confirm:
 5. Only then may `status = current` and
    `activation_claim_allowed = true`.
 
+Persisted restart facts carry no authority of their own. A restart row, a
+persisted surface proof, and a prior process identity are read only from a
+record whose schema identity, schema version, and installed-content row the
+runtime can positively interpret (`protocol/INSTALL_UPDATE_STATE.md`). When the
+record is unusable, the MCP surface is treated as affected and steps 1-5 above
+must be satisfied by fresh observation: no persisted row, and no `VERSION`
+receipt offered in its place, supplies `verified`, `current`, activation, or a
+successful complete-qualified outcome.
+
+An unusable record and an unbindable restart candidate are refusals, not
+absence. Only a genuinely absent record — or a compatible record that persisted
+no restart candidate for this client — permits the benign no-restart-needed
+reading; a refused one keeps the MCP surface restart-relevant while exposing no
+prior process, so a run that reports `no_restart_needed`, `complete`, or a
+complete-qualified outcome after refusing the recorded MCP identity is
+reporting a fail-open claim.
+
 A new process with old or unknown loaded content fails this check. Do not kill
 processes, control a GUI, execute an arbitrary restart command, or fabricate
 the observation. Cross-platform instruction checks performed without the
@@ -301,6 +318,10 @@ Get-Content $env:USERPROFILE\.cartopian\VERSION
 ```
 
 Pass when: the file exists, is non-empty, and contains exactly one ref token (release tag or `main`) on a single line.
+
+This marker is also the release metadata a copy-mode install carries: the CLI (`cartopian --version`) and the MCP install-context block report a release-tag ref recorded here as the release version, alongside the separately derived installed-content identity. A branch ref such as `main`, or a marker that is empty, multi-line, or multi-token, leaves the release version `unknown` rather than being reported as a release.
+
+Receipt authority is limited to the two ref shapes the installer can have written — a release tag, or the literal `main` fallback. Any other single token (a commit id, a branch name, a hand-edited word) is malformed marker content: it leaves release identity `unknown` **and** carries no installation provenance, so it cannot make installed content `verified`.
 
 If `VERSION` is missing, the install predates the marker; re-run `install-cartopian` to refresh it. `check-for-updates` will otherwise treat the install as ref-unknown.
 

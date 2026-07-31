@@ -360,6 +360,15 @@ _HARD_IDENTITY_STATES = frozenset(
 _SOFT_IDENTITY_STATES = frozenset(
     ("unknown", "unverified", "older", "stale-runtime")
 )
+# Every peer identity may also carry these facts, whatever its own states are.
+_EXPLICIT_IDENTITY_STATES: Tuple[str, ...] = (
+    "unknown",
+    "missing",
+    "malformed",
+    "unsupported-newer",
+    "contradictory",
+)
+_VERIFIED = "verified"
 
 
 class ContractRefusal(ValueError):
@@ -398,20 +407,57 @@ def _diagnostic_sort_key(item: Mapping[str, Any]) -> Tuple[int, str, str, str]:
     )
 
 
+def supported_record_schema_version(value: Any) -> bool:
+    """Report whether ``value`` is *this* contract's record schema version.
+
+    Type identity is part of the answer. ``True`` and ``1.0`` compare equal to
+    ``1`` in Python, but neither is the integer the schema declares, so a
+    record carrying one was not written by a supported adapter and must not be
+    read as though it were.
+    """
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value == RECORD_SCHEMA_VERSION
+    )
+
+
+def identity_state_vocabulary(kind: str) -> Tuple[str, ...]:
+    """Return the closed state vocabulary for one peer identity kind."""
+    metadata = identity_contract().get(kind)
+    if metadata is None:
+        return ()
+    values = list(metadata.get("states", ()))
+    for explicit in _EXPLICIT_IDENTITY_STATES:
+        if explicit not in values:
+            values.append(explicit)
+    return tuple(values)
+
+
+def positive_identity_fact(kind: str, state: Any, verification: Any) -> bool:
+    """Report whether a recorded peer-identity fact positively holds.
+
+    Both values must come from the closed vocabularies for ``kind``, and
+    neither may leave the identity unresolved: a hard state contradicts the
+    claim, a soft state or any verification other than ``verified`` leaves it
+    unproven, and a boolean or other non-vocabulary value is not a fact this
+    contract can read at all. A consumer reading a persisted record for
+    verification may strengthen its verdict only from a fact this accepts.
+    """
+    if state not in identity_state_vocabulary(kind):
+        return False
+    if state in _HARD_IDENTITY_STATES or state in _SOFT_IDENTITY_STATES:
+        return False
+    if verification not in VERIFICATION_STATES:
+        return False
+    return verification == _VERIFIED
+
+
 def _ordered_vocabulary() -> "OrderedDict[str, List[str]]":
-    version_states = OrderedDict()
-    for kind, metadata in identity_contract().items():
-        values = list(metadata.get("states", ()))
-        for explicit in (
-            "unknown",
-            "missing",
-            "malformed",
-            "unsupported-newer",
-            "contradictory",
-        ):
-            if explicit not in values:
-                values.append(explicit)
-        version_states[kind] = values
+    version_states = OrderedDict(
+        (kind, list(identity_state_vocabulary(kind)))
+        for kind in identity_contract()
+    )
     return OrderedDict(
         (
             ("operation_kinds", list(OPERATION_KINDS)),
@@ -715,7 +761,7 @@ def _validate_schema(
                 "use the installed contract without coercing a newer schema",
             )
         )
-    if record.get("record_schema_version") != RECORD_SCHEMA_VERSION:
+    if not supported_record_schema_version(record.get("record_schema_version")):
         diagnostics.append(
             _diagnostic(
                 "invalid-schema",

@@ -74,7 +74,9 @@
       "phase_00_status": "not measured in Phase 00",
       "task_delta_bytes": 26,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 3467
+      "identity_evidence_delta_bytes": 103,
+      "identity_evidence_note": "Adds revision_attribution and verification_evidence to installed_content, and covers the longer content-digest revision a materialized install reports, so a copy-mode install states its installed revision and verification with the evidence class behind them instead of collapsing to unknown.",
+      "max_output_bytes": 3570
     },
     {
       "surface": "next-action",

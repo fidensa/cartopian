@@ -34,12 +34,12 @@ from typing import (
 
 from cli.config_schema import identity_contract
 from cli.install_state import (
-    RECORD_SCHEMA_VERSION,
     SCHEMA_IDENTITY,
     SURFACE_KINDS,
     build_record,
     evaluate_record,
     stable_projection,
+    supported_record_schema_version,
 )
 from cli.restart_state import (
     client_context_from_environment,
@@ -67,6 +67,11 @@ from cli.resume_state import (
     recovery_note as resume_recovery_note,
     release_lease,
 )
+from cli.version_identities import (
+    content_bound_restart_candidate,
+    install_state_evidence,
+    restart_evidence_withheld,
+)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 STATE_FILE = "install-update-state.json"
@@ -85,6 +90,15 @@ TOOL_SHIPPED: Tuple[Tuple[str, str], ...] = (
     ("install-cartopian.md", "install-cartopian.md"),
     ("scripts/install.py", "scripts/install.py"),
     ("CHANGELOG.md", "protocol/CHANGELOG.md"),
+)
+# The closed shipped surface set an install materializes, in the order both the
+# installer and the runtime digest it (``cli.version_identities``
+# ``INSTALLED_CONTENT_PATHS``; parity is asserted in
+# ``tests/test_install_version_projection.py``). The recorded identity must
+# cover the same surfaces the runtime reports as its installed revision, or a
+# change outside the narrower subset would stay "verified".
+INSTALLED_TARGETS: Tuple[str, ...] = tuple(
+    target for target, _source in TOOL_SHIPPED
 )
 COPY_ALWAYS = frozenset(("CHANGELOG.md",))
 OPERATOR_FILES = ("cartopian.toml", "projects.json")
@@ -851,6 +865,12 @@ def _version_records(
             "state": "verified" if installed_exists else "unknown",
             "authority": authorities["installed_content"]["authority"],
             "verification": "verified" if installed_exists else "unknown",
+            # The whole shipped surface set, so a later runtime can detect
+            # drift anywhere in the content it reports as installed, and the
+            # narrower MCP subset the restart projection compares.
+            "installed_identity": _surface_digest(
+                install_root, INSTALLED_TARGETS
+            ) if installed_exists else None,
             "mcp_identity": _surface_digest(
                 install_root, MCP_TARGETS
             ) if installed_exists else None,
@@ -932,35 +952,28 @@ def _required_surface(
 
 def _prior_restart(
     install_root: Path, client_id: str
-) -> Optional[Dict[str, Any]]:
-    path = install_root / STATE_FILE
-    try:
-        if (
-            not path.is_file()
-            or path.is_symlink()
-            or path.stat().st_size > _MAX_PRIOR_STATE_BYTES
-        ):
-            return None
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(raw, Mapping):
-        return None
-    rows = raw.get("restarts")
-    if not isinstance(rows, list):
-        return None
-    candidates = [
-        dict(item)
-        for item in rows
-        if isinstance(item, Mapping)
-        and item.get("state") in ("required", "pending")
-        and (
-            item.get("client") == client_id
-            or client_id == "unsupported"
-            or len(rows) == 1
-        )
-    ]
-    return candidates[0] if len(candidates) == 1 else None
+) -> "OrderedDict[str, Any]":
+    """Read the pending restart fact the last coordinated run left behind.
+
+    The restart row is a sibling of the installed-content row and carries no
+    authority of its own, so it is read through the same record-compatibility
+    and positive installed-content gate, and then through the same
+    content-binding rule every other consumer applies: a record this runtime
+    cannot interpret, or whose MCP identity does not name the MCP content
+    installed here, supplies no prior process identity for fresh-process proof.
+    The verdict is carried forward as well as the row, because a refused record
+    or candidate is not the same evidence class as an absent one: only absence
+    leaves the MCP surface free to be reported as unchanged.
+
+    The observed identity is digested exactly as ``_version_records`` writes the
+    recorded one, so the two sides of the comparison are the same authority.
+    """
+    evidence = install_state_evidence(install_root)
+    return content_bound_restart_candidate(
+        evidence,
+        observed_mcp_identity=_surface_digest(install_root, MCP_TARGETS),
+        client_id=client_id,
+    )
 
 
 def _restart_projection_for_result(
@@ -1068,7 +1081,7 @@ def _prior_declined_contexts(
     if (
         not isinstance(raw, Mapping)
         or raw.get("schema_identity") != SCHEMA_IDENTITY
-        or raw.get("record_schema_version") != RECORD_SCHEMA_VERSION
+        or not supported_record_schema_version(raw.get("record_schema_version"))
         or raw.get("state")
         not in ("complete", "repair-offered", "blocked", "failed")
     ):
@@ -1135,9 +1148,11 @@ def _progress_declined_contexts(
     projection = envelope.get("progress")
     if not isinstance(projection, Mapping):
         return {}
-    if projection.get("schema_identity") != SCHEMA_IDENTITY or projection.get(
-        "record_schema_version"
-    ) != RECORD_SCHEMA_VERSION:
+    if projection.get("schema_identity") != SCHEMA_IDENTITY or (
+        not supported_record_schema_version(
+            projection.get("record_schema_version")
+        )
+    ):
         return {}
     contexts: Dict[str, Mapping[str, Any]] = {}
     for item in projection.get("choices", []):
@@ -1535,12 +1550,22 @@ def plan_workflow(
             else normalize_client_context(None, source="unavailable")
         )
     )
-    prior_restart = _prior_restart(install, str(current_client.get("id")))
+    restart_evidence = _prior_restart(install, str(current_client.get("id")))
+    prior_restart = restart_evidence["row"]
+    # Persisted restart evidence this content cannot claim is not evidence that
+    # the MCP surface is unchanged: whatever wrote the row may have changed it,
+    # so the surface stays restart-relevant while the row itself is withheld.
+    # The shared authority decides which verdicts mean that — a record it
+    # refused and a candidate it could not bind are both withheld evidence,
+    # and only a genuinely absent record or candidate is benign here.
+    withheld_restart_evidence = restart_evidence_withheld(restart_evidence)
     mcp_surface = next(
         item for item in surfaces if item["kind"] == "mcp-server-files"
     )
     mcp_affecting_change = bool(
-        mcp_surface["affected"] or prior_restart is not None
+        mcp_surface["affected"]
+        or prior_restart is not None
+        or withheld_restart_evidence
     )
     if prior_process is not None:
         restart_baseline = copy.deepcopy(dict(prior_process))
@@ -1685,6 +1710,7 @@ def plan_workflow(
             "client_context": current_client,
             "mcp_affecting_change": mcp_affecting_change,
             "prior_process": restart_baseline,
+            "restart_evidence": restart_evidence["status"],
             "affected_surface_plan": plan_actions,
             "registration_observations": registration_facts,
             "bridge_observations": bridge_facts,
@@ -2795,7 +2821,18 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     prior_process = internal.get("prior_process")
     if not isinstance(prior_process, Mapping):
         prior_process = None
-    if restart_observation_available or prior_process is not None:
+    # Planning withheld a persisted restart row: either the record itself was
+    # refused, or its candidate could not be bound to this MCP content. The
+    # result must still report restart state rather than close as if no restart
+    # evidence had ever been persisted.
+    withheld_restart_evidence = restart_evidence_withheld(
+        internal.get("restart_evidence")
+    )
+    if (
+        restart_observation_available
+        or prior_process is not None
+        or withheld_restart_evidence
+    ):
         mcp_surface = next(
             item
             for item in verified_surfaces

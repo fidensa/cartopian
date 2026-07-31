@@ -37,6 +37,7 @@ from cli.install_state import (
     RECORD_SCHEMA_VERSION,
     SCHEMA_IDENTITY,
     SURFACE_KINDS,
+    supported_record_schema_version,
     validate_portable_evidence,
 )
 
@@ -701,7 +702,7 @@ def read_progress(install_root: Path) -> "OrderedDict[str, Any]":
     projection = raw.get("progress")
     if not isinstance(projection, Mapping):  # pragma: no cover - shape checked
         return result("corrupted", "state projection is missing")
-    if projection.get("record_schema_version") != RECORD_SCHEMA_VERSION:
+    if not supported_record_schema_version(projection.get("record_schema_version")):
         return result(
             "unsupported-newer",
             (

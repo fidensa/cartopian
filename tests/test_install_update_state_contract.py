@@ -27,8 +27,11 @@ from cli.install_state import (
     build_record,
     contract_projection,
     evaluate_record,
+    identity_state_vocabulary,
+    positive_identity_fact,
     resume_work,
     stable_projection,
+    supported_record_schema_version,
     transition,
     validate_portable_evidence,
 )
@@ -173,6 +176,85 @@ class ContractVocabularyTests(unittest.TestCase):
             surfaces=list(reversed(left["surfaces"])),
         )
         self.assertEqual(stable_projection(left), stable_projection(right))
+
+
+class SchemaVersionAndPositiveSemanticsTests(unittest.TestCase):
+    """The contract owns what a supported version and a positive fact are."""
+
+    def test_only_the_declared_integer_is_the_supported_record_version(self):
+        self.assertTrue(supported_record_schema_version(RECORD_SCHEMA_VERSION))
+        for value in (
+            1.0,
+            True,
+            False,
+            "1",
+            None,
+            RECORD_SCHEMA_VERSION + 1,
+            [RECORD_SCHEMA_VERSION],
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(supported_record_schema_version(value))
+
+    def test_evaluated_record_refuses_a_numerically_equal_float_version(self):
+        record = _base_record()
+        self.assertEqual(record["diagnostics"], [])
+        record["record_schema_version"] = 1.0
+        evaluated = evaluate_record(record)
+        self.assertIn(
+            "invalid-schema",
+            [item["code"] for item in evaluated["diagnostics"]],
+        )
+        self.assertEqual(evaluated["outcome"]["status"], "blocked")
+
+    def test_identity_state_vocabulary_matches_the_machine_projection(self):
+        projected = contract_projection()["vocabularies"]["version_states"]
+        for kind in PEER_IDENTITY_KINDS:
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    list(identity_state_vocabulary(kind)), projected[kind]
+                )
+        self.assertEqual(identity_state_vocabulary("not-an-identity"), ())
+
+    def test_only_a_verified_pair_is_a_positive_identity_fact(self):
+        for kind in PEER_IDENTITY_KINDS:
+            for state in identity_state_vocabulary(kind) + ("", True, None, 1):
+                for verification in contract_projection()["vocabularies"][
+                    "verification_states"
+                ] + ["", True, None, 1]:
+                    positive = positive_identity_fact(kind, state, verification)
+                    with self.subTest(
+                        kind=kind, state=state, verification=verification
+                    ):
+                        self.assertEqual(
+                            positive,
+                            state
+                            not in (
+                                "unknown",
+                                "unverified",
+                                "missing",
+                                "dirty",
+                                "older",
+                                "stale-runtime",
+                                "symlink-divergent",
+                                "malformed",
+                                "unsupported",
+                                "unsupported-newer",
+                                "contradictory",
+                                "",
+                                True,
+                                None,
+                                1,
+                            )
+                            and verification == "verified",
+                        )
+
+    def test_installed_content_has_exactly_one_positive_state(self):
+        positive = [
+            state
+            for state in identity_state_vocabulary("installed_content")
+            if positive_identity_fact("installed_content", state, "verified")
+        ]
+        self.assertEqual(positive, ["verified"])
 
 
 class AccountingAndIdentityTests(unittest.TestCase):
