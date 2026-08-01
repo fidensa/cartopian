@@ -246,32 +246,36 @@ The review prompt must include absolute paths to:
 - The task file.
 - The spec file, when present.
 - The deliverable, when the task declares one — the absolute `deliverable.absolute_path`, named as the **primary artifact to review** (the durable work product, not a summary of it). For a `project`-mode deliverable this is the copy the PM persisted in Stage 4.
-- The generated `## Captured coder completion evidence` section — the full,
-  content-hashed coder report snapshot the reviewer reads after the shared
-  report filename is cleared. Do not direct the reviewer to reopen that
-  transient report path.
+- The generated `## Preserved coder completion evidence` section — the
+  content-hashed binding that names the preserved completion report
+  (`reports/REPORT-NN-NNN.md`) by absolute path. The reviewer reads coder
+  evidence directly from that preserved artifact; the prompt never reproduces
+  the report body, and the completion report must stay byte-identical
+  throughout the review.
 - The expected review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`), carrying findings and the `Verdict:` header.
-- The expected report path the reviewer writes its review-completion report to (the `expected_report_path` from the handoff record — the same `reports/REPORT-NN-NNN.md` slot the coder report used, cleared below before the review handoff).
+- The expected report path the reviewer writes its review-completion report to (the `expected_report_path` from the handoff record — the independent `reports/REPORT-NN-NNN-review.md` slot, never the preserved completion report's path).
 - The report template path, directing the reviewer to the **review-completion variant** of `cartopian://templates/REPORT.md`.
 - Absolute path(s) for the declared work root(s), if any.
 - Relevant implementation evidence.
 - The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
 
 `write-prompt --review-kind task-closure` resolves the exact request trace,
-captures and verifies the still-present coder completion report, and replaces
-authored copies with generated context-bound sections. The resulting identity
-binds operator evidence, PM-derived artifacts, captured coder evidence, task,
-prompt, and review target. Do not summarize or edit those sections. Before
-clearing the slot, require `captured_completion_evidence` to be present. Before
-a manual handoff, require the `request_trace.preflight` record from
-`handoff-packet` to be present and `ok: true`; manual launch does not bypass
-the binding check automatic dispatch performs.
+verifies the preserved coder completion report, and replaces authored copies
+with generated context-bound sections. The resulting identity binds operator
+evidence, PM-derived artifacts, the preserved completion-report path and
+content identity, the expected review-report path, task, prompt, and review
+target. Do not summarize or edit those sections, and do not modify or remove
+the completion report while the task is in review — preflight re-verifies the
+preserved artifact and blocks on a missing or mutated one. Before a manual
+handoff, require the `request_trace.preflight` record from `handoff-packet`
+to be present and `ok: true`; manual launch does not bypass the binding check
+automatic dispatch performs.
 
 The reviewer produces **two** artifacts, exactly as the coder produces its work product plus a report. State both explicitly in the prompt:
 
 - The durable **review file** (`reviews/REVIEW-NN-NNN.md`) is the work product: findings, evidence, and the `Verdict:` header the `in-review → done | in-progress | open` move guard reads.
-- The transient **review-completion report** (`reports/REPORT-NN-NNN.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
-- The review-completion report's `## Identity` block must copy the absolute task-file path from the prompt into `Task path:`. `report-action` cross-checks it against the task implied by `REPORT-NN-NNN.md`; a missing, stale, or wrong task path is not valid completion evidence.
+- The transient **review-completion report** (`reports/REPORT-NN-NNN-review.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
+- The review-completion report's `## Identity` block must copy the absolute task-file path from the prompt into `Task path:`. `report-action` cross-checks it against the task implied by the report filename's `NN-NNN` identity; a missing, stale, or wrong task path is not valid completion evidence.
 - Both artifacts record `Request alignment:` and
   `Request evidence:` from the generated channel. Drift blocks
   approval. `unavailable-for-legacy` is non-blocking only when the generated
@@ -283,12 +287,15 @@ The review prompt must also include:
 - A reminder that reviewers do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When the reviewed task is **verification-only**, carry the assignment prompt's effective git operating model into the review prompt. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), state explicitly that an already-dirty work root containing prior completed tasks' deliverables is the expected steady state, not a review defect and not proof that the verification handoff changed files. The reviewer evaluates whether this handoff introduced changes using the coder report and task evidence; it must not issue `request-changes` merely because `git status` shows pre-existing modifications or untracked deliverables.
 
-After task completion evidence has been captured in the generated review
-context, remove the coder report and its wrapper status using the Core CLI
-before issuing the distinct review handoff that reuses the same report path:
+Never delete the coder completion report before or during the review handoff —
+it is the reviewer's direct evidence source and must survive review retries
+byte-identically. When a prior review attempt left a stale review report or
+its transient companions behind, clear only the **review** slot with the Core
+CLI before re-dispatching (automatic dispatch repeats this bounded clear
+itself):
 
 ```text
-cartopian delete-report <report-path>
+cartopian delete-report <expected-review-report-path>
 ```
 
 Use `skills/run-handoff.md` for review handoff mechanics.
@@ -349,6 +356,13 @@ Apply the reviewer's verdict without an operator confirmation prompt — the ver
 - `request-changes`: `cartopian move-task <task-path> in-progress`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: request-changes`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
 - `reject`: `cartopian move-task <task-path> open`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: reject`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
 
+After applying a `request-changes` or `reject` verdict, the consumed review
+round's report evidence is closed: once its findings are recorded in the
+review file, remove the review-completion report and its transient companions
+(`cartopian delete-report <review-report-path>`). The preserved completion
+report needs no manual cleanup for a rework round — the next coder dispatch
+clears and replaces that slot as a new attempt.
+
 On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round suffixes.
 
 Failed reviews do not create replacement tasks. Continue with the original task.
@@ -366,14 +380,14 @@ Failed reviews do not create replacement tasks. Continue with the original task.
    The same command renders the `decisions/INDEX.md` row from the `--title` / `--date` / `--status` / `--supersedes` arguments, so a separate raw edit of `INDEX.md` is not needed (and the contained PM cannot perform one).
 2. Ensure task, review, and report evidence agree.
 3. Remove superseded prompts with the Core CLI (`cartopian delete-prompt <prompt-path>`), never a raw `rm`.
-4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or backlog files. `STATE.md` is not an evidence home — its body is composed from the filesystem.
+4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or backlog files. Both task-scoped reports — the preserved completion report (`REPORT-NN-NNN.md`) and, under required review, the review-completion report (`REPORT-NN-NNN-review.md`) — are removed only after their evidence has been consumed and the task's closure is supported; each is cleared with its own `cartopian delete-report` call, which is idempotent over already-absent companions and over an already-absent optional review report (review-off closures and reruns of an interrupted cleanup succeed as no-ops). `STATE.md` is not an evidence home — its body is composed from the filesystem.
 6. Remove the transient wrapper status file for any report whose handoff is finished, even when the report `.md` is intentionally retained as evidence:
 
    ```text
    cartopian delete-report <report-path> --status-only
    ```
 
-   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. See `wrappers/README.md` and `cartopian://protocol/CONVENTIONS/handoffs`.
+   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. This applies to each task-scoped report slot separately (completion and review). See `wrappers/README.md` and `cartopian://protocol/CONVENTIONS/handoffs`.
 
 Do not treat reports as durable substitutes for task, review, or decision records.
 

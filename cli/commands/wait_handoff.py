@@ -1,8 +1,10 @@
 """`cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]`.
 
 Read-only observer that monitors one handoff. It resolves the expected report
-path from the task file (the same task-derived ``reports/REPORT-NN-NNN.md``
-logic used by ``handoff-packet``) and filesystem-polls two signals:
+path from the task file through the authoritative report-identity model (the
+same logic ``handoff-packet`` uses): ``reports/REPORT-NN-NNN.md`` for a task
+run, ``reports/REPORT-NN-NNN-review.md`` for an in-review task's review
+handoff. It filesystem-polls two signals:
 
 - the expected report file (the authoritative completion signal), classified
   with ``report-action`` verdict semantics; and
@@ -263,7 +265,12 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_ENV
 
     task_id = handoff_packet._extract_task_id(task_path) or task_path.stem
-    report_path = handoff_packet._expected_report_path(project_root, task_id)
+    # An in-review task's handoff is task review: observe the independent
+    # review-report slot. The preserved completion report cannot satisfy a
+    # review wait (and a review report cannot satisfy a completion wait).
+    report_path = handoff_packet._expected_handoff_report_path(
+        project_root, task_id, task_path
+    )
     status_path = Path(str(report_path) + ".status")
 
     # The configured timeout is the absolute ceiling. Without --max-block the

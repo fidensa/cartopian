@@ -40,7 +40,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from cli import handoff_observer, host_capability
+from cli import handoff_observer, host_capability, report_identity
 from cli.commands import handoff_packet
 from cli.commands.resolve_config import _CliError
 from cli.commands.wait_handoff import (
@@ -87,8 +87,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         choices=list(handoff_observer.VALID_VARIANTS),
         default=None,
         help=(
-            "Expected report variant. Planning report filenames imply "
-            "planning-review when omitted; other unmarked slots default to task"
+            "Expected report variant. When omitted, REPORT-NN-NNN-review.md "
+            "filenames imply review, planning report filenames imply "
+            "planning-review, and other unmarked slots default to task"
         ),
     )
     subparser.add_argument(
@@ -205,14 +206,13 @@ def handler(args: argparse.Namespace) -> int:
         Path(str(report_path) + ".status"),
         None,
     ).expected_variant
+    # Filename-implied default from the authoritative identity model:
+    # REPORT-NN-NNN-review.md → review, REPORT-PLAN-* → planning-review, and
+    # any other unmarked slot defaults to task — never to its own bytes.
     expected_variant = (
         explicit_variant
         or status_variant
-        or (
-            "planning-review"
-            if report_path.name.startswith("REPORT-PLAN-")
-            else "task"
-        )
+        or report_identity.variant_for_report_name(report_path.name)
     )
 
     while True:

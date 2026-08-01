@@ -50,7 +50,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import host_capability, output_safety, request_trace
+from cli import host_capability, output_safety, report_identity, request_trace
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
@@ -473,8 +473,16 @@ def handler(args: argparse.Namespace) -> int:
                 f"dispatching (run-handoff Stage 1)"
             )
             return EXIT_FAIL
-        expected_report_path = handoff_packet._expected_report_path(project_root, task_id)
+        # Task review publishes to the independent review-report slot
+        # (REPORT-NN-NNN-review.md). The task-completion report keeps its
+        # compatibility path and is *preserved* for direct reviewer access —
+        # the slot clear below therefore never touches coder evidence.
         expected_variant = "review" if activity == "task_review" else "task"
+        expected_report_path = (
+            handoff_packet._expected_review_report_path(project_root, task_id)
+            if activity == "task_review"
+            else handoff_packet._expected_report_path(project_root, task_id)
+        )
     else:
         # --- Fail-closed: --prompt names an allowlisted planning slot only ---
         # Task prompts (PROMPT-NN-NNN) must dispatch by task path, which
@@ -502,8 +510,8 @@ def handler(args: argparse.Namespace) -> int:
                 f"the launch command to the operator"
             )
             return EXIT_FAIL
-        expected_report_path = (
-            project_root / "reports" / f"REPORT-{prompt_id.removeprefix('PROMPT-')}.md"
+        expected_report_path = report_identity.planning_report_path(
+            project_root, prompt_id.removeprefix("PROMPT-")
         ).resolve()
         expected_variant = "planning-review"
 

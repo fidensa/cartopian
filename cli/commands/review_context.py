@@ -60,7 +60,7 @@ def handler(args: argparse.Namespace) -> int:
             prompt_text=prompt_text,
             # A projection over an open task is useful before implementation
             # has produced a report. Once the task is actually in review, the
-            # shared-slot lifecycle requires a durable coder snapshot.
+            # preserved completion report is required binding evidence.
             require_completion_evidence=task.parent.name == "in-review",
         ) if task else context_for_checkpoint(
             root, args.checkpoint, phase_id=args.phase, plan_ref=args.plan_ref,

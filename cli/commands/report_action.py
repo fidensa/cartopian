@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from cli import report_identity
 from cli.commands import parse_report
 from cli.commands.plan_audit import _resolve_pm_owns_product_branches
 from cli.commands.resolve_config import (
@@ -37,7 +38,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--variant",
         choices=list(parse_report.VARIANTS),
         default=None,
-        help="Explicit variant; overrides filename/content inference",
+        help=(
+            "Explicit variant; replaces content inference but must agree "
+            "with a grammar-matching report filename"
+        ),
     )
 
 
@@ -102,6 +106,20 @@ def _parse_report_state(
     explicit_variant: Optional[str],
 ) -> Tuple[str, str, Optional[str], Optional[str]]:
     if explicit_variant:
+        # An explicit variant cannot bypass the filename contract: a
+        # grammar-matching task-scoped or planning filename mandates its
+        # variant (report_identity.filename_contract_variant).
+        contract_variant = report_identity.filename_contract_variant(
+            report_path.name
+        )
+        if contract_variant is not None and explicit_variant != contract_variant:
+            raise _CliError(
+                EXIT_USAGE,
+                "usage",
+                f"path/variant mismatch: variant {explicit_variant} "
+                f"contradicts the filename contract for {report_path.name} "
+                f"(mandates {contract_variant})",
+            )
         variant = explicit_variant
     else:
         variant, err = parse_report._infer_variant(report_path, content)
@@ -136,6 +154,13 @@ def _report_suffix(report_path: Path, variant: str) -> Optional[str]:
         if stem.startswith(prefix):
             return stem[len(prefix):]
         return None
+    if variant == "review":
+        # The task-review report carries the task identity plus the -review
+        # marker (REPORT-NN-NNN-review.md). The filename contract is
+        # authoritative: an unmarked or out-of-grammar name never resolves
+        # review identities, so a misplaced review report fails closed.
+        match = report_identity.TASK_REVIEW_REPORT_RE.match(report_path.name)
+        return match.group(1) if match else None
     prefix = "REPORT-"
     if stem.startswith(prefix):
         return stem[len(prefix):]

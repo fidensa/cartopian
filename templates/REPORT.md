@@ -62,9 +62,9 @@ When evidence gate was `n/a`:
 
 ## Review completion variant
 
-Use this section instead of the above when reporting on a review handoff.
+Use this section instead of the above when reporting on a task-closure review handoff. Task-review completion has its own report identity — write it to the exact `REPORT-NN-NNN-review.md` path you were given, never to the preserved task-completion report's `REPORT-NN-NNN.md` path. Read the coder's completion evidence directly from the preserved completion-report path named in your prompt; do not modify that file.
 
-# REPORT-NN-NNN
+# REPORT-NN-NNN-review
 
 Status: <complete | blocked | failed>
 Request alignment: <aligned | drifted | unavailable-for-legacy>
@@ -79,7 +79,7 @@ Request evidence: <ordered evidence identities | none>
 
 ## Evidence reviewed
 
-<What was inspected: code, specs, test results, etc.>
+<What was inspected: the preserved completion report, code, specs, test results, etc.>
 
 Include the bound verbatim request context and separate PM-derived guidance.
 The alignment/evidence header fields must match the durable review file.

@@ -11,6 +11,7 @@ class TestIdentifierRegex(unittest.TestCase):
             "TASK-01-002", "SPEC-12-300", "PHASE-01-build-x",
             "PROMPT-01-002", "PROMPT-PLAN-003", "PROMPT-PLAN-003-slug",
             "REVIEW-01-002", "REVIEW-PLAN-003", "REPORT-01-002",
+            "REPORT-01-002-review",
             "DEC-001", "BL-007", "RM-002", "FR-003", "NF-010",
             "P01-BUILD-003",
         ):

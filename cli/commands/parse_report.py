@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from cli import request_trace
+from cli import report_identity, request_trace
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
@@ -76,7 +76,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--variant",
         choices=list(VARIANTS),
         default=None,
-        help="Explicit variant; overrides filename/content inference",
+        help=(
+            "Explicit variant; replaces content inference but must agree "
+            "with a grammar-matching report filename"
+        ),
     )
 
 
@@ -88,18 +91,26 @@ _READY_TO_CLOSE_SECTION_RE = re.compile(r"^##\s+Ready to close\s*$", re.MULTILIN
 def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Optional[str]]:
     """Return (variant, error_message). variant is None on conflict or unresolvable.
 
-    Task and task-review completion reports share the ``REPORT-NN-NNN.md`` name
-    (CONVENTIONS § Reports), so the filename alone cannot decide between them.
-    Resolve ``task`` vs ``review`` from report *content*: a review report carries
-    a ``Review ID:`` and a ``## Verdict`` section; a task report carries a
-    ``## Ready to close`` section (or its legacy alias). The assignee handoff is
-    deidentified, so a task report carries no ``Task ID:`` — its readiness section
-    is the distinguishing signal. A review report may legitimately cite a reviewed
-    ``Task ID:``, so that string never marks a report as a task report. Only a
-    report shaped as *both* (a verdict *and* a readiness section) is
-    genuinely ambiguous.
+    Task-scoped report filenames are authoritative (CONVENTIONS § Reports):
+    ``REPORT-NN-NNN.md`` carries only task completion and
+    ``REPORT-NN-NNN-review.md`` only task-review completion. Content of the
+    other shape at either path is a path/variant mismatch — neither artifact
+    can satisfy the other's completion signal, and no explicit override
+    bypasses the filename contract. A review report carries a ``Review ID:``
+    and a ``## Verdict`` section; a task report carries a ``## Ready to
+    close`` section (or its legacy alias). The assignee handoff is
+    deidentified, so a task report carries no ``Task ID:`` — its readiness
+    section is the distinguishing signal, and a review report may legitimately
+    cite a reviewed ``Task ID:``. Content inference survives only for names
+    outside the task-scoped grammar.
     """
     filename_is_plan = report_path.name.startswith("REPORT-PLAN-")
+    filename_is_review = bool(
+        report_identity.TASK_REVIEW_REPORT_RE.match(report_path.name)
+    )
+    filename_is_completion = bool(
+        report_identity.TASK_COMPLETION_REPORT_RE.match(report_path.name)
+    )
     has_review_id = "Review ID:" in content
     has_task_id = "Task ID:" in content
     review_shaped = has_review_id and bool(_VERDICT_SECTION_RE.search(content))
@@ -116,6 +127,32 @@ def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Opti
         if has_task_id and not has_review_id:
             return None, _ambiguous
         return "planning-review", None
+
+    if filename_is_review:
+        # The review filename is authoritative for its slot; task-completion
+        # content there cannot satisfy the review signal. A report shaped as
+        # *both* (a verdict *and* a readiness section) stays genuinely
+        # ambiguous rather than silently adopting the slot's variant.
+        if review_shaped and task_shaped:
+            return None, _ambiguous
+        if task_shaped:
+            return None, (
+                "path/variant mismatch: task-completion content occupies the "
+                "task-review report path (REPORT-NN-NNN-review.md)"
+            )
+        return "review", None
+
+    if filename_is_completion:
+        # Symmetric direction: the unmarked filename is the completion slot;
+        # review-shaped bytes there cannot satisfy the completion signal.
+        if review_shaped and task_shaped:
+            return None, _ambiguous
+        if review_shaped:
+            return None, (
+                "path/variant mismatch: task-review content occupies the "
+                "task-completion report path (REPORT-NN-NNN.md)"
+            )
+        return "task", None
 
     if review_shaped and task_shaped:
         return None, _ambiguous
@@ -321,6 +358,19 @@ def handler(args: argparse.Namespace) -> int:
         content = ""
 
     if args.variant:
+        # An explicit variant cannot bypass the filename contract: a
+        # grammar-matching task-scoped or planning filename mandates its
+        # variant (report_identity.filename_contract_variant).
+        contract_variant = report_identity.filename_contract_variant(
+            report_path.name
+        )
+        if contract_variant is not None and args.variant != contract_variant:
+            stderr_usage(
+                f"path/variant mismatch: --variant {args.variant} contradicts "
+                f"the filename contract for {report_path.name} "
+                f"(mandates {contract_variant})"
+            )
+            return EXIT_USAGE
         variant = args.variant
     else:
         variant, err = _infer_variant(report_path, content)

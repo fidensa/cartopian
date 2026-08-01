@@ -2,7 +2,8 @@
 
 Deletes a report file that lives under a registered project's ``reports/``
 directory and emits one NDJSON confirmation record. Filename must match the
-Cartopian report grammar: ``REPORT-NN-NNN.md`` or
+Cartopian report grammar: ``REPORT-NN-NNN.md`` (task completion),
+``REPORT-NN-NNN-review.md`` (task-review completion), or
 ``REPORT-PLAN-NNN[-kebab-slug].md`` (planning-checkpoint reports carry an
 operator-authored slug per CONVENTIONS.md).
 
@@ -31,14 +32,19 @@ Two cleanup moments share this command:
   retained as evidence while the transient companions are removed, so a
   lingering report never keeps them alive.
 
-Absence of either companion file is always a successful no-op.
+Absence of either companion file is always a successful no-op. Absence of the
+report ``.md`` itself is a failure for completion and planning reports, but a
+successful idempotent no-op for the optional task-review artifact
+(``REPORT-NN-NNN-review.md``): review-off closures, crash-only review
+attempts, and reruns of an interrupted two-artifact cleanup are all normal
+states in which the review ``.md`` is legitimately missing.
 """
 import argparse
 import os
-import re
 import sys
 from pathlib import Path
 
+from cli import report_identity
 from cli.commands._registry import (
     MalformedRegistry,
     read_registry,
@@ -47,9 +53,10 @@ from cli.commands._registry import (
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
-REPORT_FILENAME_RE = re.compile(
-    r"^REPORT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)\.md$"
-)
+# The authoritative report grammar (cli/report_identity.py): task completion,
+# task-review completion (REPORT-NN-NNN-review.md), and planning-checkpoint
+# reports. Anything else fails closed as a path mismatch.
+REPORT_FILENAME_RE = report_identity.REPORT_FILENAME_RE
 
 
 def _stderr(prefix: str, msg: str) -> None:
@@ -119,8 +126,9 @@ def handler(args: argparse.Namespace) -> int:
     if not REPORT_FILENAME_RE.match(report_path.name):
         _stderr(
             "guard",
-            f"report filename does not match REPORT-NN-NNN.md or "
-            f"REPORT-PLAN-NNN[-slug].md grammar: {report_path.name}",
+            f"report filename does not match REPORT-NN-NNN.md, "
+            f"REPORT-NN-NNN-review.md, or REPORT-PLAN-NNN[-slug].md grammar: "
+            f"{report_path.name}",
         )
         return EXIT_FAIL
 
@@ -196,11 +204,29 @@ def handler(args: argparse.Namespace) -> int:
     # never carries a stale status file or a prior run's launch log into the
     # next handoff. This runs before the report-exists guard below: a
     # crash-only handoff (died before reporting) leaves only the companions,
-    # and they must be cleared even though the delete itself then fails.
-    _remove_transient_companion(status_path)
-    _remove_transient_companion(launch_log_path)
+    # and they must be cleared even when no report .md follows.
+    status_deleted = _remove_transient_companion(status_path)
+    launch_log_deleted = _remove_transient_companion(launch_log_path)
 
     if not report_path.is_file():
+        if report_identity.TASK_REVIEW_REPORT_RE.match(report_path.name):
+            # The task-review artifact is optional: review-off closures,
+            # crash-only review attempts, and reruns of an interrupted
+            # two-artifact cleanup all reach this point with no review .md on
+            # disk. Once the owned transient companions above are cleared,
+            # that absence is a successful idempotent no-op, not a failure.
+            emit_record(
+                {
+                    "action": "delete-report",
+                    "details": {
+                        "deleted_path": None,
+                        "already_absent": True,
+                        "status_deleted": status_deleted,
+                        "launch_log_deleted": launch_log_deleted,
+                    },
+                }
+            )
+            return EXIT_OK
         _stderr("guard", f"report file not found: {report_path}")
         return EXIT_FAIL
 

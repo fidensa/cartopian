@@ -186,9 +186,18 @@ def test_task_wait_treats_partial_report_as_nonterminal_while_writer_runs(
 
 
 def test_task_review_wait_rejects_reintroduced_coder_report(capsys):
+    """Coder-shaped bytes in the review-report slot cannot satisfy review.
+
+    A task-review wait observes the independent review slot
+    (``REPORT-NN-NNN-review.md``); task-completion content occupying it is a
+    path/variant mismatch, never reviewer completion evidence.
+    """
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path = _task(scaffold, "in-review")
-        report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        report_path = scaffold.write(
+            "reports/REPORT-01-003-review.md",
+            TASK_REPORT.replace("# REPORT-01-003", "# REPORT-01-003-review"),
+        )
         Path(str(report_path) + ".status").write_text(
             "state=exited\n"
             "exit_code=0\n"
@@ -426,7 +435,15 @@ def test_no_progress_wait_refuses_role_beyond_claude_idle(
     assert "idle ceiling" in captured.err
 
 
-def test_review_context_retains_coder_evidence_after_report_slot_is_cleared():
+def test_review_context_binds_preserved_coder_evidence_by_path():
+    """Review binding references the preserved completion report on disk.
+
+    The completion report stays in place throughout task review; rebinding
+    verifies the live artifact against the bound content identity instead of
+    reconstructing evidence from prompt-embedded bytes. Removing the artifact
+    blocks the binding (the split-report contract never tolerates evidence
+    loss).
+    """
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path = _task(scaffold, "in-review")
         scaffold.capture_request(
@@ -445,7 +462,6 @@ def test_review_context_retains_coder_evidence_after_report_slot_is_cleared():
             "# Review task completion\n",
             initial.section,
         )
-        report_path.unlink()
 
         rebound = request_trace.context_for_task(
             scaffold.project_root,
@@ -454,11 +470,23 @@ def test_review_context_retains_coder_evidence_after_report_slot_is_cleared():
         )
         preflight = request_trace.preflight_prompt_binding(rebound, prompt_text)
 
-    assert preflight["ok"] is True
-    assert rebound.context_identity == initial.context_identity
-    assert rebound.as_record()["captured_completion_evidence"]["source_path"] == (
-        "reports/REPORT-01-003.md"
-    )
+        captured = rebound.as_record()["captured_completion_evidence"]
+        assert preflight["ok"] is True
+        assert rebound.context_identity == initial.context_identity
+        assert captured["source_path"] == "reports/REPORT-01-003.md"
+        assert captured["review_path"] == "reports/REPORT-01-003-review.md"
+        assert captured["completion_report_path"] == str(report_path.resolve())
+
+        report_path.unlink()
+        with pytest.raises(
+            request_trace.RequestRefusal,
+            match="missing-coder-completion-evidence",
+        ):
+            request_trace.context_for_task(
+                scaffold.project_root,
+                task_path,
+                prompt_text=prompt_text,
+            )
 
 
 @pytest.mark.parametrize(
@@ -494,7 +522,16 @@ def test_review_context_rejects_nonaccepted_or_non_task_coder_evidence(report_te
             )
 
 
-def test_reviewer_dispatch_captures_then_clears_shared_slot_before_launch():
+def test_reviewer_dispatch_preserves_completion_and_clears_review_slot():
+    """Review launch targets the independent review slot only.
+
+    The coder's completion report is preserved byte-identically for direct
+    reviewer access; slot clearing before the launch touches nothing but the
+    review-report slot and its transient companions (including the coder
+    handoff's leftover status marker cleanup being unnecessary — it lives on
+    the completion path, which dispatch no longer clears; the review slot's
+    own stale state is what resets).
+    """
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path = _task(scaffold, "in-review")
         scaffold.capture_request(
@@ -503,6 +540,8 @@ def test_reviewer_dispatch_captures_then_clears_shared_slot_before_launch():
             text="Implement the handoff completion contract.",
         )
         report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        completion_before = report_path.read_bytes()
+        review_report_path = scaffold.reports / "REPORT-01-003-review.md"
         context = request_trace.context_for_task(
             scaffold.project_root,
             task_path,
@@ -515,9 +554,10 @@ def test_reviewer_dispatch_captures_then_clears_shared_slot_before_launch():
                 context.section,
             ),
         )
-        Path(str(report_path) + ".status").write_text(
-            "state=exited\nexit_code=0\nlaunch_id=coder-launch\n"
-            "expected_variant=task\n",
+        review_report_path.write_text("# stale review attempt\n", encoding="utf-8")
+        Path(str(review_report_path) + ".status").write_text(
+            "state=exited\nexit_code=1\nlaunch_id=stale-review-launch\n"
+            "expected_variant=review\n",
             encoding="utf-8",
         )
         launched = {}
@@ -550,15 +590,21 @@ def test_reviewer_dispatch_captures_then_clears_shared_slot_before_launch():
 
         record = json.loads(out.getvalue())
         status_fields = wait_handoff._read_status_fields(
-            Path(str(report_path) + ".status")
+            Path(str(review_report_path) + ".status")
         )
+        completion_after = report_path.read_bytes()
+        stale_review_cleared = not review_report_path.exists()
 
     assert rc == EXIT_OK, err.getvalue()
-    assert not report_path.exists()
+    # Coder completion evidence is preserved byte-identically…
+    assert completion_after == completion_before
+    # …while only stale review-attempt state is cleared for the new launch.
+    assert stale_review_cleared
     assert record["slot_clear"] == {
         "report_deleted": True,
         "status_deleted": True,
     }
+    assert record["expected_report_path"] == str(review_report_path.resolve())
     assert record["expected_report_variant"] == "review"
     assert status_fields["state"] == "running"
     assert status_fields["expected_variant"] == "review"

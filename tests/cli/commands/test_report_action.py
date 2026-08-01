@@ -346,9 +346,9 @@ class TestReportActionReviewVariants(unittest.TestCase):
             _bound_task_prompt(scaffold, task_path, "02-004")
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
-                "reports/REPORT-02-004.md",
+                "reports/REPORT-02-004-review.md",
                 _review_report(
-                    report_stem="REPORT-02-004",
+                    report_stem="REPORT-02-004-review",
                     review_id="REVIEW-02-004",
                     prompt_path=scaffold.prompts / "PROMPT-02-004.md",
                     task_path=task_path,
@@ -387,9 +387,9 @@ class TestReportActionReviewVariants(unittest.TestCase):
             )
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
-                "reports/REPORT-02-004.md",
+                "reports/REPORT-02-004-review.md",
                 _review_report(
-                    report_stem="REPORT-02-004",
+                    report_stem="REPORT-02-004-review",
                     review_id="REVIEW-02-004",
                     prompt_path=scaffold.prompts / "PROMPT-02-004.md",
                     task_path=None,
@@ -424,9 +424,9 @@ class TestReportActionReviewVariants(unittest.TestCase):
             _bound_task_prompt(scaffold, wrong_task_path, "02-004")
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
             report_path = scaffold.write(
-                "reports/REPORT-02-004.md",
+                "reports/REPORT-02-004-review.md",
                 _review_report(
-                    report_stem="REPORT-02-004",
+                    report_stem="REPORT-02-004-review",
                     review_id="REVIEW-02-004",
                     prompt_path=scaffold.prompts / "PROMPT-02-004.md",
                     task_path=wrong_task_path,
@@ -457,9 +457,9 @@ class TestReportActionReviewVariants(unittest.TestCase):
                     )
                     review_path = scaffold.write("reviews/REVIEW-01-008.md", "# REVIEW-01-008\n")
                     report_path = scaffold.write(
-                        "reports/REPORT-01-008.md",
+                        "reports/REPORT-01-008-review.md",
                         _review_report(
-                            report_stem="REPORT-01-008",
+                            report_stem="REPORT-01-008-review",
                             review_id="REVIEW-01-008",
                             prompt_path=scaffold.prompts / "PROMPT-01-008.md",
                             task_path=task_path,
@@ -560,9 +560,10 @@ class TestReportActionPathMismatch(unittest.TestCase):
 
 class TestReportActionVariantInference(unittest.TestCase):
     def test_review_shaped_report_naming_task_id_infers_review(self) -> None:
-        """A review-completion report at the shared REPORT-NN-NNN.md name that
-        also cites the reviewed Task ID in its Identity block must infer
-        ``variant: review`` from content, not error ``ambiguous variant``."""
+        """A review-completion report at its authoritative
+        REPORT-NN-NNN-review.md name that also cites the reviewed Task ID in
+        its Identity block resolves ``variant: review`` — the cited Task ID
+        never makes the review report ambiguous."""
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
             home.mkdir()
@@ -573,9 +574,9 @@ class TestReportActionVariantInference(unittest.TestCase):
             _bound_task_prompt(scaffold, task_path, "01-010")
             review_path = scaffold.write("reviews/REVIEW-01-010.md", "# REVIEW-01-010\n")
             report_path = scaffold.write(
-                "reports/REPORT-01-010.md",
+                "reports/REPORT-01-010-review.md",
                 (
-                    "# REPORT-01-010\n\n"
+                    "# REPORT-01-010-review\n\n"
                     "Status: complete\n\n"
                     "Request alignment: aligned\n\n"
                     "Request evidence: REQUEST-001\n\n"

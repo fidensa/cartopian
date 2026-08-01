@@ -9,8 +9,10 @@
     the assignee process exit outcome.
 
     CONSUMER CONTRACT (cli/commands/wait_handoff.py :: _status_exit_code):
-      - Path:   <project-root>\reports\REPORT-<NN-NNN>.md.status
-                (the expected report path with a ".status" suffix).
+      - Path:   the expected report path with a ".status" suffix --
+                <project-root>\reports\REPORT-<NN-NNN>.md.status for task
+                assignment, REPORT-<NN-NNN>-review.md.status for task review,
+                REPORT-PLAN-<...>.md.status for planning review.
       - Format: newline-separated key=value lines carrying state, exit facts,
                 launch_id, and expected_variant. Dispatch may publish running;
                 this helper atomically replaces it on exit.
@@ -31,6 +33,14 @@
 # be derived (prompt outside a Cartopian project layout, or no NN-NNN id).
 function Get-CartopianStatusPath {
     param([string]$PromptPath)
+    # Bounded dispatch export wins: it names the exact report slot recorded
+    # for this launch. A task-review handoff publishes to the independent
+    # REPORT-NN-NNN-review.md slot while the coder's completion report is
+    # preserved at REPORT-NN-NNN.md.
+    $exported = $env:CARTOPIAN_EXPECTED_REPORT_PATH
+    if ($exported -and [System.IO.Path]::IsPathRooted($exported)) {
+        return "$exported.status"
+    }
     if (-not $PromptPath) { return $null }
     try {
         $promptAbs = (Resolve-Path -LiteralPath $PromptPath -ErrorAction Stop).Path
@@ -46,7 +56,14 @@ function Get-CartopianStatusPath {
     } else {
         return $null
     }
-    return (Join-Path $projectDir (Join-Path 'reports' "REPORT-$id.md.status"))
+    # Manual review launches without the dispatch export: the task prompt
+    # slot is shared between assignment and review, so the exported expected
+    # report variant selects the independent review-report identity.
+    $suffix = ''
+    if ($env:CARTOPIAN_EXPECTED_REPORT_VARIANT -eq 'review' -and $id -match '^\d{2}-\d{3}$') {
+        $suffix = '-review'
+    }
+    return (Join-Path $projectDir (Join-Path 'reports' "REPORT-$id$suffix.md.status"))
 }
 
 # Return $true when the file at -ReportPath looks like a *complete* handoff

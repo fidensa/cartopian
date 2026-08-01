@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli import report_identity
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -282,7 +283,12 @@ def handler(args: argparse.Namespace) -> int:
         "ready": ready,
         "validator_blockers": _validator_blockers(checks),
         "expected_prompt_path": str((project_root / "prompts" / f"PROMPT-{nn_nnn}.md").resolve()),
-        "expected_report_path": str((project_root / "reports" / f"REPORT-{nn_nnn}.md").resolve()),
+        "expected_report_path": str(
+            report_identity.completion_report_path(project_root, nn_nnn).resolve()
+        ),
+        "expected_review_report_path": str(
+            report_identity.review_report_path(project_root, nn_nnn).resolve()
+        ),
     }
     emit_record(record)
     return EXIT_OK

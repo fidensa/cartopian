@@ -34,6 +34,7 @@ _ID = (
     r"|REVIEW-PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?"
     r"|REVIEW-\d{2}-\d{3}"
     r"|REPORT-PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?"
+    r"|REPORT-\d{2}-\d{3}-review"
     r"|REPORT-\d{2}-\d{3}"
     r"|DEC-\d{3}"
     r"|BL-\d{3}"

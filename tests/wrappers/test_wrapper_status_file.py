@@ -52,6 +52,7 @@ def isolate_dispatch_identity(monkeypatch):
     """Unit subprocesses own their launch identity instead of inheriting one."""
     monkeypatch.delenv("CARTOPIAN_HANDOFF_ID", raising=False)
     monkeypatch.delenv("CARTOPIAN_EXPECTED_REPORT_VARIANT", raising=False)
+    monkeypatch.delenv("CARTOPIAN_EXPECTED_REPORT_PATH", raising=False)
 
 
 def _make_project(tmp_path: Path) -> Path:
@@ -149,6 +150,57 @@ def test_helper_status_path_supports_planning_report_slots(tmp_path):
         capture_output=True,
         text=True,
         check=True,
+    ).stdout.strip()
+    assert out.endswith("reports/REPORT-PLAN-001-baseline.md.status")
+
+
+def test_helper_status_path_uses_review_slot_for_review_variant(
+    tmp_path, monkeypatch
+):
+    """A task-review launch derives the independent review-report slot.
+
+    The task prompt slot is shared between assignment and review, so the
+    exported expected report variant selects REPORT-NN-NNN-review.md while
+    the coder's completion report stays preserved at REPORT-NN-NNN.md.
+    """
+    prompt = _make_project(tmp_path)
+    monkeypatch.setenv("CARTOPIAN_EXPECTED_REPORT_VARIANT", "review")
+    out = subprocess.run(
+        ["bash", "-c",
+         f'source "{STATUS_HELPER}"; cartopian_status_path "{prompt}"'],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert out.endswith("reports/REPORT-01-007-review.md.status")
+
+
+def test_helper_status_path_prefers_bounded_dispatch_export(
+    tmp_path, monkeypatch
+):
+    """CARTOPIAN_EXPECTED_REPORT_PATH names the exact slot dispatch recorded."""
+    prompt = _make_project(tmp_path)
+    exported = prompt.parent.parent / "reports" / "REPORT-01-007-review.md"
+    monkeypatch.setenv("CARTOPIAN_EXPECTED_REPORT_PATH", str(exported))
+    out = subprocess.run(
+        ["bash", "-c",
+         f'source "{STATUS_HELPER}"; cartopian_status_path "{prompt}"'],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert out == f"{exported}.status"
+
+
+def test_helper_status_path_review_variant_never_marks_planning_slots(
+    tmp_path, monkeypatch
+):
+    """Planning-report identities never gain the task-review marker."""
+    project = tmp_path / "proj"
+    (project / "prompts").mkdir(parents=True)
+    prompt = project / "prompts" / "PROMPT-PLAN-001-baseline.md"
+    prompt.write_text("review the plan\n", encoding="utf-8")
+    monkeypatch.setenv("CARTOPIAN_EXPECTED_REPORT_VARIANT", "review")
+    out = subprocess.run(
+        ["bash", "-c",
+         f'source "{STATUS_HELPER}"; cartopian_status_path "{prompt}"'],
+        capture_output=True, text=True, check=True,
     ).stdout.strip()
     assert out.endswith("reports/REPORT-PLAN-001-baseline.md.status")
 

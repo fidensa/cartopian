@@ -58,7 +58,7 @@ Read from the emitted record:
 - `launch` — resolved `agent`, `model`, `effort`, and `timeout`, consumed by Stage 2. Unset optional values are serialized as `null`.
 - `auto_launch` — the closed automatic-launch permission list for assigned work types.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
-- `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse.
+- `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse. It is variant-derived by the authoritative identity model: the completion slot (`reports/REPORT-NN-NNN.md`) for a task run, the independent review slot (`reports/REPORT-NN-NNN-review.md`) for an in-review task's review handoff. `expected_report_variant` names which one applies, and `completion_report_path` always names the preserved completion report a reviewer reads directly.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
 - `request_trace` — for an in-review task, the normalized two-channel review
   context and `preflight`. A missing prompt, stale binding, or missing/altered
@@ -91,19 +91,19 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
      --review-kind <planning|task-closure> <target arguments>
    ```
 
-   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections. A task-closure writer reads the still-present coder report, validates its task-completion publication shape, and embeds a content-hashed, full coder-evidence snapshot in the generated context. That snapshot is the review input after the transient shared report slot is cleared; review preflight does not depend on the coder report remaining at that filename.
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN-slug` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. For task review, the target arguments are `--task <absolute-task-path>`. For planning review, they are `--checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections. A task-closure writer reads the preserved coder report, validates its task-completion publication shape, and binds it into the generated context by absolute path and SHA-256 content identity — alongside the independent expected review-report path (`reports/REPORT-NN-NNN-review.md`). The prompt never reproduces the report body: the reviewer reads completion evidence directly from the preserved artifact, which must remain in place and byte-identical throughout the review (preflight blocks on a missing or mutated completion report).
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
-5. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. Then remove the coder report from the shared expected-report slot using the Core CLI before issuing the reviewer handoff:
+5. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. **Never delete the coder completion report** — it is preserved at its compatibility path (`reports/REPORT-NN-NNN.md`) as the reviewer's direct evidence source. When a prior review attempt left a stale review report or transient companions in the independent review slot, clear only that slot with the Core CLI before re-issuing the reviewer handoff:
 
    ```
-   cartopian delete-report <report-path>
+   cartopian delete-report <expected-review-report-path>
    ```
 
    `delete-report` also removes the companion `<report-path>.status` wrapper status file when present, clearing any early-crash signal a prior handoff left in the same slot. Automatic `dispatch` repeats this bounded slot clear immediately before launch, after review-context preflight, so the launch cannot inherit a stale report or status even if a caller omitted the cleanup step.
 
-Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet`. A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
+Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet` (for an in-review task that is the review slot `reports/REPORT-NN-NNN-review.md`; the record's `completion_report_path` names the preserved coder report, which review cleanup never touches). A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
 ---
 

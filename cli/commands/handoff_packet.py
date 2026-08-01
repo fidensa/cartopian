@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import request_trace
+from cli import report_identity, request_trace
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -117,14 +117,35 @@ def _build_work_roots(
 
 
 def _expected_report_path(project_root: Path, task_id: str) -> Path:
-    """Return the protocol-derived expected report path for a task.
+    """Return the protocol-derived task-completion report path for a task.
 
     The report path is task-derived (``reports/REPORT-NN-NNN.md``), not
-    role-derived. Shared with ``wait-handoff`` so both commands resolve the
-    expected report path identically.
+    role-derived, resolved by the authoritative identity model. Shared with
+    ``wait-handoff`` so both commands resolve the expected path identically.
     """
     nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
-    return (project_root / "reports" / f"REPORT-{nn_nnn}.md").resolve()
+    return report_identity.completion_report_path(project_root, nn_nnn).resolve()
+
+
+def _expected_review_report_path(project_root: Path, task_id: str) -> Path:
+    """Return the independent task-review completion report path for a task."""
+    nn_nnn = task_id.removeprefix("TASK-") if task_id.startswith("TASK-") else task_id
+    return report_identity.review_report_path(project_root, nn_nnn).resolve()
+
+
+def _expected_handoff_report_path(
+    project_root: Path, task_id: str, task_path: Path
+) -> Path:
+    """The expected report path for the task's *current* handoff kind.
+
+    An ``in-review`` task's next handoff is task review, which publishes to
+    the independent review-report slot while the completion report is
+    preserved for direct reviewer access. Every other status hands off task
+    work against the compatibility completion path.
+    """
+    if task_path.parent.name == "in-review":
+        return _expected_review_report_path(project_root, task_id)
+    return _expected_report_path(project_root, task_id)
 
 
 def _build_git_policy(git_block: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,7 +244,13 @@ def handler(args: argparse.Namespace) -> int:
 
     task_id = _extract_task_id(task_path) or task_path.stem
     task_title = _first_heading(content) or task_path.stem
-    expected_report_path = _expected_report_path(project_root, task_id)
+    completion_report_path = _expected_report_path(project_root, task_id)
+    expected_report_path = _expected_handoff_report_path(
+        project_root, task_id, task_path
+    )
+    expected_report_variant = (
+        "review" if task_path.parent.name == "in-review" else "task"
+    )
 
     # Manual review handoffs consume exactly the artifact automatic dispatch
     # does: the same resolved review context and the same binding preflight.
@@ -294,6 +321,8 @@ def handler(args: argparse.Namespace) -> int:
         "work_roots": work_roots,
         "deliverable": deliverable,
         "expected_report_path": str(expected_report_path),
+        "expected_report_variant": expected_report_variant,
+        "completion_report_path": str(completion_report_path),
         "git_versioning": git_versioning,
         "git_policy": git_policy,
         "automation_policy": resolved["automation"],

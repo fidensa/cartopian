@@ -23,6 +23,7 @@ from cli.atomic_write import (
     _snapshot_chain,
     make_tmp_name,
 )
+from cli import report_identity
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
 from cli.request_trace import (
@@ -103,7 +104,8 @@ def _late_derivatives(root: Path, unit: GovernedUnit) -> list[str]:
         # pre-existing planning artifact.
         candidates = [
             root / "prompts" / f"PROMPT-{suffix}.md",
-            root / "reports" / f"REPORT-{suffix}.md",
+            report_identity.completion_report_path(root, suffix),
+            report_identity.review_report_path(root, suffix),
             root / "reviews" / f"REVIEW-{suffix}.md",
         ]
     else:

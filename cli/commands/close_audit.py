@@ -4,13 +4,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from cli import report_identity
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
 _TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
 _PROMPT_TASK_RE = re.compile(r"^PROMPT-(\d{2}-\d{3})(?:-[^/]*)?\.md$")
-_REPORT_TASK_RE = re.compile(r"^REPORT-(\d{2}-\d{3})(?:-[^/]*)?\.md$")
 _EXIT_CRITERIA_RE = re.compile(
     r"^##\s+Exit criteria\s*$(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -127,11 +127,22 @@ def _task_in_done(project_root: Path, task_id: str) -> bool:
 
 def _collect_unresolved_reports(project_root: Path) -> List[Dict[str, str]]:
     unresolved: List[Dict[str, str]] = []
-    for report_path in _iter_matching_files(project_root / "reports", _REPORT_TASK_RE):
-        match = _REPORT_TASK_RE.match(report_path.name)
-        if match is None:
+    reports_dir = project_root / "reports"
+    if not reports_dir.is_dir():
+        return unresolved
+    for report_path in sorted(
+        reports_dir.iterdir(), key=lambda candidate: candidate.name
+    ):
+        if not report_path.is_file():
             continue
-        suffix = match.group(1)
+        # The authoritative grammar (cli/report_identity.py) classifies the
+        # task-scoped reports this audit aggregates. A malformed name such as
+        # REPORT-NN-NNN-garbage.md is not a task report here, exactly as
+        # delete-report refuses to remove it — audit and cleanup stay in
+        # parity instead of deadlocking on an undeletable "blocker".
+        suffix = report_identity.nn_nnn_for_report_name(report_path.name)
+        if suffix is None:
+            continue
         task_id = f"TASK-{suffix}"
         prompt_path = project_root / "prompts" / f"PROMPT-{suffix}.md"
         if _task_in_done(project_root, task_id):

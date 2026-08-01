@@ -11,8 +11,10 @@
 # process exit outcome.
 #
 # CONSUMER CONTRACT (cli/commands/wait_handoff.py :: _status_exit_code):
-#   - Path:   <project-root>/reports/REPORT-<NN-NNN>.md.status
-#             (i.e. the expected report path with a ".status" suffix).
+#   - Path:   the expected report path with a ".status" suffix —
+#             <project-root>/reports/REPORT-<NN-NNN>.md.status for task
+#             assignment, REPORT-<NN-NNN>-review.md.status for task review,
+#             REPORT-PLAN-<...>.md.status for planning review.
 #   - Format: newline-separated key=value lines carrying state, exit facts,
 #             launch_id, and expected_variant. Dispatch may publish running;
 #             this helper atomically replaces it on exit.
@@ -36,9 +38,21 @@
 # caller. Args: $1 = prompt path (absolute or relative).
 cartopian_status_path() {
   local prompt_path="$1"
+
+  # Bounded dispatch export wins: it names the exact report slot recorded for
+  # this launch. A task-review handoff publishes to the independent
+  # REPORT-NN-NNN-review.md slot while the coder's completion report is
+  # preserved at REPORT-NN-NNN.md, and only dispatch knows which slot this
+  # launch owns without re-deriving that contract here.
+  if [ -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]; then
+    case "$CARTOPIAN_EXPECTED_REPORT_PATH" in
+      /*) echo "${CARTOPIAN_EXPECTED_REPORT_PATH}.status"; return 0 ;;
+    esac
+  fi
+
   [ -n "$prompt_path" ] || { echo ""; return 0; }
 
-  local prompt_dir prompt_abs prompts_dir project_dir base id
+  local prompt_dir prompt_abs prompts_dir project_dir base id suffix
   prompt_dir="$(cd "$(dirname "$prompt_path")" 2>/dev/null && pwd -P)" || { echo ""; return 0; }
   prompt_abs="$prompt_dir/$(basename "$prompt_path")"
   prompts_dir="$(dirname "$prompt_abs")"
@@ -56,7 +70,16 @@ cartopian_status_path() {
     return 0
   fi
 
-  echo "${project_dir}/reports/REPORT-${id}.md.status"
+  # Manual review launches without the dispatch export: the task prompt slot
+  # is shared between assignment and review, so the exported expected report
+  # variant selects the independent review-report identity.
+  suffix=""
+  if [ "${CARTOPIAN_EXPECTED_REPORT_VARIANT:-}" = "review" ] \
+    && [[ "$id" =~ ^[0-9]{2}-[0-9]{3}$ ]]; then
+    suffix="-review"
+  fi
+
+  echo "${project_dir}/reports/REPORT-${id}${suffix}.md.status"
 }
 
 # Return 0 (success) when the file at $1 looks like a *complete* handoff report:

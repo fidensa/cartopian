@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from cli import request_trace
+from cli import report_identity, request_trace
 from cli.commands.resolve_config import _CliError, resolve_review_policy
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -63,8 +63,10 @@ def _find_project_root(task_path: Path) -> Optional[Path]:
 def _guard_coder_report(project_root: Path, nn_nnn: str, _task_id: str) -> Optional[str]:
     # The coder (task) handoff is deidentified: the report records no task id.
     # The report *filename* `REPORT-NN-NNN.md` (matched to this task's NN-NNN) is
-    # the task link, so existence + `Status: complete` is the whole guard.
-    report = project_root / "reports" / f"REPORT-{nn_nnn}.md"
+    # the task link, so existence + `Status: complete` is the whole guard. Only
+    # the preserved completion report satisfies it — the independent
+    # task-review report (`REPORT-NN-NNN-review.md`) is a different artifact.
+    report = report_identity.completion_report_path(project_root, nn_nnn)
     if not report.is_file():
         return f"missing coder report: {report}"
     try:

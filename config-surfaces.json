@@ -98,7 +98,9 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity without introducing a new migration-readiness gate.",
-      "max_output_bytes": 634
+      "split_report_delta_bytes": 55,
+      "split_report_note": "Adds expected_review_report_path so bundles carry both task-scoped report identities from the authoritative resolver.",
+      "max_output_bytes": 689
     },
     {
       "surface": "handoff-packet",
@@ -109,9 +111,11 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 1445,
+      "max_output_bytes": 1549,
       "request_trace_channel_delta_bytes": 7,
-      "request_trace_channel_note": "Adds one bounded request-trace projection for review handoffs."
+      "request_trace_channel_note": "Adds one bounded request-trace projection for review handoffs.",
+      "split_report_delta_bytes": 104,
+      "split_report_note": "Adds expected_report_variant and completion_report_path so review handoffs name the independent review-report slot while preserving the completion-report identity."
     },
     {
       "surface": "containment-matrix",

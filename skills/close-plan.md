@@ -83,8 +83,11 @@ cartopian close-audit <project-path>
   - `unresolved_reports` — `REPORT-*.md` files whose tasks are not in `done/` while their prompts still exist (i.e. handoff state is still open). Treat these as active handoff state. Reports that have been processed and whose corresponding tasks are in `done/` may instead be cleared via the Core CLI during Stage 4 reset:
 
     ```
-    cartopian delete-report <project-path>/reports/REPORT-NN-NNN-<slug>.md
+    cartopian delete-report <project-path>/reports/REPORT-NN-NNN.md
+    cartopian delete-report <project-path>/reports/REPORT-NN-NNN-review.md
     ```
+
+    A closed task may leave both task-scoped reports — the preserved completion report and, under required review, its independent review-completion report. Clear each existing artifact with its own call; a task closed without review simply has no review report to clear.
 
   - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN-slug.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
 
