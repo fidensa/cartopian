@@ -29,7 +29,7 @@ class TestScanPmIdentifiers(unittest.TestCase):
                         "    # FR-002 data-scoped guard",
                         "    x = 1  # see DEC-005 and TASK-01-002",
                         "    # BL-013 / OQ-009 / REVIEW-03-007",
-                        "    # P01-05 and P04-BUILD-005",
+                        "    # P01-05, BUILD-04-005, and P04-BUILD-005",
                         "    # PROMPT-PLAN-004 and REVIEW-PLAN-001 word-segment ids",
                         "    return x",
                     ]
@@ -45,6 +45,7 @@ class TestScanPmIdentifiers(unittest.TestCase):
                 "OQ-009",
                 "REVIEW-03-007",
                 "P01-05",
+                "BUILD-04-005",
                 "P04-BUILD-005",
                 "PROMPT-PLAN-004",
                 "REVIEW-PLAN-001",

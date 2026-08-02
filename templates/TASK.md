@@ -1,7 +1,7 @@
 # TASK-NN-NNN: <short imperative title>
 
 Phase: PHASE-NN-slug
-Plan ref: PNN-KIND-NNN
+Plan ref: KIND-NN-NNN
 Source: <BL-NNN | n/a>
 Work root: <name | name, name | n/a>
 Deliverable: <root:relative/path | project:resources/relative/path | n/a>
@@ -18,7 +18,7 @@ One or two sentences. What does done look like?
 
 ## Plan ref
 
-One primary plan item from `IMPLEMENTATION_PLAN.md`, for example `P01-BUILD-001`. The matching phase file must carry the same plan ref. Under the prospective numbering contract the plan ref's final suffix equals the task id's (`P01-BUILD-003` ↔ `TASK-01-003`); once the corrected release is installed and active, mediated authoring refuses a mismatch in newly created tasks. Pre-activation tasks keep their existing mappings unchanged. A task that truly advances multiple plan refs should usually be split; use References for secondary context.
+One primary plan item from `IMPLEMENTATION_PLAN.md`, for example `BUILD-01-001`. The matching phase file must carry the same plan ref. Plan-ref counters are local to each work kind within a phase; task ids use an independent phase-wide sequence, so their numeric suffixes do not need to match. Pre-activation tasks keep their existing mappings unchanged. A task that truly advances multiple plan refs should usually be split; use References for secondary context.
 
 ## Source
 

@@ -62,7 +62,7 @@ auto_launch = ["task_run"]
 TASK_BODY = """# TASK-01-003: Implement wait-handoff CLI command
 
 Phase: PHASE-01-stdio-wait-primitives
-Plan ref: P01-BUILD-003
+Plan ref: BUILD-01-003
 Work root: tool-repo
 Assignee: coder
 """

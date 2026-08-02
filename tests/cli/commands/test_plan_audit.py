@@ -824,7 +824,7 @@ class TestPlanAuditBacklogInvariants(unittest.TestCase):
             # A durable artifact already stamps BL-001 but the entry is still
             # live: the benign stamp-then-delete crash-window duplicate.
             _write(project / "tasks" / "open" / "TASK-01-001-x.md",
-                   "# TASK-01-001: x\n\nPlan ref: P01-BUILD-001\nSource: BL-001\n")
+                   "# TASK-01-001: x\n\nPlan ref: BUILD-01-001\nSource: BL-001\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             record = json.loads(proc.stdout.strip())

@@ -203,6 +203,8 @@ def _append_record(project_root: Path, record: Dict[str, object]) -> bool:
 # wide so a four-digit year-like suffix does not false-match.
 PM_IDENTIFIER_RE = re.compile(
     r"\b(?:FR|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC)-(?:[A-Z]+-)?\d{2,3}(?:-\d{2,3})?\b"
+    r"|\b(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}\b"
+    # Historical phase-first plan refs are still management identifiers.
     r"|\bP\d{2}-(?:[A-Z]+-)?\d{2,3}\b"
 )
 

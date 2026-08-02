@@ -978,9 +978,9 @@ def _check_situation_notes(project_path: Path) -> List[Dict[str, Any]]:
 def _check_numbering_contract(
     project_path: Path,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Prospective suffix-alignment findings, resolved by the shared contract.
+    """Prospective plan-ref numbering findings, resolved by the shared contract.
 
-    The corrected phase-wide rule applies only through the runtime activation
+    The corrected kind-first rule applies only through the runtime activation
     boundary (reviewed correction in an operator-owned tag, installed, and
     proven active) and only to tasks the mediated writer created under the
     active contract — their creation is recorded in the project's provenance
@@ -1039,8 +1039,8 @@ def _check_numbering_contract(
             "task_path": relpath,
             "task_id": task_id,
             "plan_ref": verdict["plan_ref"],
-            "expected_suffix": verdict["expected_suffix"],
-            "observed_suffix": verdict["observed_suffix"],
+            "task_counter": verdict["task_counter"],
+            "plan_ref_counter": verdict["plan_ref_counter"],
             "contract": verdict["contract"],
             "blocking": True,
             "detail": f"{relpath}: {verdict['detail']}",

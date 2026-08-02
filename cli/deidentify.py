@@ -1,7 +1,7 @@
 """Deidentify PM artifacts before they are surfaced to an assignee (coder).
 
 Cartopian project-management identifiers — ``TASK-NN-NNN``, ``SPEC-NN-NNN``,
-plan refs ``PNN-KIND-NNN``, requirement refs (``FR-`` / ``NF-`` / ``RM-``),
+plan refs ``KIND-NN-NNN``, requirement refs (``FR-`` / ``NF-`` / ``RM-``),
 decisions (``DEC-``), backlog (``BL-``), and prompt / report / review ids — are
 bookkeeping that maps only to ephemeral PM data. When an assignee reads them
 they get copied into product code (most often into code comments), where they
@@ -41,6 +41,8 @@ _ID = (
     r"|RM-\d{3}"
     r"|FR-\d{3}"
     r"|NF-\d{3}"
+    r"|(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}"
+    # Preserve deidentification of historical phase-first plan refs.
     r"|P\d{2}-[A-Z]+-\d{3}"
     r")"
 )

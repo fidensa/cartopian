@@ -140,7 +140,7 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
 
-Within each phase, assign `PNN-KIND-NNN` plan refs, allocating each final suffix once from one phase-wide sequence spanning all work kinds (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) — kind classifies the item and never owns its own counter. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
+Within each phase, assign `KIND-NN-NNN` plan refs. Every supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) has an independent counter starting at `001` within that phase. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
 
 **Requirement coverage:**
 
@@ -194,12 +194,12 @@ For each build and research item in the active phase, author `tasks/open/TASK-NN
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
 ```
 
-Each task takes its id suffix from its plan ref (`PNN-KIND-NNN` → `TASK-NN-NNN`), so the phase-wide allocation done at planning time carries through. Do not renumber; the mediated writer refuses a mismatched suffix under the corrected contract.
+Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
 
 Populate all fields:
 
 - `Phase:` from the phase file
-- `Plan ref:` from the `PNN-KIND-NNN` table
+- `Plan ref:` from the `KIND-NN-NNN` table
 - `Work root:` name(s) from the resolved config's `[project].work_roots` (or `n/a` if not applicable). Names only; do not write paths.
 - `Assignee:` from the resolved role configuration
 - `Spec:` link if a spec is being created; otherwise `none`

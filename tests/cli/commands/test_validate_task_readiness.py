@@ -38,7 +38,7 @@ BARE_PROJECT_TOML = (
 )
 
 
-def _make_project(root: Path, *, work_roots=None, plan_refs=("P01-BUILD-007",)):
+def _make_project(root: Path, *, work_roots=None, plan_refs=("BUILD-01-007",)):
     body = BARE_PROJECT_TOML
     if work_roots is not None:
         body += "work_roots = [" + ", ".join(f'"{n}"' for n in work_roots) + "]\n"
@@ -61,7 +61,7 @@ def _make_project(root: Path, *, work_roots=None, plan_refs=("P01-BUILD-007",)):
 def _task_body(
     *,
     phase="PHASE-01-substrate-build",
-    plan_ref="P01-BUILD-007",
+    plan_ref="BUILD-01-007",
     work_root=None,
     blocked_by=None,
     evidence_gate="required",

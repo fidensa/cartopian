@@ -169,7 +169,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 - **Work topology**: which repos or other work locations are involved and what each owns. Include no-repo projects when applicable.
 - **Phase sequence**: each phase with:
   - Goal
-  - Plan ref table (`PNN-KIND-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Suffixes are allocated once per phase from one phase-wide sequence across all kinds — kind never owns a counter.
+  - Plan ref table (`KIND-NN-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Within each phase, each kind owns an independent counter starting at `001`.
   - Exit criteria
 - **Requirement coverage matrix**: every requirement from `REQUIREMENTS.md` mapped to plan ref(s) and phase(s). Every requirement must appear. Deferred requirements note the reason.
 - **Open questions by phase**: questions that arose during planning.
@@ -238,7 +238,7 @@ Authoring task files is **PM-performed**. For each build and research item in th
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
 ```
 
-Each task takes its id suffix from its plan ref (`PNN-KIND-NNN` → `TASK-NN-NNN`), so the phase-wide allocation done at planning time carries through. Do not renumber; the mediated writer refuses a mismatched suffix under the corrected contract.
+Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
 
 New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advances them from there. Populate the body from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 

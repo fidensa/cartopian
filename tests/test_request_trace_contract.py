@@ -84,7 +84,7 @@ class RequestTraceContract(unittest.TestCase):
             self.assertEqual(capture_request.handler(args), 0)
 
     def seed_task(self) -> None:
-        self.task.write_text("# TASK-02-010: Trace\n\nPhase: PHASE-02-build\nPlan ref: P02-BUILD-010\n", encoding="utf-8")
+        self.task.write_text("# TASK-02-010: Trace\n\nPhase: PHASE-02-build\nPlan ref: BUILD-02-010\n", encoding="utf-8")
 
     def run_cli(self, *argv: str) -> tuple[int, list[dict], str]:
         parser = build_parser()
@@ -193,7 +193,7 @@ class RequestTraceContract(unittest.TestCase):
         )
         self.task.write_text(
             "# TASK-02-010: Trace\n\n"
-            "Phase: PHASE-02-build\nPlan ref: P02-BUILD-010\n\n"
+            "Phase: PHASE-02-build\nPlan ref: BUILD-02-010\n\n"
             "## Operator intent\n\nDEC-001 and DEC-002 preserve the exact request.\n",
             encoding="utf-8",
         )

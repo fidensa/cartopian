@@ -1,9 +1,10 @@
-"""Authoritative resolver for the prospective plan/task suffix-alignment contract.
+"""Authoritative resolver for the prospective plan/task numbering contract.
 
-Under the original (corrected) contract, a plan ref ``PNN-KIND-NNN`` and its
-task ``TASK-NN-NNN`` share one phase-wide final numeric suffix across every
-supported work kind; ``KIND`` classifies the work and never owns an independent
-counter. The corrected contract is genuinely prospective: it governs only
+Under the corrected contract, a plan ref is ``KIND-NN-NNN``: work kind first,
+then phase number, then a counter local to that kind within the phase. Task ids
+remain ``TASK-NN-NNN`` and use their own phase-wide sequence. Plan-ref and task
+counters are therefore independent and are not required to match. The
+corrected contract is genuinely prospective: it governs only
 plan/task pairs authored *after* the reviewed correction is carried by an
 operator-owned release tag, installed, and proven active in the running
 process. Nothing that already exists is migrated, inventoried, renumbered,
@@ -43,8 +44,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-# Closed classification vocabulary for governed work kinds. Kind is
-# classification only: allocation draws every kind from one phase-wide sequence.
+# Closed classification vocabulary for governed work kinds. Each kind owns an
+# independent counter within a phase.
 SUPPORTED_KINDS = (
     "BUILD",
     "DESIGN",
@@ -56,8 +57,8 @@ SUPPORTED_KINDS = (
 )
 
 # Contract identities reported in structured records.
-CONTRACT_LEGACY = "kind-local-counters"
-CONTRACT_ALIGNED = "phase-wide-aligned-suffix"
+CONTRACT_LEGACY = "phase-first-plan-refs"
+CONTRACT_KIND_FIRST = "kind-first-kind-local-counters"
 
 # The authoritative activation boundary, reported in structured records.
 ACTIVATION_BOUNDARY = "reviewed-tag-installed-fresh-runtime"
@@ -66,7 +67,7 @@ ACTIVATION_BOUNDARY = "reviewed-tag-installed-fresh-runtime"
 # active contract. Exactly the tasks with such a record are "newly governed".
 GOVERNED_ACTION = "numbering-governed"
 
-PLAN_REF_RE = re.compile(r"^P(\d{2})-([A-Z][A-Z0-9]*)-(\d{3})$")
+PLAN_REF_RE = re.compile(r"^([A-Z][A-Z0-9]*)-(\d{2})-(\d{3})$")
 PHASE_NAME_RE = re.compile(r"^PHASE-(\d{2})(?:-.+)?$")
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2})-(\d{3})$")
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
@@ -77,15 +78,15 @@ _STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 
 
 def parse_plan_ref(value: str) -> Optional[Dict[str, Any]]:
-    """Parse one ``PNN-KIND-NNN`` plan ref, or ``None`` when malformed."""
+    """Parse one ``KIND-NN-NNN`` plan ref, or ``None`` when malformed."""
     match = PLAN_REF_RE.fullmatch(value.strip())
     if not match:
         return None
-    phase, kind, suffix = match.groups()
+    kind, phase, counter = match.groups()
     return {
         "phase": phase,
         "kind": kind,
-        "suffix": suffix,
+        "counter": counter,
         "kind_supported": kind in SUPPORTED_KINDS,
     }
 
@@ -95,8 +96,8 @@ def parse_task_id(task_id: str) -> Optional[Dict[str, str]]:
     match = _TASK_ID_RE.fullmatch(task_id.strip())
     if not match:
         return None
-    phase, suffix = match.groups()
-    return {"phase": phase, "suffix": suffix}
+    phase, counter = match.groups()
+    return {"phase": phase, "counter": counter}
 
 
 def parse_phase_name(value: str) -> Optional[str]:
@@ -228,7 +229,7 @@ def evaluate_activation(
                 loaded.get("mcp_verification") or "unknown"
             )
             return state
-    state["contract"] = CONTRACT_ALIGNED
+    state["contract"] = CONTRACT_KIND_FIRST
     state["active"] = True
     state["reason"] = "active"
     return state
@@ -259,7 +260,7 @@ def classify_binding(
     Callers apply this only to newly governed work under the active contract —
     never to pre-activation artifacts, which remain valid unchanged. The
     verdict carries structured evidence: classification, blocking status,
-    expected and observed suffixes, and an actionable detail string.
+    both independent counters, and an actionable detail string.
 
     ``phase_header`` is the task body's declared ``Phase:`` value. When the
     caller supplies it (pass ``None`` only when no task body is in hand), the
@@ -273,11 +274,11 @@ def classify_binding(
         "task_id": task_id,
         "plan_ref": plan_ref,
         "phase_header": phase_header.strip() if phase_header else phase_header,
-        "contract": CONTRACT_ALIGNED,
-        "classification": "aligned",
+        "contract": CONTRACT_KIND_FIRST,
+        "classification": "valid",
         "blocking": False,
-        "expected_suffix": task["suffix"] if task else None,
-        "observed_suffix": None,
+        "task_counter": task["counter"] if task else None,
+        "plan_ref_counter": None,
         "detail": None,
     }
     if task is None:
@@ -290,7 +291,7 @@ def classify_binding(
         verdict["blocking"] = True
         verdict["detail"] = (
             f"{task_id} carries no Plan ref: header; newly governed work "
-            "binds one primary plan ref whose final suffix equals the task's"
+            "binds one primary KIND-NN-NNN plan ref"
         )
         return verdict
     ref = parse_plan_ref(plan_ref)
@@ -298,11 +299,11 @@ def classify_binding(
         verdict["classification"] = "plan-ref-malformed"
         verdict["blocking"] = True
         verdict["detail"] = (
-            f"{task_id} carries a plan ref that does not match PNN-KIND-NNN: "
+            f"{task_id} carries a plan ref that does not match KIND-NN-NNN: "
             f"{plan_ref!r}"
         )
         return verdict
-    verdict["observed_suffix"] = ref["suffix"]
+    verdict["plan_ref_counter"] = ref["counter"]
     if not ref["kind_supported"]:
         verdict["classification"] = "plan-ref-kind-unsupported"
         verdict["blocking"] = True
@@ -317,15 +318,6 @@ def classify_binding(
         verdict["detail"] = (
             f"{task_id} is phase {task['phase']} but plan ref {plan_ref} "
             f"names phase {ref['phase']}"
-        )
-        return verdict
-    if ref["suffix"] != task["suffix"]:
-        verdict["classification"] = "plan-task-suffix-mismatch"
-        verdict["blocking"] = True
-        verdict["detail"] = (
-            f"{task_id} expects plan-ref suffix {task['suffix']} (one "
-            f"phase-wide sequence across all work kinds); got {plan_ref} "
-            f"with suffix {ref['suffix']}"
         )
         return verdict
     if phase_header is not None:
@@ -358,7 +350,8 @@ def classify_binding(
             )
             return verdict
     verdict["detail"] = (
-        f"{task_id} / {plan_ref} share phase-wide suffix {task['suffix']}"
+        f"{task_id} binds {plan_ref} in phase {task['phase']}; task and "
+        "plan-ref counters are independent"
     )
     return verdict
 

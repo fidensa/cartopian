@@ -14,7 +14,7 @@ _SPEC = (
     "# SPEC-01-002: Widget rendering contract\n"
     "\n"
     "Status: locked\n"
-    "Plan refs: P01-BUILD-003, P01-BUILD-004\n"
+    "Plan refs: BUILD-01-003, BUILD-01-004\n"
     "\n"
     "## Problem\n"
     "\n"
@@ -63,7 +63,7 @@ class TestRenderSpec(unittest.TestCase):
             # No PM identifier survives anywhere — including inside the code fence.
             for token in (
                 "SPEC-01-002", "SPEC-01-001", "FR-003", "DEC-001",
-                "P01-BUILD-003", "P01-BUILD-004",
+                "BUILD-01-003", "BUILD-01-004",
             ):
                 self.assertNotIn(token, body, msg=f"{token} leaked into rendering")
             # Work-contract prose is preserved.
@@ -77,7 +77,7 @@ class TestRenderSpec(unittest.TestCase):
             self.assertEqual(
                 set(record["redactions"]),
                 {"SPEC-01-002", "SPEC-01-001", "FR-003", "DEC-001",
-                 "P01-BUILD-003", "P01-BUILD-004"},
+                 "BUILD-01-003", "BUILD-01-004"},
             )
 
     def test_missing_file(self):

@@ -135,7 +135,7 @@
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
       "max_output_bytes": 960,
       "numbering_contract_delta_bytes": 387,
-      "numbering_contract_note": "Adds the numbering_contract activation-boundary state (contract identity, release receipt, installed-content verification, and running-process proof where affected) so operators can read why the prospective suffix-alignment rule is or is not active."
+      "numbering_contract_note": "Adds the numbering_contract activation-boundary state (contract identity, release receipt, installed-content verification, and running-process proof where affected) so operators can read why the prospective kind-first plan-ref rule is or is not active."
     },
     {
       "surface": "review-context",
@@ -540,7 +540,7 @@
         "check": "tests/cli/test_numbering_contract.py"
       },
       "output_projection": [
-        "write-task suffix-alignment guard",
+        "write-task plan-ref numbering guard",
         "plan-ref-aligned readiness check",
         "plan-audit numbering findings and activation state",
         "numbering-governed creation provenance record"

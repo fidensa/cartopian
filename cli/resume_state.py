@@ -206,7 +206,8 @@ _RETRY_RANK = {
 # identifier text smuggled inside an otherwise-allowed scalar.
 _GOVERNANCE_TEXT = re.compile(
     r"\b(?:TASK|SPEC|PHASE|PROMPT|REVIEW|REPORT|REQUEST|DEC|FR|NF|PLAN|REQ)"
-    r"-[0-9]|\bP[0-9]{2}-[A-Z]"
+    r"-[0-9]|\b(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)"
+    r"-[0-9]{2}-[0-9]{3}\b|\bP[0-9]{2}-[A-Z]"
 )
 _PRIVATE_TEXT = re.compile(
     r"(?i)\b(?:api[_-]?key|secret|password|passwd|bearer|private[_-]?key|"

@@ -121,7 +121,7 @@ def _task(scaffold, status: str = "in-progress") -> Path:
         """# TASK-01-003: Demo
 
 Phase: PHASE-01-demo
-Plan ref: P01-BUILD-003
+Plan ref: BUILD-01-003
 Work root: tool-repo
 Assignee: coder
 """,

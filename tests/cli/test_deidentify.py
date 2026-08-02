@@ -13,7 +13,7 @@ class TestIdentifierRegex(unittest.TestCase):
             "REVIEW-01-002", "REVIEW-PLAN-003", "REPORT-01-002",
             "REPORT-01-002-review",
             "DEC-001", "BL-007", "RM-002", "FR-003", "NF-010",
-            "P01-BUILD-003",
+            "BUILD-01-003", "P01-BUILD-003",
         ):
             self.assertEqual(IDENTIFIER_RE.findall(token), [token], token)
 
@@ -35,7 +35,7 @@ class TestDeidentifySpec(unittest.TestCase):
         self.assertEqual(self._clean("# SPEC-01-002\n").strip(), "# Specification")
 
     def test_plan_refs_line_removed(self):
-        out = self._clean("# T\n\nPlan refs: P01-BUILD-003\n\nbody\n")
+        out = self._clean("# T\n\nPlan refs: BUILD-01-003\n\nbody\n")
         self.assertNotIn("Plan refs", out)
         self.assertIn("body", out)
 

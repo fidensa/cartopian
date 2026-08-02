@@ -71,7 +71,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                 "cartopian.local.toml",
                 f"[work_roots]\ntool-repo = \"{work_root}\"\n",
             )
-            scaffold.write("IMPLEMENTATION_PLAN.md", "P01-BUILD-002\n")
+            scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
             scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
             scaffold.write("specs/SPEC-01-001-demo.md", "# Demo Spec\n")
             scaffold.write(
@@ -83,7 +83,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                 (
                     "# TASK-01-002: Example\n\n"
                     "Phase: PHASE-01-foundation\n"
-                    "Plan ref: P01-BUILD-002\n"
+                    "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
                     "Spec: SPEC-01-001-demo.md\n"
@@ -298,7 +298,7 @@ class TestTaskBundleUnmetReadiness(unittest.TestCase):
                 "cartopian.local.toml",
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
-            scaffold.write("IMPLEMENTATION_PLAN.md", "P01-BUILD-002\n")
+            scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
             scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
             scaffold.write(
                 "tasks/open/TASK-01-001-prereq.md",
@@ -309,7 +309,7 @@ class TestTaskBundleUnmetReadiness(unittest.TestCase):
                 (
                     "# TASK-01-002: Example\n\n"
                     "Phase: PHASE-01-foundation\n"
-                    "Plan ref: P01-BUILD-002\n"
+                    "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
                     "Spec: none\n"
@@ -360,7 +360,7 @@ class TestTaskBundleReadOnly(unittest.TestCase):
                 "cartopian.local.toml",
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
-            scaffold.write("IMPLEMENTATION_PLAN.md", "P01-BUILD-002\n")
+            scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
             scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
             scaffold.write("specs/SPEC-01-001-demo.md", "# Demo Spec\n")
             scaffold.write(
@@ -372,7 +372,7 @@ class TestTaskBundleReadOnly(unittest.TestCase):
                 (
                     "# TASK-01-002: Example\n\n"
                     "Phase: PHASE-01-foundation\n"
-                    "Plan ref: P01-BUILD-002\n"
+                    "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
                     "Spec: SPEC-01-001-demo.md\n"

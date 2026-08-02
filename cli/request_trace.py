@@ -27,7 +27,9 @@ REQUEST_ID_RE = re.compile(r"^REQUEST-\d{3}$")
 CORRECTION_ID_RE = re.compile(r"^(REQUEST-\d{3})-CORRECTION-(\d{3})$")
 CHAT_RECORD_ID_RE = re.compile(r"^CHAT-[A-Z0-9][A-Z0-9-]{1,79}$")
 PHASE_ID_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
-PLAN_REF_RE = re.compile(r"^P\d{2}-[A-Z][A-Z0-9]*-\d{3}$")
+PLAN_REF_RE = re.compile(
+    r"^(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}$"
+)
 CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?$")
 REVIEW_KINDS = ("planning", "task-closure")
 UNIT_KINDS = ("project", "planning", "task")

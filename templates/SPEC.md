@@ -5,7 +5,7 @@ Profile: <software | general>
 Author: <name or role>
 Reviewer: <name or role>
 Date: YYYY-MM-DD
-Plan refs: <PNN-KIND-NNN, PNN-KIND-NNN | n/a>
+Plan refs: <KIND-NN-NNN, KIND-NN-NNN | n/a>
 Source: <BL-NNN | n/a>
 
 Choose exactly one body profile below and delete the other profile and all instructional text. Classification follows this spec's outcome, not the overall project's label:

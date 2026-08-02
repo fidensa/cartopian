@@ -3,7 +3,7 @@
 Work root: <name | name, name | n/a>
 Branch: <branch or n/a; include only for a git workflow>
 Phase: <PHASE-NN-slug | omit when not applicable>
-Plan ref: <PNN-KIND-NNN | omit when not applicable>
+Plan ref: <KIND-NN-NNN | omit when not applicable>
 
 ## Paths
 

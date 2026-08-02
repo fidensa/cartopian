@@ -138,7 +138,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
             "--captured-at", "2026-07-27T12:00:00Z",
         )
         self._run("write-requirements", ps, "--content", "# Requirements\n\nFR-1\n")
-        self._run("write-plan", ps, "--content", "# Implementation Plan\n\nP01-BUILD-001\n")
+        self._run("write-plan", ps, "--content", "# Implementation Plan\n\nBUILD-01-001\n")
         self._run("write-standards", ps, "--content", "# Standards\n")
         self._run("write-phase", ps, "--phase-id", "PHASE-01-core", "--content",
                   "# PHASE-01-core: Core\n")
@@ -146,7 +146,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
                   "--content", "# SPEC-01-001\n")
         self._run("write-task", ps, "--task-id", "TASK-01-001", "--slug", "do-thing",
                   "--content",
-                  "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: P01-BUILD-001\n"
+                  "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: BUILD-01-001\n"
                   "Evidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n")
         task_request_source = proj.parent / "task-operator-request.txt"
         task_request_source.write_text("Run the planned task.", encoding="utf-8")

@@ -65,7 +65,7 @@ class _Fixture(unittest.TestCase):
         path = Path(self.root) / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            f"# TASK-01-001: x\n\nPlan ref: P01-BUILD-001\nSource: {bl_id}\n",
+            f"# TASK-01-001: x\n\nPlan ref: BUILD-01-001\nSource: {bl_id}\n",
             encoding="utf-8",
         )
         return path

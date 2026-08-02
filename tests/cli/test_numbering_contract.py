@@ -1,4 +1,4 @@
-"""Prospective plan/task suffix-alignment contract (`cli.numbering_contract`).
+"""Prospective kind-first plan-ref contract (`cli.numbering_contract`).
 
 The corrected contract is prospective only: it activates through the
 reviewed-tag/installed/fresh-runtime boundary — never from source, a dirty
@@ -119,53 +119,52 @@ def _write_phase_file(project: Path, refs, phase="PHASE-01-fixture"):
 
 class TestGrammar(unittest.TestCase):
     def test_plan_ref_grammar(self):
-        ref = nc.parse_plan_ref("P03-RESEARCH-010")
+        ref = nc.parse_plan_ref("RESEARCH-03-010")
         self.assertEqual(ref["phase"], "03")
         self.assertEqual(ref["kind"], "RESEARCH")
-        self.assertEqual(ref["suffix"], "010")
+        self.assertEqual(ref["counter"], "010")
         self.assertTrue(ref["kind_supported"])
-        self.assertFalse(nc.parse_plan_ref("P03-SMOKE-010")["kind_supported"])
-        for bad in ("P3-BUILD-010", "P03-BUILD-10", "TASK-03-010", "", "P03"):
+        self.assertFalse(nc.parse_plan_ref("SMOKE-03-010")["kind_supported"])
+        for bad in ("P03-BUILD-010", "BUILD-3-010", "BUILD-03-10", "", "P03"):
             self.assertIsNone(nc.parse_plan_ref(bad))
 
     def test_task_id_grammar(self):
         task = nc.parse_task_id("TASK-03-010")
-        self.assertEqual(task, {"phase": "03", "suffix": "010"})
-        for bad in ("TASK-3-010", "TASK-03-10", "P03-BUILD-010", ""):
+        self.assertEqual(task, {"phase": "03", "counter": "010"})
+        for bad in ("TASK-3-010", "TASK-03-10", "BUILD-03-010", ""):
             self.assertIsNone(nc.parse_task_id(bad))
 
     def test_plan_ref_header_window_ends_at_first_section(self):
-        body = "# T\n\nPlan ref: P01-BUILD-001\n\n## Notes\nPlan ref: X\n"
-        self.assertEqual(nc.plan_ref_header_value(body), "P01-BUILD-001")
+        body = "# T\n\nPlan ref: BUILD-01-001\n\n## Notes\nPlan ref: X\n"
+        self.assertEqual(nc.plan_ref_header_value(body), "BUILD-01-001")
         self.assertIsNone(nc.plan_ref_header_value("## Goal\nPlan ref: X\n"))
 
 
 class TestClassifyBinding(unittest.TestCase):
-    def test_every_supported_kind_aligns_from_one_phase_wide_sequence(self):
-        # Mixed kinds share one sequence: kind never owns a counter, so any
-        # kind may carry any suffix as long as it equals the task's.
+    def test_every_supported_kind_has_an_independent_counter(self):
+        # Every kind may start at 001 in the same phase while task ids proceed
+        # independently through their own sequence.
         for index, kind in enumerate(nc.SUPPORTED_KINDS, start=1):
-            suffix = f"{index:03d}"
             verdict = nc.classify_binding(
-                f"TASK-01-{suffix}", f"P01-{kind}-{suffix}"
+                f"TASK-01-{index:03d}", f"{kind}-01-001"
             )
-            self.assertEqual(verdict["classification"], "aligned")
+            self.assertEqual(verdict["classification"], "valid")
             self.assertFalse(verdict["blocking"])
 
-    def test_suffix_mismatch_blocks_with_expected_and_observed(self):
-        verdict = nc.classify_binding("TASK-01-004", "P01-RESEARCH-001")
-        self.assertEqual(verdict["classification"], "plan-task-suffix-mismatch")
-        self.assertTrue(verdict["blocking"])
-        self.assertEqual(verdict["expected_suffix"], "004")
-        self.assertEqual(verdict["observed_suffix"], "001")
+    def test_task_and_plan_ref_counters_are_independent(self):
+        verdict = nc.classify_binding("TASK-01-004", "RESEARCH-01-001")
+        self.assertEqual(verdict["classification"], "valid")
+        self.assertFalse(verdict["blocking"])
+        self.assertEqual(verdict["task_counter"], "004")
+        self.assertEqual(verdict["plan_ref_counter"], "001")
 
     def test_structural_failures_fail_closed(self):
         cases = {
             "plan-ref-missing": ("TASK-01-004", ""),
             "plan-ref-malformed": ("TASK-01-004", "n/a"),
-            "plan-ref-kind-unsupported": ("TASK-01-004", "P01-SMOKE-004"),
-            "plan-ref-phase-mismatch": ("TASK-01-004", "P02-BUILD-004"),
-            "task-id-malformed": ("TASK-1-4", "P01-BUILD-004"),
+            "plan-ref-kind-unsupported": ("TASK-01-004", "SMOKE-01-004"),
+            "plan-ref-phase-mismatch": ("TASK-01-004", "BUILD-02-004"),
+            "task-id-malformed": ("TASK-1-4", "BUILD-01-004"),
         }
         for expected, (task_id, plan_ref) in cases.items():
             verdict = nc.classify_binding(task_id, plan_ref)
@@ -176,36 +175,36 @@ class TestClassifyBinding(unittest.TestCase):
         # The three identities — task id, plan ref, declared Phase: header —
         # must name one phase for newly governed work.
         aligned = nc.classify_binding(
-            "TASK-01-002", "P01-BUILD-002", "PHASE-01-fixture"
+            "TASK-01-002", "BUILD-01-002", "PHASE-01-fixture"
         )
-        self.assertEqual(aligned["classification"], "aligned")
+        self.assertEqual(aligned["classification"], "valid")
         self.assertFalse(aligned["blocking"])
         mismatch = nc.classify_binding(
-            "TASK-01-002", "P01-BUILD-002", "PHASE-02-other"
+            "TASK-01-002", "BUILD-01-002", "PHASE-02-other"
         )
         self.assertEqual(mismatch["classification"], "phase-header-mismatch")
         self.assertTrue(mismatch["blocking"])
         self.assertIn("PHASE-02-other", mismatch["detail"])
         malformed = nc.classify_binding(
-            "TASK-01-002", "P01-BUILD-002", "Phase One"
+            "TASK-01-002", "BUILD-01-002", "Phase One"
         )
         self.assertEqual(malformed["classification"], "phase-header-malformed")
         self.assertTrue(malformed["blocking"])
-        missing = nc.classify_binding("TASK-01-002", "P01-BUILD-002", "")
+        missing = nc.classify_binding("TASK-01-002", "BUILD-01-002", "")
         self.assertEqual(missing["classification"], "phase-header-missing")
         self.assertTrue(missing["blocking"])
         # A caller with no task body in hand skips the comparison.
-        no_header = nc.classify_binding("TASK-01-002", "P01-BUILD-002", None)
-        self.assertEqual(no_header["classification"], "aligned")
+        no_header = nc.classify_binding("TASK-01-002", "BUILD-01-002", None)
+        self.assertEqual(no_header["classification"], "valid")
 
     def test_duplicate_binding_names_the_prior_owner(self):
-        existing = {"TASK-01-003": "P01-BUILD-003", "TASK-01-004": ""}
+        existing = {"TASK-01-003": "BUILD-01-003", "TASK-01-004": ""}
         detail = nc.duplicate_binding(
-            "TASK-01-005", "P01-BUILD-003", existing
+            "TASK-01-005", "BUILD-01-003", existing
         )
         self.assertIn("TASK-01-003", detail)
         self.assertIsNone(
-            nc.duplicate_binding("TASK-01-003", "P01-BUILD-003", existing)
+            nc.duplicate_binding("TASK-01-003", "BUILD-01-003", existing)
         )
         self.assertIsNone(nc.duplicate_binding("TASK-01-005", "", existing))
 
@@ -247,7 +246,7 @@ class TestActivationBoundary(unittest.TestCase):
 
     def test_installed_verified_release_activates_for_cli(self):
         state = _active_state()
-        self.assertEqual(state["contract"], nc.CONTRACT_ALIGNED)
+        self.assertEqual(state["contract"], nc.CONTRACT_KIND_FIRST)
         self.assertEqual(state["reason"], "active")
         self.assertEqual(state["boundary"], nc.ACTIVATION_BOUNDARY)
 
@@ -310,14 +309,14 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-004",
                     "old-style",
-                    _task_body("P01-RESEARCH-001"),
+                    _task_body("RESEARCH-01-001"),
                 )
             self.assertEqual(code, 0, stderr)
             task = project / "tasks" / "open" / "TASK-01-004-old-style.md"
             self.assertTrue(task.is_file())
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
-    def test_active_creation_accepts_alignment_and_records_governance(self):
+    def test_active_creation_accepts_kind_first_ref_and_records_governance(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             with mock.patch.object(
@@ -326,15 +325,15 @@ class TestMediatedAuthoring(unittest.TestCase):
                 code, stderr = _write_task(
                     project,
                     "TASK-01-002",
-                    "aligned",
-                    _task_body("P01-RESEARCH-002"),
+                    "kind-first",
+                    _task_body("RESEARCH-01-001"),
                 )
             self.assertEqual(code, 0, stderr)
             self.assertEqual(
                 nc.governed_task_ids(project), frozenset({"TASK-01-002"})
             )
 
-    def test_active_creation_refuses_a_mismatched_suffix(self):
+    def test_active_creation_accepts_an_independent_plan_ref_counter(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             with mock.patch.object(
@@ -343,24 +342,36 @@ class TestMediatedAuthoring(unittest.TestCase):
                 code, stderr = _write_task(
                     project,
                     "TASK-01-004",
-                    "mismatched",
+                    "independent-counter",
+                    _task_body("RESEARCH-01-001"),
+                )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(
+                nc.governed_task_ids(project), frozenset({"TASK-01-004"})
+            )
+
+    def test_active_creation_refuses_the_old_phase_first_grammar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            with mock.patch.object(
+                nc, "activation_state", return_value=_active_state()
+            ):
+                code, stderr = _write_task(
+                    project,
+                    "TASK-01-004",
+                    "old-grammar",
                     _task_body("P01-RESEARCH-001"),
                 )
             self.assertEqual(code, 1)
-            self.assertIn("plan-task-suffix-mismatch", stderr)
-            self.assertIn("004", stderr)
-            self.assertIn("001", stderr)
-            self.assertEqual(
-                list((project / "tasks" / "open").iterdir()), []
-            )
-            self.assertEqual(nc.governed_task_ids(project), frozenset())
+            self.assertIn("plan-ref-malformed", stderr)
+            self.assertIn("KIND-NN-NNN", stderr)
 
     def test_active_creation_refuses_reusing_any_bound_plan_ref(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             # A pre-activation, hand-preserved task already owns the ref.
             (project / "tasks" / "done" / "TASK-01-009-old.md").write_text(
-                _task_body("P01-BUILD-004"), encoding="utf-8"
+                _task_body("BUILD-01-004"), encoding="utf-8"
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
@@ -369,15 +380,15 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-004",
                     "reuse",
-                    _task_body("P01-BUILD-004"),
+                    _task_body("BUILD-01-004"),
                 )
             self.assertEqual(code, 1)
             self.assertIn("plan-ref-reused", stderr)
             self.assertIn("TASK-01-009", stderr)
 
     def test_active_creation_refuses_a_wrong_phase_header(self):
-        # An aligned suffix cannot smuggle in a foreign phase anchor: the
-        # declared Phase: header must name the task's own phase.
+        # A plan ref cannot smuggle in a foreign phase anchor: the declared
+        # Phase: header must name the task's own phase.
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             with mock.patch.object(
@@ -387,7 +398,7 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-004",
                     "foreign-phase",
-                    _task_body("P01-BUILD-004", phase="PHASE-02-other"),
+                    _task_body("BUILD-01-004", phase="PHASE-02-other"),
                 )
             self.assertEqual(code, 1)
             self.assertIn("phase-header-mismatch", stderr)
@@ -407,28 +418,27 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-005",
                     "corrective-one",
-                    _task_body("P01-CORRECTIVE-005"),
+                    _task_body("CORRECTIVE-01-001"),
                 )
                 self.assertEqual(first, 0, stderr)
                 second, stderr = _write_task(
                     project,
                     "TASK-01-006",
                     "corrective-two",
-                    _task_body("P01-CORRECTIVE-006"),
+                    _task_body("CORRECTIVE-01-002"),
                 )
                 self.assertEqual(second, 0, stderr)
                 # A third corrective task trying to ride on the first one's
-                # ref is refused: under phase-wide allocation a new task can
-                # never share an already-allocated suffix, so each corrective
-                # item necessarily receives its own distinct plan ref.
+                # ref is refused because each corrective item receives its own
+                # distinct plan ref.
                 reused, stderr = _write_task(
                     project,
                     "TASK-01-007",
                     "corrective-reuse",
-                    _task_body("P01-CORRECTIVE-005"),
+                    _task_body("CORRECTIVE-01-001"),
                 )
             self.assertEqual(reused, 1)
-            self.assertIn("plan-task-suffix-mismatch", stderr)
+            self.assertIn("plan-ref-reused", stderr)
 
     def test_pre_activation_task_updates_pass_untouched(self):
         # An existing mismatched pair is preserved history, not new work:
@@ -439,7 +449,7 @@ class TestMediatedAuthoring(unittest.TestCase):
                 project / "tasks" / "in-progress" / "TASK-01-010-old.md"
             )
             existing.write_text(
-                _task_body("P01-BUILD-007"), encoding="utf-8"
+                _task_body("BUILD-01-007"), encoding="utf-8"
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
@@ -448,16 +458,16 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-010",
                     "old",
-                    _task_body("P01-BUILD-007") + "\nUpdated.\n",
+                    _task_body("BUILD-01-007") + "\nUpdated.\n",
                 )
             self.assertEqual(code, 0, stderr)
             self.assertIn(
-                "Plan ref: P01-BUILD-007",
+                "Plan ref: BUILD-01-007",
                 existing.read_text(encoding="utf-8"),
             )
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
-    def test_governed_task_updates_stay_governed(self):
+    def test_governed_task_updates_accept_a_different_kind_local_counter(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             with mock.patch.object(
@@ -467,17 +477,19 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-002",
                     "aligned",
-                    _task_body("P01-BUILD-002"),
+                    _task_body("BUILD-01-002"),
                 )
                 self.assertEqual(code, 0, stderr)
                 code, stderr = _write_task(
                     project,
                     "TASK-01-002",
                     "aligned",
-                    _task_body("P01-RESEARCH-001"),
+                    _task_body("RESEARCH-01-001"),
                 )
-            self.assertEqual(code, 1)
-            self.assertIn("plan-task-suffix-mismatch", stderr)
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(
+                nc.governed_task_ids(project), frozenset({"TASK-01-002"})
+            )
 
 
 class TestReadinessAndAudit(unittest.TestCase):
@@ -485,18 +497,18 @@ class TestReadinessAndAudit(unittest.TestCase):
 
     def _governed_project(self, tmp: Path):
         project = _make_project(tmp)
-        _write_phase_file(project, ["P01-RESEARCH-002"])
+        _write_phase_file(project, ["RESEARCH-01-001"])
         with mock.patch.object(
             nc, "activation_state", return_value=_active_state()
         ):
             code, stderr = _write_task(
                 project,
                 "TASK-01-002",
-                "aligned",
-                _task_body("P01-RESEARCH-002"),
+                "independent-counter",
+                _task_body("RESEARCH-01-001"),
             )
         assert code == 0, stderr
-        return project, project / "tasks" / "open" / "TASK-01-002-aligned.md"
+        return project, project / "tasks" / "open" / "TASK-01-002-independent-counter.md"
 
     def test_governed_aligned_task_passes_readiness_and_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -522,16 +534,16 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertTrue(check["pass"], check["reason"])
 
     def test_readiness_blocks_a_governed_task_declaring_a_foreign_phase(self):
-        # F1 probe: TASK-01-002 / P01-RESEARCH-002 declaring an existing
+        # F1 probe: TASK-01-002 / RESEARCH-01-001 declaring an existing
         # PHASE-02-* file whose body never mentions the plan ref must fail —
-        # suffix alignment alone is not a complete anchor chain.
+        # a valid kind-local counter alone is not a complete anchor chain.
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
             _write_phase_file(
-                project, ["P02-BUILD-001"], phase="PHASE-02-other"
+                project, ["BUILD-02-001"], phase="PHASE-02-other"
             )
             task.write_text(
-                _task_body("P01-RESEARCH-002", phase="PHASE-02-other"),
+                _task_body("RESEARCH-01-001", phase="PHASE-02-other"),
                 encoding="utf-8",
             )
             with mock.patch.object(
@@ -547,13 +559,13 @@ class TestReadinessAndAudit(unittest.TestCase):
     def test_readiness_blocks_when_the_phase_file_lacks_the_plan_ref(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
-            _write_phase_file(project, ["P01-BUILD-099"])
+            _write_phase_file(project, ["BUILD-01-099"])
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
                 check = _readiness_check(project, task)
             self.assertFalse(check["pass"])
-            self.assertIn("does not carry plan ref P01-RESEARCH-002", check["reason"])
+            self.assertIn("does not carry plan ref RESEARCH-01-001", check["reason"])
 
     def test_readiness_blocks_when_the_declared_phase_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -566,31 +578,42 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertFalse(check["pass"])
             self.assertIn("phases/PHASE-01-fixture.md", check["reason"])
 
-    def test_rewritten_governed_task_blocks_readiness_and_audit(self):
+    def test_rewritten_governed_task_keeps_independent_counters_valid(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
             # Hand-rewriting the governed binding out of band cannot escape
             # the contract the task was created under.
-            task.write_text(
-                _task_body("P01-RESEARCH-001"), encoding="utf-8"
-            )
+            _write_phase_file(project, ["RESEARCH-01-009"])
+            task.write_text(_task_body("RESEARCH-01-009"), encoding="utf-8")
+            with mock.patch.object(
+                nc, "activation_state", return_value=_active_state()
+            ):
+                check = _readiness_check(project, task)
+                blockers, _state = _check_numbering_contract(project)
+            self.assertTrue(check["pass"], check["reason"])
+            self.assertEqual(blockers, [])
+
+    def test_rewritten_governed_task_with_old_grammar_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, task = self._governed_project(Path(tmp))
+            task.write_text(_task_body("P01-RESEARCH-001"), encoding="utf-8")
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
                 check = _readiness_check(project, task)
                 blockers, _state = _check_numbering_contract(project)
             self.assertFalse(check["pass"])
-            self.assertIn("expects plan-ref suffix 002", check["reason"])
+            self.assertIn("does not match KIND-NN-NNN", check["reason"])
             self.assertEqual(len(blockers), 1)
-            self.assertEqual(blockers[0]["kind"], "plan-task-suffix-mismatch")
-            self.assertEqual(blockers[0]["expected_suffix"], "002")
-            self.assertEqual(blockers[0]["observed_suffix"], "001")
+            self.assertEqual(blockers[0]["kind"], "plan-ref-malformed")
+            self.assertEqual(blockers[0]["task_counter"], "002")
+            self.assertIsNone(blockers[0]["plan_ref_counter"])
 
     def test_pre_activation_mismatches_are_never_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             task = project / "tasks" / "in-progress" / "TASK-01-010-old.md"
-            task.write_text(_task_body("P01-BUILD-007"), encoding="utf-8")
+            task.write_text(_task_body("BUILD-01-007"), encoding="utf-8")
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -601,15 +624,13 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertTrue(state["active"])
             self.assertEqual(
                 task.read_text(encoding="utf-8"),
-                _task_body("P01-BUILD-007"),
+                _task_body("BUILD-01-007"),
             )
 
     def test_stale_runtime_keeps_every_check_inert(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
-            task.write_text(
-                _task_body("P01-RESEARCH-001"), encoding="utf-8"
-            )
+            task.write_text(_task_body("P01-RESEARCH-001"), encoding="utf-8")
             with mock.patch.object(
                 nc, "activation_state", return_value=_inactive_state()
             ):
@@ -626,11 +647,11 @@ class TestReadinessAndAudit(unittest.TestCase):
             # A hand-written task binding the governed task's ref.
             (
                 project / "tasks" / "done" / "TASK-01-011-dupe.md"
-            ).write_text(_task_body("P01-RESEARCH-002"), encoding="utf-8")
+            ).write_text(_task_body("RESEARCH-01-001"), encoding="utf-8")
             # Two purely pre-activation tasks sharing a ref stay history.
             for name in ("TASK-01-012-a.md", "TASK-01-013-b.md"):
                 (project / "tasks" / "done" / name).write_text(
-                    _task_body("P01-BUILD-020"), encoding="utf-8"
+                    _task_body("BUILD-01-020"), encoding="utf-8"
                 )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
@@ -638,7 +659,7 @@ class TestReadinessAndAudit(unittest.TestCase):
                 blockers, _state = _check_numbering_contract(project)
             reuse = [b for b in blockers if b["kind"] == "plan-ref-reused"]
             self.assertEqual(len(reuse), 1)
-            self.assertEqual(reuse[0]["plan_ref"], "P01-RESEARCH-002")
+            self.assertEqual(reuse[0]["plan_ref"], "RESEARCH-01-001")
             self.assertIn("TASK-01-011", reuse[0]["task_ids"])
 
     def test_audit_is_idempotent_and_mutates_nothing(self):
@@ -671,121 +692,75 @@ class TestReadinessAndAudit(unittest.TestCase):
                 nc.governed_task_ids(project), frozenset({"TASK-01-002"})
             )
             moved.write_text(
-                _task_body("P01-RESEARCH-001"), encoding="utf-8"
+                _task_body("RESEARCH-02-001"), encoding="utf-8"
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
                 blockers, _state = _check_numbering_contract(project)
             self.assertEqual(len(blockers), 1)
+            self.assertEqual(blockers[0]["kind"], "plan-ref-phase-mismatch")
             self.assertEqual(
                 blockers[0]["task_path"].split("/")[1], "in-progress"
             )
 
 
-class TestSkippedSuffixes(unittest.TestCase):
-    """Deterministic skipped-suffix boundary (SPEC-03-010 edge case).
+class TestKindLocalCounters(unittest.TestCase):
+    """Each work kind owns its own sequence within a phase."""
 
-    Under the prospective contract the mediated writer is the authoritative
-    allocator: each successful governed creation allocates its phase-wide
-    suffix and binds its plan ref. A gap is therefore allowed only where that
-    authoritative allocation has advanced past (or later reserves) the
-    skipped values — a governed task may take a higher suffix leaving values
-    unused, and a skipped value may be filled only by its own aligned,
-    freshly allocated ref. Reuse is always blocked: an already-bound plan ref
-    is never reallocated, and a skipped value cannot be filled by riding an
-    existing allocation's ref.
-    """
-
-    def _allocated_project(self, tmp: Path):
-        project = _make_project(tmp)
-        _write_phase_file(
-            project, ["P01-BUILD-002", "P01-DESIGN-005", "P01-TEST-003"]
-        )
-        with mock.patch.object(
-            nc, "activation_state", return_value=_active_state()
-        ):
-            code, stderr = _write_task(
-                project, "TASK-01-002", "first", _task_body("P01-BUILD-002")
-            )
-            assert code == 0, stderr
-            # The allocator advances past 003/004: the gap is legitimate
-            # because it was produced by authoritative allocation, not by a
-            # caller claiming unallocated values for someone else's work.
-            code, stderr = _write_task(
-                project, "TASK-01-005", "skip", _task_body("P01-DESIGN-005")
-            )
-            assert code == 0, stderr
-        return project
-
-    def test_gap_produced_by_authoritative_allocation_is_allowed(self):
+    def test_build_and_test_may_both_start_at_001_in_phase_04(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project = self._allocated_project(Path(tmp))
-            self.assertEqual(
-                nc.governed_task_ids(project),
-                frozenset({"TASK-01-002", "TASK-01-005"}),
-            )
-            skipped = (
-                project / "tasks" / "open" / "TASK-01-005-skip.md"
+            project = _make_project(Path(tmp))
+            _write_phase_file(
+                project,
+                ["BUILD-04-001", "TEST-04-001"],
+                phase="PHASE-04-fixture",
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
-                check = _readiness_check(project, skipped)
-                blockers, state = _check_numbering_contract(project)
-            self.assertTrue(check["pass"], check["reason"])
+                first, stderr = _write_task(
+                    project,
+                    "TASK-04-001",
+                    "build",
+                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
+                )
+                self.assertEqual(first, 0, stderr)
+                second, stderr = _write_task(
+                    project,
+                    "TASK-04-002",
+                    "test",
+                    _task_body("TEST-04-001", phase="PHASE-04-fixture"),
+                )
+                self.assertEqual(second, 0, stderr)
+                blockers, _state = _check_numbering_contract(project)
             self.assertEqual(blockers, [])
-            self.assertTrue(state["active"])
-
-    def test_skipped_value_is_filled_only_by_fresh_aligned_allocation(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project = self._allocated_project(Path(tmp))
-            with mock.patch.object(
-                nc, "activation_state", return_value=_active_state()
-            ):
-                # Riding an existing allocation's ref into the gap: blocked.
-                code, stderr = _write_task(
-                    project,
-                    "TASK-01-003",
-                    "ride",
-                    _task_body("P01-DESIGN-005"),
-                )
-                self.assertEqual(code, 1)
-                self.assertIn("plan-task-suffix-mismatch", stderr)
-                # Reserving the skipped value through the allocator with its
-                # own aligned ref: allowed.
-                code, stderr = _write_task(
-                    project,
-                    "TASK-01-003",
-                    "fill",
-                    _task_body("P01-TEST-003"),
-                )
-                self.assertEqual(code, 0, stderr)
             self.assertEqual(
                 nc.governed_task_ids(project),
-                frozenset({"TASK-01-002", "TASK-01-003", "TASK-01-005"}),
+                frozenset({"TASK-04-001", "TASK-04-002"}),
             )
 
-    def test_reuse_of_a_consumed_skipped_value_is_blocked(self):
+    def test_exact_plan_ref_reuse_is_still_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:
-            project = self._allocated_project(Path(tmp))
-            # Pre-activation history already consumed the skipped value's
-            # ref; the gap cannot be "filled" by reallocating that ref.
-            (project / "tasks" / "done" / "TASK-01-020-old.md").write_text(
-                _task_body("P01-TEST-003"), encoding="utf-8"
-            )
+            project = _make_project(Path(tmp))
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
-                code, stderr = _write_task(
+                first, stderr = _write_task(
                     project,
-                    "TASK-01-003",
-                    "reuse",
-                    _task_body("P01-TEST-003"),
+                    "TASK-04-001",
+                    "first",
+                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
                 )
-            self.assertEqual(code, 1)
+                self.assertEqual(first, 0, stderr)
+                second, stderr = _write_task(
+                    project,
+                    "TASK-04-002",
+                    "reuse",
+                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
+                )
+            self.assertEqual(second, 1)
             self.assertIn("plan-ref-reused", stderr)
-            self.assertIn("TASK-01-020", stderr)
 
 
 _TOML_PROJECT = (
@@ -810,9 +785,9 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         scaffold = project_scaffold(cartopian_toml=_TOML_PROJECT)
         self.addCleanup(scaffold.cleanup)
         scaffold.write(
-            "IMPLEMENTATION_PLAN.md", "P01-BUILD-002\nP01-RESEARCH-001\n"
+            "IMPLEMENTATION_PLAN.md", "BUILD-01-002\nP01-RESEARCH-001\n"
         )
-        _write_phase_file(scaffold.project_root, ["P01-BUILD-002"])
+        _write_phase_file(scaffold.project_root, ["BUILD-01-002"])
         scaffold.capture_request(
             request_id="REQUEST-001",
             unit="task:TASK-01-002",
@@ -825,7 +800,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
                 scaffold.project_root,
                 "TASK-01-002",
                 "aligned",
-                _task_body("P01-BUILD-002"),
+                _task_body("BUILD-01-002"),
             )
         assert code == 0, stderr
         task_path = (
@@ -882,13 +857,14 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         # structured record the public CLI path emits.
         self.assertEqual(structured["records"], [cli_record])
 
-    def test_mismatched_governed_task_blocks_identically_on_both_surfaces(
+    def test_old_grammar_blocks_identically_on_both_surfaces(
         self,
     ):
         scaffold, task_path = self._governed_scaffold()
-        # Hand-rewrite the governed binding out of band: P01-RESEARCH-001 is
-        # a real plan item, so only the shared resolver can catch the
-        # suffix mismatch.
+        # Hand-rewrite the governed binding out of band to the retired
+        # phase-first grammar. Keep the plan and phase anchors present so the
+        # numbering resolver is the check that rejects it.
+        _write_phase_file(scaffold.project_root, ["P01-RESEARCH-001"])
         task_path.write_text(
             _task_body("P01-RESEARCH-001"), encoding="utf-8"
         )
@@ -914,7 +890,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
             if blocker.startswith("plan-ref-aligned:")
         ]
         self.assertEqual(len(aligned_blockers), 1)
-        self.assertIn("expects plan-ref suffix 002", aligned_blockers[0])
+        self.assertIn("does not match KIND-NN-NNN", aligned_blockers[0])
         self.assertIn("P01-RESEARCH-001", aligned_blockers[0])
         # Readiness path: same check, failing exit.
         self.assertEqual(readiness_code, 1)
@@ -925,7 +901,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         ]
         self.assertEqual(len(aligned_checks), 1)
         self.assertFalse(aligned_checks[0]["pass"])
-        self.assertIn("expects plan-ref suffix 002", aligned_checks[0]["reason"])
+        self.assertIn("does not match KIND-NN-NNN", aligned_checks[0]["reason"])
         # MCP dispatch path: identical structured records and exit codes.
         self.assertEqual(
             mcp_bundle["structuredContent"]["records"], [bundle_record]
@@ -943,7 +919,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         # carrying the governed task's plan ref, so bundle and MCP dispatch
         # must both report the anchor blocker from the shared resolver.
         scaffold, task_path = self._governed_scaffold()
-        _write_phase_file(scaffold.project_root, ["P01-BUILD-099"])
+        _write_phase_file(scaffold.project_root, ["BUILD-01-099"])
         with mock.patch.object(
             nc, "activation_state", return_value=_active_state()
         ):
@@ -956,7 +932,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         anchor_blockers = [
             blocker
             for blocker in bundle_record["validator_blockers"]
-            if "does not carry plan ref P01-BUILD-002" in blocker
+            if "does not carry plan ref BUILD-01-002" in blocker
         ]
         self.assertEqual(len(anchor_blockers), 1)
         self.assertTrue(anchor_blockers[0].startswith("plan-ref-aligned:"))

@@ -155,10 +155,11 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
-    # Prospective suffix-alignment contract: once the reviewed correction is
+    # Prospective plan-ref numbering contract: once the reviewed correction is
     # carried by an installed operator-owned tag and proven active, a newly
-    # created task binds one plan ref whose final suffix equals the task's
-    # phase-wide suffix, and no plan ref is reused across tasks. The guard is
+    # created task binds one kind-first plan ref in the same phase, and no plan
+    # ref is reused across tasks. Plan-ref counters are kind-local and
+    # independent of the task-id counter. The guard is
     # inert until then, governs only new work (plus tasks it created), leaves
     # every pre-activation artifact untouched, and runs before any on-disk
     # rename so a refusal leaves the tree unchanged.

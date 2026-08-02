@@ -10,25 +10,25 @@ One or two sentences. What does this phase exist to accomplish?
 
 ## Plan refs covered
 
-| Plan ref         | Kind     | Description |
-| ---------------- | -------- | ----------- |
-| PNN-BUILD-001    | build    | …           |
-| PNN-RESEARCH-002 | research | …           |
+| Plan ref        | Kind     | Description |
+| --------------- | -------- | ----------- |
+| BUILD-NN-001    | build    | …           |
+| RESEARCH-NN-001 | research | …           |
 
-Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit phase number (`NN`) must match the plan section number. Every plan ref listed here must resolve to either a build or research item below. Plan-ref suffixes are drawn from one phase-wide sequence across all work kinds, and each ref's `TASK-NN-NNN` file shares its final suffix.
+Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit phase number (`NN`) must match the plan section number. Every plan ref listed here must resolve to either a build or research item below. Each work kind has its own counter within the phase. Task ids use a separate phase-wide counter, so task and plan-ref suffixes are independent.
 
 ## Build items
 
 Delivery/execution tasks that produce an outcome or artifact. `BUILD` is a compatibility identifier, not a claim that the project is software. Other supported kinds (`DESIGN`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) are listed under whichever section fits their outcome; kind is classification only. List by plan ref; the corresponding `TASK-NN-NNN-slug.md` files are generated when this phase becomes active.
 
-- `PNN-BUILD-001` — …
-- `PNN-BUILD-003` — …
+- `BUILD-NN-001` — …
+- `BUILD-NN-002` — …
 
 ## Research items
 
 Tasks that produce knowledge, decisions, investigations, or designs. Other supported kinds belong here when their outcome is knowledge or a decision; kind is classification only. List by plan ref.
 
-- `PNN-RESEARCH-002` — …
+- `RESEARCH-NN-001` — …
 
 ## Dependencies on prior phases
 

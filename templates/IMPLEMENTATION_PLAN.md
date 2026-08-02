@@ -18,12 +18,12 @@ Which repos or other work locations are involved, what each owns, and how they i
 
 **Goal:** …
 
-| Plan ref         | Kind     | Description |
-| ---------------- | -------- | ----------- |
-| P00-BUILD-001    | build    | …           |
-| P00-RESEARCH-002 | research | …           |
+| Plan ref        | Kind     | Description |
+| --------------- | -------- | ----------- |
+| BUILD-00-001    | build    | …           |
+| RESEARCH-00-001 | research | …           |
 
-Within each phase, the final three-digit suffix is allocated once from one phase-wide sequence spanning all work kinds (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Kind classifies the item and never owns its own counter. The task generated for a plan ref shares its suffix (`P00-RESEARCH-002` → `TASK-00-002`), and each corrective item receives its own new ref.
+Within each phase, every work kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) has an independent three-digit counter starting at `001`. Task ids use their own phase-wide counter; a plan ref and its task do not need matching numeric suffixes. Each corrective item receives its own new ref.
 
 **Exit criteria:**
 
@@ -33,9 +33,9 @@ Within each phase, the final three-digit suffix is allocated once from one phase
 
 **Goal:** …
 
-| Plan ref      | Kind  | Description |
-| ------------- | ----- | ----------- |
-| P01-BUILD-001 | build | …           |
+| Plan ref     | Kind  | Description |
+| ------------ | ----- | ----------- |
+| BUILD-01-001 | build | …           |
 
 **Exit criteria:**
 
@@ -45,10 +45,10 @@ Within each phase, the final three-digit suffix is allocated once from one phase
 
 ## Requirement coverage
 
-| Requirement | Plan ref(s)   | Phase |
-| ----------- | ------------- | ----- |
-| FR-001      | P01-BUILD-001 | 01    |
-| NF-001      | P02-BUILD-003 | 02    |
+| Requirement | Plan ref(s)  | Phase |
+| ----------- | ------------ | ----- |
+| FR-001      | BUILD-01-001 | 01    |
+| NF-001      | BUILD-02-003 | 02    |
 
 Every requirement from REQUIREMENTS.md must appear. If a requirement is intentionally deferred, note the reason.
 

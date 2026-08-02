@@ -135,7 +135,7 @@ def _check_plan_ref(project_root: Path, headers: Dict[str, str]) -> Dict[str, An
 def _check_plan_ref_aligned(
     project_root: Path, task_path: Path, headers: Dict[str, str]
 ) -> Dict[str, Any]:
-    """Prospective suffix-alignment contract (resolver-backed).
+    """Prospective plan-ref numbering contract (resolver-backed).
 
     Re-verifies exactly the tasks the mediated writer created under the
     active corrected contract (their creation is recorded in the project's
@@ -144,8 +144,8 @@ def _check_plan_ref_aligned(
     corrected contract is not proven active, so a stale runtime keeps the old
     behavior.
 
-    For governed work the check verifies the full anchor chain, not just the
-    suffix: the task id, plan ref, and declared ``Phase:`` header must name
+    For governed work the check verifies the full anchor chain: the task id,
+    plan ref, and declared ``Phase:`` header must name
     one phase, and the declared phase file must carry the same plan ref — a
     governed task cannot pass by anchoring to a foreign phase file that never
     mentions its ref.
