@@ -18,8 +18,14 @@ from cli.install_state import (
     supported_record_schema_version,
 )
 
+# The MCP-affected content surface (mirrors ``cli.install_workflow.MCP_TARGETS``).
+# ``cli`` is a member because the MCP server runs every tool call through the
+# in-process ``cli`` package: content that changes CLI behavior changes the
+# behavior a connected MCP client observes, so it participates in MCP identity
+# and fresh-process proof.
 MCP_CONTENT_PATHS: Tuple[str, ...] = (
     "mcp_server",
+    "cli",
     "bin/cartopian-mcp",
     "bin/cartopian-mcp.cmd",
 )

@@ -140,7 +140,7 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
 
-Within each phase, assign `PNN-KIND-NNN` plan refs. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs.
+Within each phase, assign `PNN-KIND-NNN` plan refs, allocating each final suffix once from one phase-wide sequence spanning all work kinds (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) — kind classifies the item and never owns its own counter. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
 
 **Requirement coverage:**
 
@@ -193,6 +193,8 @@ For each build and research item in the active phase, author `tasks/open/TASK-NN
 ```
 cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
 ```
+
+Each task takes its id suffix from its plan ref (`PNN-KIND-NNN` → `TASK-NN-NNN`), so the phase-wide allocation done at planning time carries through. Do not renumber; the mediated writer refuses a mismatched suffix under the corrected contract.
 
 Populate all fields:
 

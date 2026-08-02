@@ -21,7 +21,9 @@ Which repos or other work locations are involved, what each owns, and how they i
 | Plan ref         | Kind     | Description |
 | ---------------- | -------- | ----------- |
 | P00-BUILD-001    | build    | …           |
-| P00-RESEARCH-001 | research | …           |
+| P00-RESEARCH-002 | research | …           |
+
+Within each phase, the final three-digit suffix is allocated once from one phase-wide sequence spanning all work kinds (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Kind classifies the item and never owns its own counter. The task generated for a plan ref shares its suffix (`P00-RESEARCH-002` → `TASK-00-002`), and each corrective item receives its own new ref.
 
 **Exit criteria:**
 

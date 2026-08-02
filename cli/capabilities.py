@@ -59,7 +59,7 @@ ALL_CAPABILITIES: Tuple[str, ...] = READ_CAPABILITIES + WRITE_CAPABILITIES
 # the prompt); the PM presets deliberately exclude read:work-roots and
 # write:worktree.
 PRESETS: Dict[str, Tuple[str, ...]] = {
-    "coder-like": ("read:prompts", "read:work-roots", "write:worktree"),
+    "coder-like": ("read:prompts", "read:work-roots", "write:worktree", "write:reports"),
     "reviewer-like": ("read:prompts", "read:work-roots", "write:reports"),
     "planner-like": ("read:governance", "read:reports", "read:prompts", "write:plan"),
     "pm-with-planner": (

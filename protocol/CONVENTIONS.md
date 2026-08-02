@@ -135,9 +135,21 @@ intent never changes the request's intent class.
 
 The trace chain is identifier-based, not physical nesting. Related artifacts live in their protocol directories.
 
-`IMPLEMENTATION_PLAN.md` defines phase sections; phase files carry the same phase number; task, spec, prompt, report, and review identifiers share the task's `NN-NNN` prefix. A plan ref such as `P01-BUILD-003` encodes its phase number and points to `PHASE-01-*` and the matching plan phase section.
+`IMPLEMENTATION_PLAN.md` defines phase sections; phase files carry the same phase number; task, spec, prompt, report, and review identifiers share the task's `NN-NNN` prefix. A plan ref such as `P01-BUILD-003` encodes its phase number and points to `PHASE-01-*` and the matching plan phase section; under the numbering contract below its final suffix equals its task's, so `P01-BUILD-003` maps to `TASK-01-003` in either direction without opening an artifact.
 
 Planning-checkpoint prompts, reports, and reviews are not part of the task trace chain because they attach to planning stages, not tasks.
+
+### Plan/Task Numbering Contract
+
+A plan ref `PNN-KIND-NNN` names its phase (`NN`), its work kind, and a three-digit final suffix. Supported work kinds are `BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, and `CORRECTIVE`. Kind is classification only — it never owns an independent counter.
+
+Within a phase, the final suffix is allocated once from one phase-wide sequence spanning every work kind, and the plan ref shares that suffix with its task: allocating `003` to a research item yields `PNN-RESEARCH-003` and `TASK-NN-003`. Switching kinds mid-phase neither restarts nor forks the sequence. An allocated suffix is never reused; a gap is legal only where the sequence has already advanced past it. One plan ref binds one primary task, and every corrective task receives its own distinct plan ref — a ref is never reused merely because several tasks correct the same original item. A plan ref authored for a future phase that no task has bound yet is prospective planning content; renumbering it into the phase-wide sequence when its phase is revised is normal plan evolution, not historical rewriting.
+
+The contract is prospective and its boundary is runtime-governed: the corrected rule applies only after the reviewed correction is carried by an operator-owned release tag, that release is installed, and the running process is proven to serve the installed content (`install-cartopian.md`, `protocol/INSTALL_UPDATE_STATE.md`). The boundary is observed from authoritative identity facts — the install root's release-tag receipt, verified installed content, and fresh-process proof for MCP-served calls; hand-typed task prose, caller-selected dates, and filename conventions are not a boundary and cannot claim early activation. Reviewed source alone activates nothing: a source checkout, an unreceipted tree, or content that fails install verification keeps the historical numbering behavior authoritative, and a stale running process keeps it until fresh-process proof succeeds.
+
+The corrected rule governs only work authored after activation: when the mediated task writer creates a task under the active contract, it records that creation in the project's append-only provenance log, and exactly those tasks are re-verified downstream. Every artifact that already exists — including every pre-activation plan/task pair whose suffixes differ — remains valid, byte-stable, and accepted, with no migration, inventory, receipt, renumbering, rewrite, or reclassification.
+
+Enforcement is mediated and shared. `cartopian write-task` refuses newly governed work whose plan ref is missing, malformed, unsupported in kind, phase-mismatched, suffix-mismatched, or already bound to another task, or whose declared `Phase:` header is missing, malformed, or names a different phase than the task id and plan ref, reporting expected and observed suffixes. `validate-task-readiness` and `task-bundle` report the same verdict through the `plan-ref-aligned` check and additionally verify the anchor chain for governed work — the declared phase file must exist and carry the task's plan ref. `cartopian plan-audit` reports mismatches and reused plan refs among newly governed work as blockers while reporting the activation-boundary state, never applying the corrected rule retroactively to artifacts that predate activation. CLI and MCP surfaces resolve through the one numbering-contract resolver, so their verdicts cannot drift.
 
 ### Filename Exclusions
 

@@ -79,8 +79,9 @@ def _find_task_files(project_root: Path, task_id: str) -> List[Path]:
 
     A file carries the id when its stem is the id itself or the id followed by
     a ``-slug`` suffix (the ``TASK-NN-NNN[-slug].md`` grammar move-task
-    accepts); plain prefix matching would conflate TASK-01-001 with a
-    hypothetical longer id.
+    accepts); plain prefix matching would conflate an id with any longer id
+    that starts with the same characters, the way ``item-1`` prefixes
+    ``item-10``.
     """
     matches: List[Path] = []
     for status in STATUSES:
@@ -154,6 +155,24 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
+    # Prospective suffix-alignment contract: once the reviewed correction is
+    # carried by an installed operator-owned tag and proven active, a newly
+    # created task binds one plan ref whose final suffix equals the task's
+    # phase-wide suffix, and no plan ref is reused across tasks. The guard is
+    # inert until then, governs only new work (plus tasks it created), leaves
+    # every pre-activation artifact untouched, and runs before any on-disk
+    # rename so a refusal leaves the tree unchanged.
+    from cli import numbering_contract
+
+    creating = not matches
+    numbering_state = numbering_contract.activation_state()
+    refusal = numbering_contract.guard_task_write(
+        root, task_id, content, creating=creating, state=numbering_state
+    )
+    if refusal is not None:
+        _writers.stderr("guard", f"{refusal[0]}: {refusal[1]}")
+        return _writers.EXIT_FAIL
+
     if matches:
         # Exactly one — update in place in its current status directory. A
         # slug change renames within that directory first (one file before,
@@ -195,4 +214,11 @@ def handler(args: argparse.Namespace) -> int:
             os.rename(renamed_from.parent / filename, renamed_from)
         except OSError:
             pass
+    if code == _writers.EXIT_OK and creating and numbering_state["active"]:
+        # Future-authoring boundary record: exactly the tasks created under
+        # the active contract are re-verified by readiness and plan audit.
+        # Pre-activation artifacts never receive one and stay untouched.
+        numbering_contract.record_governed_creation(
+            root, relative_target, content
+        )
     return code

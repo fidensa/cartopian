@@ -20,6 +20,7 @@ from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 CHECK_ORDER = (
     "phase-exists",
     "plan-ref-exists",
+    "plan-ref-aligned",
     "blocked-by-complete",
     "evidence-gate-valid",
     "acceptance-present",
@@ -129,6 +130,51 @@ def _check_plan_ref(project_root: Path, headers: Dict[str, str]) -> Dict[str, An
         "pass": False,
         "reason": f"plan ref not found in IMPLEMENTATION_PLAN.md: {plan_ref}",
     }
+
+
+def _check_plan_ref_aligned(
+    project_root: Path, task_path: Path, headers: Dict[str, str]
+) -> Dict[str, Any]:
+    """Prospective suffix-alignment contract (resolver-backed).
+
+    Re-verifies exactly the tasks the mediated writer created under the
+    active corrected contract (their creation is recorded in the project's
+    provenance log). Every other task — all pre-activation work, whatever its
+    historical binding — passes untouched, and the check is inert while the
+    corrected contract is not proven active, so a stale runtime keeps the old
+    behavior.
+
+    For governed work the check verifies the full anchor chain, not just the
+    suffix: the task id, plan ref, and declared ``Phase:`` header must name
+    one phase, and the declared phase file must carry the same plan ref — a
+    governed task cannot pass by anchoring to a foreign phase file that never
+    mentions its ref.
+    """
+    from cli import numbering_contract
+
+    name = "plan-ref-aligned"
+    match = re.match(r"^(TASK-\d{2}-\d{3})(?:-|$)", task_path.stem)
+    if not match:
+        return {"name": name, "pass": True, "reason": None}
+    if match.group(1) not in numbering_contract.governed_task_ids(
+        project_root
+    ):
+        return {"name": name, "pass": True, "reason": None}
+    if not numbering_contract.activation_state()["active"]:
+        return {"name": name, "pass": True, "reason": None}
+    verdict = numbering_contract.classify_binding(
+        match.group(1),
+        headers.get("Plan ref", ""),
+        headers.get("Phase", ""),
+    )
+    if verdict["blocking"]:
+        return {"name": name, "pass": False, "reason": verdict["detail"]}
+    anchor = numbering_contract.verify_phase_anchor(
+        project_root, headers.get("Phase", ""), verdict["plan_ref"]
+    )
+    if anchor is not None:
+        return {"name": name, "pass": False, "reason": anchor[1]}
+    return {"name": name, "pass": True, "reason": None}
 
 
 def _check_blocked_by(project_root: Path, headers: Dict[str, str]) -> Dict[str, Any]:
@@ -352,6 +398,9 @@ def handler(args: argparse.Namespace) -> int:
     checks_by_name = {
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref(project_root, headers),
+        "plan-ref-aligned": _check_plan_ref_aligned(
+            project_root, task_path, headers
+        ),
         "blocked-by-complete": _check_blocked_by(project_root, headers),
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
         "acceptance-present": _check_acceptance(content),

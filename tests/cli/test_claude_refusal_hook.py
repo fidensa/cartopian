@@ -89,7 +89,8 @@ _UNGATED_ROLES = (
 )
 
 # Read-axis config: `assignee` holds the default dispatched-assignee grants
-# (`coder-like` = read:prompts + read:work-roots + write:worktree); `curator`
+# (`coder-like` = read:prompts + read:work-roots + write:worktree +
+# write:reports); `curator`
 # holds the two read grants the assignee deliberately lacks; `boaster` has a
 # prose description claiming everything but an empty grant list — enforcement
 # must key on the grants, never on the name or the description.

@@ -905,7 +905,14 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
         "capability_activation_is_project_wide": gated.activated
         and not gated.role_grants["manual"],
         "preset_expands_without_widening": gated.role_grants["coder"]
-        == frozenset({"read:prompts", "read:work-roots", "write:worktree"}),
+        == frozenset(
+            {
+                "read:prompts",
+                "read:work-roots",
+                "write:reports",
+                "write:worktree",
+            }
+        ),
         "work_root_is_declared_and_mapped": resolved["work_roots"]
         == {"product": "/fixture/product"},
         "manual_fallback_has_no_handoff_agent": resolved["roles"]["manual"][

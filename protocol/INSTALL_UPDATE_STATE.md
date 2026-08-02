@@ -153,6 +153,10 @@ is bound to the MCP content being projected; otherwise the projection carries
 no prior process and no freshness claim. A new process serving old or unknown
 content remains restart required. A verified `mcp-server-files` unaffected fact is the only
 affected-surface boundary that can suppress restart without process proof.
+The `mcp-server-files` surface covers every piece of content the connected
+server serves in-process: the `mcp_server` package, the `cli` package its tool
+calls dispatch into, and the MCP entry shims. A release that changes CLI
+behavior is therefore MCP-affecting and requires the same fresh-process proof.
 
 Client registration and client configuration are separately visible surfaces
 owned by one bounded configuration adapter. A disposition supplied for either

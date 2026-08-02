@@ -82,7 +82,7 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
         self.assertEqual(coder["description"], "Writes code.")
         self.assertEqual(
             coder["effective_grants"],
-            ["read:prompts", "read:work-roots", "write:worktree"],
+            ["read:prompts", "read:work-roots", "write:reports", "write:worktree"],
         )
         self.assertEqual(coder["assigned_work_types"], ["task_run"])
         self.assertEqual(coder["auto_launch"], ["task_run"])

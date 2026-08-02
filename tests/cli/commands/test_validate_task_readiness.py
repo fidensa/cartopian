@@ -125,6 +125,7 @@ class _Sandbox:
 CHECK_NAMES_IN_ORDER = [
     "phase-exists",
     "plan-ref-exists",
+    "plan-ref-aligned",
     "blocked-by-complete",
     "evidence-gate-valid",
     "acceptance-present",

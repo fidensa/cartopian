@@ -34,7 +34,7 @@ Preset names are valid anywhere a capability name is and expand to their grants 
 
 | Preset | Grants |
 | --- | --- |
-| `coder-like` | `read:prompts`, `read:work-roots`, `write:worktree` |
+| `coder-like` | `read:prompts`, `read:work-roots`, `write:worktree`, `write:reports` |
 | `reviewer-like` | `read:prompts`, `read:work-roots`, `write:reports` |
 | `planner-like` | `read:governance`, `read:reports`, `read:prompts`, `write:plan` |
 | `pm-with-planner` | `read:governance`, `read:reports`, `read:prompts`, `write:lifecycle`, `dispatch` |

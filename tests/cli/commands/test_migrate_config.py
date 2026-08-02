@@ -164,7 +164,7 @@ class TestConfigurationMigration(unittest.TestCase):
             self.assertTrue(effective["capabilities"]["activated"])
             self.assertEqual(
                 effective["roles"]["coder"]["effective_grants"],
-                ["read:prompts", "read:work-roots", "write:worktree"],
+                ["read:prompts", "read:work-roots", "write:reports", "write:worktree"],
             )
 
     def test_completed_migration_and_canonical_input_are_byte_stable(self):

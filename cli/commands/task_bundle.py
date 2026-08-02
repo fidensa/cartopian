@@ -22,6 +22,7 @@ from cli.commands.validate_task_readiness import (
     _check_request_trace,
     _check_phase,
     _check_plan_ref,
+    _check_plan_ref_aligned,
     _check_work_root,
     _parse_headers,
     _split_csv,
@@ -184,6 +185,9 @@ def _build_validation_checks(
     checks_by_name = {
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref_bundle(project_root, headers),
+        "plan-ref-aligned": _check_plan_ref_aligned(
+            project_root, task_path, headers
+        ),
         "blocked-by-complete": _check_blocked_by(project_root, headers),
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
         "acceptance-present": _check_acceptance(content),

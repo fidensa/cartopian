@@ -47,6 +47,8 @@ def _write_mcp_surface(root: Path) -> None:
     (root / "mcp_server").mkdir(parents=True)
     (root / "mcp_server" / "a.py").write_text("a\n", encoding="utf-8")
     (root / "mcp_server" / "b.py").write_text("b\n", encoding="utf-8")
+    (root / "cli").mkdir()
+    (root / "cli" / "main.py").write_text("cli\n", encoding="utf-8")
     (root / "bin").mkdir()
     (root / "bin" / "cartopian-mcp").write_text(
         "unix\n", encoding="utf-8"

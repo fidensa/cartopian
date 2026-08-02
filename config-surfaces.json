@@ -111,11 +111,13 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 1549,
+      "max_output_bytes": 1565,
       "request_trace_channel_delta_bytes": 7,
       "request_trace_channel_note": "Adds one bounded request-trace projection for review handoffs.",
       "split_report_delta_bytes": 104,
-      "split_report_note": "Adds expected_report_variant and completion_report_path so review handoffs name the independent review-report slot while preserving the completion-report identity."
+      "split_report_note": "Adds expected_report_variant and completion_report_path so review handoffs name the independent review-report slot while preserving the completion-report identity.",
+      "assignee_report_grant_delta_bytes": 16,
+      "assignee_report_grant_note": "Adds write:reports to the coder-like preset so an assignee's effective_grants name the completion-report slot the packet already assigns it."
     },
     {
       "surface": "containment-matrix",
@@ -131,7 +133,9 @@
       "phase_00_status": "not measured in Phase 00",
       "task_delta_bytes": 114,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
-      "max_output_bytes": 573
+      "max_output_bytes": 960,
+      "numbering_contract_delta_bytes": 387,
+      "numbering_contract_note": "Adds the numbering_contract activation-boundary state (contract identity, release receipt, installed-content verification, and running-process proof where affected) so operators can read why the prospective suffix-alignment rule is or is not active."
     },
     {
       "surface": "review-context",
@@ -507,6 +511,41 @@
         "dispatch and manual-handoff preflight"
       ],
       "test_anchor": "tests/test_request_trace_contract.py",
+      "legacy_policy": "compatibility-labeled"
+    },
+    {
+      "id": "numbering-contract",
+      "paths": [
+        "cli/numbering_contract.py",
+        "cli/commands/write_task.py",
+        "cli/commands/validate_task_readiness.py",
+        "cli/commands/task_bundle.py",
+        "cli/commands/plan_audit.py",
+        "protocol/CONVENTIONS.md",
+        "templates/IMPLEMENTATION_PLAN.md",
+        "templates/PHASE.md",
+        "templates/TASK.md",
+        "skills/plan-project.md",
+        "skills/adopt-plan.md"
+      ],
+      "owner_contract": "cli/numbering_contract.py::evaluate_activation",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "install-root.release-version",
+        "install-root.installed-content",
+        "mcp.running-server-fact"
+      ],
+      "parity_mechanism": {
+        "kind": "executable-contract",
+        "check": "tests/cli/test_numbering_contract.py"
+      },
+      "output_projection": [
+        "write-task suffix-alignment guard",
+        "plan-ref-aligned readiness check",
+        "plan-audit numbering findings and activation state",
+        "numbering-governed creation provenance record"
+      ],
+      "test_anchor": "tests/cli/test_numbering_contract.py",
       "legacy_policy": "compatibility-labeled"
     },
     {

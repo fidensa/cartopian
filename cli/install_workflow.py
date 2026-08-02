@@ -114,7 +114,16 @@ CORE_TARGETS = (
     "scripts/install.py",
     "CHANGELOG.md",
 )
-MCP_TARGETS = ("mcp_server", "bin/cartopian-mcp", "bin/cartopian-mcp.cmd")
+# The MCP-affected content surface. `cli` is included because the MCP server
+# dispatches every tool call into the `cli` package in-process: a release that
+# changes CLI behavior changes MCP behavior, and only fresh-process proof shows
+# the running server serves the newly installed content.
+MCP_TARGETS = (
+    "mcp_server",
+    "cli",
+    "bin/cartopian-mcp",
+    "bin/cartopian-mcp.cmd",
+)
 WRAPPER_TARGETS = ("wrappers",)
 VERIFICATION_TARGETS = ("protocol/INSTALL_VERIFICATION.md",)
 
