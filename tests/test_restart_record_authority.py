@@ -884,6 +884,56 @@ class PublicRestartVerificationAuthorityTests(unittest.TestCase):
         self.assertNotEqual(workflow["outcome"]["claim"], "qualified-complete")
         self.assertNotEqual(workflow["state"], "complete")
 
+    def test_legacy_digest_observation_cannot_poison_current_record(self) -> None:
+        """An old in-process verifier must leave newer install proof intact."""
+        root = clone(self, _UPDATED)
+        state_path = root / STATE_FILE
+        original = state_path.read_bytes()
+        legacy_identity = "sha256:" + "4" * 64
+        legacy_installed = {
+            "mcp_identity": legacy_identity,
+            "mcp_state": "dirty",
+            "mcp_verification": "dirty",
+            "mcp_completeness": "complete",
+        }
+        legacy_observation = {
+            "identity": legacy_identity,
+            "state": "unverified",
+            "verification": "unverified",
+            "completeness": "complete",
+            "authority": "installed-or-materialized-content",
+        }
+        with (
+            patch.object(
+                server,
+                "_RUNNING_SERVER_FACT",
+                _running(legacy_identity, STALE_PROCESS, STALE_INSTANCE),
+            ),
+            patch.object(
+                verify_restart_state,
+                "mcp_content_identity",
+                return_value=legacy_observation,
+            ),
+            patch.object(
+                verify_restart_state,
+                "installed_content",
+                return_value=legacy_installed,
+            ),
+        ):
+            response = server.call_tool(
+                "verify_restart_state", {"install_root": str(root)}
+            )
+
+        result = response["structuredContent"]["records"][0]
+        self.assertEqual(
+            result["restart_state"]["reason_code"],
+            "installed_content_unverified",
+        )
+        self.assertFalse(
+            result["restart_state"]["activation_claim_allowed"]
+        )
+        self.assertEqual(state_path.read_bytes(), original)
+
     def test_refused_restart_evidence_still_fails_closed(self) -> None:
         """The classification change cannot weaken this consumer either.
 

@@ -131,13 +131,20 @@ def _update_version_facts(
         if not isinstance(item, dict):
             continue
         if item.get("kind") == "installed_content":
-            item["mcp_identity"] = installed.get("identity")
-            item["mcp_verification"] = installed.get(
-                "verification", "unknown"
-            )
-            item["mcp_completeness"] = installed.get(
-                "completeness", "unknown"
-            )
+            # The installer owns this identity.  A verifier still running
+            # pre-update code may use an older digest contract while reading
+            # the newly installed tree; it must not replace the installer's
+            # current identity with that incompatible observation.
+            observed_identity = installed.get("identity")
+            recorded_identity = item.get("mcp_identity")
+            if recorded_identity in (None, observed_identity):
+                item["mcp_identity"] = observed_identity
+                item["mcp_verification"] = installed.get(
+                    "verification", "unknown"
+                )
+                item["mcp_completeness"] = installed.get(
+                    "completeness", "unknown"
+                )
         elif item.get("kind") == "running_server":
             item["value"] = running.get("loaded_identity")
             item["process_id"] = running.get("process_id")
@@ -268,15 +275,21 @@ def handler(args: argparse.Namespace) -> int:
     elif projection["status"] == "current":
         updated["state"] = "complete"
     evaluated = evaluate_record(updated)
-    _atomic_write_text(
-        state_path,
-        json.dumps(
-            stable_projection(evaluated),
-            indent=2,
-            ensure_ascii=False,
-        )
-        + "\n",
+    identity_contract_conflict = (
+        record_usable
+        and recorded_mcp is not None
+        and recorded_mcp != observed_identity
     )
+    if not identity_contract_conflict:
+        _atomic_write_text(
+            state_path,
+            json.dumps(
+                stable_projection(evaluated),
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+        )
     emit_record(
         {
             "restart_state": projection,
