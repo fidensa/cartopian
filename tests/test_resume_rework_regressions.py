@@ -312,13 +312,18 @@ class SourceMismatchPreservationTests(ReworkTestCase):
             json.loads(predecessor.decode("utf-8"))["run"]["source"]["value"],
         )
 
-    def test_changed_source_cannot_overwrite_preserved_evidence(self) -> None:
-        """A second changed-source run cannot consume the preserved record."""
+    def test_changed_source_rolls_forward_hash_linked_preserved_evidence(
+        self,
+    ) -> None:
+        """A later source preserves the envelope that commits to its predecessor."""
         apply_workflow(self.plan(operation="fresh-install"))
         predecessor = (self.install_root / PROGRESS_FILE).read_bytes()
+        predecessor_identity = resume_state._digest_bytes(predecessor)
         alternate = self.alternate_source()
         self.drift_client_config()
         apply_workflow(self.plan(source_root=alternate))
+        current = (self.install_root / PROGRESS_FILE).read_bytes()
+        current_identity = resume_state._digest_bytes(current)
 
         third = self.root / "third-source"
         shutil.copytree(
@@ -333,9 +338,50 @@ class SourceMismatchPreservationTests(ReworkTestCase):
             changelog.read_text(encoding="utf-8") + "\n<!-- third -->\n",
             encoding="utf-8",
         )
+        apply_workflow(self.plan(source_root=third))
+
+        preserved = (self.install_root / QUARANTINE_FILE).read_bytes()
+        self.assertEqual(preserved, current)
+        preserved_record = json.loads(preserved.decode("utf-8"))
+        self.assertEqual(
+            preserved_record["recovery"]["quarantined_identity"],
+            predecessor_identity,
+        )
+        self.assertEqual(
+            self.envelope()["recovery"]["quarantined_identity"],
+            current_identity,
+        )
+
+    def test_changed_source_refuses_unlinked_preserved_evidence(self) -> None:
+        """A tampered lineage cannot authorize replacing the preserved slot."""
+        apply_workflow(self.plan(operation="fresh-install"))
+        predecessor = (self.install_root / PROGRESS_FILE).read_bytes()
+        alternate = self.alternate_source()
+        self.drift_client_config()
+        apply_workflow(self.plan(source_root=alternate))
+
+        envelope = self.envelope()
+        envelope["recovery"]["quarantined_identity"] = "sha256:" + "0" * 64
+        (self.install_root / PROGRESS_FILE).write_text(
+            json.dumps(envelope), encoding="utf-8"
+        )
+
+        third = self.root / "third-source-unlinked"
+        shutil.copytree(
+            alternate,
+            third,
+            ignore=shutil.ignore_patterns(
+                ".git", "__pycache__", "projects", ".pytest_cache"
+            ),
+        )
+        changelog = third / "protocol" / "CHANGELOG.md"
+        changelog.write_text(
+            changelog.read_text(encoding="utf-8") + "\n<!-- third -->\n",
+            encoding="utf-8",
+        )
         with self.assertRaises(WorkflowRefusal) as caught:
             apply_workflow(self.plan(source_root=third))
-        self.assertIn("preserved", str(caught.exception))
+        self.assertIn("does not commit", str(caught.exception))
         self.assertEqual(
             (self.install_root / QUARANTINE_FILE).read_bytes(), predecessor
         )

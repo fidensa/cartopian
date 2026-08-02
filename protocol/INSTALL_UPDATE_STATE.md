@@ -340,13 +340,18 @@ failure is the useful one and a later duplicate may be dropped.
 `source-mismatch`, `run-conflict`, and `orphaned` are the opposite case — the
 record reads perfectly and is the last useful recovery evidence for a different
 source, run, or installation. Each is preserved before any new envelope is
-written, under two rules:
+written, under these rules:
 
 - It is retained byte-for-byte and never relabelled. Its content identity is
   the evidence, so rewriting it would destroy what it proves.
-- A preservation slot already holding a different record is a refusal, not
-  something to overwrite. A second changed source therefore cannot consume the
-  evidence the first one preserved.
+- A preservation slot already holding a different record rolls forward only
+  when the current progress envelope commits to that exact occupant's content
+  identity in its recovery note. The current envelope then becomes the new
+  preserved head and carries the earlier identity inside it, forming a bounded,
+  hash-linked lineage instead of permanently blocking later source updates.
+- If the current envelope does not commit to the exact occupant identity, the
+  installer refuses. Unrelated, missing, symlinked, or tampered evidence is
+  never overwritten.
 
 The recovery note carries `preserved_classification` alongside the preserved
 record's `quarantine` name and `quarantined_identity` for the life of the

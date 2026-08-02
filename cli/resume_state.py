@@ -785,13 +785,17 @@ def preserve_progress(
     installation that is no longer present.  A new envelope may not replace one
     of those until it has been preserved.
 
-    Two rules follow from that:
+    Three rules follow from that:
 
     * The record is retained byte-for-byte and is never relabelled.  Its content
       identity *is* the evidence, so rewriting it would destroy what it proves.
-    * A preservation slot already holding a different record is a refusal, not
-      something to overwrite.  Otherwise a second changed source could consume
-      the evidence the first one preserved.
+    * A preservation slot already holding a different record may roll forward
+      only when the current progress envelope commits to that exact record's
+      content identity in its recovery note.  Replacing the slot with the
+      current envelope then preserves a bounded, hash-linked lineage instead
+      of deadlocking every later source update.
+    * A different occupant that is not committed by the current envelope is a
+      refusal.  An unrelated or tampered record is never overwritten.
     """
     source = progress_path(install_root)
     target = quarantine_path(install_root)
@@ -813,18 +817,40 @@ def preserve_progress(
                 if target.is_file() and not target.is_symlink()
                 else b""
             )
-            if _digest_bytes(retained) != identity:
-                raise ProgressRefusal(
-                    "preserved-evidence-occupied",
-                    (
-                        "earlier recovery evidence is already preserved at "
-                        f"{QUARANTINE_FILE} and would be destroyed by "
-                        f"preserving this {classification} record; inspect and "
-                        "clear the preserved record before retrying"
-                    ),
+            retained_identity = _digest_bytes(retained)
+            if retained_identity == identity:
+                # The identical record is already preserved; drop the duplicate.
+                source.unlink()
+            else:
+                try:
+                    current = json.loads(content.decode("utf-8"))
+                except (UnicodeError, json.JSONDecodeError):
+                    current = None
+                recovery = (
+                    current.get("recovery")
+                    if isinstance(current, Mapping)
+                    else None
                 )
-            # The identical record is already preserved; drop the duplicate.
-            source.unlink()
+                carries_retained_identity = (
+                    isinstance(recovery, Mapping)
+                    and recovery.get("quarantine") == QUARANTINE_FILE
+                    and recovery.get("quarantined_identity")
+                    == retained_identity
+                )
+                if not carries_retained_identity:
+                    raise ProgressRefusal(
+                        "preserved-evidence-occupied",
+                        (
+                            "earlier recovery evidence is already preserved at "
+                            f"{QUARANTINE_FILE}, but the current progress record "
+                            "does not commit to its content identity; inspect "
+                            "the preserved record before retrying"
+                        ),
+                    )
+                # The current envelope contains the exact digest of the prior
+                # occupant.  Preserve it as the new head of a bounded,
+                # hash-linked lineage; os.replace keeps the rollover atomic.
+                os.replace(source, target)
         else:
             os.replace(source, target)
     except OSError as exc:
