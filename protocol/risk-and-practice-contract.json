@@ -17,6 +17,24 @@
       "consequential": "A material external effect, recovery-dependent state, unresolved authority question, or consequential quality judgment is present.",
       "critical": "Material harm or commitment could be irreversible or broadly propagated, recovery is uncertain, or required authority is absent."
     },
+    "observation_record_fields": [
+      {
+        "id": "observation",
+        "meaning": "Identity of the declared observable condition being recorded."
+      },
+      {
+        "id": "state",
+        "meaning": "The single declared state this observation was recorded in."
+      },
+      {
+        "id": "supporting_fact",
+        "meaning": "Identity of the task fact, current-state observation, policy value, or evidence result that supports the recorded state. An unsupported state is recorded as unknown, never as favorable."
+      },
+      {
+        "id": "elevates_governance",
+        "meaning": "True when the recorded state's band floor is above the lowest band, so an operator can see which observations raised the expectations."
+      }
+    ],
     "observations": [
       {
         "id": "consequence-reach",
@@ -25,26 +43,31 @@
           {
             "id": "local-artifact",
             "band_floor": "routine",
+            "elevates_governance": false,
             "meaning": "Effects stay inside a bounded draft, sandbox, or readily inspectable local artifact."
           },
           {
             "id": "project-internal",
             "band_floor": "bounded",
+            "elevates_governance": true,
             "meaning": "Effects reach other work inside the project or team but no external party, system of record, or obligation."
           },
           {
             "id": "external-or-material",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Effects reach people outside the work, external systems, money, shared assets, or another material obligation."
           },
           {
             "id": "broad-or-binding",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "Effects could propagate broadly or create a binding commitment that others rely on."
           },
           {
             "id": "unknown",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Reach could not be established from the task envelope or the current state; it is recorded as missing, never as contained."
           }
         ]
@@ -56,26 +79,31 @@
           {
             "id": "direct-undo",
             "band_floor": "routine",
+            "elevates_governance": false,
             "meaning": "A direct undo is known, available, and cheap to verify."
           },
           {
             "id": "bounded-recovery",
             "band_floor": "bounded",
+            "elevates_governance": true,
             "meaning": "Recovery is multi-step but known, available, and already demonstrated."
           },
           {
             "id": "recovery-dependent",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Recovery depends on state that must itself be verified, or destroys intermediate state."
           },
           {
             "id": "unrecoverable",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "No recovery path exists, or the available path is known to be incompatible with the effect."
           },
           {
             "id": "unknown",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "The recovery path could not be established; an unproven undo is not a demonstrated one."
           }
         ]
@@ -87,26 +115,31 @@
           {
             "id": "covered",
             "band_floor": "routine",
+            "elevates_governance": false,
             "meaning": "Existing authority clearly covers the action and no new commitment is created."
           },
           {
             "id": "new-commitment",
             "band_floor": "bounded",
+            "elevates_governance": true,
             "meaning": "Authority covers the action, but it creates a durable commitment that outlives the task."
           },
           {
             "id": "unconfirmed",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Intent, approval, ownership, or the scope of authority has not been confirmed for this action."
           },
           {
             "id": "absent",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "Required authority is missing, contradicted, or reserved to someone who has not granted it."
           },
           {
             "id": "unknown",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "Authority could not be established. A missing authority observation is never read as permission."
           }
         ]
@@ -118,26 +151,31 @@
           {
             "id": "confirmed",
             "band_floor": "routine",
+            "elevates_governance": false,
             "meaning": "Inputs, exclusions, and success conditions are confirmed and the path is familiar."
           },
           {
             "id": "stated-assumption",
             "band_floor": "bounded",
+            "elevates_governance": true,
             "meaning": "One recorded assumption remains; exclusions and success conditions are otherwise confirmed."
           },
           {
             "id": "material-assumption",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Material assumptions, mixed state, or a novel path remain unresolved."
           },
           {
             "id": "contradictory",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "Sources, instructions, or observed states conflict and cannot all hold."
           },
           {
             "id": "unknown",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "The settledness of the inputs could not be established from the envelope."
           }
         ]
@@ -149,26 +187,31 @@
           {
             "id": "deterministic",
             "band_floor": "routine",
+            "elevates_governance": false,
             "meaning": "A deterministic check establishes the decisive success condition from current evidence."
           },
           {
             "id": "direct-observation",
             "band_floor": "bounded",
+            "elevates_governance": true,
             "meaning": "The decisive condition is directly observable in the target state, though not machine-checkable."
           },
           {
             "id": "indirect-or-qualitative",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "The decisive condition is qualitative, indirect, or susceptible to self-certification."
           },
           {
             "id": "unavailable",
             "band_floor": "critical",
+            "elevates_governance": true,
             "meaning": "Decisive evidence is stale, out of reach, or cannot be obtained before acting."
           },
           {
             "id": "unknown",
             "band_floor": "consequential",
+            "elevates_governance": true,
             "meaning": "Evidence coverage could not be established; absent evidence is recorded as absent."
           }
         ]
@@ -262,42 +305,72 @@
     "cards": [
       {
         "id": "intent-confirmation",
+        "boundary_id": "requirements-and-intent",
+        "failure_id": "inferred-intent-not-confirmed",
         "lifecycle_boundary": "Requirements and intent confirmation, before delivery of the interpreted contract begins.",
         "non_enforceable_failure": "Missing intent, exclusions, success conditions, or authority are inferred and delivery starts before the operator confirms the interpretation.",
         "evidence": "The adoption and planning runbooks already require the interpretation and any proposed exit criteria to be confirmed before files are generated, but a file-presence guard cannot decide whether an inferred intent is faithful to the request.",
         "disposition": "keep-separate",
         "separation_reason": "This is a pre-commitment judgment boundary, not an evidence review and not a closeout test.",
+        "guidance": "failure_signal_grammar",
         "body_budget_bytes": 1024
       },
       {
         "id": "evidence-and-gates",
+        "boundary_id": "evidence-and-review-gate",
+        "failure_id": "evidence-self-certified-or-missing",
         "lifecycle_boundary": "Acceptance of completion evidence and the risk or review gate that follows it.",
         "non_enforceable_failure": "The producer self-certifies quality, treats missing or indirect evidence as success, or skips independent judgment where deterministic checks cannot decide adequacy.",
         "evidence": "The handoff runbook already rejects missing, malformed, inconsistent, blocked, or operator-dependent reports as successful evidence, and configured review policy is already separate from role labels. Deterministic checks validate structure and state, not every qualitative claim.",
         "disposition": "keep-separate",
         "separation_reason": "It is invoked only for a remaining qualitative gap, and its failure signals are the ones the other three cards reference rather than restate.",
+        "guidance": "failure_signal_grammar",
         "body_budget_bytes": 1024
       },
       {
         "id": "mixed-version-state",
+        "boundary_id": "migration-install-restart",
+        "failure_id": "mixed-version-or-unproven-running-state",
         "lifecycle_boundary": "Configuration migration and the install, update, or restart transition.",
         "non_enforceable_failure": "Success is claimed while old and new versions, partial migration state, stale processes, or unverified recovery coexist.",
         "evidence": "Protocol gating and the migration runbook already fail closed around unresolved or judgment-dependent migration actions, and installed markers, source checkouts, and running identity are known to diverge. A static version string cannot prove that migration recovered cleanly or that updated software is the process actually serving requests.",
         "disposition": "keep-separate",
         "separation_reason": "It owns mixed-version and running-state proof, which the general evidence card would state too vaguely to act on.",
+        "guidance": "failure_signal_grammar",
         "body_budget_bytes": 1024
       },
       {
         "id": "delivery-closeout",
+        "boundary_id": "delivery-and-closeout",
+        "failure_id": "artifact-mistaken-for-outcome",
         "lifecycle_boundary": "Delivery of the outcome and closeout of the unit of work.",
         "non_enforceable_failure": "Artifact creation is mistaken for outcome completion, and real-world acceptance, contingency, durable decisions, or follow-up is omitted.",
         "evidence": "The handoff runbook already separates accepted, blocked, failed, rejected, and malformed outcomes, and closeout already requires an audit, operator confirmation, an archival choice, reset validation, and unresolved-decision follow-up. Artifact presence alone still does not establish delivery, recipient acceptance, or real-world effect.",
         "disposition": "keep-separate",
         "separation_reason": "It is the final outcome boundary and must distinguish artifact state from outcome state.",
+        "guidance": "failure_signal_grammar",
         "body_budget_bytes": 1024
       }
     ],
     "activation": "A card is eligible only at its own lifecycle boundary and only when its named non-enforceable failure is possible. Deterministic guards continue to own every fact they can decide.",
+    "envelope_facts": [
+      {
+        "id": "lifecycle_boundaries",
+        "meaning": "The lifecycle boundaries this unit of work actually crosses. Declared by the envelope; never derived from the risk band or a pack outcome."
+      },
+      {
+        "id": "open_failure_conditions",
+        "meaning": "The named non-enforceable failures that are still open for this unit of work. A failure that a deterministic guard has already decided is not open."
+      }
+    ],
+    "activation_rule": {
+      "boundary_fact": "lifecycle_boundaries",
+      "failure_fact": "open_failure_conditions",
+      "combinator": "boundary-and-open-failure",
+      "default_outcome": "no-card",
+      "meaning": "A card is eligible only when the task envelope declares that the work crosses the card's lifecycle boundary and that the card's named non-enforceable failure is still open. Crossing the boundary alone activates nothing, and an open failure outside its boundary activates nothing. Neither the risk band nor the pack outcome is an input.",
+      "result_order": "declared card order"
+    },
     "grammar_ownership": "central",
     "failure_signal_grammar": [
       {
@@ -335,6 +408,13 @@
         "required": true,
         "use": "identity",
         "meaning": "Stable logical identity of the pack. Not a machine path.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "family",
+        "required": true,
+        "use": "identity",
+        "meaning": "The approved practice-pack family this pack belongs to: software, research, marketing, operations, or policy. Exactly one pack ships per family and no sixth family is admitted.",
         "breaks_selection_ties": false
       },
       {
@@ -394,6 +474,13 @@
         "breaks_selection_ties": false
       },
       {
+        "id": "content_areas",
+        "required": true,
+        "use": "semantics",
+        "meaning": "The approved guidance content areas this pack's body must cover. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band.",
+        "breaks_selection_ties": false
+      },
+      {
         "id": "evidence_shape",
         "required": true,
         "use": "semantics",
@@ -421,6 +508,10 @@
       {
         "id": "authorized_profile_hint",
         "meaning": "An explicit profile hint, honored only when the envelope authorizes it."
+      },
+      {
+        "id": "lifecycle_substrate_activities",
+        "meaning": "Cartopian's own lifecycle mechanics that this unit of work performs. Declaring one is a negative condition; it is never a primary outcome."
       }
     ],
     "fact_precedence_classes": {
@@ -459,8 +550,16 @@
         "rule": "A pack is eligible only when every one of its positive conditions matches."
       },
       {
+        "id": "declared-operational-outcome-required",
+        "behavior": "Operations is eligible only when the envelope declares one of the qualifying operational outcomes. No other envelope fact supplies it, and no inference from prose, filenames, work-root contents, conversation, project history, or Cartopian runtime activity supplies it."
+      },
+      {
         "id": "negative-veto",
         "rule": "Any matching negative condition disqualifies the pack regardless of how many positive conditions matched."
+      },
+      {
+        "id": "lifecycle-substrate-is-never-an-operational-outcome",
+        "behavior": "A declared Cartopian lifecycle-substrate activity vetoes operations. Task-directory movement, handoff dispatch, review routing, STATE.md refresh, and PM cleanup are process substrate and never operations-profile matching evidence."
       },
       {
         "id": "primary-outcome-precedence",
@@ -568,9 +667,11 @@
       },
       {
         "id": "operations",
-        "positive_shape": "The primary outcome is execution of a repeatable process, state transition, handoff, service action, or contingency.",
-        "negative_shape": "An operational process is only being studied or described without an execution outcome.",
-        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency."
+        "positive_shape": "The primary outcome is an explicitly declared, executed and verified operational outcome: a service action, process transition, handoff outcome, recovery, or contingency.",
+        "negative_shape": "The operational language names only Cartopian's own lifecycle mechanics, implements software functionality, researches operations, documents a process without executing it, or appears as an incidental subject term.",
+        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency.",
+        "requires_declared_outcome": true,
+        "excludes_lifecycle_substrate": true
       },
       {
         "id": "policy",
@@ -589,7 +690,298 @@
       "bodies_loaded",
       "loaded_body_bytes"
     ],
-    "catalog_boundary": "The five shapes are optional demonstrations of one metadata and selection contract. They are not a mandatory catalog and no pack is required for any task."
+    "catalog_boundary": "The five approved families are the complete initial delivery scope: five optional, task-matched packs, one per family, no mandatory pack, no always-loaded catalog, and no sixth family. \"Not a mandatory catalog\" means no pack is preloaded and no task requires one; it does not mean fewer than five ship.",
+    "condition_forms": [
+      {
+        "id": "exact-value",
+        "meaning": "The condition declares one `value`. It matches when that value appears in the named envelope fact."
+      },
+      {
+        "id": "any-of-declared-set",
+        "meaning": "The condition declares a closed `any_of` set. It matches when at least one declared member appears in the named envelope fact. The set is fixed in this registry; it is not open-ended matching."
+      }
+    ],
+    "negative_only_facts": [
+      "lifecycle_substrate"
+    ],
+    "outcome_declaration": {
+      "rule": "A primary outcome is a declared task-envelope fact. Selection never infers one.",
+      "non_inference_sources": [
+        {
+          "id": "prose-verbs",
+          "meaning": "Verbs or phrasing in task prose, however operational they sound."
+        },
+        {
+          "id": "filenames",
+          "meaning": "File, directory, or artifact names."
+        },
+        {
+          "id": "work-root-contents",
+          "meaning": "Anything found by reading the work root or repository contents."
+        },
+        {
+          "id": "conversation",
+          "meaning": "Session conversation with the operator or another role."
+        },
+        {
+          "id": "project-history",
+          "meaning": "Prior tasks, decisions, reports, or plan history."
+        },
+        {
+          "id": "cartopian-runtime-activity",
+          "meaning": "Observed Cartopian runtime mechanics, including dispatch, routing, state refresh, and cleanup."
+        }
+      ],
+      "ambiguity_rule": "When the declared primary outcomes do not resolve to one eligible pack, selection fails closed and loads no body. Ambiguity is never resolved by inference."
+    },
+    "lifecycle_substrate": {
+      "statement": "Ordinary Cartopian lifecycle mechanics are process substrate, not operations-profile matching evidence. Cartopian moving its own work through its own lifecycle is how the protocol runs; it is not an operational outcome the protocol governs.",
+      "activities": [
+        {
+          "id": "task-directory-movement",
+          "meaning": "Moving a task file between Cartopian's open, in-progress, in-review, and done directories."
+        },
+        {
+          "id": "handoff-dispatch",
+          "meaning": "Dispatching an assignment to a role and waiting for its report."
+        },
+        {
+          "id": "review-routing",
+          "meaning": "Routing a completed unit of work to its configured review loop."
+        },
+        {
+          "id": "state-file-refresh",
+          "meaning": "Refreshing STATE.md to reflect the current phase, active work, and next action."
+        },
+        {
+          "id": "pm-cleanup",
+          "meaning": "PM lifecycle cleanup such as prompt removal, report filing, and plan bookkeeping."
+        }
+      ],
+      "rule": "A declared lifecycle-substrate activity is a negative condition on the operations profile. It can never satisfy a positive condition, and it vetoes operations regardless of how many positive conditions matched."
+    },
+    "operations_primary_outcome": {
+      "rule": "Operations is eligible only when the task envelope explicitly declares one of the qualifying operational outcomes below. Each requires both execution and verification; an intention to execute is not an executed outcome.",
+      "qualifying_outcomes": [
+        {
+          "id": "executed-service-action",
+          "meaning": "A service or system action was executed and the resulting state verified."
+        },
+        {
+          "id": "executed-process-transition",
+          "meaning": "A declared process moved from one state to another and the new state was verified."
+        },
+        {
+          "id": "executed-handoff-outcome",
+          "meaning": "A handoff was completed and its receipt or acceptance verified."
+        },
+        {
+          "id": "executed-recovery",
+          "meaning": "A recovery action was executed and the recovered state verified."
+        },
+        {
+          "id": "executed-contingency",
+          "meaning": "A contingency action was executed and its effect verified."
+        }
+      ],
+      "negative_applicability": [
+        {
+          "id": "governance-mechanics-only",
+          "vetoes_when": "The operational language names only Cartopian's own governance mechanics.",
+          "condition": {
+            "fact": "lifecycle_substrate",
+            "any_of": [
+              "task-directory-movement",
+              "handoff-dispatch",
+              "review-routing",
+              "state-file-refresh",
+              "pm-cleanup"
+            ]
+          }
+        },
+        {
+          "id": "implementing-software-functionality",
+          "vetoes_when": "The primary outcome is implementing or changing software functionality, even when that functionality is operational.",
+          "condition": {
+            "fact": "primary_outcome",
+            "value": "software-behavior-change"
+          }
+        },
+        {
+          "id": "researching-operations",
+          "vetoes_when": "The primary outcome is a supported finding about operations rather than an executed operational outcome.",
+          "condition": {
+            "fact": "primary_outcome",
+            "value": "supported-finding"
+          }
+        },
+        {
+          "id": "documenting-without-executing",
+          "vetoes_when": "The primary outcome is documenting or describing a process without executing it.",
+          "condition": {
+            "fact": "primary_outcome",
+            "value": "documented-process-without-execution"
+          }
+        },
+        {
+          "id": "operational-language-as-subject-only",
+          "vetoes_when": "Operational language appears only as an incidental subject term and is not the outcome.",
+          "status": "operator-accepted",
+          "decision_ref": "DEC-038",
+          "acceptance_evidence": [
+            "DEC-038-QUOTE-001"
+          ],
+          "reopenable": false,
+          "condition": {
+            "fact": "incidental_term",
+            "value": "operations-subject"
+          }
+        }
+      ],
+      "acceptance": {
+        "status": "operator-accepted",
+        "state": "locked",
+        "decision_ref": "DEC-038",
+        "acceptance_owner": "operator",
+        "accepted_on": "2026-08-03",
+        "acceptance_evidence": [
+          "DEC-038-QUOTE-001"
+        ],
+        "reopenable": false,
+        "accepted_safeguards": [
+          "governance-mechanics-only",
+          "operational-language-as-subject-only"
+        ],
+        "acceptance_meaning": "The operator accepted the lifecycle-substrate veto and operational-language-as-subject-only as governing negative applicability vetoes. Both are settled authority: operational terminology used only as subject matter cannot select operations-change, and no delivered surface may present either safeguard as a maintainer proposal, an open question, or a live choice."
+      }
+    },
+    "runtime_activation_gate": {
+      "statement": "Practice-pack bodies and runtime pack selection stay inactive until every condition below is met. The contract is defined and validated; it is not activated. This gate defers activation. It does not reduce the five-pack delivery scope, which stays required.",
+      "inactive_until_met": [
+        "practice-pack-body",
+        "runtime-pack-selection"
+      ],
+      "state": "unmet",
+      "conditions": [
+        {
+          "id": "operations-safeguards-validated",
+          "met": true,
+          "requirement": "The declared operational-outcome requirement, the lifecycle-substrate veto, the exhaustive negative applicability, and the six boundary fixtures resolve deterministically.",
+          "evidence": "tests/test_risk_and_practice_contract.py"
+        },
+        {
+          "id": "operator-exemplar-acceptance",
+          "met": true,
+          "requirement": "The operator accepts the mechanism-validation exemplar set. Acceptance of the exemplar pair is not acceptance of a reduced delivery scope.",
+          "evidence": "DEC-039-QUOTE-001"
+        },
+        {
+          "id": "equivalent-cli-and-mcp-validation",
+          "met": false,
+          "requirement": "The safeguards and the selection result resolve identically on the command-line and tool surfaces from this shared authority.",
+          "evidence": null
+        },
+        {
+          "id": "task-review",
+          "met": false,
+          "requirement": "This contract passes task review.",
+          "evidence": null
+        }
+      ]
+    },
+    "delivery_scope": {
+      "statement": "Phase 04 ships exactly five initial optional practice packs, one per approved family. Every pack is optional and task-matched: none is mandatory, none is always loaded, and at most one matched body enters active context.",
+      "required_initial_pack_count": 5,
+      "required_initial_packs": [
+        {
+          "family": "software",
+          "pack_id": "software-delivery",
+          "content_areas": [
+            "testing",
+            "security",
+            "accessibility",
+            "delivery"
+          ],
+          "applicability_boundary": "The primary outcome changes or verifies executable behavior, configuration behavior, or a software artifact.",
+          "not_applicable_when": "Software is only the subject of research, policy analysis, promotion, or an operational record, or the envelope excludes software guidance."
+        },
+        {
+          "family": "research",
+          "pack_id": "research-inquiry",
+          "content_areas": [
+            "source-quality",
+            "methodology",
+            "fact-checking"
+          ],
+          "applicability_boundary": "The primary outcome is a supported finding, comparison, synthesis, or source-based answer.",
+          "not_applicable_when": "Source reading is incidental to another profile's primary outcome, the primary outcome is a software behavior change or an executed operational outcome, or the envelope excludes research guidance."
+        },
+        {
+          "family": "marketing",
+          "pack_id": "marketing-claim",
+          "content_areas": [
+            "audience",
+            "brand",
+            "legal-review",
+            "launch-measurement"
+          ],
+          "applicability_boundary": "The primary outcome is an audience-facing claim, campaign asset, positioning decision, or channel result.",
+          "not_applicable_when": "The marketing material is only an input to policy, research, software, or operations work, the primary outcome is a governing interpretation, or the envelope excludes marketing guidance."
+        },
+        {
+          "family": "operations",
+          "pack_id": "operations-change",
+          "content_areas": [
+            "rehearsal",
+            "handoff",
+            "rollback",
+            "monitoring"
+          ],
+          "applicability_boundary": "The primary outcome is an explicitly declared, executed and verified operational outcome: a service action, process transition, handoff outcome, recovery, or contingency.",
+          "not_applicable_when": "The envelope declares a Cartopian lifecycle-substrate activity, the primary outcome is a software behavior change, a supported finding, or a documented process without execution, operational language appears only as an incidental subject term, or the envelope excludes operations guidance."
+        },
+        {
+          "family": "policy",
+          "pack_id": "policy-governance",
+          "content_areas": [
+            "stakeholder-review",
+            "compliance",
+            "publication",
+            "effective-date-checks"
+          ],
+          "applicability_boundary": "The primary outcome is an interpretation, rule, governance position, compliance effect, or decision under stated authority.",
+          "not_applicable_when": "Policy text is only a research source or a communication topic without a policy outcome, or the envelope excludes policy guidance."
+        }
+      ],
+      "mandatory": false,
+      "always_loaded": false,
+      "out_of_scope": [
+        {
+          "id": "profiles-beyond-the-five-initial-families",
+          "reason": "A sixth family is out of scope for Phase 04. Admitting one is a later decision with its own evidence."
+        },
+        {
+          "id": "mandatory-packs",
+          "reason": "No pack may be required for any task. A no-match envelope returns none and core governance continues unchanged."
+        },
+        {
+          "id": "always-loaded-catalogs",
+          "reason": "No pack body is resident. A body is retrieved only after selection resolves to selected, and only for the one selected pack."
+        }
+      ],
+      "exemplar_relationship": "research-inquiry and operations-change are the minimal mechanism-validation exemplars accepted in DEC-039. They prove positive matching, negative veto, equal-precedence collision, none selection, and bounded single-body loading. They are not the delivery scope and cannot reduce it: all five packs ship.",
+      "what_the_operator_rejected": "What the operator excluded was a 24-skill mandatory specialist catalog preloaded into every session, plus universal TDD, security, performance, web, and accessibility gates. Five optional, task-matched packs of which at most one ever loads are what the operator asked for, not that catalog. No statement in this contract may treat the five-pack delivery scope as a rejected catalog.",
+      "phase_exit": {
+        "rule": "Phase 04 exit requires valid metadata and a valid authored body for every one of the five required initial packs, each covering that pack's approved content areas.",
+        "missing_or_invalid_body_blocks_exit": true,
+        "exemplar_pass_is_not_sufficient": "Passing the two mechanism-validation exemplars does not satisfy Phase 04 exit. A missing or invalid body for any of the five required initial packs blocks exit even when both exemplars pass.",
+        "bodies_required": 5,
+        "bodies_authored": 0,
+        "state": "blocked",
+        "blocked_by": "runtime-activation-gate",
+        "authoring_owner": "BUILD-04-003"
+      }
+    }
   },
   "independence": {
     "statement": "Risk classification, judgment-card activation, and practice-pack selection are independent mechanisms with independent record identities. None silently activates another.",
@@ -636,11 +1028,94 @@
       "activates_card"
     ]
   },
-  "exemplar_recommendation": {
-    "status": "pending-operator-acceptance",
+  "accepted_decisions": {
+    "statement": "Each record below is an operator-accepted decision, recorded against verbatim operator evidence and locked. A locked decision is settled authority for every surface that projects this contract: authority, projection, templates, skills, tests, and completion evidence describe it as decided, never as an open input, a maintainer proposal, or a live choice.",
     "acceptance_owner": "operator",
-    "accepted_on": null,
-    "recommended_packs": [
+    "self_claimed": false,
+    "prohibited_representations": [
+      "pending",
+      "reserved",
+      "contestable",
+      "reopenable",
+      "awaiting-operator-confirmation"
+    ],
+    "prohibition_rule": "A record in this block may not be emitted in any of the prohibited representations above. Evidence that supported the decision stays on record as evidence behind a closed decision and is never re-presented as an unresolved choice.",
+    "decisions": [
+      {
+        "decision_id": "DEC-037",
+        "title": "Accept the claim-and-change exemplar representation",
+        "status": "operator-accepted",
+        "state": "locked",
+        "acceptance_owner": "operator",
+        "accepted_on": "2026-08-03",
+        "acceptance_evidence": [
+          "DEC-037-QUOTE-001"
+        ],
+        "reopenable": false,
+        "contested": false,
+        "governs": [
+          "mechanism_validation_exemplars.representation_mapping",
+          "mechanism_validation_exemplars.exemplar_packs",
+          "mechanism_validation_exemplars.candidate_sets"
+        ],
+        "acceptance_meaning": "research-inquiry represents the claim-oriented research, marketing, and policy contract shapes and operations-change represents the change-oriented operations and software contract shapes. This representation is settled authority for the exemplar comparison and for the authoring order it produces. The candidate-set comparison and its cost figures are the evidence behind the closed decision.",
+        "delivery_scope_effect": "none. All five initial optional packs ship."
+      },
+      {
+        "decision_id": "DEC-038",
+        "title": "Accept the operational-language subject-only veto",
+        "status": "operator-accepted",
+        "state": "locked",
+        "acceptance_owner": "operator",
+        "accepted_on": "2026-08-03",
+        "acceptance_evidence": [
+          "DEC-038-QUOTE-001"
+        ],
+        "reopenable": false,
+        "contested": false,
+        "governs": [
+          "packs.operations_primary_outcome.acceptance",
+          "packs.operations_primary_outcome.negative_applicability",
+          "packs.lifecycle_substrate"
+        ],
+        "acceptance_meaning": "operational-language-as-subject-only is a governing negative applicability veto in the operations profile. Operational terminology used only as subject matter cannot select operations-change. The lifecycle-substrate and subject-only safeguards are both settled authority.",
+        "delivery_scope_effect": "none. The five families, their content areas, selection precedence, and the operations outcome boundary are unchanged."
+      },
+      {
+        "decision_id": "DEC-039",
+        "title": "Accept the mechanism-validation exemplar pair and the five-pack delivery scope",
+        "status": "operator-accepted",
+        "state": "locked",
+        "acceptance_owner": "operator",
+        "accepted_on": "2026-08-03",
+        "acceptance_evidence": [
+          "DEC-039-QUOTE-001"
+        ],
+        "reopenable": false,
+        "contested": false,
+        "governs": [
+          "mechanism_validation_exemplars.status",
+          "packs.delivery_scope",
+          "packs.runtime_activation_gate.conditions"
+        ],
+        "acceptance_meaning": "research-inquiry and operations-change are the accepted mechanism-validation exemplar pair, and in the same acceptance the operator restored all five initial optional packs as the required delivery scope. Accepting the pair is not accepting a reduced scope.",
+        "delivery_scope_effect": "five required initial packs, one per approved family."
+      }
+    ]
+  },
+  "mechanism_validation_exemplars": {
+    "purpose": "Choose the minimal set of packs whose bodies validate the selection mechanism first. This block ranks mechanism-validation coverage only.",
+    "scope_limit": "This comparison does not bound, reduce, or decide Phase 04 delivery scope. Delivery scope is fixed at the five required initial packs by packs.delivery_scope. A candidate set rejected here is rejected as a minimal exemplar set, never as a pack that ships.",
+    "bounds_delivery_scope": false,
+    "delivery_scope_ref": "packs.delivery_scope",
+    "status": "operator-accepted",
+    "acceptance_owner": "operator",
+    "accepted_on": "2026-08-03",
+    "acceptance_evidence": [
+      "DEC-039-QUOTE-001"
+    ],
+    "acceptance_meaning": "The operator accepted research-inquiry and operations-change as the mechanism-validation exemplar pair and, in the same acceptance, restored all five initial optional packs as the required delivery scope. Accepting the pair is not accepting a reduced scope.",
+    "exemplar_packs": [
       {
         "pack_id": "research-inquiry",
         "profile_shape": "research",
@@ -662,16 +1137,465 @@
       }
     ],
     "minimum_set_reason": "One pack cannot demonstrate the contract. A single candidate can never produce an equal-precedence collision, a cross-shape veto, or the exactly-one-of-many admission bound, so the smallest set that exercises the whole selection contract is two.",
-    "rationale": "The five profile shapes differ along two axes the metadata contract must express: whether the primary outcome is a claim about the world or a change to the world, and whether the shape can veto work where its subject matter appears but is not the outcome. Research and operations sit at opposite ends of the first axis and carry vetoes in both directions on the second. Together they exercise positive primary-outcome matching, negative veto, declared specificity, the equal-precedence collision, the none result, and single-body admission. The three shapes without an exemplar body remain proven representable by validating their declared metadata against this same contract as body-free shape fixtures, which demonstrates applicability without growing a catalog.",
-    "alternative_considered": {
-      "packs": [
-        "research-inquiry",
-        "software-delivery"
+    "rationale": "The five profile shapes differ along two axes the metadata contract must express: whether the primary outcome is a claim about the world or a change to the world, and whether the shape can veto work where its subject matter appears but is not the outcome. Research and operations sit at opposite ends of the first axis and carry vetoes in both directions on the second, so their two bodies exercise positive primary-outcome matching, negative veto, declared specificity, the equal-precedence collision, the none result, and single-body admission before any other body is authored. The other three packs ship too; validating the mechanism on this pair first is a build sequence, not a reduction of scope.",
+    "after_acceptance": "Body authoring proceeds under BUILD-04-003 for all five required initial packs. The exemplar pair is authored and validated first so the mechanism is proven before the remaining three bodies land. Phase 04 exit still requires all five.",
+    "exemplar_and_delivery_relationship": "All five packs carry validating metadata today and all five ship bodies before Phase 04 exits. The exemplar pair is the first two bodies authored, chosen because two packs are the smallest set that can exercise every selection outcome. No shape is a metadata-only fixture in the delivered contract.",
+    "cost_method": "Resident metadata bytes are the declared specimen lines for the packs in the set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. Peak active bytes are the core line plus one declared body budget, because at most one body is ever admitted: adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.",
+    "cost_finding": "Set size does not change peak active context. Every set with at least one pack peaks at 4174 bytes, because at most one body is ever admitted. The resident-metadata spread across every two-pack candidate is 8 bytes and 2 estimated tokens, so context cost is not a discriminator among them; mechanism coverage is. The five-pack figures are the measured cost of the required delivery scope: 447 resident bytes and 20480 bytes of authored body, of which zero unmatched bytes reach active context.",
+    "measurement_vs_production_budgets": "Every figure here is a composition measurement over the declared fixtures, in bytes of fixed ASCII specimen lines and estimated tokens at four bytes per token. They are evidence that non-selection costs zero, not adopted production budgets. Production budgets and tokenizer-specific measurements are not set by this contract.",
+    "decisive_reason": "research-and-operations is the only candidate set that demonstrates all five profile shapes within the one-or-two exemplar bound, and the only two-pack set that can demonstrate the lifecycle-substrate safeguards on an exemplar body while also carrying a claim-shaped exemplar. This decides which bodies are authored first, not how many are authored.",
+    "representation_mapping": {
+      "status": "operator-accepted",
+      "state": "locked",
+      "decision_ref": "DEC-037",
+      "acceptance_owner": "operator",
+      "accepted_on": "2026-08-03",
+      "acceptance_evidence": [
+        "DEC-037-QUOTE-001"
       ],
-      "why_not": "This pair is the most familiar for a software audience, but both shapes read as software-adjacent, which invites the reading that the core is software-specific. It also omits the change-shaped target-state and recovery evidence that the operations exemplar proves, and loses the demonstration that a pack selects while a judgment card activates independently."
+      "reopenable": false,
+      "contested": false,
+      "statement": "research-inquiry represents the claim-oriented research, marketing, and policy contract shapes. operations-change represents the change-oriented operations and software contract shapes.",
+      "acceptance_meaning": "The operator accepted this representation. It is settled authority for the exemplar comparison and for the authoring order the comparison produces, and no delivered surface may present it as a maintainer judgment the operator has yet to rule on.",
+      "evidence_role": "The candidate-set comparison below, including every coverage flag and cost figure, is the evidence recorded behind this closed decision. marketing-and-operations and policy-and-operations remain on record as equally covering at essentially identical cost; under the accepted representation they are set aside because marketing and policy each represent only themselves. Those figures document why the accepted authoring order holds, not a choice that is still being made.",
+      "mapping": [
+        {
+          "pack_id": "research-inquiry",
+          "represents_shapes": [
+            "research",
+            "marketing",
+            "policy"
+          ]
+        },
+        {
+          "pack_id": "operations-change",
+          "represents_shapes": [
+            "operations",
+            "software"
+          ]
+        },
+        {
+          "pack_id": "software-delivery",
+          "represents_shapes": [
+            "software"
+          ]
+        },
+        {
+          "pack_id": "marketing-claim",
+          "represents_shapes": [
+            "marketing"
+          ]
+        },
+        {
+          "pack_id": "policy-governance",
+          "represents_shapes": [
+            "policy"
+          ]
+        }
+      ],
+      "delivery_scope_effect": "none. Delivery scope is fixed at the five required initial packs by packs.delivery_scope."
     },
-    "on_acceptance": "Once the operator accepts a set, the accepted pack identities and the acceptance record replace this pending status, and only then may pack bodies be authored and loaded.",
-    "shape_fixtures_are_not_packs": "The five shape fixtures carry metadata only. They validate the contract; they are not installed guidance and they ship no body."
+    "candidate_sets": [
+      {
+        "id": "research-and-operations",
+        "packs": [
+          "research-inquiry",
+          "operations-change"
+        ],
+        "verdict": "recommended",
+        "shapes_demonstrated": [
+          "marketing",
+          "operations",
+          "policy",
+          "research",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": true,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 173,
+        "resident_metadata_estimated_tokens": 44,
+        "delta_bytes_vs_recommended": 0,
+        "delta_estimated_tokens_vs_recommended": 0,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "research-and-software",
+        "packs": [
+          "research-inquiry",
+          "software-delivery"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "policy",
+          "research",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": false,
+        "pack_selected_while_card_activates_independently": false,
+        "resident_metadata_bytes": 181,
+        "resident_metadata_estimated_tokens": 46,
+        "delta_bytes_vs_recommended": 8,
+        "delta_estimated_tokens_vs_recommended": 2,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "Neither exemplar declares a lifecycle-substrate veto, so the operations-primary-outcome safeguards cannot be demonstrated on an exemplar body.",
+          "Both exemplars read as software-adjacent, which invites the reading the domain-neutral core exists to prevent.",
+          "Loses the worked outcome in which a pack is selected while a judgment card activates independently."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "software-and-operations",
+        "packs": [
+          "software-delivery",
+          "operations-change"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "operations",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 180,
+        "resident_metadata_estimated_tokens": 46,
+        "delta_bytes_vs_recommended": 7,
+        "delta_estimated_tokens_vs_recommended": 2,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "No claim-shaped exemplar, so research, marketing, and policy are left with no exemplar carrying their contract shape.",
+          "Both exemplars are change-shaped, so the set demonstrates one side of the contract twice."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "research-and-policy",
+        "packs": [
+          "research-inquiry",
+          "policy-governance"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "policy",
+          "research"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": false,
+        "pack_selected_while_card_activates_independently": false,
+        "resident_metadata_bytes": 174,
+        "resident_metadata_estimated_tokens": 44,
+        "delta_bytes_vs_recommended": 1,
+        "delta_estimated_tokens_vs_recommended": 0,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "No change-shaped exemplar, so target-state and recovery evidence is never demonstrated.",
+          "No lifecycle-substrate veto, so the operations safeguards cannot be demonstrated on an exemplar body."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "research-and-marketing",
+        "packs": [
+          "research-inquiry",
+          "marketing-claim"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "policy",
+          "research"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": false,
+        "lifecycle_substrate_safeguards_demonstrable": false,
+        "pack_selected_while_card_activates_independently": false,
+        "resident_metadata_bytes": 180,
+        "resident_metadata_estimated_tokens": 46,
+        "delta_bytes_vs_recommended": 7,
+        "delta_estimated_tokens_vs_recommended": 2,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "Two claim shapes and no change shape.",
+          "No incidental-subject veto and no lifecycle-substrate veto."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "marketing-and-operations",
+        "packs": [
+          "marketing-claim",
+          "operations-change"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "operations",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 179,
+        "resident_metadata_estimated_tokens": 46,
+        "delta_bytes_vs_recommended": 6,
+        "delta_estimated_tokens_vs_recommended": 2,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "Ties the recommended set on mechanism coverage and costs 6 more resident bytes, but marketing is the narrowest claim shape and represents only itself, so research and policy are left unrepresented.",
+          "The specification's own acceptance example — a sourced comparative finding where software is only the subject — would have no exemplar body."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "policy-and-operations",
+        "packs": [
+          "policy-governance",
+          "operations-change"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "operations",
+          "policy",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 173,
+        "resident_metadata_estimated_tokens": 44,
+        "delta_bytes_vs_recommended": 0,
+        "delta_estimated_tokens_vs_recommended": 0,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 8192,
+        "verdict_reasons": [
+          "Ties the recommended set on mechanism coverage at identical resident cost, but policy is an authority-bound shape that represents only itself, so research and marketing are left unrepresented.",
+          "The specification's own acceptance example — a sourced comparative finding where software is only the subject — would have no exemplar body."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "research-only",
+        "packs": [
+          "research-inquiry"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "policy",
+          "research"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": false,
+        "single_body_admission_demonstrable": false,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": false,
+        "lifecycle_substrate_safeguards_demonstrable": false,
+        "pack_selected_while_card_activates_independently": false,
+        "resident_metadata_bytes": 87,
+        "resident_metadata_estimated_tokens": 22,
+        "delta_bytes_vs_recommended": -86,
+        "delta_estimated_tokens_vs_recommended": -22,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 4096,
+        "verdict_reasons": [
+          "A single candidate can never produce an equal-precedence collision or demonstrate exactly-one-of-many admission.",
+          "No change-shaped exemplar and no lifecycle-substrate veto."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "operations-only",
+        "packs": [
+          "operations-change"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "operations",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": false,
+        "single_body_admission_demonstrable": false,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 86,
+        "resident_metadata_estimated_tokens": 22,
+        "delta_bytes_vs_recommended": -87,
+        "delta_estimated_tokens_vs_recommended": -22,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 4096,
+        "verdict_reasons": [
+          "A single candidate can never produce an equal-precedence collision or demonstrate exactly-one-of-many admission.",
+          "No claim-shaped exemplar."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "software-only",
+        "packs": [
+          "software-delivery"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "software"
+        ],
+        "all_five_shapes_demonstrated": false,
+        "within_two_pack_bound": true,
+        "equal_precedence_collision_demonstrable": false,
+        "single_body_admission_demonstrable": false,
+        "veto_on_competing_primary_outcome": false,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": false,
+        "pack_selected_while_card_activates_independently": false,
+        "resident_metadata_bytes": 94,
+        "resident_metadata_estimated_tokens": 24,
+        "delta_bytes_vs_recommended": -79,
+        "delta_estimated_tokens_vs_recommended": -20,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 4096,
+        "verdict_reasons": [
+          "A single candidate can never produce an equal-precedence collision or demonstrate exactly-one-of-many admission.",
+          "Represents one shape only and makes the core look software-specific."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "research-operations-and-software",
+        "packs": [
+          "research-inquiry",
+          "operations-change",
+          "software-delivery"
+        ],
+        "verdict": "rejected-as-exemplar-set",
+        "shapes_demonstrated": [
+          "marketing",
+          "operations",
+          "policy",
+          "research",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": true,
+        "within_two_pack_bound": false,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 267,
+        "resident_metadata_estimated_tokens": 68,
+        "delta_bytes_vs_recommended": 94,
+        "delta_estimated_tokens_vs_recommended": 24,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 12288,
+        "verdict_reasons": [
+          "Adds a third resident metadata line and a third authored body for no mechanism-validation coverage the recommended pair does not already provide.",
+          "Exceeds the one-or-two exemplar bound for the minimal mechanism-validation set. This is not a delivery verdict: software-delivery ships as one of the five required initial packs regardless."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": false
+      },
+      {
+        "id": "all-five-shapes",
+        "packs": [
+          "research-inquiry",
+          "operations-change",
+          "software-delivery",
+          "marketing-claim",
+          "policy-governance"
+        ],
+        "verdict": "is-the-delivery-scope",
+        "shapes_demonstrated": [
+          "marketing",
+          "operations",
+          "policy",
+          "research",
+          "software"
+        ],
+        "all_five_shapes_demonstrated": true,
+        "within_two_pack_bound": false,
+        "equal_precedence_collision_demonstrable": true,
+        "single_body_admission_demonstrable": true,
+        "veto_on_competing_primary_outcome": true,
+        "veto_on_incidental_subject": true,
+        "lifecycle_substrate_safeguards_demonstrable": true,
+        "pack_selected_while_card_activates_independently": true,
+        "resident_metadata_bytes": 447,
+        "resident_metadata_estimated_tokens": 114,
+        "delta_bytes_vs_recommended": 274,
+        "delta_estimated_tokens_vs_recommended": 70,
+        "peak_active_bytes": 4174,
+        "authored_body_budget_bytes": 20480,
+        "verdict_reasons": [
+          "This set is the Phase 04 delivery scope, not a candidate for the minimal mechanism-validation set. All five packs ship and none of them is rejected.",
+          "It is outside the exemplar comparison only because a five-pack set cannot be the smallest set that exercises collision, cross-shape veto, and single-body admission. That is a statement about minimality, not about whether five packs are wanted.",
+          "Its higher resident-metadata and authored-body figures are the measured cost of the required delivery scope, not an argument against shipping it. Peak active context is identical to every other set: one core line plus one body."
+        ],
+        "bounds_delivery_scope": false,
+        "is_delivery_scope": true
+      }
+    ]
   },
   "authoritative_surfaces": [
     {
@@ -729,6 +1653,12 @@
       "owns": "The runtime classifier that reads this authority."
     },
     {
+      "path": "protocol/packs/",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The five required initial pack bodies, one per approved family, each bounded by its declared body budget and covering that pack's approved content areas. Retrieved only for the one selected pack."
+    },
+    {
       "path": "cli/practice_packs.py",
       "role": "projection",
       "activation": "pending",
@@ -741,6 +1671,18 @@
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py",
       "requirement": "Every fixed envelope classifies to exactly one band, and repeated evaluation over reordered observations returns the same result."
+    },
+    {
+      "id": "ordered-reasons-follow-declared-observation-order",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every fixed envelope produces the recorded ordered reasons, those reasons follow the declared observation order, and reordering the observation input does not change them."
+    },
+    {
+      "id": "risk-observations-record-their-support-and-elevation",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The observation record shape declares the supporting fact and the elevation flag, and every declared state's elevation flag agrees with its band floor."
     },
     {
       "id": "critical-conditions-cannot-be-averaged-down",
@@ -773,6 +1715,12 @@
       "requirement": "Four cards remain, each carries its boundary, non-enforceable failure, evidence, and separation reason, and admission of a fifth requires both records."
     },
     {
+      "id": "judgment-activation-is-declarative-and-boundary-scoped",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Each card declares a machine boundary and failure identity, activation requires both a crossed boundary and an open failure, every fixed envelope activates exactly the recorded cards, and neither the band nor the pack outcome changes activation."
+    },
+    {
       "id": "selection-honors-positive-negative-and-precedence",
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py",
@@ -794,7 +1742,7 @@
       "id": "unmatched-guidance-adds-zero-active-bytes",
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py",
-      "requirement": "For each fixed measurement case, active bytes plus excluded bytes equal the eligible universe, and a non-selected outcome contributes zero pack bytes."
+      "requirement": "For each measurement case, active plus excluded bytes equal the eligible universe of all five required packs, and a non-selected outcome contributes zero pack bytes."
     },
     {
       "id": "mechanisms-carry-no-activation-edges",
@@ -809,10 +1757,94 @@
       "requirement": "The plain-language projection names every authoritative identifier and reproduces the governance table exactly."
     },
     {
-      "id": "no-pack-body-ships-before-acceptance",
+      "id": "no-pack-body-ships-before-the-activation-gate-is-met",
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py",
-      "requirement": "While the exemplar choice is pending, no pack body location exists in the repository."
+      "requirement": "While the runtime activation gate is unmet, no pack body location exists in the repository. The gate defers authoring; it does not reduce the five-pack delivery scope."
+    },
+    {
+      "id": "operations-requires-a-declared-operational-outcome",
+      "requirement": "Operations is eligible only when the envelope declares one of the qualifying operational outcomes; every other envelope fact and every inference source is excluded.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "lifecycle-substrate-never-matches-operations",
+      "requirement": "Each of the five declared Cartopian lifecycle-substrate activities vetoes operations on its own, and no positive condition may be declared on a negative-only fact.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "operations-negative-vetoes-are-exhaustive",
+      "requirement": "Every declared operations negative-applicability category appears as a negative condition on the operations candidate, and none appears as a positive one.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "six-operations-boundary-fixtures-resolve-deterministically",
+      "requirement": "All six declared operations-primary-outcome boundary fixtures resolve to exactly their recorded outcome, pack, and loaded-body count.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "operations-runtime-and-bodies-remain-inactive",
+      "requirement": "The runtime activation gate is unmet, no pack body location exists, and the runtime classifier and selector surfaces remain pending projections.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "exemplar-candidate-sets-are-compared-with-measured-cost",
+      "requirement": "Every recorded candidate set's coverage flags and byte and token figures recompute from the pack metadata and the measurement specimens, exactly one set is recommended as the minimal mechanism-validation exemplar set, and no candidate set bounds delivery scope.",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py"
+    },
+    {
+      "id": "five-initial-packs-are-required-and-content-bounded",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The contract requires exactly five initial optional packs, one per approved family — software, research, marketing, operations, and policy — each declaring its approved content areas, its applicability boundary, and the case where it does not apply. No pack is mandatory and none is always loaded."
+    },
+    {
+      "id": "every-required-pack-declares-family-and-approved-content-areas",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every required initial pack resolves to validating metadata declaring the same family and the same approved content areas as the delivery scope, targeting the compatible contract version with a bounded body reference and budget."
+    },
+    {
+      "id": "each-required-pack-selects-positively-and-is-vetoed-negatively",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "For each of the five required initial packs, every declared positive condition selects that pack and loads exactly one body, and every declared negative condition withholds it."
+    },
+    {
+      "id": "exemplar-comparison-does-not-bound-delivery-scope",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The mechanism-validation exemplar comparison declares that it does not bound delivery scope, no candidate set claims to, and the five-pack set is recorded as the delivery scope rather than a rejected candidate."
+    },
+    {
+      "id": "missing-required-pack-body-blocks-phase-exit",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The phase-exit rule declares that a missing or invalid body for any of the five required initial packs blocks Phase 04 exit even when both mechanism-validation exemplars pass, and the recorded exit state agrees with the authored-body count."
+    },
+    {
+      "id": "only-one-required-pack-body-enters-active-context",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every one of the five required packs has a measured selection case; in each case exactly one pack specimen is active and the excluded bytes equal the full weight of the other four required packs."
+    },
+    {
+      "id": "peak-active-context-does-not-grow-with-the-required-pack-count",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Five authored bodies total five body budgets of maintenance surface, while peak active context stays at the core line plus one body budget and unmatched bodies contribute zero active bytes."
+    },
+    {
+      "id": "accepted-decision-states-stay-locked",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every decision recorded in accepted_decisions carries its operator evidence and is emitted as locked on the authority and the projection; the accepted operations veto and the accepted representation mapping never appear in any prohibited open representation, and the accepted veto still vetoes an otherwise qualifying operations envelope on its own."
     },
     {
       "id": "runtime-classifier-matches-the-fixtures",
@@ -824,7 +1856,7 @@
       "id": "runtime-selector-matches-the-fixtures",
       "state": "pending",
       "test_anchor": null,
-      "requirement": "The runtime selector returns the recorded outcome, pack identity, diagnostics, and loaded-body byte count for every fixed envelope, on both the command-line and the tool surfaces."
+      "requirement": "The runtime selector returns the recorded outcome, pack identity, diagnostics, and loaded-body byte count for every fixed envelope, on both the command-line and tool surfaces. This discharges the equivalent-cli-and-mcp-validation activation condition, including all six operations boundary fixtures and one selection case per required initial pack."
     },
     {
       "id": "adversarial-review-context-is-bounded",
@@ -843,6 +1875,18 @@
       "state": "pending",
       "test_anchor": null,
       "requirement": "A selected pack body loads within its declared budget, and stale, oversized, unreadable, or out-of-bounds bodies fail closed without partial content."
+    },
+    {
+      "id": "each-required-pack-body-covers-its-approved-content-areas",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "Each of the five authored pack bodies covers every approved content area declared for its family, and a body omitting an approved area is invalid."
+    },
+    {
+      "id": "every-required-pack-body-is-authored-and-within-budget",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "All five required initial pack bodies exist, each within its declared body budget, before Phase 04 exits."
     }
   ],
   "fixtures": {
@@ -858,6 +1902,18 @@
           "evidence-coverage": "deterministic"
         },
         "expected_band": "routine",
+        "expected_ordered_reasons": [
+          "consequence-reach=local-artifact->routine",
+          "reversibility=direct-undo->routine",
+          "authority=covered->routine",
+          "ambiguity=confirmed->routine",
+          "evidence-coverage=deterministic->routine"
+        ],
+        "lifecycle_boundaries": [
+          "requirements-and-intent",
+          "delivery-and-closeout"
+        ],
+        "open_failure_conditions": [],
         "primary_outcomes": [
           "local-text-correction"
         ],
@@ -882,6 +1938,13 @@
           "evidence-coverage": "indirect-or-qualitative"
         },
         "expected_band": "consequential",
+        "expected_ordered_reasons": [
+          "evidence-coverage=indirect-or-qualitative->consequential"
+        ],
+        "lifecycle_boundaries": [
+          "requirements-and-intent"
+        ],
+        "open_failure_conditions": [],
         "primary_outcomes": [
           "supported-finding"
         ],
@@ -908,8 +1971,20 @@
           "evidence-coverage": "direct-observation"
         },
         "expected_band": "consequential",
+        "expected_ordered_reasons": [
+          "consequence-reach=external-or-material->consequential",
+          "reversibility=recovery-dependent->consequential",
+          "ambiguity=material-assumption->consequential"
+        ],
+        "lifecycle_boundaries": [
+          "migration-install-restart",
+          "delivery-and-closeout"
+        ],
+        "open_failure_conditions": [
+          "mixed-version-or-unproven-running-state"
+        ],
         "primary_outcomes": [
-          "executed-state-transition"
+          "executed-service-action"
         ],
         "artifact_kinds": [
           "running-service-state"
@@ -936,6 +2011,17 @@
           "evidence-coverage": "indirect-or-qualitative"
         },
         "expected_band": "consequential",
+        "expected_ordered_reasons": [
+          "authority=unconfirmed->consequential",
+          "ambiguity=material-assumption->consequential",
+          "evidence-coverage=indirect-or-qualitative->consequential"
+        ],
+        "lifecycle_boundaries": [
+          "requirements-and-intent"
+        ],
+        "open_failure_conditions": [
+          "inferred-intent-not-confirmed"
+        ],
         "primary_outcomes": [
           "supported-finding",
           "audience-facing-claim"
@@ -955,7 +2041,7 @@
       },
       {
         "id": "critical-external-commitment-missing-authority",
-        "description": "Make an external commitment whose required authority has not been granted, with every other observation routine.",
+        "description": "Make an external commitment whose required authority has not been granted; no other observation reaches the critical floor.",
         "observations": {
           "consequence-reach": "external-or-material",
           "reversibility": "bounded-recovery",
@@ -964,6 +2050,15 @@
           "evidence-coverage": "deterministic"
         },
         "expected_band": "critical",
+        "expected_ordered_reasons": [
+          "authority=absent->critical"
+        ],
+        "lifecycle_boundaries": [
+          "evidence-and-review-gate"
+        ],
+        "open_failure_conditions": [
+          "evidence-self-certified-or-missing"
+        ],
         "primary_outcomes": [
           "binding-external-commitment"
         ],
@@ -990,6 +2085,14 @@
           "evidence-coverage": "deterministic"
         },
         "expected_band": "bounded",
+        "expected_ordered_reasons": [
+          "consequence-reach=project-internal->bounded",
+          "reversibility=bounded-recovery->bounded"
+        ],
+        "lifecycle_boundaries": [
+          "evidence-and-review-gate"
+        ],
+        "open_failure_conditions": [],
         "primary_outcomes": [
           "software-behavior-change"
         ],
@@ -1004,6 +2107,38 @@
         "expected_judgment_cards": []
       },
       {
+        "id": "campaign-launch-decision",
+        "description": "Decide and publish the launch campaign claim for an external audience.",
+        "observations": {
+          "consequence-reach": "external-or-material",
+          "reversibility": "bounded-recovery",
+          "authority": "new-commitment",
+          "ambiguity": "stated-assumption",
+          "evidence-coverage": "indirect-or-qualitative"
+        },
+        "expected_band": "consequential",
+        "expected_ordered_reasons": [
+          "consequence-reach=external-or-material->consequential",
+          "evidence-coverage=indirect-or-qualitative->consequential"
+        ],
+        "lifecycle_boundaries": [
+          "delivery-and-closeout"
+        ],
+        "open_failure_conditions": [],
+        "primary_outcomes": [
+          "audience-facing-claim"
+        ],
+        "artifact_kinds": [
+          "campaign-asset"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "selected",
+        "expected_pack": "marketing-claim",
+        "expected_bodies_loaded": 1,
+        "expected_judgment_cards": []
+      },
+      {
         "id": "binding-policy-interpretation",
         "description": "Issue an interpretation that controls a binding downstream decision.",
         "observations": {
@@ -1014,6 +2149,15 @@
           "evidence-coverage": "indirect-or-qualitative"
         },
         "expected_band": "critical",
+        "expected_ordered_reasons": [
+          "consequence-reach=broad-or-binding->critical"
+        ],
+        "lifecycle_boundaries": [
+          "delivery-and-closeout"
+        ],
+        "open_failure_conditions": [
+          "artifact-mistaken-for-outcome"
+        ],
         "primary_outcomes": [
           "governing-interpretation"
         ],
@@ -1040,6 +2184,15 @@
           "evidence-coverage": "deterministic"
         },
         "expected_band": "critical",
+        "expected_ordered_reasons": [
+          "authority=unknown->critical"
+        ],
+        "lifecycle_boundaries": [
+          "requirements-and-intent"
+        ],
+        "open_failure_conditions": [
+          "inferred-intent-not-confirmed"
+        ],
         "primary_outcomes": [
           "local-text-correction"
         ],
@@ -1059,6 +2212,7 @@
     "pack_candidates": [
       {
         "pack_id": "research-inquiry",
+        "family": "research",
         "profile_shape": "research",
         "revision": 1,
         "contract_version": 1,
@@ -1075,7 +2229,13 @@
           },
           {
             "fact": "primary_outcome",
-            "value": "executed-state-transition"
+            "any_of": [
+              "executed-service-action",
+              "executed-process-transition",
+              "executed-handoff-outcome",
+              "executed-recovery",
+              "executed-contingency"
+            ]
           },
           {
             "fact": "exclusion",
@@ -1085,23 +2245,64 @@
         "tie_key": "research-inquiry",
         "body_ref": "packs/research-inquiry",
         "body_budget_bytes": 4096,
-        "evidence_shape": "Source provenance, claim support, uncertainty, and contradiction."
+        "content_areas": [
+          "source-quality",
+          "methodology",
+          "fact-checking"
+        ],
+        "evidence_shape": "Source provenance, claim support, uncertainty, and contradiction.",
+        "demonstrates_shapes": [
+          "research",
+          "marketing",
+          "policy"
+        ],
+        "demonstrates_shapes_reason": "Research is the claim-shaped exemplar. Marketing and policy declare the same contract shape: a positive condition on a claim-style primary outcome and a negative condition that withholds the pack when the subject matter appears without being the outcome.",
+        "required_initial_pack": true
       },
       {
         "pack_id": "operations-change",
+        "family": "operations",
         "profile_shape": "operations",
         "revision": 1,
         "contract_version": 1,
         "applies_when": [
           {
             "fact": "primary_outcome",
-            "value": "executed-state-transition"
+            "any_of": [
+              "executed-service-action",
+              "executed-process-transition",
+              "executed-handoff-outcome",
+              "executed-recovery",
+              "executed-contingency"
+            ]
           }
         ],
         "never_when": [
           {
+            "fact": "lifecycle_substrate",
+            "any_of": [
+              "task-directory-movement",
+              "handoff-dispatch",
+              "review-routing",
+              "state-file-refresh",
+              "pm-cleanup"
+            ]
+          },
+          {
+            "fact": "primary_outcome",
+            "value": "software-behavior-change"
+          },
+          {
             "fact": "primary_outcome",
             "value": "supported-finding"
+          },
+          {
+            "fact": "primary_outcome",
+            "value": "documented-process-without-execution"
+          },
+          {
+            "fact": "incidental_term",
+            "value": "operations-subject"
           },
           {
             "fact": "exclusion",
@@ -1111,10 +2312,23 @@
         "tie_key": "operations-change",
         "body_ref": "packs/operations-change",
         "body_budget_bytes": 4096,
-        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency."
+        "content_areas": [
+          "rehearsal",
+          "handoff",
+          "rollback",
+          "monitoring"
+        ],
+        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency.",
+        "demonstrates_shapes": [
+          "operations",
+          "software"
+        ],
+        "demonstrates_shapes_reason": "Operations is the change-shaped exemplar. Software delivery declares the same contract shape: a positive condition on an executed-and-verified outcome and target-state plus recovery evidence. Operations additionally carries the incidental-subject and lifecycle-substrate vetoes.",
+        "required_initial_pack": true
       },
       {
         "pack_id": "software-delivery",
+        "family": "software",
         "profile_shape": "software",
         "revision": 1,
         "contract_version": 1,
@@ -1137,10 +2351,22 @@
         "tie_key": "software-delivery",
         "body_ref": "packs/software-delivery",
         "body_budget_bytes": 4096,
-        "evidence_shape": "Artifact behavior, target-state verification, and recovery evidence."
+        "content_areas": [
+          "testing",
+          "security",
+          "accessibility",
+          "delivery"
+        ],
+        "evidence_shape": "Artifact behavior, target-state verification, and recovery evidence.",
+        "demonstrates_shapes": [
+          "software"
+        ],
+        "demonstrates_shapes_reason": "Software delivery declares no ownership, handoff, stop-condition, or contingency evidence, so it does not represent the operations shape.",
+        "required_initial_pack": true
       },
       {
         "pack_id": "marketing-claim",
+        "family": "marketing",
         "profile_shape": "marketing",
         "revision": 1,
         "contract_version": 1,
@@ -1163,10 +2389,22 @@
         "tie_key": "marketing-claim",
         "body_ref": "packs/marketing-claim",
         "body_budget_bytes": 4096,
-        "evidence_shape": "Claim-to-evidence fit, audience and channel fit, and outcome observation."
+        "content_areas": [
+          "audience",
+          "brand",
+          "legal-review",
+          "launch-measurement"
+        ],
+        "evidence_shape": "Claim-to-evidence fit, audience and channel fit, and outcome observation.",
+        "demonstrates_shapes": [
+          "marketing"
+        ],
+        "demonstrates_shapes_reason": "Marketing declares the narrowest claim shape — audience and channel fit — and does not represent research provenance or policy authority.",
+        "required_initial_pack": true
       },
       {
         "pack_id": "policy-governance",
+        "family": "policy",
         "profile_shape": "policy",
         "revision": 1,
         "contract_version": 1,
@@ -1189,7 +2427,18 @@
         "tie_key": "policy-governance",
         "body_ref": "packs/policy-governance",
         "body_budget_bytes": 4096,
-        "evidence_shape": "Authority, applicability, interpretation, effect, and exception."
+        "content_areas": [
+          "stakeholder-review",
+          "compliance",
+          "publication",
+          "effective-date-checks"
+        ],
+        "evidence_shape": "Authority, applicability, interpretation, effect, and exception.",
+        "demonstrates_shapes": [
+          "policy"
+        ],
+        "demonstrates_shapes_reason": "Policy declares an authority-bound interpretation shape and does not represent research provenance or marketing channel fit.",
+        "required_initial_pack": true
       }
     ],
     "context_measurement": {
@@ -1207,43 +2456,62 @@
           "kind": "pack",
           "text": "PACK|research-inquiry|lens=source provenance and claim support|never=software delivery",
           "exact_bytes": 87,
-          "estimated_tokens": 22
+          "estimated_tokens": 22,
+          "pack_id": "research-inquiry"
         },
         {
           "id": "pack-software",
           "kind": "pack",
           "text": "PACK|software-delivery|lens=artifact behavior and recovery evidence|never=software as subject",
           "exact_bytes": 94,
-          "estimated_tokens": 24
+          "estimated_tokens": 24,
+          "pack_id": "software-delivery"
         },
         {
           "id": "pack-marketing",
           "kind": "pack",
           "text": "PACK|marketing-claim|lens=audience claim and channel evidence|never=governing interpretation",
           "exact_bytes": 93,
-          "estimated_tokens": 24
+          "estimated_tokens": 24,
+          "pack_id": "marketing-claim"
         },
         {
           "id": "pack-operations",
           "kind": "pack",
           "text": "PACK|operations-change|lens=run state handoff and contingency|never=supported finding",
           "exact_bytes": 86,
-          "estimated_tokens": 22
+          "estimated_tokens": 22,
+          "pack_id": "operations-change"
         },
         {
           "id": "pack-policy",
           "kind": "pack",
           "text": "PACK|policy-governance|lens=authority interpretation and effect|never=policy as source",
           "exact_bytes": 87,
-          "estimated_tokens": 22
+          "estimated_tokens": 22,
+          "pack_id": "policy-governance"
         }
       ],
       "eligible_universe_bytes": 525,
       "cases": [
         {
+          "id": "software-selected",
+          "envelope": "bounded-software-behavior-change",
+          "expected_selection": "selected",
+          "selected_pack": "software-delivery",
+          "active_specimens": [
+            "core",
+            "pack-software"
+          ],
+          "active_bytes": 172,
+          "active_pack_bytes": 94,
+          "excluded_bytes": 353
+        },
+        {
           "id": "research-selected",
           "envelope": "sourced-comparative-finding",
           "expected_selection": "selected",
+          "selected_pack": "research-inquiry",
           "active_specimens": [
             "core",
             "pack-research"
@@ -1253,9 +2521,23 @@
           "excluded_bytes": 360
         },
         {
+          "id": "marketing-selected",
+          "envelope": "campaign-launch-decision",
+          "expected_selection": "selected",
+          "selected_pack": "marketing-claim",
+          "active_specimens": [
+            "core",
+            "pack-marketing"
+          ],
+          "active_bytes": 171,
+          "active_pack_bytes": 93,
+          "excluded_bytes": 354
+        },
+        {
           "id": "operations-selected",
           "envelope": "updated-service-restart-proof",
           "expected_selection": "selected",
+          "selected_pack": "operations-change",
           "active_specimens": [
             "core",
             "pack-operations"
@@ -1263,6 +2545,19 @@
           "active_bytes": 164,
           "active_pack_bytes": 86,
           "excluded_bytes": 361
+        },
+        {
+          "id": "policy-selected",
+          "envelope": "binding-policy-interpretation",
+          "expected_selection": "selected",
+          "selected_pack": "policy-governance",
+          "active_specimens": [
+            "core",
+            "pack-policy"
+          ],
+          "active_bytes": 165,
+          "active_pack_bytes": 87,
+          "excluded_bytes": 360
         },
         {
           "id": "collision-loads-no-body",
@@ -1273,7 +2568,8 @@
           ],
           "active_bytes": 78,
           "active_pack_bytes": 0,
-          "excluded_bytes": 447
+          "excluded_bytes": 447,
+          "selected_pack": null
         },
         {
           "id": "no-match-loads-no-body",
@@ -1284,9 +2580,142 @@
           ],
           "active_bytes": 78,
           "active_pack_bytes": 0,
-          "excluded_bytes": 447
+          "excluded_bytes": 447,
+          "selected_pack": null
         }
-      ]
-    }
+      ],
+      "body_admission": {
+        "statement": "Five authored bodies exist as maintenance surface. At most one enters active context, so peak active context is the core line plus one declared body budget no matter how many required packs ship.",
+        "required_pack_count": 5,
+        "authored_body_budget_bytes_per_pack": 4096,
+        "total_authored_body_bytes": 20480,
+        "peak_active_body_bytes": 4096,
+        "peak_active_bytes": 4174,
+        "unmatched_body_bytes_in_active_context": 0
+      }
+    },
+    "operations_boundary": [
+      {
+        "id": "routine-cartopian-handoff-selects-no-operations",
+        "description": "A routine Cartopian handoff is dispatched to a role and its report awaited.",
+        "boundary": "Routine handoff dispatch is lifecycle substrate and never makes operations the primary outcome.",
+        "primary_outcomes": [
+          "executed-handoff-outcome"
+        ],
+        "artifact_kinds": [
+          "handoff-record"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [
+          "handoff-dispatch"
+        ],
+        "expected_selection": "none",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_veto": "governance-mechanics-only"
+      },
+      {
+        "id": "task-status-movement-selects-no-operations",
+        "description": "A task file moves between Cartopian status directories and STATE.md is refreshed.",
+        "boundary": "Task-directory movement and state refresh are lifecycle substrate and never make operations the primary outcome.",
+        "primary_outcomes": [
+          "executed-process-transition"
+        ],
+        "artifact_kinds": [
+          "task-file-location"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [
+          "task-directory-movement",
+          "state-file-refresh"
+        ],
+        "expected_selection": "none",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_veto": "governance-mechanics-only"
+      },
+      {
+        "id": "implementing-handoff-functionality-selects-software",
+        "description": "Implement handoff functionality in the product; handoff operations are the subject, not the outcome.",
+        "boundary": "Implementing operational functionality is a software outcome, not an operations outcome.",
+        "primary_outcomes": [
+          "software-behavior-change"
+        ],
+        "artifact_kinds": [
+          "handoff-implementation"
+        ],
+        "incidental_terms": [
+          "operations-subject"
+        ],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [],
+        "expected_selection": "selected",
+        "expected_pack": "software-delivery",
+        "expected_bodies_loaded": 1,
+        "expected_veto": "implementing-software-functionality"
+      },
+      {
+        "id": "researching-handoff-practices-selects-research",
+        "description": "Compare handoff practices across sources and return a supported finding.",
+        "boundary": "Researching operations is a research outcome, not an operations outcome.",
+        "primary_outcomes": [
+          "supported-finding"
+        ],
+        "artifact_kinds": [
+          "comparative-finding"
+        ],
+        "incidental_terms": [
+          "operations-subject"
+        ],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [],
+        "expected_selection": "selected",
+        "expected_pack": "research-inquiry",
+        "expected_bodies_loaded": 1,
+        "expected_veto": "researching-operations"
+      },
+      {
+        "id": "executing-and-verifying-a-service-restart-selects-operations",
+        "description": "Restart the service and verify the new process is the one serving requests.",
+        "boundary": "An explicitly declared, executed and verified service action is an operations outcome.",
+        "primary_outcomes": [
+          "executed-service-action"
+        ],
+        "artifact_kinds": [
+          "running-service-state"
+        ],
+        "incidental_terms": [
+          "software-subject"
+        ],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [],
+        "expected_selection": "selected",
+        "expected_pack": "operations-change",
+        "expected_bodies_loaded": 1,
+        "expected_veto": null
+      },
+      {
+        "id": "ambiguous-primary-outcomes-load-no-body",
+        "description": "Execute a recovery and decide an audience-facing claim, with neither named primary and no authorized hint.",
+        "boundary": "Ambiguous primary outcomes fail closed and load no body.",
+        "primary_outcomes": [
+          "executed-recovery",
+          "audience-facing-claim"
+        ],
+        "artifact_kinds": [
+          "recovery-record",
+          "campaign-decision"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "lifecycle_substrate_activities": [],
+        "expected_selection": "ambiguous",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_veto": null
+      }
+    ]
   }
 }
