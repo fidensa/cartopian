@@ -101,4 +101,8 @@ When you are done, write a completion report to the report path listed above. Us
 
 Use the task handoff, review handoff, or planning-review handoff variant from `templates/REPORT.md`, matching the type of work this prompt assigns.
 
+**Run completion-critical work in the foreground.** This handoff is a single non-interactive session, and your final result is process exit — nothing runs after you stop. Any command whose outcome the report depends on (test suite, build, validation script, fixture run, lint pass) must be run in the **foreground** and waited for to completion before you write the report. Do not background it, do not rely on a background-task or job-completion notification to resume you, and do not end the turn saying a run is "still going" and the report will follow: there is no later turn, the session is terminated, and the handoff is recorded as having exited without a report. If a run is too slow to finish inside the handoff deadline, that is a blocker to report — not work to leave running.
+
+**Writing the report is the last thing you do.** An unwritten report is a lost handoff even when the work itself succeeded. If the work cannot be finished, still write the report with `Status: blocked` and record what stopped you — a blocked report is a finished handoff; an absent one is not.
+
 **Redact secrets.** Do not include API keys, credentials, tokens, private connection strings, or comparable sensitive values in the report.

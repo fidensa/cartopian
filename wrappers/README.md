@@ -311,6 +311,7 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_EXPECTED_REPORT_PATH` | _(unset on manual launch)_ | Exact bounded report slot recorded by dispatch for custom wrapper integration. |
 | `CARTOPIAN_LOG_BYTE_LIMIT` / `CARTOPIAN_LOG_LINE_LIMIT` | `65536` / `400` | Retained launch-log ceilings; they do not limit wrapper execution or artifacts. |
 | `CARTOPIAN_LAUNCH_LOG_PATH` | _(unset when unavailable)_ | Safe destination selected for the bounded retained representation. Wait/status paths never read its body. |
+| `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` | `3` | Claude Code only: stop-refusal ceiling for the completion-adapter Stop hook. See [Claude Code hooks](#claude-code-hooks). |
 
 > Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
 
@@ -329,8 +330,26 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | --- | --- | --- |
 | `CARTOPIAN_CLAUDE_TOOLS` | _(empty)_ | Allowed-tool whitelist (comma-separated). Empty means claude's full default tool set. Set e.g. `Read` to restrict to read-only. |
 | `CARTOPIAN_CLAUDE_FORMAT` | `text` | Output format: `text`, `json`, `stream-json` |
-| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip plugin/hook discovery (`true`/`false`) |
+| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip plugin/hook discovery (`true`/`false`). **Setting this to `true` disables both Cartopian hooks below**, including the report-less-stop guard. |
 | `CARTOPIAN_CLAUDE_SKIP_PERMS` | `true` | Pass `--dangerously-skip-permissions` so claude runs non-interactively. Set to `false` to re-enable permission prompts (interactive debugging only). |
+
+#### Claude Code hooks
+
+`claude -p` treats the assistant's final result as process exit: background shells are stopped shortly after it, and a background-task notification cannot resume the session. An assignee that ends its turn saying "the suite is still running, I'll write the report after" therefore loses both the run and the report, and the handoff lands as `exited-without-report`.
+
+`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish. Register it (alongside the capability refusal adapter) with:
+
+```bash
+python ~/.cartopian/scripts/install.py --claude-hook /path/to/cartopian/project
+```
+
+Both hooks land in that project's `.claude/settings.json` — project-level settings only, never user-global. The Stop hook is inert unless `CARTOPIAN_EXPECTED_REPORT_PATH` is set, so interactive sessions in the same directory are untouched.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` | `3` | Maximum stop refusals per session before the guard yields and lets the process exit (leaving `exited-without-report` as the backstop). `0` disables the guard; a malformed or negative value falls back to the default rather than silently disabling it. |
+
+The guard adds no timer — `CARTOPIAN_TIMEOUT` remains the only clock — and fails open on every error path (missing env, unreadable payload, unwritable counter, internal error).
 
 ### Gemini
 

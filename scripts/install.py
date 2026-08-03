@@ -536,14 +536,18 @@ def patch_user_path(install_root: Path, actions: List[str]) -> None:
         _patch_unix_rc(bin_dir, install_root / "wrappers" / "bin", actions)
 
 
-# --- Claude Code refusal-adapter hook registration (operator-invoked) -----
-# `--claude-hook <project-dir>` merges the PreToolUse registration for
-# cli/claude_hook.py into <project-dir>/.claude/settings.json — project-level
-# Claude Code settings only. It is never run implicitly and never touches any
-# user-global settings file.
-# Read tools first, then the mutation tools: the hook gates both axes, and
-# the containment matrix claims read enforcement only when the registered
-# matcher actually covers the read tools.
+# --- Claude Code hook registration (operator-invoked) ---------------------
+# `--claude-hook <project-dir>` merges two registrations into
+# <project-dir>/.claude/settings.json — project-level Claude Code settings
+# only. It is never run implicitly and never touches any user-global settings
+# file.
+#
+#   PreToolUse -> cli/claude_hook.py       capability-keyed read/write refusal
+#   Stop       -> cli/claude_stop_hook.py  report-less-stop refusal
+#
+# Read tools first, then the mutation tools: the PreToolUse hook gates both
+# axes, and the containment matrix claims read enforcement only when the
+# registered matcher actually covers the read tools.
 CLAUDE_HOOK_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
 
 
@@ -552,28 +556,67 @@ def _claude_hook_command(install_root: Path) -> str:
     return f'"{sys.executable}" "{hook_path}"'
 
 
+def _claude_stop_hook_command(install_root: Path) -> str:
+    hook_path = install_root / "cli" / "claude_stop_hook.py"
+    return f'"{sys.executable}" "{hook_path}"'
+
+
+def _load_claude_settings(settings_path: Path) -> dict:
+    """Read a project's ``.claude/settings.json`` for merging.
+
+    A missing file is an empty document. An unreadable or non-object file is a
+    hard error: silently replacing operator settings would be worse than
+    refusing.
+    """
+    import json
+
+    if not settings_path.exists():
+        return {}
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"[error] cannot merge into {settings_path}: {exc}\n"
+            "        fix or remove the file, then re-run."
+        )
+    if not isinstance(settings, dict):
+        raise SystemExit(
+            f"[error] {settings_path} is not a JSON object; not merging."
+        )
+    return settings
+
+
+def _save_claude_settings(settings_path: Path, settings: dict) -> None:
+    import json
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _without_hook_script(entries: list, script_name: str) -> list:
+    """Drop event entries that already register ``script_name`` (idempotence)."""
+    return [
+        item
+        for item in entries
+        if script_name
+        not in "".join(
+            h.get("command", "")
+            for h in (item.get("hooks", []) if isinstance(item, dict) else [])
+            if isinstance(h, dict)
+        )
+    ]
+
+
 def register_claude_hook(
     project_dir: Path, install_root: Path, actions: List[str]
 ) -> None:
     """Merge the refusal-adapter PreToolUse hook into the project's
     ``.claude/settings.json``. Idempotent: an existing claude_hook.py entry is
     replaced in place; all other settings are preserved."""
-    import json
-
     settings_path = project_dir / ".claude" / "settings.json"
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(
-                f"[error] cannot merge into {settings_path}: {exc}\n"
-                "        fix or remove the file, then re-run."
-            )
-        if not isinstance(settings, dict):
-            raise SystemExit(
-                f"[error] {settings_path} is not a JSON object; not merging."
-            )
+    settings = _load_claude_settings(settings_path)
     hooks = settings.setdefault("hooks", {})
     pre = hooks.setdefault("PreToolUse", [])
     entry = {
@@ -582,23 +625,38 @@ def register_claude_hook(
             {"type": "command", "command": _claude_hook_command(install_root)}
         ],
     }
-    kept = [
-        item
-        for item in pre
-        if "claude_hook.py"
-        not in "".join(
-            h.get("command", "")
-            for h in (item.get("hooks", []) if isinstance(item, dict) else [])
-            if isinstance(h, dict)
-        )
-    ]
+    kept = _without_hook_script(pre, "claude_hook.py")
     kept.append(entry)
     hooks["PreToolUse"] = kept
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(
-        json.dumps(settings, indent=2) + "\n", encoding="utf-8"
-    )
+    _save_claude_settings(settings_path, settings)
     actions.append(f"registered claude refusal-adapter hook in {settings_path}")
+
+
+def register_claude_stop_hook(
+    project_dir: Path, install_root: Path, actions: List[str]
+) -> None:
+    """Merge the completion-adapter Stop hook into the project's
+    ``.claude/settings.json``.
+
+    The Stop event carries no tool name, so the entry has no ``matcher``.
+    Idempotent in the same way as the PreToolUse registration: an existing
+    claude_stop_hook.py entry is replaced in place and every other setting —
+    including the operator's own Stop hooks — is preserved.
+    """
+    settings_path = project_dir / ".claude" / "settings.json"
+    settings = _load_claude_settings(settings_path)
+    hooks = settings.setdefault("hooks", {})
+    stop = hooks.setdefault("Stop", [])
+    entry = {
+        "hooks": [
+            {"type": "command", "command": _claude_stop_hook_command(install_root)}
+        ]
+    }
+    kept = _without_hook_script(stop, "claude_stop_hook.py")
+    kept.append(entry)
+    hooks["Stop"] = kept
+    _save_claude_settings(settings_path, settings)
+    actions.append(f"registered claude completion-adapter Stop hook in {settings_path}")
 
 
 def _check_optional_coreutils() -> Optional[str]:
@@ -735,9 +793,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PROJECT_DIR",
         help=(
-            "also register the Claude Code refusal-adapter PreToolUse hook in "
-            "PROJECT_DIR/.claude/settings.json (project-level settings only; "
-            "never modifies user-global settings)."
+            "also register the Claude Code hooks in "
+            "PROJECT_DIR/.claude/settings.json: the refusal-adapter PreToolUse "
+            "hook (capability gating) and the completion-adapter Stop hook "
+            "(refuses a stop while the expected handoff report is missing). "
+            "Project-level settings only; never modifies user-global settings."
         ),
     )
     return p
@@ -853,9 +913,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.patch_path:
             patch_user_path(install_root, actions)
         if args.claude_hook is not None:
-            register_claude_hook(
-                args.claude_hook.expanduser().resolve(), install_root, actions
-            )
+            claude_project = args.claude_hook.expanduser().resolve()
+            register_claude_hook(claude_project, install_root, actions)
+            register_claude_stop_hook(claude_project, install_root, actions)
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)

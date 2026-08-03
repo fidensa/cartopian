@@ -586,6 +586,17 @@ The prompt path is passed as one argument. Tool-specific non-interactive flags, 
 
 Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin) are in `wrappers/`. See `wrappers/README.md` for installation.
 
+### Foreground Completion
+
+An automated handoff is one non-interactive session, and the assignee's final result is process exit. Nothing the assignee started survives that exit, and no completion notification can resume it — the session is not suspended between turns, it is over. Two rules follow, and every prompt states them (`templates/PROMPT.md` § Completion report):
+
+- **Completion-critical work runs in the foreground.** Any command whose outcome the completion report depends on — test suite, build, validation script, fixture run, evidence-gate command — must be run in the foreground and waited for before the report is written. Backgrounding it and ending the turn on the expectation of a later notification discards the run and the report with it. A run that cannot finish inside `roles.<role>.timeout` is a blocker to report, not work to leave running.
+- **The report is the last action, unconditionally.** Work that succeeded but was never reported is not completion evidence. When the work cannot be finished, the assignee still publishes the report with `Status: blocked` and records what stopped it: a blocked report is a finished handoff, an absent one is a lost handoff.
+
+Harness enforcement is agent-local and optional. For Claude Code, `cli/claude_stop_hook.py` is a **Stop** hook that refuses to end the turn while the report slot named by `CARTOPIAN_EXPECTED_REPORT_PATH` is absent or unparseable, feeding the assignee the instruction to finish in the foreground and publish. It is active only for a dispatched handoff (the variable is unset in every interactive session), delegates the completeness question to the same canonical observer the wait primitives use, imposes no timer of its own, and bounds itself to `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` interventions (default 3) so a session that genuinely cannot report is never pinned open. It fails open on every error path. `scripts/install.py --claude-hook <project-dir>` registers it alongside the capability refusal adapter. Hosts with no comparable interception point rely on the prompt instruction alone.
+
+This is prevention, not detection. The terminal classification in [Waiting For Completion](#waiting-for-completion) is unchanged and remains authoritative: a clean exit with no report is still `exited-without-report`, and that backstop is what records the outcome whenever the guard is absent, disabled, exhausted, or bypassed.
+
 ### Automated output safety
 
 `cli/output_safety.py` is the runtime source of truth for automated-dispatch launch-log retention. Every configured wrapper runs through this agent-neutral standard-library supervisor on POSIX and native PowerShell/CMD launch paths. The supervisor continuously drains combined wrapper output so the child cannot block on a full pipe, but retains only the bounded `<report-path>.launch.log` diagnostic. Bytes outside the retained representation are discarded; retained-log growth never signals, terminates, fails, or otherwise constrains the assignee, its source files and deliverables, or its completion report.
