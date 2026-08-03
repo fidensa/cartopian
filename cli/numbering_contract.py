@@ -101,7 +101,7 @@ def parse_task_id(task_id: str) -> Optional[Dict[str, str]]:
 
 
 def parse_phase_name(value: str) -> Optional[str]:
-    """The two-digit phase number of one ``PHASE-NN-slug`` name, or ``None``."""
+    """The two-digit phase number of a canonical or legacy phase name."""
     match = PHASE_NAME_RE.fullmatch(value.strip())
     if not match:
         return None
@@ -336,7 +336,7 @@ def classify_binding(
             verdict["blocking"] = True
             verdict["detail"] = (
                 f"{task_id} declares a Phase: header that does not match "
-                f"PHASE-NN-slug: {declared!r}"
+                f"PHASE-NN (legacy descriptive suffixes remain readable): {declared!r}"
             )
             return verdict
         if declared_phase != task["phase"]:

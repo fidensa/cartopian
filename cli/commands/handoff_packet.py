@@ -252,19 +252,25 @@ def handler(args: argparse.Namespace) -> int:
         "review" if task_path.parent.name == "in-review" else "task"
     )
 
-    # Manual review handoffs consume exactly the artifact automatic dispatch
+    # Manual task handoffs consume exactly the artifact automatic dispatch
     # does: the same resolved review context and the same binding preflight.
     # Bypassing `cartopian dispatch` therefore cannot bypass intent resolution.
     request_trace_record: Optional[Dict[str, Any]] = None
-    if task_path.parent.name == "in-review":
+    if task_path.parent.name in ("in-progress", "in-review"):
         nn_nnn = task_id.removeprefix("TASK-")
         review_prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
         try:
-            context = request_trace.context_for_task(
-                project_root,
-                task_path,
-                require_completion_evidence=True,
-            )
+            if task_path.parent.name == "in-review":
+                context = request_trace.context_for_task(
+                    project_root,
+                    task_path,
+                    require_completion_evidence=True,
+                )
+            else:
+                context = request_trace.context_for_task_assignment(
+                    project_root,
+                    task_path,
+                )
         except request_trace.RequestRefusal as refusal:
             stderr_guard(f"{refusal.rule}: {refusal.detail}")
             if refusal.recovery:
@@ -276,12 +282,19 @@ def handler(args: argparse.Namespace) -> int:
                 prompt_text = request_trace.read_contained_text(
                     project_root, review_prompt, what="review prompt"
                 )
-                prompt_context = request_trace.context_for_task(
-                    project_root,
-                    task_path,
-                    prompt_text=prompt_text,
-                    require_completion_evidence=True,
-                )
+                if task_path.parent.name == "in-review":
+                    prompt_context = request_trace.context_for_task(
+                        project_root,
+                        task_path,
+                        prompt_text=prompt_text,
+                        require_completion_evidence=True,
+                    )
+                else:
+                    prompt_context = request_trace.context_for_task_assignment(
+                        project_root,
+                        task_path,
+                        prompt_text=prompt_text,
+                    )
             except request_trace.RequestRefusal as refusal:
                 stderr_guard(f"{refusal.rule}: {refusal.detail}")
                 if refusal.recovery:
@@ -292,12 +305,12 @@ def handler(args: argparse.Namespace) -> int:
             )
             preflight["prompt_path"] = str(review_prompt)
             context = prompt_context
-        else:
+        elif task_path.parent.name == "in-review":
             preflight = {
                 "ok": False,
                 "rule": "missing-prompt",
-                "detail": f"review prompt not found: {review_prompt}",
-                "recovery": "prepare the bound review prompt before manual handoff",
+                "detail": f"prompt not found: {review_prompt}",
+                "recovery": "prepare the bound prompt before manual handoff",
                 "context_identity": context.context_identity,
                 "prompt_path": str(review_prompt),
             }

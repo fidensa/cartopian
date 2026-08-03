@@ -20,6 +20,8 @@ AI agents come pre-trained to "be helpful and proactive". That training causes p
 
 `skills/*.md` files are executable runbooks. They define operational procedure for initialization, planning, task execution, handoff automation, and plan closeout.
 
+`protocol/RISK_AND_PRACTICE.md` explains the optional risk, judgment, and practice-pack extension contracts; `protocol/risk-and-practice-contract.json` is the single authority for their machine values. Those contracts are defined but not yet active: no lifecycle surface derives a risk band, activates a judgment card, or selects a practice pack today. This file remains the invariant layer, and it continues to own review policy, evidence-gate discipline, and every other lifecycle rule. Risk classification never rewrites review policy, roles, capability grants, or launch configuration.
+
 Skill invocation names are derived from skill filenames by dropping `.md` and replacing hyphens with spaces. For example, `run-task.md` maps to `run task`.
 
 `use cartopian` is a common phrase used to start the cartopian project management system. This and other commands correlate to Cartopian MCP server tools and dialogs and other Cartopian skills. Map available skill and MCP server volcabulary before making assumptions about the Operator's instruction meaning.
@@ -117,27 +119,32 @@ intent never changes the request's intent class.
 
 ## Naming
 
-- Tasks: `TASK-NN-NNN-kebab-case-slug.md`. `NN` is the two-digit phase; `NNN` is the three-digit counter within that phase.
-- Specs: `SPEC-NN-NNN-kebab-case-slug.md`. Spec numbering is locked to task numbering; specs do not have an independent counter.
+- Tasks: `TASK-NN-NNN.md`. `NN` is the two-digit phase; `NNN` is the three-digit counter within that phase.
+- Specs: `SPEC-NN-NNN.md`. Spec numbering is locked to task numbering; specs do not have an independent counter.
 - Reviews: `REVIEW-NN-NNN.md`. One task-closure review per task; overwritten on re-review.
-- Planning-checkpoint reviews: `REVIEW-PLAN-NNN-slug.md`. `NNN` is a per-project sequential counter independent of task numbering.
+- Planning-checkpoint reviews: `REVIEW-PLAN-NNN.md`. `NNN` is a per-project sequential counter independent of task numbering.
 - Prompts: `PROMPT-NN-NNN.md`. Temporary task handoff artifacts in `prompts/`.
-- Planning-checkpoint prompts: `PROMPT-PLAN-NNN-slug.md`. Temporary review handoff artifacts in `prompts/`.
+- Planning-checkpoint prompts: `PROMPT-PLAN-NNN.md`. Temporary review handoff artifacts in `prompts/`.
 - Reports: `REPORT-NN-NNN.md`. Task-completion handoff result artifacts in `reports/`, preserved unchanged throughout any task-closure review.
 - Task-review reports: `REPORT-NN-NNN-review.md`. Independent task-review completion result artifacts in `reports/`; they share the task's `NN-NNN` identity but never the completion report's slot.
-- Planning-checkpoint reports: `REPORT-PLAN-NNN-slug.md`. Temporary planning-review handoff result artifacts in `reports/`.
-- Phases: `PHASE-NN-slug.md`. `NN` matches the plan phase order.
+- Planning-checkpoint reports: `REPORT-PLAN-NNN.md`. Temporary planning-review handoff result artifacts in `reports/`.
+- Phases: `PHASE-NN.md`. `NN` matches the plan phase order.
 - Implementation plan: `IMPLEMENTATION_PLAN.md`. One live plan per project.
-- Plan archives: `archive/PLAN-NNN-slug/`. Optional completed-plan snapshots created only during plan closeout.
-- Plan closeout summary: `archive/PLAN-NNN-slug/CLOSEOUT.md`.
+- Plan archives: `archive/PLAN-NNN/`. Optional completed-plan snapshots created only during plan closeout.
+- Plan closeout summary: `archive/PLAN-NNN/CLOSEOUT.md`.
 - Archive index: `archive/INDEX.md`. One-line-per-archive summary table.
-- Decisions: `DEC-NNN-kebab-case-slug.md`. `NNN` is a project-local counter within `decisions/`.
+- Decisions: `DEC-NNN.md`. `NNN` is a project-local counter within `decisions/`.
+
+Artifact names carry identity only. Human-readable descriptions belong in the
+artifact heading and index metadata, never in a filename. Readers retain
+compatibility with older descriptive filenames, but mediated writers create
+and update only the identifier-only form.
 
 ### Trace Chain
 
 The trace chain is identifier-based, not physical nesting. Related artifacts live in their protocol directories.
 
-`IMPLEMENTATION_PLAN.md` defines phase sections; phase files carry the same phase number; task, spec, prompt, report, and review identifiers share the task's `NN-NNN` prefix. A plan ref such as `BUILD-01-003` encodes its work kind and phase number and points to `PHASE-01-*` and the matching plan phase section. The task file carries that plan ref explicitly; task and plan-ref counters are independent.
+`IMPLEMENTATION_PLAN.md` defines phase sections; phase files carry the same phase number; task, spec, prompt, report, and review identifiers share the task's `NN-NNN` prefix. A plan ref such as `BUILD-01-003` encodes its work kind and phase number and points to `PHASE-01.md` and the matching plan phase section. The task file carries that plan ref explicitly; task and plan-ref counters are independent.
 
 Planning-checkpoint prompts, reports, and reviews are not part of the task trace chain because they attach to planning stages, not tasks.
 
@@ -284,7 +291,7 @@ The protocol defaults both loops to `off`. A project can therefore override glob
 
 Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review file per task, overwritten on re-review. There is no round suffix and no closure sign-off section.
 
-Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN-slug.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
+Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
 Planning-checkpoint reviews are temporary artifacts deleted when the checkpoint is approved or superseded.
 
@@ -296,7 +303,7 @@ Review verdicts are:
 
 ## Up-front Operator Request Evidence
 
-Before an existing planning or task-closure review, Cartopian resolves exact
+Before a task assignment, planning review, or task-closure review, Cartopian resolves exact
 operator excerpts from three provenance-bearing sources: explicitly attributed
 verbatim quotations in applicable decisions, supported host-provided chat
 records, and optional immutable request-store records. A native host callback
@@ -330,6 +337,17 @@ late. Decision-first and capture-first intake orderings are both valid. Later
 requirements, plans, phases, tasks, specs, and prompts still fail closed when
 neither an applicable exact decision/chat source nor an optional request record
 resolves. There is no raw decision-deletion recovery path.
+
+For task assignment, `write-prompt --task <absolute-task-path>` generates the
+exact-request channel before the coder sees the prompt. The assignment context
+binds the request to the PM-derived task and applicable spec. `dispatch`
+recomputes that binding and fails closed before process launch when the section
+is absent, edited, or stale. The assignee compares the exact request with all
+PM-authored instructions before changing a work root. Added implementation,
+destinations, features, conventions, or scope are blockers, not implicit
+authority; permission to propose an option does not authorize implementing it.
+Task-closure review applies the same authority rule to the delivered outcome,
+so a PM-authored liberty is request drift even when the task and coder agree.
 
 Supported host chat records are UTF-8 JSON files below `requests/chat/` with
 schema `cartopian-host-chat-v1`. They identify the operator role, governed unit,
@@ -426,7 +444,7 @@ Report files follow the canonical field schema and variants in `templates/REPORT
 
 The neutral task-report core is `## Identity`, `## Completion evidence`, `## Remaining risks`, and `## Ready to close`. Specialized software and document sections (`## Files changed`, `## Deliverable`, `## Test evidence`, `## Commit / PR`) are optional evidence shapes. For compatibility, an exact `## Files changed` or `## Deliverable` heading may stand in for `## Completion evidence`, and `## Ready for review` may stand in for `## Ready to close`.
 
-Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use the independent `reports/REPORT-NN-NNN-review.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN-slug.md`. The task-completion report is preserved unchanged throughout task review — the reviewer reads it directly from its compatibility path — and neither task-scoped artifact can satisfy the other's completion signal.
+Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use the independent `reports/REPORT-NN-NNN-review.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN.md`. The task-completion report is preserved unchanged throughout task review — the reviewer reads it directly from its compatibility path — and neither task-scoped artifact can satisfy the other's completion signal.
 
 Task review completion reports declare the absolute `Task path:` in `## Identity`. The path must name the task implied by the report filename's `NN-NNN` identity in its current lifecycle directory; a missing, stale, or wrong task path is invalid completion evidence. This requirement does not apply to deidentified task completion reports or to planning-review completion reports.
 
@@ -460,7 +478,7 @@ Report parsing outcomes are:
 
 ## Document Deliverables
 
-A document-deliverable task is one whose work product is a durable document — research findings, a design, an evaluation, an analysis — rather than code. Such a task declares a `Deliverable:` field so its work product is written to a durable file the reviewer reviews directly, and the completion report stays a thin summary. This is the same shape as a code task: code is written to the work root and the report summarizes it; a document is written to a deliverable and the report summarizes it. A report is never the home of the work product, and reports are not durable lifecycle records: both task-scoped reports (`reports/REPORT-NN-NNN.md` and `reports/REPORT-NN-NNN-review.md`) are removed at supported task closure, after their evidence has been consumed.
+A document-deliverable task is one whose work product is a durable document — research findings, a design, an evaluation, an analysis — rather than code. Such a task declares a `Deliverable:` field so its work product is written to a durable file the reviewer reviews directly, and the completion report stays a thin summary. `DESIGN` and `RESEARCH` plan items are document work and therefore cannot launch with an absent or `n/a` deliverable. This is the same shape as a code task: code is written to the work root and the report summarizes it; a document is written to a deliverable and the report summarizes it. A report is never the home of the work product, and reports are not durable lifecycle records: both task-scoped reports (`reports/REPORT-NN-NNN.md` and `reports/REPORT-NN-NNN-review.md`) are removed at supported task closure, after their evidence has been consumed.
 
 ### The Deliverable field
 
@@ -707,7 +725,7 @@ Plan closeout resets the live plan surface:
 
 Cartopian is anti-archival by default. Completed plan artifacts are archived only when the operator explicitly asks during closeout.
 
-Plan archives use `archive/PLAN-NNN-slug/` and may include snapshots of:
+Plan archives use `archive/PLAN-NNN/` and may include snapshots of:
 
 - `REQUIREMENTS.md`
 - `STANDARDS.md`
@@ -732,7 +750,7 @@ After closeout, `STATE.md` says there is no active plan and names `skills/plan-p
 
 ## Decisions
 
-Every non-trivial decision gets its own immutable file in `decisions/`, named `DEC-NNN-kebab-case-slug.md`.
+Every non-trivial decision gets its own immutable file in `decisions/`, named `DEC-NNN.md`; its title lives in the file and decision index.
 
 `decisions/INDEX.md` is a one-line-per-decision summary table.
 

@@ -104,52 +104,58 @@ class TestRootArtifactWriters(_Fixture):
 class TestIdBearingWriters(_Fixture):
     def test_write_phase(self):
         code, recs, err = run_cli(
-            "write-phase", self.root, "--phase-id", "PHASE-01-foundation",
+            "write-phase", self.root, "--phase-id", "PHASE-01",
             "--content", "# phase\n",
         )
         self.assertEqual(code, 0, msg=err)
-        self.assertTrue((self.scaffold.phases / "PHASE-01-foundation.md").is_file())
-        self.assertEqual(recs[0]["details"]["phase_id"], "PHASE-01-foundation")
+        self.assertTrue((self.scaffold.phases / "PHASE-01.md").is_file())
+        self.assertEqual(recs[0]["details"]["phase_id"], "PHASE-01")
 
     def test_write_task_lands_in_open(self):
         code, recs, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do-thing",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", "# task\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n",
         )
         self.assertEqual(code, 0, msg=err)
-        self.assertTrue((self.scaffold.tasks_open / "TASK-01-001-do-thing.md").is_file())
-        self.assertEqual(recs[0]["details"]["relative_target"], "open/TASK-01-001-do-thing.md")
+        self.assertTrue((self.scaffold.tasks_open / "TASK-01-001.md").is_file())
+        self.assertEqual(recs[0]["details"]["relative_target"], "open/TASK-01-001.md")
 
     def test_write_spec(self):
         code, recs, err = run_cli(
-            "write-spec", self.root, "--spec-id", "SPEC-01-001", "--slug", "thing",
+            "write-spec", self.root, "--spec-id", "SPEC-01-001",
             "--content", "# spec\n",
         )
         self.assertEqual(code, 0, msg=err)
-        self.assertTrue((self.scaffold.specs / "SPEC-01-001-thing.md").is_file())
+        self.assertTrue((self.scaffold.specs / "SPEC-01-001.md").is_file())
 
     def test_write_prompt_task_and_planning_variants(self):
+        task = self.scaffold.tasks_in_progress / "TASK-01-001.md"
+        task.write_text("# task\n", encoding="utf-8")
         code, recs, err = run_cli(
-            "write-prompt", self.root, "--prompt-id", "PROMPT-01-001", "--content", "# p\n",
+            "write-prompt", self.root, "--prompt-id", "PROMPT-01-001",
+            "--task", str(task), "--content", "# p\n",
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(recs[0]["details"]["variant"], "task")
-        self.assertTrue((self.scaffold.prompts / "PROMPT-01-001.md").is_file())
+        assignment_prompt = self.scaffold.prompts / "PROMPT-01-001.md"
+        self.assertTrue(assignment_prompt.is_file())
+        assignment_text = assignment_prompt.read_text(encoding="utf-8")
+        self.assertIn("Before changing any work root", assignment_text)
+        self.assertIn("features, conventions, or scope", assignment_text)
 
         code, recs, err = run_cli(
-            "write-prompt", self.root, "--prompt-id", "PROMPT-PLAN-001-kickoff",
+            "write-prompt", self.root, "--prompt-id", "PROMPT-PLAN-001",
             "--content", "# p\n",
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(recs[0]["details"]["variant"], "planning")
-        self.assertTrue((self.scaffold.prompts / "PROMPT-PLAN-001-kickoff.md").is_file())
+        self.assertTrue((self.scaffold.prompts / "PROMPT-PLAN-001.md").is_file())
 
     def test_bad_ids_and_slugs_refused_as_usage(self):
         cases = [
             ("write-phase", ["--phase-id", "PHASE-1-x"]),       # bad number width
-            ("write-task", ["--task-id", "TASK-01-1", "--slug", "ok"]),
-            ("write-task", ["--task-id", "TASK-01-001", "--slug", "Bad_Slug"]),
-            ("write-spec", ["--spec-id", "SPEC-01", "--slug", "ok"]),
+            ("write-task", ["--task-id", "TASK-01-1"]),
+            ("write-spec", ["--spec-id", "SPEC-01"]),
             ("write-prompt", ["--prompt-id", "PROMPT-01"]),
         ]
         for verb, extra in cases:
@@ -197,11 +203,11 @@ class TestDestinationRefusalDelegation(_Fixture):
         # no-follow guard must refuse and the writer surfaces it fail-closed.
         secret = Path(self.scaffold.root) / "secret.md"
         secret.write_text("ORIGINAL", encoding="utf-8")
-        link = self.scaffold.tasks_open / "TASK-01-009-x.md"
+        link = self.scaffold.tasks_open / "TASK-01-009.md"
         os.symlink(secret, link)
 
         code, recs, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-009", "--slug", "x",
+            "write-task", self.root, "--task-id", "TASK-01-009",
             # Schema-valid so the write reaches the primitive's symlink guard
             # rather than tripping write-task's own content-shape gate first.
             "--content", "PWNED\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n",
@@ -240,20 +246,20 @@ class TestWriteState(_Fixture):
 class TestWriteDecision(_Fixture):
     def test_writes_dec_and_creates_index_row(self):
         code, recs, err = run_cli(
-            "write-decision", self.root, "--dec-id", "DEC-001", "--slug", "pick",
+            "write-decision", self.root, "--dec-id", "DEC-001",
             "--title", "Pick a thing", "--date", "2026-06-01", "--content", "# DEC-001\n",
         )
         self.assertEqual(code, 0, msg=err)
-        self.assertTrue((self.scaffold.decisions / "DEC-001-pick.md").is_file())
+        self.assertTrue((self.scaffold.decisions / "DEC-001.md").is_file())
         index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
-        self.assertIn("| [DEC-001](DEC-001-pick.md) | Pick a thing | 2026-06-01 | locked | none |", index)
+        self.assertIn("| [DEC-001](DEC-001.md) | Pick a thing | 2026-06-01 | locked | none |", index)
         self.assertFalse(recs[0]["details"]["index_row_replaced"])
 
     def test_reissue_replaces_row_in_place(self):
-        run_cli("write-decision", self.root, "--dec-id", "DEC-002", "--slug", "x",
+        run_cli("write-decision", self.root, "--dec-id", "DEC-002",
                 "--title", "First", "--date", "2026-06-01", "--content", "a")
         code, recs, err = run_cli(
-            "write-decision", self.root, "--dec-id", "DEC-002", "--slug", "x",
+            "write-decision", self.root, "--dec-id", "DEC-002",
             "--title", "Second", "--date", "2026-06-02", "--status", "open", "--content", "b",
         )
         self.assertEqual(code, 0, msg=err)
@@ -264,21 +270,21 @@ class TestWriteDecision(_Fixture):
         self.assertEqual(index.count("[DEC-002]"), 1)
 
     def test_multiple_decisions_accumulate_rows(self):
-        for n, slug in (("DEC-001", "a"), ("DEC-002", "b"), ("DEC-003", "c")):
-            run_cli("write-decision", self.root, "--dec-id", n, "--slug", slug,
+        for n in ("DEC-001", "DEC-002", "DEC-003"):
+            run_cli("write-decision", self.root, "--dec-id", n,
                     "--title", f"T{n}", "--date", "2026-06-01", "--content", "x")
         index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
         self.assertEqual(index.count("| [DEC-0"), 3)
 
     def test_pipe_in_title_is_escaped(self):
-        run_cli("write-decision", self.root, "--dec-id", "DEC-004", "--slug", "p",
+        run_cli("write-decision", self.root, "--dec-id", "DEC-004",
                 "--title", "a | b", "--date", "2026-06-01", "--content", "x")
         index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("a \\| b", index)
 
     def test_bad_date_is_usage_error(self):
         code, recs, err = run_cli(
-            "write-decision", self.root, "--dec-id", "DEC-005", "--slug", "p",
+            "write-decision", self.root, "--dec-id", "DEC-005",
             "--title", "T", "--date", "06/01/2026", "--content", "x",
         )
         self.assertEqual(code, 2)

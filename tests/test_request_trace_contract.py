@@ -400,7 +400,7 @@ class RequestTraceContract(unittest.TestCase):
         )
         code, _, error = self.run_cli(
             "write-decision", str(self.root), "--dec-id", "DEC-001",
-            "--slug", "preserve-request", "--title", "Preserve request",
+            "--title", "Preserve request",
             "--date", "2026-07-27", "--content", body,
         )
         self.assertEqual(code, 0, msg=error)
@@ -416,7 +416,7 @@ class RequestTraceContract(unittest.TestCase):
     def test_optional_capture_remains_reachable_after_decision(self) -> None:
         code, _, error = self.run_cli(
             "write-decision", str(self.root), "--dec-id", "DEC-001",
-            "--slug", "context", "--title", "Context", "--date", "2026-07-27",
+            "--title", "Context", "--date", "2026-07-27",
             "--content", "# DEC-001\n\nOrdinary decision prose.\n",
         )
         self.assertEqual(code, 0, msg=error)
@@ -429,7 +429,7 @@ class RequestTraceContract(unittest.TestCase):
         self.capture("Capture first, then author.")
         code, _, error = self.run_cli(
             "write-decision", str(self.root), "--dec-id", "DEC-001",
-            "--slug", "choice", "--title", "Choice", "--date", "2026-07-27",
+            "--title", "Choice", "--date", "2026-07-27",
             "--content", "# DEC-001\n",
         )
         self.assertEqual(code, 0, msg=error)

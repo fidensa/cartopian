@@ -2,7 +2,7 @@
 
 Work root: <name | name, name | n/a>
 Branch: <branch or n/a; include only for a git workflow>
-Phase: <PHASE-NN-slug | omit when not applicable>
+Phase: <PHASE-NN | omit when not applicable>
 Plan ref: <KIND-NN-NNN | omit when not applicable>
 
 ## Paths
@@ -10,7 +10,7 @@ Plan ref: <KIND-NN-NNN | omit when not applicable>
 - **Project root**: <absolute path to the governing Cartopian project directory; process launch cwd, but not authority to edit PM lifecycle artifacts>
 - **Work root paths**: <comma-separated absolute paths resolved from `Work root:`, or n/a>
 - **Deliverable path**: <absolute path where the durable work product is written, or n/a; when the deliverable must land inside the governing project, this is n/a and the work product is returned inline in the report instead — see the Deliverable section below>
-- **Report path**: <absolute path to the expected handoff report: `reports/REPORT-NN-NNN.md` for task completion, `reports/REPORT-NN-NNN-review.md` for task-review completion, `reports/REPORT-PLAN-NNN-slug.md` for planning review>
+- **Report path**: <absolute path to the expected handoff report: `reports/REPORT-NN-NNN.md` for task completion, `reports/REPORT-NN-NNN-review.md` for task-review completion, `reports/REPORT-PLAN-NNN.md` for planning review>
 - **Report template path**: <absolute path to templates/REPORT.md>
 
 The assignee CLI is launched with cwd set to the **Cartopian project root**. That working directory is launch context, not lifecycle authority: product work occurs only through the declared **Work root paths**, and declared work-root access does not grant PM lifecycle authority over requirements, decisions, tasks, backlog, `STATE.md`, prompts, or reports. Unless this assignment explicitly says otherwise, the only authorized write in the governing project is the **Report path** above.

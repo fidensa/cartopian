@@ -195,10 +195,10 @@ Read the locked `IMPLEMENTATION_PLAN.md`.
 
 ### 3.2 Generate phase files
 
-Authoring phase files is **PM-performed**. For each phase in the plan, author `phases/PHASE-NN-slug.md` through the mediated writer `cartopian write-phase` (the `--phase-id` resolves the allowlisted `phases/` destination, so the PM supplies the id, not a path):
+Authoring phase files is **PM-performed**. For each phase in the plan, author `phases/PHASE-NN.md` through the mediated writer `cartopian write-phase` (the `--phase-id` resolves the allowlisted `phases/` destination, so the PM supplies the id, not a path):
 
 ```
-cartopian write-phase <project-root> --phase-id PHASE-NN-slug --content-file <body-path>
+cartopian write-phase <project-root> --phase-id PHASE-NN --content-file <body-path>
 ```
 
 Each phase body contains:
@@ -210,7 +210,7 @@ Each phase body contains:
 - **Exit criteria**: copied from the plan.
 - **Dependencies on prior phases**: what must be done before this phase can start.
 
-Use the phase number and slug from the plan. The two-digit phase number (`NN`) must match the plan section number.
+Use the phase number from the plan. The two-digit phase number (`NN`) must match the plan section number; keep the description in the heading, not the filename.
 
 ### 3.3 Review checkpoint
 
@@ -232,10 +232,10 @@ Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if start
 
 ### 4.2 Generate task files
 
-Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md`. Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format by reading an existing task or report; read the template resource and follow it.
+Authoring task files is **PM-performed**. For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md`. Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format by reading an existing task or report; read the template resource and follow it.
 
 ```
-cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
+cartopian write-task <project-root> --task-id TASK-NN-NNN --content-file <body-path>
 ```
 
 Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
@@ -244,10 +244,10 @@ New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advance
 
 ### 4.3 Generate spec files
 
-For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md` (a **PM-performed** write):
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md` (a **PM-performed** write):
 
 ```
-cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
+cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --content-file <body-path>
 ```
 
 Not every task needs a spec. Use judgment: configuration tasks, documentation tasks, and simple implementation tasks typically do not need specs.
@@ -303,33 +303,33 @@ Planning — including task generation — is a **scoped directive** (`cartopian
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN-slug.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN-slug.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN-slug --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN-slug` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent intake request channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-PLAN-NNN.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent intake request channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
 
 The standard checkpoint sequence is:
 
-| NNN | Stage | Shared slug | Prompt | Report | Review |
-| --- | --- | --- | --- | --- | --- |
-| 001 | Requirements & Standards | `requirements-and-standards` | `PROMPT-PLAN-001-requirements-and-standards.md` | `REPORT-PLAN-001-requirements-and-standards.md` | `REVIEW-PLAN-001-requirements-and-standards.md` |
-| 002 | Implementation Plan | `implementation-plan` | `PROMPT-PLAN-002-implementation-plan.md` | `REPORT-PLAN-002-implementation-plan.md` | `REVIEW-PLAN-002-implementation-plan.md` |
-| 003 | Phases | `phases` | `PROMPT-PLAN-003-phases.md` | `REPORT-PLAN-003-phases.md` | `REVIEW-PLAN-003-phases.md` |
-| 004 | Tasks & Specs | `tasks-and-specs` | `PROMPT-PLAN-004-tasks-and-specs.md` | `REPORT-PLAN-004-tasks-and-specs.md` | `REVIEW-PLAN-004-tasks-and-specs.md` |
+| NNN | Stage | Prompt | Report | Review |
+| --- | --- | --- | --- | --- |
+| 001 | Requirements & Standards | `PROMPT-PLAN-001.md` | `REPORT-PLAN-001.md` | `REVIEW-PLAN-001.md` |
+| 002 | Implementation Plan | `PROMPT-PLAN-002.md` | `REPORT-PLAN-002.md` | `REVIEW-PLAN-002.md` |
+| 003 | Phases | `PROMPT-PLAN-003.md` | `REPORT-PLAN-003.md` | `REVIEW-PLAN-003.md` |
+| 004 | Tasks & Specs | `PROMPT-PLAN-004.md` | `REPORT-PLAN-004.md` | `REVIEW-PLAN-004.md` |
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN-slug --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
 2. Call `skills/run-handoff.md` with:
    - Role: the exact resolved `reviews.planning.role` value
-   - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN-slug.md`
-   - Absolute report path: `<project>/reports/REPORT-PLAN-NNN-slug.md`
+   - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN.md`
+   - Absolute report path: `<project>/reports/REPORT-PLAN-NNN.md`
    - Expected report variant: planning-review completion
    - Allowed lifecycle action: return outcome to this skill
-3. Require the configured reviewer to create `reviews/REVIEW-PLAN-NNN-slug.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Request alignment:` and `Request evidence:`. Drift or missing/mismatched evidence blocks approval; only generated `unavailable-for-legacy` is non-blocking.
+3. Require the configured reviewer to create `reviews/REVIEW-PLAN-NNN.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Request alignment:` and `Request evidence:`. Drift or missing/mismatched evidence blocks approval; only generated `unavailable-for-legacy` is non-blocking.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
 Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:
 
 ```
-cartopian wait-report <project>/reports/REPORT-PLAN-NNN-slug.md --role <role>
+cartopian wait-report <project>/reports/REPORT-PLAN-NNN.md --role <role>
 ```
 
 `cartopian wait-report` is a read-only observer: the report file is the authoritative completion signal. It is terminal by default — one call blocks until the report lands or the resolved role launch timeout elapses (`timeout`). It emits `accepted` when the planning-review report is present and parses, a `[guard]` failure when a report is present but not acceptable, `timeout` when the ceiling elapses first, or — only under an explicitly requested `--max-block` observation slice, which exists solely to fit a host `tools/call` ceiling that cannot be raised — `still_running` when that budget elapses before the report lands. Treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. The re-wait is read-only, does not launch a second reviewer, and does not consume a `max_handoffs_per_run` unit; only the original launch does. Do not ask for operator continuation between slices. When the checkpoint is dispatched through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
@@ -341,13 +341,13 @@ Planning-checkpoint prompts and reviews are temporary artifacts. When a planning
 - Remove the checkpoint prompt:
 
   ```
-  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
+  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN.md
   ```
 
 - Remove the checkpoint report (if present):
 
   ```
-  cartopian delete-report <project-path>/reports/REPORT-PLAN-NNN-<slug>.md
+  cartopian delete-report <project-path>/reports/REPORT-PLAN-NNN.md
   ```
 
 No archival for prompts or reports.

@@ -2,7 +2,7 @@
 
 ## Plan identity
 
-- Archive: `archive/PLAN-NNN-slug/`
+- Archive: `archive/PLAN-NNN/`
 - Closed: `<YYYY-MM-DD>`
 - Project: `<project name>`
 - Completed plan: `IMPLEMENTATION_PLAN.md`

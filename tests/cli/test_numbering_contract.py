@@ -312,7 +312,7 @@ class TestMediatedAuthoring(unittest.TestCase):
                     _task_body("RESEARCH-01-001"),
                 )
             self.assertEqual(code, 0, stderr)
-            task = project / "tasks" / "open" / "TASK-01-004-old-style.md"
+            task = project / "tasks" / "open" / "TASK-01-004.md"
             self.assertTrue(task.is_file())
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
@@ -461,9 +461,10 @@ class TestMediatedAuthoring(unittest.TestCase):
                     _task_body("BUILD-01-007") + "\nUpdated.\n",
                 )
             self.assertEqual(code, 0, stderr)
+            normalized = existing.parent / "TASK-01-010.md"
             self.assertIn(
                 "Plan ref: BUILD-01-007",
-                existing.read_text(encoding="utf-8"),
+                normalized.read_text(encoding="utf-8"),
             )
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
@@ -508,7 +509,7 @@ class TestReadinessAndAudit(unittest.TestCase):
                 _task_body("RESEARCH-01-001"),
             )
         assert code == 0, stderr
-        return project, project / "tasks" / "open" / "TASK-01-002-independent-counter.md"
+        return project, project / "tasks" / "open" / "TASK-01-002.md"
 
     def test_governed_aligned_task_passes_readiness_and_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -804,7 +805,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
             )
         assert code == 0, stderr
         task_path = (
-            scaffold.project_root / "tasks" / "open" / "TASK-01-002-aligned.md"
+            scaffold.project_root / "tasks" / "open" / "TASK-01-002.md"
         )
         return scaffold, task_path
 

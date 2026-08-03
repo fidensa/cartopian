@@ -140,13 +140,13 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         self._run("write-requirements", ps, "--content", "# Requirements\n\nFR-1\n")
         self._run("write-plan", ps, "--content", "# Implementation Plan\n\nBUILD-01-001\n")
         self._run("write-standards", ps, "--content", "# Standards\n")
-        self._run("write-phase", ps, "--phase-id", "PHASE-01-core", "--content",
-                  "# PHASE-01-core: Core\n")
-        self._run("write-spec", ps, "--spec-id", "SPEC-01-001", "--slug", "thing",
+        self._run("write-phase", ps, "--phase-id", "PHASE-01", "--content",
+                  "# PHASE-01: Core\n")
+        self._run("write-spec", ps, "--spec-id", "SPEC-01-001",
                   "--content", "# SPEC-01-001\n")
-        self._run("write-task", ps, "--task-id", "TASK-01-001", "--slug", "do-thing",
+        self._run("write-task", ps, "--task-id", "TASK-01-001",
                   "--content",
-                  "# TASK-01-001: do thing\n\nPhase: PHASE-01-core\nPlan ref: BUILD-01-001\n"
+                  "# TASK-01-001: do thing\n\nPhase: PHASE-01\nPlan ref: BUILD-01-001\n"
                   "Evidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n")
         task_request_source = proj.parent / "task-operator-request.txt"
         task_request_source.write_text("Run the planned task.", encoding="utf-8")
@@ -156,16 +156,15 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
             "--content-file", str(task_request_source),
             "--captured-at", "2026-07-27T12:00:01Z",
         )
-        self._run("write-prompt", ps, "--prompt-id", "PROMPT-01-001",
-                  "--content", "# PROMPT-01-001\n")
-
-        task_path = proj / "tasks" / "open" / "TASK-01-001-do-thing.md"
+        task_path = proj / "tasks" / "open" / "TASK-01-001.md"
         self.assertTrue(task_path.is_file())
 
-        # --- ASSIGN (G7 prompt already written) ---
+        # --- ASSIGN ---
         self._run("move-task", str(task_path), "in-progress")
-        task_path = proj / "tasks" / "in-progress" / "TASK-01-001-do-thing.md"
+        task_path = proj / "tasks" / "in-progress" / "TASK-01-001.md"
         self.assertTrue(task_path.is_file())
+        self._run("write-prompt", ps, "--prompt-id", "PROMPT-01-001",
+                  "--task", str(task_path), "--content", "# PROMPT-01-001\n")
 
         # Dispatched coder produces the report (out of scope here):
         # NOT a PM operation — stands in for the assignee agent.
@@ -180,7 +179,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
 
         # --- REVIEW (G9, G10, G11) ---
         self._run("move-task", str(task_path), "in-review")
-        task_path = proj / "tasks" / "in-review" / "TASK-01-001-do-thing.md"
+        task_path = proj / "tasks" / "in-review" / "TASK-01-001.md"
         self.assertTrue(task_path.is_file())
         self._run(
             "write-prompt",
@@ -206,10 +205,10 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         )
 
         # Record a decision + index in one command (G9 + G10).
-        self._run("write-decision", ps, "--dec-id", "DEC-001", "--slug", "approach",
+        self._run("write-decision", ps, "--dec-id", "DEC-001",
                   "--title", "Chosen approach", "--date", "2026-06-01",
                   "--content", "# DEC-001\n")
-        self.assertTrue((proj / "decisions" / "DEC-001-approach.md").is_file())
+        self.assertTrue((proj / "decisions" / "DEC-001.md").is_file())
         self.assertIn("[DEC-001]", (proj / "decisions" / "INDEX.md").read_text(encoding="utf-8"))
 
         # Persist STATE.md; write-state composes the canonical body itself
@@ -224,7 +223,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
 
         # Approve → done.
         self._run("move-task", str(task_path), "done")
-        self.assertTrue((proj / "tasks" / "done" / "TASK-01-001-do-thing.md").is_file())
+        self.assertTrue((proj / "tasks" / "done" / "TASK-01-001.md").is_file())
 
         # --- CLOSE (G13, G14, G15) ---
         self._run("delete-prompt", str(proj / "prompts" / "PROMPT-01-001.md"))

@@ -30,6 +30,7 @@ CHECK_ORDER = (
 )
 
 EVIDENCE_GATE_VALUES = ("required", "n/a")
+DOCUMENT_WORK_KINDS = ("DESIGN", "RESEARCH")
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -307,10 +308,25 @@ def _check_deliverable(
 
     A project-mode deliverable must land under ``resources/`` (CONVENTIONS
     § Project Resources); a work-root deliverable must name a declared work
-    root. Absent / ``n/a`` deliverables pass — most tasks have none.
+    root. DESIGN and RESEARCH plan items are document work and must declare a
+    durable destination. Other task kinds may use absent / ``n/a`` when they
+    produce no durable document.
     """
     raw = headers.get("Deliverable", "").strip()
     if raw.lower() in _DELIVERABLE_SKIP:
+        plan_ref = headers.get("Plan ref", "").strip()
+        kind = plan_ref.partition("-")[0]
+        if kind in DOCUMENT_WORK_KINDS:
+            return {
+                "name": "deliverable-valid",
+                "pass": False,
+                "reason": (
+                    f"{kind} work must declare a durable Deliverable; use "
+                    "project:resources/<path> for project-support artifacts, "
+                    "or an operator-chosen work-root path only when the "
+                    "artifact is explicitly part of the product"
+                ),
+            }
         return {"name": "deliverable-valid", "pass": True, "reason": None}
 
     root, sep, relpath = raw.partition(":")

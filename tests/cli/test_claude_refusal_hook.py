@@ -812,6 +812,7 @@ class TestDispatchExportsRole(unittest.TestCase):
     the env mechanism the hook reads for session-role identification."""
 
     def test_dispatch_exports_cartopian_role(self) -> None:
+        from cli import request_trace
         from cli.commands import dispatch
         from tests.scaffold import project_scaffold
 
@@ -833,8 +834,20 @@ class TestDispatchExportsRole(unittest.TestCase):
                 "tasks/in-progress/TASK-01-004-role-export.md",
                 "# TASK-01-004: role export\n",
             )
+            scaffold.capture_request(
+                request_id="REQUEST-001",
+                unit="task:TASK-01-004",
+                text="Run the role export task.",
+            )
+            context = request_trace.context_for_task_assignment(
+                scaffold.project_root, task_path
+            )
             scaffold.write(
-                "prompts/PROMPT-01-004.md", "# PROMPT-01-004\n\n## Your task\n\nx\n"
+                "prompts/PROMPT-01-004.md",
+                request_trace.upsert_request_sections(
+                    "# PROMPT-01-004\n\n## Your task\n\nx\n",
+                    context.section,
+                ),
             )
             captured = {}
 

@@ -4,7 +4,7 @@ Close a completed Cartopian implementation plan, optionally archive the complete
 
 This workflow is the boundary between one active plan and the next. It does not generate the new plan. After closeout, run `skills/plan-project.md` to gather fresh requirements and produce the next plan.
 
-**Output:** A reset project directory ready for `plan project`, plus an optional `archive/PLAN-NNN-slug/` snapshot when the operator requests one.
+**Output:** A reset project directory ready for `plan project`, plus an optional `archive/PLAN-NNN/` snapshot when the operator requests one.
 
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
@@ -31,7 +31,7 @@ The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; 
 2. Read `STATE.md`.
 3. Confirm the operator wants to close the current plan, not revise it.
 4. Explain that `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phases, tasks, specs, reviews, prompts, reports, and decisions will be removed from the live project surface during reset.
-5. Explain that `cartopian.toml` remains live across the reset. The optional `archive/PLAN-NNN-slug/` directory (if the operator chose to archive at Stage 3) also remains and holds the closed plan's snapshot, including its `decisions/`.
+5. Explain that `cartopian.toml` remains live across the reset. The optional `archive/PLAN-NNN/` directory (if the operator chose to archive at Stage 3) also remains and holds the closed plan's snapshot, including its `decisions/`.
 
 Do not proceed unless the operator explicitly confirms plan closeout.
 
@@ -70,13 +70,13 @@ cartopian close-audit <project-path>
   - `stale_prompts` — `PROMPT-*.md` files whose tasks are already in `done/` or otherwise no longer active. Resolve each named prompt with the Core CLI before rerunning closeout:
 
     ```
-    cartopian delete-prompt <project-path>/prompts/PROMPT-NN-NNN-<slug>.md
+    cartopian delete-prompt <project-path>/prompts/PROMPT-NN-NNN.md
     ```
 
     Superseded planning-checkpoint prompts are cleared the same way:
 
     ```
-    cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN-<slug>.md
+    cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN.md
     ```
 
     Do not delete a prompt whose work is still active or ambiguous; obtain an operator decision first.
@@ -89,7 +89,7 @@ cartopian close-audit <project-path>
 
     A closed task may leave both task-scoped reports — the preserved completion report and, under required review, its independent review-completion report. Clear each existing artifact with its own call; a task closed without review simply has no review report to clear.
 
-  - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN-slug.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
+  - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
 
 - **`closable`:** the aggregator's verdict. When `blocking_reasons` is empty, `closable` is `true` and closeout may proceed to Stage 2.
 
@@ -134,7 +134,7 @@ Archival is **PM-performed**. Route the complete snapshot operation through the 
 Choose the next available plan archive directory:
 
 ```text
-archive/PLAN-NNN-slug/
+archive/PLAN-NNN/
 ```
 
 - `NNN` is a three-digit counter, starting at `001`.
@@ -178,7 +178,7 @@ Do not archive `prompts/`. Prompts are temporary handoff artifacts and must not 
 Run the PM-owned archive command before any reset:
 
 ```text
-cartopian archive-plan <project-root> --slug <slug> --closed <YYYY-MM-DD> --summary <brief-outcome> --content <closeout-body>
+cartopian archive-plan <project-root> --closed <YYYY-MM-DD> --summary <brief-outcome> --content <closeout-body>
 ```
 
 Consume the emitted `archive_path` as the authoritative snapshot location. The command copies the fixed live-artifact set, writes `CLOSEOUT.md`, and creates or appends the one-line entry in `archive/INDEX.md`. If it exits non-zero, stop closeout; never run the reset without the requested snapshot.
@@ -271,7 +271,7 @@ None.
 
 ## Closeout notes
 
-- Archive: <none | archive/PLAN-NNN-slug/>
+- Archive: <none | archive/PLAN-NNN/>
 - Engineering carry-forward: <yes | no>
 - Resources: <carried forward | carried forward, operator pruned <files>>
 

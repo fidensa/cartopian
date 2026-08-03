@@ -175,6 +175,12 @@ def _preflight_request_trace(
                 prompt_text=prompt_text,
                 require_completion_evidence=True,
             )
+        elif activity == "task_run":
+            context = request_trace.context_for_task_assignment(
+                project_root,
+                task_path,
+                prompt_text=prompt_text,
+            )
         else:
             checkpoint_id = prompt_path.stem.removeprefix("PROMPT-")
             context = request_trace.context_for_checkpoint(
@@ -521,7 +527,7 @@ def handler(args: argparse.Namespace) -> int:
     # resolution, so the identical preflight runs on the manual path through
     # `cartopian handoff-packet` / `cartopian review-context --prompt`.
     request_record: Optional[Dict[str, Any]] = None
-    if activity in ("task_review", "planning_review"):
+    if activity in ("task_run", "task_review", "planning_review"):
         ok, request_record = _preflight_request_trace(
             project_root, activity, task_path, prompt_path
         )

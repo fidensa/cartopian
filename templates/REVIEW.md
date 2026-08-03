@@ -1,6 +1,6 @@
 # REVIEW-NN-NNN
 
-Target: <TASK-NN-NNN-slug or SPEC-NN-NNN-slug>
+Target: <TASK-NN-NNN or SPEC-NN-NNN>
 Plan ref: <KIND-NN-NNN | n/a>
 Work root: <name | name, name | n/a>
 Reviewer: <free text>

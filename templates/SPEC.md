@@ -82,7 +82,7 @@ What the Implementation Plan or a prior spec requires. Cite by section heading.
 ## References
 
 - `IMPLEMENTATION_PLAN.md` section(s) by heading.
-- Matching `phases/PHASE-NN-slug.md` roll-up row(s).
+- Matching `phases/PHASE-NN.md` roll-up row(s).
 - Prior specs, tasks, or decisions this spec depends on.
 
 ## Examples / acceptance

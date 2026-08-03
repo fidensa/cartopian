@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from cli import config_migration, protocol_gate, version_identities
+from cli import config_migration, protocol_gate, request_trace, version_identities
 from cli.capabilities import resolve_grants
 from cli.commands import dispatch
 from cli.config_schema import (
@@ -360,11 +360,45 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 "## Goal\n\nReview.\n",
                 encoding="utf-8",
             )
-            for task_suffix in ("01-001", "01-002"):
-                (project / "prompts" / f"PROMPT-{task_suffix}.md").write_text(
-                    f"# PROMPT-{task_suffix}\n\n## Your task\n\nProbe.\n",
-                    encoding="utf-8",
+            request_text = "Run the configuration matrix task."
+            request_id = "REQUEST-" + "001"
+            prompt_id = "PROMPT-" + task_id.removeprefix("TASK-")
+            review_prompt_id = "PROMPT-" + review_task_id.removeprefix("TASK-")
+            requests = project / "requests"
+            requests.mkdir()
+            (requests / f"{request_id}.json").write_text(
+                json.dumps(
+                    {
+                        "captured_at": "2026-07-27T12:00:00Z",
+                        "content_identity": request_trace.content_identity(
+                            request_text.encode("utf-8")
+                        ),
+                        "kind": "original",
+                        "record_id": request_id,
+                        "request_id": request_id,
+                        "schema": "cartopian-original-request-v1",
+                        "sequence": 0,
+                        "text": request_text,
+                        "unit": {"kind": "task", "id": task_id},
+                    },
+                    indent=2,
+                    sort_keys=True,
                 )
+                + "\n",
+                encoding="utf-8",
+            )
+            assignment = request_trace.context_for_task_assignment(project, task)
+            (project / "prompts" / f"{prompt_id}.md").write_text(
+                request_trace.upsert_request_sections(
+                    f"# {prompt_id}\n\n## Your task\n\nProbe.\n",
+                    assignment.section,
+                ),
+                encoding="utf-8",
+            )
+            (project / "prompts" / f"{review_prompt_id}.md").write_text(
+                f"# {review_prompt_id}\n\n## Your task\n\nProbe.\n",
+                encoding="utf-8",
+            )
             return project, task, review_task
 
         permitted_project, permitted_task, review_task = seed("permitted", True)

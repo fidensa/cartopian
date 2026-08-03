@@ -1,8 +1,8 @@
 """`cartopian archive-plan <project-root>`.
 
 Create the optional completed-plan snapshot as a bounded, PM-owned lifecycle
-operation.  The caller supplies only the project root, a validated slug, index
-metadata, and the CLOSEOUT body.  Source paths and the archive destination are
+operation.  The caller supplies only the project root, index metadata, and the
+CLOSEOUT body.  Source paths and the archive destination are
 fixed by this command; there is no generic copy or directory-creation surface.
 """
 from __future__ import annotations
@@ -37,8 +37,7 @@ ARCHIVE_DIRS = (
     "reports",
     "resources",
 )
-_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-_ARCHIVE_RE = re.compile(r"^PLAN-(\d{3})-[a-z0-9]+(?:-[a-z0-9]+)*$")
+_ARCHIVE_RE = re.compile(r"^PLAN-(\d{3})(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -55,11 +54,6 @@ def _stderr(prefix: str, message: str) -> None:
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("project_root", help="Absolute Cartopian project root")
-    subparser.add_argument(
-        "--slug",
-        required=True,
-        help="Short lowercase kebab-case archive slug",
-    )
     subparser.add_argument(
         "--closed",
         required=True,
@@ -165,9 +159,6 @@ def handler(args: argparse.Namespace) -> int:
     if root.is_symlink() or not root.is_dir() or not (root / "cartopian.toml").is_file():
         _stderr("guard", f"not a Cartopian project root: {root}")
         return EXIT_FAIL
-    if not _SLUG_RE.fullmatch(args.slug):
-        _stderr("usage", f"slug must be lowercase kebab-case; got: {args.slug!r}")
-        return EXIT_USAGE
     try:
         if not _DATE_RE.fullmatch(args.closed):
             raise ValueError
@@ -217,7 +208,7 @@ def handler(args: argparse.Namespace) -> int:
         next_number = max((number for number, _ in existing), default=0) + 1
         if next_number > 999:
             raise _ArchiveRefusal("archive-counter", "PLAN archive counter exhausted at 999")
-        archive_name = f"PLAN-{next_number:03d}-{args.slug}"
+        archive_name = f"PLAN-{next_number:03d}"
         destination = archive_root / archive_name
         if destination.exists() or destination.is_symlink():
             raise _ArchiveRefusal("archive-collision", f"destination exists: {destination}")

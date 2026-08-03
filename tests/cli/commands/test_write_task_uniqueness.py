@@ -2,7 +2,7 @@
 
 A task id lives in exactly one of ``tasks/{open,in-progress,in-review,done}/``.
 Re-issuing ``write-task`` for an existing id must update that file in place in
-its current status directory (renaming within it on a slug change) — never
+its current status directory (normalizing any legacy descriptive name) — never
 create a second copy in ``tasks/open/``. Only a genuinely new id creates a
 file, in ``tasks/open/``. A pre-existing multi-directory collision fails
 closed, names every colliding path, and writes nothing.
@@ -77,44 +77,45 @@ class TestUpdateInPlace(_Fixture):
 
                 code, recs, err = run_cli(
                     "write-task", self.root, "--task-id", task_id,
-                    "--slug", "do-thing", "--content", _BODY,
+                    "--content", _BODY,
                 )
                 self.assertEqual(code, 0, msg=err)
-                self.assertEqual(existing.read_text(encoding="utf-8"), _BODY)
+                canonical = status_dir / f"{task_id}.md"
+                self.assertEqual(canonical.read_text(encoding="utf-8"), _BODY)
                 self.assertFalse(
-                    (self.scaffold.tasks_open / f"{task_id}-do-thing.md").exists(),
+                    (self.scaffold.tasks_open / f"{task_id}.md").exists(),
                     msg=f"duplicate created in open/ for id residing in {status}/",
                 )
                 self.assertEqual(
-                    self.all_task_files(), [f"{status}/{task_id}-do-thing.md"]
+                    self.all_task_files(), [f"{status}/{task_id}.md"]
                 )
-                existing.unlink()  # reset for the next status
+                canonical.unlink()  # reset for the next status
 
-    def test_slug_change_renames_in_place_within_status_dir(self):
+    def test_legacy_name_normalizes_in_place_within_status_dir(self):
         old = self.scaffold.tasks_in_review / "TASK-01-002-old-slug.md"
         old.write_text("# v1\n", encoding="utf-8")
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-002",
-            "--slug", "new-slug", "--content", _BODY,
+            "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
-        renamed = self.scaffold.tasks_in_review / "TASK-01-002-new-slug.md"
+        renamed = self.scaffold.tasks_in_review / "TASK-01-002.md"
         self.assertTrue(renamed.is_file())
         self.assertEqual(renamed.read_text(encoding="utf-8"), _BODY)
-        self.assertFalse(old.exists(), msg="old-slug file left behind after rename")
-        self.assertEqual(self.all_task_files(), ["in-review/TASK-01-002-new-slug.md"])
+        self.assertFalse(old.exists(), msg="legacy descriptive file left behind")
+        self.assertEqual(self.all_task_files(), ["in-review/TASK-01-002.md"])
 
     def test_new_id_still_lands_in_open(self):
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-003",
-            "--slug", "fresh", "--content", _BODY,
+            "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertTrue(
-            (self.scaffold.tasks_open / "TASK-01-003-fresh.md").is_file()
+            (self.scaffold.tasks_open / "TASK-01-003.md").is_file()
         )
-        self.assertEqual(self.all_task_files(), ["open/TASK-01-003-fresh.md"])
+        self.assertEqual(self.all_task_files(), ["open/TASK-01-003.md"])
 
 
 class TestCollision(_Fixture):
@@ -126,7 +127,7 @@ class TestCollision(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-004",
-            "--slug", "thing", "--content", _BODY,
+            "--content", _BODY,
         )
         self.assertEqual(code, 1)
         self.assertEqual(recs, [])
@@ -148,7 +149,7 @@ class TestSchemaGate(_Fixture):
 
     def test_missing_evidence_gate_and_acceptance_refused(self):
         code, recs, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-007", "--slug", "bad",
+            "write-task", self.root, "--task-id", "TASK-01-007",
             "--content", "# TASK-01-007: incomplete\n\nPhase: PHASE-01-x\n",
         )
         self.assertEqual(code, 1)
@@ -161,7 +162,7 @@ class TestSchemaGate(_Fixture):
 
     def test_missing_acceptance_alone_refused_without_writing(self):
         code, recs, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-008", "--slug", "bad",
+            "write-task", self.root, "--task-id", "TASK-01-008",
             "--content", "# t\n\nEvidence gate: required\n",
         )
         self.assertEqual(code, 1)
@@ -176,7 +177,7 @@ class TestSchemaGate(_Fixture):
         existing = self.scaffold.tasks_in_progress / "TASK-01-010-old.md"
         existing.write_text("# original\n", encoding="utf-8")
         code, recs, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-010", "--slug", "new",
+            "write-task", self.root, "--task-id", "TASK-01-010",
             "--content", "# no gate, no acceptance\n",
         )
         self.assertEqual(code, 1)
@@ -193,24 +194,27 @@ class TestRecordDestination(_Fixture):
 
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-005",
-            "--slug", "shipped", "--content", _BODY,
+            "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(len(recs), 1)
         details = recs[0]["details"]
-        self.assertEqual(details["relative_target"], "done/TASK-01-005-shipped.md")
+        self.assertEqual(details["relative_target"], "done/TASK-01-005.md")
         # mediated_write canonicalizes with realpath (macOS tempdirs are
         # symlinked under /private), so compare resolved paths.
-        self.assertEqual(details["path"], str(existing.resolve()))
+        self.assertEqual(
+            details["path"],
+            str((self.scaffold.tasks_done / "TASK-01-005.md").resolve()),
+        )
 
     def test_record_for_new_id_names_open(self):
         code, recs, err = run_cli(
             "write-task", self.root, "--task-id", "TASK-01-006",
-            "--slug", "brand-new", "--content", _BODY,
+            "--content", _BODY,
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(
-            recs[0]["details"]["relative_target"], "open/TASK-01-006-brand-new.md"
+            recs[0]["details"]["relative_target"], "open/TASK-01-006.md"
         )
 
 

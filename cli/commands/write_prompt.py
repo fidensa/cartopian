@@ -6,7 +6,8 @@ from typing import Optional
 from cli.commands import _writers
 from cli.request_trace import (
     CHECKPOINT_ID_RE, PHASE_ID_RE, PLAN_REF_RE, REVIEW_KINDS, RequestRefusal,
-    context_for_checkpoint, context_for_task, upsert_request_sections,
+    context_for_checkpoint, context_for_task, context_for_task_assignment,
+    upsert_request_sections,
 )
 
 
@@ -21,7 +22,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def handler(args: argparse.Namespace) -> int:
-    if not _writers.PROMPT_ID_RE.fullmatch(args.prompt_id):
+    if not _writers.PROMPT_CANONICAL_ID_RE.fullmatch(args.prompt_id):
         _writers.stderr("usage", "--prompt-id has invalid grammar")
         return _writers.EXIT_USAGE
     variant = "planning" if args.prompt_id.startswith("PROMPT-PLAN-") else "task"
@@ -40,12 +41,45 @@ def handler(args: argparse.Namespace) -> int:
     assert isinstance(body, str)
     content: Optional[object] = body
     details = {"prompt_id": args.prompt_id, "variant": variant}
-    if args.review_kind:
+    if variant == "task" and not args.review_kind:
+        try:
+            task = Path(args.task or "")
+            if not task.is_absolute() or not task.is_file():
+                raise RequestRefusal(
+                    "missing-assignment-target",
+                    "task assignment prompts require --task naming an existing absolute task",
+                )
+            task_identity = "-".join(task.stem.split("-")[:3])
+            expected_prompt = f"PROMPT-{task_identity.removeprefix('TASK-')}"
+            if args.prompt_id != expected_prompt:
+                raise RequestRefusal(
+                    "prompt-target-mismatch",
+                    "task prompt identity must match the target task identity",
+                )
+            context = context_for_task_assignment(root, task.resolve())
+        except RequestRefusal as refusal:
+            _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
+            return _writers.EXIT_FAIL
+        content = upsert_request_sections(body, context.section)
+        details.update({
+            "request_kind": context.review_kind,
+            "request_context_identity": context.context_identity,
+            "request_evidence": context.evidence_ids,
+            "request_state": "unavailable-for-legacy" if context.legacy else "resolved",
+            "request_measures": context.as_record()["measures"],
+        })
+    elif args.review_kind:
         try:
             if args.review_kind == "task-closure":
                 task = Path(args.task or "")
                 if not task.is_absolute() or not task.is_file():
                     raise RequestRefusal("missing-review-target", "--task must name an existing absolute task")
+                task_identity = "-".join(task.stem.split("-")[:3])
+                if args.prompt_id != f"PROMPT-{task_identity.removeprefix('TASK-')}":
+                    raise RequestRefusal(
+                        "prompt-target-mismatch",
+                        "task prompt identity must match the target task identity",
+                    )
                 context = context_for_task(
                     root,
                     task.resolve(),
@@ -53,7 +87,12 @@ def handler(args: argparse.Namespace) -> int:
                 )
             else:
                 if not args.checkpoint or not CHECKPOINT_ID_RE.fullmatch(args.checkpoint):
-                    raise RequestRefusal("missing-review-target", "--checkpoint must match PLAN-NNN[-slug]")
+                    raise RequestRefusal("missing-review-target", "--checkpoint must match PLAN-NNN")
+                if args.prompt_id != f"PROMPT-{args.checkpoint}":
+                    raise RequestRefusal(
+                        "prompt-target-mismatch",
+                        "planning prompt identity must match the checkpoint identity",
+                    )
                 context = context_for_checkpoint(root, args.checkpoint, phase_id=args.phase, plan_ref=args.plan_ref)
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")

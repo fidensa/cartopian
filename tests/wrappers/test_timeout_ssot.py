@@ -23,6 +23,7 @@ This file is independent of the status-file tests; both must stay green.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -116,6 +117,29 @@ def _handoff_packet_project(tmp_path: Path, toml_body: str, task_id: str):
     root = tmp_path / "proj"
     (root / "phases").mkdir(parents=True)
     (root / "cartopian.toml").write_text(toml_body, encoding="utf-8")
+    request_text = "Run the timeout probe task."
+    request_bytes = request_text.encode("utf-8")
+    requests = root / "requests"
+    requests.mkdir()
+    (requests / "REQUEST-001.json").write_text(
+        json.dumps(
+            {
+                "captured_at": "2026-07-27T12:00:00Z",
+                "content_identity": "sha256:" + hashlib.sha256(request_bytes).hexdigest(),
+                "kind": "original",
+                "record_id": "REQUEST-001",
+                "request_id": "REQUEST-001",
+                "schema": "cartopian-original-request-v1",
+                "sequence": 0,
+                "text": request_text,
+                "unit": {"kind": "task", "id": f"TASK-{task_id}"},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     tasks = root / "tasks" / "in-progress"
     tasks.mkdir(parents=True)
     task = tasks / f"TASK-{task_id}-demo.md"

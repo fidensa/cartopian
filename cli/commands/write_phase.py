@@ -1,10 +1,11 @@
-"""`cartopian write-phase <project-root> --phase-id PHASE-NN-slug`.
+"""`cartopian write-phase <project-root> --phase-id PHASE-NN`.
 
-Structured writer for phase files ``phases/PHASE-NN-slug.md``. The filename
+Structured writer for phase files ``phases/PHASE-NN.md``. The filename
 is derived from the validated ``--phase-id`` (the PM supplies an id, not a
 path); the destination subtree is the allowlisted ``phase`` dest_kind.
 """
 import argparse
+import os
 
 from cli.commands import _writers
 
@@ -14,17 +15,17 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--phase-id",
         required=True,
-        help="Phase id matching the grammar PHASE-NN-slug, e.g. PHASE-foundation",
+        help="Phase id matching the grammar PHASE-NN, e.g. PHASE-01",
     )
     _writers.add_source_arg(subparser)
 
 
 def handler(args: argparse.Namespace) -> int:
     phase_id = args.phase_id
-    if not _writers.PHASE_ID_RE.match(phase_id):
+    if not _writers.PHASE_CANONICAL_ID_RE.match(phase_id):
         _writers.stderr(
             "usage",
-            f"--phase-id must match PHASE-NN-slug grammar; got: {phase_id!r}",
+            f"--phase-id must match PHASE-NN grammar; got: {phase_id!r}",
         )
         return _writers.EXIT_USAGE
 
@@ -41,10 +42,28 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr(*serr)
         return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
 
+    filename = f"{phase_id}.md"
+    matches = _writers.identifier_files(root / "phases", phase_id)
+    if len(matches) > 1:
+        _writers.stderr(
+            "guard",
+            f"phase-id-collision: {phase_id} resolves to multiple files: "
+            + ", ".join(str(path) for path in matches),
+        )
+        return _writers.EXIT_FAIL
+    renamed_from = None
+    if matches and matches[0].name != filename:
+        renamed_from = matches[0]
+        try:
+            os.rename(renamed_from, renamed_from.parent / filename)
+        except OSError as exc:
+            _writers.stderr("error", f"rename failed: {exc}")
+            return _writers.EXIT_FAIL
+
     extra_details = {"phase_id": phase_id}
     if source_id is not None:
         extra_details["source"] = source_id
-    return _writers.perform_write(
+    code = _writers.perform_write(
         args,
         action="write-phase",
         dest_kind="phase",
@@ -52,3 +71,9 @@ def handler(args: argparse.Namespace) -> int:
         content=content,
         extra_details=extra_details,
     )
+    if code != _writers.EXIT_OK and renamed_from is not None:
+        try:
+            os.rename(renamed_from.parent / filename, renamed_from)
+        except OSError:
+            pass
+    return code

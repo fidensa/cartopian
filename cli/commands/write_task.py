@@ -1,13 +1,13 @@
-"""`cartopian write-task <project-root> --task-id TASK-NN-NNN --slug ...`.
+"""`cartopian write-task <project-root> --task-id TASK-NN-NNN`.
 
 Structured writer for task files. A task id lives in exactly one status
 directory (``tasks/{open,in-progress,in-review,done}/``); re-issuing this
-writer for an existing id updates that file in place wherever it lives,
-renaming within its status directory on a slug change. Only a genuinely new
+writer for an existing id updates that file in place wherever it lives and
+normalizes its name to the identifier-only form. Only a genuinely new
 id creates a file — in ``tasks/open/``, the lifecycle entry point
 (``move-task`` advances it from there). A pre-existing multi-directory
 collision is refused fail-closed, naming every colliding path. The PM
-supplies the id + slug, not a path; the destination subtree is the
+supplies the id, not a path; the destination subtree is the
 allowlisted ``task`` dest_kind.
 """
 import argparse
@@ -66,11 +66,6 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Task id, e.g. TASK-NN-NNN",
     )
-    subparser.add_argument(
-        "--slug",
-        required=True,
-        help="Kebab-case slug for the filename (TASK-NN-NNN-<slug>.md)",
-    )
     _writers.add_source_arg(subparser)
 
 
@@ -98,17 +93,10 @@ def _find_task_files(project_root: Path, task_id: str) -> List[Path]:
 
 def handler(args: argparse.Namespace) -> int:
     task_id = args.task_id
-    slug = args.slug
     if not _writers.TASK_ID_RE.match(task_id):
         _writers.stderr(
             "usage",
             f"--task-id must match TASK-NN-NNN grammar; got: {task_id!r}",
-        )
-        return _writers.EXIT_USAGE
-    if not _writers.SLUG_RE.match(slug):
-        _writers.stderr(
-            "usage",
-            f"--slug must be kebab-case [a-z0-9][a-z0-9-]*; got: {slug!r}",
         )
         return _writers.EXIT_USAGE
 
@@ -141,7 +129,7 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
-    filename = f"{task_id}-{slug}.md"
+    filename = f"{task_id}.md"
 
     # Id uniqueness: the same id in more than one place is pre-existing
     # corruption this writer must not compound — refuse and write nothing.
@@ -176,7 +164,7 @@ def handler(args: argparse.Namespace) -> int:
 
     if matches:
         # Exactly one — update in place in its current status directory. A
-        # slug change renames within that directory first (one file before,
+        # A legacy descriptive name is normalized within that directory first (one file before,
         # one file after), so the mediated write and its provenance record
         # land on the actual path.
         existing = matches[0]
@@ -197,7 +185,7 @@ def handler(args: argparse.Namespace) -> int:
         renamed_from = None
         relative_target = f"open/{filename}"
 
-    extra_details = {"task_id": task_id, "slug": slug, "status": status}
+    extra_details = {"task_id": task_id, "status": status}
     if source_id is not None:
         extra_details["source"] = source_id
     code = _writers.perform_write(
@@ -209,7 +197,7 @@ def handler(args: argparse.Namespace) -> int:
         extra_details=extra_details,
     )
     if code != _writers.EXIT_OK and renamed_from is not None:
-        # The write was refused after the slug rename; restore the original
+        # The write was refused after filename normalization; restore the original
         # filename so a refusal leaves the tree unchanged (best-effort).
         try:
             os.rename(renamed_from.parent / filename, renamed_from)

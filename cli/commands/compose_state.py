@@ -9,7 +9,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
 _TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
-_PHASE_ID_RE = re.compile(r"^(PHASE-\d{2}-[a-z0-9][a-z0-9-]*)")
+_PHASE_ID_RE = re.compile(r"^(PHASE-\d{2}(?:-[a-z0-9][a-z0-9-]*)?)$")
 _PLAN_DIRS = (
     "phases",
     "prompts",

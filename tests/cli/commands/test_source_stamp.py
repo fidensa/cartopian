@@ -69,11 +69,11 @@ class TestSourceStamp(_Fixture):
     def test_write_task_stamps_live_source(self):
         bl = self._add_backlog()          # BL-001
         code, records, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", _TASK_BODY, "--source", bl,
         )
         self.assertEqual(code, 0, err)
-        text = (self.scaffold.tasks_open / "TASK-01-001-do.md").read_text(encoding="utf-8")
+        text = (self.scaffold.tasks_open / "TASK-01-001.md").read_text(encoding="utf-8")
         self.assertIn(f"Source: {bl}", text)
         # Stamped into the header block (before the first `## ` section), right
         # after Plan ref.
@@ -84,39 +84,39 @@ class TestSourceStamp(_Fixture):
     def test_write_spec_stamps_live_source(self):
         bl = self._add_backlog()
         code, _r, err = run_cli(
-            "write-spec", self.root, "--spec-id", "SPEC-01-001", "--slug", "s",
+            "write-spec", self.root, "--spec-id", "SPEC-01-001",
             "--content", _SPEC_BODY, "--source", bl,
         )
         self.assertEqual(code, 0, err)
-        text = (self.scaffold.project_root / "specs" / "SPEC-01-001-s.md").read_text(encoding="utf-8")
+        text = (self.scaffold.project_root / "specs" / "SPEC-01-001.md").read_text(encoding="utf-8")
         self.assertIn(f"Source: {bl}", text)
 
     def test_write_phase_stamps_live_source(self):
         bl = self._add_backlog()
         code, _r, err = run_cli(
-            "write-phase", self.root, "--phase-id", "PHASE-01-x",
+            "write-phase", self.root, "--phase-id", "PHASE-01",
             "--content", _PHASE_BODY, "--source", bl,
         )
         self.assertEqual(code, 0, err)
-        text = (self.scaffold.project_root / "phases" / "PHASE-01-x.md").read_text(encoding="utf-8")
+        text = (self.scaffold.project_root / "phases" / "PHASE-01.md").read_text(encoding="utf-8")
         self.assertIn(f"Source: {bl}", text)
 
     def test_nonlive_source_is_refused_and_writes_nothing(self):
         self._add_backlog()  # BL-001 exists; BL-009 does not
         code, records, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", _TASK_BODY, "--source", "BL-009",
         )
         self.assertEqual(code, 1)
         self.assertIn("[guard]", err)
         self.assertIn("source-entry-not-live", err)
         self.assertEqual(records, [])
-        self.assertFalse((self.scaffold.tasks_open / "TASK-01-001-do.md").exists())
+        self.assertFalse((self.scaffold.tasks_open / "TASK-01-001.md").exists())
 
     def test_bad_source_grammar_is_usage_error(self):
         self._add_backlog()
         code, _records, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", _TASK_BODY, "--source", "BL-1",
         )
         self.assertEqual(code, 2)
@@ -129,12 +129,12 @@ class TestSourceStamp(_Fixture):
         forged = _TASK_BODY.replace("## Goal", f"Source: {bl}\n\n## Goal")
         # Write WITHOUT --source; the body carries a forged stamp.
         code, _r, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", forged,
         )
         self.assertEqual(code, 0, err)
         # The forged line IS present in the task file...
-        task_text = (self.scaffold.tasks_open / "TASK-01-001-do.md").read_text(encoding="utf-8")
+        task_text = (self.scaffold.tasks_open / "TASK-01-001.md").read_text(encoding="utf-8")
         self.assertIn(f"Source: {bl}", task_text)
         # ...and because it is a real `Source:` line in a governed surface, the
         # delete guard treats it as a stamp. This documents the boundary: the
@@ -148,7 +148,7 @@ class TestSourceStamp(_Fixture):
     def test_end_to_end_promotion_then_delete(self):
         bl = self._add_backlog("Promote me")   # BL-001
         code, _r, err = run_cli(
-            "write-task", self.root, "--task-id", "TASK-01-001", "--slug", "do",
+            "write-task", self.root, "--task-id", "TASK-01-001",
             "--content", _TASK_BODY, "--source", bl,
         )
         self.assertEqual(code, 0, err)

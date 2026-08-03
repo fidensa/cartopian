@@ -1,0 +1,1292 @@
+{
+  "contract_id": "risk-and-practice",
+  "contract_version": 1,
+  "status": "defined",
+  "purpose": "Single authority for compact task risk, risk-scaled governance consequences, bounded judgment guidance, and optional practice-pack selection. Every other surface projects these values and none redefines them.",
+  "measurement_method": "Fixed ASCII fixtures, UTF-8 encoding, LF line termination, and no optional whitespace. Exact bytes include the terminating line feed. Token figures are estimated tokens, computed as the ceiling of exact bytes divided by four; they are not tokenizer output or provider billing.",
+  "risk": {
+    "band_order": [
+      "routine",
+      "bounded",
+      "consequential",
+      "critical"
+    ],
+    "band_meanings": {
+      "routine": "Bounded consequence, direct recovery, confirmed authority and intent, no material ambiguity, and deterministic proof of the decisive outcome.",
+      "bounded": "One elevating condition exists, but consequence stays contained, recovery remains demonstrated, and no external or irreversible commitment is made.",
+      "consequential": "A material external effect, recovery-dependent state, unresolved authority question, or consequential quality judgment is present.",
+      "critical": "Material harm or commitment could be irreversible or broadly propagated, recovery is uncertain, or required authority is absent."
+    },
+    "observations": [
+      {
+        "id": "consequence-reach",
+        "question": "How far do the effects of this work reach?",
+        "states": [
+          {
+            "id": "local-artifact",
+            "band_floor": "routine",
+            "meaning": "Effects stay inside a bounded draft, sandbox, or readily inspectable local artifact."
+          },
+          {
+            "id": "project-internal",
+            "band_floor": "bounded",
+            "meaning": "Effects reach other work inside the project or team but no external party, system of record, or obligation."
+          },
+          {
+            "id": "external-or-material",
+            "band_floor": "consequential",
+            "meaning": "Effects reach people outside the work, external systems, money, shared assets, or another material obligation."
+          },
+          {
+            "id": "broad-or-binding",
+            "band_floor": "critical",
+            "meaning": "Effects could propagate broadly or create a binding commitment that others rely on."
+          },
+          {
+            "id": "unknown",
+            "band_floor": "consequential",
+            "meaning": "Reach could not be established from the task envelope or the current state; it is recorded as missing, never as contained."
+          }
+        ]
+      },
+      {
+        "id": "reversibility",
+        "question": "If this turns out wrong, how is it undone?",
+        "states": [
+          {
+            "id": "direct-undo",
+            "band_floor": "routine",
+            "meaning": "A direct undo is known, available, and cheap to verify."
+          },
+          {
+            "id": "bounded-recovery",
+            "band_floor": "bounded",
+            "meaning": "Recovery is multi-step but known, available, and already demonstrated."
+          },
+          {
+            "id": "recovery-dependent",
+            "band_floor": "consequential",
+            "meaning": "Recovery depends on state that must itself be verified, or destroys intermediate state."
+          },
+          {
+            "id": "unrecoverable",
+            "band_floor": "critical",
+            "meaning": "No recovery path exists, or the available path is known to be incompatible with the effect."
+          },
+          {
+            "id": "unknown",
+            "band_floor": "consequential",
+            "meaning": "The recovery path could not be established; an unproven undo is not a demonstrated one."
+          }
+        ]
+      },
+      {
+        "id": "authority",
+        "question": "Does existing authority cover this, and what does it commit?",
+        "states": [
+          {
+            "id": "covered",
+            "band_floor": "routine",
+            "meaning": "Existing authority clearly covers the action and no new commitment is created."
+          },
+          {
+            "id": "new-commitment",
+            "band_floor": "bounded",
+            "meaning": "Authority covers the action, but it creates a durable commitment that outlives the task."
+          },
+          {
+            "id": "unconfirmed",
+            "band_floor": "consequential",
+            "meaning": "Intent, approval, ownership, or the scope of authority has not been confirmed for this action."
+          },
+          {
+            "id": "absent",
+            "band_floor": "critical",
+            "meaning": "Required authority is missing, contradicted, or reserved to someone who has not granted it."
+          },
+          {
+            "id": "unknown",
+            "band_floor": "critical",
+            "meaning": "Authority could not be established. A missing authority observation is never read as permission."
+          }
+        ]
+      },
+      {
+        "id": "ambiguity",
+        "question": "How settled are the inputs, exclusions, and success conditions?",
+        "states": [
+          {
+            "id": "confirmed",
+            "band_floor": "routine",
+            "meaning": "Inputs, exclusions, and success conditions are confirmed and the path is familiar."
+          },
+          {
+            "id": "stated-assumption",
+            "band_floor": "bounded",
+            "meaning": "One recorded assumption remains; exclusions and success conditions are otherwise confirmed."
+          },
+          {
+            "id": "material-assumption",
+            "band_floor": "consequential",
+            "meaning": "Material assumptions, mixed state, or a novel path remain unresolved."
+          },
+          {
+            "id": "contradictory",
+            "band_floor": "critical",
+            "meaning": "Sources, instructions, or observed states conflict and cannot all hold."
+          },
+          {
+            "id": "unknown",
+            "band_floor": "consequential",
+            "meaning": "The settledness of the inputs could not be established from the envelope."
+          }
+        ]
+      },
+      {
+        "id": "evidence-coverage",
+        "question": "Can the decisive success condition actually be proven?",
+        "states": [
+          {
+            "id": "deterministic",
+            "band_floor": "routine",
+            "meaning": "A deterministic check establishes the decisive success condition from current evidence."
+          },
+          {
+            "id": "direct-observation",
+            "band_floor": "bounded",
+            "meaning": "The decisive condition is directly observable in the target state, though not machine-checkable."
+          },
+          {
+            "id": "indirect-or-qualitative",
+            "band_floor": "consequential",
+            "meaning": "The decisive condition is qualitative, indirect, or susceptible to self-certification."
+          },
+          {
+            "id": "unavailable",
+            "band_floor": "critical",
+            "meaning": "Decisive evidence is stale, out of reach, or cannot be obtained before acting."
+          },
+          {
+            "id": "unknown",
+            "band_floor": "consequential",
+            "meaning": "Evidence coverage could not be established; absent evidence is recorded as absent."
+          }
+        ]
+      }
+    ],
+    "classification": {
+      "rule": "dominance-maximum",
+      "rule_meaning": "The band is the highest band floor across the five observations. Favorable observations never average away an elevating one.",
+      "incomplete_input": "invalid",
+      "incomplete_input_meaning": "An observation set that omits a declared observation, or carries an undeclared one, fails closed as invalid. It is not classified at the lowest band.",
+      "averaging": "forbidden",
+      "confidence_scores": "forbidden",
+      "result_fields": [
+        "contract_id",
+        "contract_version",
+        "band",
+        "ordered_reasons",
+        "evidence_expectation",
+        "review_expectation",
+        "operator_gate",
+        "contingency_expectation"
+      ],
+      "ordered_reasons_meaning": "Every observation whose floor equals the resulting band, in declared observation order, so an operator can see which observable facts produced it and challenge them."
+    },
+    "meanings": {
+      "task-local-proof": "Direct, task-local completion evidence, plus the deterministic check when one exists.",
+      "artifact-and-recovery-proof": "Direct evidence for the changed artifact or state and proof that the bounded recovery path remains available.",
+      "target-state-proof": "Evidence read from the real target state, plus recovery or downstream-effect evidence where either applies.",
+      "target-state-and-failclosed-proof": "Current target-state evidence plus proof that the fail-closed and recovery conditions are viable.",
+      "none-by-default": "No independent review is derived. Configured policy may still require one.",
+      "policy-only": "An independent review is derived only when configured policy requires it or a decisive qualitative gap remains.",
+      "independent-when-qualitative": "One task-appropriate independent review of the decisive judgment when deterministic guards cannot establish its quality. No role, model, or panel is prescribed.",
+      "independent-challenge": "An independent challenge of the decisive claims and the recovery evidence, given the artifact and the governing contract in fresh bounded context without the author's conclusion. Additional depth applies only when configured policy or this derived expectation names it.",
+      "no-additional-gate": "No gate beyond the authority already confirmed for the work.",
+      "boundary-crossing-approval": "Operator approval before crossing an unconfirmed authority boundary or making an external commitment.",
+      "material-commitment-approval": "Explicit operator approval before a binding, externally visible, destructive, or otherwise material commitment.",
+      "explicit-operator-authorization": "Explicit operator authorization before acting and again before accepting an unrecovered partial state.",
+      "known-correction-path": "A known undo or correction path. No rehearsal is required.",
+      "named-recovery-action": "A named recovery action and its trigger, proportionate to the contained effect.",
+      "recorded-trigger-and-owner": "A recorded trigger, owner, and recovery route, plus verification that recovery is ready.",
+      "evidenced-contingency-and-stop-condition": "A tested or otherwise directly evidenced contingency, an explicit stop condition, named ownership, and follow-up disposition."
+    },
+    "governance": [
+      {
+        "band": "routine",
+        "evidence_expectation": "task-local-proof",
+        "review_expectation": "none-by-default",
+        "operator_gate": "no-additional-gate",
+        "contingency_expectation": "known-correction-path"
+      },
+      {
+        "band": "bounded",
+        "evidence_expectation": "artifact-and-recovery-proof",
+        "review_expectation": "policy-only",
+        "operator_gate": "boundary-crossing-approval",
+        "contingency_expectation": "named-recovery-action"
+      },
+      {
+        "band": "consequential",
+        "evidence_expectation": "target-state-proof",
+        "review_expectation": "independent-when-qualitative",
+        "operator_gate": "material-commitment-approval",
+        "contingency_expectation": "recorded-trigger-and-owner"
+      },
+      {
+        "band": "critical",
+        "evidence_expectation": "target-state-and-failclosed-proof",
+        "review_expectation": "independent-challenge",
+        "operator_gate": "explicit-operator-authorization",
+        "contingency_expectation": "evidenced-contingency-and-stop-condition"
+      }
+    ],
+    "policy_separation": {
+      "configured_policy_is_authoritative": true,
+      "risk_may_rewrite_configuration": false,
+      "additional_depth_requires_explicit_contract": true,
+      "statement": "Configured review policy answers whether a review loop runs and who performs it. A derived review expectation is an expectation recorded on the task's risk result. When it exceeds configured policy, that difference is raised as an operator gate; it never edits configuration.",
+      "never_written_by_risk": [
+        "the project's review policy values",
+        "the resolved role assigned to a review loop",
+        "role capability grants",
+        "launch and automation configuration"
+      ],
+      "independence_definition": "Independent means the reviewer did not produce the decisive work and does not self-certify its quality. It does not mean a fixed roster, a second model, or multiple reviewers.",
+      "cross_model_review": "optional-and-explicit"
+    }
+  },
+  "judgment": {
+    "card_count": 4,
+    "card_count_basis": "The recorded governance-extension analysis kept all four candidates separate; no merge or removal is justified, and no addition is admitted without both required records.",
+    "cards": [
+      {
+        "id": "intent-confirmation",
+        "lifecycle_boundary": "Requirements and intent confirmation, before delivery of the interpreted contract begins.",
+        "non_enforceable_failure": "Missing intent, exclusions, success conditions, or authority are inferred and delivery starts before the operator confirms the interpretation.",
+        "evidence": "The adoption and planning runbooks already require the interpretation and any proposed exit criteria to be confirmed before files are generated, but a file-presence guard cannot decide whether an inferred intent is faithful to the request.",
+        "disposition": "keep-separate",
+        "separation_reason": "This is a pre-commitment judgment boundary, not an evidence review and not a closeout test.",
+        "body_budget_bytes": 1024
+      },
+      {
+        "id": "evidence-and-gates",
+        "lifecycle_boundary": "Acceptance of completion evidence and the risk or review gate that follows it.",
+        "non_enforceable_failure": "The producer self-certifies quality, treats missing or indirect evidence as success, or skips independent judgment where deterministic checks cannot decide adequacy.",
+        "evidence": "The handoff runbook already rejects missing, malformed, inconsistent, blocked, or operator-dependent reports as successful evidence, and configured review policy is already separate from role labels. Deterministic checks validate structure and state, not every qualitative claim.",
+        "disposition": "keep-separate",
+        "separation_reason": "It is invoked only for a remaining qualitative gap, and its failure signals are the ones the other three cards reference rather than restate.",
+        "body_budget_bytes": 1024
+      },
+      {
+        "id": "mixed-version-state",
+        "lifecycle_boundary": "Configuration migration and the install, update, or restart transition.",
+        "non_enforceable_failure": "Success is claimed while old and new versions, partial migration state, stale processes, or unverified recovery coexist.",
+        "evidence": "Protocol gating and the migration runbook already fail closed around unresolved or judgment-dependent migration actions, and installed markers, source checkouts, and running identity are known to diverge. A static version string cannot prove that migration recovered cleanly or that updated software is the process actually serving requests.",
+        "disposition": "keep-separate",
+        "separation_reason": "It owns mixed-version and running-state proof, which the general evidence card would state too vaguely to act on.",
+        "body_budget_bytes": 1024
+      },
+      {
+        "id": "delivery-closeout",
+        "lifecycle_boundary": "Delivery of the outcome and closeout of the unit of work.",
+        "non_enforceable_failure": "Artifact creation is mistaken for outcome completion, and real-world acceptance, contingency, durable decisions, or follow-up is omitted.",
+        "evidence": "The handoff runbook already separates accepted, blocked, failed, rejected, and malformed outcomes, and closeout already requires an audit, operator confirmation, an archival choice, reset validation, and unresolved-decision follow-up. Artifact presence alone still does not establish delivery, recipient acceptance, or real-world effect.",
+        "disposition": "keep-separate",
+        "separation_reason": "It is the final outcome boundary and must distinguish artifact state from outcome state.",
+        "body_budget_bytes": 1024
+      }
+    ],
+    "activation": "A card is eligible only at its own lifecycle boundary and only when its named non-enforceable failure is possible. Deterministic guards continue to own every fact they can decide.",
+    "grammar_ownership": "central",
+    "failure_signal_grammar": [
+      {
+        "id": "unverified-claim",
+        "prompt": "Name the claim that is not yet verified."
+      },
+      {
+        "id": "missing-authority-or-evidence",
+        "prompt": "Name the authority or evidence that is missing."
+      },
+      {
+        "id": "consequence-of-proceeding",
+        "prompt": "State what happens if the work proceeds anyway."
+      },
+      {
+        "id": "next-decision-or-proof",
+        "prompt": "State the next decision or the proof that would settle it."
+      }
+    ],
+    "grammar_rule": "The four cards share this one grammar. A pack may reference a card but must not copy its prose or introduce a parallel anti-rationalization table.",
+    "admission_rule": {
+      "required_records": [
+        "non-enforceable-failure-record",
+        "fixed-input-context-measurement"
+      ],
+      "either_record_alone": "rejected",
+      "default_outcome": "not-admitted",
+      "reason": "Failure evidence alone produces a catalog of rare warnings. A context measurement alone does not prove a distinct judgment need. Without both, the candidate stays outside active context."
+    }
+  },
+  "packs": {
+    "metadata_fields": [
+      {
+        "id": "pack_id",
+        "required": true,
+        "use": "identity",
+        "meaning": "Stable logical identity of the pack. Not a machine path.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "revision",
+        "required": true,
+        "use": "identity",
+        "meaning": "Monotonic revision of this pack's metadata and body.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "contract_version",
+        "required": true,
+        "use": "compatibility",
+        "meaning": "The risk and practice contract version this pack targets. A mismatch is invalid before any body is retrieved.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "applies_when",
+        "required": true,
+        "use": "positive-applicability",
+        "meaning": "Observable task-envelope conditions that must all match for the pack to be eligible.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "never_when",
+        "required": true,
+        "use": "negative-applicability",
+        "meaning": "Conditions that disqualify the pack. Any match vetoes every positive match.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "precedence_class",
+        "required": true,
+        "use": "precedence",
+        "meaning": "The most specific class among the pack's matched positive conditions, used to rank eligible candidates.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "tie_key",
+        "required": true,
+        "use": "diagnostic-ordering-only",
+        "breaks_selection_ties": false,
+        "meaning": "Stable key that orders candidates inside a diagnostic. It never chooses a winner; equal precedence fails closed instead."
+      },
+      {
+        "id": "body_ref",
+        "required": true,
+        "use": "context-reference",
+        "meaning": "Logical locator of the bounded guidance body. Retrieved only after the outcome resolves to selected.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "body_budget_bytes",
+        "required": true,
+        "use": "context-reference",
+        "meaning": "Declared maximum size of the guidance body. A body over budget fails closed and loads nothing.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "evidence_shape",
+        "required": true,
+        "use": "semantics",
+        "meaning": "The kind of task evidence this profile helps interpret. It cannot impose a universal gate or change the risk band.",
+        "breaks_selection_ties": false
+      }
+    ],
+    "envelope_facts": [
+      {
+        "id": "primary_outcomes",
+        "meaning": "The primary intended outcomes the task declares. More than one means no single primary outcome was named."
+      },
+      {
+        "id": "artifact_kinds",
+        "meaning": "The artifact or state kinds the work produces."
+      },
+      {
+        "id": "incidental_terms",
+        "meaning": "Supporting or incidental subject terms that are not the outcome."
+      },
+      {
+        "id": "exclusions",
+        "meaning": "Guidance or outcomes the task envelope explicitly excludes."
+      },
+      {
+        "id": "authorized_profile_hint",
+        "meaning": "An explicit profile hint, honored only when the envelope authorizes it."
+      }
+    ],
+    "fact_precedence_classes": {
+      "primary_outcome": "primary-outcome",
+      "artifact_kind": "artifact-kind",
+      "incidental_term": "incidental-term"
+    },
+    "precedence_classes": [
+      {
+        "id": "primary-outcome",
+        "rank": 1,
+        "meaning": "The condition matches the task envelope's primary intended outcome."
+      },
+      {
+        "id": "artifact-kind",
+        "rank": 2,
+        "meaning": "The condition matches the artifact or state kind the work produces."
+      },
+      {
+        "id": "incidental-term",
+        "rank": 3,
+        "meaning": "The condition matches a supporting or incidental term only."
+      }
+    ],
+    "selection_rules": [
+      {
+        "id": "envelope-facts-only",
+        "rule": "Selection reads only the declared task-envelope facts. Project history, conversation, and unrelated work-root content are not inputs."
+      },
+      {
+        "id": "compatibility-first",
+        "rule": "Metadata that fails validation or declares an incompatible contract version is rejected before any body is retrieved."
+      },
+      {
+        "id": "all-positive-required",
+        "rule": "A pack is eligible only when every one of its positive conditions matches."
+      },
+      {
+        "id": "negative-veto",
+        "rule": "Any matching negative condition disqualifies the pack regardless of how many positive conditions matched."
+      },
+      {
+        "id": "primary-outcome-precedence",
+        "rule": "Among eligible packs, the most specific matched class wins: primary outcome outranks artifact kind, which outranks an incidental term."
+      },
+      {
+        "id": "declared-specificity",
+        "rule": "Within one class, a pack declaring more positive conditions outranks a pack declaring fewer."
+      },
+      {
+        "id": "equal-precedence-fails-closed",
+        "rule": "Two or more survivors at equal precedence return an ambiguity error. No body is retrieved while the operator resolves the envelope."
+      },
+      {
+        "id": "authorized-hint-resolves-eligible-collisions-only",
+        "rule": "An authorized profile hint may choose among already-eligible candidates in an equal-precedence collision. It can never override a negative veto, a stated exclusion, or an incompatible contract version, and an unauthorized hint is ignored with a diagnostic."
+      },
+      {
+        "id": "no-match-is-none",
+        "rule": "Zero eligible candidates return none. That is a valid result, not an error, and core governance continues without specialist guidance."
+      },
+      {
+        "id": "single-body-admission",
+        "rule": "A selected outcome admits exactly one pack body into active context. Every other outcome admits zero."
+      },
+      {
+        "id": "retrieval-after-resolution",
+        "rule": "Selection resolves an identity. The body is retrieved only after the outcome resolves to selected."
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "selected",
+        "bodies_loaded": 1,
+        "is_error": false,
+        "meaning": "Exactly one eligible pack survived precedence. Its body may be retrieved."
+      },
+      {
+        "id": "none",
+        "bodies_loaded": 0,
+        "is_error": false,
+        "meaning": "No pack was eligible. Core governance continues unchanged."
+      },
+      {
+        "id": "ambiguous",
+        "bodies_loaded": 0,
+        "is_error": true,
+        "meaning": "Two or more candidates tied at the same precedence. Selection fails closed and loads nothing."
+      },
+      {
+        "id": "invalid",
+        "bodies_loaded": 0,
+        "is_error": true,
+        "meaning": "Metadata or a body failed validation. Selection fails closed and returns structured evidence without partial content."
+      }
+    ],
+    "body_failure_modes": [
+      {
+        "id": "stale-body",
+        "condition": "The body's recorded revision does not match its metadata.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "oversized-body",
+        "condition": "The body exceeds its declared byte budget.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "unreadable-body",
+        "condition": "The body cannot be read or decoded.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "out-of-bounds-body",
+        "condition": "The body reference resolves outside the bounded pack location.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      }
+    ],
+    "profile_shapes": [
+      {
+        "id": "software",
+        "positive_shape": "The primary outcome changes or verifies executable behavior, configuration behavior, or a software artifact.",
+        "negative_shape": "Software is merely the subject of research, policy analysis, promotion, or an operational record.",
+        "evidence_shape": "Artifact behavior, target-state verification, and recovery evidence."
+      },
+      {
+        "id": "research",
+        "positive_shape": "The primary outcome is a supported finding, comparison, synthesis, or source-based answer.",
+        "negative_shape": "Source reading is incidental to delivering another profile's primary outcome.",
+        "evidence_shape": "Source provenance, claim support, uncertainty, and contradiction."
+      },
+      {
+        "id": "marketing",
+        "positive_shape": "The primary outcome is an audience-facing claim, campaign asset, positioning decision, or channel result.",
+        "negative_shape": "Marketing material is only an input to policy, research, software, or operations work.",
+        "evidence_shape": "Claim-to-evidence fit, audience and channel fit, and outcome observation."
+      },
+      {
+        "id": "operations",
+        "positive_shape": "The primary outcome is execution of a repeatable process, state transition, handoff, service action, or contingency.",
+        "negative_shape": "An operational process is only being studied or described without an execution outcome.",
+        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency."
+      },
+      {
+        "id": "policy",
+        "positive_shape": "The primary outcome is an interpretation, rule, governance position, compliance effect, or decision under stated authority.",
+        "negative_shape": "Policy text is only a research source or a communication topic without a policy outcome.",
+        "evidence_shape": "Authority, applicability, interpretation, effect, and exception."
+      }
+    ],
+    "result_fields": [
+      "contract_id",
+      "contract_version",
+      "outcome",
+      "pack_id",
+      "ordered_match_reasons",
+      "rejected_candidates",
+      "bodies_loaded",
+      "loaded_body_bytes"
+    ],
+    "catalog_boundary": "The five shapes are optional demonstrations of one metadata and selection contract. They are not a mandatory catalog and no pack is required for any task."
+  },
+  "independence": {
+    "statement": "Risk classification, judgment-card activation, and practice-pack selection are independent mechanisms with independent record identities. None silently activates another.",
+    "forbidden_edges": [
+      {
+        "from": "pack-selection",
+        "to": "risk",
+        "reason": "A selected pack cannot raise or lower the band; only observable task facts do."
+      },
+      {
+        "from": "pack-selection",
+        "to": "judgment",
+        "reason": "Selecting a pack cannot activate a judgment card."
+      },
+      {
+        "from": "judgment",
+        "to": "pack-selection",
+        "reason": "An active card cannot select a pack."
+      },
+      {
+        "from": "judgment",
+        "to": "risk",
+        "reason": "An active card cannot change the band."
+      },
+      {
+        "from": "risk",
+        "to": "pack-selection",
+        "reason": "A band cannot select a pack; a low-risk task and a critical task select the same way."
+      },
+      {
+        "from": "risk",
+        "to": "judgment",
+        "reason": "A band cannot activate a card; cards activate at their lifecycle boundary."
+      }
+    ],
+    "forbidden_pack_metadata_fields": [
+      "risk_band",
+      "band_floor",
+      "risk_observation",
+      "review_expectation",
+      "operator_gate",
+      "contingency_expectation",
+      "judgment_card",
+      "activates_card"
+    ]
+  },
+  "exemplar_recommendation": {
+    "status": "pending-operator-acceptance",
+    "acceptance_owner": "operator",
+    "accepted_on": null,
+    "recommended_packs": [
+      {
+        "pack_id": "research-inquiry",
+        "profile_shape": "research",
+        "demonstrates_shapes": [
+          "research",
+          "marketing",
+          "policy"
+        ],
+        "why": "Research is the claim-shaped exemplar. Its outcome is an assertion that must be supported by evidence and bounded by authority, which is the same contract shape marketing and policy use; its negative conditions exercise the veto direction those two shapes need in reverse."
+      },
+      {
+        "pack_id": "operations-change",
+        "profile_shape": "operations",
+        "demonstrates_shapes": [
+          "operations",
+          "software"
+        ],
+        "why": "Operations is the change-shaped exemplar. Its outcome is a state transition that must be verified in the target state and recovered if wrong, which is the same contract shape software delivery uses; it also proves that a pack can be selected while a judgment card activates independently."
+      }
+    ],
+    "minimum_set_reason": "One pack cannot demonstrate the contract. A single candidate can never produce an equal-precedence collision, a cross-shape veto, or the exactly-one-of-many admission bound, so the smallest set that exercises the whole selection contract is two.",
+    "rationale": "The five profile shapes differ along two axes the metadata contract must express: whether the primary outcome is a claim about the world or a change to the world, and whether the shape can veto work where its subject matter appears but is not the outcome. Research and operations sit at opposite ends of the first axis and carry vetoes in both directions on the second. Together they exercise positive primary-outcome matching, negative veto, declared specificity, the equal-precedence collision, the none result, and single-body admission. The three shapes without an exemplar body remain proven representable by validating their declared metadata against this same contract as body-free shape fixtures, which demonstrates applicability without growing a catalog.",
+    "alternative_considered": {
+      "packs": [
+        "research-inquiry",
+        "software-delivery"
+      ],
+      "why_not": "This pair is the most familiar for a software audience, but both shapes read as software-adjacent, which invites the reading that the core is software-specific. It also omits the change-shaped target-state and recovery evidence that the operations exemplar proves, and loses the demonstration that a pack selects while a judgment card activates independently."
+    },
+    "on_acceptance": "Once the operator accepts a set, the accepted pack identities and the acceptance record replace this pending status, and only then may pack bodies be authored and loaded.",
+    "shape_fixtures_are_not_packs": "The five shape fixtures carry metadata only. They validate the contract; they are not installed guidance and they ship no body."
+  },
+  "authoritative_surfaces": [
+    {
+      "path": "protocol/risk-and-practice-contract.json",
+      "role": "authority",
+      "activation": "active",
+      "owns": "Every machine value in this contract: observations, states, band floors, governance expectations, judgment cards, pack metadata fields, selection rules, outcomes, and fixtures."
+    },
+    {
+      "path": "protocol/RISK_AND_PRACTICE.md",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The plain-language explanation of the contract. It restates identifiers and their meanings and defines no behavior of its own."
+    },
+    {
+      "path": "tests/test_risk_and_practice_contract.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "Deterministic validation of the contract, its fixtures, and the projection's fidelity to the authority."
+    },
+    {
+      "path": "templates/TASK.md",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The task-envelope facts and risk observations captured at authoring time."
+    },
+    {
+      "path": "templates/PROMPT.md",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The derived risk result, applicable judgment reference, and selected pack rendering carried into an assignment."
+    },
+    {
+      "path": "templates/REPORT.md",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The evidence and contingency expectations reported back at completion."
+    },
+    {
+      "path": "skills/run-task.md",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "Assignee-facing procedure for the derived expectations."
+    },
+    {
+      "path": "skills/run-handoff.md",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "Bounded adversarial review construction for the critical band."
+    },
+    {
+      "path": "cli/risk_contract.py",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The runtime classifier that reads this authority."
+    },
+    {
+      "path": "cli/practice_packs.py",
+      "role": "projection",
+      "activation": "pending",
+      "owns": "The runtime metadata validator and selector that reads this authority."
+    }
+  ],
+  "validation_obligations": [
+    {
+      "id": "band-derivation-is-total-and-deterministic",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every fixed envelope classifies to exactly one band, and repeated evaluation over reordered observations returns the same result."
+    },
+    {
+      "id": "critical-conditions-cannot-be-averaged-down",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Every state with a critical floor produces the critical band even when all four other observations are routine."
+    },
+    {
+      "id": "incomplete-observations-fail-closed",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "An observation set that omits a declared observation returns invalid rather than a band."
+    },
+    {
+      "id": "each-band-derives-one-governance-row",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Each band maps to exactly one evidence, review, operator-gate, and contingency expectation, and each expectation resolves to declared prose."
+    },
+    {
+      "id": "configured-review-policy-stays-authoritative",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The contract declares that configured policy is authoritative, that risk never rewrites configuration, and which surfaces risk never writes."
+    },
+    {
+      "id": "exactly-four-judgment-cards-with-recorded-evidence",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Four cards remain, each carries its boundary, non-enforceable failure, evidence, and separation reason, and admission of a fifth requires both records."
+    },
+    {
+      "id": "selection-honors-positive-negative-and-precedence",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Selection requires all positive conditions, honors negative vetoes, ranks by precedence class then declared specificity, and resolves each fixed envelope to one recorded outcome."
+    },
+    {
+      "id": "collision-and-none-load-zero-bodies",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "Ambiguous, none, and invalid outcomes admit zero bodies; only a selected outcome admits one."
+    },
+    {
+      "id": "incompatible-metadata-fails-before-retrieval",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "An incompatible contract version returns invalid before any body reference is resolved."
+    },
+    {
+      "id": "unmatched-guidance-adds-zero-active-bytes",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "For each fixed measurement case, active bytes plus excluded bytes equal the eligible universe, and a non-selected outcome contributes zero pack bytes."
+    },
+    {
+      "id": "mechanisms-carry-no-activation-edges",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "No forbidden edge is declared as allowed, pack metadata carries no risk or judgment field, and fixtures show each mechanism varying independently."
+    },
+    {
+      "id": "projection-does-not-drift-from-the-authority",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "The plain-language projection names every authoritative identifier and reproduces the governance table exactly."
+    },
+    {
+      "id": "no-pack-body-ships-before-acceptance",
+      "state": "proven",
+      "test_anchor": "tests/test_risk_and_practice_contract.py",
+      "requirement": "While the exemplar choice is pending, no pack body location exists in the repository."
+    },
+    {
+      "id": "runtime-classifier-matches-the-fixtures",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "The runtime classifier returns the recorded band, ordered reasons, and derived expectations for every fixed envelope, on both the command-line and the tool surfaces."
+    },
+    {
+      "id": "runtime-selector-matches-the-fixtures",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "The runtime selector returns the recorded outcome, pack identity, diagnostics, and loaded-body byte count for every fixed envelope, on both the command-line and the tool surfaces."
+    },
+    {
+      "id": "adversarial-review-context-is-bounded",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "A critical-band review handoff carries the artifact, governing contract, required evidence, and derived expectations, and omits the author's conclusion."
+    },
+    {
+      "id": "judgment-card-bodies-meet-their-budget",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "Each authored card body is within its declared byte budget and enters context only at its own lifecycle boundary."
+    },
+    {
+      "id": "measured-pack-body-loading-is-bounded",
+      "state": "pending",
+      "test_anchor": null,
+      "requirement": "A selected pack body loads within its declared budget, and stale, oversized, unreadable, or out-of-bounds bodies fail closed without partial content."
+    }
+  ],
+  "fixtures": {
+    "task_envelopes": [
+      {
+        "id": "routine-local-text-correction",
+        "description": "Correct punctuation in an internal draft label with a direct undo.",
+        "observations": {
+          "consequence-reach": "local-artifact",
+          "reversibility": "direct-undo",
+          "authority": "covered",
+          "ambiguity": "confirmed",
+          "evidence-coverage": "deterministic"
+        },
+        "expected_band": "routine",
+        "primary_outcomes": [
+          "local-text-correction"
+        ],
+        "artifact_kinds": [
+          "internal-draft-label"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "none",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_judgment_cards": []
+      },
+      {
+        "id": "sourced-comparative-finding",
+        "description": "Compare the support for three claims and return a sourced finding; software is discussed only as the subject.",
+        "observations": {
+          "consequence-reach": "project-internal",
+          "reversibility": "direct-undo",
+          "authority": "covered",
+          "ambiguity": "stated-assumption",
+          "evidence-coverage": "indirect-or-qualitative"
+        },
+        "expected_band": "consequential",
+        "primary_outcomes": [
+          "supported-finding"
+        ],
+        "artifact_kinds": [
+          "comparative-finding"
+        ],
+        "incidental_terms": [
+          "software-subject"
+        ],
+        "exclusions": [],
+        "expected_selection": "selected",
+        "expected_pack": "research-inquiry",
+        "expected_bodies_loaded": 1,
+        "expected_judgment_cards": []
+      },
+      {
+        "id": "updated-service-restart-proof",
+        "description": "Restart the updated service and prove the new process is the one serving requests.",
+        "observations": {
+          "consequence-reach": "external-or-material",
+          "reversibility": "recovery-dependent",
+          "authority": "new-commitment",
+          "ambiguity": "material-assumption",
+          "evidence-coverage": "direct-observation"
+        },
+        "expected_band": "consequential",
+        "primary_outcomes": [
+          "executed-state-transition"
+        ],
+        "artifact_kinds": [
+          "running-service-state"
+        ],
+        "incidental_terms": [
+          "software-subject"
+        ],
+        "exclusions": [],
+        "expected_selection": "selected",
+        "expected_pack": "operations-change",
+        "expected_bodies_loaded": 1,
+        "expected_judgment_cards": [
+          "mixed-version-state"
+        ]
+      },
+      {
+        "id": "equal-primary-research-and-marketing",
+        "description": "Produce both a source assessment and a campaign decision with neither named primary and no authorized hint.",
+        "observations": {
+          "consequence-reach": "project-internal",
+          "reversibility": "bounded-recovery",
+          "authority": "unconfirmed",
+          "ambiguity": "material-assumption",
+          "evidence-coverage": "indirect-or-qualitative"
+        },
+        "expected_band": "consequential",
+        "primary_outcomes": [
+          "supported-finding",
+          "audience-facing-claim"
+        ],
+        "artifact_kinds": [
+          "source-assessment",
+          "campaign-decision"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "ambiguous",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_judgment_cards": [
+          "intent-confirmation"
+        ]
+      },
+      {
+        "id": "critical-external-commitment-missing-authority",
+        "description": "Make an external commitment whose required authority has not been granted, with every other observation routine.",
+        "observations": {
+          "consequence-reach": "external-or-material",
+          "reversibility": "bounded-recovery",
+          "authority": "absent",
+          "ambiguity": "confirmed",
+          "evidence-coverage": "deterministic"
+        },
+        "expected_band": "critical",
+        "primary_outcomes": [
+          "binding-external-commitment"
+        ],
+        "artifact_kinds": [
+          "external-agreement"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "none",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_judgment_cards": [
+          "evidence-and-gates"
+        ]
+      },
+      {
+        "id": "bounded-software-behavior-change",
+        "description": "Change executable behavior inside the project with a demonstrated recovery path and a deterministic check.",
+        "observations": {
+          "consequence-reach": "project-internal",
+          "reversibility": "bounded-recovery",
+          "authority": "covered",
+          "ambiguity": "confirmed",
+          "evidence-coverage": "deterministic"
+        },
+        "expected_band": "bounded",
+        "primary_outcomes": [
+          "software-behavior-change"
+        ],
+        "artifact_kinds": [
+          "executable-behavior"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "selected",
+        "expected_pack": "software-delivery",
+        "expected_bodies_loaded": 1,
+        "expected_judgment_cards": []
+      },
+      {
+        "id": "binding-policy-interpretation",
+        "description": "Issue an interpretation that controls a binding downstream decision.",
+        "observations": {
+          "consequence-reach": "broad-or-binding",
+          "reversibility": "recovery-dependent",
+          "authority": "new-commitment",
+          "ambiguity": "stated-assumption",
+          "evidence-coverage": "indirect-or-qualitative"
+        },
+        "expected_band": "critical",
+        "primary_outcomes": [
+          "governing-interpretation"
+        ],
+        "artifact_kinds": [
+          "interpretation-record"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "selected",
+        "expected_pack": "policy-governance",
+        "expected_bodies_loaded": 1,
+        "expected_judgment_cards": [
+          "delivery-closeout"
+        ]
+      },
+      {
+        "id": "unestablished-authority-observation",
+        "description": "A locally contained correction whose authority could not be established from the envelope.",
+        "observations": {
+          "consequence-reach": "local-artifact",
+          "reversibility": "direct-undo",
+          "authority": "unknown",
+          "ambiguity": "confirmed",
+          "evidence-coverage": "deterministic"
+        },
+        "expected_band": "critical",
+        "primary_outcomes": [
+          "local-text-correction"
+        ],
+        "artifact_kinds": [
+          "internal-draft-label"
+        ],
+        "incidental_terms": [],
+        "exclusions": [],
+        "expected_selection": "none",
+        "expected_pack": null,
+        "expected_bodies_loaded": 0,
+        "expected_judgment_cards": [
+          "intent-confirmation"
+        ]
+      }
+    ],
+    "pack_candidates": [
+      {
+        "pack_id": "research-inquiry",
+        "profile_shape": "research",
+        "revision": 1,
+        "contract_version": 1,
+        "applies_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "supported-finding"
+          }
+        ],
+        "never_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "software-behavior-change"
+          },
+          {
+            "fact": "primary_outcome",
+            "value": "executed-state-transition"
+          },
+          {
+            "fact": "exclusion",
+            "value": "research-guidance"
+          }
+        ],
+        "tie_key": "research-inquiry",
+        "body_ref": "packs/research-inquiry",
+        "body_budget_bytes": 4096,
+        "evidence_shape": "Source provenance, claim support, uncertainty, and contradiction."
+      },
+      {
+        "pack_id": "operations-change",
+        "profile_shape": "operations",
+        "revision": 1,
+        "contract_version": 1,
+        "applies_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "executed-state-transition"
+          }
+        ],
+        "never_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "supported-finding"
+          },
+          {
+            "fact": "exclusion",
+            "value": "operations-guidance"
+          }
+        ],
+        "tie_key": "operations-change",
+        "body_ref": "packs/operations-change",
+        "body_budget_bytes": 4096,
+        "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency."
+      },
+      {
+        "pack_id": "software-delivery",
+        "profile_shape": "software",
+        "revision": 1,
+        "contract_version": 1,
+        "applies_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "software-behavior-change"
+          }
+        ],
+        "never_when": [
+          {
+            "fact": "incidental_term",
+            "value": "software-subject"
+          },
+          {
+            "fact": "exclusion",
+            "value": "software-guidance"
+          }
+        ],
+        "tie_key": "software-delivery",
+        "body_ref": "packs/software-delivery",
+        "body_budget_bytes": 4096,
+        "evidence_shape": "Artifact behavior, target-state verification, and recovery evidence."
+      },
+      {
+        "pack_id": "marketing-claim",
+        "profile_shape": "marketing",
+        "revision": 1,
+        "contract_version": 1,
+        "applies_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "audience-facing-claim"
+          }
+        ],
+        "never_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "governing-interpretation"
+          },
+          {
+            "fact": "exclusion",
+            "value": "marketing-guidance"
+          }
+        ],
+        "tie_key": "marketing-claim",
+        "body_ref": "packs/marketing-claim",
+        "body_budget_bytes": 4096,
+        "evidence_shape": "Claim-to-evidence fit, audience and channel fit, and outcome observation."
+      },
+      {
+        "pack_id": "policy-governance",
+        "profile_shape": "policy",
+        "revision": 1,
+        "contract_version": 1,
+        "applies_when": [
+          {
+            "fact": "primary_outcome",
+            "value": "governing-interpretation"
+          }
+        ],
+        "never_when": [
+          {
+            "fact": "incidental_term",
+            "value": "policy-source"
+          },
+          {
+            "fact": "exclusion",
+            "value": "policy-guidance"
+          }
+        ],
+        "tie_key": "policy-governance",
+        "body_ref": "packs/policy-governance",
+        "body_budget_bytes": 4096,
+        "evidence_shape": "Authority, applicability, interpretation, effect, and exception."
+      }
+    ],
+    "context_measurement": {
+      "method": "Each specimen is one fixed ASCII line with one appended line feed. Exact bytes include that line feed.",
+      "specimens": [
+        {
+          "id": "core",
+          "kind": "core",
+          "text": "CORE|task=compare-claims|band=consequential|gate=material-commitment-approval",
+          "exact_bytes": 78,
+          "estimated_tokens": 20
+        },
+        {
+          "id": "pack-research",
+          "kind": "pack",
+          "text": "PACK|research-inquiry|lens=source provenance and claim support|never=software delivery",
+          "exact_bytes": 87,
+          "estimated_tokens": 22
+        },
+        {
+          "id": "pack-software",
+          "kind": "pack",
+          "text": "PACK|software-delivery|lens=artifact behavior and recovery evidence|never=software as subject",
+          "exact_bytes": 94,
+          "estimated_tokens": 24
+        },
+        {
+          "id": "pack-marketing",
+          "kind": "pack",
+          "text": "PACK|marketing-claim|lens=audience claim and channel evidence|never=governing interpretation",
+          "exact_bytes": 93,
+          "estimated_tokens": 24
+        },
+        {
+          "id": "pack-operations",
+          "kind": "pack",
+          "text": "PACK|operations-change|lens=run state handoff and contingency|never=supported finding",
+          "exact_bytes": 86,
+          "estimated_tokens": 22
+        },
+        {
+          "id": "pack-policy",
+          "kind": "pack",
+          "text": "PACK|policy-governance|lens=authority interpretation and effect|never=policy as source",
+          "exact_bytes": 87,
+          "estimated_tokens": 22
+        }
+      ],
+      "eligible_universe_bytes": 525,
+      "cases": [
+        {
+          "id": "research-selected",
+          "envelope": "sourced-comparative-finding",
+          "expected_selection": "selected",
+          "active_specimens": [
+            "core",
+            "pack-research"
+          ],
+          "active_bytes": 165,
+          "active_pack_bytes": 87,
+          "excluded_bytes": 360
+        },
+        {
+          "id": "operations-selected",
+          "envelope": "updated-service-restart-proof",
+          "expected_selection": "selected",
+          "active_specimens": [
+            "core",
+            "pack-operations"
+          ],
+          "active_bytes": 164,
+          "active_pack_bytes": 86,
+          "excluded_bytes": 361
+        },
+        {
+          "id": "collision-loads-no-body",
+          "envelope": "equal-primary-research-and-marketing",
+          "expected_selection": "ambiguous",
+          "active_specimens": [
+            "core"
+          ],
+          "active_bytes": 78,
+          "active_pack_bytes": 0,
+          "excluded_bytes": 447
+        },
+        {
+          "id": "no-match-loads-no-body",
+          "envelope": "routine-local-text-correction",
+          "expected_selection": "none",
+          "active_specimens": [
+            "core"
+          ],
+          "active_bytes": 78,
+          "active_pack_bytes": 0,
+          "excluded_bytes": 447
+        }
+      ]
+    }
+  }
+}

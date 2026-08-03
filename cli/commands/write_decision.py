@@ -1,9 +1,9 @@
-"""`cartopian write-decision <project-root> --dec-id DEC-NNN --slug ... --title ...`.
+"""`cartopian write-decision <project-root> --dec-id DEC-NNN --title ...`.
 
 Structured writer that records a decision **and** updates its index in one
 invocation:
 
-- writes ``decisions/DEC-NNN-slug.md`` (the body, via ``--content`` /
+- writes ``decisions/DEC-NNN.md`` (the body, via ``--content`` /
   ``--content-file``), then
 - updates ``decisions/INDEX.md`` — appending the matching table row, or
   replacing the existing row for the same ``DEC-NNN`` on re-issue.
@@ -14,6 +14,7 @@ back through the primitive — no raw edit, no second bypass surface. The DEC
 file is written first; if it refuses, the index is left untouched.
 """
 import argparse
+import os
 from pathlib import Path
 from typing import List
 
@@ -33,11 +34,6 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--dec-id",
         required=True,
         help="Decision id in DEC-NNN format (three-digit number)",
-    )
-    subparser.add_argument(
-        "--slug",
-        required=True,
-        help="Kebab-case slug for the filename (DEC-NNN-<slug>.md)",
     )
     subparser.add_argument(
         "--title",
@@ -98,14 +94,8 @@ def _existing_rows(index_path: Path) -> List[str]:
 
 def handler(args: argparse.Namespace) -> int:
     dec_id = args.dec_id
-    slug = args.slug
     if not _writers.DEC_ID_RE.match(dec_id):
         _writers.stderr("usage", f"--dec-id must match DEC-NNN grammar; got: {dec_id!r}")
-        return _writers.EXIT_USAGE
-    if not _writers.SLUG_RE.match(slug):
-        _writers.stderr(
-            "usage", f"--slug must be kebab-case [a-z0-9][a-z0-9-]*; got: {slug!r}"
-        )
         return _writers.EXIT_USAGE
     if not _writers.DATE_RE.match(args.date):
         _writers.stderr("usage", f"--date must be YYYY-MM-DD; got: {args.date!r}")
@@ -121,12 +111,33 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr("usage", cerr)
         return _writers.EXIT_USAGE
 
-    dec_filename = f"{dec_id}-{slug}.md"
+    dec_filename = f"{dec_id}.md"
+    matches = _writers.identifier_files(root / "decisions", dec_id)
+    if len(matches) > 1:
+        _writers.stderr(
+            "guard",
+            f"decision-id-collision: {dec_id} resolves to multiple files: "
+            + ", ".join(str(path) for path in matches),
+        )
+        return _writers.EXIT_FAIL
+    renamed_from = None
+    if matches and matches[0].name != dec_filename:
+        renamed_from = matches[0]
+        try:
+            os.rename(renamed_from, renamed_from.parent / dec_filename)
+        except OSError as exc:
+            _writers.stderr("error", f"rename failed: {exc}")
+            return _writers.EXIT_FAIL
 
     # 1. Write the DEC body first. If it refuses, the index stays untouched.
     try:
         dec_result = mediated_write(root, "decision", dec_filename, content)
     except GuardRefusal as refusal:
+        if renamed_from is not None:
+            try:
+                os.rename(renamed_from.parent / dec_filename, renamed_from)
+            except OSError:
+                pass
         _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
         return _writers.EXIT_FAIL
 

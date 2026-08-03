@@ -126,7 +126,7 @@ Persist the chosen value into the task via `cartopian write-task` so it enters t
 Then author the assignment prompt. This is a **PM-performed** write; the contained PM has no raw `Write` tool, so create or update `prompts/PROMPT-NN-NNN.md` through the mediated writer:
 
 ```
-cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --content-file <body-path>
+cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --task <absolute-in-progress-task-path> --content-file <body-path>
 ```
 
 The command resolves the allowlisted `prompts/` destination from the `--prompt-id`, so the PM never supplies a free-form path; re-issuing it overwrites the same prompt in place on a retry. The assignee handoff is **deidentified**: name the work by its title and address every resource by file path. Do **not** put project-management identifiers (the task id, plan ref, spec id, `FR-`/`NF-` requirement refs, decision refs) anywhere in the prompt body — they map to nothing once PM data is archived and can leak into the delivered work. The prompt body must be directed at the assignee and include, sourced from the `handoff-packet` record:
@@ -140,6 +140,7 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - Absolute expected report path (from the record's `expected_report_path`).
 - Absolute report template path.
 - The goal, context, acceptance criteria, scope boundaries, and test gate — written as self-contained prose, not as references to PM artifacts.
+- The generated exact-request comparison channel. It is not editable PM prose: before changing any work root, the assignee compares it with the task, spec, and prompt and stops on any added implementation, destination, feature, convention, or scope the operator did not request.
 - A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When `git.pm_owns_product_branches = true` and the task declares one or more `Work root:` names, a reminder that assignees do not stage, commit, push, branch, open PRs, merge, or otherwise perform product-repo git plumbing.
@@ -371,10 +372,10 @@ Failed reviews do not create replacement tasks. Continue with the original task.
 
 ## Stage 7 - Update Durable Records
 
-1. Record any non-trivial decisions. Authoring a decision is **PM-performed**; write `decisions/DEC-NNN-slug.md` through the mediated writer rather than a raw `Write`:
+1. Record any non-trivial decisions. Authoring a decision is **PM-performed**; write `decisions/DEC-NNN.md` through the mediated writer rather than a raw `Write`:
 
    ```
-   cartopian write-decision <project-root> --dec-id DEC-NNN --slug <slug> --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>
+   cartopian write-decision <project-root> --dec-id DEC-NNN --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>
    ```
 
    The same command renders the `decisions/INDEX.md` row from the `--title` / `--date` / `--status` / `--supersedes` arguments, so a separate raw edit of `INDEX.md` is not needed (and the contained PM cannot perform one).

@@ -19,7 +19,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--review-kind", required=True, choices=list(REVIEW_KINDS))
     parser.add_argument("--task", default=None, help="Absolute task path for task-closure")
     parser.add_argument("--checkpoint", default=None, help="PLAN-NNN[-slug] for planning")
-    parser.add_argument("--phase", default=None, help="Optional PHASE-NN-slug target metadata")
+    parser.add_argument("--phase", default=None, help="Optional PHASE-NN target metadata")
     parser.add_argument("--plan-ref", default=None, help="Optional KIND-NN-NNN target metadata")
     parser.add_argument("--prompt", default=None, help="Absolute review prompt path for binding preflight")
 
@@ -34,7 +34,7 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"project config not found: {root / 'cartopian.toml'}")
         return EXIT_ENV
     if args.phase and not PHASE_ID_RE.fullmatch(args.phase):
-        stderr_usage("--phase must match PHASE-NN-slug")
+        stderr_usage("--phase must match PHASE-NN")
         return EXIT_USAGE
     if args.plan_ref and not PLAN_REF_RE.fullmatch(args.plan_ref):
         stderr_usage("--plan-ref must match KIND-NN-NNN")

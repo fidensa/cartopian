@@ -222,9 +222,20 @@ def _write_task_and_prompt(scaffold, nn_nnn: str = "01-004") -> Path:
             "## Goal\n\nLaunch via mediated dispatch.\n"
         ),
     )
+    scaffold.capture_request(
+        request_id=f"REQUEST-{nn_nnn.replace('-', '')[-3:]}",
+        unit=f"task:TASK-{nn_nnn}",
+        text="Launch only the requested mediated task.",
+    )
+    context = request_trace.context_for_task_assignment(
+        scaffold.project_root, task_path
+    )
     scaffold.write(
         f"prompts/PROMPT-{nn_nnn}.md",
-        f"# PROMPT-{nn_nnn}\n\n## Your task\n\nDo the work.\n",
+        request_trace.upsert_request_sections(
+            f"# PROMPT-{nn_nnn}\n\n## Your task\n\nDo the work.\n",
+            context.section,
+        ),
     )
     return task_path
 
@@ -384,9 +395,20 @@ class TestDispatchPositive(unittest.TestCase):
                 "Assignee: coder\n\n"
                 "## Goal\n\nExercise bounded wait slices.\n",
             )
+            scaffold.capture_request(
+                request_id="REQUEST-005",
+                unit="task:TASK-01-005",
+                text="Exercise the bounded wait slices.",
+            )
+            context = request_trace.context_for_task_assignment(
+                scaffold.project_root, task_path
+            )
             scaffold.write(
                 "prompts/PROMPT-01-005.md",
-                "# PROMPT-01-005\n\n## Your task\n\nWrite the report.\n",
+                request_trace.upsert_request_sections(
+                    "# PROMPT-01-005\n\n## Your task\n\nWrite the report.\n",
+                    context.section,
+                ),
             )
             fake_home = tmp_path / "home"
             fake_home.mkdir()
@@ -1271,6 +1293,28 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("roles.coder.auto_launch", stderr)
+            self.assertFalse(capture.exists())
+
+    def test_task_run_refuses_prompt_without_generated_request_binding(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub)))
+            task_path = _write_task_and_prompt(scaffold)
+            (scaffold.prompts / "PROMPT-01-004.md").write_text(
+                "# Unbound prompt\n\nDo extra work.\n", encoding="utf-8"
+            )
+
+            with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("stale-request-context", stderr)
             self.assertFalse(capture.exists())
 
     def test_empty_model_fails_closed(self) -> None:

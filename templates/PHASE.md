@@ -1,4 +1,4 @@
-# PHASE-NN-slug: <short noun-phrase title>
+# PHASE-NN: <short noun-phrase title>
 
 Plan ref section: `## Phase NN: <name>` in `IMPLEMENTATION_PLAN.md`
 Source: <BL-NNN | n/a>
@@ -19,7 +19,7 @@ Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit ph
 
 ## Build items
 
-Delivery/execution tasks that produce an outcome or artifact. `BUILD` is a compatibility identifier, not a claim that the project is software. Other supported kinds (`DESIGN`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) are listed under whichever section fits their outcome; kind is classification only. List by plan ref; the corresponding `TASK-NN-NNN-slug.md` files are generated when this phase becomes active.
+Delivery/execution tasks that produce an outcome or artifact. `BUILD` is a compatibility identifier, not a claim that the project is software. Other supported kinds (`DESIGN`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) are listed under whichever section fits their outcome; kind is classification only. List by plan ref; the corresponding `TASK-NN-NNN.md` files are generated when this phase becomes active.
 
 - `BUILD-NN-001` — …
 - `BUILD-NN-002` — …
@@ -34,7 +34,7 @@ Tasks that produce knowledge, decisions, investigations, or designs. Other suppo
 
 What must be complete before this phase can start. Cite by phase identifier and the exit-criterion or artifact being relied on.
 
-- `PHASE-NN-slug`: …
+- `PHASE-NN`: …
 
 Use `none` for the first phase or a bootstrap phase.
 

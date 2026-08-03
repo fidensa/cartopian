@@ -27,17 +27,31 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.mediated_write import GuardRefusal, mediated_write
 
-# Shared id / slug grammars (kept in sync with the existing lifecycle commands:
-# move_task, delete_prompt, compose_state).
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# Shared identifier grammars.
 TASK_ID_RE = re.compile(r"^TASK-\d{2}-\d{3}$")
 SPEC_ID_RE = re.compile(r"^SPEC-\d{2}-\d{3}$")
-PHASE_ID_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
+PHASE_CANONICAL_ID_RE = re.compile(r"^PHASE-\d{2}$")
+
+
+def identifier_files(directory: Path, identifier: str) -> list[Path]:
+    """Return canonical and legacy descriptive files for one identifier."""
+    if not directory.is_dir():
+        return []
+    return [
+        entry
+        for entry in sorted(directory.iterdir())
+        if entry.is_file()
+        and entry.suffix == ".md"
+        and (entry.stem == identifier or entry.stem.startswith(f"{identifier}-"))
+    ]
+
+
 DEC_ID_RE = re.compile(r"^DEC-\d{3}$")
 BL_ID_RE = re.compile(r"^BL-\d{3}$")
 PROMPT_ID_RE = re.compile(
     r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)$"
 )
+PROMPT_CANONICAL_ID_RE = re.compile(r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 

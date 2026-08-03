@@ -69,6 +69,7 @@ def _task_body(
     include_acceptance_header=True,
     acceptance_items=("- [ ] something to do",),
     omit_work_root_line=False,
+    deliverable=None,
 ):
     lines = ["# TASK-XX-XXX: example", "", f"Phase: {phase}", f"Plan ref: {plan_ref}"]
     if not omit_work_root_line:
@@ -78,6 +79,8 @@ def _task_body(
             lines.append("Work root: n/a")
     if blocked_by is not None:
         lines.append(f"Blocked by: {blocked_by}")
+    if deliverable is not None:
+        lines.append(f"Deliverable: {deliverable}")
     if use_legacy_test_gate:
         lines.append(f"Test gate: {evidence_gate}")
     else:
@@ -354,6 +357,41 @@ class TestWorkRootNamesValidUnknown(unittest.TestCase):
         self.assertEqual(check["reason"], "unknown work-root name: foo")
         self.assertIn("[work-root]", result.stderr)
         self.assertNotIn("[validation] work-root-names-valid", result.stderr)
+
+
+class TestDocumentDeliverableRouting(unittest.TestCase):
+    def test_design_task_cannot_launch_with_na_deliverable(self):
+        with _Sandbox() as sb:
+            sb.make(plan_refs=("DESIGN-01-001",))
+            task = sb.write_task(
+                "TASK-01-007.md",
+                _task_body(
+                    plan_ref="DESIGN-01-001",
+                    deliverable="n/a",
+                ),
+            )
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        record = _parse_single_record(result)
+        check = next(c for c in record["checks"] if c["name"] == "deliverable-valid")
+        self.assertFalse(check["pass"])
+        self.assertIn("project:resources/<path>", check["reason"])
+
+    def test_research_support_artifact_routes_to_resources(self):
+        with _Sandbox() as sb:
+            sb.make(plan_refs=("RESEARCH-01-001",))
+            task = sb.write_task(
+                "TASK-01-007.md",
+                _task_body(
+                    plan_ref="RESEARCH-01-001",
+                    deliverable="project:resources/findings.md",
+                ),
+            )
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        check = next(c for c in record["checks"] if c["name"] == "deliverable-valid")
+        self.assertTrue(check["pass"])
 
 
 class TestWorkRootNamesValidMultiValued(unittest.TestCase):

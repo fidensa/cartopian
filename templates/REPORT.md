@@ -98,7 +98,7 @@ The alignment/evidence header fields must match the durable review file.
 
 Use this section instead of the above when reporting on a planning- checkpoint review handoff (e.g., requirements review, plan review).
 
-# REPORT-PLAN-NNN-slug
+# REPORT-PLAN-NNN
 
 Status: <complete | blocked | failed>
 Request alignment: <aligned | drifted | unavailable-for-legacy>
@@ -106,7 +106,7 @@ Request evidence: <ordered evidence identities | none>
 
 ## Identity
 
-- Review ID: <REVIEW-PLAN-NNN-slug>
+- Review ID: <REVIEW-PLAN-NNN>
 - Prompt path: <absolute path to the prompt file>
 - Review file path: <absolute path to the review file>
 

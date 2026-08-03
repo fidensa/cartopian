@@ -1033,6 +1033,11 @@ def test_handoff_packet_review_names_review_slot_and_preserved_completion(capsys
 def test_handoff_packet_task_run_keeps_compatibility_report_path(capsys):
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path = _task(scaffold, "in-progress")
+        scaffold.capture_request(
+            request_id="REQUEST-001",
+            unit="task:TASK-01-003",
+            text="Run the split-report task.",
+        )
         args = argparse.Namespace(task_path=str(task_path), role="coder")
         rc = handoff_packet.handler(args)
 

@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cli import emit, host_capability  # noqa: E402
+from cli import emit, host_capability, request_trace  # noqa: E402
 from mcp_server import server  # noqa: E402
 
 
@@ -432,6 +432,30 @@ class TestToolSurface(unittest.TestCase):
                 "# TASK-01-001: Demo\n\n"
                 "Phase: PHASE-01-demo\n"
                 "Work root: n/a\n",
+                encoding="utf-8",
+            )
+            request_text = "Run the demo task."
+            requests = project / "requests"
+            requests.mkdir()
+            (requests / "REQUEST-001.json").write_text(
+                json.dumps(
+                    {
+                        "captured_at": "2026-07-27T12:00:00Z",
+                        "content_identity": request_trace.content_identity(
+                            request_text.encode("utf-8")
+                        ),
+                        "kind": "original",
+                        "record_id": "REQUEST-001",
+                        "request_id": "REQUEST-001",
+                        "schema": "cartopian-original-request-v1",
+                        "sequence": 0,
+                        "text": request_text,
+                        "unit": {"kind": "task", "id": "TASK-01-001"},
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
                 encoding="utf-8",
             )
             report.write_text(

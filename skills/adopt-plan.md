@@ -138,7 +138,7 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Work topology:** Identify which repos or other work locations are involved, including no-repo work. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
 
-**Phase sequence:** Map each phase from the external plan to a `PHASE-NN-slug` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output).
+**Phase sequence:** Map each phase from the external plan to a `PHASE-NN` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output); keep the description in the heading, not the filename.
 
 Within each phase, assign `KIND-NN-NNN` plan refs. Every supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) has an independent counter starting at `001` within that phase. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
 
@@ -160,10 +160,10 @@ If `reviews.planning.mode` is `required`, run review checkpoint `002 implementat
 
 ## Stage 4 — Generate Phase Files
 
-For each phase in `IMPLEMENTATION_PLAN.md`, author `phases/PHASE-NN-slug.md` through the mediated writer (a **PM-performed** write; `--phase-id` resolves the allowlisted `phases/` destination):
+For each phase in `IMPLEMENTATION_PLAN.md`, author `phases/PHASE-NN.md` through the mediated writer (a **PM-performed** write; `--phase-id` resolves the allowlisted `phases/` destination):
 
 ```
-cartopian write-phase <project-root> --phase-id PHASE-NN-slug --content-file <body-path>
+cartopian write-phase <project-root> --phase-id PHASE-NN --content-file <body-path>
 ```
 
 Each phase body contains:
@@ -188,10 +188,10 @@ phase is the lowest-numbered phase with open work). Do not generate tasks for
 future phases or preload future-phase task detail — later phases may change as
 earlier work completes.
 
-For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN-slug.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
+For each build and research item in the active phase, author `tasks/open/TASK-NN-NNN.md` through the mediated writer `cartopian write-task`, following the template in `cartopian://templates/TASK.md` (a **PM-performed** write). Read that template from the MCP resource — Cartopian templates are served by the MCP server at `cartopian://templates/<NAME>.md` — the upper-case template name **with the `.md` extension** (e.g. `cartopian://templates/TASK.md`, `cartopian://templates/REPORT.md`, `cartopian://templates/SPEC.md`) — not files on your filesystem. Always include the `.md`. Do **not** open `templates/...` as a path and do **not** infer the format from an existing task; read the template resource and follow it.
 
 ```
-cartopian write-task <project-root> --task-id TASK-NN-NNN --slug <slug> --content-file <body-path>
+cartopian write-task <project-root> --task-id TASK-NN-NNN --content-file <body-path>
 ```
 
 Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
@@ -206,10 +206,10 @@ Populate all fields:
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
 - `Evidence gate:` use judgment — `required` whenever concrete before-and-after evidence is appropriate (tests, validations, approvals, inspections, rehearsals, fact-checks); `n/a` only with a reason
 
-For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN-slug.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md`:
+For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md`:
 
 ```
-cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --slug <slug> --content-file <body-path>
+cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --content-file <body-path>
 ```
 
 Before authoring each spec, classify the outcome governed by that spec and set `Profile: software | general`; classify the spec itself, not the overall project. Use `software` when the end outcome is executable software or a technical contract intended for software implementation (including applications, services, libraries, CLIs, automation scripts, or implementable schemas, APIs, and integrations). Use `general` for genuinely non-software outcomes such as research reports, operating procedures, launch activities, or creative assets. A project may contain both profiles.

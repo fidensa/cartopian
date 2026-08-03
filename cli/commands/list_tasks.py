@@ -25,7 +25,7 @@ from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 STATUS_ORDER = ("open", "in-progress", "in-review", "done")
 _STATUS_RANK = {s: i for i, s in enumerate(STATUS_ORDER)}
 
-_PHASE_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
+_PHASE_RE = re.compile(r"^PHASE-\d{2}(?:-[a-z0-9][a-z0-9-]*)?$")
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
 
 
@@ -59,7 +59,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "--phase",
         default=None,
         action=_SeenOnceAction,
-        help="Canonical phase id in full form (e.g. PHASE-NN-slug)",
+        help="Canonical phase id in full form (e.g. PHASE-NN)",
     )
     subparser.add_argument(
         "--status",
@@ -176,7 +176,7 @@ def handler(args: argparse.Namespace) -> int:
         if not _PHASE_RE.match(args.phase):
             _stderr(
                 "usage",
-                f"invalid --phase: {args.phase} — must match PHASE-NN-slug",
+                f"invalid --phase: {args.phase} — must match PHASE-NN",
             )
             return EXIT_USAGE
         phase_file = project_root / "phases" / f"{args.phase}.md"
