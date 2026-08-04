@@ -137,7 +137,7 @@ class TestHelperStatic:
         child was reaped (even when the reap raced the deadline) — mirroring
         the bash helper's final cartopian_report_complete override."""
         body = _supervisor_body(_helper_text())
-        tail = body[body.rindex("finally"):]
+        tail = body[body.index("# The report file is authoritative"):]
         assert "Test-CartopianReportComplete $ReportPath" in tail
         assert "ExitCode = 0" in tail
         assert "ExitCode = 124" in tail

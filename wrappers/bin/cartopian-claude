@@ -43,7 +43,9 @@ CLAUDE_ALLOWED_TOOLS="${CARTOPIAN_CLAUDE_TOOLS:-}"
 # Output format: "text" | "json" | "stream-json"
 CLAUDE_OUTPUT_FORMAT="${CARTOPIAN_CLAUDE_FORMAT:-text}"
 
-# Use --bare to skip auto-discovery of hooks/plugins (faster startup)
+# Use --bare to skip auto-discovery of hooks/plugins (faster startup). A
+# dispatched handoff still receives Cartopian's completion Stop hook through
+# an explicit per-launch --settings layer below.
 CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
 
 # Skip all permission prompts so claude runs non-interactively. Without
@@ -116,6 +118,27 @@ fi
 # --------------------------------------------------------------------
 
 CMD=(claude -p)
+
+# Completion discipline is activated at dispatch's exact boundary. Build one
+# compact JSON argument for Claude's additional per-launch settings layer;
+# user, project, and local settings remain loaded normally because no
+# --setting-sources override is used. The helper lives under the installed
+# root in both copy and symlink layouts. Refuse before launch if that shipped
+# helper cannot construct valid settings: a dispatched handoff must never
+# silently lose its Stop guard.
+if [[ -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
+  _CARTOPIAN_INSTALL_ROOT="$(cd "${_CARTOPIAN_WRAPPER_DIR}/../.." && pwd)"
+  _CARTOPIAN_SETTINGS_HELPER="${_CARTOPIAN_INSTALL_ROOT}/cli/claude_launch_settings.py"
+  if [[ ! -f "$_CARTOPIAN_SETTINGS_HELPER" ]]; then
+    echo "cartopian-claude: error: completion settings helper not found: $_CARTOPIAN_SETTINGS_HELPER" >&2
+    exit 1
+  fi
+  if ! _CARTOPIAN_CLAUDE_SETTINGS="$(python3 "$_CARTOPIAN_SETTINGS_HELPER" --install-root "$_CARTOPIAN_INSTALL_ROOT" --project-dir "$PWD" --platform posix)"; then
+    echo "cartopian-claude: error: could not construct completion Stop-hook settings" >&2
+    exit 1
+  fi
+  CMD+=(--settings "$_CARTOPIAN_CLAUDE_SETTINGS")
+fi
 
 if [[ -n "$CLAUDE_ALLOWED_TOOLS" ]]; then
   CMD+=(--allowedTools "$CLAUDE_ALLOWED_TOOLS")

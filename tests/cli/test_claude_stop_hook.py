@@ -448,7 +448,7 @@ class TestHookIO(unittest.TestCase):
         self.assertIn("allowing stop", stderr.getvalue())
 
 
-class TestInstallerRegistration(unittest.TestCase):
+class TestInstallerMigration(unittest.TestCase):
     def _install_module(self):
         import importlib.util
 
@@ -459,79 +459,100 @@ class TestInstallerRegistration(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_registers_the_stop_hook(self):
+    def _write_legacy_settings(self, project: Path) -> None:
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "settings.json").write_text(
+            json.dumps(
+                {
+                    "theme": "dark",
+                    "hooks": {
+                        "Stop": [
+                            {"hooks": [{"type": "command", "command": "notify.sh"}]},
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "same-group-notify.sh",
+                                    },
+                                    {
+                                        "type": "command",
+                                        "command": 'python "/old/claude_stop_hook.py"',
+                                    }
+                                ]
+                            },
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_removes_only_the_legacy_stop_hook(self):
         install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
+            self._write_legacy_settings(project)
             actions = []
-            install.register_claude_stop_hook(project, Path(tmp) / "root", actions)
+            install.remove_legacy_claude_stop_hook(project, actions)
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
             stop = settings["hooks"]["Stop"]
-            self.assertEqual(len(stop), 1)
-            self.assertNotIn("matcher", stop[0])
-            self.assertIn("claude_stop_hook.py", stop[0]["hooks"][0]["command"])
+            self.assertEqual(len(stop), 2)
+            self.assertEqual(stop[0]["hooks"][0]["command"], "notify.sh")
+            self.assertEqual(
+                stop[1]["hooks"][0]["command"], "same-group-notify.sh"
+            )
+            self.assertEqual(settings["theme"], "dark")
             self.assertTrue(actions)
 
-    def test_registration_is_idempotent(self):
+    def test_migration_is_idempotent(self):
         install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
-            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
-            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
-            settings = json.loads(
-                (project / ".claude" / "settings.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(len(settings["hooks"]["Stop"]), 1)
+            self._write_legacy_settings(project)
+            install.remove_legacy_claude_stop_hook(project, [])
+            after_first = (project / ".claude" / "settings.json").read_bytes()
+            install.remove_legacy_claude_stop_hook(project, [])
+            after_second = (project / ".claude" / "settings.json").read_bytes()
+            self.assertEqual(after_first, after_second)
 
-    def test_operator_stop_hooks_are_preserved(self):
+    def test_no_legacy_registration_is_unchanged(self):
         install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             (project / ".claude").mkdir(parents=True)
-            (project / ".claude" / "settings.json").write_text(
+            path = project / ".claude" / "settings.json"
+            path.write_text(
                 json.dumps(
-                    {
-                        "hooks": {
-                            "Stop": [
-                                {"hooks": [{"type": "command", "command": "notify.sh"}]}
-                            ]
-                        }
-                    }
+                    {"hooks": {"Stop": [{"hooks": [{"command": "notify.sh"}]}]}}
                 ),
                 encoding="utf-8",
             )
-            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
-            settings = json.loads(
-                (project / ".claude" / "settings.json").read_text(encoding="utf-8")
-            )
-            commands = [
-                h["command"] for item in settings["hooks"]["Stop"] for h in item["hooks"]
-            ]
-            self.assertIn("notify.sh", commands)
-            self.assertEqual(
-                sum("claude_stop_hook.py" in c for c in commands), 1
-            )
+            before = path.read_bytes()
+            install.remove_legacy_claude_stop_hook(project, [])
+            self.assertEqual(path.read_bytes(), before)
 
-    def test_both_hooks_coexist_in_one_settings_file(self):
+    def test_capability_registration_migrates_completion_entry(self):
         install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
+            self._write_legacy_settings(project)
             install.register_claude_hook(project, Path(tmp) / "root", [])
-            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
+            install.remove_legacy_claude_stop_hook(project, [])
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
             self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
-            self.assertEqual(len(settings["hooks"]["Stop"]), 1)
             self.assertIn(
                 "claude_hook.py",
                 settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
             )
+            self.assertEqual(len(settings["hooks"]["Stop"]), 2)
+            self.assertEqual(settings["hooks"]["Stop"][0]["hooks"][0]["command"], "notify.sh")
 
 
 if __name__ == "__main__":

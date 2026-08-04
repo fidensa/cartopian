@@ -153,9 +153,11 @@ function Test-CartopianReportComplete {
 # then reaped, so the wrapper exits 0/clean promptly. A genuine hang never
 # writes a report, is never reaped early, and still hits the deadline (124).
 #
-# stdin is redirected from an empty temp file (immediate EOF -- the PowerShell
-# equivalent of </dev/null) so the child can never block waiting on inherited
-# terminal input (one of the lingering modes).
+# stdin is redirected and closed immediately (the PowerShell equivalent of
+# </dev/null) so the child can never block waiting on inherited terminal input
+# (one of the lingering modes). ProcessStartInfo.ArgumentList is used where
+# available so every argument remains exact; Windows PowerShell 5.1 falls back
+# to an explicit CommandLineToArgvW-compatible quoting routine.
 #
 # Args:    -ReportPath   the authoritative report path to watch ($null/empty
 #                        => no supervision; run under the deadline only)
@@ -168,6 +170,32 @@ function Test-CartopianReportComplete {
 #          genuine deadline kill; else the assignee's own exit code.
 # Tunables (env): CARTOPIAN_REPORT_POLL (seconds between polls; default 2)
 #                 CARTOPIAN_REPORT_GRACE_POLLS (post-report grace polls; default 3)
+function ConvertTo-CartopianWindowsArgument {
+    param([AllowEmptyString()][string]$Value)
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+
+    $quoted = New-Object System.Text.StringBuilder
+    [void]$quoted.Append('"')
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $slashes++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$quoted.Append(('\' * (2 * $slashes + 1)))
+            [void]$quoted.Append('"')
+        } else {
+            if ($slashes) { [void]$quoted.Append(('\' * $slashes)) }
+            [void]$quoted.Append($character)
+        }
+        $slashes = 0
+    }
+    if ($slashes) { [void]$quoted.Append(('\' * (2 * $slashes))) }
+    [void]$quoted.Append('"')
+    return $quoted.ToString()
+}
+
 function Invoke-CartopianSupervisedRun {
     param(
         [AllowEmptyString()][AllowNull()][string]$ReportPath,
@@ -187,58 +215,62 @@ function Invoke-CartopianSupervisedRun {
     }
     $pollMs = [int][Math]::Max(50.0, [double]$pollSec * 1000.0)
 
-    # Closed stdin: an empty temp file gives the child immediate EOF.
-    $stdinFile = $null
-    try { $stdinFile = [System.IO.Path]::GetTempFileName() } catch { $stdinFile = $null }
-
-    $startArgs = @{
-        FilePath     = $FilePath
-        ArgumentList = $ArgumentList
-        NoNewWindow  = $true
-        PassThru     = $true
-        ErrorAction  = 'Stop'
+    # Start-Process joins -ArgumentList values into one string and can corrupt
+    # JSON, quotes, and paths containing spaces on native Windows. Build the
+    # process directly so modern PowerShell/.NET receives an exact argv array.
+    # Windows PowerShell 5.1 lacks ProcessStartInfo.ArgumentList, so only that
+    # runtime uses the compatible pre-quoted command-line fallback.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
+        foreach ($argument in $ArgumentList) {
+            [void]$startInfo.ArgumentList.Add([string]$argument)
+        }
+    } else {
+        $startInfo.Arguments = (($ArgumentList | ForEach-Object {
+            ConvertTo-CartopianWindowsArgument ([string]$_)
+        }) -join ' ')
     }
-    if ($stdinFile) { $startArgs['RedirectStandardInput'] = $stdinFile }
 
     # The single SSOT deadline -- computed once, never extended.
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSec)
     $timedOut = $false
-    try {
-        $proc = Start-Process @startArgs
-        $reportSeen = $false
-        while (-not $proc.HasExited) {
-            $remainingMs = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
-            if ($remainingMs -le 0) {
-                # Deadline elapsed: kill (the PowerShell analogue of coreutils
-                # `timeout` sending SIGTERM and returning 124).
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $startInfo
+    [void]$proc.Start()
+    $proc.StandardInput.Close()
+    $reportSeen = $false
+    while (-not $proc.HasExited) {
+        $remainingMs = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
+        if ($remainingMs -le 0) {
+            # Deadline elapsed: kill (the PowerShell analogue of coreutils
+            # `timeout` sending SIGTERM and returning 124).
+            try { $proc.Kill() } catch {}
+            try { $proc.WaitForExit() } catch {}
+            $timedOut = $true
+            break
+        }
+        if (-not $reportSeen -and (Test-CartopianReportComplete $ReportPath)) {
+            $reportSeen = $true
+            # Work is provably done: grant a brief grace for the child to
+            # tear itself down, then reap the lingerer.
+            for ($i = 0; $i -lt $gracePolls -and -not $proc.HasExited; $i++) {
+                $left = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
+                $g = [int][Math]::Min([double]$pollMs, [Math]::Max(1.0, $left))
+                [void]$proc.WaitForExit($g)
+            }
+            if (-not $proc.HasExited) {
                 try { $proc.Kill() } catch {}
                 try { $proc.WaitForExit() } catch {}
-                $timedOut = $true
-                break
             }
-            if (-not $reportSeen -and (Test-CartopianReportComplete $ReportPath)) {
-                $reportSeen = $true
-                # Work is provably done: grant a brief grace for the child to
-                # tear itself down, then reap the lingerer.
-                for ($i = 0; $i -lt $gracePolls -and -not $proc.HasExited; $i++) {
-                    $left = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
-                    $g = [int][Math]::Min([double]$pollMs, [Math]::Max(1.0, $left))
-                    [void]$proc.WaitForExit($g)
-                }
-                if (-not $proc.HasExited) {
-                    try { $proc.Kill() } catch {}
-                    try { $proc.WaitForExit() } catch {}
-                }
-                break
-            }
-            $left = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
-            $w = [int][Math]::Min([double]$pollMs, [Math]::Max(1.0, $left))
-            [void]$proc.WaitForExit($w)
+            break
         }
-    } finally {
-        if ($stdinFile) {
-            try { Remove-Item -LiteralPath $stdinFile -Force -ErrorAction SilentlyContinue } catch {}
-        }
+        $left = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
+        $w = [int][Math]::Min([double]$pollMs, [Math]::Max(1.0, $left))
+        [void]$proc.WaitForExit($w)
     }
 
     # The report file is authoritative: if it is complete, the handoff

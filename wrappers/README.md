@@ -330,20 +330,24 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | --- | --- | --- |
 | `CARTOPIAN_CLAUDE_TOOLS` | _(empty)_ | Allowed-tool whitelist (comma-separated). Empty means claude's full default tool set. Set e.g. `Read` to restrict to read-only. |
 | `CARTOPIAN_CLAUDE_FORMAT` | `text` | Output format: `text`, `json`, `stream-json` |
-| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip plugin/hook discovery (`true`/`false`). **Setting this to `true` disables both Cartopian hooks below**, including the report-less-stop guard. |
+| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip auto-discovered plugins and hooks (`true`/`false`). For a dispatched handoff, the report-less-stop guard remains active because the wrapper supplies it explicitly through per-launch `--settings`; the optional project capability hook remains auto-discovered and is therefore skipped in bare mode. |
 | `CARTOPIAN_CLAUDE_SKIP_PERMS` | `true` | Pass `--dangerously-skip-permissions` so claude runs non-interactively. Set to `false` to re-enable permission prompts (interactive debugging only). |
 
 #### Claude Code hooks
 
 `claude -p` treats the assistant's final result as process exit: background shells are stopped shortly after it, and a background-task notification cannot resume the session. An assignee that ends its turn saying "the suite is still running, I'll write the report after" therefore loses both the run and the report, and the handoff lands as `exited-without-report`.
 
-`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish. Register it (alongside the capability refusal adapter) with:
+`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish. Whenever `CARTOPIAN_EXPECTED_REPORT_PATH` is present, both shipped Claude wrappers pass an inline JSON object through Claude's `--settings` option for that launched process only. They do not write user, project, or local Claude settings, do not restrict Claude's normal settings sources, and do not include the capability-refusal PreToolUse hook. Without the expected-report export, no completion settings are added and the hook is inert.
+
+`CARTOPIAN_CLAUDE_BARE=true` retains bare mode's normal suppression of auto-discovered hooks and plugins, but it does not disable completion enforcement: the wrapper still supplies the completion entry explicitly through `--settings`. A dispatched handoff therefore cannot silently opt out of its report guard through this convenience flag.
+
+Older Cartopian versions optionally wrote the completion entry into project `.claude/settings.json`. During the compatibility window the wrapper copies that exact entry into the per-launch layer, allowing Claude's array de-duplication to execute it once. To remove the obsolete project entry, re-run the capability-hook registration command:
 
 ```bash
 python ~/.cartopian/scripts/install.py --claude-hook /path/to/cartopian/project
 ```
 
-Both hooks land in that project's `.claude/settings.json` — project-level settings only, never user-global. The Stop hook is inert unless `CARTOPIAN_EXPECTED_REPORT_PATH` is set, so interactive sessions in the same directory are untouched.
+That explicit operation now registers only the capability-refusal PreToolUse hook and removes the older Cartopian completion Stop entry while preserving all unrelated settings and hooks. Installation, update, reconciliation, and dispatch never perform this project mutation automatically.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

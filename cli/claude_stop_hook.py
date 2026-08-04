@@ -53,9 +53,9 @@ id and the report path — never inside the governed project, so it adds no
 report-slot companion file and needs no lifecycle cleanup. A stale file from an
 earlier launch carries a different session id and resets to zero.
 
-Installation (operator-invoked; project-level settings only). Registered in the
-same ``.claude/settings.json`` as the refusal adapter, which
-``scripts/install.py --claude-hook <project-dir>`` writes for you::
+Activation is process-scoped. The shipped Claude wrappers add a Stop entry as
+an inline ``--settings`` value whenever
+``CARTOPIAN_EXPECTED_REPORT_PATH`` is present::
 
     {
       "hooks": {
@@ -64,7 +64,7 @@ same ``.claude/settings.json`` as the refusal adapter, which
             "hooks": [
               {
                 "type": "command",
-                "command": "python \\"$HOME/.cartopian/cli/claude_stop_hook.py\\""
+                "command": "python /installed/root/cli/claude_stop_hook.py"
               }
             ]
           }
@@ -72,8 +72,14 @@ same ``.claude/settings.json`` as the refusal adapter, which
       }
     }
 
-Note that ``CARTOPIAN_CLAUDE_BARE=true`` makes the wrapper pass ``--bare``,
-which skips hook discovery entirely — this guard is inactive in that mode.
+The actual command contains fully serialized installed paths; no settings file
+is written. Claude continues to load user, project, and local settings
+normally. ``CARTOPIAN_CLAUDE_BARE=true`` still passes ``--bare``;
+auto-discovered hooks stay skipped, while this explicitly supplied per-launch
+settings entry remains active. The optional ``scripts/install.py --claude-hook
+<project-dir>`` operation is only for the capability-refusal PreToolUse hook
+and removes the obsolete project-level completion registration as a bounded
+migration.
 
 Hook I/O contract: the Stop payload arrives as JSON on stdin; a block is the
 documented ``{"decision": "block", "reason": ...}`` object on stdout with exit

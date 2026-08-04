@@ -536,14 +536,16 @@ def patch_user_path(install_root: Path, actions: List[str]) -> None:
         _patch_unix_rc(bin_dir, install_root / "wrappers" / "bin", actions)
 
 
-# --- Claude Code hook registration (operator-invoked) ---------------------
-# `--claude-hook <project-dir>` merges two registrations into
-# <project-dir>/.claude/settings.json — project-level Claude Code settings
-# only. It is never run implicitly and never touches any user-global settings
-# file.
+# --- Claude Code capability-hook registration (operator-invoked) ----------
+# `--claude-hook <project-dir>` merges the PreToolUse refusal adapter into
+# <project-dir>/.claude/settings.json. It is never run implicitly and never
+# touches any user-global settings file. Completion enforcement is instead
+# loaded by the Claude wrappers through process-scoped `--settings`.
 #
-#   PreToolUse -> cli/claude_hook.py       capability-keyed read/write refusal
-#   Stop       -> cli/claude_stop_hook.py  report-less-stop refusal
+# For compatibility, this explicit operation also removes the obsolete
+# project-level claude_stop_hook.py registration written by older installers.
+# That is a bounded migration of the exact project the operator named; normal
+# installation, update, reconciliation, and dispatch never mutate projects.
 #
 # Read tools first, then the mutation tools: the PreToolUse hook gates both
 # axes, and the containment matrix claims read enforcement only when the
@@ -553,11 +555,6 @@ CLAUDE_HOOK_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|Notebook
 
 def _claude_hook_command(install_root: Path) -> str:
     hook_path = install_root / "cli" / "claude_hook.py"
-    return f'"{sys.executable}" "{hook_path}"'
-
-
-def _claude_stop_hook_command(install_root: Path) -> str:
-    hook_path = install_root / "cli" / "claude_stop_hook.py"
     return f'"{sys.executable}" "{hook_path}"'
 
 
@@ -609,6 +606,28 @@ def _without_hook_script(entries: list, script_name: str) -> list:
     ]
 
 
+def _without_hook_handler(entries: list, script_name: str) -> list:
+    """Drop matching handlers while preserving their event entry siblings."""
+    kept = []
+    for item in entries:
+        if not isinstance(item, dict) or not isinstance(item.get("hooks"), list):
+            kept.append(item)
+            continue
+        handlers = [
+            handler
+            for handler in item["hooks"]
+            if not (
+                isinstance(handler, dict)
+                and script_name in str(handler.get("command", ""))
+            )
+        ]
+        if handlers:
+            preserved = dict(item)
+            preserved["hooks"] = handlers
+            kept.append(preserved)
+    return kept
+
+
 def register_claude_hook(
     project_dir: Path, install_root: Path, actions: List[str]
 ) -> None:
@@ -632,31 +651,31 @@ def register_claude_hook(
     actions.append(f"registered claude refusal-adapter hook in {settings_path}")
 
 
-def register_claude_stop_hook(
-    project_dir: Path, install_root: Path, actions: List[str]
+def remove_legacy_claude_stop_hook(
+    project_dir: Path, actions: List[str]
 ) -> None:
-    """Merge the completion-adapter Stop hook into the project's
-    ``.claude/settings.json``.
+    """Remove the obsolete project-scoped completion hook registration.
 
-    The Stop event carries no tool name, so the entry has no ``matcher``.
-    Idempotent in the same way as the PreToolUse registration: an existing
-    claude_stop_hook.py entry is replaced in place and every other setting —
-    including the operator's own Stop hooks — is preserved.
+    Every unrelated setting and Stop hook is preserved. Missing legacy
+    registrations are an idempotent no-op.
     """
     settings_path = project_dir / ".claude" / "settings.json"
     settings = _load_claude_settings(settings_path)
-    hooks = settings.setdefault("hooks", {})
-    stop = hooks.setdefault("Stop", [])
-    entry = {
-        "hooks": [
-            {"type": "command", "command": _claude_stop_hook_command(install_root)}
-        ]
-    }
-    kept = _without_hook_script(stop, "claude_stop_hook.py")
-    kept.append(entry)
-    hooks["Stop"] = kept
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    stop = hooks.get("Stop")
+    if not isinstance(stop, list):
+        return
+    kept = _without_hook_handler(stop, "claude_stop_hook.py")
+    if kept == stop:
+        return
+    if kept:
+        hooks["Stop"] = kept
+    else:
+        hooks.pop("Stop", None)
     _save_claude_settings(settings_path, settings)
-    actions.append(f"registered claude completion-adapter Stop hook in {settings_path}")
+    actions.append(f"removed legacy claude completion Stop hook from {settings_path}")
 
 
 def _check_optional_coreutils() -> Optional[str]:
@@ -793,11 +812,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PROJECT_DIR",
         help=(
-            "also register the Claude Code hooks in "
-            "PROJECT_DIR/.claude/settings.json: the refusal-adapter PreToolUse "
-            "hook (capability gating) and the completion-adapter Stop hook "
-            "(refuses a stop while the expected handoff report is missing). "
-            "Project-level settings only; never modifies user-global settings."
+            "also register the Claude Code refusal-adapter PreToolUse hook "
+            "(capability gating) in PROJECT_DIR/.claude/settings.json. Also "
+            "removes obsolete Cartopian completion Stop-hook registrations; "
+            "completion enforcement is process-scoped by the Claude wrapper. "
+            "Never modifies user-global settings."
         ),
     )
     return p
@@ -915,7 +934,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.claude_hook is not None:
             claude_project = args.claude_hook.expanduser().resolve()
             register_claude_hook(claude_project, install_root, actions)
-            register_claude_stop_hook(claude_project, install_root, actions)
+            remove_legacy_claude_stop_hook(claude_project, actions)
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)

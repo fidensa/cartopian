@@ -51,6 +51,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # autonomous coder/reviewer handoff needs.
 $AllowedTools = if ($env:CARTOPIAN_CLAUDE_TOOLS) { $env:CARTOPIAN_CLAUDE_TOOLS } else { '' }
 $OutputFormat = if ($env:CARTOPIAN_CLAUDE_FORMAT) { $env:CARTOPIAN_CLAUDE_FORMAT } else { 'text' }
+# Bare mode skips auto-discovered hooks/plugins, but a dispatched handoff still
+# receives Cartopian's completion Stop hook through explicit --settings below.
 $Bare = if ($env:CARTOPIAN_CLAUDE_BARE -eq 'true') { $true } else { $false }
 # Skip permission prompts so claude runs non-interactively. Matches
 # the autonomy posture of cartopian-codex and cartopian-gemini. Set
@@ -110,6 +112,48 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 # --------------------------------------------------------------------
 
 $Args = @('-p')
+
+# Dispatch's expected-report export is the sole activation boundary. Generate
+# a compact JSON value for Claude's process-scoped --settings layer without
+# changing --setting-sources, so user, project, and local settings remain
+# loaded. The same installed-root-relative path works for copy and symlink
+# installs. A generation failure refuses the launch instead of silently
+# dropping report-completion enforcement.
+if ($env:CARTOPIAN_EXPECTED_REPORT_PATH) {
+    $InstallRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $SettingsHelper = Join-Path $InstallRoot 'cli\claude_launch_settings.py'
+    if (-not (Test-Path -LiteralPath $SettingsHelper -PathType Leaf)) {
+        Write-Error "cartopian-claude: completion settings helper not found: $SettingsHelper"
+        exit 1
+    }
+    $ProjectDir = (Get-Location).Path
+    $SettingsHelperArgs = @(
+        $SettingsHelper,
+        '--install-root', $InstallRoot,
+        '--project-dir', $ProjectDir,
+        '--platform', 'windows'
+    )
+    $Python = Get-Command py -ErrorAction SilentlyContinue
+    if ($Python) {
+        $PythonPath = $Python.Source
+        $ClaudeLaunchSettings = & $PythonPath -3 @SettingsHelperArgs
+    } else {
+        $Python = Get-Command python3 -ErrorAction SilentlyContinue
+        if (-not $Python) { $Python = Get-Command python -ErrorAction SilentlyContinue }
+        if (-not $Python) {
+            Write-Error 'cartopian-claude: Python 3 is required to construct completion Stop-hook settings'
+            exit 1
+        }
+        $PythonPath = $Python.Source
+        $ClaudeLaunchSettings = & $PythonPath @SettingsHelperArgs
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $ClaudeLaunchSettings) {
+        Write-Error 'cartopian-claude: could not construct completion Stop-hook settings'
+        exit 1
+    }
+    $Args += @('--settings', ($ClaudeLaunchSettings -join "`n"))
+}
+
 if ($AllowedTools) {
     $Args += @('--allowedTools', $AllowedTools)
 }
