@@ -8,7 +8,7 @@ Two keying modes:
 - ``cartopian dispatch --prompt <prompt-path> --role <role>`` — report-path-only
   handoffs (planning-checkpoint reviews; no task file exists during planning).
   ``--prompt`` accepts only an allowlisted planning-checkpoint prompt slot
-  (``<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md``).
+  (``<project-root>/prompts/PROMPT-PLAN-NNN.md``).
 
 Each mode fails closed unless its exact activity appears in the role's
 ``auto_launch`` list: ``task_run``, ``task_review``, or ``planning_review``.
@@ -336,7 +336,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Absolute path to a planning-checkpoint prompt "
-            "(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md) for a "
+            "(<project-root>/prompts/PROMPT-PLAN-NNN.md) for a "
             "report-path-only handoff; requires planning_review in the "
             "role's auto_launch list"
         ),
@@ -507,7 +507,7 @@ def handler(args: argparse.Namespace) -> int:
         ):
             stderr_guard(
                 f"--prompt must name a planning-checkpoint prompt slot "
-                f"(<project-root>/prompts/PROMPT-PLAN-NNN[-slug].md); got: {prompt_path}. "
+                f"(<project-root>/prompts/PROMPT-PLAN-NNN.md); got: {prompt_path}. "
                 f"Task-scoped handoffs dispatch by task path"
             )
             return EXIT_FAIL

@@ -177,7 +177,7 @@ The status file lives at the expected report path with a `.status` suffix — ex
 ```text
 <project-root>/reports/REPORT-NN-NNN.md.status            (task assignment)
 <project-root>/reports/REPORT-NN-NNN-review.md.status     (task review)
-<project-root>/reports/REPORT-PLAN-NNN[-slug].md.status   (planning review)
+<project-root>/reports/REPORT-PLAN-NNN.md.status   (planning review)
 ```
 
 When dispatch exports `CARTOPIAN_EXPECTED_REPORT_PATH`, the helpers use that exact bounded slot. Otherwise the id comes from the prompt filename (`PROMPT-NN-NNN.md`) and the project root is the prompt's grandparent directory (`<project-root>/prompts/PROMPT-NN-NNN.md`); a manual task-review launch selects the `-review` slot from `CARTOPIAN_EXPECTED_REPORT_VARIANT=review`. The task-review report slot is independent of the coder's completion report (`REPORT-NN-NNN.md`), which stays preserved throughout review and is never the review launch's watch target. Wrappers compute this from the prompt path *before* changing the launch cwd, so a relative prompt path still resolves.

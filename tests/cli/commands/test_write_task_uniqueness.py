@@ -2,7 +2,7 @@
 
 A task id lives in exactly one of ``tasks/{open,in-progress,in-review,done}/``.
 Re-issuing ``write-task`` for an existing id must update that file in place in
-its current status directory (normalizing any legacy descriptive name) — never
+its current status directory — never
 create a second copy in ``tasks/open/``. Only a genuinely new id creates a
 file, in ``tasks/open/``. A pre-existing multi-directory collision fails
 closed, names every colliding path, and writes nothing.
@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
 )
 
 # A schema-valid task body: write-task refuses one that could never pass
@@ -72,7 +72,7 @@ class TestUpdateInPlace(_Fixture):
         ):
             with self.subTest(status=status):
                 task_id = "TASK-01-001"
-                existing = status_dir / f"{task_id}-do-thing.md"
+                existing = status_dir / f"{task_id}.md"
                 existing.write_text("# v1\n", encoding="utf-8")
 
                 code, recs, err = run_cli(
@@ -91,7 +91,7 @@ class TestUpdateInPlace(_Fixture):
                 )
                 canonical.unlink()  # reset for the next status
 
-    def test_legacy_name_normalizes_in_place_within_status_dir(self):
+    def test_descriptive_name_requires_project_migration(self):
         old = self.scaffold.tasks_in_review / "TASK-01-002-old-slug.md"
         old.write_text("# v1\n", encoding="utf-8")
 
@@ -99,12 +99,10 @@ class TestUpdateInPlace(_Fixture):
             "write-task", self.root, "--task-id", "TASK-01-002",
             "--content", _BODY,
         )
-        self.assertEqual(code, 0, msg=err)
-        renamed = self.scaffold.tasks_in_review / "TASK-01-002.md"
-        self.assertTrue(renamed.is_file())
-        self.assertEqual(renamed.read_text(encoding="utf-8"), _BODY)
-        self.assertFalse(old.exists(), msg="legacy descriptive file left behind")
-        self.assertEqual(self.all_task_files(), ["in-review/TASK-01-002.md"])
+        self.assertEqual(code, 1)
+        self.assertIn("artifact-name-migration-required", err)
+        self.assertTrue(old.is_file())
+        self.assertFalse((self.scaffold.tasks_in_review / "TASK-01-002.md").exists())
 
     def test_new_id_still_lands_in_open(self):
         code, recs, err = run_cli(
@@ -189,7 +187,7 @@ class TestSchemaGate(_Fixture):
 
 class TestRecordDestination(_Fixture):
     def test_record_names_actual_destination_directory(self):
-        existing = self.scaffold.tasks_done / "TASK-01-005-shipped.md"
+        existing = self.scaffold.tasks_done / "TASK-01-005.md"
         existing.write_text("# v1\n", encoding="utf-8")
 
         code, recs, err = run_cli(

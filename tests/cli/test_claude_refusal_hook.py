@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -109,11 +109,11 @@ _READ_ROLES = (
 # Governance-class read targets (management/strategy artifacts and specs; an
 # unclassified project file also falls to governance on the read axis).
 _GOVERNANCE_READ_TARGETS = (
-    "specs/SPEC-01-001-x.md",
-    "phases/PHASE-01-x.md",
+    "specs/SPEC-01-001.md",
+    "phases/PHASE-01.md",
     "IMPLEMENTATION_PLAN.md",
     "REQUIREMENTS.md",
-    "tasks/open/TASK-01-001-x.md",
+    "tasks/open/TASK-01-001.md",
     "STATE.md",
     "BACKLOG.md",
     "decisions/DECISION-001.md",
@@ -170,10 +170,10 @@ class _HookFixture:
 
 # Governed targets by path-class: (relative path, class fragment, grant).
 _CLASS_MATRIX = (
-    ("specs/SPEC-01-001-x.md", "plan", "write:plan"),
-    ("phases/PHASE-01-x.md", "plan", "write:plan"),
+    ("specs/SPEC-01-001.md", "plan", "write:plan"),
+    ("phases/PHASE-01.md", "plan", "write:plan"),
     ("IMPLEMENTATION_PLAN.md", "plan", "write:plan"),
-    ("tasks/open/TASK-01-001-x.md", "lifecycle", "write:lifecycle"),
+    ("tasks/open/TASK-01-001.md", "lifecycle", "write:lifecycle"),
     ("STATE.md", "lifecycle", "write:lifecycle"),
     ("BACKLOG.md", "lifecycle", "write:lifecycle"),
     ("prompts/PROMPT-01-001.md", "prompts", "write:lifecycle"),
@@ -820,7 +820,7 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'project_schema_version = "v0.9.0"\n'
+            'project_schema_version = "v0.10.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
@@ -831,7 +831,7 @@ class TestDispatchExportsRole(unittest.TestCase):
         with project_scaffold(cartopian_toml=toml) as scaffold, \
                 tempfile.TemporaryDirectory() as fake_home:
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-004-role-export.md",
+                "tasks/in-progress/TASK-01-004.md",
                 "# TASK-01-004: role export\n",
             )
             scaffold.capture_request(

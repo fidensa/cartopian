@@ -5,8 +5,6 @@ is derived from the validated ``--phase-id`` (the PM supplies an id, not a
 path); the destination subtree is the allowlisted ``phase`` dest_kind.
 """
 import argparse
-import os
-
 from cli.commands import _writers
 
 
@@ -51,19 +49,17 @@ def handler(args: argparse.Namespace) -> int:
             + ", ".join(str(path) for path in matches),
         )
         return _writers.EXIT_FAIL
-    renamed_from = None
     if matches and matches[0].name != filename:
-        renamed_from = matches[0]
-        try:
-            os.rename(renamed_from, renamed_from.parent / filename)
-        except OSError as exc:
-            _writers.stderr("error", f"rename failed: {exc}")
-            return _writers.EXIT_FAIL
+        _writers.stderr(
+            "guard",
+            f"artifact-name-migration-required: {matches[0]} must be migrated to {filename}",
+        )
+        return _writers.EXIT_FAIL
 
     extra_details = {"phase_id": phase_id}
     if source_id is not None:
         extra_details["source"] = source_id
-    code = _writers.perform_write(
+    return _writers.perform_write(
         args,
         action="write-phase",
         dest_kind="phase",
@@ -71,9 +67,3 @@ def handler(args: argparse.Namespace) -> int:
         content=content,
         extra_details=extra_details,
     )
-    if code != _writers.EXIT_OK and renamed_from is not None:
-        try:
-            os.rename(renamed_from.parent / filename, renamed_from)
-        except OSError:
-            pass
-    return code

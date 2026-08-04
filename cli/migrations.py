@@ -63,11 +63,20 @@ class PlannedDelete:
 
 
 @dataclass(frozen=True)
+class PlannedDirectoryRename:
+    action_kind: str
+    source: Path
+    target: Path
+    expected_identity: Tuple[int, int]
+
+
+@dataclass(frozen=True)
 class MigrationPlan:
     writes: Tuple[PlannedWrite, ...] = ()
     deletes: Tuple[PlannedDelete, ...] = ()
     pending: Tuple[Dict[str, object], ...] = ()
     skipped: Tuple[Dict[str, object], ...] = ()
+    directory_renames: Tuple[PlannedDirectoryRename, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,8 +98,50 @@ class MigrationApplyError(GuardRefusal):
         super().__init__(refusal.rule, refusal.detail)
 
 
-ENTRY_VERSIONS = ("v0.2.0", "v0.3.0", "v0.6.0", "v0.7.0", "v0.8.0", "v0.9.0")
+ENTRY_VERSIONS = (
+    "v0.2.0",
+    "v0.3.0",
+    "v0.6.0",
+    "v0.7.0",
+    "v0.8.0",
+    "v0.9.0",
+    "v0.10.0",
+)
 _VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+
+
+def _version_tuple(value: str) -> Tuple[int, int, int]:
+    return tuple(int(part) for part in value.removeprefix("v").split("."))  # type: ignore[return-value]
+
+
+# v0.10 removes descriptive text from governed artifact filenames.  These
+# patterns are intentionally migration-only: normal lifecycle readers accept
+# the canonical names exclusively after the project marker advances.
+_CANONICAL_NAME_RULES = (
+    (re.compile(r"^(PHASE-\d{2})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "phase"),
+    (re.compile(r"^(TASK-\d{2}-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "task"),
+    (re.compile(r"^(SPEC-\d{2}-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "spec"),
+    (re.compile(r"^(DEC-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "decision"),
+    (re.compile(r"^(PROMPT-PLAN-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "prompt"),
+    (re.compile(r"^(REPORT-PLAN-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "report"),
+    (re.compile(r"^(REVIEW-PLAN-\d{3})-[a-z0-9][a-z0-9-]*\.md$"), r"\1.md", "review"),
+)
+
+_CANONICAL_NAME_DIRS = (
+    "phases",
+    "specs",
+    "decisions",
+    "prompts",
+    "reports",
+    "reviews",
+    "tasks/open",
+    "tasks/in-progress",
+    "tasks/in-review",
+    "tasks/done",
+)
+_DESCRIPTIVE_ARCHIVE_RE = re.compile(
+    r"^(PLAN-\d{3})-[a-z0-9][a-z0-9-]*$"
+)
 
 # Shipped exact wrapper migrations.  No currently shipped project wrapper has a
 # byte signature specific enough to rewrite generically, so v0.3.0 custom
@@ -174,10 +225,10 @@ def _guarded_delete(
     root = os.path.realpath(os.fspath(project_root))
     path = os.path.abspath(os.fspath(item.absolute_path))
     parent = os.path.realpath(os.path.dirname(path))
-    if parent != root:
+    if not _within(parent, root):
         raise GuardRefusal(
             "outside-allowlist",
-            f"retirement target is not a project-root file: {path}",
+            f"retirement target escapes the project root: {path}",
         )
     name = os.path.basename(path)
     if os.path.islink(path):
@@ -302,8 +353,14 @@ def _guarded_migration_write(
     root = os.path.realpath(os.fspath(project_root))
     subtrees = {
         "task": "tasks",
+        "phase": "phases",
+        "spec": "specs",
+        "decision": "decisions",
+        "prompt": "prompts",
         "review": "reviews",
         "report": "reports",
+        "archive-index": "archive",
+        "root-markdown": "",
         "standards": "",
         "wrapper": "wrappers",
     }
@@ -322,6 +379,20 @@ def _guarded_migration_write(
     if item.dest_kind == "standards" and path != os.path.join(root, "STANDARDS.md"):
         raise GuardRefusal(
             "invalid-registry", "standards migration target must be STANDARDS.md"
+        )
+    if item.dest_kind == "root-markdown" and (
+        parent != root or not path.endswith(".md")
+    ):
+        raise GuardRefusal(
+            "invalid-registry",
+            "root-markdown migration targets must be project-root Markdown files",
+        )
+    if item.dest_kind == "archive-index" and path != os.path.join(
+        root, "archive", "INDEX.md"
+    ):
+        raise GuardRefusal(
+            "invalid-registry",
+            "archive-index migration target must be archive/INDEX.md",
         )
     if not os.path.isdir(base) or not os.path.isdir(parent):
         raise GuardRefusal("missing-parent", f"migration target parent is missing: {path}")
@@ -664,6 +735,219 @@ def _is_canonical_conventions_placeholder(data: bytes) -> bool:
     ]
 
 
+def _canonical_artifact_target(path: Path) -> Tuple[Path, str] | None:
+    """Return the v0.10 canonical destination and migration dest kind.
+
+    This recognises retired descriptive names only inside the closed migration
+    registry.  Normal lifecycle code does not call it and therefore does not
+    retain a compatibility read path.
+    """
+    for pattern, replacement, dest_kind in _CANONICAL_NAME_RULES:
+        if pattern.fullmatch(path.name):
+            return path.with_name(pattern.sub(replacement, path.name)), dest_kind
+    return None
+
+
+def _governance_markdown_paths(root: Path) -> List[Path]:
+    """Return live governance Markdown files whose path references may change."""
+    paths = [path for path in root.glob("*.md") if path.is_file()]
+    for rel_dir in _CANONICAL_NAME_DIRS:
+        directory = root / rel_dir
+        if not directory.is_dir():
+            continue
+        paths.extend(path for path in directory.glob("*.md") if path.is_file())
+    archive_index = root / "archive" / "INDEX.md"
+    if archive_index.is_file():
+        paths.append(archive_index)
+    return sorted(set(paths))
+
+
+def _canonical_name_migration(root: Path, entry_version: str) -> MigrationPlan:
+    """Plan the one-time removal of descriptive governed artifact names.
+
+    Every source/destination collision fails closed.  References in the live
+    governance Markdown surface are rewritten from the old relative path,
+    basename, stem, and absolute path to the canonical identity-only form.
+    Resources and provenance are intentionally outside this transform.
+    """
+    renames: Dict[Path, Tuple[Path, str, bytes, int]] = {}
+    directory_renames: List[PlannedDirectoryRename] = []
+    targets: Dict[Path, Path] = {}
+    archive_targets: Dict[Path, Path] = {}
+    replacements: Dict[str, str] = {}
+
+    archive_root = root / "archive"
+    if archive_root.is_dir():
+        if archive_root.is_symlink():
+            raise GuardRefusal(
+                "unsafe-tree", f"archive path is a symlink: {archive_root}"
+            )
+        for source in sorted(archive_root.iterdir()):
+            match = _DESCRIPTIVE_ARCHIVE_RE.fullmatch(source.name)
+            if match is None:
+                continue
+            source_st = os.lstat(source)
+            if not stat.S_ISDIR(source_st.st_mode) or stat.S_ISLNK(source_st.st_mode):
+                raise GuardRefusal(
+                    "unsafe-tree", f"archive migration source is not a real directory: {source}"
+                )
+            target = source.with_name(match.group(1))
+            prior = archive_targets.get(target)
+            if prior is not None:
+                raise GuardRefusal(
+                    "artifact-name-collision",
+                    f"multiple descriptive plan archives resolve to {target}: {prior}, {source}",
+                )
+            if os.path.lexists(target):
+                raise GuardRefusal(
+                    "artifact-name-collision",
+                    f"descriptive and canonical plan archives both exist: {source}, {target}",
+                )
+            archive_targets[target] = source
+            directory_renames.append(
+                PlannedDirectoryRename(
+                    "canonicalize-name",
+                    source,
+                    target,
+                    (source_st.st_dev, source_st.st_ino),
+                )
+            )
+            old_rel = source.relative_to(root).as_posix()
+            new_rel = target.relative_to(root).as_posix()
+            replacements[str(source)] = str(target)
+            replacements[old_rel] = new_rel
+            replacements[source.name] = target.name
+
+    for rel_dir in _CANONICAL_NAME_DIRS:
+        directory = root / rel_dir
+        if not directory.is_dir():
+            continue
+        for source in sorted(directory.iterdir()):
+            if not source.is_file():
+                continue
+            resolved = _canonical_artifact_target(source)
+            if resolved is None:
+                continue
+            target, dest_kind = resolved
+            prior = targets.get(target)
+            if prior is not None and prior != source:
+                raise GuardRefusal(
+                    "artifact-name-collision",
+                    f"multiple descriptive artifacts resolve to {target}: {prior}, {source}",
+                )
+            source_data, _, source_mode = _regular_file_snapshot(source, root)
+            if os.path.lexists(target):
+                target_data = _regular_file_bytes(target, root)
+                if not migration_write_evidenced(
+                    root,
+                    target,
+                    target_data,
+                    entry_version=entry_version,
+                    action_kind="canonicalize-name",
+                ):
+                    raise GuardRefusal(
+                        "artifact-name-collision",
+                        f"descriptive and canonical artifacts both exist: {source}, {target}",
+                    )
+            targets[target] = source
+            renames[source] = (target, dest_kind, source_data, source_mode)
+
+            old_rel = source.relative_to(root).as_posix()
+            new_rel = target.relative_to(root).as_posix()
+            replacements[str(source)] = str(target)
+            replacements[old_rel] = new_rel
+            replacements[source.name] = target.name
+            replacements[source.stem] = target.stem
+            for prefix in ("PROMPT-", "REPORT-", "REVIEW-"):
+                if source.stem.startswith(prefix + "PLAN-"):
+                    replacements[source.stem[len(prefix):]] = target.stem[len(prefix):]
+
+    if not renames and not directory_renames:
+        return MigrationPlan(
+            skipped=(
+                {
+                    "kind": "entry",
+                    "target": ".",
+                    "status": "skipped",
+                    "reason": "all governed artifact and archive names are canonical",
+                },
+            )
+        )
+
+    ordered_replacements = sorted(
+        replacements.items(), key=lambda pair: len(pair[0]), reverse=True
+    )
+    writes: List[PlannedWrite] = []
+    deletes: List[PlannedDelete] = []
+
+    for source in _governance_markdown_paths(root):
+        before, _, mode = _regular_file_snapshot(source, root)
+        try:
+            text = before.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise GuardRefusal(
+                "invalid-utf8",
+                f"governance artifact is not UTF-8: {source} — {exc}",
+            )
+        for old, new in ordered_replacements:
+            text = text.replace(old, new)
+        after = text.encode("utf-8")
+        rename = renames.get(source)
+        if rename is not None:
+            target, dest_kind, _, source_mode = rename
+            if not os.path.lexists(target):
+                writes.append(
+                    PlannedWrite(
+                        "canonicalize-name",
+                        dest_kind,
+                        target.relative_to(root).as_posix(),
+                        target,
+                        b"",
+                        after,
+                        False,
+                        source_mode,
+                    )
+                )
+            deletes.append(PlannedDelete("canonicalize-name", source, before))
+        elif after != before:
+            # Root Markdown uses the existing standards allowlist; all other
+            # files use the destination kind implied by their live directory.
+            rel = source.relative_to(root)
+            if len(rel.parts) == 1:
+                dest_kind = "root-markdown"
+            elif rel.parts[0] == "tasks":
+                dest_kind = "task"
+            elif rel.parts[0] == "archive":
+                dest_kind = "archive-index"
+            else:
+                dest_kind = {
+                    "phases": "phase",
+                    "specs": "spec",
+                    "decisions": "decision",
+                    "prompts": "prompt",
+                    "reports": "report",
+                    "reviews": "review",
+                }[rel.parts[0]]
+            writes.append(
+                PlannedWrite(
+                    "canonicalize-reference",
+                    dest_kind,
+                    rel.as_posix(),
+                    source,
+                    before,
+                    after,
+                    True,
+                    mode,
+                )
+            )
+
+    return MigrationPlan(
+        tuple(writes),
+        tuple(deletes),
+        directory_renames=tuple(directory_renames),
+    )
+
+
 def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
     """Preflight one closed-registry migration entry without mutating files."""
     root = Path(os.path.realpath(os.fspath(project_root)))
@@ -686,7 +970,11 @@ def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
             "invalid-config",
             "project schema marker must be a vX.Y.Z string",
         )
-    if isinstance(marker, str) and marker >= entry_version:
+    if (
+        isinstance(marker, str)
+        and _version_tuple(marker) >= _version_tuple(entry_version)
+        and entry_version != "v0.10.0"
+    ):
         return MigrationPlan(
             skipped=(
                 {
@@ -880,6 +1168,9 @@ def plan_entry(project_root: Path, entry_version: str) -> MigrationPlan:
             )
         )
 
+    if entry_version == "v0.10.0":
+        return _canonical_name_migration(root, entry_version)
+
     conventions = root / "CONVENTIONS.md"
     if not os.path.lexists(conventions):
         return MigrationPlan(
@@ -954,6 +1245,77 @@ def record_pending_actions(
             )
 
 
+def _guarded_directory_rename(
+    project_root: Path, item: PlannedDirectoryRename
+) -> None:
+    """Atomically rename one preflighted project-local directory."""
+    root = os.path.realpath(os.fspath(project_root))
+    source = os.path.abspath(os.fspath(item.source))
+    target = os.path.abspath(os.fspath(item.target))
+    parent = os.path.realpath(os.path.dirname(source))
+    if (
+        parent != os.path.realpath(os.path.dirname(target))
+        or not _within(parent, root)
+        or os.path.basename(parent) != "archive"
+    ):
+        raise GuardRefusal(
+            "outside-allowlist", "archive rename must stay within archive/"
+        )
+    if os.path.lexists(target):
+        raise GuardRefusal(
+            "artifact-name-collision",
+            f"archive migration destination appeared after preflight: {target}",
+        )
+    if os.path.islink(source):
+        raise GuardRefusal("symlink", f"archive migration source is a symlink: {source}")
+    source_st = os.lstat(source)
+    if (
+        not stat.S_ISDIR(source_st.st_mode)
+        or (source_st.st_dev, source_st.st_ino) != item.expected_identity
+    ):
+        raise GuardRefusal(
+            "toctou", f"archive migration source identity changed: {source}"
+        )
+    snapshot = _snapshot_chain(parent, root)
+    if DIR_FD_SUPPORTED:
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        dir_fd = os.open(parent, flags)
+        try:
+            parent_st = os.fstat(dir_fd)
+            if (parent_st.st_dev, parent_st.st_ino) != (
+                snapshot[-1][1].st_dev,
+                snapshot[-1][1].st_ino,
+            ):
+                raise GuardRefusal("toctou", "archive parent identity changed")
+            _reverify_chain(snapshot)
+            now = os.stat(
+                os.path.basename(source), dir_fd=dir_fd, follow_symlinks=False
+            )
+            if (now.st_dev, now.st_ino) != item.expected_identity:
+                raise GuardRefusal(
+                    "toctou", f"archive migration source identity changed: {source}"
+                )
+            os.rename(
+                os.path.basename(source),
+                os.path.basename(target),
+                src_dir_fd=dir_fd,
+                dst_dir_fd=dir_fd,
+            )
+            try:
+                os.fsync(dir_fd)
+            except OSError:
+                pass
+        finally:
+            os.close(dir_fd)
+    else:
+        _reverify_chain(snapshot)
+        os.rename(source, target)
+
+
 def apply_plan(
     project_root: Path, entry_version: str, plan: MigrationPlan
 ) -> List[Dict[str, object]]:
@@ -963,7 +1325,7 @@ def apply_plan(
         return []
     results: List[Dict[str, object]] = list(plan.skipped)
     try:
-        if plan.writes or plan.deletes:
+        if plan.writes or plan.deletes or plan.directory_renames:
             provenance_dir = project_root / ".cartopian"
             provenance_log = provenance_dir / "provenance.log"
             if os.path.lexists(provenance_dir):
@@ -1037,6 +1399,18 @@ def apply_plan(
                     "status": "applied",
                     "provenance": provenance,
                     "provenance_status": "recorded",
+                }
+            )
+        for item in plan.directory_renames:
+            _guarded_directory_rename(project_root, item)
+            results.append(
+                {
+                    "kind": item.action_kind,
+                    "target": item.target.relative_to(project_root).as_posix(),
+                    "status": "applied",
+                    "source": item.source.relative_to(project_root).as_posix(),
+                    "provenance": f"migration-entry:{entry_version}:{item.action_kind}",
+                    "provenance_status": "not-applicable-to-directory",
                 }
             )
     except GuardRefusal as exc:

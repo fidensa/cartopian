@@ -9,8 +9,8 @@ from cli.commands.resolve_config import _CliError, _load_toml, _require_project_
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
-_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
-_PROMPT_TASK_RE = re.compile(r"^PROMPT-(\d{2}-\d{3})(?:-[^/]*)?\.md$")
+_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
+_PROMPT_TASK_RE = re.compile(r"^PROMPT-(\d{2}-\d{3})\.md$")
 _EXIT_CRITERIA_RE = re.compile(
     r"^##\s+Exit criteria\s*$(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -19,7 +19,7 @@ _CRITERION_ID_RE = re.compile(
     r"\b("
     r"TASK-\d{2}-\d{3}"
     r"|DEC(?:ISION)?-[A-Za-z0-9-]+"
-    r"|SPEC-\d{2}-\d{3}(?:-[A-Za-z0-9-]+)?"
+    r"|SPEC-\d{2}-\d{3}"
     r"|REVIEW(?:-PLAN)?-[A-Za-z0-9-]+"
     r"|REPORT(?:-PLAN)?-[A-Za-z0-9-]+"
     r")\b"

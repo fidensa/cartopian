@@ -154,7 +154,7 @@ def _check_plan_ref_aligned(
     from cli import numbering_contract
 
     name = "plan-ref-aligned"
-    match = re.match(r"^(TASK-\d{2}-\d{3})(?:-|$)", task_path.stem)
+    match = re.fullmatch(r"(TASK-\d{2}-\d{3})", task_path.stem)
     if not match:
         return {"name": name, "pass": True, "reason": None}
     if match.group(1) not in numbering_contract.governed_task_ids(

@@ -129,7 +129,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.9.0"
+                project_cfg["project"]["project_schema_version"], "v0.10.0"
             )
             for migrated_text in (
                 (home / ".cartopian" / "cartopian.toml").read_text(),
@@ -202,6 +202,7 @@ class TestConfigurationMigration(unittest.TestCase):
             "config-v0.6-to-v0.7",
             "config-v0.7-to-v0.8",
             "config-v0.8-to-v0.9",
+            "config-v0.9-to-v0.10",
         ],
             )
             config_migration.execute_configuration_migration(
@@ -219,7 +220,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.9.0"
+                migrated["project"]["project_schema_version"], "v0.10.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -625,7 +626,12 @@ timeout = "45m"
             self.assertEqual(plan.status, "planned")
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.6-to-v0.7", "config-v0.7-to-v0.8", "config-v0.8-to-v0.9"],
+                [
+                    "config-v0.6-to-v0.7",
+                    "config-v0.7-to-v0.8",
+                    "config-v0.8-to-v0.9",
+                    "config-v0.9-to-v0.10",
+                ],
             )
             source = dict(plan.source_effective)
             target = dict(plan.target_effective)
@@ -660,7 +666,7 @@ timeout = "45m"
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.9.0"
+                migrated["project"]["project_schema_version"], "v0.10.0"
             )
 
             before_rerun = path.read_bytes()
@@ -739,7 +745,7 @@ timeout = "45m"
                 self.assertNotIn("# migrated legacy:", path.read_text())
             self.assertEqual(
                 records[0]["details"]["plan"]["entries"][0]["identity"],
-                "config-v0.9-partial-repair",
+                "config-v0.10-partial-repair",
             )
 
             before_rerun = _config_bytes(home, project)
@@ -775,7 +781,7 @@ timeout = "30m"
             self.assertEqual(public_result["status"], "complete")
             self.assertEqual(
                 public_plan["entries"][0]["identity"],
-                "config-v0.9-partial-repair",
+                "config-v0.10-partial-repair",
             )
             self.assertIn(
                 "superseded-role-launch",

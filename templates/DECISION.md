@@ -7,7 +7,7 @@ Supersedes: <DEC-NNN | none>
 Ordinary decision prose is PM-derived guidance. A new decision preserves
 verbatim operator evidence only with the exact structural marker below,
 immediately followed by one Markdown block quote. The marker binds the quote to
-one governed unit (`project:project`, `planning:PLAN-NNN[-slug]`, or
+one governed unit (`project:project`, `planning:PLAN-NNN`, or
 `task:TASK-NN-NNN`); loosely adjacent attribution and ordinary block quotes are
 not evidence.
 

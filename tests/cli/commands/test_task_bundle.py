@@ -16,7 +16,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     'work_roots = ["tool-repo"]\n'
 )
 
@@ -72,21 +72,21 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                 f"[work_roots]\ntool-repo = \"{work_root}\"\n",
             )
             scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
-            scaffold.write("specs/SPEC-01-001-demo.md", "# Demo Spec\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
+            scaffold.write("specs/SPEC-01-001.md", "# Demo Spec\n")
             scaffold.write(
-                "tasks/done/TASK-01-001-prereq.md",
+                "tasks/done/TASK-01-001.md",
                 "# TASK-01-001: Prereq\n",
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-002-example.md",
+                "tasks/open/TASK-01-002.md",
                 (
                     "# TASK-01-002: Example\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
-                    "Spec: SPEC-01-001-demo.md\n"
+                    "Spec: SPEC-01-001.md\n"
                     "Depends on: n/a\n"
                     "Blocked by: TASK-01-001\n"
                     "Created: 2026-05-18\n"
@@ -125,7 +125,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
         self.assertEqual(record["task_status"], "open")
         self.assertEqual(
             record["spec_path"],
-            str((scaffold.project_root / "specs" / "SPEC-01-001-demo.md").resolve()),
+            str((scaffold.project_root / "specs" / "SPEC-01-001.md").resolve()),
         )
         self.assertEqual(
             record["dependencies"],
@@ -133,7 +133,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                 {
                     "task_id": "TASK-01-001",
                     "title": "TASK-01-001: Prereq",
-                    "path": str((scaffold.project_root / "tasks" / "done" / "TASK-01-001-prereq.md").resolve()),
+                    "path": str((scaffold.project_root / "tasks" / "done" / "TASK-01-001.md").resolve()),
                     "status": "done",
                 }
             ],
@@ -171,12 +171,12 @@ class TestTaskBundleNoPlan(unittest.TestCase):
                 "cartopian.local.toml",
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
             task_path = scaffold.write(
-                "tasks/open/TASK-01-003-no-plan.md",
+                "tasks/open/TASK-01-003.md",
                 (
                     "# TASK-01-003: No Plan\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: n/a\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
@@ -206,7 +206,7 @@ class TestTaskBundleNoPlan(unittest.TestCase):
 class TestTaskBundleSchemaIdentityWithoutReadinessGate(unittest.TestCase):
     def test_pre_migration_project_keeps_prior_read_behavior(self) -> None:
         stale = _TOML_BASE.replace(
-            'project_schema_version = "v0.9.0"',
+            'project_schema_version = "v0.10.0"',
             'project_schema_version = "v0.5.0"',
         )
         with project_scaffold(cartopian_toml=stale) as scaffold:
@@ -216,11 +216,11 @@ class TestTaskBundleSchemaIdentityWithoutReadinessGate(unittest.TestCase):
                 "cartopian.local.toml",
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
             task_path = scaffold.write(
-                "tasks/open/TASK-01-006-stale-project.md",
+                "tasks/open/TASK-01-006.md",
                 "# TASK-01-006: Stale project\n\n"
-                "Phase: PHASE-01-foundation\nPlan ref: n/a\n"
+                "Phase: PHASE-01\nPlan ref: n/a\n"
                 "Work root: tool-repo\nAssignee: coder\nSpec: none\n"
                 "Depends on: n/a\nBlocked by: n/a\nCreated: 2026-07-25\n"
                 "Evidence gate: n/a\n\n## Goal\n\nRead.\n\n"
@@ -242,7 +242,7 @@ class TestTaskBundleProjectGuardParity(unittest.TestCase):
             cartopian_toml="[defaults]\ngit_versioning = false\n"
         ) as scaffold:
             task_path = scaffold.write(
-                "tasks/open/TASK-01-099-workspace-config.md",
+                "tasks/open/TASK-01-099.md",
                 "# TASK-01-099: Workspace config\n",
             )
             result = _run(str(task_path), scaffold.root)
@@ -264,12 +264,12 @@ class TestTaskBundleMissingConfig(unittest.TestCase):
     def test_missing_cartopian_toml_exits_3(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             (scaffold.project_root / "cartopian.toml").unlink()
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
             task_path = scaffold.write(
-                "tasks/open/TASK-01-004-no-config.md",
+                "tasks/open/TASK-01-004.md",
                 (
                     "# TASK-01-004: No Config\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: n/a\n"
                     "Work root: n/a\n"
                     "Assignee: coder\n"
@@ -299,16 +299,16 @@ class TestTaskBundleUnmetReadiness(unittest.TestCase):
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
             scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
             scaffold.write(
-                "tasks/open/TASK-01-001-prereq.md",
+                "tasks/open/TASK-01-001.md",
                 "# TASK-01-001: Prereq\n",
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-002-example.md",
+                "tasks/open/TASK-01-002.md",
                 (
                     "# TASK-01-002: Example\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
@@ -341,7 +341,7 @@ class TestTaskBundleUnmetReadiness(unittest.TestCase):
                     "task_id": "TASK-01-001",
                     "title": "TASK-01-001: Prereq",
                     "path": str(
-                        (scaffold.project_root / "tasks" / "open" / "TASK-01-001-prereq.md").resolve()
+                        (scaffold.project_root / "tasks" / "open" / "TASK-01-001.md").resolve()
                     ),
                     "status": "open",
                 }
@@ -361,21 +361,21 @@ class TestTaskBundleReadOnly(unittest.TestCase):
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
             scaffold.write("IMPLEMENTATION_PLAN.md", "BUILD-01-002\n")
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
-            scaffold.write("specs/SPEC-01-001-demo.md", "# Demo Spec\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01\n")
+            scaffold.write("specs/SPEC-01-001.md", "# Demo Spec\n")
             scaffold.write(
-                "tasks/done/TASK-01-001-prereq.md",
+                "tasks/done/TASK-01-001.md",
                 "# TASK-01-001: Prereq\n",
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-002-example.md",
+                "tasks/open/TASK-01-002.md",
                 (
                     "# TASK-01-002: Example\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: BUILD-01-002\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
-                    "Spec: SPEC-01-001-demo.md\n"
+                    "Spec: SPEC-01-001.md\n"
                     "Depends on: n/a\n"
                     "Blocked by: TASK-01-001\n"
                     "Created: 2026-05-18\n"

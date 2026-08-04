@@ -3,8 +3,7 @@
 Deletes a prompt file that lives under a registered project's ``prompts/``
 directory and emits one NDJSON confirmation record. Filename must match the
 Cartopian prompt grammar: ``PROMPT-NN-NNN.md`` or
-``PROMPT-PLAN-NNN[-kebab-slug].md`` (planning-checkpoint prompts carry an
-operator-authored slug per CONVENTIONS.md).
+``PROMPT-PLAN-NNN.md``.
 """
 import argparse
 import os
@@ -21,7 +20,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 PROMPT_FILENAME_RE = re.compile(
-    r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)\.md$"
+    r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})\.md$"
 )
 
 
@@ -56,7 +55,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr(
             "guard",
             f"prompt filename does not match PROMPT-NN-NNN.md or "
-            f"PROMPT-PLAN-NNN[-slug].md grammar: {prompt_path.name}",
+            f"PROMPT-PLAN-NNN.md grammar: {prompt_path.name}",
         )
         return EXIT_FAIL
 

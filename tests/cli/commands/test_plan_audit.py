@@ -20,7 +20,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
 )
 
 _REVIEW_TOML = (
@@ -146,7 +146,7 @@ class TestPlanAuditClean(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-progress" / "TASK-01-003-do-thing.md", "# task\n")
+            _write(project / "tasks" / "in-progress" / "TASK-01-003.md", "# task\n")
             _write(project / "prompts" / "PROMPT-01-003.md", "# prompt\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -158,7 +158,7 @@ class TestPlanAuditClean(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            task = project / "tasks" / "in-review" / "TASK-01-004-review-me.md"
+            task = project / "tasks" / "in-review" / "TASK-01-004.md"
             _write(task, "# task\n")
             source = tmp_path / "operator-message.txt"
             _write(source, "Review this task.")
@@ -214,7 +214,7 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-progress" / "TASK-01-003-do-thing.md", "# task\n")
+            _write(project / "tasks" / "in-progress" / "TASK-01-003.md", "# task\n")
             # no prompt
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 1)
@@ -230,7 +230,7 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-review" / "TASK-02-005-thing.md", "# task\n")
+            _write(project / "tasks" / "in-review" / "TASK-02-005.md", "# task\n")
             # no review file
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 1)
@@ -244,7 +244,7 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-review" / "TASK-02-005-thing.md", "# task\n")
+            _write(project / "tasks" / "in-review" / "TASK-02-005.md", "# task\n")
             # review file exists but has no Verdict: field
             _write(project / "reviews" / "REVIEW-02-005.md",
                    "# REVIEW-02-005\n\nNo verdict here.\n")
@@ -258,8 +258,8 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-progress" / "TASK-01-001-a.md", "# task\n")
-            _write(project / "tasks" / "in-progress" / "TASK-01-002-b.md", "# task\n")
+            _write(project / "tasks" / "in-progress" / "TASK-01-001.md", "# task\n")
+            _write(project / "tasks" / "in-progress" / "TASK-01-002.md", "# task\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 1)
             record = json.loads(proc.stdout.strip())
@@ -272,7 +272,7 @@ class TestPlanAuditArtifactChainBlockers(unittest.TestCase):
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
             # Done task with no artifacts — should not trigger blockers
-            _write(project / "tasks" / "done" / "TASK-01-001-finished.md", "# task\n")
+            _write(project / "tasks" / "done" / "TASK-01-001.md", "# task\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             record = json.loads(proc.stdout.strip())
@@ -291,7 +291,7 @@ class TestPlanAuditReviewOff(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = self._make_review_off_project(root)
-            _write(project / "tasks/in-review/TASK-02-005-thing.md", "# task\n")
+            _write(project / "tasks/in-review/TASK-02-005.md", "# task\n")
             result = _run(str(project), home=root)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         record = json.loads(result.stdout)
@@ -304,7 +304,7 @@ class TestPlanAuditReviewOff(unittest.TestCase):
             root = Path(tmp)
             project = self._make_review_off_project(root)
             _write(
-                project / "tasks/done/TASK-02-006-output.md",
+                project / "tasks/done/TASK-02-006.md",
                 "# task\n\nDeliverable: project:outputs/result.md\n",
             )
             result = _run(str(project), home=root)
@@ -316,7 +316,7 @@ class TestPlanAuditReviewOff(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "open" / "TASK-01-001-waiting.md", "# task\n")
+            _write(project / "tasks" / "open" / "TASK-01-001.md", "# task\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
             record = json.loads(proc.stdout.strip())
@@ -386,7 +386,7 @@ class TestPlanAuditOutput(unittest.TestCase):
             )
             _write(work_root / "scratch.txt", "local changes\n")
             _write(
-                project / "tasks" / "done" / "TASK-01-001-build.md",
+                project / "tasks" / "done" / "TASK-01-001.md",
                 "# task\n\nWork root: tool-repo\nAssignee: coder\n",
             )
 
@@ -461,7 +461,7 @@ class TestPlanAuditOutput(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
-            _write(project / "tasks" / "in-progress" / "TASK-01-001-a.md", "# task\n")
+            _write(project / "tasks" / "in-progress" / "TASK-01-001.md", "# task\n")
             proc = _run(str(project), home=tmp_path)
             self.assertIn("[audit]", proc.stderr)
 
@@ -495,7 +495,7 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
             tmp_path = Path(tmp)
             project, work_root = self._project_with_work_root(tmp_path)
             _write(
-                project / "tasks" / "done" / "TASK-01-001-build.md",
+                project / "tasks" / "done" / "TASK-01-001.md",
                 "# task\n\nWork root: tool-repo\nAssignee: coder\n\nDo the thing.\n",
             )
             _write(work_root / ".github" / "workflows" / "ci.yml", "name: ci\n")
@@ -520,7 +520,7 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
             tmp_path = Path(tmp)
             project, work_root = self._project_with_work_root(tmp_path)
             _write(
-                project / "tasks" / "done" / "TASK-01-001-build.md",
+                project / "tasks" / "done" / "TASK-01-001.md",
                 "# task\n\nWork root: tool-repo\nAssignee: coder\n"
                 "Infra authorized: yes\n",
             )
@@ -541,7 +541,7 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
             tmp_path = Path(tmp)
             project, work_root = self._project_with_work_root(tmp_path)
             _write(
-                project / "tasks" / "in-progress" / "TASK-01-002-ci.md",
+                project / "tasks" / "in-progress" / "TASK-01-002.md",
                 "# task\n\nWork root: tool-repo\nAssignee: coder\n"
                 "Infra authorized: .github\n\n"
                 "Add the release workflow under .github/workflows/.\n",
@@ -571,7 +571,7 @@ class TestPlanAuditInfraArtifacts(unittest.TestCase):
                 tmp_path = Path(tmp)
                 project, work_root = self._project_with_work_root(tmp_path)
                 _write(
-                    project / "tasks" / "done" / "TASK-01-001-build.md",
+                    project / "tasks" / "done" / "TASK-01-001.md",
                     f"# task\n\nWork root: tool-repo\nAssignee: coder\n\n{prose}\n",
                 )
                 _write(work_root / ".github" / "workflows" / "ci.yml", "name: ci\n")
@@ -823,7 +823,7 @@ class TestPlanAuditBacklogInvariants(unittest.TestCase):
                    "# Backlog\n\nHighest id issued: BL-001\n\n## BL-001 — One\n\nA.\n")
             # A durable artifact already stamps BL-001 but the entry is still
             # live: the benign stamp-then-delete crash-window duplicate.
-            _write(project / "tasks" / "open" / "TASK-01-001-x.md",
+            _write(project / "tasks" / "open" / "TASK-01-001.md",
                    "# TASK-01-001: x\n\nPlan ref: BUILD-01-001\nSource: BL-001\n")
             proc = _run(str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)

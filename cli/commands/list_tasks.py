@@ -25,8 +25,8 @@ from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE
 STATUS_ORDER = ("open", "in-progress", "in-review", "done")
 _STATUS_RANK = {s: i for i, s in enumerate(STATUS_ORDER)}
 
-_PHASE_RE = re.compile(r"^PHASE-\d{2}(?:-[a-z0-9][a-z0-9-]*)?$")
-_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
+_PHASE_RE = re.compile(r"^PHASE-\d{2}$")
+_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 
 
 def _stderr(prefix: str, msg: str) -> None:

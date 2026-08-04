@@ -32,6 +32,50 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.10.0 — Canonical identifier-only artifact names
+
+- **Protocol version:** `v0.10.0`
+- **One-line summary:** Removes descriptive governed-artifact and plan-archive names and migrates them to identifier-only names.
+
+#### What changed
+
+Governed artifact filenames now carry identity only. Descriptive suffixes were
+an authoring mistake, not a compatibility contract. Normal lifecycle readers,
+writers, audits, dispatch, state composition, and request-context projection
+accept only the canonical forms documented in `protocol/CONVENTIONS.md`.
+
+The one-time migration renames descriptive phase, task, spec, decision,
+planning-checkpoint prompt/report/review files, and `archive/PLAN-NNN-*`
+directories. It updates Markdown references to the renamed paths and identities
+and fails closed on any source/destination collision. After migration there is
+no legacy reader branch and no scheduled compatibility-removal debt.
+
+#### Applies when
+
+Applies when `[project].project_schema_version` is numerically less than
+`v0.10.0`, or as a partial-repair entry when a prematurely advanced v0.10
+project still contains descriptive governed names.
+
+#### Agent-followable migration steps
+
+1. Run `cartopian apply-migration-entry <project-root> v0.10.0` and resolve any reported naming collision instead of retaining both names.
+2. Run `cartopian migrate-config <project-root> --apply` to advance `[project].project_schema_version` to `v0.10.0` only after the filesystem transform succeeds.
+3. Refresh derived state with `cartopian write-state <project-root>`.
+4. Run `cartopian next-action <project-root>`, `cartopian plan-audit <project-root>`, and readiness validation for the next task.
+
+#### Idempotence guarantee
+
+The migration is a no-op when every governed artifact already has its
+identifier-only name. A partial application is resumable from recorded
+migration provenance; collisions fail before ambiguous content is replaced.
+
+#### Post-migration validation hint
+
+No file in the live `phases/`, `tasks/`, `specs/`, `decisions/`, `prompts/`,
+`reports/`, or `reviews/` surfaces may carry descriptive text after its
+protocol identifier. `next-action` must resolve `PHASE-NN.md` directly, and
+`plan-audit` must be clean.
+
 ### v0.9.0 — Up-front operator request review evidence
 
 - **Protocol version:** `v0.9.0`

@@ -4,8 +4,7 @@ Deletes a report file that lives under a registered project's ``reports/``
 directory and emits one NDJSON confirmation record. Filename must match the
 Cartopian report grammar: ``REPORT-NN-NNN.md`` (task completion),
 ``REPORT-NN-NNN-review.md`` (task-review completion), or
-``REPORT-PLAN-NNN[-kebab-slug].md`` (planning-checkpoint reports carry an
-operator-authored slug per CONVENTIONS.md).
+``REPORT-PLAN-NNN.md``.
 
 It also removes the transient companion files that a handoff leaves next to
 its report:
@@ -127,7 +126,7 @@ def handler(args: argparse.Namespace) -> int:
         _stderr(
             "guard",
             f"report filename does not match REPORT-NN-NNN.md, "
-            f"REPORT-NN-NNN-review.md, or REPORT-PLAN-NNN[-slug].md grammar: "
+            f"REPORT-NN-NNN-review.md, or REPORT-PLAN-NNN.md grammar: "
             f"{report_path.name}",
         )
         return EXIT_FAIL

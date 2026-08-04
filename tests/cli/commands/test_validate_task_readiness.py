@@ -47,8 +47,8 @@ def _make_project(root: Path, *, work_roots=None, plan_refs=("BUILD-01-007",)):
         mapping = "\n".join(f'{n} = "/tmp/{n}-dir"' for n in work_roots)
         _write(root / "cartopian.local.toml", f"[work_roots]\n{mapping}\n")
     _write(
-        root / "phases" / "PHASE-01-substrate-build.md",
-        "# PHASE-01-substrate-build\n",
+        root / "phases" / "PHASE-01.md",
+        "# PHASE-01\n",
     )
     _write(
         root / "IMPLEMENTATION_PLAN.md",
@@ -60,7 +60,7 @@ def _make_project(root: Path, *, work_roots=None, plan_refs=("BUILD-01-007",)):
 
 def _task_body(
     *,
-    phase="PHASE-01-substrate-build",
+    phase="PHASE-01",
     plan_ref="BUILD-01-007",
     work_root=None,
     blocked_by=None,
@@ -151,7 +151,7 @@ class TestHappyPath(unittest.TestCase):
     def test_well_formed_task_validates_ready_true(self):
         with _Sandbox() as sb:
             sb.make()
-            task = sb.write_task("TASK-01-007-x.md", _task_body())
+            task = sb.write_task("TASK-01-007.md", _task_body())
             result = _run(str(task), home=sb.home)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertEqual(result.stderr, "")
@@ -173,8 +173,8 @@ class TestPhaseExistsFails(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
-                _task_body(phase="PHASE-99-missing"),
+                "TASK-01-007.md",
+                _task_body(phase="PHASE-99"),
             )
             result = _run(str(task), home=sb.home)
         self.assertEqual(result.returncode, 1)
@@ -191,7 +191,7 @@ class TestPlanRefExistsFails(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(plan_ref="P99-MISSING-000"),
             )
             result = _run(str(task), home=sb.home)
@@ -209,12 +209,12 @@ class TestBlockedByComplete(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             sb.write_task(
-                "TASK-01-099-other.md",
+                "TASK-01-099.md",
                 _task_body(),
                 status="open",
             )
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(blocked_by="TASK-01-099"),
             )
             result = _run(str(task), home=sb.home)
@@ -230,12 +230,12 @@ class TestBlockedByComplete(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             sb.write_task(
-                "TASK-01-099-other.md",
+                "TASK-01-099.md",
                 _task_body(),
                 status="done",
             )
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(blocked_by="TASK-01-099"),
             )
             result = _run(str(task), home=sb.home)
@@ -252,7 +252,7 @@ class TestBlockedByComplete(unittest.TestCase):
                 with _Sandbox() as sb:
                     sb.make()
                     task = sb.write_task(
-                        "TASK-01-007-x.md",
+                        "TASK-01-007.md",
                         _task_body(blocked_by=sentinel),
                     )
                     result = _run(str(task), home=sb.home)
@@ -270,7 +270,7 @@ class TestEvidenceGateValid(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(evidence_gate="required"),
             )
             result = _run(str(task), home=sb.home)
@@ -283,7 +283,7 @@ class TestEvidenceGateValid(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(use_legacy_test_gate=True, evidence_gate="required"),
             )
             result = _run(str(task), home=sb.home)
@@ -296,7 +296,7 @@ class TestEvidenceGateValid(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(evidence_gate="maybe"),
             )
             result = _run(str(task), home=sb.home)
@@ -313,7 +313,7 @@ class TestAcceptancePresent(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(include_acceptance_header=False),
             )
             result = _run(str(task), home=sb.home)
@@ -328,7 +328,7 @@ class TestAcceptancePresent(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(
                     acceptance_items=("Just prose, no checkbox.",),
                 ),
@@ -345,7 +345,7 @@ class TestWorkRootNamesValidUnknown(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(work_root="foo"),
             )
             result = _run(str(task), home=sb.home)
@@ -399,7 +399,7 @@ class TestWorkRootNamesValidMultiValued(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make(work_roots=["alpha", "beta"])
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(work_root="alpha, beta"),
             )
             result = _run(str(task), home=sb.home)
@@ -416,7 +416,7 @@ class TestWorkRootSkipCases(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(work_root="n/a"),
             )
             result = _run(str(task), home=sb.home)
@@ -429,7 +429,7 @@ class TestWorkRootSkipCases(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(work_root=""),
             )
             result = _run(str(task), home=sb.home)
@@ -442,7 +442,7 @@ class TestWorkRootSkipCases(unittest.TestCase):
         with _Sandbox() as sb:
             sb.make()
             task = sb.write_task(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 _task_body(omit_work_root_line=True),
             )
             result = _run(str(task), home=sb.home)
@@ -456,7 +456,7 @@ class TestMissingTaskFile(unittest.TestCase):
     def test_missing_file_exits_fail_with_no_record(self):
         with _Sandbox() as sb:
             sb.make()
-            missing = sb.project / "tasks" / "open" / "TASK-01-007-x.md"
+            missing = sb.project / "tasks" / "open" / "TASK-01-007.md"
             result = _run(str(missing), home=sb.home)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
@@ -467,16 +467,16 @@ class TestRelativePathRejected(unittest.TestCase):
     def test_relative_task_path_exits_usage(self):
         with _Sandbox() as sb:
             sb.make()
-            sb.write_task("TASK-01-007-x.md", _task_body())
+            sb.write_task("TASK-01-007.md", _task_body())
             result = _run(
-                "TASK-01-007-x.md",
+                "TASK-01-007.md",
                 home=sb.home,
                 cwd=sb.project / "tasks" / "open",
             )
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
         self.assertIn(
-            "[usage] task_path must be an absolute path; got: TASK-01-007-x.md",
+            "[usage] task_path must be an absolute path; got: TASK-01-007.md",
             result.stderr,
         )
 
@@ -485,7 +485,7 @@ class TestDeterminism(unittest.TestCase):
     def test_same_fixture_byte_equal_stdout(self):
         with _Sandbox() as sb:
             sb.make()
-            task = sb.write_task("TASK-01-007-x.md", _task_body())
+            task = sb.write_task("TASK-01-007.md", _task_body())
             first = _run(str(task), home=sb.home)
             second = _run(str(task), home=sb.home)
         self.assertEqual(first.returncode, 0, msg=first.stderr)
@@ -497,7 +497,7 @@ class TestCheckOrdering(unittest.TestCase):
     def test_checks_in_spec_locked_order(self):
         with _Sandbox() as sb:
             sb.make()
-            task = sb.write_task("TASK-01-007-x.md", _task_body())
+            task = sb.write_task("TASK-01-007.md", _task_body())
             result = _run(str(task), home=sb.home)
         record = _parse_single_record(result)
         self.assertEqual(

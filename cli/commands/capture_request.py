@@ -63,7 +63,7 @@ def _unit(raw: str) -> GovernedUnit:
     kind, sep, identifier = raw.partition(":")
     if not sep or kind not in ("planning", "task"):
         raise ValueError("--unit must be project, planning:PLAN-NNN, or task:TASK-NN-NNN")
-    grammar = r"PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?" if kind == "planning" else r"TASK-\d{2}-\d{3}"
+    grammar = r"PLAN-\d{3}" if kind == "planning" else r"TASK-\d{2}-\d{3}"
     if re.fullmatch(grammar, identifier) is None:
         raise ValueError(f"invalid {kind} unit id: {identifier!r}")
     return GovernedUnit(kind, identifier)

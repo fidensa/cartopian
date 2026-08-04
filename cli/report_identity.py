@@ -12,7 +12,7 @@ The contract:
   ``REPORT-NN-NNN-review.md``. The completion report is preserved, unmodified,
   for the reviewer to read directly; neither artifact can satisfy the other's
   completion signal.
-- Planning-checkpoint reviews keep ``REPORT-PLAN-NNN[-slug].md`` unchanged.
+- Planning-checkpoint reviews use ``REPORT-PLAN-NNN.md``.
 
 Standard library only (NF-001).
 """
@@ -34,12 +34,12 @@ NN_NNN_RE = re.compile(r"^\d{2}-\d{3}$")
 TASK_COMPLETION_REPORT_RE = re.compile(r"^REPORT-(\d{2}-\d{3})\.md$")
 TASK_REVIEW_REPORT_RE = re.compile(r"^REPORT-(\d{2}-\d{3})-review\.md$")
 PLANNING_REVIEW_REPORT_RE = re.compile(
-    r"^REPORT-(PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)\.md$"
+    r"^REPORT-(PLAN-\d{3})\.md$"
 )
 
 # The complete report-filename grammar (cleanup and validation surfaces).
 REPORT_FILENAME_RE = re.compile(
-    r"^REPORT-(?:\d{2}-\d{3}(?:-review)?|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)\.md$"
+    r"^REPORT-(?:\d{2}-\d{3}(?:-review)?|PLAN-\d{3})\.md$"
 )
 
 
@@ -58,7 +58,7 @@ def review_report_name(nn_nnn: str) -> str:
 
 
 def completion_report_path(project_root: Path, nn_nnn: str) -> Path:
-    """The task-completion report slot (compatibility path)."""
+    """The task-completion report slot."""
     return Path(project_root) / "reports" / completion_report_name(nn_nnn)
 
 

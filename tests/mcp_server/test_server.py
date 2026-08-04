@@ -400,7 +400,7 @@ class TestToolSurface(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
-            task = project / "tasks" / "in-progress" / "TASK-01-001-demo.md"
+            task = project / "tasks" / "in-progress" / "TASK-01-001.md"
             report = project / "reports" / "REPORT-01-001.md"
             (project / "phases").mkdir(parents=True)
             task.parent.mkdir(parents=True)
@@ -411,7 +411,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.9.0"\n'
+                'project_schema_version = "v0.10.0"\n'
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
@@ -430,7 +430,7 @@ class TestToolSurface(unittest.TestCase):
             )
             task.write_text(
                 "# TASK-01-001: Demo\n\n"
-                "Phase: PHASE-01-demo\n"
+                "Phase: PHASE-01\n"
                 "Work root: n/a\n",
                 encoding="utf-8",
             )
@@ -519,7 +519,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.9.0"\n'
+                'project_schema_version = "v0.10.0"\n'
                 "unknown = true\n",
                 encoding="utf-8",
             )
@@ -548,7 +548,7 @@ class TestToolSurface(unittest.TestCase):
 
     def test_move_task_invalid_status_preserves_fr014_usage_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
-            task = Path(tmp) / "project" / "tasks" / "open" / "TASK-01-001-demo.md"
+            task = Path(tmp) / "project" / "tasks" / "open" / "TASK-01-001.md"
             task.parent.mkdir(parents=True, exist_ok=True)
             task.write_text("# task\n", encoding="utf-8")
             response = single("tools/call", {

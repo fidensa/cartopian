@@ -136,9 +136,9 @@ intent never changes the request's intent class.
 - Decisions: `DEC-NNN.md`. `NNN` is a project-local counter within `decisions/`.
 
 Artifact names carry identity only. Human-readable descriptions belong in the
-artifact heading and index metadata, never in a filename. Readers retain
-compatibility with older descriptive filenames, but mediated writers create
-and update only the identifier-only form.
+artifact heading and index metadata, never in a filename. Descriptive
+filenames are invalid after the `v0.10.0` project migration; normal lifecycle
+surfaces do not retain a legacy reader path.
 
 ### Trace Chain
 
@@ -321,7 +321,7 @@ Operator request quote for: project:project
 ```
 
 The value is exactly one governed unit: `project:project`,
-`planning:PLAN-NNN[-slug]`, or `task:TASK-NN-NNN`. The unit-bearing marker makes
+`planning:PLAN-NNN`, or `task:TASK-NN-NNN`. The unit-bearing marker makes
 a decision self-selecting and lets a fresh project establish exact evidence
 before requirements exist. Malformed or ambiguous markers fail closed.
 Ordinary block quotes, loosely adjacent PM attribution, and ordinary plan,

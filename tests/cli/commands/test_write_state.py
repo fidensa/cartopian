@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
 )
 
 
@@ -47,16 +47,16 @@ class _PlannedFixture(unittest.TestCase):
         self.addCleanup(self.scaffold.cleanup)
         self.root = str(self.scaffold.project_root)
         self.scaffold.write(
-            "phases/PHASE-01-foundation.md",
-            "# PHASE-01-foundation: Foundation\n",
+            "phases/PHASE-01.md",
+            "# PHASE-01: Foundation\n",
         )
         self.scaffold.write(
-            "tasks/in-progress/TASK-01-001-build.md",
-            "# TASK-01-001: Build\n\nPhase: PHASE-01-foundation\n",
+            "tasks/in-progress/TASK-01-001.md",
+            "# TASK-01-001: Build\n\nPhase: PHASE-01\n",
         )
         self.scaffold.write(
-            "tasks/open/TASK-01-002-polish.md",
-            "# TASK-01-002: Polish\n\nPhase: PHASE-01-foundation\n",
+            "tasks/open/TASK-01-002.md",
+            "# TASK-01-002: Polish\n\nPhase: PHASE-01\n",
         )
 
     def state_text(self) -> str:

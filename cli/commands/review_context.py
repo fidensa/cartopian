@@ -18,7 +18,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("project_root", help="Absolute path to the Cartopian project root")
     parser.add_argument("--review-kind", required=True, choices=list(REVIEW_KINDS))
     parser.add_argument("--task", default=None, help="Absolute task path for task-closure")
-    parser.add_argument("--checkpoint", default=None, help="PLAN-NNN[-slug] for planning")
+    parser.add_argument("--checkpoint", default=None, help="PLAN-NNN for planning")
     parser.add_argument("--phase", default=None, help="Optional PHASE-NN target metadata")
     parser.add_argument("--plan-ref", default=None, help="Optional KIND-NN-NNN target metadata")
     parser.add_argument("--prompt", default=None, help="Absolute review prompt path for binding preflight")
@@ -46,7 +46,7 @@ def handler(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         task = Path(args.task).resolve()
     elif not args.checkpoint or not CHECKPOINT_ID_RE.fullmatch(args.checkpoint):
-        stderr_usage("--checkpoint must match PLAN-NNN[-slug] for planning")
+        stderr_usage("--checkpoint must match PLAN-NNN for planning")
         return EXIT_USAGE
     prompt: Optional[Path] = Path(args.prompt) if args.prompt else None
     prompt_text: Optional[str] = None

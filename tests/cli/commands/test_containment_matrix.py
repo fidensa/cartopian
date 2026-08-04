@@ -27,7 +27,7 @@ _ACTIVATED_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     "\n"
     "[roles.coder]\n"
     'description = "Implements tasks per spec."\n'
@@ -38,7 +38,7 @@ _UNGATED_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     "\n"
     "[roles.pm]\n"
     'description = "Plans the work."\n'

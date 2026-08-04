@@ -8,8 +8,8 @@ from cli.deidentify import IDENTIFIER_RE
 class TestIdentifierRegex(unittest.TestCase):
     def test_matches_each_family(self):
         for token in (
-            "TASK-01-002", "SPEC-12-300", "PHASE-01-build-x",
-            "PROMPT-01-002", "PROMPT-PLAN-003", "PROMPT-PLAN-003-slug",
+            "TASK-01-002", "SPEC-12-300", "PHASE-01",
+            "PROMPT-01-002", "PROMPT-PLAN-003",
             "REVIEW-01-002", "REVIEW-PLAN-003", "REPORT-01-002",
             "REPORT-01-002-review",
             "DEC-001", "BL-007", "RM-002", "FR-003", "NF-010",
@@ -20,6 +20,10 @@ class TestIdentifierRegex(unittest.TestCase):
     def test_substring_and_boundary_safety(self):
         # Longer tokens / word-joined forms must NOT match.
         for text in ("TASK-01-0024", "xFR-001", "FR-001x", "DECODE-001", "aDEC-001"):
+            self.assertEqual(IDENTIFIER_RE.findall(text), [], text)
+
+    def test_retired_descriptive_identifiers_do_not_partially_match(self):
+        for text in ("PHASE-01-build", "PROMPT-PLAN-003-slug"):
             self.assertEqual(IDENTIFIER_RE.findall(text), [], text)
 
 

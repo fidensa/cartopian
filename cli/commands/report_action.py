@@ -16,7 +16,7 @@ from cli.commands.resolve_config import (
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
-_TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})(?:-[^/]*)?\.md$")
+_TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})\.md$")
 _TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 _TASK_READY_SECTION_RE = re.compile(
     r"^##\s+(?:Ready to close|Ready for review)\s*$(.*?)(?=^##\s|\Z)",

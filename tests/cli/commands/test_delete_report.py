@@ -72,9 +72,7 @@ class TestDeleteReportHappyPath(unittest.TestCase):
             rec = json.loads(proc.stdout.strip())
             self.assertEqual(rec["action"], "delete-report")
 
-    def test_planning_variant_with_slug_suffix_accepted(self):
-        # CONVENTIONS.md names planning-checkpoint reports
-        # REPORT-PLAN-NNN-slug.md; the deleter must accept that canonical form.
+    def test_planning_variant_with_slug_suffix_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             home = tmp_path / "home"
@@ -86,11 +84,10 @@ class TestDeleteReportHappyPath(unittest.TestCase):
             report.write_text("# report\n", encoding="utf-8")
 
             proc = _run(str(report), home=home)
-            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
-            rec = json.loads(proc.stdout.strip())
-            self.assertEqual(rec["action"], "delete-report")
-            self.assertEqual(rec["details"]["deleted_path"], str(report))
-            self.assertFalse(report.exists())
+            self.assertEqual(proc.returncode, 1)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("[guard]", proc.stderr)
+            self.assertTrue(report.exists())
 
 
 class TestDeleteReportGuards(unittest.TestCase):

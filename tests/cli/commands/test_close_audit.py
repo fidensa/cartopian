@@ -16,7 +16,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
 )
 
 
@@ -46,15 +46,15 @@ class TestCloseAuditRequiredFields(unittest.TestCase):
     def test_all_schema_fields_present_for_closable_project(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "phases/PHASE-01-foundation.md",
+                "phases/PHASE-01.md",
                 (
-                    "# PHASE-01-foundation: Foundation\n\n"
+                    "# PHASE-01: Foundation\n\n"
                     "## Exit criteria\n\n"
                     "- `TASK-01-001`\n"
                 ),
             )
             scaffold.write(
-                "tasks/done/TASK-01-001-finished.md",
+                "tasks/done/TASK-01-001.md",
                 "# TASK-01-001: finished\n",
             )
 
@@ -116,15 +116,15 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
     def test_active_tasks_block_closeout_and_counts_are_reported_by_status(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             open_task = scaffold.write(
-                "tasks/open/TASK-01-002-open-work.md",
+                "tasks/open/TASK-01-002.md",
                 "# TASK-01-002: open work\n",
             )
             in_progress_task = scaffold.write(
-                "tasks/in-progress/TASK-01-003-active-work.md",
+                "tasks/in-progress/TASK-01-003.md",
                 "# TASK-01-003: active work\n",
             )
             in_review_task = scaffold.write(
-                "tasks/in-review/TASK-01-004-review-work.md",
+                "tasks/in-review/TASK-01-004.md",
                 "# TASK-01-004: review work\n",
             )
 
@@ -188,7 +188,7 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
     def test_prompt_with_only_open_task_is_stale(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "tasks/open/TASK-01-005-not-started.md",
+                "tasks/open/TASK-01-005.md",
                 "# TASK-01-005: not started\n",
             )
             prompt_path = scaffold.write(
@@ -234,16 +234,16 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
     def test_unmet_exit_criteria_blocks_closeout(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "phases/PHASE-02-closeout.md",
+                "phases/PHASE-02.md",
                 (
-                    "# PHASE-02-closeout: Closeout\n\n"
+                    "# PHASE-02: Closeout\n\n"
                     "## Exit criteria\n\n"
                     "- `TASK-02-001`\n"
                     "- `DEC-002`\n"
                 ),
             )
             scaffold.write(
-                "tasks/done/TASK-02-001-finished.md",
+                "tasks/done/TASK-02-001.md",
                 "# TASK-02-001: finished\n",
             )
 
@@ -280,15 +280,15 @@ class TestCloseAuditReadOnlyInvariant(unittest.TestCase):
     def test_no_files_created_or_modified(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "phases/PHASE-01-foundation.md",
+                "phases/PHASE-01.md",
                 (
-                    "# PHASE-01-foundation: Foundation\n\n"
+                    "# PHASE-01: Foundation\n\n"
                     "## Exit criteria\n\n"
                     "- `TASK-01-001`\n"
                 ),
             )
             scaffold.write(
-                "tasks/done/TASK-01-001-finished.md",
+                "tasks/done/TASK-01-001.md",
                 "# TASK-01-001: finished\n",
             )
             before = {

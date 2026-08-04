@@ -115,11 +115,11 @@ class TestFr004Smoke(unittest.TestCase):
             self.assertEqual(discover_rec["id"], "smoke-demo")
 
             # validate-task-readiness — seed a minimal task and validate
-            task_path = project / "tasks" / "open" / "TASK-99-999-smoke.md"
+            task_path = project / "tasks" / "open" / "TASK-99-999.md"
             task_body = (
                 "# TASK-99-999: smoke fixture\n"
                 "\n"
-                "Phase: PHASE-99-smoke\n"
+                "Phase: PHASE-99\n"
                 "Plan ref: P99-SMOKE-001\n"
                 "Work root: n/a\n"
                 "Evidence gate: n/a\n"
@@ -130,8 +130,8 @@ class TestFr004Smoke(unittest.TestCase):
             )
             task_path.write_text(task_body, encoding="utf-8")
             # Seed the phase + plan-ref so validation passes the file checks.
-            (project / "phases" / "PHASE-99-smoke.md").write_text(
-                "# PHASE-99-smoke\n", encoding="utf-8",
+            (project / "phases" / "PHASE-99.md").write_text(
+                "# PHASE-99\n", encoding="utf-8",
             )
             (project / "IMPLEMENTATION_PLAN.md").write_text(
                 "P99-SMOKE-001\n", encoding="utf-8",
@@ -219,7 +219,7 @@ class TestFr004Smoke(unittest.TestCase):
             listing = _run_cli(
                 "list-tasks",
                 "--project", "smoke-demo",
-                "--phase", "PHASE-99-smoke",
+                "--phase", "PHASE-99",
                 "--status", "in-progress",
                 home=home,
             )
@@ -228,7 +228,7 @@ class TestFr004Smoke(unittest.TestCase):
             self.assertEqual(len(list_lines), 1)
             list_rec = json.loads(list_lines[0])
             self.assertEqual(list_rec["task_id"], "TASK-99-999")
-            self.assertEqual(list_rec["phase"], "PHASE-99-smoke")
+            self.assertEqual(list_rec["phase"], "PHASE-99")
             self.assertEqual(list_rec["status"], "in-progress")
 
             # delete-prompt — seed a prompt then delete it

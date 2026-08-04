@@ -34,7 +34,11 @@ PHASE_CANONICAL_ID_RE = re.compile(r"^PHASE-\d{2}$")
 
 
 def identifier_files(directory: Path, identifier: str) -> list[Path]:
-    """Return canonical and legacy descriptive files for one identifier."""
+    """Return files claiming an identifier, including invalid pre-migration names.
+
+    Writers use the broader match only to fail with a migration-required
+    diagnostic; lifecycle readers do not consume descriptive names.
+    """
     if not directory.is_dir():
         return []
     return [
@@ -49,7 +53,7 @@ def identifier_files(directory: Path, identifier: str) -> list[Path]:
 DEC_ID_RE = re.compile(r"^DEC-\d{3}$")
 BL_ID_RE = re.compile(r"^BL-\d{3}$")
 PROMPT_ID_RE = re.compile(
-    r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?)$"
+    r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})$"
 )
 PROMPT_CANONICAL_ID_RE = re.compile(r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

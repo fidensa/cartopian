@@ -2,8 +2,8 @@
 
 Structured writer for task files. A task id lives in exactly one status
 directory (``tasks/{open,in-progress,in-review,done}/``); re-issuing this
-writer for an existing id updates that file in place wherever it lives and
-normalizes its name to the identifier-only form. Only a genuinely new
+writer for an existing id updates that canonical file in place wherever it
+lives. Only a genuinely new
 id creates a file — in ``tasks/open/``, the lifecycle entry point
 (``move-task`` advances it from there). A pre-existing multi-directory
 collision is refused fail-closed, naming every colliding path. The PM
@@ -11,7 +11,6 @@ supplies the id, not a path; the destination subtree is the
 allowlisted ``task`` dest_kind.
 """
 import argparse
-import os
 from pathlib import Path
 from typing import List, Union
 
@@ -72,11 +71,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 def _find_task_files(project_root: Path, task_id: str) -> List[Path]:
     """Every task file carrying ``task_id`` across the four status directories.
 
-    A file carries the id when its stem is the id itself or the id followed by
-    a ``-slug`` suffix (the ``TASK-NN-NNN[-slug].md`` grammar move-task
-    accepts); plain prefix matching would conflate an id with any longer id
-    that starts with the same characters, the way ``item-1`` prefixes
-    ``item-10``.
+    The broader scan detects invalid pre-migration names so the writer can
+    refuse rather than create a canonical duplicate. Normal task readers use
+    the canonical filename only.
     """
     matches: List[Path] = []
     for status in STATUSES:
@@ -142,6 +139,12 @@ def handler(args: argparse.Namespace) -> int:
             + ", ".join(str(p) for p in matches),
         )
         return _writers.EXIT_FAIL
+    if matches and matches[0].name != filename:
+        _writers.stderr(
+            "guard",
+            f"artifact-name-migration-required: {matches[0]} must be migrated to {filename}",
+        )
+        return _writers.EXIT_FAIL
 
     # Prospective plan-ref numbering contract: once the reviewed correction is
     # carried by an installed operator-owned tag and proven active, a newly
@@ -163,26 +166,13 @@ def handler(args: argparse.Namespace) -> int:
         return _writers.EXIT_FAIL
 
     if matches:
-        # Exactly one — update in place in its current status directory. A
-        # A legacy descriptive name is normalized within that directory first (one file before,
-        # one file after), so the mediated write and its provenance record
-        # land on the actual path.
+        # Exactly one canonical file — update it in its current status directory.
         existing = matches[0]
         status = existing.parent.name
-        renamed_from = None
-        if existing.name != filename:
-            target = existing.parent / filename
-            try:
-                os.rename(existing, target)
-            except OSError as exc:
-                _writers.stderr("error", f"rename failed: {exc}")
-                return _writers.EXIT_FAIL
-            renamed_from = existing
         relative_target = f"{status}/{filename}"
     else:
         # Genuinely new id — lifecycle entry point.
         status = "open"
-        renamed_from = None
         relative_target = f"open/{filename}"
 
     extra_details = {"task_id": task_id, "status": status}
@@ -196,13 +186,6 @@ def handler(args: argparse.Namespace) -> int:
         content=content,
         extra_details=extra_details,
     )
-    if code != _writers.EXIT_OK and renamed_from is not None:
-        # The write was refused after filename normalization; restore the original
-        # filename so a refusal leaves the tree unchanged (best-effort).
-        try:
-            os.rename(renamed_from.parent / filename, renamed_from)
-        except OSError:
-            pass
     if code == _writers.EXIT_OK and creating and numbering_state["active"]:
         # Future-authoring boundary record: exactly the tasks created under
         # the active contract are re-verified by readiness and plan audit.

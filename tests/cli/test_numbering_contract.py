@@ -62,7 +62,7 @@ def _inactive_state():
     return state
 
 
-def _task_body(plan_ref, phase="PHASE-01-fixture"):
+def _task_body(plan_ref, phase="PHASE-01"):
     return (
         "# Task fixture\n"
         "\n"
@@ -110,7 +110,7 @@ def _readiness_check(project: Path, task_path: Path):
     return _check_plan_ref_aligned(project, task_path, headers)
 
 
-def _write_phase_file(project: Path, refs, phase="PHASE-01-fixture"):
+def _write_phase_file(project: Path, refs, phase="PHASE-01"):
     phases = project / "phases"
     phases.mkdir(exist_ok=True)
     body = "# Phase fixture\n\n" + "".join(f"- `{ref}` — item\n" for ref in refs)
@@ -175,16 +175,16 @@ class TestClassifyBinding(unittest.TestCase):
         # The three identities — task id, plan ref, declared Phase: header —
         # must name one phase for newly governed work.
         aligned = nc.classify_binding(
-            "TASK-01-002", "BUILD-01-002", "PHASE-01-fixture"
+            "TASK-01-002", "BUILD-01-002", "PHASE-01"
         )
         self.assertEqual(aligned["classification"], "valid")
         self.assertFalse(aligned["blocking"])
         mismatch = nc.classify_binding(
-            "TASK-01-002", "BUILD-01-002", "PHASE-02-other"
+            "TASK-01-002", "BUILD-01-002", "PHASE-02"
         )
         self.assertEqual(mismatch["classification"], "phase-header-mismatch")
         self.assertTrue(mismatch["blocking"])
-        self.assertIn("PHASE-02-other", mismatch["detail"])
+        self.assertIn("PHASE-02", mismatch["detail"])
         malformed = nc.classify_binding(
             "TASK-01-002", "BUILD-01-002", "Phase One"
         )
@@ -370,7 +370,7 @@ class TestMediatedAuthoring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             # A pre-activation, hand-preserved task already owns the ref.
-            (project / "tasks" / "done" / "TASK-01-009-old.md").write_text(
+            (project / "tasks" / "done" / "TASK-01-009.md").write_text(
                 _task_body("BUILD-01-004"), encoding="utf-8"
             )
             with mock.patch.object(
@@ -398,11 +398,11 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-004",
                     "foreign-phase",
-                    _task_body("BUILD-01-004", phase="PHASE-02-other"),
+                    _task_body("BUILD-01-004", phase="PHASE-02"),
                 )
             self.assertEqual(code, 1)
             self.assertIn("phase-header-mismatch", stderr)
-            self.assertIn("PHASE-02-other", stderr)
+            self.assertIn("PHASE-02", stderr)
             self.assertEqual(
                 list((project / "tasks" / "open").iterdir()), []
             )
@@ -440,13 +440,13 @@ class TestMediatedAuthoring(unittest.TestCase):
             self.assertEqual(reused, 1)
             self.assertIn("plan-ref-reused", stderr)
 
-    def test_pre_activation_task_updates_pass_untouched(self):
+    def test_existing_canonical_task_updates_pass_untouched(self):
         # An existing mismatched pair is preserved history, not new work:
         # updating its body under the active contract must not retrofit it.
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             existing = (
-                project / "tasks" / "in-progress" / "TASK-01-010-old.md"
+                project / "tasks" / "in-progress" / "TASK-01-010.md"
             )
             existing.write_text(
                 _task_body("BUILD-01-007"), encoding="utf-8"
@@ -461,10 +461,9 @@ class TestMediatedAuthoring(unittest.TestCase):
                     _task_body("BUILD-01-007") + "\nUpdated.\n",
                 )
             self.assertEqual(code, 0, stderr)
-            normalized = existing.parent / "TASK-01-010.md"
             self.assertIn(
                 "Plan ref: BUILD-01-007",
-                normalized.read_text(encoding="utf-8"),
+                existing.read_text(encoding="utf-8"),
             )
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
@@ -541,10 +540,10 @@ class TestReadinessAndAudit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
             _write_phase_file(
-                project, ["BUILD-02-001"], phase="PHASE-02-other"
+                project, ["BUILD-02-001"], phase="PHASE-02"
             )
             task.write_text(
-                _task_body("RESEARCH-01-001", phase="PHASE-02-other"),
+                _task_body("RESEARCH-01-001", phase="PHASE-02"),
                 encoding="utf-8",
             )
             with mock.patch.object(
@@ -553,7 +552,7 @@ class TestReadinessAndAudit(unittest.TestCase):
                 check = _readiness_check(project, task)
                 blockers, _state = _check_numbering_contract(project)
             self.assertFalse(check["pass"])
-            self.assertIn("PHASE-02-other", check["reason"])
+            self.assertIn("PHASE-02", check["reason"])
             self.assertEqual(len(blockers), 1)
             self.assertEqual(blockers[0]["kind"], "phase-header-mismatch")
 
@@ -571,13 +570,13 @@ class TestReadinessAndAudit(unittest.TestCase):
     def test_readiness_blocks_when_the_declared_phase_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
-            (project / "phases" / "PHASE-01-fixture.md").unlink()
+            (project / "phases" / "PHASE-01.md").unlink()
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
                 check = _readiness_check(project, task)
             self.assertFalse(check["pass"])
-            self.assertIn("phases/PHASE-01-fixture.md", check["reason"])
+            self.assertIn("phases/PHASE-01.md", check["reason"])
 
     def test_rewritten_governed_task_keeps_independent_counters_valid(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -613,7 +612,7 @@ class TestReadinessAndAudit(unittest.TestCase):
     def test_pre_activation_mismatches_are_never_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
-            task = project / "tasks" / "in-progress" / "TASK-01-010-old.md"
+            task = project / "tasks" / "in-progress" / "TASK-01-010.md"
             task.write_text(_task_body("BUILD-01-007"), encoding="utf-8")
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
@@ -647,10 +646,10 @@ class TestReadinessAndAudit(unittest.TestCase):
             project, task = self._governed_project(Path(tmp))
             # A hand-written task binding the governed task's ref.
             (
-                project / "tasks" / "done" / "TASK-01-011-dupe.md"
+                project / "tasks" / "done" / "TASK-01-011.md"
             ).write_text(_task_body("RESEARCH-01-001"), encoding="utf-8")
             # Two purely pre-activation tasks sharing a ref stay history.
-            for name in ("TASK-01-012-a.md", "TASK-01-013-b.md"):
+            for name in ("TASK-01-012.md", "TASK-01-013.md"):
                 (project / "tasks" / "done" / name).write_text(
                     _task_body("BUILD-01-020"), encoding="utf-8"
                 )
@@ -715,7 +714,7 @@ class TestKindLocalCounters(unittest.TestCase):
             _write_phase_file(
                 project,
                 ["BUILD-04-001", "TEST-04-001"],
-                phase="PHASE-04-fixture",
+                phase="PHASE-04",
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
@@ -724,14 +723,14 @@ class TestKindLocalCounters(unittest.TestCase):
                     project,
                     "TASK-04-001",
                     "build",
-                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
+                    _task_body("BUILD-04-001", phase="PHASE-04"),
                 )
                 self.assertEqual(first, 0, stderr)
                 second, stderr = _write_task(
                     project,
                     "TASK-04-002",
                     "test",
-                    _task_body("TEST-04-001", phase="PHASE-04-fixture"),
+                    _task_body("TEST-04-001", phase="PHASE-04"),
                 )
                 self.assertEqual(second, 0, stderr)
                 blockers, _state = _check_numbering_contract(project)
@@ -751,14 +750,14 @@ class TestKindLocalCounters(unittest.TestCase):
                     project,
                     "TASK-04-001",
                     "first",
-                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
+                    _task_body("BUILD-04-001", phase="PHASE-04"),
                 )
                 self.assertEqual(first, 0, stderr)
                 second, stderr = _write_task(
                     project,
                     "TASK-04-002",
                     "reuse",
-                    _task_body("BUILD-04-001", phase="PHASE-04-fixture"),
+                    _task_body("BUILD-04-001", phase="PHASE-04"),
                 )
             self.assertEqual(second, 1)
             self.assertIn("plan-ref-reused", stderr)
@@ -768,7 +767,7 @@ _TOML_PROJECT = (
     "[project]\n"
     'id = "numbering-fixture"\n'
     'name = "Numbering Fixture"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     "work_roots = []\n"
 )
 

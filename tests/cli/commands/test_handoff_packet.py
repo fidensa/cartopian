@@ -21,7 +21,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles.coder]\n"
@@ -88,10 +88,10 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 f"[work_roots]\ntool-repo = \"{work_root}\"\n",
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-002-example.md",
+                "tasks/open/TASK-01-002.md",
                 (
                     "# TASK-01-002: Example\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "Plan ref: n/a\n"
                     "Work root: tool-repo\n"
                     "Assignee: coder\n"
@@ -180,7 +180,7 @@ class TestHandoffPacketProjectGuardParity(unittest.TestCase):
             cartopian_toml="[defaults]\ngit_versioning = false\n"
         ) as scaffold:
             task_path = scaffold.write(
-                "tasks/open/TASK-01-099-workspace-config.md",
+                "tasks/open/TASK-01-099.md",
                 "# TASK-01-099: Workspace config\n",
             )
             stdout, stderr, rc = _invoke(str(task_path), "coder")
@@ -206,7 +206,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'project_schema_version = "v0.9.0"\n'
+        'project_schema_version = "v0.10.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
@@ -220,7 +220,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             # fallback in _find_project_root.
             (scaffold.project_root / "phases").rmdir()
             task_path = scaffold.write(
-                "tasks/open/TASK-09-007-no-plan.md",
+                "tasks/open/TASK-09-007.md",
                 "# TASK-09-007: No Plan\n",
             )
 
@@ -283,7 +283,7 @@ class TestHandoffPacketGitOperatingModel(unittest.TestCase):
                 f'[work_roots]\ntool-repo = "{work_root}"\n',
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-003-verify.md",
+                "tasks/open/TASK-01-003.md",
                 "# TASK-01-003: Verify\n\nWork root: tool-repo\n",
             )
 
@@ -310,7 +310,7 @@ class TestHandoffPacketMissingConfig(unittest.TestCase):
     def test_exits_env_when_no_cartopian_toml(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cartopian-no-config-") as tmp:
             tmp_root = Path(tmp)
-            task_path = tmp_root / "TASK-01-099-orphan.md"
+            task_path = tmp_root / "TASK-01-099.md"
             task_path.write_text("# TASK-01-099: Orphan\n", encoding="utf-8")
 
             stdout, stderr, rc = _invoke(str(task_path), "coder")
@@ -330,7 +330,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'project_schema_version = "v0.9.0"\n'
+        'project_schema_version = "v0.10.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
@@ -339,7 +339,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
     def test_emits_guard_when_role_block_missing(self) -> None:
         with project_scaffold(cartopian_toml=self._TOML_NO_HANDOFFS) as scaffold:
             task_path = scaffold.write(
-                "tasks/open/TASK-01-050-noblock.md",
+                "tasks/open/TASK-01-050.md",
                 "# TASK-01-050: No Block\n",
             )
 
@@ -367,10 +367,10 @@ class TestHandoffPacketReadOnlyInvariant(unittest.TestCase):
                 f"[work_roots]\ntool-repo = \"{work_root}\"\n",
             )
             task_path = scaffold.write(
-                "tasks/open/TASK-01-002-example.md",
+                "tasks/open/TASK-01-002.md",
                 (
                     "# TASK-01-002: Example\n\n"
-                    "Phase: PHASE-01-foundation\n"
+                    "Phase: PHASE-01\n"
                     "## Goal\n\nExample goal.\n"
                 ),
             )

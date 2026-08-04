@@ -148,7 +148,7 @@ if prompt and os.environ.get("STUB_NO_REPORT") != "1":
     nn = base[len("PROMPT-"):-len(".md")]
     report = os.path.join(root, "reports", "REPORT-%s.md" % nn)
     os.makedirs(os.path.dirname(report), exist_ok=True)
-    task = os.path.join(root, "tasks", "in-progress", "TASK-%s-x.md" % nn)
+    task = os.path.join(root, "tasks", "in-progress", "TASK-%s.md" % nn)
     text = open(os.environ["STUB_REPORT_TEMPLATE"], encoding="utf-8").read()
     with open(report, "w", encoding="utf-8") as fh:
         fh.write(text.format(nn=nn, prompt=prompt, task=task))
@@ -197,7 +197,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.9.0"\n'
+        'project_schema_version = "v0.10.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
@@ -213,10 +213,10 @@ def _toml(
 
 def _write_task_and_prompt(scaffold, nn_nnn: str = "01-004") -> Path:
     task_path = scaffold.write(
-        f"tasks/in-progress/TASK-{nn_nnn}-mediated.md",
+        f"tasks/in-progress/TASK-{nn_nnn}.md",
         (
             f"# TASK-{nn_nnn}: Mediated dispatch\n\n"
-            "Phase: PHASE-01-x\n"
+            "Phase: PHASE-01\n"
             "Work root: tool-repo\n"
             "Assignee: coder\n\n"
             "## Goal\n\nLaunch via mediated dispatch.\n"
@@ -388,9 +388,9 @@ class TestDispatchPositive(unittest.TestCase):
                   "max_handoffs_per_run = 1\n",
             )
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-005-x.md",
+                "tasks/in-progress/TASK-01-005.md",
                 "# TASK-01-005: Multi-slice handoff\n\n"
-                "Phase: PHASE-01-x\n"
+                "Phase: PHASE-01\n"
                 "Work root: n/a\n"
                 "Assignee: coder\n\n"
                 "## Goal\n\nExercise bounded wait slices.\n",
@@ -1252,7 +1252,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.9.0"\n'
+            'project_schema_version = "v0.10.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
@@ -1430,7 +1430,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             scaffold.write("cartopian.toml", _toml(str(stub)))
             # Task present, but no matching prompt file written.
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-004-mediated.md",
+                "tasks/in-progress/TASK-01-004.md",
                 "# TASK-01-004: Mediated\n\nWork root: n/a\n",
             )
 
@@ -1591,7 +1591,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
     role's task automation never silently extends to planning reviews).
     """
 
-    PLAN_PROMPT = "PROMPT-PLAN-001-requirements-and-standards.md"
+    PLAN_PROMPT = "PROMPT-PLAN-001.md"
 
     def _fake_home(self, tmp_path: Path) -> Path:
         home = tmp_path / "home"
@@ -1615,7 +1615,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             # through the real generator so the fixture cannot drift from the
             # contract dispatch enforces.
             context = request_trace.context_for_checkpoint(
-                scaffold.project_root, "PLAN-001-requirements-and-standards"
+                scaffold.project_root, "PLAN-001"
             )
             prompt_path = scaffold.write(
                 f"prompts/{self.PLAN_PROMPT}",
@@ -1638,12 +1638,12 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             self.assertEqual(rec["status"], "dispatched")
             self.assertIsNone(rec["task_id"])
             self.assertEqual(
-                rec["prompt_id"], "PROMPT-PLAN-001-requirements-and-standards"
+                rec["prompt_id"], "PROMPT-PLAN-001"
             )
             self.assertEqual(rec["prompt_path"], str(resolved_prompt))
             self.assertTrue(
                 rec["expected_report_path"].endswith(
-                    "/reports/REPORT-PLAN-001-requirements-and-standards.md"
+                    "/reports/REPORT-PLAN-001.md"
                 ),
                 msg=rec["expected_report_path"],
             )
@@ -1724,7 +1724,7 @@ class TestDispatchPromptKeyed(unittest.TestCase):
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
             scaffold.write("cartopian.toml", _toml(str(stub), auto_launch_reviews=True))
-            stray = scaffold.write("PROMPT-PLAN-001-stray.md", "# P\n")
+            stray = scaffold.write("PROMPT-PLAN-001.md", "# P\n")
 
             with mock.patch.dict(os.environ, {"STUB_CAPTURE": str(capture)}, clear=False):
                 stdout, stderr, rc = _dispatch(
@@ -1802,7 +1802,7 @@ class TestDispatchNoRawExec(unittest.TestCase):
             )
         # An injected executable flag is rejected outright (argparse usage error).
         with self.assertRaises(SystemExit) as ctx:
-            parser.parse_args(["dispatch", "/abs/TASK-01-004-x.md", "--role", "coder", "--agent", "/bin/sh"])
+            parser.parse_args(["dispatch", "/abs/TASK-01-004.md", "--role", "coder", "--agent", "/bin/sh"])
         self.assertEqual(ctx.exception.code, EXIT_USAGE)
 
     def test_dispatch_is_the_only_wrapper_launcher_on_the_pm_surface(self) -> None:

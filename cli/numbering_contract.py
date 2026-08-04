@@ -68,9 +68,9 @@ ACTIVATION_BOUNDARY = "reviewed-tag-installed-fresh-runtime"
 GOVERNED_ACTION = "numbering-governed"
 
 PLAN_REF_RE = re.compile(r"^([A-Z][A-Z0-9]*)-(\d{2})-(\d{3})$")
-PHASE_NAME_RE = re.compile(r"^PHASE-(\d{2})(?:-.+)?$")
+PHASE_NAME_RE = re.compile(r"^PHASE-(\d{2})$")
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2})-(\d{3})$")
-_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
+_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 _PLAN_REF_HEADER_RE = re.compile(r"^Plan ref:\s*(.*)$")
 _PHASE_HEADER_RE = re.compile(r"^Phase:\s*(.*)$")
 
@@ -101,7 +101,7 @@ def parse_task_id(task_id: str) -> Optional[Dict[str, str]]:
 
 
 def parse_phase_name(value: str) -> Optional[str]:
-    """The two-digit phase number of a canonical or legacy phase name."""
+    """The two-digit phase number of a canonical phase name."""
     match = PHASE_NAME_RE.fullmatch(value.strip())
     if not match:
         return None
@@ -336,7 +336,7 @@ def classify_binding(
             verdict["blocking"] = True
             verdict["detail"] = (
                 f"{task_id} declares a Phase: header that does not match "
-                f"PHASE-NN (legacy descriptive suffixes remain readable): {declared!r}"
+                f"PHASE-NN: {declared!r}"
             )
             return verdict
         if declared_phase != task["phase"]:

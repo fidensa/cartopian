@@ -72,9 +72,7 @@ class TestDeletePromptHappyPath(unittest.TestCase):
             rec = json.loads(proc.stdout.strip())
             self.assertEqual(rec["action"], "delete-prompt")
 
-    def test_planning_variant_with_slug_suffix_accepted(self):
-        # CONVENTIONS.md names planning-checkpoint prompts
-        # PROMPT-PLAN-NNN-slug.md; the deleter must accept that canonical form.
+    def test_planning_variant_with_slug_suffix_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             home = tmp_path / "home"
@@ -86,11 +84,10 @@ class TestDeletePromptHappyPath(unittest.TestCase):
             prompt.write_text("# prompt\n", encoding="utf-8")
 
             proc = _run(str(prompt), home=home)
-            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
-            rec = json.loads(proc.stdout.strip())
-            self.assertEqual(rec["action"], "delete-prompt")
-            self.assertEqual(rec["details"]["deleted_path"], str(prompt))
-            self.assertFalse(prompt.exists())
+            self.assertEqual(proc.returncode, 1)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("[guard]", proc.stderr)
+            self.assertTrue(prompt.exists())
 
 
 class TestDeletePromptGuards(unittest.TestCase):

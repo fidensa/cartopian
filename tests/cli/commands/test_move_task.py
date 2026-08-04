@@ -19,7 +19,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     '\n'
     '[roles.reviewer]\n'
     'description = "Reviews completed work."\n'
@@ -35,7 +35,7 @@ _NO_REVIEW_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     '\n'
     '[reviews]\n'
     'planning = "off"\n'
@@ -60,7 +60,7 @@ def _run(*cli_args, home, cwd=None):
 def _seed_task(
     tmp: Path,
     status: str,
-    name: str = "TASK-01-007-demo.md",
+    name: str = "TASK-01-007.md",
     config: str = _MINIMAL_TOML,
 ) -> Path:
     """Create a minimal Cartopian project with the task in <status>."""
@@ -471,7 +471,7 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
             tasks_dir = tmp_path / "tasks"
             for s in STATUSES:
                 (tasks_dir / s).mkdir(parents=True, exist_ok=True)
-            task = tasks_dir / "in-progress" / "TASK-01-007-demo.md"
+            task = tasks_dir / "in-progress" / "TASK-01-007.md"
             task.write_text("# task\n", encoding="utf-8")
             proc = _run(str(task), "in-review", home=tmp_path)
             self.assertEqual(proc.returncode, 1)
@@ -486,7 +486,7 @@ class TestMoveTaskLifecycleGuards(unittest.TestCase):
             tasks_dir = tmp_path / "tasks"
             for s in STATUSES:
                 (tasks_dir / s).mkdir(parents=True, exist_ok=True)
-            task = tasks_dir / "open" / "TASK-01-007-demo.md"
+            task = tasks_dir / "open" / "TASK-01-007.md"
             task.write_text("# task\n", encoding="utf-8")
             proc = _run(str(task), "in-progress", home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -510,7 +510,7 @@ class TestMoveTaskUsage(unittest.TestCase):
     def test_relative_task_path_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            proc = _run("tasks/open/TASK-01-007-demo.md", "in-progress", home=tmp_path)
+            proc = _run("tasks/open/TASK-01-007.md", "in-progress", home=tmp_path)
             self.assertEqual(proc.returncode, 2)
             self.assertEqual(proc.stdout, "")
             self.assertTrue(proc.stderr.startswith("[usage]"), msg=proc.stderr)
@@ -521,7 +521,7 @@ class TestMoveTaskUsage(unittest.TestCase):
             tmp_path = Path(tmp)
             bad = tmp_path / "project" / "tasks" / "archived"
             bad.mkdir(parents=True, exist_ok=True)
-            task = bad / "TASK-01-007-demo.md"
+            task = bad / "TASK-01-007.md"
             task.write_text("# task\n", encoding="utf-8")
             proc = _run(str(task), "in-progress", home=tmp_path)
             self.assertEqual(proc.returncode, 2)
@@ -549,7 +549,7 @@ class TestMoveTaskMissingAndCollision(unittest.TestCase):
             tasks_dir = tmp_path / "project" / "tasks"
             for s in STATUSES:
                 (tasks_dir / s).mkdir(parents=True, exist_ok=True)
-            missing = tasks_dir / "open" / "TASK-01-007-missing.md"
+            missing = tasks_dir / "open" / "TASK-01-007.md"
             proc = _run(str(missing), "in-progress", home=tmp_path)
             self.assertEqual(proc.returncode, 1)
             self.assertEqual(proc.stdout, "")

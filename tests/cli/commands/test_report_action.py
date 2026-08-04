@@ -17,7 +17,7 @@ _PROJECT_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -36,7 +36,7 @@ _PROJECT_TOML_OFF = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
     "\n"
     "[git]\n"
     "pm_owns_product_branches = true\n"
@@ -173,7 +173,7 @@ class TestReportActionHappyPath(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-006-demo.md",
+                "tasks/in-progress/TASK-01-006.md",
                 (
                     "# TASK-01-006: demo\n\n"
                     "Work root: tool-repo\n"
@@ -244,7 +244,7 @@ class TestReportActionReviewOff(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-006-demo.md",
+                "tasks/in-progress/TASK-01-006.md",
                 "# task\n\nWork root: tool-repo\n",
             )
             report_path = scaffold.write(
@@ -273,7 +273,7 @@ class TestReportActionReviewOff(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             scaffold.write(
-                "tasks/in-progress/TASK-01-009-book-venue.md",
+                "tasks/in-progress/TASK-01-009.md",
                 "# task\n\nWork root: n/a\n",
             )
             report_path = scaffold.write(
@@ -301,7 +301,7 @@ class TestReportActionReviewOff(unittest.TestCase):
                     home = scaffold.root / "home"
                     home.mkdir()
                     task_path = scaffold.write(
-                        "tasks/in-progress/TASK-01-006-demo.md",
+                        "tasks/in-progress/TASK-01-006.md",
                         (
                             "# TASK-01-006: demo\n\n"
                             "Work root: tool-repo\n"
@@ -340,7 +340,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-review/TASK-02-004-demo.md",
+                "tasks/in-review/TASK-02-004.md",
                 "# TASK-02-004: demo\n\nWork root: n/a\n",
             )
             _bound_task_prompt(scaffold, task_path, "02-004")
@@ -382,7 +382,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             scaffold.write(
-                "tasks/in-review/TASK-02-004-demo.md",
+                "tasks/in-review/TASK-02-004.md",
                 "# TASK-02-004: demo\n\nWork root: n/a\n",
             )
             review_path = scaffold.write("reviews/REVIEW-02-004.md", "# REVIEW-02-004\n")
@@ -414,11 +414,11 @@ class TestReportActionReviewVariants(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             expected_task_path = scaffold.write(
-                "tasks/in-review/TASK-02-004-demo.md",
+                "tasks/in-review/TASK-02-004.md",
                 "# TASK-02-004: demo\n\nWork root: n/a\n",
             )
             wrong_task_path = scaffold.write(
-                "tasks/in-review/TASK-02-005-other.md",
+                "tasks/in-review/TASK-02-005.md",
                 "# TASK-02-005: other\n\nWork root: n/a\n",
             )
             _bound_task_prompt(scaffold, wrong_task_path, "02-004")
@@ -452,7 +452,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
                     home = scaffold.root / "home"
                     home.mkdir()
                     task_path = scaffold.write(
-                        "tasks/in-review/TASK-01-008-demo.md",
+                        "tasks/in-review/TASK-01-008.md",
                         "# TASK-01-008: demo\n\nWork root: n/a\n",
                     )
                     review_path = scaffold.write("reviews/REVIEW-01-008.md", "# REVIEW-01-008\n")
@@ -487,13 +487,13 @@ class TestReportActionReviewVariants(unittest.TestCase):
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
             home.mkdir()
-            review_path = scaffold.write("reviews/REVIEW-PLAN-001-demo.md", "# REVIEW-PLAN-001-demo\n")
+            review_path = scaffold.write("reviews/REVIEW-PLAN-001.md", "# REVIEW-PLAN-001\n")
             report_path = scaffold.write(
-                "reports/REPORT-PLAN-001-demo.md",
+                "reports/REPORT-PLAN-001.md",
                 _review_report(
-                    report_stem="REPORT-PLAN-001-demo",
-                    review_id="REVIEW-PLAN-001-demo",
-                    prompt_path=scaffold.prompts / "PROMPT-PLAN-001-demo.md",
+                    report_stem="REPORT-PLAN-001",
+                    review_id="REVIEW-PLAN-001",
+                    prompt_path=scaffold.prompts / "PROMPT-PLAN-001.md",
                     task_path=None,
                     review_path=review_path,
                     status="complete",
@@ -513,7 +513,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
         self.assertFalse(record["requires_pr_step"])
         self.assertEqual(
             record["prompt_to_overwrite"],
-            str((scaffold.prompts / "PROMPT-PLAN-001-demo.md").resolve()),
+            str((scaffold.prompts / "PROMPT-PLAN-001.md").resolve()),
         )
         self.assertEqual(record["review_path"], str(review_path.resolve()))
         self.assertFalse(record["path_mismatch"])
@@ -525,7 +525,7 @@ class TestReportActionPathMismatch(unittest.TestCase):
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
             home.mkdir()
-            scaffold.write("tasks/in-progress/TASK-01-006-demo.md", "# TASK-01-006: demo\n")
+            scaffold.write("tasks/in-progress/TASK-01-006.md", "# TASK-01-006: demo\n")
             report_path = scaffold.write(
                 "reports/REPORT-01-006.md",
                 (
@@ -534,7 +534,7 @@ class TestReportActionPathMismatch(unittest.TestCase):
                     "## Identity\n\n"
                     "- Task ID: TASK-01-006\n"
                     f"- Prompt path: {scaffold.prompts / 'PROMPT-99-999.md'}\n"
-                    f"- Task path: {scaffold.project_root / 'tasks' / 'done' / 'TASK-99-999-wrong.md'}\n"
+                    f"- Task path: {scaffold.project_root / 'tasks' / 'done' / 'TASK-99-999.md'}\n"
                     "- Work root: n/a\n\n"
                     "## Files changed\n\n"
                     "- cli/commands/report_action.py — added\n\n"
@@ -568,7 +568,7 @@ class TestReportActionVariantInference(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-review/TASK-01-010-demo.md",
+                "tasks/in-review/TASK-01-010.md",
                 "# TASK-01-010: demo\n\nWork root: n/a\n",
             )
             _bound_task_prompt(scaffold, task_path, "01-010")
@@ -641,7 +641,7 @@ class TestReportActionPathNormalization(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-012-demo.md",
+                "tasks/in-progress/TASK-01-012.md",
                 "# TASK-01-012: demo\n\nWork root: n/a\n",
             )
             report_path = scaffold.write(
@@ -684,7 +684,7 @@ class TestReportActionFailedToParse(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-009-demo.md",
+                "tasks/in-progress/TASK-01-009.md",
                 "# TASK-01-009: demo\n\nWork root: n/a\n",
             )
             report_path = scaffold.write(
@@ -760,7 +760,7 @@ class TestReportActionReadOnly(unittest.TestCase):
             home = scaffold.root / "home"
             home.mkdir()
             task_path = scaffold.write(
-                "tasks/in-progress/TASK-01-006-demo.md",
+                "tasks/in-progress/TASK-01-006.md",
                 (
                     "# TASK-01-006: demo\n\n"
                     "Work root: n/a\n"

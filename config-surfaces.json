@@ -85,7 +85,7 @@
         "bytes": 1150
       },
       "phase_00_status": "justified exception",
-      "task_delta_bytes": 114,
+      "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "max_output_bytes": 2556
     },
@@ -96,7 +96,7 @@
         "bytes": 1099
       },
       "phase_00_status": "justified exception",
-      "task_delta_bytes": 114,
+      "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity without introducing a new migration-readiness gate.",
       "split_report_delta_bytes": 55,
       "split_report_note": "Adds expected_review_report_path so bundles carry both task-scoped report identities from the authoritative resolver.",
@@ -109,7 +109,7 @@
         "bytes": 1197
       },
       "phase_00_status": "justified exception",
-      "task_delta_bytes": 114,
+      "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "max_output_bytes": 1565,
       "request_trace_channel_delta_bytes": 7,
@@ -123,7 +123,7 @@
       "surface": "containment-matrix",
       "phase_00_baseline": null,
       "phase_00_status": "not measured in Phase 00",
-      "task_delta_bytes": 114,
+      "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "max_output_bytes": 7199
     },
@@ -131,7 +131,7 @@
       "surface": "plan-audit",
       "phase_00_baseline": null,
       "phase_00_status": "not measured in Phase 00",
-      "task_delta_bytes": 114,
+      "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
       "max_output_bytes": 960,
       "numbering_contract_delta_bytes": 387,

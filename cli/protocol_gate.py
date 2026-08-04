@@ -6,10 +6,10 @@ topmost ``### vX.Y.Z`` entry under ``## Entries`` in
 ``protocol/CHANGELOG.md`` — and classifies:
 
 - ``GATE_CURRENT``  — marker equals the shipped version; pass, no gate noise.
-- ``GATE_MIGRATE``  — marker is unset, missing, or lexically less than the
+- ``GATE_MIGRATE``  — marker is unset, missing, or numerically less than the
   shipped version (the CHANGELOG entries' applies-when precondition), so the
   documented migration entries bring it current.
-- ``GATE_BLOCKED``  — marker is malformed or lexically greater than the
+- ``GATE_BLOCKED``  — marker is malformed or numerically greater than the
   shipped version; no CHANGELOG migration path exists, so consumers fail
   closed with the named residual :data:`RESIDUAL_NAME`.
 
@@ -73,9 +73,16 @@ def classify_project_schema_version(declared: Any, shipped: str) -> Dict[str, st
             "detail": "",
         }
 
-    # CHANGELOG applies-when semantics: a migration entry applies when the
-    # marker is "unset, missing, or lexically less" than the entry's version.
-    if not detected or (_VERSION_FORM_RE.match(detected) and detected < shipped):
+    # CHANGELOG applies-when semantics compare numeric version components;
+    # lexical ordering breaks as soon as a component reaches two digits
+    # (v0.9.0 would incorrectly sort after v0.10.0).
+    def version_tuple(value: str) -> tuple[int, int, int]:
+        return tuple(int(part) for part in value.removeprefix("v").split("."))  # type: ignore[return-value]
+
+    if not detected or (
+        _VERSION_FORM_RE.match(detected)
+        and version_tuple(detected) < version_tuple(shipped)
+    ):
         detected_label = detected or "unset"
         return {
             "status": GATE_MIGRATE,

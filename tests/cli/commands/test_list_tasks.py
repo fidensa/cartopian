@@ -33,8 +33,8 @@ def _seed_project(root: Path) -> Path:
     for s in STATUSES:
         (tasks / s).mkdir(parents=True, exist_ok=True)
     (project / "phases").mkdir(parents=True, exist_ok=True)
-    (project / "phases" / "PHASE-01-build.md").write_text("# PHASE-01\n", encoding="utf-8")
-    (project / "phases" / "PHASE-02-ship.md").write_text("# PHASE-02\n", encoding="utf-8")
+    (project / "phases" / "PHASE-01.md").write_text("# PHASE-01\n", encoding="utf-8")
+    (project / "phases" / "PHASE-02.md").write_text("# PHASE-02\n", encoding="utf-8")
     return project
 
 
@@ -49,7 +49,7 @@ def _seed_task(
         "Work root: n/a\n"
         "Evidence gate: n/a\n"
     )
-    task_path = project / "tasks" / status / f"{task_id}-demo.md"
+    task_path = project / "tasks" / status / f"{task_id}.md"
     task_path.write_text(body, encoding="utf-8")
     return task_path
 
@@ -59,11 +59,11 @@ class TestListTasksHappyPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _seed_project(tmp_path)
-            _seed_task(project, "in-review", "TASK-02-001", "PHASE-02-ship", "P02-1", "ship-1")
-            _seed_task(project, "done", "TASK-01-002", "PHASE-01-build", "P01-2", "build-2")
-            _seed_task(project, "open", "TASK-01-001", "PHASE-01-build", "P01-1", "build-1")
-            _seed_task(project, "in-progress", "TASK-01-003", "PHASE-01-build", "P01-3", "build-3")
-            _seed_task(project, "open", "TASK-02-002", "PHASE-02-ship", "P02-2", "ship-2")
+            _seed_task(project, "in-review", "TASK-02-001", "PHASE-02", "P02-1", "ship-1")
+            _seed_task(project, "done", "TASK-01-002", "PHASE-01", "P01-2", "build-2")
+            _seed_task(project, "open", "TASK-01-001", "PHASE-01", "P01-1", "build-1")
+            _seed_task(project, "in-progress", "TASK-01-003", "PHASE-01", "P01-3", "build-3")
+            _seed_task(project, "open", "TASK-02-002", "PHASE-02", "P02-2", "ship-2")
 
             proc = _run("--project", str(project), home=tmp_path)
             self.assertEqual(proc.returncode, 0, msg=proc.stderr)
@@ -75,11 +75,11 @@ class TestListTasksHappyPath(unittest.TestCase):
             self.assertEqual(
                 [(r["phase"], r["status"], r["task_id"]) for r in recs],
                 [
-                    ("PHASE-01-build", "open", "TASK-01-001"),
-                    ("PHASE-01-build", "in-progress", "TASK-01-003"),
-                    ("PHASE-01-build", "done", "TASK-01-002"),
-                    ("PHASE-02-ship", "open", "TASK-02-002"),
-                    ("PHASE-02-ship", "in-review", "TASK-02-001"),
+                    ("PHASE-01", "open", "TASK-01-001"),
+                    ("PHASE-01", "in-progress", "TASK-01-003"),
+                    ("PHASE-01", "done", "TASK-01-002"),
+                    ("PHASE-02", "open", "TASK-02-002"),
+                    ("PHASE-02", "in-review", "TASK-02-001"),
                 ],
             )
             # exact field set per spec
@@ -96,13 +96,13 @@ class TestListTasksHappyPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _seed_project(tmp_path)
-            _seed_task(project, "open", "TASK-01-001", "PHASE-01-build", "P01-1", "t1")
-            _seed_task(project, "open", "TASK-02-001", "PHASE-02-ship", "P02-1", "t2")
-            _seed_task(project, "done", "TASK-01-002", "PHASE-01-build", "P01-2", "t3")
+            _seed_task(project, "open", "TASK-01-001", "PHASE-01", "P01-1", "t1")
+            _seed_task(project, "open", "TASK-02-001", "PHASE-02", "P02-1", "t2")
+            _seed_task(project, "done", "TASK-01-002", "PHASE-01", "P01-2", "t3")
 
             proc = _run(
                 "--project", str(project),
-                "--phase", "PHASE-01-build",
+                "--phase", "PHASE-01",
                 "--status", "open",
                 home=tmp_path,
             )
@@ -118,7 +118,7 @@ class TestListTasksEmptyAndZeroRecords(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             project = _seed_project(tmp_path)
-            _seed_task(project, "open", "TASK-01-001", "PHASE-01-build", "P01-1", "t1")
+            _seed_task(project, "open", "TASK-01-001", "PHASE-01", "P01-1", "t1")
             proc = _run(
                 "--project", str(project),
                 "--status", "done",

@@ -336,13 +336,13 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 'initiation = "operator"\n',
                 encoding="utf-8",
             )
-            (project / "phases" / f"{phase_id}-build.md").write_text(
+            (project / "phases" / f"{phase_id}.md").write_text(
                 f"# {phase_id}: Build\n", encoding="utf-8"
             )
-            task = project / "tasks" / "open" / f"{task_id}-build.md"
+            task = project / "tasks" / "open" / f"{task_id}.md"
             task.write_text(
                 f"# {task_id}: Build\n\n"
-                f"Phase: {phase_id}-build\n"
+                f"Phase: {phase_id}\n"
                 "Work root: n/a\n"
                 "Assignee: coder\n"
                 "Blocked by: n/a\n\n"
@@ -350,11 +350,11 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 encoding="utf-8",
             )
             review_task = (
-                project / "tasks" / "in-review" / f"{review_task_id}-review.md"
+                project / "tasks" / "in-review" / f"{review_task_id}.md"
             )
             review_task.write_text(
                 f"# {review_task_id}: Review\n\n"
-                f"Phase: {phase_id}-build\n"
+                f"Phase: {phase_id}\n"
                 "Work root: n/a\n"
                 "Assignee: coder\n\n"
                 "## Goal\n\nReview.\n",

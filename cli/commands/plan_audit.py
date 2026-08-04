@@ -1010,7 +1010,7 @@ def _check_numbering_contract(
             if not task_file.is_file():
                 continue
             match = re.match(
-                r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$", task_file.name
+                r"^(TASK-\d{2}-\d{3})\.md$", task_file.name
             )
             if not match or match.group(1) in seen_ids:
                 continue

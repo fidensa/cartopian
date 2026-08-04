@@ -1,4 +1,4 @@
-"""Regression contract for v0.9 up-front request evidence."""
+"""Regression contract for up-front request evidence."""
 from __future__ import annotations
 
 import argparse
@@ -30,7 +30,7 @@ ORIGINAL = (
 CONFIG = '''[project]
 name = "Trace"
 id = "trace"
-project_schema_version = "v0.9.0"
+project_schema_version = "v0.10.0"
 
 [reviews]
 planning = "required"
@@ -56,7 +56,7 @@ class RequestTraceContract(unittest.TestCase):
         for directory in ("tasks/in-review", "tasks/done", "prompts", "reviews", "reports"):
             (self.root / directory).mkdir(parents=True, exist_ok=True)
         (self.root / "decisions").mkdir()
-        self.task = self.root / "tasks/in-review/TASK-02-010-trace.md"
+        self.task = self.root / "tasks/in-review/TASK-02-010.md"
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -84,7 +84,7 @@ class RequestTraceContract(unittest.TestCase):
             self.assertEqual(capture_request.handler(args), 0)
 
     def seed_task(self) -> None:
-        self.task.write_text("# TASK-02-010: Trace\n\nPhase: PHASE-02-build\nPlan ref: BUILD-02-010\n", encoding="utf-8")
+        self.task.write_text("# TASK-02-010: Trace\n\nPhase: PHASE-02\nPlan ref: BUILD-02-010\n", encoding="utf-8")
 
     def run_cli(self, *argv: str) -> tuple[int, list[dict], str]:
         parser = build_parser()
@@ -119,7 +119,7 @@ class RequestTraceContract(unittest.TestCase):
             if marked
             else "The PM described this as operator context:"
         )
-        (decisions / f"{decision_id}-request-source.md").write_text(
+        (decisions / f"{decision_id}.md").write_text(
             f"# {decision_id}: Request source\n\n"
             "Date: 2026-07-27\nStatus: locked\nSupersedes: none\n\n"
             f"## Context\n\n{attribution}\n\n> {quote}\n",
@@ -193,7 +193,7 @@ class RequestTraceContract(unittest.TestCase):
         )
         self.task.write_text(
             "# TASK-02-010: Trace\n\n"
-            "Phase: PHASE-02-build\nPlan ref: BUILD-02-010\n\n"
+            "Phase: PHASE-02\nPlan ref: BUILD-02-010\n\n"
             "## Operator intent\n\nDEC-001 and DEC-002 preserve the exact request.\n",
             encoding="utf-8",
         )
@@ -212,7 +212,7 @@ class RequestTraceContract(unittest.TestCase):
         )
         self.assertTrue(all(item.source_content_identity.startswith("sha256:") for item in context.trace))
         self.assertNotIn("Unrelated quoted history", context.section)
-        self.assertIn("Source path: decisions/DEC-001-request-source.md", context.section)
+        self.assertIn("Source path: decisions/DEC-001.md", context.section)
 
     def test_structural_decision_quote_preserves_matching_boundary_marks(self) -> None:
         quote = '"Keep these literal boundary marks"'
@@ -224,7 +224,7 @@ class RequestTraceContract(unittest.TestCase):
         self.assertEqual(context.trace[0].text, quote)
 
     def test_structural_decision_quote_preserves_bare_blank_paragraph(self) -> None:
-        path = self.root / "decisions/DEC-014-request-source.md"
+        path = self.root / "decisions/DEC-014.md"
         path.write_text(
             "# DEC-014: Request source\n\n"
             "Date: 2026-07-27\nStatus: locked\nSupersedes: none\n\n"
@@ -259,7 +259,7 @@ class RequestTraceContract(unittest.TestCase):
     def test_changed_decision_source_invalidates_bound_context(self) -> None:
         self.write_decision("DEC-005", "Preserve this exact request.")
         self.task.write_text(
-            "# TASK-02-010: Trace\n\nPhase: PHASE-02-build\n\n"
+            "# TASK-02-010: Trace\n\nPhase: PHASE-02\n\n"
             "## Operator intent\n\nExact operator quote source: DEC-005\n",
             encoding="utf-8",
         )
@@ -358,7 +358,7 @@ class RequestTraceContract(unittest.TestCase):
 
     def test_malformed_decision_quote_marker_fails_closed(self) -> None:
         self.write_decision("DEC-011", "Malformed.")
-        path = self.root / "decisions/DEC-011-request-source.md"
+        path = self.root / "decisions/DEC-011.md"
         path.write_text(
             path.read_text(encoding="utf-8").replace(
                 "Operator request quote for: task:TASK-02-010",
@@ -376,7 +376,7 @@ class RequestTraceContract(unittest.TestCase):
     def test_decision_quote_with_ambiguous_unit_binding_fails_closed(self) -> None:
         decisions = self.root / "decisions"
         decisions.mkdir(exist_ok=True)
-        (decisions / "DEC-012-ambiguous.md").write_text(
+        (decisions / "DEC-012.md").write_text(
             "# DEC-012\n\n"
             "Operator request quote for: project:project\n\n"
             "> \"Same text.\"\n\n"
@@ -447,21 +447,20 @@ class RequestTraceContract(unittest.TestCase):
         self.assertIn("request-not-captured", error)
         self.assertFalse((self.root / "REQUIREMENTS.md").exists())
 
-    def test_management_projection_uses_only_real_slugged_and_applicable_artifacts(self) -> None:
+    def test_management_projection_uses_only_real_canonical_and_applicable_artifacts(self) -> None:
         self.capture(ORIGINAL, unit="task:TASK-02-010")
         self.seed_task()
         (self.root / "phases").mkdir(exist_ok=True)
         (self.root / "specs").mkdir(exist_ok=True)
-        (self.root / "phases/PHASE-02-build.md").write_text("# Phase\n", encoding="utf-8")
-        (self.root / "specs/SPEC-02-010-slugged.md").write_text("# Spec\n", encoding="utf-8")
+        (self.root / "phases/PHASE-02.md").write_text("# Phase\n", encoding="utf-8")
+        (self.root / "specs/SPEC-02-010.md").write_text("# Spec\n", encoding="utf-8")
         (self.root / "reviews/REVIEW-02-010.md").write_text("# Review\n", encoding="utf-8")
 
         context = request_trace.context_for_task(self.root, self.task)
 
-        self.assertIn("specs/SPEC-02-010-slugged.md", context.management_artifacts)
-        self.assertIn("phases/PHASE-02-build.md", context.management_artifacts)
+        self.assertIn("specs/SPEC-02-010.md", context.management_artifacts)
+        self.assertIn("phases/PHASE-02.md", context.management_artifacts)
         self.assertIn("reviews/REVIEW-02-010.md", context.management_artifacts)
-        self.assertNotIn("specs/SPEC-02-010.md", context.management_artifacts)
         self.assertNotIn("REQUIREMENTS.md", context.management_artifacts)
         self.assertTrue(
             all((self.root / path).is_file() for path in context.management_artifacts)
@@ -577,7 +576,7 @@ class RequestTraceContract(unittest.TestCase):
         self.assertEqual(caught.exception.rule, "unsafe-file")
 
     def test_historical_review_is_byte_identical_and_not_retroactively_blocked(self) -> None:
-        old = self.root / "tasks/done/TASK-01-001-old.md"
+        old = self.root / "tasks/done/TASK-01-001.md"
         old.write_text("# TASK-01-001: Old\n", encoding="utf-8")
         review = self.root / "reviews/REVIEW-01-001.md"
         review.write_text("# REVIEW-01-001\n\nVerdict: approve\n", encoding="utf-8")
@@ -625,7 +624,7 @@ class RequestTraceContract(unittest.TestCase):
 
     def test_migrated_active_review_prompt_is_regenerated_then_audit_recovers(self) -> None:
         self.root.joinpath("cartopian.toml").write_text(
-            CONFIG.replace('project_schema_version = "v0.9.0"',
+            CONFIG.replace('project_schema_version = "v0.10.0"',
                            'project_schema_version = "v0.8.0"'),
             encoding="utf-8",
         )

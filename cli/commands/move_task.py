@@ -35,7 +35,7 @@ _REVIEW_OFF_DISALLOWED: Dict[Tuple[str, str], str] = {
     ("in-progress", "in-review"): "task-closure review is off",
 }
 
-_TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
+_TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})$")
 _STATUS_RE = re.compile(r"^Status:\s*(.+)$", re.MULTILINE)
 _VERDICT_RE = re.compile(r"\bVerdict:\s*(approve|request-changes|reject)\b(?!\s*\|)")
 
@@ -46,7 +46,7 @@ def _stderr(prefix: str, msg: str) -> None:
 
 def _extract_nn_nnn(task_path: Path) -> Optional[str]:
     """Return NN-NNN from a TASK-NN-NNN[-slug].md stem, or None if non-canonical."""
-    m = _TASK_ID_RE.match(task_path.stem)
+    m = _TASK_ID_RE.fullmatch(task_path.stem)
     return m.group(1) if m else None
 
 

@@ -113,7 +113,7 @@ class TestWaitReportTimeout(unittest.TestCase):
                 report_stem="REPORT-01-002",
                 task_id="TASK-01-002",
                 prompt_path=scaffold.prompts / "PROMPT-01-002.md",
-                task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002-wait-report.md",
+                task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002.md",
                 status="complete",
             )
 
@@ -144,7 +144,7 @@ class TestWaitReportAccepted(unittest.TestCase):
                     report_stem="REPORT-01-002",
                     task_id="TASK-01-002",
                     prompt_path=scaffold.prompts / "PROMPT-01-002.md",
-                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002-wait-report.md",
+                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002.md",
                     status="complete",
                 ),
             )
@@ -168,7 +168,7 @@ class TestWaitReportGuard(unittest.TestCase):
                     report_stem="REPORT-01-002",
                     task_id="TASK-01-002",
                     prompt_path=scaffold.prompts / "PROMPT-01-002.md",
-                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002-wait-report.md",
+                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002.md",
                     status="blocked",
                 ),
             )
@@ -212,7 +212,7 @@ class TestWaitReportArgParsing(unittest.TestCase):
                 report_stem="REPORT-OK",
                 task_id="TASK-01-002",
                 prompt_path=scaffold.prompts / "PROMPT-01-002.md",
-                task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002-wait-report.md",
+                task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002.md",
                 status="complete",
             )
             ok_path = scaffold.write("reports/REPORT-OK.md", content)
@@ -286,7 +286,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.9.0"\n\n'
+                'project_schema_version = "v0.10.0"\n\n'
                 "[roles.reviewer]\n"
                 'description = "Reviews completed tasks."\n'
                 'agent = "codex"\n'
@@ -317,7 +317,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.9.0"\n'
+                'project_schema_version = "v0.10.0"\n'
                 "unknown = true\n",
             )
             report_path = scaffold.reports / "REPORT-01-002.md"
@@ -343,7 +343,7 @@ class TestWaitReportDefaultTerminal(unittest.TestCase):
                 "[project]\n"
                 'id = "test-proj"\n'
                 'name = "Test Project"\n'
-                'project_schema_version = "v0.9.0"\n\n'
+                'project_schema_version = "v0.10.0"\n\n'
                 "[roles.reviewer]\n"
                 'description = "Reviews completed tasks."\n'
                 'agent = "codex"\n'
@@ -392,7 +392,7 @@ class TestWaitReportReadOnly(unittest.TestCase):
                     report_stem="REPORT-01-002",
                     task_id="TASK-01-002",
                     prompt_path=scaffold.prompts / "PROMPT-01-002.md",
-                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002-wait-report.md",
+                    task_path=scaffold.project_root / "tasks" / "in-progress" / "TASK-01-002.md",
                     status="complete",
                 ),
             )

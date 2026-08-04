@@ -69,7 +69,14 @@ def _applicable(start):
     """Entries that apply given the starting marker (None = unset → all)."""
     if start is None:
         return list(ASCENDING)
-    return [v for v in ASCENDING if v > start]
+    start_key = tuple(int(part) for part in start.removeprefix("v").split("."))
+    return [
+        version
+        for version in ASCENDING
+        if tuple(
+            int(part) for part in version.removeprefix("v").split(".")
+        ) > start_key
+    ]
 
 
 def _migrate(proj, home, start, delegated_satisfied):

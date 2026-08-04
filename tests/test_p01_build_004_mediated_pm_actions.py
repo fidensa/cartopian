@@ -105,7 +105,7 @@ REQUIRED_MEDIATED: dict[str, tuple[str, ...]] = {
 # --- residual-raw-op scan patterns ----------------------------------------
 
 # Cartopian artifacts the PM authors via a `write-*` command. Both the literal
-# placeholder spellings the skills use (TASK-NN-NNN, PHASE-NN-slug, PROMPT-PLAN-
+# placeholder spellings the skills use (TASK-NN-NNN, PHASE-NN, PROMPT-PLAN-
 # NNN, DEC-NNN) and concrete-id spellings are matched, in path and bare forms.
 # reviews/REVIEW-* and reports/REPORT-* are intentionally NOT here: they are
 # authored by the non-contained reviewer/assignee, not the PM.

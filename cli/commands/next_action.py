@@ -28,8 +28,8 @@ from cli.protocol_gate import (
     read_shipped_project_schema_version,
 )
 
-_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?\.md$")
-_PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}-[a-z0-9][a-z0-9-]*$")
+_TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
+_PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}$")
 _STATE_TASK_STATUS_RE = re.compile(
     r"\b(TASK-\d{2}-\d{3})\b[^`\n]*`([^`\n]+)`"
 )

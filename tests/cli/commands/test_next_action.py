@@ -14,7 +14,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.9.0"\n'
+    'project_schema_version = "v0.10.0"\n'
 )
 
 
@@ -165,19 +165,19 @@ class TestNextActionHappyPath(unittest.TestCase):
         toml = _TOML_BASE + '\n[roles.pm]\ndescription = "Plans the work."\n'
         state_md = (
             "# test-proj — State\n\n"
-            "## Current phase\n\nPHASE-01-foundation\n\n"
+            "## Current phase\n\nPHASE-01\n\n"
             "## Active work\n\nTASK-01-001 (build) is `in-progress`\n\n"
             "## Open Questions\n\nNone.\n"
         )
         with project_scaffold(cartopian_toml=toml, state_md=state_md) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             scaffold.write(
-                "tasks/in-progress/TASK-01-001-build.md",
-                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+                "tasks/in-progress/TASK-01-001.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01\n",
             )
             scaffold.write(
-                "tasks/open/TASK-01-002-pending.md",
-                "# TASK-01-002: pending\n\nPhase: PHASE-01-foundation\n",
+                "tasks/open/TASK-01-002.md",
+                "# TASK-01-002: pending\n\nPhase: PHASE-01\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
 
@@ -187,18 +187,18 @@ class TestNextActionHappyPath(unittest.TestCase):
 
             self.assertEqual(rec["project_id"], "test-proj")
             self.assertEqual(rec["project_path"], str(scaffold.project_root.resolve()))
-            self.assertEqual(rec["phase_id"], "PHASE-01-foundation")
+            self.assertEqual(rec["phase_id"], "PHASE-01")
 
             self.assertIsNotNone(rec["active_task"])
             self.assertEqual(rec["active_task"]["id"], "TASK-01-001")
             self.assertEqual(rec["active_task"]["status"], "in-progress")
             self.assertIn("TASK-01-001", rec["active_task"]["title"])
-            self.assertTrue(rec["active_task"]["path"].endswith("TASK-01-001-build.md"))
+            self.assertTrue(rec["active_task"]["path"].endswith("TASK-01-001.md"))
 
             self.assertIsNotNone(rec["next_open_task"])
             self.assertEqual(rec["next_open_task"]["id"], "TASK-01-002")
             self.assertIn("TASK-01-002", rec["next_open_task"]["title"])
-            self.assertTrue(rec["next_open_task"]["path"].endswith("TASK-01-002-pending.md"))
+            self.assertTrue(rec["next_open_task"]["path"].endswith("TASK-01-002.md"))
 
             self.assertEqual(rec["pm_role"], "Plans the work.")
             self.assertTrue(rec["pm_role_declared"])
@@ -236,7 +236,7 @@ class TestNextActionActiveTask(unittest.TestCase):
     def test_active_task_detected_in_progress(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "tasks/in-progress/TASK-01-001-do-stuff.md",
+                "tasks/in-progress/TASK-01-001.md",
                 "# TASK-01-001: Do Stuff\n\nSome content.\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
@@ -250,7 +250,7 @@ class TestNextActionActiveTask(unittest.TestCase):
     def test_active_task_detected_in_review(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "tasks/in-review/TASK-02-003-review-work.md",
+                "tasks/in-review/TASK-02-003.md",
                 "# TASK-02-003: Review Work\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
@@ -263,7 +263,7 @@ class TestNextActionActiveTask(unittest.TestCase):
     def test_next_open_task_detected(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "tasks/open/TASK-01-002-open-work.md",
+                "tasks/open/TASK-01-002.md",
                 "# TASK-01-002: Open Work\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
@@ -276,28 +276,28 @@ class TestNextActionActiveTask(unittest.TestCase):
 
     def test_next_open_task_sorted_first(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("tasks/open/TASK-01-003-third.md", "# TASK-01-003: Third\n")
-            scaffold.write("tasks/open/TASK-01-001-first.md", "# TASK-01-001: First\n")
-            scaffold.write("tasks/open/TASK-01-002-second.md", "# TASK-01-002: Second\n")
+            scaffold.write("tasks/open/TASK-01-003.md", "# TASK-01-003: Third\n")
+            scaffold.write("tasks/open/TASK-01-001.md", "# TASK-01-001: First\n")
+            scaffold.write("tasks/open/TASK-01-002.md", "# TASK-01-002: Second\n")
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["next_open_task"]["id"], "TASK-01-001")
 
     def test_next_open_task_prefers_earlier_phase_over_filename_order(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
-            scaffold.write("phases/PHASE-02-expansion.md", "# Phase 02\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            scaffold.write("phases/PHASE-02.md", "# PHASE-02: Expansion\n")
             scaffold.write(
-                "tasks/open/TASK-00-999-later-phase.md",
-                "# TASK-00-999: Later Phase\n\nPhase: PHASE-02-expansion\n",
+                "tasks/open/TASK-00-999.md",
+                "# TASK-00-999: Later Phase\n\nPhase: PHASE-02\n",
             )
             scaffold.write(
-                "tasks/open/TASK-99-001-earlier-phase.md",
-                "# TASK-99-001: Earlier Phase\n\nPhase: PHASE-01-foundation\n",
+                "tasks/open/TASK-99-001.md",
+                "# TASK-99-001: Earlier Phase\n\nPhase: PHASE-01\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
-            self.assertEqual(records[0]["phase_id"], "PHASE-01-foundation")
+            self.assertEqual(records[0]["phase_id"], "PHASE-01")
             self.assertEqual(records[0]["next_open_task"]["id"], "TASK-99-001")
 
 
@@ -438,7 +438,7 @@ class TestNextActionDisagreement(unittest.TestCase):
     def test_no_disagreement_when_state_matches_filesystem(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
             scaffold.write(
-                "tasks/in-progress/TASK-01-001-demo.md",
+                "tasks/in-progress/TASK-01-001.md",
                 "# TASK-01-001: demo\n",
             )
             scaffold.write(
@@ -468,8 +468,8 @@ class TestNextActionReadOnlyInvariant(unittest.TestCase):
     def test_no_files_created_or_modified(self) -> None:
         """Handler must not write, move, rename, or delete any file (NFR-001)."""
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("tasks/in-progress/TASK-01-001-demo.md", "# TASK-01-001: demo\n")
-            scaffold.write("tasks/open/TASK-01-002-pending.md", "# TASK-01-002: pending\n")
+            scaffold.write("tasks/in-progress/TASK-01-001.md", "# TASK-01-001: demo\n")
+            scaffold.write("tasks/open/TASK-01-002.md", "# TASK-01-002: pending\n")
             # Snapshot all files and their mtimes before invocation.
             before: dict = {
                 p: p.stat().st_mtime_ns
@@ -493,10 +493,10 @@ class TestNextActionBlockers(unittest.TestCase):
     def test_blockers_empty_on_clean_project(self) -> None:
         """No blockers on a project with a phase file and no open questions."""
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             scaffold.write(
-                "tasks/open/TASK-01-001-demo.md",
-                "# TASK-01-001: demo\n\nPhase: PHASE-01-foundation\n",
+                "tasks/open/TASK-01-001.md",
+                "# TASK-01-001: demo\n\nPhase: PHASE-01\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
@@ -505,7 +505,7 @@ class TestNextActionBlockers(unittest.TestCase):
     def test_blocker_missing_phase_when_tasks_present(self) -> None:
         """Blocker reported when tasks exist but no phase is detected."""
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("tasks/open/TASK-01-001-demo.md", "# TASK-01-001: demo\n")
+            scaffold.write("tasks/open/TASK-01-001.md", "# TASK-01-001: demo\n")
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             blockers = records[0]["blockers"]
@@ -526,7 +526,7 @@ class TestNextActionBlockers(unittest.TestCase):
             "- OQ-002: What format for compose-state output?\n"
         )
         with project_scaffold(cartopian_toml=_TOML_BASE, state_md=state_with_oqs) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             blockers = records[0]["blockers"]
@@ -544,7 +544,7 @@ class TestNextActionBlockers(unittest.TestCase):
             "## What to do next\n\nContinue.\n"
         )
         with project_scaffold(cartopian_toml=_TOML_BASE, state_md=state_no_oqs) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             self.assertEqual(records[0]["blockers"], [])
@@ -558,7 +558,7 @@ class TestNextActionBlockers(unittest.TestCase):
             "- coder deploy failed mid-handoff; operator restarting the machine\n"
         )
         with project_scaffold(cartopian_toml=_TOML_BASE, state_md=state_with_note) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             note_blockers = [
@@ -573,34 +573,34 @@ class TestNextActionBlockers(unittest.TestCase):
 class TestNextUnstartedPhaseHelper(unittest.TestCase):
     """Pure logic of `_next_unstarted_phase` (FR-012)."""
 
-    _STEMS = ["PHASE-00-rulings", "PHASE-01-foundation", "PHASE-02-build"]
+    _STEMS = ["PHASE-00", "PHASE-01", "PHASE-02"]
 
     def test_picks_first_phase_after_last_with_tasks(self):
         self.assertEqual(
             next_action._next_unstarted_phase(self._STEMS, {
-                "PHASE-00-rulings": True,
-                "PHASE-01-foundation": True,
-                "PHASE-02-build": False,
+                "PHASE-00": True,
+                "PHASE-01": True,
+                "PHASE-02": False,
             }),
-            "PHASE-02-build",
+            "PHASE-02",
         )
 
     def test_skips_earlier_task_less_phase(self):
         # Phase 00 task-less (a completed rulings phase) is behind us, not "next".
         self.assertEqual(
             next_action._next_unstarted_phase(self._STEMS, {
-                "PHASE-00-rulings": False,
-                "PHASE-01-foundation": True,
-                "PHASE-02-build": False,
+                "PHASE-00": False,
+                "PHASE-01": True,
+                "PHASE-02": False,
             }),
-            "PHASE-02-build",
+            "PHASE-02",
         )
 
     def test_none_when_every_phase_has_tasks(self):
         self.assertIsNone(next_action._next_unstarted_phase(self._STEMS, {
-            "PHASE-00-rulings": True,
-            "PHASE-01-foundation": True,
-            "PHASE-02-build": True,
+            "PHASE-00": True,
+            "PHASE-01": True,
+            "PHASE-02": True,
         }))
 
     def test_none_when_no_phases(self):
@@ -614,27 +614,27 @@ class TestPlanCompletionTruth(unittest.TestCase):
 
     def test_phase_done_next_phase_ungenerated_is_not_complete(self):
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
-            scaffold.write("phases/PHASE-02-build.md", "# Phase 02\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            scaffold.write("phases/PHASE-02.md", "# PHASE-02: Build\n")
             # Phase 01's only task is DONE; Phase 02 exists but has no tasks yet.
             scaffold.write(
-                "tasks/done/TASK-01-001-build.md",
-                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+                "tasks/done/TASK-01-001.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)
             rec = records[0]
             self.assertIsNone(rec["active_task"])
             self.assertIsNone(rec["next_open_task"])
-            self.assertEqual(rec["next_unstarted_phase"], "PHASE-02-build")
+            self.assertEqual(rec["next_unstarted_phase"], "PHASE-02")
             self.assertFalse(rec["plan_complete"])
 
     def test_all_phases_done_is_complete(self):
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
-            scaffold.write("phases/PHASE-01-foundation.md", "# Phase 01\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
             scaffold.write(
-                "tasks/done/TASK-01-001-build.md",
-                "# TASK-01-001: build\n\nPhase: PHASE-01-foundation\n",
+                "tasks/done/TASK-01-001.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01\n",
             )
             records, rc = _invoke(str(scaffold.project_root))
             self.assertEqual(rc, 0)

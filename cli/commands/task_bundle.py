@@ -38,7 +38,7 @@ from cli.main import (
     stderr_usage,
 )
 
-_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?$")
+_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})$")
 _STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 _NO_PLAN_VALUES = frozenset({"n/a", "none", ""})
 

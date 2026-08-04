@@ -26,11 +26,11 @@ HOST_CHAT_DIRNAME = "chat"
 REQUEST_ID_RE = re.compile(r"^REQUEST-\d{3}$")
 CORRECTION_ID_RE = re.compile(r"^(REQUEST-\d{3})-CORRECTION-(\d{3})$")
 CHAT_RECORD_ID_RE = re.compile(r"^CHAT-[A-Z0-9][A-Z0-9-]{1,79}$")
-PHASE_ID_RE = re.compile(r"^PHASE-\d{2}(?:-[a-z0-9][a-z0-9-]*)?$")
+PHASE_ID_RE = re.compile(r"^PHASE-\d{2}$")
 PLAN_REF_RE = re.compile(
     r"^(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}$"
 )
-CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?$")
+CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}$")
 REVIEW_KINDS = ("planning", "task-closure")
 UNIT_KINDS = ("project", "planning", "task")
 REQUEST_SECTION_HEADING = "## Original operator request (verbatim)"
@@ -55,7 +55,7 @@ MAX_COMPLETION_EVIDENCE_BYTES = 256 * 1024
 DECISION_QUOTE_MARKER = "Operator request quote for:"
 DECISION_QUOTE_MARKER_RE = re.compile(
     r"^Operator request quote for:\s*"
-    r"(project:project|planning:PLAN-\d{3}(?:-[a-z0-9][a-z0-9-]*)?|"
+    r"(project:project|planning:PLAN-\d{3}|"
     r"task:TASK-\d{2}-\d{3})$"
 )
 LEGACY_DECISION_ATTRIBUTIONS = (
@@ -612,7 +612,7 @@ def _decision_evidence(
     grouped: Dict[str, List[Path]] = {}
     if decisions_dir.is_dir():
         for path in sorted(decisions_dir.glob("DEC-*.md")):
-            match = re.fullmatch(r"(DEC-\d{3})(?:-[a-z0-9][a-z0-9-]*)?\.md", path.name)
+            match = re.fullmatch(r"(DEC-\d{3})\.md", path.name)
             if match:
                 grouped.setdefault(match.group(1), []).append(path)
     structurally_marked: set[str] = set()
@@ -660,7 +660,7 @@ def _target_unit(review_kind: str, task_path: Optional[Path], checkpoint_id: Opt
     if review_kind in ("task-assignment", "task-closure"):
         if task_path is None:
             raise RequestRefusal("missing-review-target", "task review has no task")
-        match = re.match(r"^(TASK-\d{2}-\d{3})", task_path.stem)
+        match = re.fullmatch(r"(TASK-\d{2}-\d{3})", task_path.stem)
         if match is None:
             raise RequestRefusal("malformed-review-target", f"invalid task name: {task_path.name}")
         return GovernedUnit("task", match.group(1))
@@ -786,7 +786,7 @@ def _resolve_trace(
 
 
 def _phase_from_text(text: str) -> Optional[str]:
-    match = re.search(r"^Phase:\s*(PHASE-\d{2}(?:-[a-z0-9][a-z0-9-]*)?)\s*$", text, re.MULTILINE)
+    match = re.search(r"^Phase:\s*(PHASE-\d{2})\s*$", text, re.MULTILINE)
     return match.group(1) if match else None
 
 

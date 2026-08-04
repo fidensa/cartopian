@@ -981,14 +981,14 @@ class TestSurfaceRegistry(unittest.TestCase):
                 "# Standards\n",
                 encoding="utf-8",
             )
-            (project / "phases" / "PHASE-01-build.md").write_text(
+            (project / "phases" / "PHASE-01.md").write_text(
                 "# PHASE-01: Build\n",
                 encoding="utf-8",
             )
-            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task = project / "tasks" / "open" / "TASK-01-001.md"
             task.write_text(
                 "# TASK-01-001: Build\n\n"
-                "Phase: PHASE-01-build\n"
+                "Phase: PHASE-01\n"
                 "Plan ref: n/a\n"
                 "Work root: tool-repo\n"
                 "Assignee: coder\n"
@@ -1320,7 +1320,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.9.0"\n'
+        'project_schema_version = "v0.10.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"
@@ -1373,13 +1373,13 @@ class TestProjectionParity(unittest.TestCase):
                 "# State\n\n## Situation\n\nNone.\n", encoding="utf-8"
             )
             (project / "STANDARDS.md").write_text("# Standards\n", encoding="utf-8")
-            (project / "phases" / "PHASE-01-build.md").write_text(
+            (project / "phases" / "PHASE-01.md").write_text(
                 "# PHASE-01: Build\n", encoding="utf-8"
             )
-            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task = project / "tasks" / "open" / "TASK-01-001.md"
             task.write_text(
                 "# TASK-01-001: Build\n\n"
-                "Phase: PHASE-01-build\n"
+                "Phase: PHASE-01\n"
                 "Plan ref: n/a\n"
                 "Work root: tool-repo\n"
                 "Assignee: coder\n"
@@ -1515,13 +1515,13 @@ class TestProjectionParity(unittest.TestCase):
             (project / "STANDARDS.md").write_text(
                 "# Standards\n", encoding="utf-8"
             )
-            (project / "phases" / "PHASE-01-build.md").write_text(
+            (project / "phases" / "PHASE-01.md").write_text(
                 "# PHASE-01: Build\n", encoding="utf-8"
             )
-            task = project / "tasks" / "open" / "TASK-01-001-build.md"
+            task = project / "tasks" / "open" / "TASK-01-001.md"
             task.write_text(
                 "# TASK-01-001: Build\n\n"
-                "Phase: PHASE-01-build\nPlan ref: n/a\nWork root: tool-repo\n"
+                "Phase: PHASE-01\nPlan ref: n/a\nWork root: tool-repo\n"
                 "Assignee: coder\nSpec: none\nDepends on: n/a\nBlocked by: n/a\n"
                 "Created: 2026-07-25\nEvidence gate: n/a\n\n"
                 "## Goal\n\nBuild.\n\n## Acceptance\n\n- [ ] Built.\n",

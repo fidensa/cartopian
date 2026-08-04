@@ -29,7 +29,7 @@ from cli.main import (
     stderr_usage,
 )
 
-_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})(?:-[^/]*)?$")
+_TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})$")
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
