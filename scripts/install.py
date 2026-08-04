@@ -765,11 +765,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PROJECT_DIR",
         help=(
-            "compatibility cleanup: remove obsolete Cartopian PreToolUse and "
+            "standalone compatibility cleanup: remove obsolete Cartopian PreToolUse and "
             "Stop hook registrations from PROJECT_DIR/.claude/settings.json "
             "while preserving unrelated settings and hooks. Current Claude "
             "wrappers load both hooks process-scoped; no registration is "
-            "created. Never modifies user-global settings."
+            "created. Does not run install/update and never modifies user-global settings."
         ),
     )
     return p
@@ -779,6 +779,43 @@ def main(argv: Optional[List[str]] = None) -> int:
     _require_python()
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.claude_hook is not None:
+        # This historical spelling is now a bounded cleanup command, not an
+        # install modifier. Handle it before source/install-root validation so
+        # the shipped <install-root>/scripts/install.py copy can clean a
+        # project without treating its own install tree as both source and
+        # destination.
+        conflicting = any(
+            (
+                args.prefix is not None,
+                args.source is not None,
+                args.mode is not None,
+                args.from_github,
+                args.ref is not None,
+                args.patch_path,
+                args.plan_only,
+                bool(args.client),
+                bool(args.repair),
+                bool(args.inspected),
+            )
+        )
+        if conflicting:
+            parser.error(
+                "--claude-hook is a standalone cleanup operation and cannot be "
+                "combined with install, update, repair, or planning options"
+            )
+        claude_project = args.claude_hook.expanduser().resolve()
+        if not claude_project.is_dir():
+            parser.error(f"--claude-hook project directory not found: {claude_project}")
+        cleanup_actions: List[str] = []
+        cleanup_claude_hook_registrations(claude_project, cleanup_actions)
+        if not args.quiet:
+            if cleanup_actions:
+                for line in cleanup_actions:
+                    print(line)
+            else:
+                print(f"no legacy Cartopian Claude hooks found in {claude_project}")
+        return EXIT_OK
     if args.from_github and args.source is not None:
         parser.error("--from-github and --source are mutually exclusive")
     mode = args.mode or ("copy" if args.from_github else "symlink")
@@ -884,9 +921,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             write_version_marker(install_root, ref, actions)
         if args.patch_path:
             patch_user_path(install_root, actions)
-        if args.claude_hook is not None:
-            claude_project = args.claude_hook.expanduser().resolve()
-            cleanup_claude_hook_registrations(claude_project, actions)
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)

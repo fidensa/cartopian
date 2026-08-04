@@ -945,6 +945,40 @@ class TestInstallerHookCleanup(unittest.TestCase):
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             self.assertNotIn("PreToolUse", settings["hooks"])
 
+    def test_cli_cleanup_is_standalone_and_skips_install_source_validation(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import install
+        finally:
+            sys.path.pop(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "workdir"
+            (project_dir / ".claude").mkdir(parents=True)
+            settings_path = project_dir / ".claude" / "settings.json"
+            settings_path.write_text(
+                json.dumps({
+                    "hooks": {
+                        "PreToolUse": [{
+                            "matcher": "Write",
+                            "hooks": [{
+                                "type": "command",
+                                "command": "python old/claude_hook.py",
+                            }],
+                        }]
+                    }
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                install,
+                "_resolve_source_root",
+                side_effect=AssertionError("cleanup must not resolve an install source"),
+            ):
+                rc = install.main(["--claude-hook", str(project_dir), "--quiet"])
+            self.assertEqual(rc, 0)
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertNotIn("PreToolUse", settings["hooks"])
+
 
 _PM_LIFECYCLE_ROLES = (
     "[roles.pm]\n"
