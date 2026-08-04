@@ -266,7 +266,7 @@ Cartopian wrappers always change directory to the **Cartopian project root** bef
 
 So `LAUNCH_CWD = <workspace>/projects/<project-id>`.
 
-Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly. The prompt the PM authors references any outside-the-project resources (work roots, etc.) by absolute path/URI; the wrapper does not itself gate the agent's filesystem access — that is the harness's job (capability-based gating), not the launcher's. Where the agent CLI imposes its *own* sandbox rooted at the launch cwd, the wrapper widens it with the declared work roots (see [Scope and gating](#scope-and-gating)).
+Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly. The prompt the PM authors references any outside-the-project resources (work roots, etc.) by absolute path/URI. Where the agent CLI imposes its *own* sandbox rooted at the launch cwd, the wrapper widens it with the declared work roots (see [Scope and gating](#scope-and-gating)). For Claude only, the wrapper also loads the native capability hook at this exact dispatched project boundary.
 
 If the prompt is not inside a recognizable Cartopian project layout (missing the `prompts/` marker on its path), the wrapper leaves cwd unchanged and prints a notice. This keeps the wrappers usable in ad-hoc test harnesses.
 
@@ -292,7 +292,7 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 
 ## Scope and gating
 
-The wrappers are **neutral launchers**. They translate the resolved dispatch environment into client CLI flags, set cwd, enforce the deadline, and emit an exit signal. They do not parse project configuration or interpret review policy, assignment, run automation, task selection, launch permission, capabilities, schema identity, or application identity. Capability-based gating is the **harness's** responsibility. If you want approval-in-the-loop behavior, use the operator-performed path instead of the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
+The wrappers retain a **neutral launcher** role for ordinary CLI translation: they map the resolved dispatch environment into client flags, set cwd, enforce the deadline, and emit an exit signal. They do not interpret review policy, assignment, run automation, task selection, launch permission, schema identity, or application identity. The Claude wrapper has one additional responsibility: when dispatch supplies `CARTOPIAN_ROLE`, its settings helper resolves whether the project activates grants and, if so, loads the harness's PreToolUse refusal adapter. The wrapper never derives authorization from the role or wrapper name; the hook resolves effective grants. If you want approval-in-the-loop behavior, use the operator-performed path instead of the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
 
 One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). The launch contract grants the assignee write access to the union of the Cartopian project root and the project's declared work roots, so wrappers widen a tool-imposed sandbox to cover the work roots `cartopian dispatch` exports via `CARTOPIAN_WORK_ROOTS` — widening a sandbox up to the launch contract is not scoping, and wrappers never confine the agent below what its own CLI does. Where a tool's sandbox has no per-path grant surface (gemini `--sandbox`, devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
 
@@ -307,6 +307,8 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude and Codex translate it into their tool-specific flags; Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
 | `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
+| `CARTOPIAN_ROLE` | _(unset on manual launch)_ | Dispatch role/config boundary inherited by the capability hook. On Claude it also asks the settings helper to resolve whether process-scoped capability enforcement is active; it never authorizes by role name. |
+| `CARTOPIAN_PYTHON` | _(unset on manual launch)_ | Current Python interpreter exported by dispatch for per-launch hook commands, avoiding stale install-time interpreter paths. |
 | `CARTOPIAN_EXPECTED_REPORT_VARIANT` | _(inferred on manual launch)_ | `task`, `review`, or `planning-review`; prevents another handoff kind's stale content from satisfying supervision/observation. |
 | `CARTOPIAN_EXPECTED_REPORT_PATH` | _(unset on manual launch)_ | Exact bounded report slot recorded by dispatch for custom wrapper integration. |
 | `CARTOPIAN_LOG_BYTE_LIMIT` / `CARTOPIAN_LOG_LINE_LIMIT` | `65536` / `400` | Retained launch-log ceilings; they do not limit wrapper execution or artifacts. |
@@ -330,30 +332,35 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | --- | --- | --- |
 | `CARTOPIAN_CLAUDE_TOOLS` | _(empty)_ | Allowed-tool whitelist (comma-separated). Empty means claude's full default tool set. Set e.g. `Read` to restrict to read-only. |
 | `CARTOPIAN_CLAUDE_FORMAT` | `text` | Output format: `text`, `json`, `stream-json` |
-| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip auto-discovered plugins and hooks (`true`/`false`). For a dispatched handoff, the report-less-stop guard remains active because the wrapper supplies it explicitly through per-launch `--settings`; the optional project capability hook remains auto-discovered and is therefore skipped in bare mode. |
+| `CARTOPIAN_CLAUDE_BARE` | `false` | Skip auto-discovered plugins and hooks (`true`/`false`). Explicit process-scoped capability and completion hooks remain active when their independent dispatch boundaries apply. |
 | `CARTOPIAN_CLAUDE_SKIP_PERMS` | `true` | Pass `--dangerously-skip-permissions` so claude runs non-interactively. Set to `false` to re-enable permission prompts (interactive debugging only). |
 
 #### Claude Code hooks
 
 `claude -p` treats the assistant's final result as process exit: background shells are stopped shortly after it, and a background-task notification cannot resume the session. An assignee that ends its turn saying "the suite is still running, I'll write the report after" therefore loses both the run and the report, and the handoff lands as `exited-without-report`.
 
-`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish. Whenever `CARTOPIAN_EXPECTED_REPORT_PATH` is present, both shipped Claude wrappers pass an inline JSON object through Claude's `--settings` option for that launched process only. They do not write user, project, or local Claude settings, do not restrict Claude's normal settings sources, and do not include the capability-refusal PreToolUse hook. Without the expected-report export, no completion settings are added and the hook is inert.
+The wrapper builds one inline JSON object for Claude's per-process `--settings` layer. It can contain two logically separate entries:
 
-`CARTOPIAN_CLAUDE_BARE=true` retains bare mode's normal suppression of auto-discovered hooks and plugins, but it does not disable completion enforcement: the wrapper still supplies the completion entry explicitly through `--settings`. A dispatched handoff therefore cannot silently opt out of its report guard through this convenience flag.
+- `PreToolUse`: when `CARTOPIAN_ROLE` marks a mediated dispatch and canonical config resolution finds that any role declares grants, the wrapper loads `cli/claude_hook.py`. Ungated configs add no capability entry. The hook resolves the dispatched role's effective grants and fails closed under the capability contract.
+- `Stop`: whenever `CARTOPIAN_EXPECTED_REPORT_PATH` is present, the wrapper loads `cli/claude_stop_hook.py`, which blocks an absent or unparseable report at the repairable end-of-turn moment.
 
-Older Cartopian versions optionally wrote the completion entry into project `.claude/settings.json`. During the compatibility window the wrapper copies that exact entry into the per-launch layer, allowing Claude's array de-duplication to execute it once. To remove the obsolete project entry, re-run the capability-hook registration command:
+The wrappers do not write user, project, or local Claude settings and do not pass `--setting-sources`, so all normal settings sources remain available. Each hook command uses the current interpreter exported by dispatch and the hook path in the current install; it does not depend on an interpreter captured during an earlier installation.
+
+`CARTOPIAN_CLAUDE_BARE=true` retains bare mode's normal suppression of auto-discovered hooks and plugins, but it does not disable either applicable process-scoped entry: the wrapper supplies them explicitly through `--settings`.
+
+Older Cartopian versions optionally wrote capability and completion entries into project `.claude/settings.json`. During the compatibility window the wrapper reuses an entry only when it targets the current interpreter and installed hook, allowing Claude's array de-duplication to execute it once. A stale or incompatible Cartopian entry refuses launch rather than executing the hook twice or trusting an old interpreter. Remove obsolete project entries with the retained compatibility command:
 
 ```bash
 python ~/.cartopian/scripts/install.py --claude-hook /path/to/cartopian/project
 ```
 
-That explicit operation now registers only the capability-refusal PreToolUse hook and removes the older Cartopian completion Stop entry while preserving all unrelated settings and hooks. Installation, update, reconciliation, and dispatch never perform this project mutation automatically.
+That explicit operation removes old Cartopian PreToolUse and Stop handlers while preserving all unrelated settings and hooks. It does not create a registration. Installation, update, reconciliation, and dispatch never perform this project mutation automatically.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` | `3` | Maximum stop refusals per session before the guard yields and lets the process exit (leaving `exited-without-report` as the backstop). `0` disables the guard; a malformed or negative value falls back to the default rather than silently disabling it. |
+| `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` | `3` | Maximum stop refusals per session before the guard yields and lets the process exit. A clean exit with no report is then classified `exited-without-report`. `0` disables the guard; a malformed or negative value falls back to the default rather than silently disabling it. |
 
-The guard adds no timer — `CARTOPIAN_TIMEOUT` remains the only clock — and fails open on every error path (missing env, unreadable payload, unwritable counter, internal error).
+The Stop guard adds no timer — `CARTOPIAN_TIMEOUT` remains the only clock — and fails open on every error path (missing env, unreadable payload, unwritable counter, internal error). It is completion discipline, not capability enforcement. Capability refusal is point-of-use PreToolUse behavior. Governed-write provenance is after-the-fact detection. `exited-without-report` is only a completion classification. None of those mechanisms can reliably reveal unauthorized shell reads.
 
 ### Gemini
 

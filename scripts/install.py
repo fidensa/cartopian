@@ -536,26 +536,14 @@ def patch_user_path(install_root: Path, actions: List[str]) -> None:
         _patch_unix_rc(bin_dir, install_root / "wrappers" / "bin", actions)
 
 
-# --- Claude Code capability-hook registration (operator-invoked) ----------
-# `--claude-hook <project-dir>` merges the PreToolUse refusal adapter into
-# <project-dir>/.claude/settings.json. It is never run implicitly and never
-# touches any user-global settings file. Completion enforcement is instead
-# loaded by the Claude wrappers through process-scoped `--settings`.
-#
-# For compatibility, this explicit operation also removes the obsolete
-# project-level claude_stop_hook.py registration written by older installers.
-# That is a bounded migration of the exact project the operator named; normal
-# installation, update, reconciliation, and dispatch never mutate projects.
-#
-# Read tools first, then the mutation tools: the PreToolUse hook gates both
-# axes, and the containment matrix claims read enforcement only when the
-# registered matcher actually covers the read tools.
-CLAUDE_HOOK_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
-
-
-def _claude_hook_command(install_root: Path) -> str:
-    hook_path = install_root / "cli" / "claude_hook.py"
-    return f'"{sys.executable}" "{hook_path}"'
+# --- Claude Code project-hook cleanup (operator-invoked) -------------------
+# Current Claude wrappers load both Cartopian hooks through process-scoped
+# `--settings`; no project registration is required.  The historical
+# `--claude-hook <project-dir>` spelling is retained as an explicit cleanup
+# operation for registrations made by older releases.  It removes only
+# Cartopian's two known hook handlers and preserves unrelated settings/hooks.
+# Normal installation, update, reconciliation, and dispatch never call this
+# path and never mutate a registered project.
 
 
 def _load_claude_settings(settings_path: Path) -> dict:
@@ -592,20 +580,6 @@ def _save_claude_settings(settings_path: Path, settings: dict) -> None:
     )
 
 
-def _without_hook_script(entries: list, script_name: str) -> list:
-    """Drop event entries that already register ``script_name`` (idempotence)."""
-    return [
-        item
-        for item in entries
-        if script_name
-        not in "".join(
-            h.get("command", "")
-            for h in (item.get("hooks", []) if isinstance(item, dict) else [])
-            if isinstance(h, dict)
-        )
-    ]
-
-
 def _without_hook_handler(entries: list, script_name: str) -> list:
     """Drop matching handlers while preserving their event entry siblings."""
     kept = []
@@ -628,54 +602,33 @@ def _without_hook_handler(entries: list, script_name: str) -> list:
     return kept
 
 
-def register_claude_hook(
-    project_dir: Path, install_root: Path, actions: List[str]
-) -> None:
-    """Merge the refusal-adapter PreToolUse hook into the project's
-    ``.claude/settings.json``. Idempotent: an existing claude_hook.py entry is
-    replaced in place; all other settings are preserved."""
-    settings_path = project_dir / ".claude" / "settings.json"
-    settings = _load_claude_settings(settings_path)
-    hooks = settings.setdefault("hooks", {})
-    pre = hooks.setdefault("PreToolUse", [])
-    entry = {
-        "matcher": CLAUDE_HOOK_MATCHER,
-        "hooks": [
-            {"type": "command", "command": _claude_hook_command(install_root)}
-        ],
-    }
-    kept = _without_hook_script(pre, "claude_hook.py")
-    kept.append(entry)
-    hooks["PreToolUse"] = kept
-    _save_claude_settings(settings_path, settings)
-    actions.append(f"registered claude refusal-adapter hook in {settings_path}")
-
-
-def remove_legacy_claude_stop_hook(
-    project_dir: Path, actions: List[str]
-) -> None:
-    """Remove the obsolete project-scoped completion hook registration.
-
-    Every unrelated setting and Stop hook is preserved. Missing legacy
-    registrations are an idempotent no-op.
-    """
+def cleanup_claude_hook_registrations(project_dir: Path, actions: List[str]) -> None:
+    """Remove obsolete Cartopian project hooks without touching other settings."""
     settings_path = project_dir / ".claude" / "settings.json"
     settings = _load_claude_settings(settings_path)
     hooks = settings.get("hooks")
     if not isinstance(hooks, dict):
         return
-    stop = hooks.get("Stop")
-    if not isinstance(stop, list):
+    changed = False
+    for event, script_name in (
+        ("PreToolUse", "claude_hook.py"),
+        ("Stop", "claude_stop_hook.py"),
+    ):
+        entries = hooks.get(event)
+        if not isinstance(entries, list):
+            continue
+        kept = _without_hook_handler(entries, script_name)
+        if kept == entries:
+            continue
+        changed = True
+        if kept:
+            hooks[event] = kept
+        else:
+            hooks.pop(event, None)
+    if not changed:
         return
-    kept = _without_hook_handler(stop, "claude_stop_hook.py")
-    if kept == stop:
-        return
-    if kept:
-        hooks["Stop"] = kept
-    else:
-        hooks.pop("Stop", None)
     _save_claude_settings(settings_path, settings)
-    actions.append(f"removed legacy claude completion Stop hook from {settings_path}")
+    actions.append(f"removed legacy Cartopian Claude hooks from {settings_path}")
 
 
 def _check_optional_coreutils() -> Optional[str]:
@@ -812,11 +765,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PROJECT_DIR",
         help=(
-            "also register the Claude Code refusal-adapter PreToolUse hook "
-            "(capability gating) in PROJECT_DIR/.claude/settings.json. Also "
-            "removes obsolete Cartopian completion Stop-hook registrations; "
-            "completion enforcement is process-scoped by the Claude wrapper. "
-            "Never modifies user-global settings."
+            "compatibility cleanup: remove obsolete Cartopian PreToolUse and "
+            "Stop hook registrations from PROJECT_DIR/.claude/settings.json "
+            "while preserving unrelated settings and hooks. Current Claude "
+            "wrappers load both hooks process-scoped; no registration is "
+            "created. Never modifies user-global settings."
         ),
     )
     return p
@@ -933,8 +886,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             patch_user_path(install_root, actions)
         if args.claude_hook is not None:
             claude_project = args.claude_hook.expanduser().resolve()
-            register_claude_hook(claude_project, install_root, actions)
-            remove_legacy_claude_stop_hook(claude_project, actions)
+            cleanup_claude_hook_registrations(claude_project, actions)
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)

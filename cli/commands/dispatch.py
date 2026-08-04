@@ -26,8 +26,10 @@ missing role handoff agent or prompt, exports ``CARTOPIAN_TIMEOUT`` from
 enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
 cartopian project-root cwd (the launch contract fixed by
-``protocol/CONVENTIONS.md`` § Handoffs / Launch Directory). Capability gating of
-the launched agent is the harness's job, not the launcher's.
+``protocol/CONVENTIONS.md`` § Handoffs / Launch Directory). Capability grant
+decisions remain the harness hook's job. The Claude wrapper uses the exported
+role only to resolve whether that process-scoped hook must be loaded; it never
+derives authorization from a role or wrapper name.
 
 It returns once the wrapper is launched — it does **not** block to completion. The
 wrapper owns its own background/timeout semantics (it kills the assignee at the
@@ -98,6 +100,7 @@ WORK_ROOTS_ENV = "CARTOPIAN_WORK_ROOTS"
 HANDOFF_ID_ENV = "CARTOPIAN_HANDOFF_ID"
 EXPECTED_VARIANT_ENV = "CARTOPIAN_EXPECTED_REPORT_VARIANT"
 EXPECTED_REPORT_ENV = "CARTOPIAN_EXPECTED_REPORT_PATH"
+PYTHON_ENV = "CARTOPIAN_PYTHON"
 
 def _running_on_windows() -> bool:
     """Platform seam for the two native-Windows launch branches (argv routing
@@ -560,11 +563,11 @@ def handler(args: argparse.Namespace) -> int:
     # argument, cwd = the cartopian project root, CARTOPIAN_TIMEOUT exported.
     # `start_new_session` detaches the wrapper so it runs in the background and
     # survives this short-lived invocation; we never wait() — the PM observes
-    # completion via wait-handoff / wait-report. The wrapper is a neutral
-    # launcher: dispatch sets where to run and the deadline; it does not gate
-    # the agent's filesystem access (capability gating is the harness's job),
-    # but it does export the resolved work roots so a wrapper whose agent CLI
-    # imposes its own sandbox can widen it to cover the declared work roots.
+    # completion via wait-handoff / wait-report. Dispatch sets where to run,
+    # the deadline, and the role/config boundary. The Claude wrapper uses that
+    # boundary only to attach its native enforcement hook; grant decisions
+    # remain inside the hook. Resolved work roots let wrappers widen an agent
+    # CLI sandbox to cover the declared work roots.
     launch_cwd = str(project_root)
     env = dict(os.environ)
     # Connected-host identity belongs to the MCP boundary.  It is evidence for
@@ -588,6 +591,10 @@ def handler(args: argparse.Namespace) -> int:
     env[HANDOFF_ID_ENV] = launch_id
     env[EXPECTED_VARIANT_ENV] = expected_variant
     env[EXPECTED_REPORT_ENV] = str(expected_report_path)
+    # Per-launch hook settings must use the same valid interpreter running
+    # this dispatch, not a path captured by an earlier install and not an
+    # arbitrary `python3` found later in the wrapper's PATH.
+    env[PYTHON_ENV] = sys.executable
     # Agent-neutral model selection from the resolved role launch record.
     # A stale value inherited from the parent environment is cleared when the
     # handoff sets no model, so the signal reflects this dispatch alone.

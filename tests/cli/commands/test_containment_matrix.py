@@ -9,6 +9,7 @@ everywhere, and every advisory row plainly names the detection-floor residual
 write).
 """
 import io
+import importlib.util
 import json
 import os
 import unittest
@@ -81,8 +82,14 @@ class _Fixture(unittest.TestCase):
     FULL_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
     WRITE_ONLY_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
 
-    def register_hook(self, matcher=FULL_MATCHER):
-        """Register the real Claude Code refusal-adapter hook for this project."""
+    def register_hook(self, matcher=FULL_MATCHER, command=None):
+        """Write an older project registration for compatibility coverage."""
+        if command is None:
+            from cli import claude_launch_settings
+
+            command = claude_launch_settings.hook_command(
+                REPO_ROOT, "claude_hook.py", windows=False
+            )
         settings = {
             "hooks": {
                 "PreToolUse": [
@@ -91,7 +98,7 @@ class _Fixture(unittest.TestCase):
                         "hooks": [
                             {
                                 "type": "command",
-                                "command": f'"python3" "{HOOK_PATH}"',
+                                "command": command,
                             }
                         ],
                     }
@@ -111,19 +118,22 @@ class _Fixture(unittest.TestCase):
 
 
 class TestHonestTiersFromEvidence(_Fixture):
-    def test_activated_project_with_registered_hook_renders_contained(self):
-        self.register_hook()
+    def test_activated_project_with_healthy_process_chain_renders_partial(self):
         record, rows = self.rows()
         claude = rows["claude-code"]
-        self.assertEqual(claude["tier"], "contained")
+        self.assertEqual(claude["tier"], "contained-partial")
         self.assertEqual(claude["ceiling"], "contained")
         self.assertTrue(claude["interception_present"])
         self.assertTrue(claude["interception_registered"])
+        self.assertTrue(claude["process_scoped_evidence"]["process_scoped"])
+        self.assertEqual(
+            claude["process_scoped_evidence"]["legacy_project_registration"],
+            "absent",
+        )
         self.assertTrue(claude["activated"])
-        self.assertIsNone(claude["disclosure"])
+        self.assertIn("Bash/shell", claude["disclosure"])
 
     def test_detection_floor_only_host_renders_advisory(self):
-        self.register_hook()
         _, rows = self.rows()
         for host in (
             "claude-desktop",
@@ -136,17 +146,13 @@ class TestHonestTiersFromEvidence(_Fixture):
                 self.assertEqual(rows[host]["tier"], "advisory+detection")
                 self.assertFalse(rows[host]["interception_registered"])
 
-    def test_activated_project_without_registration_degrades_to_advisory(self):
-        # No .claude/settings.json written: the interception is not registered
-        # for this project, so even the contained-ceiling host degrades.
+    def test_project_registration_is_not_required(self):
         _, rows = self.rows()
         claude = rows["claude-code"]
-        self.assertEqual(claude["tier"], "advisory+detection")
-        self.assertFalse(claude["interception_registered"])
-        self.assertIsNotNone(claude["disclosure"])
+        self.assertEqual(claude["tier"], "contained-partial")
+        self.assertTrue(claude["interception_registered"])
 
     def test_all_seven_hosts_present_with_assigned_ceilings(self):
-        self.register_hook()
         _, rows = self.rows()
         expected_ceilings = {
             "claude-code": "contained",
@@ -167,36 +173,29 @@ class TestReadBoundaryTiers(_Fixture):
     where the interception point actually intercepts the read tools; advisory
     + detection (with a plain disclosure) everywhere else."""
 
-    def test_full_matcher_renders_both_boundaries_contained(self):
-        self.register_hook()
+    def test_process_matcher_renders_both_boundaries_partial(self):
         _, rows = self.rows()
         claude = rows["claude-code"]
-        self.assertEqual(claude["boundaries"]["write"]["tier"], "contained")
-        self.assertEqual(claude["boundaries"]["read"]["tier"], "contained")
-        self.assertEqual(claude["tier"], "contained")
-        self.assertIsNone(claude["boundaries"]["read"]["disclosure"])
+        self.assertEqual(claude["boundaries"]["write"]["tier"], "contained-partial")
+        self.assertEqual(claude["boundaries"]["read"]["tier"], "contained-partial")
+        self.assertEqual(claude["tier"], "contained-partial")
+        self.assertFalse(claude["boundaries"]["read"]["shell_interception"])
+        self.assertFalse(claude["boundaries"]["read"]["unauthorized_read_detection"])
 
-    def test_write_only_matcher_discloses_read_as_advisory(self):
-        # A registration that intercepts only the mutation tools cannot claim
-        # read enforcement: the read boundary — and therefore the overall
-        # tier — degrades, and the disclosure names the read residual.
+    def test_incompatible_write_only_registration_invalidates_process_chain(self):
         self.register_hook(matcher=self.WRITE_ONLY_MATCHER)
         _, rows = self.rows()
         claude = rows["claude-code"]
-        self.assertEqual(claude["boundaries"]["write"]["tier"], "contained")
-        self.assertEqual(
-            claude["boundaries"]["read"]["tier"], "advisory+detection"
-        )
+        self.assertEqual(claude["boundaries"]["write"]["tier"], "advisory+detection")
+        self.assertEqual(claude["boundaries"]["read"]["tier"], "advisory+detection")
         self.assertFalse(claude["boundaries"]["read"]["interception_registered"])
         self.assertEqual(claude["tier"], "advisory+detection")
-        read_disclosure = claude["boundaries"]["read"]["disclosure"]
-        self.assertIsNotNone(read_disclosure)
-        self.assertIn("read", read_disclosure)
-        self.assertIsNotNone(claude["disclosure"])
-        self.assertIn("read", claude["disclosure"])
+        self.assertEqual(
+            claude["process_scoped_evidence"]["legacy_project_registration"],
+            "incompatible",
+        )
 
     def test_read_boundary_advisory_on_hosts_without_adapter(self):
-        self.register_hook()
         _, rows = self.rows()
         for host, row in rows.items():
             if host == "claude-code":
@@ -210,19 +209,18 @@ class TestReadBoundaryTiers(_Fixture):
                 )
                 self.assertIsNotNone(row["boundaries"]["read"]["disclosure"])
 
-    def test_no_registration_degrades_both_boundaries(self):
+    def test_no_registration_keeps_both_process_boundaries_active(self):
         _, rows = self.rows()
         claude = rows["claude-code"]
         for boundary in ("read", "write"):
             with self.subTest(boundary=boundary):
                 self.assertEqual(
-                    claude["boundaries"][boundary]["tier"], "advisory+detection"
+                    claude["boundaries"][boundary]["tier"], "contained-partial"
                 )
 
 
 class TestFailClosedGateWiring(_Fixture):
     def test_gated_ceiling_never_renders_contained_via_cli(self):
-        self.register_hook()
         _, rows = self.rows()
         for host, row in rows.items():
             if host == "claude-code":
@@ -258,7 +256,6 @@ class TestUngatedProject(_Fixture):
         self.scaffold.write("cartopian.toml", _UNGATED_TOML)
 
     def test_ungated_config_never_renders_contained_even_with_hook(self):
-        self.register_hook()
         record, rows = self.rows()
         self.assertFalse(record["activated"])
         for host, row in rows.items():
@@ -267,7 +264,6 @@ class TestUngatedProject(_Fixture):
                 self.assertFalse(row["activated"])
 
     def test_ungated_disclosure_names_the_config_as_cause(self):
-        self.register_hook()
         _, rows = self.rows()
         disclosure = rows["claude-code"]["disclosure"]
         self.assertIsNotNone(disclosure)
@@ -275,7 +271,6 @@ class TestUngatedProject(_Fixture):
         self.assertIn("no capability grants", disclosure)
 
     def test_ungated_read_boundary_is_advisory_with_ungated_disclosure(self):
-        self.register_hook()
         _, rows = self.rows()
         read = rows["claude-code"]["boundaries"]["read"]
         self.assertEqual(read["tier"], "advisory+detection")
@@ -284,7 +279,6 @@ class TestUngatedProject(_Fixture):
 
 class TestAdvisoryDisclosure(_Fixture):
     def test_advisory_rows_plainly_name_the_residual(self):
-        self.register_hook()
         _, rows = self.rows()
         advisory_rows = [r for r in rows.values() if r["tier"] == "advisory+detection"]
         self.assertTrue(advisory_rows, msg="expected at least one advisory row")
@@ -293,12 +287,77 @@ class TestAdvisoryDisclosure(_Fixture):
                 disclosure = row["disclosure"]
                 self.assertIsNotNone(disclosure)
                 self.assertIn("detected after the fact", disclosure)
-                self.assertIn("not prevented at the point of write", disclosure)
 
-    def test_non_advisory_rows_carry_no_disclosure(self):
-        self.register_hook()
+    def test_partial_row_carries_shell_residual_disclosure(self):
         _, rows = self.rows()
-        self.assertIsNone(rows["claude-code"]["disclosure"])
+        self.assertIn("Bash/shell", rows["claude-code"]["disclosure"])
+
+
+class TestInstalledProcessChainEvidence(_Fixture):
+    def install_root(self, mode="copy"):
+        spec = importlib.util.spec_from_file_location(
+            f"matrix_install_{mode}", REPO_ROOT / "scripts" / "install.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        root = self.scaffold.root / f"Cartopian {mode} install"
+        module.install(REPO_ROOT, root, mode=mode)
+        return root
+
+    def rows_at(self, install_root):
+        with patch(
+            "cli.commands.containment_matrix._install_root",
+            return_value=install_root,
+        ):
+            return self.rows()
+
+    def test_copy_and_symlink_layouts_have_healthy_process_chain(self):
+        for mode in ("copy", "symlink"):
+            with self.subTest(mode=mode):
+                _, rows = self.rows_at(self.install_root(mode))
+                evidence = rows["claude-code"]["process_scoped_evidence"]
+                self.assertTrue(evidence["process_scoped"])
+                self.assertTrue(evidence["wrapper_chain_valid"])
+
+    def test_missing_hook_downgrades(self):
+        root = self.install_root()
+        (root / "cli" / "claude_hook.py").unlink()
+        _, rows = self.rows_at(root)
+        self.assertEqual(rows["claude-code"]["tier"], "advisory+detection")
+        self.assertFalse(
+            rows["claude-code"]["process_scoped_evidence"]["hook_present"]
+        )
+
+    def test_missing_settings_helper_downgrades(self):
+        root = self.install_root()
+        (root / "cli" / "claude_launch_settings.py").unlink()
+        _, rows = self.rows_at(root)
+        self.assertEqual(rows["claude-code"]["tier"], "advisory+detection")
+        self.assertFalse(
+            rows["claude-code"]["process_scoped_evidence"]["settings_helper_present"]
+        )
+
+    def test_invalid_hook_downgrades(self):
+        root = self.install_root()
+        (root / "cli" / "claude_hook.py").write_text(
+            "# incomplete hook stub\n", encoding="utf-8"
+        )
+        _, rows = self.rows_at(root)
+        self.assertEqual(rows["claude-code"]["tier"], "advisory+detection")
+        evidence = rows["claude-code"]["process_scoped_evidence"]
+        self.assertTrue(evidence["hook_present"])
+        self.assertFalse(evidence["hook_valid"])
+
+    def test_invalid_wrapper_chain_downgrades(self):
+        root = self.install_root()
+        wrapper = root / "wrappers" / "bin" / "cartopian-claude"
+        wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        _, rows = self.rows_at(root)
+        self.assertEqual(rows["claude-code"]["tier"], "advisory+detection")
+        self.assertFalse(
+            rows["claude-code"]["process_scoped_evidence"]["wrapper_chain_valid"]
+        )
 
 
 class TestUsageGuards(_Fixture):

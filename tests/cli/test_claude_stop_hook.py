@@ -14,8 +14,8 @@ Coverage follows the five handoff outcomes plus the guard's own bounds:
 - **complete** / **blocked** / **failed** report → allow (all are *finished*
   handoffs; only the PM judges the verdict)
 - **API-error-shaped loop** (report never appears) → the guard exhausts after
-  ``CARTOPIAN_STOP_GUARD_MAX_BLOCKS`` and allows the stop, leaving
-  ``exited-without-report`` as the final defensive backstop
+  ``CARTOPIAN_STOP_GUARD_MAX_BLOCKS`` and allows the stop; a clean exit with
+  no report receives the completion classification ``exited-without-report``
 - every failure path (no env, bad payload, unwritable counter, internal
   exception) fails **open**
 """
@@ -494,7 +494,7 @@ class TestInstallerMigration(unittest.TestCase):
             project.mkdir()
             self._write_legacy_settings(project)
             actions = []
-            install.remove_legacy_claude_stop_hook(project, actions)
+            install.cleanup_claude_hook_registrations(project, actions)
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
@@ -513,9 +513,9 @@ class TestInstallerMigration(unittest.TestCase):
             project = Path(tmp) / "project"
             project.mkdir()
             self._write_legacy_settings(project)
-            install.remove_legacy_claude_stop_hook(project, [])
+            install.cleanup_claude_hook_registrations(project, [])
             after_first = (project / ".claude" / "settings.json").read_bytes()
-            install.remove_legacy_claude_stop_hook(project, [])
+            install.cleanup_claude_hook_registrations(project, [])
             after_second = (project / ".claude" / "settings.json").read_bytes()
             self.assertEqual(after_first, after_second)
 
@@ -532,25 +532,27 @@ class TestInstallerMigration(unittest.TestCase):
                 encoding="utf-8",
             )
             before = path.read_bytes()
-            install.remove_legacy_claude_stop_hook(project, [])
+            install.cleanup_claude_hook_registrations(project, [])
             self.assertEqual(path.read_bytes(), before)
 
-    def test_capability_registration_migrates_completion_entry(self):
+    def test_cleanup_removes_capability_and_completion_entries(self):
         install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
             self._write_legacy_settings(project)
-            install.register_claude_hook(project, Path(tmp) / "root", [])
-            install.remove_legacy_claude_stop_hook(project, [])
+            path = project / ".claude" / "settings.json"
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["hooks"]["PreToolUse"] = [{
+                "matcher": "Write|Read",
+                "hooks": [{"type": "command", "command": "python old/claude_hook.py"}],
+            }]
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            install.cleanup_claude_hook_registrations(project, [])
             settings = json.loads(
-                (project / ".claude" / "settings.json").read_text(encoding="utf-8")
+                path.read_text(encoding="utf-8")
             )
-            self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
-            self.assertIn(
-                "claude_hook.py",
-                settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
-            )
+            self.assertNotIn("PreToolUse", settings["hooks"])
             self.assertEqual(len(settings["hooks"]["Stop"]), 2)
             self.assertEqual(settings["hooks"]["Stop"][0]["hooks"][0]["command"], "notify.sh")
 

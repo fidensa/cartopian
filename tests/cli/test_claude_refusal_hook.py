@@ -868,13 +868,13 @@ class TestDispatchExportsRole(unittest.TestCase):
                     rc = dispatch.handler(args)
             self.assertEqual(rc, 0, msg=err.getvalue())
             self.assertEqual(captured["env"].get("CARTOPIAN_ROLE"), "coder")
+            self.assertEqual(captured["env"].get("CARTOPIAN_PYTHON"), sys.executable)
 
 
-class TestInstallerHookRegistration(unittest.TestCase):
-    """`scripts/install.py --claude-hook <project-dir>` writes the project-level
-    settings registration; it is operator-invoked and never global."""
+class TestInstallerHookCleanup(unittest.TestCase):
+    """The historical ``--claude-hook`` path removes old registrations only."""
 
-    def test_registers_hook_in_project_settings(self) -> None:
+    def test_missing_settings_remains_unmodified(self) -> None:
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         try:
             import install
@@ -883,22 +883,11 @@ class TestInstallerHookRegistration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "workdir"
             project_dir.mkdir()
-            actions = []
-            install.register_claude_hook(
-                project_dir, Path(tmp) / "install-root", actions
-            )
+            install.cleanup_claude_hook_registrations(project_dir, [])
             settings_path = project_dir / ".claude" / "settings.json"
-            self.assertTrue(settings_path.exists())
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            matchers = settings["hooks"]["PreToolUse"]
-            self.assertEqual(len(matchers), 1)
-            self.assertEqual(
-                matchers[0]["matcher"],
-                "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit",
-            )
-            self.assertIn("claude_hook.py", matchers[0]["hooks"][0]["command"])
+            self.assertFalse(settings_path.exists())
 
-    def test_registration_is_idempotent_and_preserves_settings(self) -> None:
+    def test_cleanup_is_idempotent_and_preserves_settings(self) -> None:
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         try:
             import install
@@ -908,21 +897,28 @@ class TestInstallerHookRegistration(unittest.TestCase):
             project_dir = Path(tmp) / "workdir"
             (project_dir / ".claude").mkdir(parents=True)
             settings_path = project_dir / ".claude" / "settings.json"
-            settings_path.write_text(
-                json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}}),
-                encoding="utf-8",
-            )
+            settings_path.write_text(json.dumps({
+                "permissions": {"allow": ["Bash(ls:*)"]},
+                "hooks": {"PreToolUse": [{
+                    "matcher": "Write",
+                    "hooks": [
+                        {"type": "command", "command": "python old/claude_hook.py"},
+                        {"type": "command", "command": "audit-tool"},
+                    ],
+                }]},
+            }), encoding="utf-8")
             actions = []
-            install.register_claude_hook(project_dir, Path(tmp) / "root", actions)
-            install.register_claude_hook(project_dir, Path(tmp) / "root", actions)
+            install.cleanup_claude_hook_registrations(project_dir, actions)
+            install.cleanup_claude_hook_registrations(project_dir, actions)
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             self.assertEqual(settings["permissions"], {"allow": ["Bash(ls:*)"]})
-            self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
+            self.assertEqual(
+                settings["hooks"]["PreToolUse"][0]["hooks"],
+                [{"type": "command", "command": "audit-tool"}],
+            )
+            self.assertEqual(len(actions), 1)
 
-    def test_reregistration_upgrades_write_only_matcher(self) -> None:
-        # A pre-read-boundary install registered only the mutation tools;
-        # re-running the installer replaces the entry in place so the read
-        # tools are intercepted too.
+    def test_cleanup_removes_old_write_only_matcher(self) -> None:
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         try:
             import install
@@ -945,12 +941,9 @@ class TestInstallerHookRegistration(unittest.TestCase):
                 }
             }
             settings_path.write_text(json.dumps(stale), encoding="utf-8")
-            install.register_claude_hook(project_dir, Path(tmp) / "root", [])
+            install.cleanup_claude_hook_registrations(project_dir, [])
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            entries = settings["hooks"]["PreToolUse"]
-            self.assertEqual(len(entries), 1)
-            for tool in ("Read", "Glob", "Grep"):
-                self.assertIn(tool, entries[0]["matcher"])
+            self.assertNotIn("PreToolUse", settings["hooks"])
 
 
 _PM_LIFECYCLE_ROLES = (

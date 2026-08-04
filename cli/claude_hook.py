@@ -6,10 +6,12 @@ calls (``Read``, ``NotebookRead``, and the search tools ``Glob``/``Grep``)
 against a registered Cartopian project's governed path-classes — and against
 its declared work roots — when the active session lacks the corresponding
 capability grant (see ``cli/capabilities.py`` and ``CAPABILITIES.md``).
-Enforcement lives here, at the harness's native interception point; the
-launchers under ``wrappers/`` stay neutral. ``Bash``/shell tool calls are
-deliberately never gated — the raw-edit/read detection floor owns that
-residual.
+Enforcement lives here, at the harness's native interception point. For a
+mediated Claude handoff the wrapper adds this hook process-scoped after
+resolving activation; grant decisions still live only here. ``Bash``/shell
+tool calls are deliberately never gated. Governed writes routed around this
+point may be detected later by provenance checks; unauthorized shell reads
+generally leave no reliable Cartopian detection evidence.
 
 Decision procedure (per target path; identical for both axes):
 
@@ -69,9 +71,10 @@ are case-insensitive and separator-agnostic (drive letters, backslashes, and
 forward slashes all normalize). Live runs use ``os.path``, which is the
 correct flavor per OS.
 
-Installation (operator-invoked; never auto-applied to any user-global
-settings): register the hook in the *project-level* Claude Code settings —
-``.claude/settings.json`` in the directory Claude Code runs in::
+Activation: ``cartopian dispatch`` exports ``CARTOPIAN_ROLE`` and the Claude
+wrapper resolves the same project configuration used below. If any role
+declares grants, the wrapper supplies this entry through Claude's per-process
+``--settings`` layer::
 
     {
       "hooks": {
@@ -81,7 +84,7 @@ settings): register the hook in the *project-level* Claude Code settings —
             "hooks": [
               {
                 "type": "command",
-                "command": "python \\"$HOME/.cartopian/cli/claude_hook.py\\""
+                "command": "/current/python /installed/root/cli/claude_hook.py"
               }
             ]
           }
@@ -89,10 +92,12 @@ settings): register the hook in the *project-level* Claude Code settings —
       }
     }
 
-On native Windows use
-``python "%USERPROFILE%\\.cartopian\\cli\\claude_hook.py"`` as the command.
-``scripts/install.py --claude-hook <project-dir>`` writes this registration
-for you (merging into an existing ``.claude/settings.json``).
+The actual command is serialized for POSIX or native Windows with the current
+dispatch interpreter and installed hook path. No Claude settings file is
+written, normal user/project/local settings remain available, and
+``CARTOPIAN_CLAUDE_BARE=true`` cannot suppress the explicit layer. The legacy
+``scripts/install.py --claude-hook <project-dir>`` spelling now removes older
+Cartopian project registrations; it does not create one.
 
 Hook I/O contract: the tool-call JSON arrives on stdin; a deny is emitted as
 the documented PreToolUse structured output (``permissionDecision: "deny"``
@@ -118,8 +123,8 @@ from cli.commands.resolve_config import (  # noqa: E402
 )
 
 # The file-mutation tools this hook gates on the write axis. Bash is
-# deliberately absent: the raw-edit/read detection floor owns shell-routed
-# access.
+# deliberately absent. Governed shell writes have later provenance checks;
+# unauthorized shell reads generally have no reliable detection signal.
 FILE_MUTATION_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
 # The read tools gated on the read axis. FILE_READ_TOOLS carry an explicit

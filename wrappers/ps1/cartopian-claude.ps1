@@ -51,8 +51,9 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # autonomous coder/reviewer handoff needs.
 $AllowedTools = if ($env:CARTOPIAN_CLAUDE_TOOLS) { $env:CARTOPIAN_CLAUDE_TOOLS } else { '' }
 $OutputFormat = if ($env:CARTOPIAN_CLAUDE_FORMAT) { $env:CARTOPIAN_CLAUDE_FORMAT } else { 'text' }
-# Bare mode skips auto-discovered hooks/plugins, but a dispatched handoff still
-# receives Cartopian's completion Stop hook through explicit --settings below.
+# Bare mode skips auto-discovered hooks/plugins. Cartopian's process-scoped
+# capability and completion hooks still arrive through explicit --settings
+# when their independent dispatch boundaries apply.
 $Bare = if ($env:CARTOPIAN_CLAUDE_BARE -eq 'true') { $true } else { $false }
 # Skip permission prompts so claude runs non-interactively. Matches
 # the autonomy posture of cartopian-codex and cartopian-gemini. Set
@@ -113,17 +114,16 @@ if ($env:CARTOPIAN_LAUNCH_CWD) {
 
 $Args = @('-p')
 
-# Dispatch's expected-report export is the sole activation boundary. Generate
-# a compact JSON value for Claude's process-scoped --settings layer without
-# changing --setting-sources, so user, project, and local settings remain
-# loaded. The same installed-root-relative path works for copy and symlink
-# installs. A generation failure refuses the launch instead of silently
-# dropping report-completion enforcement.
-if ($env:CARTOPIAN_EXPECTED_REPORT_PATH) {
+# CARTOPIAN_ROLE is the mediated-dispatch role/config boundary consumed by the
+# capability hook; CARTOPIAN_EXPECTED_REPORT_PATH independently activates the
+# completion hook. Generate one process-scoped --settings value without
+# changing --setting-sources, so normal user, project, and local settings stay
+# loaded. A generation or compatibility failure refuses the launch.
+if ($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH) {
     $InstallRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
     $SettingsHelper = Join-Path $InstallRoot 'cli\claude_launch_settings.py'
     if (-not (Test-Path -LiteralPath $SettingsHelper -PathType Leaf)) {
-        Write-Error "cartopian-claude: completion settings helper not found: $SettingsHelper"
+        Write-Error "cartopian-claude: Claude settings helper not found: $SettingsHelper"
         exit 1
     }
     $ProjectDir = (Get-Location).Path
@@ -133,25 +133,35 @@ if ($env:CARTOPIAN_EXPECTED_REPORT_PATH) {
         '--project-dir', $ProjectDir,
         '--platform', 'windows'
     )
-    $Python = Get-Command py -ErrorAction SilentlyContinue
-    if ($Python) {
+    if ($env:CARTOPIAN_ROLE) { $SettingsHelperArgs += '--capability' }
+    if ($env:CARTOPIAN_EXPECTED_REPORT_PATH) { $SettingsHelperArgs += '--completion' }
+    if ($env:CARTOPIAN_PYTHON) {
+        $PythonPath = $env:CARTOPIAN_PYTHON
+        $ClaudeLaunchSettings = & $PythonPath @SettingsHelperArgs
+    } else {
+        $Python = Get-Command py -ErrorAction SilentlyContinue
+    }
+    if (-not $env:CARTOPIAN_PYTHON -and $Python) {
         $PythonPath = $Python.Source
         $ClaudeLaunchSettings = & $PythonPath -3 @SettingsHelperArgs
-    } else {
+    } elseif (-not $env:CARTOPIAN_PYTHON) {
         $Python = Get-Command python3 -ErrorAction SilentlyContinue
         if (-not $Python) { $Python = Get-Command python -ErrorAction SilentlyContinue }
         if (-not $Python) {
-            Write-Error 'cartopian-claude: Python 3 is required to construct completion Stop-hook settings'
+            Write-Error 'cartopian-claude: Python 3 is required to construct process-scoped Claude hook settings'
             exit 1
         }
         $PythonPath = $Python.Source
         $ClaudeLaunchSettings = & $PythonPath @SettingsHelperArgs
     }
     if ($LASTEXITCODE -ne 0 -or -not $ClaudeLaunchSettings) {
-        Write-Error 'cartopian-claude: could not construct completion Stop-hook settings'
+        Write-Error 'cartopian-claude: could not construct process-scoped Claude hook settings'
         exit 1
     }
-    $Args += @('--settings', ($ClaudeLaunchSettings -join "`n"))
+    $ClaudeLaunchSettingsJson = $ClaudeLaunchSettings -join "`n"
+    if ($ClaudeLaunchSettingsJson -ne '{}') {
+        $Args += @('--settings', $ClaudeLaunchSettingsJson)
+    }
 }
 
 if ($AllowedTools) {

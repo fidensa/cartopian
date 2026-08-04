@@ -35,8 +35,9 @@ Scope (deliberately narrow):
    that genuinely cannot write a report (API error loop, an exhausted context)
    into an unkillable session. Each block is counted per session; after
    ``CARTOPIAN_STOP_GUARD_MAX_BLOCKS`` (default 3) the guard stops
-   intervening, lets the process exit, and leaves the outcome to the
-   pre-existing ``exited-without-report`` backstop.
+   intervening and lets the process exit. If it exits cleanly without a
+   report, the observer records the completion classification
+   ``exited-without-report``.
 4. **Fail open, always.** An unreadable payload, an unwritable counter, an
    unexpected exception — every failure path allows the stop with a stderr
    note. This hook is completion *discipline*, not a security boundary
@@ -76,10 +77,11 @@ The actual command contains fully serialized installed paths; no settings file
 is written. Claude continues to load user, project, and local settings
 normally. ``CARTOPIAN_CLAUDE_BARE=true`` still passes ``--bare``;
 auto-discovered hooks stay skipped, while this explicitly supplied per-launch
-settings entry remains active. The optional ``scripts/install.py --claude-hook
-<project-dir>`` operation is only for the capability-refusal PreToolUse hook
-and removes the obsolete project-level completion registration as a bounded
-migration.
+settings entry remains active. The same settings object may independently
+carry the capability-refusal PreToolUse hook when the dispatched project's
+resolved grants activate containment. The legacy ``scripts/install.py
+--claude-hook <project-dir>`` operation removes obsolete project-level
+Cartopian hook registrations as a bounded compatibility cleanup.
 
 Hook I/O contract: the Stop payload arrives as JSON on stdin; a block is the
 documented ``{"decision": "block", "reason": ...}`` object on stdout with exit
