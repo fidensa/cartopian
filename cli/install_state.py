@@ -15,12 +15,7 @@ from cli.config_schema import identity_contract
 from cli.restart_state import RESTART_REASON_CODES, RESTART_STATUSES
 
 SCHEMA_IDENTITY = "cartopian-install-update-state-v1"
-# v2 adds the `project-hooks` surface. The surface vocabulary is closed and
-# every kind must be accounted for in a record, so a v1 reader cannot interpret
-# a v2 record. Bumping is what makes that refusal deterministic and honest: a
-# stale reader reports an unsupported schema version rather than an unknown
-# surface kind it would otherwise treat as a malformed record.
-RECORD_SCHEMA_VERSION = 2
+RECORD_SCHEMA_VERSION = 1
 
 OPERATION_KINDS: Tuple[str, ...] = (
     "fresh-install",
@@ -50,7 +45,6 @@ SURFACE_KINDS: Tuple[str, ...] = (
     "client-registrations",
     "client-configuration",
     "verification-content",
-    "project-hooks",
     "project-schema-migration-offers",
 )
 LIFECYCLE_STATES: Tuple[str, ...] = (

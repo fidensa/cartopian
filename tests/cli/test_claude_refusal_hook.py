@@ -871,21 +871,22 @@ class TestDispatchExportsRole(unittest.TestCase):
 
 
 class TestInstallerHookRegistration(unittest.TestCase):
-    """Project-level hook registration.
-
-    The canonical definition lives in ``cli/claude_hooks.py``; the installer's
-    required ``project-hooks`` surface and ``register-project`` both apply it,
-    so the guarantees are asserted against that module rather than against any
-    one caller.
-    """
+    """`scripts/install.py --claude-hook <project-dir>` writes the project-level
+    settings registration; it is operator-invoked and never global."""
 
     def test_registers_hook_in_project_settings(self) -> None:
-        from cli import claude_hooks
-
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import install
+        finally:
+            sys.path.pop(0)
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "workdir"
             project_dir.mkdir()
-            claude_hooks.apply_project(project_dir, Path(tmp) / "install-root")
+            actions = []
+            install.register_claude_hook(
+                project_dir, Path(tmp) / "install-root", actions
+            )
             settings_path = project_dir / ".claude" / "settings.json"
             self.assertTrue(settings_path.exists())
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
@@ -898,8 +899,11 @@ class TestInstallerHookRegistration(unittest.TestCase):
             self.assertIn("claude_hook.py", matchers[0]["hooks"][0]["command"])
 
     def test_registration_is_idempotent_and_preserves_settings(self) -> None:
-        from cli import claude_hooks
-
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import install
+        finally:
+            sys.path.pop(0)
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "workdir"
             (project_dir / ".claude").mkdir(parents=True)
@@ -908,8 +912,9 @@ class TestInstallerHookRegistration(unittest.TestCase):
                 json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}}),
                 encoding="utf-8",
             )
-            claude_hooks.apply_project(project_dir, Path(tmp) / "root")
-            claude_hooks.apply_project(project_dir, Path(tmp) / "root")
+            actions = []
+            install.register_claude_hook(project_dir, Path(tmp) / "root", actions)
+            install.register_claude_hook(project_dir, Path(tmp) / "root", actions)
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             self.assertEqual(settings["permissions"], {"allow": ["Bash(ls:*)"]})
             self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
@@ -918,8 +923,11 @@ class TestInstallerHookRegistration(unittest.TestCase):
         # A pre-read-boundary install registered only the mutation tools;
         # re-running the installer replaces the entry in place so the read
         # tools are intercepted too.
-        from cli import claude_hooks
-
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import install
+        finally:
+            sys.path.pop(0)
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "workdir"
             (project_dir / ".claude").mkdir(parents=True)
@@ -937,7 +945,7 @@ class TestInstallerHookRegistration(unittest.TestCase):
                 }
             }
             settings_path.write_text(json.dumps(stale), encoding="utf-8")
-            claude_hooks.apply_project(project_dir, Path(tmp) / "root")
+            install.register_claude_hook(project_dir, Path(tmp) / "root", [])
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             entries = settings["hooks"]["PreToolUse"]
             self.assertEqual(len(entries), 1)

@@ -12,7 +12,6 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from cli import claude_hooks
 from cli.commands._registry import (
     MalformedRegistry,
     is_kebab_case,
@@ -146,11 +145,6 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("error", f"failed to write registry: {reg_path} — {exc}")
         return EXIT_ENV
 
-    # A project registered after the last install would otherwise carry no
-    # assignee hooks until the next upgrade ran. Registration is uniform for
-    # every project, so it happens here too rather than waiting.
-    hooks_state = _register_hooks(project_path, reg_path.parent)
-
     emit_record(
         {
             "action": "register-project",
@@ -158,29 +152,7 @@ def handler(args: argparse.Namespace) -> int:
                 "id": project_id,
                 "path": project_path_str,
                 "label": label,
-                "project_hooks": hooks_state,
             },
         }
     )
     return EXIT_OK
-
-
-def _register_hooks(project_path: Path, install_root: Path) -> str:
-    """Register the Claude Code assignee hooks; never fail the registration.
-
-    The project is registered either way — a hook that could not be written is
-    reported as a residual the next install run repairs, not a reason to leave
-    the registry and the project disagreeing about whether the project exists.
-    """
-    try:
-        return claude_hooks.apply_project(project_path, install_root)
-    except (ValueError, OSError) as exc:
-        _stderr(
-            "residual",
-            (
-                f"project hooks not registered at "
-                f"{claude_hooks.settings_path(project_path)}: {exc}; "
-                f"the next install or update run repairs this"
-            ),
-        )
-        return "unregistered"

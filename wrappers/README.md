@@ -337,15 +337,13 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 
 `claude -p` treats the assistant's final result as process exit: background shells are stopped shortly after it, and a background-task notification cannot resume the session. An assignee that ends its turn saying "the suite is still running, I'll write the report after" therefore loses both the run and the report, and the handoff lands as `exited-without-report`.
 
-`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish.
-
-Registration is automatic and needs no flag. Installing or updating Cartopian registers this hook and the capability refusal adapter in **every registered project**, and `cartopian register-project` does the same for a project registered afterwards. Both hooks land in that project's `.claude/settings.json` — project-level settings only, never user-global — and operator-authored hooks in the same file are preserved. The Stop hook is inert unless `CARTOPIAN_EXPECTED_REPORT_PATH` is set, so interactive sessions in the same directory are untouched.
-
-To hook a directory that is *not* a registered project, pass it explicitly:
+`cli/claude_stop_hook.py` closes that hole at the only repairable moment. It is a **Stop** hook that blocks the stop while the expected report is absent or unparseable and hands the agent the instruction to re-run in the foreground and publish. Register it (alongside the capability refusal adapter) with:
 
 ```bash
-python ~/.cartopian/scripts/install.py --claude-hook /path/to/unregistered/dir
+python ~/.cartopian/scripts/install.py --claude-hook /path/to/cartopian/project
 ```
+
+Both hooks land in that project's `.claude/settings.json` — project-level settings only, never user-global. The Stop hook is inert unless `CARTOPIAN_EXPECTED_REPORT_PATH` is set, so interactive sessions in the same directory are untouched.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

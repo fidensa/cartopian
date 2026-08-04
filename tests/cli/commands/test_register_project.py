@@ -384,55 +384,5 @@ class TestRegisterProjectNoOutsideWrites(unittest.TestCase):
             self.assertTrue(_no_files_outside_home(home, tmp_path))
 
 
-
-class TestRegistrationInstallsProjectHooks(unittest.TestCase):
-    """A project registered after an install does not wait for the next upgrade.
-
-    The installer's `project-hooks` surface only sees projects that are in the
-    registry when it runs, so registration applies the same hooks itself.
-    """
-
-    def test_hooks_are_registered_for_a_newly_registered_project(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            home.mkdir()
-            proj = _seed_project(Path(tmp))
-            result = _run(str(proj), home=home)
-            self.assertEqual(result.returncode, 0, result.stderr)
-
-            settings_path = proj / ".claude" / "settings.json"
-            self.assertTrue(settings_path.exists(), result.stderr)
-            hooks = json.loads(settings_path.read_text(encoding="utf-8"))["hooks"]
-            self.assertEqual(len(hooks["PreToolUse"]), 1)
-            self.assertEqual(len(hooks["Stop"]), 1)
-            self.assertIn(
-                "claude_stop_hook.py", hooks["Stop"][0]["hooks"][0]["command"]
-            )
-            record = json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertEqual(record["details"]["project_hooks"], "current")
-
-    def test_registration_succeeds_even_when_hooks_cannot_be_written(self):
-        # The registry and the project must not disagree about whether the
-        # project exists just because a settings file is unmergeable.
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            home.mkdir()
-            proj = _seed_project(Path(tmp))
-            (proj / ".claude").mkdir()
-            (proj / ".claude" / "settings.json").write_text(
-                "{not json", encoding="utf-8"
-            )
-            result = _run(str(proj), home=home)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(len(_read_registry(home)), 1)
-            self.assertIn("[residual]", result.stderr)
-            self.assertEqual(
-                (proj / ".claude" / "settings.json").read_text(encoding="utf-8"),
-                "{not json",
-            )
-            record = json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertEqual(record["details"]["project_hooks"], "unregistered")
-
-
 if __name__ == "__main__":
     unittest.main()

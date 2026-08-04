@@ -449,20 +449,23 @@ class TestHookIO(unittest.TestCase):
 
 
 class TestInstallerRegistration(unittest.TestCase):
-    """Both hooks are written by the one canonical registration.
+    def _install_module(self):
+        import importlib.util
 
-    ``cli/claude_hooks.apply_project`` is the single definition the required
-    ``project-hooks`` install surface and ``register-project`` both call, so a
-    project can never end up with one hook and not the other.
-    """
+        spec = importlib.util.spec_from_file_location(
+            "cartopian_install_for_stop_hook_test", REPO_ROOT / "scripts" / "install.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     def test_registers_the_stop_hook(self):
-        from cli import claude_hooks
-
+        install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
-            claude_hooks.apply_project(project, Path(tmp) / "root")
+            actions = []
+            install.register_claude_stop_hook(project, Path(tmp) / "root", actions)
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
@@ -470,23 +473,22 @@ class TestInstallerRegistration(unittest.TestCase):
             self.assertEqual(len(stop), 1)
             self.assertNotIn("matcher", stop[0])
             self.assertIn("claude_stop_hook.py", stop[0]["hooks"][0]["command"])
+            self.assertTrue(actions)
 
     def test_registration_is_idempotent(self):
-        from cli import claude_hooks
-
+        install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
-            claude_hooks.apply_project(project, Path(tmp) / "root")
-            claude_hooks.apply_project(project, Path(tmp) / "root")
+            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
+            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
             self.assertEqual(len(settings["hooks"]["Stop"]), 1)
 
     def test_operator_stop_hooks_are_preserved(self):
-        from cli import claude_hooks
-
+        install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             (project / ".claude").mkdir(parents=True)
@@ -502,7 +504,7 @@ class TestInstallerRegistration(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            claude_hooks.apply_project(project, Path(tmp) / "root")
+            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
@@ -515,12 +517,12 @@ class TestInstallerRegistration(unittest.TestCase):
             )
 
     def test_both_hooks_coexist_in_one_settings_file(self):
-        from cli import claude_hooks
-
+        install = self._install_module()
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
             project.mkdir()
-            claude_hooks.apply_project(project, Path(tmp) / "root")
+            install.register_claude_hook(project, Path(tmp) / "root", [])
+            install.register_claude_stop_hook(project, Path(tmp) / "root", [])
             settings = json.loads(
                 (project / ".claude" / "settings.json").read_text(encoding="utf-8")
             )
@@ -530,18 +532,6 @@ class TestInstallerRegistration(unittest.TestCase):
                 "claude_hook.py",
                 settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
             )
-
-    def test_a_malformed_settings_file_is_refused_not_overwritten(self):
-        from cli import claude_hooks
-
-        with tempfile.TemporaryDirectory() as tmp:
-            project = Path(tmp) / "project"
-            (project / ".claude").mkdir(parents=True)
-            settings_path = project / ".claude" / "settings.json"
-            settings_path.write_text("{not json", encoding="utf-8")
-            with self.assertRaises(ValueError):
-                claude_hooks.apply_project(project, Path(tmp) / "root")
-            self.assertEqual(settings_path.read_text(encoding="utf-8"), "{not json")
 
 
 if __name__ == "__main__":
