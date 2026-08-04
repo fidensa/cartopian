@@ -1755,38 +1755,50 @@
     {
       "path": "templates/TASK.md",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "The task-envelope facts and risk observations captured at authoring time."
     },
     {
       "path": "templates/PROMPT.md",
       "role": "projection",
-      "activation": "pending",
-      "owns": "The derived risk result, applicable judgment reference, and selected pack rendering carried into an assignment."
+      "activation": "active",
+      "owns": "The derived risk result carried into an assignment. Judgment references and selected pack rendering remain inactive."
     },
     {
       "path": "templates/REPORT.md",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "The evidence and contingency expectations reported back at completion."
     },
     {
       "path": "skills/run-task.md",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "Assignee-facing procedure for the derived expectations."
     },
     {
       "path": "skills/run-handoff.md",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "Bounded adversarial review construction for the critical band."
     },
     {
       "path": "cli/risk_contract.py",
       "role": "projection",
-      "activation": "pending",
-      "owns": "The runtime classifier that reads this authority."
+      "activation": "active",
+      "owns": "The runtime classifier and bounded critical-review context builder that read this authority."
+    },
+    {
+      "path": "cli/commands/classify_risk.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The CLI/MCP input projection for bounded risk observations."
+    },
+    {
+      "path": "cli/commands/adversarial_review_context.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The CLI/MCP projection for fresh bounded critical-review context."
     },
     {
       "path": "protocol/packs/",
@@ -1924,7 +1936,7 @@
     },
     {
       "id": "operations-runtime-and-bodies-remain-inactive",
-      "requirement": "The runtime activation gate is unmet, no pack body location exists, and the runtime classifier and selector surfaces remain pending projections.",
+      "requirement": "The practice-pack runtime activation gate is unmet, no pack body location exists, and the runtime selector surface remains pending; independent risk-classifier activation does not activate pack selection.",
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py"
     },
@@ -1984,8 +1996,8 @@
     },
     {
       "id": "runtime-classifier-matches-the-fixtures",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_risk_execution.py",
       "requirement": "The runtime classifier returns the recorded band, ordered reasons, and derived expectations for every fixed envelope, on both the command-line and the tool surfaces."
     },
     {
@@ -1996,8 +2008,8 @@
     },
     {
       "id": "adversarial-review-context-is-bounded",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_risk_execution.py",
       "requirement": "A critical-band review handoff carries the artifact, governing contract, required evidence, and derived expectations, and omits the author's conclusion."
     },
     {

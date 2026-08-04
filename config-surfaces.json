@@ -408,6 +408,7 @@
     {
       "id": "lifecycle-projections",
       "paths": [
+        "cli/commands/adversarial_review_context.py",
         "cli/commands/handoff_packet.py",
         "cli/commands/move_task.py",
         "cli/commands/next_action.py",
@@ -431,6 +432,7 @@
         "request_alignment"
       ],
       "output_projection": [
+        "bounded adversarial review context",
         "next-action",
         "task-bundle",
         "handoff-packet",

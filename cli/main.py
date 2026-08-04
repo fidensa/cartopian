@@ -15,7 +15,9 @@ EXIT_USAGE = 2
 EXIT_ENV = 3
 
 SUBCOMMANDS: List[str] = [
+    "adversarial-review-context",
     "apply-migration-entry",
+    "classify-risk",
     "discover-projects",
     "generate-config",
     "install-workflow",
@@ -138,9 +140,11 @@ def _real_handlers():
     constants from this module).
     """
     from cli.commands import (
+        adversarial_review_context,
         apply_migration_entry,
         archive_plan,
         capture_request,
+        classify_risk,
         close_audit,
         compose_state,
         containment_matrix,
@@ -188,12 +192,17 @@ def _real_handlers():
     )
 
     return {
+        "adversarial-review-context": (
+            adversarial_review_context.configure_parser,
+            adversarial_review_context.handler,
+        ),
         "apply-migration-entry": (
             apply_migration_entry.configure_parser,
             apply_migration_entry.handler,
         ),
         "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
         "capture-request": (capture_request.configure_parser, capture_request.handler),
+        "classify-risk": (classify_risk.configure_parser, classify_risk.handler),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),

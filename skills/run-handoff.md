@@ -109,6 +109,21 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
 
 Do not delete unrelated reports. Use `delete-report` only for the `expected_report_path` returned by `handoff-packet` (for an in-review task that is the review slot `reports/REPORT-NN-NNN-review.md`; the record's `completion_report_path` names the preserved coder report, which review cleanup never touches). A stale report at the expected path is unsafe because it can be mistaken for the current handoff result.
 
+### Critical adversarial review context
+
+When a retained risk result has `band = critical` and its `independent-challenge` expectation is being fulfilled, construct the challenge input afresh with the shared bounded command:
+
+```text
+cartopian adversarial-review-context <project-root> \
+  --artifact <absolute-delivered-artifact-file> \
+  --governing-contract <absolute-governing-contract-file> \
+  --risk-result '<exact classify-risk JSON>'
+```
+
+The artifact must be the delivered work, not the producer's completion report or summary. The governing contract must carry the decisive requirements, required evidence, derived expectations, and applicable authority. Both files must resolve inside the project root or a configured work root. The command reads them at call time, checks the critical result against the current registry, applies the byte bound before admitting content, and returns a content identity. Its `context` object has exactly `artifact` and `governing_contract`; provide that object as the fresh challenge input without the author's conclusion or unrelated project history.
+
+Independence means the challenger did not produce the decisive work. It does not select a fixed role, panel, model, or number of reviewers. Configured review and launch policy still decide who may receive and launch the handoff. If policy does not satisfy the derived expectation, return the difference to the operator as a gate rather than rewriting configuration. If the artifact cannot be represented as one bounded file, fail closed and obtain an operator-approved bounded artifact representation before launching the challenge.
+
 ---
 
 ## Stage 2 - Issue The Handoff

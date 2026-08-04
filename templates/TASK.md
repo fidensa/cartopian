@@ -55,6 +55,16 @@ Use `n/a` (or omit the line) only for code tasks and other task kinds with no du
 
 If `required`, name the concrete before-and-after acceptance evidence (test target, fixture check, validation run, fact-check, approval checklist, inspection, rehearsal, or similar) that demonstrates the outcome. If `n/a`, say why.
 
+## Risk observations
+
+Every new task records all five observable conditions below. Use one state from `protocol/RISK_AND_PRACTICE.md` and a bounded supporting fact identity for each; do not infer a favorable state from missing information. An observation that cannot be established uses `unknown`. Classification is performed by `cartopian classify-risk`, not by averaging prose.
+
+- consequence-reach: <local-artifact | project-internal | external-or-material | broad-or-binding | unknown>; Fact: <task or current-state fact>
+- reversibility: <direct-undo | bounded-recovery | recovery-dependent | unrecoverable | unknown>; Fact: <recovery observation>
+- authority: <covered | new-commitment | unconfirmed | absent | unknown>; Fact: <authority or commitment observation>
+- ambiguity: <confirmed | stated-assumption | material-assumption | contradictory | unknown>; Fact: <input, exclusion, or success-condition observation>
+- evidence-coverage: <deterministic | direct-observation | indirect-or-qualitative | unavailable | unknown>; Fact: <decisive evidence observation>
+
 ## Source guidance
 
 Use this existing task/spec contract when the outcome depends on external or internal source authority. Set the header to `task` when this task owns the record, `spec` when the named spec owns it, or `n/a` when source authority is not material to the work. A missing header remains readable only for legacy tasks; new tasks choose explicitly.

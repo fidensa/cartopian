@@ -906,7 +906,8 @@ class OperationsPrimaryOutcomeTests(unittest.TestCase):
                 "task-review",
             },
         )
-        # The two gates the assignment names remain unmet, so nothing activates.
+        # The two pack-selection gates remain unmet. Risk classification has an
+        # independent activation path and cannot satisfy either one.
         self.assertFalse(conditions["equivalent-cli-and-mcp-validation"]["met"])
         self.assertFalse(conditions["task-review"]["met"])
         for condition in gate["conditions"]:
@@ -926,14 +927,18 @@ class OperationsPrimaryOutcomeTests(unittest.TestCase):
         self.assertEqual(scope["required_initial_pack_count"], 5)
         self.assertEqual(scope["phase_exit"]["blocked_by"], "runtime-activation-gate")
         self.assertFalse((REPO_ROOT / "protocol" / "packs").exists())
-        runtime = [
+        selector = next(
             surface
             for surface in registry["authoritative_surfaces"]
-            if surface["path"].startswith("cli/")
-        ]
-        self.assertTrue(runtime)
-        for surface in runtime:
-            self.assertEqual(surface["activation"], "pending", surface["path"])
+            if surface["path"] == "cli/practice_packs.py"
+        )
+        self.assertEqual(selector["activation"], "pending")
+        classifier = next(
+            surface
+            for surface in registry["authoritative_surfaces"]
+            if surface["path"] == "cli/risk_contract.py"
+        )
+        self.assertEqual(classifier["activation"], "active")
 
 
 class IndependenceTests(unittest.TestCase):

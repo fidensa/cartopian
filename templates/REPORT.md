@@ -61,6 +61,15 @@ When evidence gate was `n/a`:
 
 - n/a — <reason>>
 
+## Risk-scaled evidence
+
+<Include when the assignment carried a `## Risk result` section. Record the derived band and the evidence and contingency expectations verbatim, then point to the direct evidence that satisfies each. Record the operator-gate disposition and any stop condition or recovery owner the result requires. Do not claim that this section changed configured review policy, roles, or launch authority.>
+
+- Band: <routine | bounded | consequential | critical>
+- Evidence expectation: <identifier>; Evidence: <direct proof>
+- Operator gate: <identifier>; Disposition: <authority or approval evidence>
+- Contingency expectation: <identifier>; Evidence: <recovery action, trigger/owner, or evidenced stop condition>
+
 ## Commit / PR
 
 <Optional software git-flow section. Omit when the work uses no repository or commit/PR workflow.>

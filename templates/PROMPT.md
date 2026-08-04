@@ -55,6 +55,10 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 <Include only when the handoff packet's `source_guidance.outcome` is `valid`. Paste its `deidentified_guidance` exactly. It names the authoritative sources, applicable dates or versions, conflict disposition, and explicitly unverified claims. If the record is invalid, do not author or issue the handoff; surface its actionable blockers.>
 
+## Risk result
+
+<Paste the structured result returned by `cartopian classify-risk`. Preserve its `contract_id`, `contract_version`, `band`, ordered reasons, evidence expectation, independent-review expectation, operator gate, and contingency expectation exactly. This projection does not replace or edit configured review policy, role assignments, capability grants, or launch permissions. State how any applicable operator gate was satisfied before the gated action.>
+
 ## Original operator request (verbatim)
 
 <Review prompts only. Tool-generated from exact applicable decision quotes,

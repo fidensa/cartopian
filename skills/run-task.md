@@ -18,6 +18,7 @@ For vague session-start requests that do not name a project or target task, use 
 - `cartopian://protocol/CONVENTIONS/document-deliverables` — where a document-producing task's work product lives and how the prompt, report, and review reference it (Stages 2, 4, 5).
 - `cartopian://protocol/CONVENTIONS/evidence-gate-discipline` — `required` vs `n/a` evidence gates.
 - `cartopian://protocol/CONVENTIONS/source-backed-work` — source identity, applicable date/version, conflict, unverified-claim, and fail-closed handoff rules.
+- `cartopian://protocol/CONVENTIONS/risk-classification-and-scaled-governance` — observable risk facts, dominance, derived expectations, and policy separation.
 - `cartopian://protocol/CONVENTIONS/git` — git policy keys behind the PM-owned product-repo steps and session-close behavior.
 
 The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
@@ -94,6 +95,10 @@ Resolve blockers with the operator before proceeding to Stage 1.
 
 3. Confirm acceptance criteria are actionable for the assignee and, when task-closure review is required, the assigned review role.
 
+4. Read the five records under the task's `## Risk observations` and call `cartopian classify-risk` with the corresponding state and supporting-fact option for each observation. Do not substitute prose judgment, omit an observation, or convert a missing fact into a favorable state. A missing, duplicate, unsupported, or undeclared observation is a readiness blocker. Retain the returned structured risk result as the only derived source for the assignment prompt, evidence requirement, review expectation, operator gate, and contingency expectation.
+
+The configured review policy remains authoritative. Classification never edits `reviews`, roles, grants, or launch/automation values. If the derived independent-review expectation is deeper than the configured task-closure policy, surface that explicit difference as an operator gate before closeout; do not silently enable a review or choose a reviewer. Cross-model review occurs only when configured policy or the operator's explicit scoped direction requires it.
+
 ---
 
 ## Stage 2 - Prepare Assignment Prompt
@@ -142,6 +147,7 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - Absolute expected report path (from the record's `expected_report_path`).
 - Absolute report template path.
 - The goal, context, acceptance criteria, scope boundaries, and test gate — written as self-contained prose, not as references to PM artifacts.
+- The exact `## Risk result` returned in Stage 1. Carry every ordered reason and all four derived expectations without recomputing them from prompt prose. Require the completion report's `## Risk-scaled evidence` to answer the evidence, operator-gate, and contingency expectations directly.
 - When `source_guidance.outcome = valid`, the record's `deidentified_guidance` pasted into `## Source guidance` exactly, plus a requirement that the completion report provide matching `## Source evidence`. `invalid` is a blocker and `not-applicable` / `not-declared` adds no source-guidance section. Do not paste raw PM identifiers from the owning task or spec.
 - The generated exact-request comparison channel. It is not editable PM prose: before changing any work root, the assignee compares it with the task, spec, and prompt and stops on any added implementation, destination, feature, convention, or scope the operator did not request.
 - A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
@@ -166,6 +172,8 @@ Use `skills/run-handoff.md` for assignment mechanics.
 For manual assignment, present the prompt path and expected report path to the operator and wait for explicit assignment/start confirmation.
 
 For configured task-scoped agent handoff, require the applicable `task_run` or `task_review` entry in the resolved role's `auto_launch` list and follow the run automation policy. Planning-review handoffs require `planning_review` through `skills/run-handoff.md`.
+
+For a critical result, the `independent-challenge` expectation is not self-certifiable. Before accepting closeout, use the critical adversarial procedure in `skills/run-handoff.md`. If configured review is off, stop at the derived operator gate and ask the operator whether to authorize one scoped independent challenge or explicitly change policy; risk classification itself does neither.
 
 The task is already in `tasks/in-progress/` from Stage 2. Prompt existence is enforced fail-closed at the handoff boundary: `cartopian dispatch` refuses to launch when `prompts/PROMPT-NN-NNN.md` is missing. The prompt written in Stage 2 satisfies this check.
 
