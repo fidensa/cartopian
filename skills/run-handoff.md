@@ -46,7 +46,7 @@ If the role is declared but its resolved `launch.agent` is unset, return a manua
 
 ## Stage 1 - Prepare Prompt And Report Slot
 
-First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the work-root absolute paths the assignee will be granted; the expected absolute report path; and the relevant Git policy. The call is read-only; it does not write, move, or delete anything.
+First, assemble the prompt-input bundle with a single Core CLI call. `handoff-packet` is the FR-003 aggregator: it returns one NDJSON record with the resolved role `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the work-root absolute paths the assignee will be granted; the resolved source-guidance record; the expected absolute report path; and the relevant Git policy. The call is read-only; it does not write, move, or delete anything.
 
 ```
 cartopian handoff-packet <task-path> --role <role>
@@ -65,6 +65,7 @@ Read from the emitted record:
   generated section makes the
   command fail closed. After writing an assignment prompt, rerun `handoff-packet`
   and require `request_trace.preflight.ok: true` before a manual handoff.
+- `source_guidance` — the task/spec-owned source record. `valid` carries the only `deidentified_guidance` allowed into an assignee prompt. `invalid` fails this call with actionable blockers; do not bypass it through a manual launch. `not-applicable` and legacy `not-declared` add no source section.
 
 For a planning-checkpoint review (which has no task file), resolve the same
 artifact directly:
@@ -97,7 +98,8 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 5. Ensure the prompt carries the foreground-completion instruction from `templates/PROMPT.md` § Completion report: completion-critical commands run in the foreground and are waited for before the report is written, background-task notifications cannot resume a non-interactive handoff, and an unfinishable handoff still publishes `Status: blocked` rather than exiting silently. The Foreground Completion rules are in `cartopian://protocol/CONVENTIONS/handoffs`. This is the prompt-side half of the fix for assignees that end a turn with work "still running"; the harness-side half is the optional Claude Code Stop hook registered by `scripts/install.py --claude-hook`.
-6. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. **Never delete the coder completion report** — it is preserved at its compatibility path (`reports/REPORT-NN-NNN.md`) as the reviewer's direct evidence source. When a prior review attempt left a stale review report or transient companions in the independent review slot, clear only that slot with the Core CLI before re-issuing the reviewer handoff:
+6. When `source_guidance.outcome = valid`, paste its `deidentified_guidance` into the prompt and require matching `## Source evidence` in a complete report. This is a projection of the owner, not a second source authority.
+7. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. **Never delete the coder completion report** — it is preserved at its compatibility path (`reports/REPORT-NN-NNN.md`) as the reviewer's direct evidence source. When a prior review attempt left a stale review report or transient companions in the independent review slot, clear only that slot with the Core CLI before re-issuing the reviewer handoff:
 
    ```
    cartopian delete-report <expected-review-report-path>
@@ -208,7 +210,7 @@ cartopian report-action <report-path>
 - Review completion for task-review handoffs.
 - Planning-review completion for planning-checkpoint review handoffs.
 
-The emitted record is a strict superset of the legacy `parse-report` record: it carries the same `verdict`, `variant`, `report_path`, `status`, and `review_verdict` fields and adds routing fields such as `path_mismatch`, `target_task_status`, and `recommended_action`. The `path_mismatch` flag captures the AR-5 expected-path check directly; treat `path_mismatch = true` as `failed-to-parse` for the caller.
+The emitted record is a strict superset of the legacy `parse-report` record: it carries the same `verdict`, `variant`, `report_path`, `status`, `review_verdict`, and source-evidence projection fields and adds routing fields such as `path_mismatch`, `target_task_status`, and `recommended_action`. The `path_mismatch` flag captures the AR-5 expected-path check directly; treat `path_mismatch = true` as `failed-to-parse` for the caller. For complete source-backed task reports, `source_evidence.outcome` must be `valid`; its actionable blockers explain any fail-closed result.
 
 If the report is missing, malformed, inconsistent, uses unsupported values, or fails the expected-path check, treat it as `failed-to-parse`.
 

@@ -14,6 +14,26 @@ The `Work root:` value carries names only — the same names declared in the pro
 
 <Concrete evidence that the outcome exists: confirmation number, approval, inspection result, published URL, completed checklist, file path, validation output, photograph, meeting decision, or another verifiable observation.>
 
+## Source evidence
+
+<Include for a source-backed task. Omit when the task's resolved source guidance is `n/a` or legacy-not-declared. Use the same three-subsection record as the governing guidance, naming the sources and applicable contexts actually used. A decisive claim may not remain unverified in a complete report.>
+
+### Authoritative sources
+
+- Identity: <stable source title or locator>; Applicable context: <effective date, publication date, edition, revision, or version>; Status: <current | stale | unknown>; Scope: <claims or decisions governed>
+
+### Conflict resolution
+
+- Status: <none | resolved | unresolved>; Rule: <precedence rule or named decision authority>; Decision: <applied resolution | n/a>
+
+### Unverified claims
+
+- none
+
+Or:
+
+- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; Missing: <authority or evidence>; Consequence: <consequence of proceeding>; Next: <decision or proof required>
+
 ## Files changed
 
 <Optional software/file-work evidence. Omit when the task did not change files.>

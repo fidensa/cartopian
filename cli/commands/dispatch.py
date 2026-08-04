@@ -52,7 +52,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import host_capability, output_safety, report_identity, request_trace
+from cli import (
+    host_capability,
+    output_safety,
+    report_identity,
+    request_trace,
+    source_guidance,
+)
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
@@ -459,6 +465,7 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     task_id: Optional[str]
+    source_guidance_record: Optional[Dict[str, Any]] = None
     if task_path is not None:
         activity = (
             "task_review"
@@ -492,6 +499,13 @@ def handler(args: argparse.Namespace) -> int:
             if activity == "task_review"
             else handoff_packet._expected_report_path(project_root, task_id)
         )
+        source_guidance_record = source_guidance.resolve_task_guidance(task_path)
+        if source_guidance_record["outcome"] == "invalid":
+            for blocker in source_guidance_record["blockers"]:
+                stderr_guard(
+                    f"{blocker['code']}: {blocker['detail']} — {blocker['recovery']}"
+                )
+            return EXIT_FAIL
     else:
         # --- Fail-closed: --prompt names an allowlisted planning slot only ---
         # Task prompts (PROMPT-NN-NNN) must dispatch by task path, which
@@ -732,6 +746,11 @@ def handler(args: argparse.Namespace) -> int:
         "slot_clear": slot_clear,
         "status": "dispatched",
         "request_trace": request_record,
+        "source_guidance": (
+            source_guidance.active_projection(source_guidance_record)
+            if source_guidance_record is not None
+            else None
+        ),
         # The wait budget this launch was cleared against. `null` when the CLI
         # ran outside an MCP host, where no tools/call ceiling applies.
         "host_wait_budget": host_budget.record() if host_budget is not None else None,

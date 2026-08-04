@@ -4,6 +4,142 @@
   "status": "defined",
   "purpose": "Single authority for compact task risk, risk-scaled governance consequences, bounded judgment guidance, and optional practice-pack selection. Every other surface projects these values and none redefines them.",
   "measurement_method": "Fixed ASCII fixtures, UTF-8 encoding, LF line termination, and no optional whitespace. Exact bytes include the terminating line feed. Token figures are estimated tokens, computed as the ceiling of exact bytes divided by four; they are not tokenizer output or provider billing.",
+  "source_guidance": {
+    "contract_id": "source-guidance",
+    "contract_version": 1,
+    "purpose": "Domain-neutral source-backed work records authoritative source identity, applicable date or version context, deterministic conflict disposition, and explicit handling for claims that remain unverified.",
+    "task_declarations": [
+      "task",
+      "spec",
+      "n/a"
+    ],
+    "spec_declarations": [
+      "required",
+      "n/a"
+    ],
+    "legacy_declaration": "not-declared",
+    "section_headings": {
+      "guidance": "Source guidance",
+      "evidence": "Source evidence"
+    },
+    "subsections": {
+      "sources": "Authoritative sources",
+      "conflicts": "Conflict resolution",
+      "claims": "Unverified claims"
+    },
+    "source_fields": [
+      {
+        "id": "identity",
+        "label": "Identity"
+      },
+      {
+        "id": "applicable_context",
+        "label": "Applicable context"
+      },
+      {
+        "id": "status",
+        "label": "Status"
+      },
+      {
+        "id": "scope",
+        "label": "Scope"
+      }
+    ],
+    "source_statuses": [
+      "current",
+      "stale",
+      "unknown"
+    ],
+    "conflict_fields": [
+      {
+        "id": "status",
+        "label": "Status"
+      },
+      {
+        "id": "rule",
+        "label": "Rule"
+      },
+      {
+        "id": "decision",
+        "label": "Decision"
+      }
+    ],
+    "conflict_statuses": [
+      "none",
+      "resolved",
+      "unresolved"
+    ],
+    "claim_fields": [
+      {
+        "id": "claim",
+        "label": "Claim"
+      },
+      {
+        "id": "decisiveness",
+        "label": "Decisiveness"
+      },
+      {
+        "id": "missing",
+        "label": "Missing"
+      },
+      {
+        "id": "consequence",
+        "label": "Consequence"
+      },
+      {
+        "id": "next",
+        "label": "Next"
+      }
+    ],
+    "claim_decisiveness": [
+      "decisive",
+      "non-decisive"
+    ],
+    "rules": {
+      "authority": "At least one non-placeholder authoritative source identity is required for declared source-backed work.",
+      "applicable_context": "Every authoritative source names a current, non-placeholder date, effective date, edition, revision, or version context.",
+      "conflicts": "One conflict record is required. An unresolved conflict loads no authority for the disputed claim and blocks the work until its named rule or decision authority resolves it.",
+      "unverified_claims": "The claims subsection says none or records every remaining claim with decisiveness, missing authority or evidence, consequence of proceeding, and next decision or proof. A decisive unverified claim blocks the work; a fully recorded non-decisive claim remains explicit without becoming a favorable observation.",
+      "dominance": "Missing decisive authority, stale or absent applicable context, unresolved source conflict, and a decisive unverified claim each fail closed and cannot be offset by favorable source observations.",
+      "scoring": "The result contains reasons and actionable recovery, never a numeric score or averaged estimate."
+    },
+    "failure_codes": [
+      "missing-authoritative-source",
+      "missing-applicable-context",
+      "stale-applicable-context",
+      "missing-conflict-resolution",
+      "unresolved-source-conflict",
+      "unhandled-unverified-claim",
+      "decisive-claim-unverified",
+      "source-guidance-owner-mismatch"
+    ],
+    "authoritative_surfaces": [
+      {
+        "path": "protocol/risk-and-practice-contract.json",
+        "role": "authority"
+      },
+      {
+        "path": "cli/source_guidance.py",
+        "role": "runtime-projection"
+      },
+      {
+        "path": "templates/TASK.md",
+        "role": "task-projection"
+      },
+      {
+        "path": "templates/SPEC.md",
+        "role": "specification-projection"
+      },
+      {
+        "path": "templates/PROMPT.md",
+        "role": "handoff-projection"
+      },
+      {
+        "path": "templates/REPORT.md",
+        "role": "evidence-projection"
+      }
+    ]
+  },
   "risk": {
     "band_order": [
       "routine",

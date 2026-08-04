@@ -4,6 +4,8 @@
 
 What this plan exists to accomplish. Name the source documents or external references that drive it — e.g., `REQUIREMENTS.md`, `STANDARDS.md`, a JIRA epic, or a Confluence page — and their versions or dates where applicable.
 
+When those sources are authoritative, also state which one governs each scope, the conflict-resolution rule or named decision authority, and any claim that remains explicitly unverified. Do not average conflicting or missing decisive authority into a favorable planning judgment.
+
 ## Architecture rules
 
 Rules derived from requirements and project standards that constrain all phases. These are not new decisions — they are consequences of locked inputs.

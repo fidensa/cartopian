@@ -242,6 +242,8 @@ Allocate task ids from the task sequence for the active phase. Plan refs use ind
 
 New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advances them from there. Populate the body from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 
+Classify source authority explicitly for every new task. Use `Source guidance: task` when the task owns the record, `Source guidance: spec` when its named spec owns the one record, and `Source guidance: n/a` only when authoritative sources are not material to the outcome. For source-backed work, name stable sources, their applicable dates/versions and scopes, the conflict rule or decision authority, and every explicitly unverified claim. Do not create duplicate task and spec records.
+
 ### 4.3 Generate spec files
 
 For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md` (a **PM-performed** write):
@@ -260,6 +262,8 @@ Before authoring each spec, classify the outcome governed by that spec and set i
 For `software`, keep the template's software profile and remove the general profile. The spec is the task-scoped SRS and TDS: cover **Overview & Goals**, **Functional Requirements**, **Non-Functional Requirements**, **User Stories & Use Cases**, **Architecture & Structure**, **Data Models**, **APIs & Integrations**, and **Edge Cases & Error Handling**. Describe required behavior, design boundaries, constraints, and acceptance conditions, while leaving source-level implementation decisions to the assignee. Do not write source/executable code, pseudocode, step-by-step algorithms, function or class bodies, complete configuration or build files, or copy/paste-ready implementation snippets. Contract notation such as diagrams, tables, field/type definitions, endpoint signatures, protocol grammar, and concise example payloads or input/output values is allowed.
 
 For `general`, keep the template's general profile and remove the software profile. Do not select `general` merely to put implementation content into a software spec. Before writing either profile, remove the unused profile and all template instructional text.
+
+Every authored spec also chooses `Source guidance: required | n/a`. A required spec record uses the same domain-neutral shape as a task-owned record and is the owner only for tasks that declare `Source guidance: spec`. Missing decisive authority, stale context, unresolved conflicts, or decisive unverified claims block spec writing and planning review.
 
 ### 4.4 Review checkpoint
 

@@ -84,6 +84,8 @@ operator re-entry, confirmation, safeguard, or new stage.
 
 Accept whatever format the operator provides. The goal is to extract the information, not enforce a format on the input.
 
+For every source that substantively governs the requirements, resolve its stable identity, applicable effective date/edition/revision/version, and governed scope. Record the precedence rule or named decision authority when sources conflict. Keep every claim that remains unverified explicit with its missing authority/evidence, consequence, and next decision/proof. Missing or conflicting decisive authority blocks requirements lock; it is not a numerical confidence question.
+
 If the operator provides a reference (e.g., "JIRA story HUB-123") without content, ask:
 
 > "Can you paste the story details here, or would you prefer a stub REQUIREMENTS.md that just references the external source?"
@@ -121,6 +123,8 @@ cartopian write-requirements <project-root> --content-file <body-path>
 ```
 
 Not every project needs every section.
+
+Populate the template's `## Source authority` section for source-backed requirements. Use `n/a — requirements are not source-backed` only when no source authority materially governs the requirements.
 
 **If the operator prefers a reference stub** (requirements maintained externally, not duplicated locally), pass the stub below as the `--content-file` body to the same `cartopian write-requirements` command:
 

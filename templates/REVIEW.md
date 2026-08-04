@@ -34,6 +34,10 @@ Required when the reviewed outcome uses implementation/git evidence. For documen
   - The named before-state evidence was recorded.
   - The closing observation passes. For software this is commonly a green test. When evidence gate was `n/a`, write `n/a — evidence gate was n/a per task`.
 
+## Source evidence review
+
+When the task is source-backed, compare the governing source guidance with the completion report's `## Source evidence`. Confirm that source identities and applicable dates/versions match, conflicts are resolved by the declared rule or authority, and remaining non-decisive unverified claims carry the full failure signal. Missing or conflicting decisive authority blocks approval. Use `n/a — task is not source-backed` otherwise.
+
 ## Findings
 
 Each finding carries a severity:

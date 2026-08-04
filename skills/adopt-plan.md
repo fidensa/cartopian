@@ -135,6 +135,8 @@ cartopian write-plan <project-root> --content-file <body-path>
 
 **Purpose section:** Name the source of the plan and the requirements reference. If requirements are external, identify the external source (e.g., "JIRA story HUB-123" or "Confluence 'Hub UI Design' page"). Include approximate date or version if known.
 
+When an external source is authoritative rather than merely contextual, record its exact applicable date/version and governed scope, the precedence rule or named authority for conflicts, and every claim that remains explicitly unverified. Missing or conflicting decisive authority blocks plan lock; do not replace that state with a confidence estimate.
+
 **Architecture rules:** Derive from any constraints stated in the external plan or the requirements source. Note the origin of each rule.
 
 **Work topology:** Identify which repos or other work locations are involved, including no-repo work. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
@@ -206,6 +208,7 @@ Populate all fields:
 - `Spec:` link if a spec is being created; otherwise `none`
 - `Depends on:` / `Blocked by:` from the external plan's dependency information
 - `Evidence gate:` use judgment — `required` whenever concrete before-and-after evidence is appropriate (tests, validations, approvals, inspections, rehearsals, fact-checks); `n/a` only with a reason
+- `Source guidance:` choose `task`, `spec`, or `n/a`. Keep one owner only; for source-backed work the owner records authoritative identities, applicable dates/versions, conflict disposition, and unverified claims in the canonical shape.
 
 For tasks that need specs (new interfaces, schemas, contracts), author `specs/SPEC-NN-NNN.md` through the mediated writer `cartopian write-spec`, following the template in `cartopian://templates/SPEC.md`:
 
@@ -218,6 +221,8 @@ Before authoring each spec, classify the outcome governed by that spec and set `
 For `software`, keep only the template's software profile. Treat the spec as the task-scoped SRS and TDS and cover **Overview & Goals**, **Functional Requirements**, **Non-Functional Requirements**, **User Stories & Use Cases**, **Architecture & Structure**, **Data Models**, **APIs & Integrations**, and **Edge Cases & Error Handling**. State required behavior and design boundaries while leaving source-level implementation decisions to the assignee. Do not include source/executable code, pseudocode, step-by-step algorithms, function or class bodies, complete configuration or build files, or copy/paste-ready implementation snippets. Contract notation such as diagrams, tables, field/type definitions, endpoint signatures, protocol grammar, and concise example payloads or input/output values is allowed.
 
 For `general`, keep only the template's general profile. Do not select it to evade the software rules. Remove the unused profile and all template instructional text before writing either profile.
+
+Set `Source guidance: required | n/a` on every new spec. A required spec owns the record for tasks that declare `Source guidance: spec`; do not copy it into those tasks.
 
 If `reviews.planning.mode` is `required`, run review checkpoint `004 tasks-and-specs`. Require the reviewer to verify profile selection and all eight SRS/TDS areas for software specs; any prohibited implementation content in a software spec is a blocking finding requiring changes.
 

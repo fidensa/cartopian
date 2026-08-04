@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import report_identity
+from cli import report_identity, source_guidance
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -20,6 +20,7 @@ from cli.commands.validate_task_readiness import (
     _check_deliverable,
     _check_evidence_gate,
     _check_request_trace,
+    _check_source_guidance,
     _check_phase,
     _check_plan_ref,
     _check_plan_ref_aligned,
@@ -190,6 +191,7 @@ def _build_validation_checks(
         ),
         "blocked-by-complete": _check_blocked_by(project_root, headers),
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
+        "source-guidance-valid": _check_source_guidance(task_path, content),
         "acceptance-present": _check_acceptance(content),
         "work-root-names-valid": _check_work_root(project_root, headers, presence, warnings),
         "deliverable-valid": _check_deliverable(project_root, headers),
@@ -256,6 +258,9 @@ def handler(args: argparse.Namespace) -> int:
         project_root, task_path, content, headers, presence
     )
     ready = all(check["pass"] for check in checks)
+    source_guidance_record = source_guidance.resolve_task_guidance(
+        task_path, content=content
+    )
 
     try:
         work_roots_resolved = _collect_work_roots(project_root, project_cfg, headers)
@@ -284,6 +289,9 @@ def handler(args: argparse.Namespace) -> int:
         "dependencies": _collect_dependencies(project_root, headers),
         "work_roots_resolved": work_roots_resolved,
         "deliverable": deliverable,
+        "source_guidance": source_guidance.active_projection(
+            source_guidance_record
+        ),
         "ready": ready,
         "validator_blockers": _validator_blockers(checks),
         "expected_prompt_path": str((project_root / "prompts" / f"PROMPT-{nn_nnn}.md").resolve()),

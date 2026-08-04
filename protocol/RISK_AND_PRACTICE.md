@@ -2,7 +2,7 @@
 
 This file explains the risk, judgment, and practice-pack contracts in plain language. It defines no behavior of its own. Every machine value below is owned once, in `protocol/risk-and-practice-contract.json`, and projected here. When this file and that registry disagree, the registry is correct and this file is a defect.
 
-The contract covers three mechanisms:
+The contract covers three independent risk/practice mechanisms:
 
 1. **Risk classification** turns a few observable facts about a task into a band, and each band derives what evidence, review, operator approval, and contingency the work is expected to carry.
 2. **Judgment guidance** offers a short card at a lifecycle boundary where a real failure exists that no deterministic check can decide.
@@ -10,7 +10,19 @@ The contract covers three mechanisms:
 
 These three are independent. A task can carry a risk band with no pack and no card, a pack with no card, or a card with no pack. **None of them silently activates another.** A pack cannot raise or lower risk. A band cannot select a pack or activate a card. A card cannot select a pack or change the band. The contract records these as forbidden edges so the separation is checkable rather than merely stated.
 
+The same machine authority also owns the active `source_guidance` extension. Source guidance is not a fourth risk/practice activation mechanism: it is a domain-neutral record projected through existing task, spec, prompt, evidence, handoff, and validation surfaces. It can name authority and fail closed without deriving a risk band, activating a judgment card, or selecting a practice pack.
+
 The core stays domain-neutral. Risk, evidence, authority, delivery, and follow-up are core concepts for any kind of work. Software, research, marketing, operations, and policy are optional profiles, selected only when the task's own facts match them.
+
+## Source guidance
+
+Source-backed work declares one owner: the task, its named spec, or `n/a`. The owning record names authoritative sources, an applicable effective date, publication date, edition, revision, or version for each source, a conflict disposition and governing rule/decision authority, and every claim that remains explicitly unverified.
+
+Each source carries `current`, `stale`, or `unknown` applicability. Each conflict carries `none`, `resolved`, or `unresolved`. Each unverified claim carries `decisive` or `non-decisive` plus the missing authority/evidence, consequence of proceeding, and next decision/proof. A non-decisive claim may remain explicit. A decisive claim may not be treated as completed source-backed work while it is unverified.
+
+Missing authority, absent or stale date/version context, unresolved source conflict, and decisive unverified claims are dominance conditions. Any one fails closed with an actionable reason; other favorable observations never average it down. The record contains no numeric score.
+
+`task-bundle` and `handoff-packet` expose the same resolved `source_guidance` object, including a deidentified assignee rendering. `validate-task-readiness` and `dispatch` refuse invalid declared records. Complete source-backed reports carry the same shape under `## Source evidence`; `parse-report` and `report-action` project it and refuse completion when governing sources are absent or a decisive claim remains unverified. CLI and MCP use the same command handlers and runtime projection.
 
 ## Risk classification
 

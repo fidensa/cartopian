@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import report_identity
+from cli import report_identity, source_guidance
 from cli.commands import parse_report
 from cli.commands.plan_audit import _resolve_pm_owns_product_branches
 from cli.commands.resolve_config import (
@@ -492,6 +492,28 @@ def handler(args: argparse.Namespace) -> int:
         else None
     )
 
+    source_evidence_record = None
+    if variant == "task" and status_value == "complete" and expected_task_path is not None:
+        try:
+            source_evidence_record = source_guidance.resolve_report_evidence(
+                expected_task_path, content
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            source_evidence_record = {
+                "required": True,
+                "outcome": "invalid",
+                "guidance": None,
+                "evidence": None,
+                "blockers": [{
+                    "code": "source-evidence-unreadable",
+                    "detail": str(exc),
+                    "recovery": "restore the governing task/spec and source evidence",
+                }],
+                "blocker_codes": ["source-evidence-unreadable"],
+            }
+        if verdict == "accepted" and source_evidence_record["outcome"] == "invalid":
+            verdict = "failed-to-parse"
+
     if verdict == "failed-to-parse":
         path_mismatch = False
     elif variant == "task":
@@ -548,6 +570,7 @@ def handler(args: argparse.Namespace) -> int:
         "status": status_value,
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,
+        "source_evidence": source_evidence_record,
         "target_task_status": target_task_status,
         "requires_pr_step": requires_pr_step,
         "prompt_to_overwrite": prompt_to_overwrite,

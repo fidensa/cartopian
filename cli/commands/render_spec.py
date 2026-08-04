@@ -10,9 +10,16 @@ deletes.
 import argparse
 from pathlib import Path
 
-from cli import deidentify
+from cli import deidentify, source_guidance
 from cli.emit import emit_record
-from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
+from cli.main import (
+    EXIT_FAIL,
+    EXIT_OK,
+    EXIT_USAGE,
+    stderr_error,
+    stderr_guard,
+    stderr_usage,
+)
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -40,12 +47,22 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     deidentified, redactions = deidentify.deidentify_spec(content)
+    source_record = source_guidance.validate_spec_content(
+        content, owner_path=spec_path
+    )
     emit_record(
         {
             "action": "render-spec",
             "spec_path": str(spec_path.resolve()),
             "deidentified_spec": deidentified,
             "redactions": redactions,
+            "source_guidance": source_guidance.active_projection(source_record),
         }
     )
+    if source_record["outcome"] == "invalid":
+        for blocker in source_record["blockers"]:
+            stderr_guard(
+                f"{blocker['code']}: {blocker['detail']} — {blocker['recovery']}"
+            )
+        return EXIT_FAIL
     return EXIT_OK

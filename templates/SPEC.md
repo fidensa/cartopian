@@ -7,6 +7,7 @@ Reviewer: <name or role>
 Date: YYYY-MM-DD
 Plan refs: <KIND-NN-NNN, KIND-NN-NNN | n/a>
 Source: <BL-NNN | n/a>
+Source guidance: <required | n/a>
 
 Choose exactly one body profile below and delete the other profile and all instructional text. Classification follows this spec's outcome, not the overall project's label:
 
@@ -79,6 +80,26 @@ What the Implementation Plan or a prior spec requires. Cite by section heading.
 
 <!-- END GENERAL PROFILE -->
 
+## Source guidance
+
+Keep this section only when `Source guidance: required`. It is the single source record for tasks that declare `Source guidance: spec`; do not copy the same record into those tasks. Use domain-neutral identities and date/version context suitable for the assignee-facing deidentified rendering.
+
+### Authoritative sources
+
+- Identity: <stable source title or locator>; Applicable context: <effective date, publication date, edition, revision, or version>; Status: <current | stale | unknown>; Scope: <claims or decisions governed>
+
+### Conflict resolution
+
+- Status: <none | resolved | unresolved>; Rule: <precedence rule or named decision authority>; Decision: <applied resolution | n/a>
+
+### Unverified claims
+
+- none
+
+Or:
+
+- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; Missing: <authority or evidence>; Consequence: <consequence of proceeding>; Next: <decision or proof required>
+
 ## References
 
 - `IMPLEMENTATION_PLAN.md` section(s) by heading.
@@ -107,5 +128,6 @@ Filled by the reviewer, not the author.
 - [ ] For `software`: the spec defines requirements and design boundaries without source code, executable code, pseudocode, step-by-step algorithms, function/class bodies, complete configuration/build files, or copy/paste-ready implementation.
 - [ ] For `general`: non-goals are honest and the outcome contract is precise enough to execute without clarification.
 - [ ] Constraints include every relevant plan clause.
+- [ ] Declared source guidance names current authoritative sources, applicable dates or versions, conflict disposition, and every remaining unverified claim; missing decisive authority fails closed.
 - [ ] Examples and acceptance evidence are concrete.
 - [ ] No open questions remain at lock time.

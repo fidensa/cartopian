@@ -3,7 +3,7 @@
   "skills": [
     {
       "identity": "adopt_plan",
-      "description": "Convert an existing implementation plan into Cartopian plan, phase, and task artifacts.",
+      "description": "Convert an existing plan into source-aware Cartopian plan, phase, task, and spec artifacts.",
       "applicability": "Use when a structured plan already exists and requirements may remain external or summarized.",
       "runbook": "skills/adopt-plan.md",
       "surfaces": {
@@ -15,7 +15,7 @@
     },
     {
       "identity": "adopt_requirements",
-      "description": "Derive local Cartopian requirements from external source material.",
+      "description": "Derive a local requirements file and source authority guidance from external material.",
       "applicability": "Use when requirements live outside the project and a local REQUIREMENTS.md is wanted.",
       "runbook": "skills/adopt-requirements.md",
       "surfaces": {
@@ -99,7 +99,7 @@
     },
     {
       "identity": "plan_project",
-      "description": "Build requirements, an implementation plan, phases, tasks, and specifications.",
+      "description": "Build requirements, a plan, phases, tasks, specifications, and source guidance where applicable.",
       "applicability": "Use for guided planning from scratch when an existing structured plan is not being adopted.",
       "runbook": "skills/plan-project.md",
       "surfaces": {
@@ -123,7 +123,7 @@
     },
     {
       "identity": "run_handoff",
-      "description": "Execute a Cartopian handoff and interpret its completion report.",
+      "description": "Execute a Cartopian handoff and interpret request, source, and completion evidence.",
       "applicability": "Use as the shared handoff workflow for task assignment, task review, or planning review.",
       "runbook": "skills/run-handoff.md",
       "surfaces": {
@@ -135,7 +135,7 @@
     },
     {
       "identity": "run_task",
-      "description": "Drive one task through assignment, evidence, review policy, and supported closure.",
+      "description": "Drive one task through source-aware assignment, evidence, review policy, and supported closure.",
       "applicability": "Use when the operator wants to start, continue, review, or close a task in the current plan.",
       "runbook": "skills/run-task.md",
       "surfaces": {

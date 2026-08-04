@@ -38,6 +38,7 @@ def _schema_errors(content: Union[str, bytes]) -> List[str]:
         _check_evidence_gate,
         _parse_headers,
     )
+    from cli import source_guidance
 
     if isinstance(content, bytes):
         try:
@@ -55,6 +56,13 @@ def _schema_errors(content: Union[str, bytes]) -> List[str]:
     acceptance = _check_acceptance(text)
     if not acceptance["pass"]:
         errors.append(acceptance["reason"])
+    declaration = source_guidance._header(text, "Source guidance")
+    if declaration is not None and declaration.lower() in {"task", "n/a"}:
+        probe = Path("TASK.md")
+        source_record = source_guidance.resolve_task_guidance(probe, content=text)
+        source_check = source_guidance.readiness_check(source_record)
+        if not source_check["pass"]:
+            errors.append(source_check["reason"])
     return errors
 
 

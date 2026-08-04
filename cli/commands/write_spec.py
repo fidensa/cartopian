@@ -5,6 +5,9 @@ supplies the id, not a path; the destination subtree is the
 allowlisted ``spec`` dest_kind.
 """
 import argparse
+from pathlib import Path
+
+from cli import source_guidance
 from cli.commands import _writers
 
 
@@ -39,6 +42,28 @@ def handler(args: argparse.Namespace) -> int:
     if serr is not None:
         _writers.stderr(*serr)
         return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
+    if isinstance(content, bytes):
+        try:
+            spec_text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            _writers.stderr("guard", "spec body must be valid UTF-8 text")
+            return _writers.EXIT_FAIL
+    else:
+        spec_text = content
+    source_record = source_guidance.validate_spec_content(
+        spec_text, owner_path=Path(root) / "specs" / f"{spec_id}.md"
+    )
+    if source_record["outcome"] == "invalid":
+        _writers.stderr(
+            "guard",
+            "source-guidance-invalid: "
+            + "; ".join(
+                f"{item['code']}: {item['detail']} — {item['recovery']}"
+                for item in source_record["blockers"]
+            ),
+        )
+        return _writers.EXIT_FAIL
 
     filename = f"{spec_id}.md"
     matches = _writers.identifier_files(root / "specs", spec_id)

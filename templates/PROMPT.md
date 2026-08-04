@@ -51,6 +51,10 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 <When the work has a spec, paste the **deidentified** spec body here — the `deidentified_spec` field from `cartopian render-spec <spec-path>`. Do not link or hand over the raw spec file; it carries PM identifiers the assignee must not copy into product code. Omit this section when the task has no spec.>
 
+## Source guidance
+
+<Include only when the handoff packet's `source_guidance.outcome` is `valid`. Paste its `deidentified_guidance` exactly. It names the authoritative sources, applicable dates or versions, conflict disposition, and explicitly unverified claims. If the record is invalid, do not author or issue the handoff; surface its actionable blockers.>
+
 ## Original operator request (verbatim)
 
 <Review prompts only. Tool-generated from exact applicable decision quotes,
@@ -78,6 +82,8 @@ Omit this section for code-only tasks.>
 ## Evidence gate
 
 <The before-and-after evidence required: test target, fixture run, validation script, fact-check pass, approval checklist, inspection, rehearsal, or n/a with reason.>
+
+For source-backed work, require the completion report to carry `## Source evidence` in the same record shape. A complete report must name the governing sources and applicable contexts actually used, the conflict disposition, and all claims that remain explicitly unverified.
 
 ## What not to do
 

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from cli import report_identity, request_trace
+from cli import report_identity, request_trace, source_guidance
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
 
@@ -341,6 +341,43 @@ def review_alignment_record(
     }
 
 
+def _source_evidence_record(
+    report_path: Path, content: str, variant: str, status: Optional[str]
+) -> Optional[dict]:
+    """Resolve source evidence for a complete task report when its task exists."""
+    if variant != "task" or status != "complete":
+        return None
+    match = report_identity.TASK_COMPLETION_REPORT_RE.match(report_path.name)
+    root = request_trace.find_project_root(report_path)
+    if match is None or root is None:
+        return None
+    task_id = f"TASK-{match.group(1)}"
+    for task_status in ("open", "in-progress", "in-review", "done"):
+        directory = root / "tasks" / task_status
+        direct = directory / f"{task_id}.md"
+        candidates = [direct] if direct.is_file() else sorted(directory.glob(f"{task_id}-*.md"))
+        for candidate in candidates:
+            if candidate.is_file():
+                try:
+                    return source_guidance.resolve_report_evidence(
+                        candidate.resolve(), content
+                    )
+                except (OSError, UnicodeError, ValueError) as exc:
+                    return {
+                        "required": True,
+                        "outcome": "invalid",
+                        "guidance": None,
+                        "evidence": None,
+                        "blockers": [{
+                            "code": "source-evidence-unreadable",
+                            "detail": str(exc),
+                            "recovery": "restore the governing task/spec and source evidence",
+                        }],
+                        "blocker_codes": ["source-evidence-unreadable"],
+                    }
+    return None
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.report_path
     if not Path(raw_path).is_absolute():
@@ -419,6 +456,15 @@ def handler(args: argparse.Namespace) -> int:
         and alignment_record["blocking"]
     ):
         verdict = "failed-to-parse"
+    source_evidence_record = _source_evidence_record(
+        report_path, content, variant, status_value
+    )
+    if (
+        verdict == "accepted"
+        and source_evidence_record is not None
+        and source_evidence_record["outcome"] == "invalid"
+    ):
+        verdict = "failed-to-parse"
 
     record = {
         "verdict": verdict,
@@ -427,6 +473,7 @@ def handler(args: argparse.Namespace) -> int:
         "status": status_value,
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,
+        "source_evidence": source_evidence_record,
     }
     emit_record(record)
     return EXIT_OK

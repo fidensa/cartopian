@@ -132,6 +132,7 @@ CHECK_NAMES_IN_ORDER = [
     "plan-ref-aligned",
     "blocked-by-complete",
     "evidence-gate-valid",
+    "source-guidance-valid",
     "acceptance-present",
     "work-root-names-valid",
     "deliverable-valid",

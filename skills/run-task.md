@@ -17,6 +17,7 @@ For vague session-start requests that do not name a project or target task, use 
 - `cartopian://protocol/CONVENTIONS/handoffs` — the handoff contract behind Stages 3-6.
 - `cartopian://protocol/CONVENTIONS/document-deliverables` — where a document-producing task's work product lives and how the prompt, report, and review reference it (Stages 2, 4, 5).
 - `cartopian://protocol/CONVENTIONS/evidence-gate-discipline` — `required` vs `n/a` evidence gates.
+- `cartopian://protocol/CONVENTIONS/source-backed-work` — source identity, applicable date/version, conflict, unverified-claim, and fail-closed handoff rules.
 - `cartopian://protocol/CONVENTIONS/git` — git policy keys behind the PM-owned product-repo steps and session-close behavior.
 
 The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
@@ -81,7 +82,7 @@ Resolve blockers with the operator before proceeding to Stage 1.
    cartopian task-bundle <task-path>
    ```
 
-   `task-bundle` is the FR-002 aggregator. It emits one NDJSON record with the resolved task identity (`task_id`, `task_title`, `task_path`, `task_status`), the resolved `spec_path`, the ordered `dependencies` list (each carrying `task_id`, `title`, `path`, `status`), the resolved `work_roots_resolved` entries (each `{name, absolute_path, exists}`), the `expected_prompt_path`, and the `expected_report_path` Stage 2 and Stage 4 will reference. Consume these fields directly; do not re-read the task, spec, or phase files to derive them.
+   `task-bundle` is the FR-002 aggregator. It emits one NDJSON record with the resolved task identity (`task_id`, `task_title`, `task_path`, `task_status`), the resolved `spec_path`, the ordered `dependencies` list (each carrying `task_id`, `title`, `path`, `status`), the resolved `work_roots_resolved` entries (each `{name, absolute_path, exists}`), the resolved `source_guidance` record, the `expected_prompt_path`, and the `expected_report_path` Stage 2 and Stage 4 will reference. Consume these fields directly; do not re-read the task, spec, or phase files to derive them.
 
 2. Validate readiness gates with the Core CLI:
 
@@ -89,7 +90,7 @@ Resolve blockers with the operator before proceeding to Stage 1.
    cartopian validate-task-readiness <task-path>
    ```
 
-   `task-bundle` assembles content; `validate-task-readiness` enforces readiness gating — the two are complementary. Treat a non-zero exit from `validate-task-readiness` as a blocker and stop.
+   `task-bundle` assembles content; `validate-task-readiness` enforces readiness gating — the two are complementary. Treat a non-zero exit from `validate-task-readiness` as a blocker and stop. For declared source-backed work this includes missing authority, stale/absent date or version context, unresolved source conflict, and decisive unverified claims. Surface the emitted reason and recovery; do not replace it with a score or average it against favorable observations.
 
 3. Confirm acceptance criteria are actionable for the assignee and, when task-closure review is required, the assigned review role.
 
@@ -113,7 +114,7 @@ Then assemble the prompt-input bundle with a single Core CLI call against the mo
 cartopian handoff-packet <task-path> --role <role>
 ```
 
-`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with resolved role description, grants, assigned work types, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the ordered `work_roots` list; the `expected_report_path`; and the relevant Git policy. Source every prompt value from this record; do not re-derive paths, roles, or review policy.
+`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with resolved role description, grants, assigned work types, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the ordered `work_roots` list; the resolved `source_guidance`; the `expected_report_path`; and the relevant Git policy. Source every prompt value from this record; do not re-derive paths, roles, source authority, or review policy.
 
 If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
 
@@ -141,6 +142,7 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - Absolute expected report path (from the record's `expected_report_path`).
 - Absolute report template path.
 - The goal, context, acceptance criteria, scope boundaries, and test gate — written as self-contained prose, not as references to PM artifacts.
+- When `source_guidance.outcome = valid`, the record's `deidentified_guidance` pasted into `## Source guidance` exactly, plus a requirement that the completion report provide matching `## Source evidence`. `invalid` is a blocker and `not-applicable` / `not-declared` adds no source-guidance section. Do not paste raw PM identifiers from the owning task or spec.
 - The generated exact-request comparison channel. It is not editable PM prose: before changing any work root, the assignee compares it with the task, spec, and prompt and stops on any added implementation, destination, feature, convention, or scope the operator did not request.
 - A reminder that assignees do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files; if any of those are wrong, ambiguous, or insufficient, the assignee stops and reports it as a blocker.
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
@@ -196,6 +198,7 @@ cartopian report-action <report-path>
 - `requires_pr_step` — true when the PM-owned product-repo git step is required before reviewer dispatch.
 - `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
 - `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
+- `source_evidence` — for a complete source-backed task, the shared evidence record. Require `outcome: valid`; missing governing sources, stale/absent context, unresolved conflict, or a decisive unverified claim makes the report `failed-to-parse`.
 
 Evidence-supported lifecycle moves are applied without an operator confirmation prompt (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order — the `[automation]` policy gates pace, not selection). Report the move in the running summary; consult the operator only at the stop conditions below.
 

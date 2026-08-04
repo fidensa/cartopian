@@ -20,7 +20,7 @@ AI agents come pre-trained to "be helpful and proactive". That training causes p
 
 `skills/*.md` files are executable runbooks. They define operational procedure for initialization, planning, task execution, handoff automation, and plan closeout.
 
-`protocol/RISK_AND_PRACTICE.md` explains the optional risk, judgment, and practice-pack extension contracts; `protocol/risk-and-practice-contract.json` is the single authority for their machine values. Those contracts are defined but not yet active: no lifecycle surface derives a risk band, activates a judgment card, or selects a practice pack today. This file remains the invariant layer, and it continues to own review policy, evidence-gate discipline, and every other lifecycle rule. Risk classification never rewrites review policy, roles, capability grants, or launch configuration.
+`protocol/RISK_AND_PRACTICE.md` explains the optional risk, judgment, and practice-pack extension contracts and the active source-guidance extension; `protocol/risk-and-practice-contract.json` is the single authority for their machine values. Risk classification, judgment cards, and practice-pack selection are defined but not yet active: no lifecycle surface derives a risk band, activates a judgment card, or selects a practice pack today. Source guidance is active through the existing task, spec, readiness, handoff, and evidence surfaces; it does not activate any of those three pending mechanisms. This file remains the invariant layer, and it continues to own review policy, evidence-gate discipline, and every other lifecycle rule. Risk classification never rewrites review policy, roles, capability grants, or launch configuration.
 
 Skill invocation names are derived from skill filenames by dropping `.md` and replacing hyphens with spaces. For example, `run-task.md` maps to `run task`.
 
@@ -231,6 +231,8 @@ Task files follow the canonical field schema in `templates/TASK.md`.
 
 Open task files should contain enough context to assign and review the work without becoming progress journals.
 
+Every new task declares `Source guidance: task | spec | n/a`. `task` means the task owns the source record; `spec` means its named spec owns the one record; `n/a` means source authority is not material to the outcome. A missing declaration remains readable only for legacy tasks. The owner modes prevent a task and spec from maintaining duplicate records that can drift.
+
 If completion evidence arrives before assignment/start was recorded, the PM may fast-forward the task to the status supported by that evidence.
 
 ### Task Execution Order
@@ -249,6 +251,25 @@ Within an initiated run, choosing the next task is a computation, not a conversa
 **Directive scope.** A scoped directive ("generate PHASE-04's tasks", "write the spec", "revise the plan") authorizes only the named operation; completing it never rolls into execution on its own. Under `initiation = "operator"` the PM reports completion and stops. Under `initiation = "auto"` the newly ready open queue may initiate a run, subject to the same stop conditions. An explicit "stop", "pause", or "don't execute" always wins over configuration.
 
 Linear movement stops — and the operator is consulted — only at genuine stop conditions: a readiness or audit blocker, a failed/blocked/rejected handoff, evidence gates that cannot be satisfied, a decision the protocol or plan reserves to the operator, a plan-level fork (no plan, phase tasks not yet generated, plan complete), or exhaustion of the `[automation]` budget.
+
+## Source-Backed Work
+
+Source-backed work uses the existing planning, task, specification, prompt, evidence, handoff, validation, and report contracts. It introduces no new lifecycle artifact, score, approval loop, or specialist context.
+
+The machine vocabulary and field labels live once under `source_guidance` in `protocol/risk-and-practice-contract.json`. `cli/source_guidance.py` reads that authority and projects one deterministic record through `task-bundle`, `validate-task-readiness`, `handoff-packet`, `dispatch`, `parse-report`, and `report-action`. Because every CLI command is exposed through the shared MCP registry, the tool surface returns the identical record and diagnostics rather than reimplementing them.
+
+A source record contains:
+
+- at least one authoritative source identity;
+- the effective date, publication date, edition, revision, or version that makes each source applicable, plus `current | stale | unknown` status and its governed scope;
+- exactly one conflict disposition: `none | resolved | unresolved`, with a precedence rule or named decision authority and the applied decision when resolved; and
+- either `none` or every claim that remains unverified, each naming whether it is decisive, the missing authority or evidence, the consequence of proceeding, and the next decision or proof required.
+
+The rule is dominance, not averaging. Missing decisive authority, missing or stale applicable context, an unresolved conflict, or a decisive unverified claim fails readiness and blocks handoff. Favorable observations from other sources cannot offset that condition. The failure record names the exact claim or source condition, why proceeding matters, and the next authority or proof required. It never emits a numeric score.
+
+Non-decisive unverified claims may remain only when the full failure signal is explicit. They are not converted into verified claims and do not silently grant authority. A complete task report for source-backed work carries `## Source evidence` in the same shape, names every governing source and applicable context actually used, and cannot close with a decisive unverified claim. `report-action` fails such a purported completion report closed as `failed-to-parse`; a `blocked` report may still truthfully report that the required authority or proof could not be obtained.
+
+Source identities and scopes carried into coder prompts remain subject to normal deidentification. `handoff-packet.source_guidance.deidentified_guidance` is the assignee-facing rendering; the PM does not paste raw task or spec identifiers into a prompt. Containment is unchanged: delegated spec guidance must resolve inside the selected project's `specs/` directory, and source guidance grants no filesystem, lifecycle, request-intent, publication, or operator authority of its own.
 
 ## Specs
 
@@ -274,6 +295,8 @@ A spec may carry `Status: draft | locked`. `locked` means the current contract h
 Approved specs change in place after the project's required review or approval. Version-suffixed spec files (`-v1`, `-v2`) and spec supersession chains are not part of the protocol.
 
 A spec is surfaced to an assignee **deidentified**, never as the raw file. The canonical spec keeps its full traceability (the `SPEC-NN-NNN` title, `Plan refs:`, and the `## References` section) for the PM; `cartopian render-spec <spec-path>` produces the assignee-facing rendering, which strips that scaffolding and any inline identifier while preserving the work-contract prose. The PM inlines that rendering into the coder prompt's `## Specification` section, so PM identifiers stay inside PM artifacts and never reach product code via the spec the coder reads.
+
+A source-backed spec declares `Source guidance: required` and owns the one record used by tasks that declare `Source guidance: spec`. A non-source-backed spec declares `n/a`. `write-spec` refuses a declared required record that lacks current authority, applicable date/version context, conflict disposition, or complete unverified-claim handling.
 
 ## Reviews
 
@@ -445,6 +468,8 @@ same target.
 
 Prompts must include complete absolute paths for every resource the assignee is expected to use or produce. They must not rely on relative path interpretation, current working directory assumptions, or vague instructions such as "read the PM system."
 
+For source-backed work, the prompt includes the resolved record's deidentified rendering and requires the corresponding source evidence at completion. Prompt authoring does not repair or reinterpret an invalid record: readiness and handoff fail first with the record's actionable blockers.
+
 Coder (task) handoffs are **deidentified**. Project-management identifiers — `TASK-NN-NNN`, `SPEC-NN-NNN`, plan refs `KIND-NN-NNN`, requirement refs (`FR-`/`NF-`), decision refs (`DEC-`), and the like — exist only inside PM artifacts; they are not surfaced to the assignee. A coder prompt names the work by its title and addresses every resource by file path, and the coder writes its report to the given report path without recording any identifier. Cartopian links the report back to its task by the report *filename* (`REPORT-NN-NNN.md`), so the assignee never needs — and is never given — a task identifier to copy into product code.
 
 Task prompts are deleted when the task reaches `done/` or when the prompt is superseded before assignment. Planning-checkpoint prompts are deleted when the checkpoint is approved or superseded. Prompts are never archived as durable records.
@@ -456,6 +481,8 @@ Reports are protocol-defined handoff result artifacts in `reports/`. They are ev
 Report files follow the canonical field schema and variants in `templates/REPORT.md`.
 
 The neutral task-report core is `## Identity`, `## Completion evidence`, `## Remaining risks`, and `## Ready to close`. Specialized software and document sections (`## Files changed`, `## Deliverable`, `## Test evidence`, `## Commit / PR`) are optional evidence shapes. For compatibility, an exact `## Files changed` or `## Deliverable` heading may stand in for `## Completion evidence`, and `## Ready for review` may stand in for `## Ready to close`.
+
+`## Source evidence` is conditionally required when the governing task resolves to valid source guidance. It repeats the shared record shape as completion evidence, not as a second authority: it names what was actually applied and what remains unverified. `parse-report` and `report-action` project the validated record; a complete source-backed report without matching governing sources fails closed.
 
 Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use the independent `reports/REPORT-NN-NNN-review.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN.md`. The task-completion report is preserved unchanged throughout task review — the reviewer reads it directly from its compatibility path — and neither task-scoped artifact can satisfy the other's completion signal.
 
@@ -716,6 +743,8 @@ Every task declares `Evidence gate: required` or `Evidence gate: n/a`.
 `n/a` is only for non-executable work and must say why.
 
 When task-closure review is required, reviews of `required` tasks record the before-and-after evidence. When review is off, the completion report records it directly.
+
+Source evidence is one domain-neutral evidence shape under this same discipline. It may be a fact-check, policy effective-date check, operating-authority check, campaign claim substantiation, software version/standard check, or another source-application observation; it is not limited to research or software work.
 
 ## Plan Lifecycle
 

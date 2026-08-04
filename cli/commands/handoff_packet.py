@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import report_identity, request_trace
+from cli import report_identity, request_trace, source_guidance
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -251,6 +251,9 @@ def handler(args: argparse.Namespace) -> int:
     expected_report_variant = (
         "review" if task_path.parent.name == "in-review" else "task"
     )
+    source_guidance_record = source_guidance.resolve_task_guidance(
+        task_path, content=content
+    )
 
     # Manual task handoffs consume exactly the artifact automatic dispatch
     # does: the same resolved review context and the same binding preflight.
@@ -333,6 +336,9 @@ def handler(args: argparse.Namespace) -> int:
         "attribution": role_record["attribution"],
         "work_roots": work_roots,
         "deliverable": deliverable,
+        "source_guidance": source_guidance.active_projection(
+            source_guidance_record
+        ),
         "expected_report_path": str(expected_report_path),
         "expected_report_variant": expected_report_variant,
         "completion_report_path": str(completion_report_path),
@@ -343,6 +349,12 @@ def handler(args: argparse.Namespace) -> int:
         "request_trace": request_trace_record,
     }
     emit_record(record)
+    if source_guidance_record["outcome"] == "invalid":
+        for blocker in source_guidance_record["blockers"]:
+            stderr_guard(
+                f"{blocker['code']}: {blocker['detail']} — {blocker['recovery']}"
+            )
+        return EXIT_FAIL
     if (
         request_trace_record is not None
         and request_trace_record["preflight"] is not None

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import request_trace
+from cli import request_trace, source_guidance
 from cli.commands.resolve_config import (
     _CliError,
     _DELIVERABLE_SKIP,
@@ -23,6 +23,7 @@ CHECK_ORDER = (
     "plan-ref-aligned",
     "blocked-by-complete",
     "evidence-gate-valid",
+    "source-guidance-valid",
     "acceptance-present",
     "work-root-names-valid",
     "deliverable-valid",
@@ -223,6 +224,19 @@ def _check_evidence_gate(
     }
 
 
+def _check_source_guidance(task_path: Path, content: str) -> Dict[str, Any]:
+    """Project the shared source contract into the readiness gate."""
+    try:
+        record = source_guidance.resolve_task_guidance(task_path, content=content)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return {
+            "name": "source-guidance-valid",
+            "pass": False,
+            "reason": f"source guidance could not be resolved: {exc}",
+        }
+    return source_guidance.readiness_check(record)
+
+
 def _check_acceptance(content: str) -> Dict[str, Any]:
     lines = content.splitlines()
     in_section = False
@@ -419,6 +433,7 @@ def handler(args: argparse.Namespace) -> int:
         ),
         "blocked-by-complete": _check_blocked_by(project_root, headers),
         "evidence-gate-valid": _check_evidence_gate(headers, presence),
+        "source-guidance-valid": _check_source_guidance(task_path, content),
         "acceptance-present": _check_acceptance(content),
         "work-root-names-valid": _check_work_root(
             project_root, headers, presence, warnings

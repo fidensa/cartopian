@@ -11,6 +11,7 @@ Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>
 Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none>
 Created: YYYY-MM-DD
 Evidence gate: <required | n/a>
+Source guidance: <task | spec | n/a>
 
 ## Goal
 
@@ -53,6 +54,30 @@ Use `n/a` (or omit the line) only for code tasks and other task kinds with no du
 ## Evidence gate
 
 If `required`, name the concrete before-and-after acceptance evidence (test target, fixture check, validation run, fact-check, approval checklist, inspection, rehearsal, or similar) that demonstrates the outcome. If `n/a`, say why.
+
+## Source guidance
+
+Use this existing task/spec contract when the outcome depends on external or internal source authority. Set the header to `task` when this task owns the record, `spec` when the named spec owns it, or `n/a` when source authority is not material to the work. A missing header remains readable only for legacy tasks; new tasks choose explicitly.
+
+When the header is `task`, keep all three subsections below. When it is `spec`, omit this section and keep the same record only in the named spec. When it is `n/a`, omit this section.
+
+### Authoritative sources
+
+- Identity: <stable source title or locator>; Applicable context: <effective date, publication date, edition, revision, or version>; Status: <current | stale | unknown>; Scope: <claims or decisions governed>
+
+### Conflict resolution
+
+- Status: <none | resolved | unresolved>; Rule: <precedence rule or named decision authority>; Decision: <applied resolution | n/a>
+
+### Unverified claims
+
+- none
+
+Or record each remaining claim using the shared failure-signal shape:
+
+- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; Missing: <authority or evidence>; Consequence: <consequence of proceeding>; Next: <decision or proof required>
+
+Missing authority, a stale/unknown applicable context, an unresolved conflict, or a decisive unverified claim fails readiness. Favorable source observations do not offset one of those conditions.
 
 ## Acceptance
 

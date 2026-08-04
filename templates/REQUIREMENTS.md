@@ -19,6 +19,10 @@ host intake record.
 - **Binding constraint:** …
 - **Explicit exclusions:** …
 
+## Source authority
+
+For source-backed requirements, name each authoritative source, its applicable effective date, edition, revision, or version, and the requirements it governs. Record the precedence rule or named decision authority for conflicts. List every claim that remains explicitly unverified together with the missing authority/evidence, consequence of proceeding, and next decision/proof. Use `n/a — requirements are not source-backed` when this contract does not apply.
+
 ## Thesis
 
 What is this thing? Define it precisely — it is exactly this, and it is surely not that.
