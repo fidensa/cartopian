@@ -199,6 +199,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--name", "Conference",
                 "--id", "conference",
                 "--role", "quality-checker=Checks plans and completed work",
+                "--role-grants", "quality-checker=reviewer-like",
                 "--review-planning", "required",
                 "--review-planning-role", "quality-checker",
                 "--review-task-closure", "off",
@@ -218,6 +219,9 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
         )
         self.assertTrue(
             data["roles"]["quality-checker"]["auto_launch"]
+        )
+        self.assertEqual(
+            data["roles"]["quality-checker"]["grants"], ["reviewer-like"]
         )
 
     def test_required_review_role_must_be_declared_or_inherited(self):

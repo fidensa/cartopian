@@ -30,17 +30,17 @@ Write/act grants:
 
 ## Presets
 
-Preset names are valid anywhere a capability name is and expand to their grants at resolution time; the operator composes them per role (e.g. `grants = ["reviewer-like", "read:reports"]`). Preset names describe access shapes only; they do not select lifecycle policy or review assignment.
+Preset names are valid anywhere a capability name is and expand to their grants at resolution time; the operator composes them per role (e.g. `grants = ["reviewer-like", "write:plan"]`). Preset names describe access shapes only; they do not select lifecycle policy or review assignment.
 
 | Preset | Grants |
 | --- | --- |
 | `coder-like` | `read:prompts`, `read:work-roots`, `write:worktree`, `write:reports` |
-| `reviewer-like` | `read:prompts`, `read:work-roots`, `write:reports` |
+| `reviewer-like` | `read:governance`, `read:reports`, `read:prompts`, `read:work-roots`, `write:reports` |
 | `planner-like` | `read:governance`, `read:reports`, `read:prompts`, `write:plan` |
 | `pm-with-planner` | `read:governance`, `read:reports`, `read:prompts`, `write:lifecycle`, `dispatch` |
 | `pm-solo` | `read:governance`, `read:reports`, `read:prompts`, `write:plan`, `write:lifecycle`, `dispatch` |
 
-Deliberate exclusions: `coder-like` and `reviewer-like` carry neither `read:governance` nor `read:reports` — the PM curates spec and feedback into the prompt (an operator may add `read:reports` to a reviewer). The PM presets stay out of `read:work-roots` and `write:worktree`.
+`reviewer-like` includes the two direct-evidence reads used by both review workflows: `read:governance` covers governed task evidence and planning artifacts, while `read:reports` covers the preserved task-completion report and prior review output. It still grants no plan, lifecycle, decision, configuration, prompt, or worktree mutation authority. `coder-like` deliberately carries neither evidence-read grant because the PM curates an implementation assignment into its prompt. The PM presets stay out of `read:work-roots` and `write:worktree`.
 
 ## Enforcement
 
@@ -58,6 +58,8 @@ Both boundaries are enforced at the harness's native interception point — the 
 | work root | each declared work root | `read:work-roots` |
 
 With the default assignee grants (`coder-like`), a dispatched session can read its own handoff prompt and the product work tree, and is refused reads of governance artifacts, specs, reports, and reviews.
+
+With `reviewer-like`, a dispatched review session can read its handoff, the product tree, governed review evidence, and reports, and can write reports. The resolved bundle is independent of the role's operator-chosen name and of whether the handoff is manual or automatically launched; point-of-use enforcement still depends on the host boundary described above.
 
 **Honest tiering.** `cartopian containment-matrix <project-path>` verifies the installed refusal hook, settings helper, and platform wrapper chain, then exercises the helper's process-scoped settings construction. It does not require `.claude/settings.json`. A missing or invalid link downgrades the result. Healthy Claude evidence is `contained-partial` on both axes because the hook intercepts the structured read and mutation tools but not `Bash`. Governed writes that bypass point-of-use refusal can be detected after the fact by `plan-audit` provenance. There is no equivalent reliable record of unauthorized shell reads, so the matrix never presents read provenance detection as a fallback.
 

@@ -391,6 +391,71 @@ class TestToolSurface(unittest.TestCase):
         self.assertEqual(sc["exit_code"], 0)
         self.assertIsInstance(sc["records"], list)
 
+    def test_cli_and_mcp_resolve_the_same_reviewer_like_role_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            project = root / "project"
+            home.mkdir()
+            project.mkdir()
+            (project / "cartopian.toml").write_text(
+                "[project]\n"
+                'id = "review-parity"\n'
+                'name = "Review Parity"\n'
+                'project_schema_version = "v0.10.0"\n'
+                "\n[roles.quality-gate]\n"
+                'description = "Reviews assigned evidence."\n'
+                'grants = ["reviewer-like"]\n'
+                "\n[reviews]\n"
+                'planning = "required"\n'
+                'planning_role = "quality-gate"\n'
+                'task_closure = "required"\n'
+                'task_role = "quality-gate"\n',
+                encoding="utf-8",
+            )
+            direct = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "bin" / "cartopian"),
+                    "resolve-config",
+                    str(project),
+                ],
+                cwd=REPO_ROOT,
+                env={"HOME": str(home), "PATH": os.environ.get("PATH", "")},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(direct.returncode, 0, msg=direct.stderr)
+            cli_record = json.loads(direct.stdout)
+            with patch.dict(os.environ, {"HOME": str(home)}):
+                response = single(
+                    "tools/call",
+                    {
+                        "name": "resolve_config",
+                        "arguments": {"project_path": str(project)},
+                    },
+                )
+            mcp_result = response["result"]["structuredContent"]
+            self.assertEqual(mcp_result["exit_code"], 0)
+            mcp_record = mcp_result["records"][0]
+
+        self.assertEqual(
+            mcp_record["roles"]["quality-gate"],
+            cli_record["roles"]["quality-gate"],
+        )
+        self.assertEqual(mcp_record["capabilities"], cli_record["capabilities"])
+        self.assertEqual(mcp_record["reviews"], cli_record["reviews"])
+        self.assertEqual(
+            mcp_record["roles"]["quality-gate"]["effective_grants"],
+            [
+                "read:governance",
+                "read:prompts",
+                "read:reports",
+                "read:work-roots",
+                "write:reports",
+            ],
+        )
+
     def test_workflow_aggregators_expose_current_schema_end_to_end(self):
         """Exercise the MCP surface, not only direct CLI helper calls.
 

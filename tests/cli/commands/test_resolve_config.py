@@ -105,23 +105,38 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
 
     def test_review_assignments_make_auto_launch_applicable(self):
         with _Sandbox() as sb:
+            config_path = sb.project / "cartopian.toml"
             _write(
-                sb.project / "cartopian.toml",
+                config_path,
                 _PROJECT
-                + '\n[roles.reviewer]\ndescription = "Checks work."\n'
+                + '\n[roles.quality-gate]\ndescription = "Checks work."\n'
+                'grants = ["reviewer-like"]\n'
                 'auto_launch = ["task_review", "planning_review"]\n'
                 'agent = "codex"\n\n'
                 '[reviews]\nplanning = "required"\n'
-                'planning_role = "reviewer"\n'
-                'task_closure = "required"\ntask_role = "reviewer"\n',
+                'planning_role = "quality-gate"\n'
+                'task_closure = "required"\ntask_role = "quality-gate"\n',
             )
+            original_config = config_path.read_bytes()
             record = self._record(_run(sb.project, home=sb.home))
+            self.assertEqual(config_path.read_bytes(), original_config)
+        quality_gate = record["roles"]["quality-gate"]
         self.assertEqual(
-            record["roles"]["reviewer"]["assigned_work_types"],
+            quality_gate["assigned_work_types"],
             ["task_run", "task_review", "planning_review"],
         )
-        self.assertEqual(record["reviews"]["planning"]["role"], "reviewer")
-        self.assertEqual(record["reviews"]["task_closure"]["role"], "reviewer")
+        self.assertEqual(
+            quality_gate["effective_grants"],
+            [
+                "read:governance",
+                "read:prompts",
+                "read:reports",
+                "read:work-roots",
+                "write:reports",
+            ],
+        )
+        self.assertEqual(record["reviews"]["planning"]["role"], "quality-gate")
+        self.assertEqual(record["reviews"]["task_closure"]["role"], "quality-gate")
 
     def test_project_can_disable_global_review_policy(self):
         with _Sandbox() as sb:

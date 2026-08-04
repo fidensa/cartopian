@@ -589,6 +589,7 @@ Use role-local launch facts only for roles that need a named agent or Cartopian 
 ```toml
 [roles.coder]
 description = "Implements tasks per spec."
+grants = ["coder-like"]
 auto_launch = ["task_run"]
 
 agent = "cartopian-codex"
@@ -598,6 +599,7 @@ timeout = "60m"
 
 [roles.reviewer]
 description = "Reviews assigned checkpoints."
+grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
 agent = "cartopian-gemini"

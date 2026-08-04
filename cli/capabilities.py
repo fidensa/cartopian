@@ -54,13 +54,20 @@ ALL_CAPABILITIES: Tuple[str, ...] = READ_CAPABILITIES + WRITE_CAPABILITIES
 
 # Presets are sane default bundles the operator composes per role. A preset
 # name is valid anywhere a capability name is, and expands to its grants at
-# resolution time. coder-like and reviewer-like deliberately exclude
-# read:governance and read:reports (the PM curates spec and feedback into
-# the prompt); the PM presets deliberately exclude read:work-roots and
-# write:worktree.
+# resolution time. coder-like deliberately excludes read:governance and
+# read:reports (the PM curates its assignment into the prompt). reviewer-like
+# includes both read grants because review handoffs inspect governed evidence
+# and preserved reports directly. The PM presets deliberately exclude
+# read:work-roots and write:worktree.
 PRESETS: Dict[str, Tuple[str, ...]] = {
     "coder-like": ("read:prompts", "read:work-roots", "write:worktree", "write:reports"),
-    "reviewer-like": ("read:prompts", "read:work-roots", "write:reports"),
+    "reviewer-like": (
+        "read:governance",
+        "read:reports",
+        "read:prompts",
+        "read:work-roots",
+        "write:reports",
+    ),
     "planner-like": ("read:governance", "read:reports", "read:prompts", "write:plan"),
     "pm-with-planner": (
         "read:governance",

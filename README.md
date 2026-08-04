@@ -168,7 +168,7 @@ task_closure = "off"
 
 The same agent can wear multiple hats, and you can, too.
 
-Roles can also carry **capability grants** (`grants = [...]`), which turn the description into an enforced boundary. What a role may read and write is gated at the harness level and determined solely by its grants. Presets such as `coder-like` and `reviewer-like` cover common configurations. Capability grants are fully optional; configurations without them behave exactly as before. See `CAPABILITIES.md`.
+Roles can also carry **capability grants** (`grants = [...]`), which turn the description into an enforced boundary. What a role may read and write is gated at the harness level and determined solely by its grants. Presets such as `coder-like` and `reviewer-like` cover common configurations; `reviewer-like` includes the governance and report reads needed to inspect assigned planning and task-closure evidence directly, without lifecycle or implementation writes. Capability grants are fully optional; configurations without them behave exactly as before. See `CAPABILITIES.md`.
 
 ### Automated handoffs (optional)
 

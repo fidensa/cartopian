@@ -42,7 +42,15 @@ EXPECTED_CAPABILITIES = frozenset(
 
 EXPECTED_PRESETS = {
     "coder-like": frozenset({"read:prompts", "read:work-roots", "write:worktree", "write:reports"}),
-    "reviewer-like": frozenset({"read:prompts", "read:work-roots", "write:reports"}),
+    "reviewer-like": frozenset(
+        {
+            "read:governance",
+            "read:reports",
+            "read:prompts",
+            "read:work-roots",
+            "write:reports",
+        }
+    ),
     "planner-like": frozenset(
         {"read:governance", "read:reports", "read:prompts", "write:plan"}
     ),
@@ -81,10 +89,10 @@ class TestPresets(unittest.TestCase):
                 self.assertEqual(frozenset(PRESETS[name]), expected)
 
     def test_preset_composes_with_extra_grant(self):
-        res = resolve_grants({"reviewer": {"grants": ["reviewer-like", "read:reports"]}})
+        res = resolve_grants({"quality_gate": {"grants": ["reviewer-like", "write:plan"]}})
         self.assertEqual(
-            res.role_grants["reviewer"],
-            EXPECTED_PRESETS["reviewer-like"] | {"read:reports"},
+            res.role_grants["quality_gate"],
+            EXPECTED_PRESETS["reviewer-like"] | {"write:plan"},
         )
 
 

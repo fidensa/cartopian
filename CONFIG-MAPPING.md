@@ -67,6 +67,8 @@ timeout = "60m"
 
 Review policy decides whether a checkpoint exists. Role assignment decides who performs it. Neither confers automatic-launch permission or capabilities.
 
+When capability containment is enabled, the existing `reviewer-like` preset is the review-workflow access bundle: it reads governed evidence, preserved reports, handoff prompts, and work roots and writes reports. It grants no lifecycle or implementation mutation. Assigning that preset remains an explicit operator configuration choice and is independent of the role's name, review assignment, and `auto_launch` values.
+
 | Field | Allowed values | Default |
 | --- | --- | --- |
 | `reviews.planning` | `required`, `off` | `off` |

@@ -106,6 +106,20 @@ _READ_ROLES = (
     "grants = []\n"
 )
 
+_REVIEW_ASSIGNMENT_ROLES = (
+    "[roles.quality-gate]\n"
+    'description = "Reviews assigned evidence."\n'
+    'grants = ["reviewer-like"]\n'
+    "[roles.builder]\n"
+    'description = "Implements assigned work."\n'
+    'grants = ["coder-like"]\n'
+    "[reviews]\n"
+    'planning = "required"\n'
+    'planning_role = "quality-gate"\n'
+    'task_closure = "required"\n'
+    'task_role = "quality-gate"\n'
+)
+
 # Governance-class read targets (management/strategy artifacts and specs; an
 # unclassified project file also falls to governance on the read axis).
 _GOVERNANCE_READ_TARGETS = (
@@ -557,6 +571,62 @@ class TestDenyUngrantedReads(unittest.TestCase):
             )
             self.assertEqual(decision.action, "allow")
             self.assertIsNone(decision.reason)
+
+
+class TestReviewerLikeWorkflowAccess(unittest.TestCase):
+    def test_arbitrarily_named_review_role_reads_task_and_completion_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _REVIEW_ASSIGNMENT_ROLES)
+            environ = {"CARTOPIAN_ROLE": "quality-gate"}
+            for rel in (
+                "tasks/in-review/TASK-01-001.md",
+                "reports/REPORT-01-001.md",
+            ):
+                decision = fx.evaluate(
+                    _read_payload("Read", str(fx.project_root / rel)),
+                    environ=environ,
+                )
+                self.assertEqual(decision.action, "allow", msg=rel)
+
+    def test_planning_review_retains_governance_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _REVIEW_ASSIGNMENT_ROLES)
+            decision = fx.evaluate(
+                _read_payload(
+                    "Read", str(fx.project_root / "IMPLEMENTATION_PLAN.md")
+                ),
+                environ={"CARTOPIAN_ROLE": "quality-gate"},
+            )
+            self.assertEqual(decision.action, "allow")
+
+    def test_unrelated_execution_role_still_cannot_read_governance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _REVIEW_ASSIGNMENT_ROLES)
+            decision = fx.evaluate(
+                _read_payload(
+                    "Read",
+                    str(fx.project_root / "tasks" / "in-review" / "TASK-01-001.md"),
+                ),
+                environ={"CARTOPIAN_ROLE": "builder"},
+            )
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("read:governance", decision.reason)
+
+    def test_reviewer_like_does_not_gain_lifecycle_or_implementation_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _REVIEW_ASSIGNMENT_ROLES)
+            environ = {"CARTOPIAN_ROLE": "quality-gate"}
+            for target in (
+                fx.project_root / "IMPLEMENTATION_PLAN.md",
+                fx.project_root / "tasks" / "in-review" / "TASK-01-001.md",
+                fx.project_root / "prompts" / "PROMPT-01-001.md",
+                fx.project_root / "decisions" / "DECISION-001.md",
+                fx.work_root / "src" / "main.py",
+            ):
+                decision = fx.evaluate(
+                    _payload("Write", str(target)), environ=environ
+                )
+                self.assertEqual(decision.action, "deny", msg=str(target))
 
 
 class TestAllowGrantedReads(unittest.TestCase):
