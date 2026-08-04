@@ -40,11 +40,12 @@ task_role = "reviewer"
 
 [roles.pm]
 description = "PM"
-grants = ["pm-like"]
+grants = ["pm-solo"]
 
 [roles.reviewer]
 description = "Configured reviewer"
 grants = ["reviewer-like"]
+agent = "cartopian-codex"
 '''
 
 
@@ -542,6 +543,71 @@ class RequestTraceContract(unittest.TestCase):
         self.assertEqual(closure.trace[0].unit, expected_unit)
         self.assertEqual(assignment.evidence_ids, ["REQUEST-001"])
         self.assertEqual(closure.evidence_ids, ["REQUEST-001"])
+
+    def test_planned_prompt_matches_assignment_and_handoff_identity(self) -> None:
+        self.capture(ORIGINAL)
+        self.task = self.root / "tasks/in-progress/TASK-02-010.md"
+        self.task.parent.mkdir(parents=True)
+        self.seed_task()
+        self.seed_plan_ancestry()
+        assignment = request_trace.context_for_task_assignment(self.root, self.task)
+
+        code, write_records, error = self.run_cli(
+            "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
+            "--task", str(self.task), "--content", "# Assignment prompt\n",
+        )
+        self.assertEqual(code, 0, msg=error)
+        self.assertEqual(
+            write_records[0]["details"]["request_context_identity"],
+            assignment.context_identity,
+        )
+        self.assertEqual(
+            write_records[0]["details"]["request_evidence"],
+            assignment.evidence_ids,
+        )
+
+        code, packet_records, error = self.run_cli(
+            "handoff-packet", str(self.task), "--role", "reviewer",
+        )
+        self.assertEqual(code, 0, msg=error)
+        packet_trace = packet_records[0]["request_trace"]
+        self.assertEqual(packet_trace["context_identity"], assignment.context_identity)
+        self.assertEqual(
+            [
+                record["record_id"]
+                for record in packet_trace["request_trace"]["records"]
+            ],
+            assignment.evidence_ids,
+        )
+
+    def test_ad_hoc_task_write_prompt_refuses_project_request(self) -> None:
+        self.capture(ORIGINAL)
+        self.task = self.root / "tasks/in-progress/TASK-02-010.md"
+        self.task.parent.mkdir(parents=True)
+        self.seed_task()
+
+        code, records, error = self.run_cli(
+            "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
+            "--task", str(self.task), "--content", "# Assignment prompt\n",
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(records, [])
+        self.assertIn("unit-request-not-captured", error)
+
+    def test_task_bound_request_still_authors_prompt_without_plan_ancestry(self) -> None:
+        self.capture(ORIGINAL, unit="task:TASK-02-010")
+        self.task = self.root / "tasks/in-progress/TASK-02-010.md"
+        self.task.parent.mkdir(parents=True)
+        self.seed_task()
+
+        code, records, error = self.run_cli(
+            "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
+            "--task", str(self.task), "--content", "# Assignment prompt\n",
+        )
+
+        self.assertEqual(code, 0, msg=error)
+        self.assertEqual(records[0]["details"]["request_evidence"], ["REQUEST-001"])
 
     def test_planned_task_inherits_project_corrections_in_order(self) -> None:
         self.capture(ORIGINAL)

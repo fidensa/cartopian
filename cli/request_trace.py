@@ -1692,9 +1692,18 @@ def require_request_before_derivative(project_root: Path, dest_kind: str, relati
     else:
         unit = GovernedUnit("project", "project")
     # Task/spec authoring during project planning is governed by the project
-    # intake. Assignment and review later revalidate the task's concrete plan
-    # ancestry before permitting the same project-origin evidence fallback.
-    allow_project_origin = unit.kind == "planning" or dest_kind in {"task", "spec"}
+    # intake. A task-targeted prompt receives the same fallback as assignment
+    # and review only after the shared ancestry predicate verifies its concrete
+    # plan chain.
+    allow_project_origin = (
+        unit.kind == "planning"
+        or dest_kind in {"task", "spec"}
+        or (
+            dest_kind == "prompt"
+            and task_path is not None
+            and _task_has_project_intent_ancestry(project_root, task_path)
+        )
+    )
     review_kind = "task-closure" if unit.kind == "task" else "planning"
     source_texts = _source_texts(
         project_root,

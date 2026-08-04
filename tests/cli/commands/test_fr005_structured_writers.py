@@ -12,6 +12,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+from cli import request_trace
 from cli.main import SUBCOMMANDS, build_parser
 from tests.scaffold import project_scaffold
 
@@ -137,6 +138,7 @@ class TestIdBearingWriters(_Fixture):
         )
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(recs[0]["details"]["variant"], "task")
+        self.assertEqual(recs[0]["details"]["request_evidence"], ["REQUEST-002"])
         assignment_prompt = self.scaffold.prompts / "PROMPT-01-001.md"
         self.assertTrue(assignment_prompt.is_file())
         assignment_text = assignment_prompt.read_text(encoding="utf-8")
@@ -150,6 +152,52 @@ class TestIdBearingWriters(_Fixture):
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(recs[0]["details"]["variant"], "planning")
         self.assertTrue((self.scaffold.prompts / "PROMPT-PLAN-001.md").is_file())
+
+    def test_planned_task_prompt_inherits_project_request(self):
+        task = self.scaffold.tasks_in_progress / "TASK-01-009.md"
+        task.write_text(
+            "# TASK-01-009: Planned task\n\n"
+            "Phase: PHASE-01\n"
+            "Plan ref: BUILD-01-009\n",
+            encoding="utf-8",
+        )
+        (self.scaffold.project_root / "IMPLEMENTATION_PLAN.md").write_text(
+            "# Plan\n\n- `BUILD-01-009` — Planned task.\n",
+            encoding="utf-8",
+        )
+        (self.scaffold.phases / "PHASE-01.md").write_text(
+            "# PHASE-01\n\n- `BUILD-01-009` — Planned task.\n",
+            encoding="utf-8",
+        )
+        assignment = request_trace.context_for_task_assignment(
+            self.scaffold.project_root, task
+        )
+
+        code, recs, err = run_cli(
+            "write-prompt", self.root, "--prompt-id", "PROMPT-01-009",
+            "--task", str(task), "--content", "# planned prompt\n",
+        )
+
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(
+            recs[0]["details"]["request_context_identity"],
+            assignment.context_identity,
+        )
+        self.assertEqual(recs[0]["details"]["request_evidence"], ["REQUEST-001"])
+
+    def test_ad_hoc_task_prompt_cannot_inherit_project_request(self):
+        task = self.scaffold.tasks_in_progress / "TASK-01-009.md"
+        task.write_text("# TASK-01-009: Ad hoc task\n", encoding="utf-8")
+
+        code, recs, err = run_cli(
+            "write-prompt", self.root, "--prompt-id", "PROMPT-01-009",
+            "--task", str(task), "--content", "# ad hoc prompt\n",
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(recs, [])
+        self.assertIn("unit-request-not-captured", err)
+        self.assertFalse((self.scaffold.prompts / "PROMPT-01-009.md").exists())
 
     def test_bad_ids_and_slugs_refused_as_usage(self):
         cases = [
