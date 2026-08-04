@@ -32,6 +32,7 @@ from typing import (
     Tuple,
 )
 
+from cli import claude_hooks
 from cli.config_schema import identity_contract
 from cli.install_state import (
     SCHEMA_IDENTITY,
@@ -246,6 +247,14 @@ _CHOICE_MAP = {
 _MIGRATION_SURFACE = "project-schema-migration-offers"
 _MIGRATION_DISPOSITIONS = ("defer",)
 
+# Claude Code hook registration for every registered project.  This is a
+# required surface on purpose: the hooks gate an *assignee* the PM launches,
+# not the operator's own session, so leaving them behind an operator-selected
+# flag meant a handoff could stop without a report on any install whose
+# operator never learned the flag existed.  It takes no disposition and asks
+# nothing.
+_PROJECT_HOOKS_SURFACE = "project-hooks"
+
 # Each surface adapter declares how safely its action may be repeated and how
 # much of its result can be re-observed on resume.  Resume assessment consumes
 # these; it never infers repeatability from the action name.
@@ -264,6 +273,10 @@ _SURFACE_RETRY_PROFILES: Dict[str, Tuple[str, str]] = {
     "client-registrations": ("inspect-before-retry", "partially-observable"),
     "client-configuration": ("inspect-before-retry", "partially-observable"),
     "verification-content": ("idempotent", "observable"),
+    # Project hooks merge into an operator-owned settings file whose
+    # non-Cartopian siblings cannot be re-derived, so a partial merge is
+    # inspected rather than replayed — the same class as client registration.
+    _PROJECT_HOOKS_SURFACE: ("inspect-before-retry", "partially-observable"),
     _MIGRATION_SURFACE: ("refuse-replay", "unobservable"),
 }
 _RETRY_RANK = {
@@ -821,6 +834,109 @@ def _migration_offers(
     return offers, aggregate
 
 
+def _project_hooks_surface(install_root: Path) -> Dict[str, Any]:
+    """Inventory Claude Code hook registration across every registered project.
+
+    Uniform by construction: the desired identity is the same for all projects,
+    and a project is only unaffected when it already carries exactly the entries
+    this install would write.  An unreadable registry is not evidence that no
+    project needs hooks, so it reports ``unknown`` rather than ``current``.
+    """
+    desired = claude_hooks.project_desired_identity(install_root)
+    projects, readable = claude_hooks.registered_projects(install_root)
+    if not readable:
+        return {
+            "kind": _PROJECT_HOOKS_SURFACE,
+            "locator": "registered-projects:hooks",
+            "desired_identity": desired,
+            "observed_identity": "unknown",
+            "state": "unknown",
+            "affected": True,
+            "required": True,
+            "verification": "unverified",
+            "completeness": "incomplete",
+            "project_count": 0,
+        }
+    if not projects:
+        return {
+            "kind": _PROJECT_HOOKS_SURFACE,
+            "locator": "registered-projects:hooks",
+            "desired_identity": "not-applicable",
+            "observed_identity": "not-applicable",
+            "state": "not-applicable",
+            "affected": False,
+            "required": True,
+            "verification": "verified",
+            "completeness": "complete",
+            "project_count": 0,
+        }
+
+    observations = {
+        entry["id"]: claude_hooks.observe_project(
+            Path(entry["path"]), install_root
+        )
+        for entry in projects
+    }
+    paths = {entry["id"]: entry["path"] for entry in projects}
+    residuals = [
+        {
+            "project_identity": name,
+            "path": paths[name],
+            "state": observations[name]["state"],
+        }
+        for name in sorted(observations)
+        if observations[name]["state"] != "current"
+    ]
+    states = [item["state"] for item in observations.values()]
+    affected = any(state != "current" for state in states)
+    for candidate in claude_hooks.STATE_PRECEDENCE:
+        if candidate in states:
+            state = candidate
+            break
+    else:
+        state = "current"
+    observed = _digest_entries(
+        (name, str(observations[name]["identity"]).encode("utf-8"))
+        for name in sorted(observations)
+    )
+    return {
+        "kind": _PROJECT_HOOKS_SURFACE,
+        "locator": "registered-projects:hooks",
+        "desired_identity": desired,
+        "observed_identity": desired if not affected else observed,
+        "state": "pending" if affected else "current",
+        "affected": affected,
+        "required": True,
+        "verification": "unverified" if state == "malformed" else "verified",
+        "completeness": "incomplete" if state == "malformed" else "complete",
+        "project_count": len(projects),
+        "residuals": residuals,
+    }
+
+
+def _apply_project_hooks(install_root: Path) -> None:
+    """Register both Claude Code hooks in every registered project.
+
+    One project cannot block the others, and no project can block the install.
+    A settings file that cannot be safely merged is preserved untouched and
+    left for the verify pass to report as an unregistered residual: refusing
+    the whole run would mean a single hand-edited project made Cartopian
+    un-upgradable, which is a worse failure than a named, retryable gap.
+    Registration is idempotent, so the next run repairs whatever this one
+    could not.
+    """
+    projects, readable = claude_hooks.registered_projects(install_root)
+    if not readable:
+        # The planner already reported the surface as unknown/affected; verify
+        # re-observes and fails it. Nothing here can be applied safely.
+        return
+    for entry in projects:
+        try:
+            claude_hooks.apply_project(Path(entry["path"]), install_root)
+        except (ValueError, OSError):
+            continue
+
+
 def _version_records(
     source_root: Path,
     install_root: Path,
@@ -1364,6 +1480,12 @@ def _plan_actions(
             action = choice["offered_action"] if choice else "repair"
             authorization = choice["state"] if choice else "offered"
             restart = "client-specific"
+        elif kind == _PROJECT_HOOKS_SURFACE and surface["affected"]:
+            # Required and unelected: no choice row is consulted, and the
+            # hooks take effect for assignees launched after this run.
+            action = "register-project-hooks"
+            authorization = "required"
+            restart = "none"
         elif surface["affected"]:
             action = (
                 "convert-materialization"
@@ -1505,6 +1627,7 @@ def plan_workflow(
             "verification-content", source, install, mode=mode
         )
     )
+    surfaces.append(_project_hooks_surface(install))
 
     migrations, migration_state = _migration_offers(install, source)
     target_schema = _target_schema(source) or "unknown"
@@ -2559,6 +2682,27 @@ def _apply_under_lease(
                 owner=owner,
             )
             _apply_registrations(clients, client_home, install_root)
+
+        # Runs last of the mutating surfaces: the hook commands name scripts
+        # under the install root, so the tool-owned content they point at must
+        # already be in place before any project is told to execute them.
+        hooks_surface = surfaces[_PROJECT_HOOKS_SURFACE]
+        if hooks_surface.get("affected"):
+            refused_surface = _PROJECT_HOOKS_SURFACE
+            attempted_action = "register-project-hooks"
+            recovery = (
+                "inspect the project's .claude/settings.json; operator-authored "
+                "hooks were preserved and only the Cartopian entries are merged"
+            )
+            recovery_artifact = "project-claude-settings:preserved"
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface=_PROJECT_HOOKS_SURFACE,
+                action=attempted_action,
+                owner=owner,
+            )
+            _apply_project_hooks(install_root)
     except (WorkflowRefusal, OSError) as exc:
         os_failure = isinstance(exc, OSError)
         failure_recovery = recovery
@@ -2657,7 +2801,12 @@ def _verification_checkpoint(
             else (
                 "registration-observation"
                 if surface["kind"]
-                in ("bridges", "client-registrations", "client-configuration")
+                in (
+                    "bridges",
+                    "client-registrations",
+                    "client-configuration",
+                    _PROJECT_HOOKS_SURFACE,
+                )
                 else "file-digest"
             )
         ),
@@ -2770,6 +2919,16 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     else:
         verification["state"] = "verified"
     verified_surfaces.append(verification)
+
+    hooks_surface = _project_hooks_surface(install_root)
+    if hooks_surface["state"] == "not-applicable":
+        pass
+    elif hooks_surface["affected"]:
+        hooks_surface["state"] = "failed"
+        failed_kinds.add(_PROJECT_HOOKS_SURFACE)
+    else:
+        hooks_surface["state"] = "verified"
+    verified_surfaces.append(hooks_surface)
 
     migrations, migration_state = _migration_offers(install_root, source_root)
     migrations_deferred = _carry_verified_migration_deferrals(

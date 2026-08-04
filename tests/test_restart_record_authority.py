@@ -298,7 +298,7 @@ INVALID_RECORDS: Tuple[Tuple[str, Callable[[Dict[str, Any]], None]], ...] = (
     # Schema identity and an actual non-boolean integer schema version.
     ("json-float-schema-version", _set("record_schema_version", 1.0)),
     ("boolean-schema-version", _set("record_schema_version", True)),
-    ("unsupported-schema-version", _set("record_schema_version", 2)),
+    ("unsupported-schema-version", _set("record_schema_version", RECORD_SCHEMA_VERSION + 1)),
     ("string-schema-version", _set("record_schema_version", "1")),
     (
         "unsupported-schema-identity",
@@ -383,7 +383,7 @@ REFUSED_RESTART_EVIDENCE: Tuple[
     # record gate refuses it before any restart row is considered.
     (
         "unusable-record-unsupported-schema-version",
-        _set("record_schema_version", 2),
+        _set("record_schema_version", RECORD_SCHEMA_VERSION + 1),
         RESTART_EVIDENCE_UNUSABLE,
     ),
     (

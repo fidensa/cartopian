@@ -878,5 +878,172 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
         )
 
 
+class ProjectHooksSurfaceTests(unittest.TestCase):
+    """The `project-hooks` surface is required, uniform, and unelected."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.install_root = self.root / "install"
+        self.client_home = self.root / "home"
+        self.client_home.mkdir()
+        self.install_root.mkdir()
+
+    def register(self, *names: str) -> None:
+        entries = []
+        for name in names:
+            project = self.root / name
+            project.mkdir(exist_ok=True)
+            entries.append(
+                {"id": name, "path": str(project), "label": name.title()}
+            )
+        (self.install_root / "projects.json").write_text(
+            json.dumps(entries), encoding="utf-8"
+        )
+
+    def plan(self, **overrides):
+        values = {
+            "source_root": REPO_ROOT,
+            "install_root": self.install_root,
+            "operation": "update",
+            "mode": "copy",
+            "client_home": self.client_home,
+            "clients": ("codex",),
+        }
+        values.update(overrides)
+        return plan_workflow(**values)
+
+    def surface(self, record):
+        return next(
+            item for item in record["surfaces"] if item["kind"] == "project-hooks"
+        )
+
+    def settings(self, name: str):
+        return json.loads(
+            (self.root / name / ".claude" / "settings.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def test_surface_is_required_and_takes_no_disposition(self) -> None:
+        self.register("alpha")
+        surface = self.surface(self.plan())
+        self.assertTrue(surface["required"])
+        self.assertNotIn(
+            "project-hooks",
+            [item["surface"] for item in self.plan()["choices"]],
+        )
+        with self.assertRaises(WorkflowRefusal):
+            self.plan(decisions={"project-hooks": "decline"})
+
+    def test_every_registered_project_is_hooked_identically(self) -> None:
+        self.register("alpha", "beta")
+        apply_workflow(self.plan())
+        for name in ("alpha", "beta"):
+            hooks = self.settings(name)["hooks"]
+            self.assertEqual(len(hooks["PreToolUse"]), 1)
+            self.assertEqual(len(hooks["Stop"]), 1)
+        self.assertEqual(
+            self.settings("alpha")["hooks"], self.settings("beta")["hooks"]
+        )
+
+    def test_registration_is_idempotent(self) -> None:
+        self.register("alpha")
+        apply_workflow(self.plan())
+        first = self.settings("alpha")
+        result = apply_workflow(self.plan())
+        self.assertEqual(self.surface(result)["state"], "verified")
+        self.assertFalse(self.surface(result)["affected"])
+        self.assertEqual(self.settings("alpha"), first)
+
+    def test_a_stale_hook_command_is_detected_and_replaced(self) -> None:
+        self.register("alpha")
+        apply_workflow(self.plan())
+        settings_path = self.root / "alpha" / ".claude" / "settings.json"
+        stale = json.loads(settings_path.read_text(encoding="utf-8"))
+        stale["hooks"]["Stop"][0]["hooks"][0]["command"] = (
+            '"/usr/bin/python3" "/moved/root/cli/claude_stop_hook.py"'
+        )
+        settings_path.write_text(json.dumps(stale), encoding="utf-8")
+        self.assertTrue(self.surface(self.plan())["affected"])
+        result = apply_workflow(self.plan())
+        self.assertEqual(self.surface(result)["state"], "verified")
+        command = self.settings("alpha")["hooks"]["Stop"][0]["hooks"][0][
+            "command"
+        ]
+        self.assertIn(str(self.install_root), command)
+
+    def test_operator_hooks_survive_registration(self) -> None:
+        self.register("alpha")
+        claude = self.root / "alpha" / ".claude"
+        claude.mkdir()
+        (claude / "settings.json").write_text(
+            json.dumps(
+                {
+                    "permissions": {"allow": ["Bash"]},
+                    "hooks": {
+                        "Stop": [
+                            {"hooks": [{"type": "command", "command": "notify.sh"}]}
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        apply_workflow(self.plan())
+        settings = self.settings("alpha")
+        self.assertEqual(settings["permissions"], {"allow": ["Bash"]})
+        commands = [
+            hook["command"]
+            for entry in settings["hooks"]["Stop"]
+            for hook in entry["hooks"]
+        ]
+        self.assertIn("notify.sh", commands)
+        self.assertEqual(sum("claude_stop_hook.py" in c for c in commands), 1)
+
+    def test_one_unmergeable_project_does_not_block_the_install(self) -> None:
+        # A hand-edited settings file must not make Cartopian un-upgradable.
+        self.register("alpha", "beta")
+        broken = self.root / "beta" / ".claude"
+        broken.mkdir()
+        (broken / "settings.json").write_text("{not json", encoding="utf-8")
+
+        result = apply_workflow(self.plan())
+        surface = self.surface(result)
+        self.assertEqual(surface["state"], "failed")
+        self.assertEqual(
+            [item["project_identity"] for item in surface["residuals"]],
+            ["beta"],
+        )
+        # The healthy project is still hooked and the broken file is untouched.
+        self.assertEqual(len(self.settings("alpha")["hooks"]["Stop"]), 1)
+        self.assertEqual(
+            (broken / "settings.json").read_text(encoding="utf-8"), "{not json"
+        )
+        # Tool-owned content still installed cleanly.
+        for kind in ("core-files", "mcp-server-files", "wrappers"):
+            row = next(i for i in result["surfaces"] if i["kind"] == kind)
+            self.assertEqual(row["state"], "verified")
+
+        # And the next run repairs it once the operator fixes the file.
+        (broken / "settings.json").write_text("{}", encoding="utf-8")
+        repaired = apply_workflow(self.plan())
+        self.assertEqual(self.surface(repaired)["state"], "verified")
+        self.assertEqual(self.surface(repaired)["residuals"], [])
+
+    def test_an_unreadable_registry_is_not_read_as_nothing_to_do(self) -> None:
+        (self.install_root / "projects.json").write_text("[[[", encoding="utf-8")
+        surface = self.surface(self.plan())
+        self.assertEqual(surface["state"], "unknown")
+        self.assertTrue(surface["affected"])
+
+    def test_no_registered_projects_is_not_applicable(self) -> None:
+        self.register()
+        surface = self.surface(self.plan())
+        self.assertEqual(surface["state"], "not-applicable")
+        self.assertFalse(surface["affected"])
+
+
 if __name__ == "__main__":
     unittest.main()

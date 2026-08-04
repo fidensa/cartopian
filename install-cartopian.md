@@ -91,7 +91,11 @@ Required tool-owned paths are staged behind a recoverable replacement
 boundary. Operator-owned files (`cartopian.toml`, `projects.json`) are
 preserved. Client configuration is changed only for a selected client and an
 authorized surface; malformed or customized configuration that cannot be
-safely merged is preserved and reported. A refusal writes a blocked latest-run
+safely merged is preserved and reported. The Claude Code assignee hooks are
+registered in every registered project as a required surface — uniformly, with
+no flag and no per-project choice; a project whose settings file cannot be
+safely merged is preserved and reported as a named residual rather than
+blocking the run. A refusal writes a blocked latest-run
 record, and an operating-system apply failure writes a failed latest-run
 record, including attempted-action, preservation, and recovery evidence,
 before the installer exits non-zero whenever the state destination remains

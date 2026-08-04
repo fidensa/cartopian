@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from cli.install_state import RECORD_SCHEMA_VERSION  # noqa: E402
 from cli.version_identities import (  # noqa: E402
     connected_running_server,
     installed_content,
@@ -348,7 +349,7 @@ class TestInstallStateEvidenceFailsClosed(unittest.TestCase):
         write_state(
             root,
             [recorded_row(root)],
-            record_schema_version=2,
+            record_schema_version=RECORD_SCHEMA_VERSION + 1,
         )
         self.assert_fails_closed(root)
 
@@ -412,7 +413,7 @@ class TestInstallStateEvidenceFailsClosed(unittest.TestCase):
             json.dumps(
                 {
                     "schema_identity": "cartopian-install-update-state-v1",
-                    "record_schema_version": 1,
+                    "record_schema_version": RECORD_SCHEMA_VERSION,
                     "versions": {"installed_content": recorded_row(root)},
                 }
             ),
@@ -429,7 +430,11 @@ class TestInstallStateEvidenceFailsClosed(unittest.TestCase):
         # ``1.0 == 1`` in Python, but the schema declares an integer version;
         # a float is not a version a supported adapter can have written.
         root = copy_install(self)
-        write_state(root, [recorded_row(root)], record_schema_version=1.0)
+        write_state(
+            root,
+            [recorded_row(root)],
+            record_schema_version=float(RECORD_SCHEMA_VERSION),
+        )
         self.assert_fails_closed(root)
 
     def test_boolean_record_schema_version_fails_closed(self) -> None:
@@ -439,7 +444,11 @@ class TestInstallStateEvidenceFailsClosed(unittest.TestCase):
 
     def test_string_record_schema_version_fails_closed(self) -> None:
         root = copy_install(self)
-        write_state(root, [recorded_row(root)], record_schema_version="1")
+        write_state(
+            root,
+            [recorded_row(root)],
+            record_schema_version=str(RECORD_SCHEMA_VERSION),
+        )
         self.assert_fails_closed(root)
 
     def test_row_state_outside_the_closed_vocabulary_fails_closed(self) -> None:

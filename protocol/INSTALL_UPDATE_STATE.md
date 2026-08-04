@@ -174,11 +174,34 @@ provenance, not authenticated operator provenance. Callers cannot select an
 executable, add a surface kind, or supply a per-surface destination.
 
 Each plan accounts for `core-files`, `mcp-server-files`, `wrappers`, `bridges`,
-`client-registrations`, `client-configuration`, `verification-content`, and
-`project-schema-migration-offers` in contract order. Required file replacement
-uses a staged payload and a recoverable backup boundary. Client configuration
-is changed only after authorization, with existing siblings preserved; a
-malformed configuration is preserved and refused.
+`client-registrations`, `client-configuration`, `verification-content`,
+`project-hooks`, and `project-schema-migration-offers` in contract order.
+Required file replacement uses a staged payload and a recoverable backup
+boundary. Client configuration is changed only after authorization, with
+existing siblings preserved; a malformed configuration is preserved and
+refused.
+
+`project-hooks` registers the Claude Code assignee adapters — the `PreToolUse`
+capability gate and the `Stop` report-less-stop refusal — in every registered
+project's `.claude/settings.json`. It is required and uniform: it takes no
+disposition, offers no choice, and treats every registered project identically.
+The hooks gate an assignee the PM launches rather than the operator's own
+session, so an operator-selected flag was the wrong authorization boundary for
+them — an operator who never learned the flag existed would have had handoffs
+that could stop without a report. Registration merges: an entry already naming
+a Cartopian hook script is replaced in place and every operator-authored hook
+is preserved.
+
+One project cannot block another, and no project can block the install. A
+settings file that cannot be safely merged is preserved untouched and reported
+as an unregistered residual naming that project; registration is idempotent, so
+a later run repairs whatever an earlier one could not. The surface is unaffected
+only when every registered project already carries exactly the entries this
+install would write, so a stale interpreter path or a moved install root reads
+as `dirty` rather than as current. An unreadable registry is not evidence that
+no project needs hooks: the surface reports `unknown` and stays affected.
+Projects registered after an install are hooked by `register-project` itself,
+so a new project does not wait for the next upgrade to be gated.
 
 When the install-root state boundary remains writable, every terminal apply
 result persists the stable projection at
@@ -274,14 +297,16 @@ result can be re-observed:
 | `client-registrations` | `inspect-before-retry` | `partially-observable` |
 | `client-configuration` | `inspect-before-retry` | `partially-observable` |
 | `verification-content` | `idempotent` | `observable` |
+| `project-hooks` | `inspect-before-retry` | `partially-observable` |
 | `project-schema-migration-offers` | `refuse-replay` | `unobservable` |
 
 Tool-owned content is replaced through a staged, digest-verified boundary, so
 repeating it converges. Client registration and configuration merge into
 operator-owned files whose non-Cartopian siblings cannot be fully re-derived, so
-a partial merge is inspected rather than replayed. A project schema migration is
-externally visible and not idempotent, so resume never replays it; it can only
-be re-offered.
+a partial merge is inspected rather than replayed. Project hook registration
+merges into an operator-owned project settings file and carries the same class
+for the same reason. A project schema migration is externally visible and not
+idempotent, so resume never replays it; it can only be re-offered.
 
 ### Resume assessment and recovery
 

@@ -109,6 +109,15 @@
       "required": true
     },
     {
+      "kind": "project-hooks",
+      "locator": "registered-projects:hooks",
+      "desired_identity": "sha256:hooks",
+      "observed_identity": "sha256:hooks",
+      "state": "current",
+      "affected": false,
+      "required": true
+    },
+    {
       "kind": "project-schema-migration-offers",
       "locator": "registered-project:schema",
       "desired_identity": "v1",

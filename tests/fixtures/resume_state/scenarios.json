@@ -1,16 +1,48 @@
 {
   "surface_retry_profiles": {
-    "core-files": ["idempotent", "observable"],
-    "mcp-server-files": ["idempotent", "observable"],
-    "wrappers": ["idempotent", "observable"],
-    "bridges": ["idempotent", "observable"],
-    "client-registrations": ["inspect-before-retry", "partially-observable"],
-    "client-configuration": ["inspect-before-retry", "partially-observable"],
-    "verification-content": ["idempotent", "observable"],
-    "project-schema-migration-offers": ["refuse-replay", "unobservable"]
+    "core-files": [
+      "idempotent",
+      "observable"
+    ],
+    "mcp-server-files": [
+      "idempotent",
+      "observable"
+    ],
+    "wrappers": [
+      "idempotent",
+      "observable"
+    ],
+    "bridges": [
+      "idempotent",
+      "observable"
+    ],
+    "client-registrations": [
+      "inspect-before-retry",
+      "partially-observable"
+    ],
+    "client-configuration": [
+      "inspect-before-retry",
+      "partially-observable"
+    ],
+    "verification-content": [
+      "idempotent",
+      "observable"
+    ],
+    "project-hooks": [
+      "inspect-before-retry",
+      "partially-observable"
+    ],
+    "project-schema-migration-offers": [
+      "refuse-replay",
+      "unobservable"
+    ]
   },
   "verified-partial-resume": {
-    "drifted_path": ["wrappers", "bin", "cartopian-codex"],
+    "drifted_path": [
+      "wrappers",
+      "bin",
+      "cartopian-codex"
+    ],
     "expected_compatibility": "stale",
     "expected_reused": [
       "bridges",
@@ -18,11 +50,23 @@
       "client-registrations",
       "core-files",
       "mcp-server-files",
+      "project-hooks",
       "project-schema-migration-offers",
       "verification-content"
     ],
-    "expected_incompatible": [["wrappers", "evidence-superseded"]],
-    "expected_remaining": [["wrappers", "install", "replan"]],
+    "expected_incompatible": [
+      [
+        "wrappers",
+        "evidence-superseded"
+      ]
+    ],
+    "expected_remaining": [
+      [
+        "wrappers",
+        "install",
+        "replan"
+      ]
+    ],
     "expected_diagnosis": {
       "core-files": "current",
       "mcp-server-files": "current",
@@ -31,6 +75,7 @@
       "client-registrations": "current",
       "client-configuration": "current",
       "verification-content": "current",
+      "project-hooks": "current",
       "project-schema-migration-offers": "current"
     }
   },
@@ -43,7 +88,12 @@
       "mutation_status": "intended"
     },
     "expected_checkpoint_status": "in-progress",
-    "expected_uncertain": [["core-files", "inspect-before-retry"]],
+    "expected_uncertain": [
+      [
+        "core-files",
+        "inspect-before-retry"
+      ]
+    ],
     "expected_terminal": {
       "schema": "pending",
       "completion": "pending",
@@ -52,15 +102,27 @@
     "expected_lease_state": "orphaned"
   },
   "recovery_by_classification": {
-    "compatible": ["resume-remaining-work"],
-    "absent": ["replan-from-current-observations"],
-    "stale": ["replan-from-current-observations", "resume-remaining-work"],
-    "source-mismatch": ["replan-from-current-observations"],
+    "compatible": [
+      "resume-remaining-work"
+    ],
+    "absent": [
+      "replan-from-current-observations"
+    ],
+    "stale": [
+      "replan-from-current-observations",
+      "resume-remaining-work"
+    ],
+    "source-mismatch": [
+      "replan-from-current-observations"
+    ],
     "run-conflict": [
       "inspect-uncertain-boundary",
       "replan-from-current-observations"
     ],
-    "lease-conflict": ["await-active-run", "release-orphaned-lease"],
+    "lease-conflict": [
+      "await-active-run",
+      "release-orphaned-lease"
+    ],
     "orphaned": [
       "discard-quarantined-progress",
       "replan-from-current-observations"
@@ -73,7 +135,9 @@
       "discard-quarantined-progress",
       "replan-from-current-observations"
     ],
-    "unsupported-newer": ["migrate-progress-with-newer-tool"]
+    "unsupported-newer": [
+      "migrate-progress-with-newer-tool"
+    ]
   },
   "portable_evidence": {
     "expected_fields": [
