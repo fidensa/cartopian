@@ -755,26 +755,38 @@ def _resolve_trace(
     *,
     allow_project_origin: bool = False,
 ) -> List[RequestEvidence]:
-    stored = [
-        _record_evidence(project_root, record)
-        for record in _select_record_trace(
-            load_records(project_root),
+    records = load_records(project_root)
+    chat_records = load_host_chat_records(project_root)
+
+    def collect(*, include_project_origin: bool) -> List[RequestEvidence]:
+        stored = [
+            _record_evidence(project_root, record)
+            for record in _select_record_trace(
+                records,
+                target,
+                allow_project_origin=include_project_origin,
+            )
+        ]
+        chat = _select_chat_trace(
+            chat_records,
             target,
-            allow_project_origin=allow_project_origin,
+            allow_project_origin=include_project_origin,
         )
-    ]
-    chat = _select_chat_trace(
-        load_host_chat_records(project_root),
-        target,
-        allow_project_origin=allow_project_origin,
-    )
-    decisions = _decision_evidence(
-        project_root,
-        target,
-        source_texts,
-        allow_project_origin=allow_project_origin,
-    )
-    ordered = [*stored, *chat, *decisions]
+        decisions = _decision_evidence(
+            project_root,
+            target,
+            source_texts,
+            allow_project_origin=include_project_origin,
+        )
+        return [*stored, *chat, *decisions]
+
+    exact = collect(include_project_origin=False)
+    # For a task, exact unit-bound evidence wins and project evidence is only
+    # an ancestry fallback. Planning checkpoints retain their established
+    # project-plus-checkpoint trace because both describe the planning unit.
+    ordered = exact
+    if allow_project_origin and (not exact or target.kind != "task"):
+        ordered = collect(include_project_origin=True)
     identities: set[str] = set()
     unique: List[RequestEvidence] = []
     for evidence in ordered:
@@ -788,6 +800,63 @@ def _resolve_trace(
 def _phase_from_text(text: str) -> Optional[str]:
     match = re.search(r"^Phase:\s*(PHASE-\d{2})\s*$", text, re.MULTILINE)
     return match.group(1) if match else None
+
+
+def _contains_identifier(text: str, identifier: str) -> bool:
+    return re.search(
+        rf"(?<![A-Z0-9-]){re.escape(identifier)}(?![A-Z0-9-])",
+        text,
+    ) is not None
+
+
+def _task_has_project_intent_ancestry(
+    project_root: Path, task_path: Path
+) -> bool:
+    """Return whether a task is anchored to the approved project plan.
+
+    Project-level operator intent may govern a generated task only when the
+    task, phase, and plan identities form one deterministic chain and both
+    authoritative plan artifacts carry the task's plan ref. Ad-hoc tasks and
+    malformed or incomplete chains must use task-bound request evidence.
+    """
+    task_text = read_contained_text(
+        project_root, task_path, what="task intent-ancestry target"
+    )
+    task_match = re.fullmatch(r"TASK-(\d{2})-\d{3}", task_path.stem)
+    phase_id = _phase_from_text(task_text)
+    plan_ref = _header(task_text, "Plan ref")
+    if (
+        task_match is None
+        or phase_id is None
+        or plan_ref is None
+        or PLAN_REF_RE.fullmatch(plan_ref) is None
+    ):
+        return False
+    plan_match = re.fullmatch(
+        r"(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-(\d{2})-\d{3}",
+        plan_ref,
+    )
+    phase_match = re.fullmatch(r"PHASE-(\d{2})", phase_id)
+    if (
+        plan_match is None
+        or phase_match is None
+        or len({task_match.group(1), plan_match.group(1), phase_match.group(1)}) != 1
+    ):
+        return False
+
+    plan_path = Path(project_root) / "IMPLEMENTATION_PLAN.md"
+    phase_path = Path(project_root) / "phases" / f"{phase_id}.md"
+    if not plan_path.is_file() or not phase_path.is_file():
+        return False
+    plan_text = read_contained_text(
+        project_root, plan_path, what="task intent-ancestry plan"
+    )
+    phase_text = read_contained_text(
+        project_root, phase_path, what="task intent-ancestry phase"
+    )
+    return _contains_identifier(plan_text, plan_ref) and _contains_identifier(
+        phase_text, plan_ref
+    )
 
 
 def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optional[List[str]]:
@@ -1354,10 +1423,15 @@ def _context(
 ) -> ReviewContext:
     del plan_ref
     target = _target_unit(review_kind, task_path, checkpoint_id)
-    # A planning checkpoint is a review of the project-planning unit, so its
-    # project-origin record is an explicit, deterministic source.  A task is a
-    # distinct intake unit: silently substituting the project's founding ask
-    # would present unrelated text as that task's initiating request.
+    # Planning checkpoints consume project intent directly. Planned tasks may
+    # inherit it only through a complete task -> phase -> plan anchor chain;
+    # an ad-hoc task remains a distinct intake unit and fails closed without
+    # task-bound evidence.
+    allow_project_origin = review_kind == "planning" or (
+        review_kind in ("task-assignment", "task-closure")
+        and task_path is not None
+        and _task_has_project_intent_ancestry(project_root, task_path)
+    )
     source_texts = _source_texts(
         project_root,
         review_kind,
@@ -1369,7 +1443,7 @@ def _context(
         project_root,
         target,
         source_texts,
-        allow_project_origin=review_kind == "planning",
+        allow_project_origin=allow_project_origin,
     )
     if (
         not trace
@@ -1618,8 +1692,8 @@ def require_request_before_derivative(project_root: Path, dest_kind: str, relati
     else:
         unit = GovernedUnit("project", "project")
     # Task/spec authoring during project planning is governed by the project
-    # intake.  A task-assignment/review prompt is different: it begins the task
-    # unit and therefore requires that task's own host-captured message.
+    # intake. Assignment and review later revalidate the task's concrete plan
+    # ancestry before permitting the same project-origin evidence fallback.
     allow_project_origin = unit.kind == "planning" or dest_kind in {"task", "spec"}
     review_kind = "task-closure" if unit.kind == "task" else "planning"
     source_texts = _source_texts(

@@ -1,4 +1,5 @@
 """Tests for `cartopian validate-task-readiness`."""
+import hashlib
 import json
 import os
 import subprocess
@@ -48,7 +49,7 @@ def _make_project(root: Path, *, work_roots=None, plan_refs=("BUILD-01-007",)):
         _write(root / "cartopian.local.toml", f"[work_roots]\n{mapping}\n")
     _write(
         root / "phases" / "PHASE-01.md",
-        "# PHASE-01\n",
+        "# PHASE-01\n\n" + "\n".join(f"- `{ref}`" for ref in plan_refs) + "\n",
     )
     _write(
         root / "IMPLEMENTATION_PLAN.md",
@@ -166,6 +167,42 @@ class TestHappyPath(unittest.TestCase):
         for check in record["checks"]:
             self.assertTrue(check["pass"], msg=check)
             self.assertIsNone(check["reason"])
+
+    def test_current_planned_task_inherits_project_request(self):
+        with _Sandbox() as sb:
+            sb.make()
+            config = sb.project / "cartopian.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace("v0.2.0", "v0.10.0"),
+                encoding="utf-8",
+            )
+            text = "Execute the approved project plan."
+            request = {
+                "schema": "cartopian-original-request-v1",
+                "record_id": "REQUEST-001",
+                "request_id": "REQUEST-001",
+                "kind": "original",
+                "sequence": 0,
+                "unit": {"kind": "project", "id": "project"},
+                "text": text,
+                "content_identity": "sha256:"
+                + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "captured_at": "2026-08-04T12:00:00Z",
+            }
+            _write(
+                sb.project / "requests/REQUEST-001.json",
+                json.dumps(request, sort_keys=True) + "\n",
+            )
+            task = sb.write_task("TASK-01-007.md", _task_body())
+
+            result = _run(str(task), home=sb.home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        request_check = next(
+            check for check in record["checks"] if check["name"] == "request-trace-valid"
+        )
+        self.assertTrue(request_check["pass"], request_check)
 
 
 class TestPhaseExistsFails(unittest.TestCase):

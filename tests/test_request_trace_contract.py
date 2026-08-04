@@ -86,6 +86,15 @@ class RequestTraceContract(unittest.TestCase):
     def seed_task(self) -> None:
         self.task.write_text("# TASK-02-010: Trace\n\nPhase: PHASE-02\nPlan ref: BUILD-02-010\n", encoding="utf-8")
 
+    def seed_plan_ancestry(self) -> None:
+        (self.root / "phases").mkdir(exist_ok=True)
+        (self.root / "IMPLEMENTATION_PLAN.md").write_text(
+            "# Plan\n\n- `BUILD-02-010` — Trace work.\n", encoding="utf-8"
+        )
+        (self.root / "phases/PHASE-02.md").write_text(
+            "# PHASE-02\n\n- `BUILD-02-010` — Trace work.\n", encoding="utf-8"
+        )
+
     def run_cli(self, *argv: str) -> tuple[int, list[dict], str]:
         parser = build_parser()
         stdout = io.StringIO()
@@ -513,11 +522,67 @@ class RequestTraceContract(unittest.TestCase):
             request_trace.require_request_before_derivative(self.root, "requirements")
         self.assertEqual(caught.exception.rule, "request-not-captured")
 
-    def test_task_context_refuses_unrelated_project_request(self) -> None:
+    def test_task_context_refuses_project_request_without_plan_ancestry(self) -> None:
         self.capture("Found the project.")
         self.seed_task()
         with self.assertRaises(request_trace.RequestRefusal) as caught:
             request_trace.context_for_task(self.root, self.task)
+        self.assertEqual(caught.exception.rule, "unit-request-not-captured")
+
+    def test_planned_task_inherits_project_request_for_assignment_and_closure(self) -> None:
+        self.capture(ORIGINAL)
+        self.seed_task()
+        self.seed_plan_ancestry()
+
+        assignment = request_trace.context_for_task_assignment(self.root, self.task)
+        closure = request_trace.context_for_task(self.root, self.task)
+
+        expected_unit = request_trace.GovernedUnit("project", "project")
+        self.assertEqual(assignment.trace[0].unit, expected_unit)
+        self.assertEqual(closure.trace[0].unit, expected_unit)
+        self.assertEqual(assignment.evidence_ids, ["REQUEST-001"])
+        self.assertEqual(closure.evidence_ids, ["REQUEST-001"])
+
+    def test_planned_task_inherits_project_corrections_in_order(self) -> None:
+        self.capture(ORIGINAL)
+        correction = "Correction: keep the task within the approved plan."
+        self.capture(correction, correction=True)
+        self.seed_task()
+        self.seed_plan_ancestry()
+
+        context = request_trace.context_for_task_assignment(self.root, self.task)
+
+        self.assertEqual([item.text for item in context.trace], [ORIGINAL, correction])
+
+    def test_task_bound_evidence_precedes_inherited_project_evidence(self) -> None:
+        self.capture(ORIGINAL)
+        task_specific = "Add this explicitly authorized task-scoped behavior."
+        self.write_decision("DEC-030", task_specific)
+        self.seed_task()
+        self.seed_plan_ancestry()
+
+        context = request_trace.context_for_task_assignment(self.root, self.task)
+
+        self.assertEqual([item.text for item in context.trace], [task_specific])
+        self.assertEqual(
+            context.trace[0].unit,
+            request_trace.GovernedUnit("task", "TASK-02-010"),
+        )
+
+    def test_project_request_does_not_cross_a_mismatched_phase_chain(self) -> None:
+        self.capture(ORIGINAL)
+        self.seed_task()
+        self.seed_plan_ancestry()
+        self.task.write_text(
+            self.task.read_text(encoding="utf-8").replace(
+                "Phase: PHASE-02", "Phase: PHASE-03"
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(request_trace.RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, self.task)
+
         self.assertEqual(caught.exception.rule, "unit-request-not-captured")
 
     def test_task_capture_is_reachable_after_planning_artifacts_exist(self) -> None:

@@ -74,8 +74,10 @@ quotations, supported host chat records, and optional immutable request records.
 A native host adapter is optional when another supported source resolves. The PM
 must not call `capture-request`, copy a message into a file, or treat a
 paraphrase as request evidence; ordinary PM prose is excluded from operator
-evidence. Explicit corrections retain their provenance and deterministic order,
-and task-specific resolution never substitutes unrelated project intent.
+evidence. Explicit corrections retain their provenance and deterministic order.
+Direct unit-bound evidence takes precedence; planned tasks may inherit project
+evidence only through verified plan ancestry, while unrelated or ad-hoc units
+never do.
 Mediated writers fail closed only when no applicable exact source of any
 supported kind resolves for the governed unit; resolution adds no later
 operator re-entry, confirmation, safeguard, or new stage.

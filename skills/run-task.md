@@ -33,13 +33,14 @@ not transcribe or reconstruct operator words; ordinary PM prose is excluded
 from operator evidence, including task, spec, phase, plan, prompt, and report
 prose.
 
-At v0.9 the existing task review uses the same resolution. Its mediated writers
-fail closed only when no applicable exact source of any supported kind resolves
-for the governed task unit. Task evidence never silently falls back to the
-project-inception request or another unrelated unit.
-This resolution is infrastructure for the existing review: it requires no
-later operator re-entry, confirmation, safeguard, handoff, or new lifecycle or
-review stage.
+Assignment and task review use the same resolution. A task generated from the
+approved plan inherits project-level evidence when the Core CLI verifies its
+complete task-to-phase-to-plan ancestry. Direct task-bound evidence takes
+precedence when present. Ad-hoc, malformed, or unanchored tasks fail closed
+only when no applicable exact source of any supported kind resolves. This
+resolution is infrastructure for the existing lifecycle: planned work requires
+no later operator restatement, confirmation, safeguard, handoff, or new review
+stage.
 
 ---
 

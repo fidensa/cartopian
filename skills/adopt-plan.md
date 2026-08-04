@@ -96,15 +96,16 @@ from the three supported source kinds: structurally marked decision quotations,
 supported host chat records, and optional immutable request records. A native
 host adapter is optional when another supported source resolves. The PM never
 copies or reconstructs that channel; ordinary PM prose is excluded from operator
-evidence. Task-specific resolution never substitutes unrelated project intent.
-Mediated writers fail closed only when no applicable exact source of any
-supported kind resolves for the governed unit; resolution adds no later operator
-re-entry, confirmation, safeguard, or new stage. Then normalize the operator's
-input, approved requirements or external requirements source, and external plan
-through the Planning Intent Contract. Follow its reuse, resolution-state,
-focused-question, working-assumption, and exclusion-conflict rules. Then
-summarize the complete compact record together with the phase interpretation and
-obtain operator confirmation. The normalized record is PM-derived guidance and
+evidence. Direct unit-bound evidence takes precedence; planned tasks may inherit
+project evidence only through verified plan ancestry, while unrelated or ad-hoc
+units never do. Mediated writers fail closed only when no applicable exact
+source of any supported kind resolves for the governed unit; resolution adds no
+later operator re-entry, confirmation, safeguard, or new stage. Then normalize
+the operator's input, approved requirements or external requirements source,
+and external plan through the Planning Intent Contract. Follow its reuse,
+resolution-state, focused-question, working-assumption, and exclusion-conflict
+rules. Then summarize the complete compact record together with the phase
+interpretation and obtain operator confirmation. The normalized record is PM-derived guidance and
 never substitutes for resolved request evidence.
 
 For example:

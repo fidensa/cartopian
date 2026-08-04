@@ -386,17 +386,30 @@ generation, dispatch, manual handoff, report parsing, lifecycle guards, and
 audit. The context identity covers the review target, ordered evidence and
 source identities, legacy state, and PM artifact paths. The PM/delivery channel
 contains only artifacts that exist when the prompt snapshot is generated,
-including real slugged specs and applicable phase and prior-review artifacts.
+including canonical specs and applicable phase and prior-review artifacts.
 Later lifecycle outputs do not retroactively alter that snapshot; regenerating
 a review prompt takes a new snapshot. Any selected-source mutation or prompt
 omission makes the binding stale. Exact content is bounded to 24 KiB per
 excerpt and is never truncated.
 
 Generated text names both the review target and every excerpt's governed unit.
-Planning checkpoints may explicitly consume project-planning evidence. Task
-closure never silently falls back to unrelated project intent: when no
-applicable decision quote, host chat turn, or optional task record resolves at
-v0.9, `unit-request-not-captured` fails closed.
+Planning checkpoints explicitly consume project-planning evidence. A planned
+task inherits the same project request without another operator restatement
+only when Cartopian can verify the complete ancestry chain: the task ID, its
+`Phase:` header, and its `Plan ref:` share one phase; the plan ref exists in
+both `IMPLEMENTATION_PLAN.md` and the canonical phase file. Assignment and
+task-closure review revalidate that chain before using project-origin evidence.
+Direct task-bound evidence takes precedence when present, allowing an explicit
+operator correction or scope addition to govern that task without mixing it
+with the inherited channel.
+
+An ad-hoc task (`Plan ref: n/a`), a task with malformed or mismatched ancestry,
+or a task whose plan anchors are missing never inherits project intent. When no
+applicable task-bound decision quote, host chat turn, or optional task record
+resolves for such a task, `unit-request-not-captured` fails closed. Semantic
+scope widening is still detected by comparing the exact request channel with
+the plan, task, spec, prompt, and delivered outcome; inheritance does not turn
+PM-authored scope into operator intent.
 
 The configured review role compares the two channels. The operator supplies the
 request but is not the reviewer. Review files and completion reports record:

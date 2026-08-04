@@ -243,8 +243,8 @@ completion requirement when an applicable decision already preserves the
 exact request. Explicit corrections remain ordered; duplicate content and
 unrelated conversation are excluded.
 
-Planning and task-closure prompts give the configured reviewer that verbatim
-channel separately from PM-derived guidance and delivery evidence.
+Planning, task-assignment, and task-closure prompts carry that verbatim channel
+separately from PM-derived guidance and delivery evidence.
 `cartopian review-context` is the read-only CLI/MCP projection used by prompt
 generation, automatic dispatch, and manual handoff preflight. Drift blocks
 approval. Historical work that genuinely predates capture remains explicitly
@@ -255,8 +255,11 @@ order, and exact-text hash. Ordinary decision, plan, spec, task, prompt, and
 report prose stays PM-derived. A plan can select operator evidence only through
 an explicitly marked source reference. Optional `capture-request` ingress is
 absent from managed-agent MCP tools and refuses dispatched-role or in-process
-MCP markers. Task review context never silently substitutes unrelated project
-intent.
+MCP markers. A planned task inherits project intent through its verified
+task-to-phase-to-plan ancestry, so executing the approved plan does not require
+the operator to restate the request for each generated task. Direct task-bound
+evidence takes precedence; ad-hoc or unanchored tasks do not inherit unrelated
+project intent.
 
 ## Protocol
 
