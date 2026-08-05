@@ -893,7 +893,7 @@ class OperationsPrimaryOutcomeTests(unittest.TestCase):
                     self.assertEqual(fixture["expected_bodies_loaded"], 0)
                     self.assertEqual(fixture["expected_veto"], "governance-mechanics-only")
 
-    def test_operations_bodies_and_runtime_selection_stay_inactive(self) -> None:
+    def test_operations_bodies_and_runtime_selection_activate_after_the_gate(self) -> None:
         registry = _registry()
         gate = registry["packs"]["runtime_activation_gate"]
         conditions = {item["id"]: item for item in gate["conditions"]}
@@ -906,10 +906,10 @@ class OperationsPrimaryOutcomeTests(unittest.TestCase):
                 "task-review",
             },
         )
-        # The two pack-selection gates remain unmet. Risk classification has an
-        # independent activation path and cannot satisfy either one.
-        self.assertFalse(conditions["equivalent-cli-and-mcp-validation"]["met"])
-        self.assertFalse(conditions["task-review"]["met"])
+        # All explicit selection gates are now evidenced. Risk classification
+        # remains an independent path and is not evidence for any of them.
+        self.assertTrue(conditions["equivalent-cli-and-mcp-validation"]["met"])
+        self.assertTrue(conditions["task-review"]["met"])
         for condition in gate["conditions"]:
             with self.subTest(condition=condition["id"]):
                 if condition["met"]:
@@ -918,21 +918,18 @@ class OperationsPrimaryOutcomeTests(unittest.TestCase):
                     self.assertIsNone(condition["evidence"])
         unmet = [item for item in gate["conditions"] if not item["met"]]
         self.assertEqual(gate["state"], "unmet" if unmet else "met")
-        self.assertEqual(
-            sorted(gate["inactive_until_met"]),
-            ["practice-pack-body", "runtime-pack-selection"],
-        )
-        # Deferring activation must not be recorded as reducing delivery scope.
+        self.assertEqual(gate["inactive_until_met"], [])
+        # Activation must not reduce or expand the approved delivery scope.
         scope = registry["packs"]["delivery_scope"]
         self.assertEqual(scope["required_initial_pack_count"], 5)
-        self.assertEqual(scope["phase_exit"]["blocked_by"], "runtime-activation-gate")
-        self.assertFalse((REPO_ROOT / "protocol" / "packs").exists())
+        self.assertIsNone(scope["phase_exit"]["blocked_by"])
+        self.assertTrue((REPO_ROOT / "protocol" / "packs").is_dir())
         selector = next(
             surface
             for surface in registry["authoritative_surfaces"]
             if surface["path"] == "cli/practice_packs.py"
         )
-        self.assertEqual(selector["activation"], "pending")
+        self.assertEqual(selector["activation"], "active")
         classifier = next(
             surface
             for surface in registry["authoritative_surfaces"]

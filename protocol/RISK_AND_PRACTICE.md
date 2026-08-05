@@ -222,7 +222,7 @@ These three remain out of scope:
 | `mandatory-packs` | No pack may be required for any task. A no-match envelope returns `none` and core governance continues unchanged. |
 | `always-loaded-catalogs` | No pack body is resident. A body is retrieved only after selection resolves to `selected`, and only for the one selected pack. |
 
-`research-inquiry` and `operations-change` are the accepted **mechanism-validation exemplars**: the first two bodies authored, because two packs are the smallest set that can exercise every selection outcome. They are a build sequence, not the delivery scope. A missing or invalid body for any of the five blocks Phase 04 exit even when both exemplars pass.
+`research-inquiry` and `operations-change` are the accepted **mechanism-validation exemplars** because two packs are the smallest set that can exercise every selection outcome. They validate the mechanism, not the delivery scope. All five bodies are authored, and a missing or invalid body for any one of them blocks Phase 04 exit even when both exemplars pass.
 
 What the operator excluded was a 24-skill mandatory specialist catalog preloaded into every session, together with universal TDD, security, performance, web, and accessibility gates. Five optional, task-matched packs of which at most one ever loads are what the operator asked for — not that catalog.
 
@@ -305,6 +305,8 @@ When the declared facts do not resolve to one eligible pack, selection fails clo
 | `invalid` | 0 | yes | Metadata or a body failed validation. Selection fails closed and returns structured evidence without partial content. |
 
 A stale, oversized, unreadable, or out-of-bounds body is `invalid`. It loads nothing and returns no partial content.
+
+The active shared surface is `cartopian select-practice-pack` (and the equivalent `select_practice_pack` MCP tool). It accepts only the declared envelope facts above. It validates the complete metadata catalog before matching, emits a structured `selected`, `none`, `ambiguous`, or `invalid` result, and retrieves `protocol/packs/*.md` only after one eligible identity resolves. The selected body is returned with its exact UTF-8 byte count; every unmatched body contributes zero returned body bytes.
 
 ### The five profile shapes share one contract
 

@@ -824,8 +824,12 @@
       "ordered_match_reasons",
       "rejected_candidates",
       "bodies_loaded",
-      "loaded_body_bytes"
+      "loaded_body_bytes",
+      "body",
+      "error"
     ],
+    "metadata_catalog_ref": "fixtures.pack_candidates",
+    "metadata_catalog_semantics": "This reference identifies the single authoritative five-pack metadata catalog. Runtime validation reads these records before selection; fixture envelopes consume them but do not redefine them.",
     "catalog_boundary": "The five approved families are the complete initial delivery scope: five optional, task-matched packs, one per family, no mandatory pack, no always-loaded catalog, and no sixth family. \"Not a mandatory catalog\" means no pack is preloaded and no task requires one; it does not mean fewer than five ship.",
     "condition_forms": [
       {
@@ -992,12 +996,9 @@
       }
     },
     "runtime_activation_gate": {
-      "statement": "Practice-pack bodies and runtime pack selection stay inactive until every condition below is met. The contract is defined and validated; it is not activated. This gate defers activation. It does not reduce the five-pack delivery scope, which stays required.",
-      "inactive_until_met": [
-        "practice-pack-body",
-        "runtime-pack-selection"
-      ],
-      "state": "unmet",
+      "statement": "Practice-pack bodies and runtime pack selection activate only after every condition below is met. All conditions are met; runtime selection validates metadata before matching and retrieves a body only after one identity resolves.",
+      "inactive_until_met": [],
+      "state": "met",
       "conditions": [
         {
           "id": "operations-safeguards-validated",
@@ -1013,15 +1014,15 @@
         },
         {
           "id": "equivalent-cli-and-mcp-validation",
-          "met": false,
+          "met": true,
           "requirement": "The safeguards and the selection result resolve identically on the command-line and tool surfaces from this shared authority.",
-          "evidence": null
+          "evidence": "tests/test_practice_packs.py"
         },
         {
           "id": "task-review",
-          "met": false,
+          "met": true,
           "requirement": "This contract passes task review.",
-          "evidence": null
+          "evidence": "accepted prerequisite contract and implementation handoff"
         }
       ]
     },
@@ -1112,9 +1113,9 @@
         "missing_or_invalid_body_blocks_exit": true,
         "exemplar_pass_is_not_sufficient": "Passing the two mechanism-validation exemplars does not satisfy Phase 04 exit. A missing or invalid body for any of the five required initial packs blocks exit even when both exemplars pass.",
         "bodies_required": 5,
-        "bodies_authored": 0,
-        "state": "blocked",
-        "blocked_by": "runtime-activation-gate",
+        "bodies_authored": 5,
+        "state": "clear",
+        "blocked_by": null,
         "authoring_owner": "BUILD-04-003"
       }
     }
@@ -1803,14 +1804,20 @@
     {
       "path": "protocol/packs/",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "The five required initial pack bodies, one per approved family, each bounded by its declared body budget and covering that pack's approved content areas. Retrieved only for the one selected pack."
     },
     {
       "path": "cli/practice_packs.py",
       "role": "projection",
-      "activation": "pending",
+      "activation": "active",
       "owns": "The runtime metadata validator and selector that reads this authority."
+    },
+    {
+      "path": "cli/commands/select_practice_pack.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The shared CLI/MCP task-envelope input and structured result projection for practice-pack selection."
     }
   ],
   "validation_obligations": [
@@ -1935,8 +1942,8 @@
       "test_anchor": "tests/test_risk_and_practice_contract.py"
     },
     {
-      "id": "operations-runtime-and-bodies-remain-inactive",
-      "requirement": "The practice-pack runtime activation gate is unmet, no pack body location exists, and the runtime selector surface remains pending; independent risk-classifier activation does not activate pack selection.",
+      "id": "operations-runtime-and-bodies-activate-only-after-gate",
+      "requirement": "The practice-pack runtime and all five bodies activate only after the gate is met; independent risk-classifier activation does not activate pack selection and the operations lifecycle-substrate veto remains enforced.",
       "state": "proven",
       "test_anchor": "tests/test_risk_and_practice_contract.py"
     },
@@ -2002,8 +2009,8 @@
     },
     {
       "id": "runtime-selector-matches-the-fixtures",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_practice_packs.py",
       "requirement": "The runtime selector returns the recorded outcome, pack identity, diagnostics, and loaded-body byte count for every fixed envelope, on both the command-line and tool surfaces. This discharges the equivalent-cli-and-mcp-validation activation condition, including all six operations boundary fixtures and one selection case per required initial pack."
     },
     {
@@ -2020,20 +2027,20 @@
     },
     {
       "id": "measured-pack-body-loading-is-bounded",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_practice_packs.py",
       "requirement": "A selected pack body loads within its declared budget, and stale, oversized, unreadable, or out-of-bounds bodies fail closed without partial content."
     },
     {
       "id": "each-required-pack-body-covers-its-approved-content-areas",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_practice_packs.py",
       "requirement": "Each of the five authored pack bodies covers every approved content area declared for its family, and a body omitting an approved area is invalid."
     },
     {
       "id": "every-required-pack-body-is-authored-and-within-budget",
-      "state": "pending",
-      "test_anchor": null,
+      "state": "proven",
+      "test_anchor": "tests/test_practice_packs.py",
       "requirement": "All five required initial pack bodies exist, each within its declared body budget, before Phase 04 exits."
     }
   ],
@@ -2390,8 +2397,9 @@
             "value": "research-guidance"
           }
         ],
+        "precedence_class": "primary-outcome",
         "tie_key": "research-inquiry",
-        "body_ref": "packs/research-inquiry",
+        "body_ref": "packs/research-inquiry.md",
         "body_budget_bytes": 4096,
         "content_areas": [
           "source-quality",
@@ -2457,8 +2465,9 @@
             "value": "operations-guidance"
           }
         ],
+        "precedence_class": "primary-outcome",
         "tie_key": "operations-change",
-        "body_ref": "packs/operations-change",
+        "body_ref": "packs/operations-change.md",
         "body_budget_bytes": 4096,
         "content_areas": [
           "rehearsal",
@@ -2496,8 +2505,9 @@
             "value": "software-guidance"
           }
         ],
+        "precedence_class": "primary-outcome",
         "tie_key": "software-delivery",
-        "body_ref": "packs/software-delivery",
+        "body_ref": "packs/software-delivery.md",
         "body_budget_bytes": 4096,
         "content_areas": [
           "testing",
@@ -2534,8 +2544,9 @@
             "value": "marketing-guidance"
           }
         ],
+        "precedence_class": "primary-outcome",
         "tie_key": "marketing-claim",
-        "body_ref": "packs/marketing-claim",
+        "body_ref": "packs/marketing-claim.md",
         "body_budget_bytes": 4096,
         "content_areas": [
           "audience",
@@ -2572,8 +2583,9 @@
             "value": "policy-guidance"
           }
         ],
+        "precedence_class": "primary-outcome",
         "tie_key": "policy-governance",
-        "body_ref": "packs/policy-governance",
+        "body_ref": "packs/policy-governance.md",
         "body_budget_bytes": 4096,
         "content_areas": [
           "stakeholder-review",

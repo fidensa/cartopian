@@ -65,6 +65,17 @@ Every new task records all five observable conditions below. Use one state from 
 - ambiguity: <confirmed | stated-assumption | material-assumption | contradictory | unknown>; Fact: <input, exclusion, or success-condition observation>
 - evidence-coverage: <deterministic | direct-observation | indirect-or-qualitative | unavailable | unknown>; Fact: <decisive evidence observation>
 
+## Practice-pack envelope
+
+Declare only observable task facts used by `cartopian select-practice-pack`; do not infer a primary outcome from prose, filenames, project history, or Cartopian's own lifecycle activity. Use `none` for an empty list. More than one primary outcome can produce a fail-closed ambiguity. An authorized profile hint may resolve only an otherwise eligible collision and cannot override an exclusion.
+
+- primary-outcomes: <stable outcome identity, ... | none>
+- artifact-kinds: <stable artifact or state identity, ... | none>
+- incidental-terms: <stable subject identity, ... | none>
+- exclusions: <stable guidance or outcome identity, ... | none>
+- lifecycle-substrate-activities: <task-directory-movement | handoff-dispatch | review-routing | state-file-refresh | pm-cleanup | none>
+- authorized-profile-hint: <software | research | marketing | operations | policy | pack identity | none>
+
 ## Source guidance
 
 Use this existing task/spec contract when the outcome depends on external or internal source authority. Set the header to `task` when this task owns the record, `spec` when the named spec owns it, or `n/a` when source authority is not material to the work. A missing header remains readable only for legacy tasks; new tasks choose explicitly.

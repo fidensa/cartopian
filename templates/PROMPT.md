@@ -59,6 +59,10 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 <Paste the structured result returned by `cartopian classify-risk`. Preserve its `contract_id`, `contract_version`, `band`, ordered reasons, evidence expectation, independent-review expectation, operator gate, and contingency expectation exactly. This projection does not replace or edit configured review policy, role assignments, capability grants, or launch permissions. State how any applicable operator gate was satisfied before the gated action.>
 
+## Practice-pack result
+
+<Paste the structured result returned by `cartopian select-practice-pack` from the task's declared practice-pack envelope. Include the body only when the outcome is `selected`; `none` carries no body and core governance continues. Do not issue the handoff when the outcome is `ambiguous` or `invalid`. Pack selection does not change the risk result, activate judgment guidance, alter configured review policy, or require review.>
+
 ## Original operator request (verbatim)
 
 <Review prompts only. Tool-generated from exact applicable decision quotes,
