@@ -11,7 +11,7 @@ litter.
 A coder handoff is therefore deidentified: the prompt carries no identifiers
 (see ``templates/PROMPT.md``), and any spec surfaced to the coder is rendered
 through :func:`deidentify_spec`, which removes the traceability scaffolding (the
-title id, the ``Plan refs:`` field, and the ``## References`` section) and strips
+title id, the ``Plan ref:`` field, and the ``## References`` section) and strips
 any inline identifier token, while leaving the work-contract prose (Problem,
 Goal, Interface, Constraints, Test vectors / acceptance) intact.
 
@@ -160,7 +160,7 @@ def deidentify_spec(text: str) -> Tuple[str, List[str]]:
                 out.append(f"# {heading}")
                 continue
 
-        # Drop the "Plan refs:" metadata line entirely.
+        # Drop the singular canonical (and historical plural) plan-ref line.
         if _PLAN_REFS_LINE_RE.match(line):
             continue
 

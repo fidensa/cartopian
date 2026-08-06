@@ -491,6 +491,26 @@ def handler(args: argparse.Namespace) -> int:
         if variant in {"task", "review"}
         else None
     )
+    numbering_trace = {"valid": True, "classification": "not-applicable", "detail": None}
+    if expected_task_path is not None and variant in {"task", "review"}:
+        from cli import numbering_contract
+
+        refusal = numbering_contract.guard_task_scoped_artifact(
+            project_root, expected_task_path, report_path.stem, content
+        )
+        if refusal is not None:
+            numbering_trace = {
+                "valid": False,
+                "classification": refusal[0],
+                "detail": refusal[1],
+            }
+            verdict = "failed-to-parse"
+        else:
+            numbering_trace = {
+                "valid": True,
+                "classification": "valid",
+                "detail": None,
+            }
 
     source_evidence_record = None
     if variant == "task" and status_value == "complete" and expected_task_path is not None:
@@ -571,6 +591,7 @@ def handler(args: argparse.Namespace) -> int:
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,
         "source_evidence": source_evidence_record,
+        "numbering_trace": numbering_trace,
         "target_task_status": target_task_status,
         "requires_pr_step": requires_pr_step,
         "prompt_to_overwrite": prompt_to_overwrite,

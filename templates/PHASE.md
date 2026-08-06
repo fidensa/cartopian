@@ -12,10 +12,10 @@ One or two sentences. What does this phase exist to accomplish?
 
 | Plan ref        | Kind     | Description |
 | --------------- | -------- | ----------- |
-| BUILD-NN-001    | build    | …           |
-| RESEARCH-NN-001 | research | …           |
+| DESIGN-NN-001 | design | … |
+| BUILD-NN-002  | build  | … |
 
-Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit phase number (`NN`) must match the plan section number. Every plan ref listed here must resolve to either a build or research item below. Each work kind has its own counter within the phase. Task ids use a separate phase-wide counter, so task and plan-ref suffixes are independent.
+Copied from the matching phase row in `IMPLEMENTATION_PLAN.md`. The two-digit phase number (`NN`) must match the plan section number. Every plan ref listed here must be allocated in the plan. All work kinds share one phase-wide sequence, and each downstream task-scoped artifact carries the plan ref's `NN-NNN` unchanged.
 
 ## Build items
 

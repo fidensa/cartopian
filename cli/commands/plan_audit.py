@@ -980,7 +980,7 @@ def _check_numbering_contract(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Prospective plan-ref numbering findings, resolved by the shared contract.
 
-    The corrected kind-first rule applies only through the runtime activation
+    The corrected kind-first, phase-wide aligned rule applies only through the runtime activation
     boundary (reviewed correction in an operator-owned tag, installed, and
     proven active) and only to tasks the mediated writer created under the
     active contract — their creation is recorded in the project's provenance
@@ -1000,7 +1000,7 @@ def _check_numbering_contract(
     blockers: List[Dict[str, Any]] = []
     governed = numbering_contract.governed_task_ids(project_path)
 
-    bindings: List[Tuple[str, str, str, str]] = []
+    bindings: List[Tuple[str, str, str, str, str]] = []
     seen_ids = set()
     for status_dir in _ALL_TASK_DIRS:
         tasks_dir = project_path / "tasks" / status_dir
@@ -1024,30 +1024,54 @@ def _check_numbering_contract(
                 numbering_contract.plan_ref_header_value(content) or "",
                 numbering_contract.phase_header_value(content) or "",
                 f"tasks/{status_dir}/{task_file.name}",
+                content,
             ))
 
-    for task_id, plan_ref, phase_header, relpath in bindings:
+    if governed:
+        plan_path = project_path / "IMPLEMENTATION_PLAN.md"
+        try:
+            plan_text = plan_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            plan_text = ""
+        for finding in numbering_contract.validate_plan_allocations(plan_text):
+            blockers.append({
+                "kind": finding["classification"],
+                "contract": contract_state["contract"],
+                "blocking": True,
+                "detail": f"IMPLEMENTATION_PLAN.md: {finding['detail']}",
+                **{key: value for key, value in finding.items() if key not in {"classification", "blocking", "detail"}},
+            })
+
+    for task_id, plan_ref, phase_header, relpath, content in bindings:
         if task_id not in governed:
             continue
-        verdict = numbering_contract.classify_binding(
-            task_id, plan_ref, phase_header
+        findings = numbering_contract.validate_task_trace(
+            project_path, task_id, content
         )
-        if not verdict["blocking"]:
-            continue
-        blockers.append({
-            "kind": verdict["classification"],
-            "task_path": relpath,
-            "task_id": task_id,
-            "plan_ref": verdict["plan_ref"],
-            "task_counter": verdict["task_counter"],
-            "plan_ref_counter": verdict["plan_ref_counter"],
-            "contract": verdict["contract"],
-            "blocking": True,
-            "detail": f"{relpath}: {verdict['detail']}",
-        })
+        for finding in findings:
+            # Allocation collisions were emitted once above, not once per task.
+            if finding["classification"] == "plan-suffix-reused":
+                continue
+            blockers.append({
+                "kind": finding["classification"],
+                "task_path": relpath,
+                "task_id": task_id,
+                "plan_ref": plan_ref,
+                "contract": contract_state["contract"],
+                "blocking": True,
+                "detail": f"{relpath}: {finding['detail']}",
+                **{
+                    key: value
+                    for key, value in finding.items()
+                    if key not in {
+                        "classification", "blocking", "detail", "task_id",
+                        "plan_ref", "contract"
+                    }
+                },
+            })
 
     by_ref: Dict[str, List[str]] = {}
-    for task_id, plan_ref, _phase_header, _relpath in bindings:
+    for task_id, plan_ref, _phase_header, _relpath, _content in bindings:
         if plan_ref.strip():
             by_ref.setdefault(plan_ref.strip(), []).append(task_id)
     for plan_ref in sorted(by_ref):

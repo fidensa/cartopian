@@ -467,6 +467,14 @@ def handler(args: argparse.Namespace) -> int:
     task_id: Optional[str]
     source_guidance_record: Optional[Dict[str, Any]] = None
     if task_path is not None:
+        from cli import numbering_contract
+
+        refusal = numbering_contract.guard_existing_task_trace(
+            project_root, task_path
+        )
+        if refusal is not None:
+            stderr_guard(f"numbering trace invalid ({refusal[0]}): {refusal[1]}")
+            return EXIT_FAIL
         activity = (
             "task_review"
             if task_path.parent.name == "in-review"

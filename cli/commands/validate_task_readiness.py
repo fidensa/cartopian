@@ -146,11 +146,9 @@ def _check_plan_ref_aligned(
     corrected contract is not proven active, so a stale runtime keeps the old
     behavior.
 
-    For governed work the check verifies the full anchor chain: the task id,
-    plan ref, and declared ``Phase:`` header must name
-    one phase, and the declared phase file must carry the same plan ref — a
-    governed task cannot pass by anchoring to a foreign phase file that never
-    mentions its ref.
+    For governed work the check verifies the full task-scoped trace: the plan
+    allocation, task id, plan ref, declared phase, and optional spec all carry
+    one suffix, and the phase/spec files exist at their deterministic paths.
     """
     from cli import numbering_contract
 
@@ -164,18 +162,15 @@ def _check_plan_ref_aligned(
         return {"name": name, "pass": True, "reason": None}
     if not numbering_contract.activation_state()["active"]:
         return {"name": name, "pass": True, "reason": None}
-    verdict = numbering_contract.classify_binding(
-        match.group(1),
-        headers.get("Plan ref", ""),
-        headers.get("Phase", ""),
+    try:
+        content = task_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return {"name": name, "pass": False, "reason": f"task unreadable: {exc}"}
+    findings = numbering_contract.validate_task_trace(
+        project_root, match.group(1), content
     )
-    if verdict["blocking"]:
-        return {"name": name, "pass": False, "reason": verdict["detail"]}
-    anchor = numbering_contract.verify_phase_anchor(
-        project_root, headers.get("Phase", ""), verdict["plan_ref"]
-    )
-    if anchor is not None:
-        return {"name": name, "pass": False, "reason": anchor[1]}
+    if findings:
+        return {"name": name, "pass": False, "reason": findings[0]["detail"]}
     return {"name": name, "pass": True, "reason": None}
 
 

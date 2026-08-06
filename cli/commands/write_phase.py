@@ -40,6 +40,34 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr(*serr)
         return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
 
+    from cli import numbering_contract
+
+    if numbering_contract.activation_state()["active"]:
+        if isinstance(content, bytes):
+            try:
+                phase_text = content.decode("utf-8")
+            except UnicodeDecodeError:
+                _writers.stderr("guard", "phase body must be valid UTF-8 text")
+                return _writers.EXIT_FAIL
+        else:
+            phase_text = content
+        try:
+            plan_text = (root / "IMPLEMENTATION_PLAN.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            _writers.stderr(
+                "guard", f"implementation-plan-unreadable: {exc}"
+            )
+            return _writers.EXIT_FAIL
+        findings = numbering_contract.validate_phase_projection(
+            plan_text, phase_id, phase_text
+        )
+        if findings:
+            finding = findings[0]
+            _writers.stderr(
+                "guard", f"{finding['classification']}: {finding['detail']}"
+            )
+            return _writers.EXIT_FAIL
+
     filename = f"{phase_id}.md"
     matches = _writers.identifier_files(root / "phases", phase_id)
     if len(matches) > 1:

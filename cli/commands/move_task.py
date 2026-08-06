@@ -171,7 +171,7 @@ def _alignment_error(
 
 
 def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[str]]:
-    def _check(project_root: Path, nn_nnn: str, _task_id: str) -> Optional[str]:
+    def _check(project_root: Path, nn_nnn: str, task_id: str) -> Optional[str]:
         review = project_root / "reviews" / f"REVIEW-{nn_nnn}.md"
         if not review.is_file():
             return f"missing review artifact: {review}"
@@ -179,6 +179,14 @@ def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[
             content = review.read_text(encoding="utf-8")
         except OSError:
             return f"review artifact unreadable: {review}"
+        from cli import numbering_contract
+
+        task_path = project_root / "tasks" / "in-review" / f"{task_id}.md"
+        refusal = numbering_contract.guard_task_scoped_artifact(
+            project_root, task_path, review.stem, content
+        )
+        if refusal is not None:
+            return f"numbering trace invalid ({refusal[0]}): {refusal[1]}"
         m = _VERDICT_RE.search(content)
         if not m:
             return f"no Verdict: field in review artifact: {review}"
@@ -287,6 +295,17 @@ def handler(args: argparse.Namespace) -> int:
     if not task_path.is_file():
         _stderr("error", f"task file not found: {raw_path}")
         return EXIT_FAIL
+
+    project_for_trace = _find_project_root(task_path)
+    if project_for_trace is not None:
+        from cli import numbering_contract
+
+        refusal = numbering_contract.guard_existing_task_trace(
+            project_for_trace, task_path.resolve()
+        )
+        if refusal is not None:
+            _stderr("guard", f"numbering trace invalid ({refusal[0]}): {refusal[1]}")
+            return EXIT_FAIL
 
     policy_pairs = (
         set(_REVIEW_REQUIRED_DISALLOWED)

@@ -19,7 +19,7 @@ One or two sentences. What does done look like?
 
 ## Plan ref
 
-One primary plan item from `IMPLEMENTATION_PLAN.md`, for example `BUILD-01-001`. The matching phase file must carry the same plan ref. Plan-ref counters are local to each work kind within a phase; task ids use an independent phase-wide sequence, so their numeric suffixes do not need to match. Pre-activation tasks keep their existing mappings unchanged. A task that truly advances multiple plan refs should usually be split; use References for secondary context.
+One primary plan item from `IMPLEMENTATION_PLAN.md`, for example `BUILD-01-001`. The matching phase file must carry the same plan ref. The plan ref allocates the suffix: `BUILD-01-001` binds `TASK-01-001`, and every task-scoped artifact carries `01-001`. Pre-activation tasks keep their existing mappings unchanged under the approved compatibility boundary. A task that truly advances multiple plan refs should usually be split; use References for secondary context.
 
 ## Source
 

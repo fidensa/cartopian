@@ -156,9 +156,8 @@ def handler(args: argparse.Namespace) -> int:
 
     # Prospective plan-ref numbering contract: once the reviewed correction is
     # carried by an installed operator-owned tag and proven active, a newly
-    # created task binds one kind-first plan ref in the same phase, and no plan
-    # ref is reused across tasks. Plan-ref counters are kind-local and
-    # independent of the task-id counter. The guard is
+    # created task binds one kind-first plan ref with the same phase-wide
+    # suffix, and no plan ref or phase suffix is reused. The guard is
     # inert until then, governs only new work (plus tasks it created), leaves
     # every pre-activation artifact untouched, and runs before any on-disk
     # rename so a refusal leaves the tree unchanged.
@@ -186,6 +185,18 @@ def handler(args: argparse.Namespace) -> int:
     extra_details = {"task_id": task_id, "status": status}
     if source_id is not None:
         extra_details["source"] = source_id
+    if creating and numbering_state["active"]:
+        # Persist the prospective-boundary marker before the artifact. If the
+        # append cannot be proven, fail closed and create no ungoverned task.
+        if not numbering_contract.record_governed_creation(
+            root, relative_target, content
+        ):
+            _writers.stderr(
+                "guard",
+                "numbering-provenance-unavailable: cannot persist the "
+                "numbering-governed creation marker",
+            )
+            return _writers.EXIT_FAIL
     code = _writers.perform_write(
         args,
         action="write-task",
@@ -194,11 +205,4 @@ def handler(args: argparse.Namespace) -> int:
         content=content,
         extra_details=extra_details,
     )
-    if code == _writers.EXIT_OK and creating and numbering_state["active"]:
-        # Future-authoring boundary record: exactly the tasks created under
-        # the active contract are re-verified by readiness and plan audit.
-        # Pre-activation artifacts never receive one and stay untouched.
-        numbering_contract.record_governed_creation(
-            root, relative_target, content
-        )
     return code

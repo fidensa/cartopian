@@ -1,4 +1,4 @@
-"""Prospective kind-first plan-ref contract (`cli.numbering_contract`).
+"""Prospective kind-first, phase-wide aligned numbering contract.
 
 The corrected contract is prospective only: it activates through the
 reviewed-tag/installed/fresh-runtime boundary — never from source, a dirty
@@ -21,7 +21,7 @@ from pathlib import Path
 from unittest import mock
 
 from cli import numbering_contract as nc
-from cli.commands import task_bundle, write_task
+from cli.commands import task_bundle, write_spec, write_task
 from cli.commands import validate_task_readiness as readiness_command
 from cli.commands.plan_audit import _check_numbering_contract
 from cli.commands.validate_task_readiness import (
@@ -62,12 +62,13 @@ def _inactive_state():
     return state
 
 
-def _task_body(plan_ref, phase="PHASE-01"):
+def _task_body(plan_ref, phase="PHASE-01", spec="none"):
     return (
         "# Task fixture\n"
         "\n"
         f"Phase: {phase}\n"
         f"Plan ref: {plan_ref}\n"
+        f"Spec: {spec}\n"
         "Evidence gate: n/a\n"
         "\n"
         "## Goal\n"
@@ -84,6 +85,7 @@ def _make_project(tmp: Path) -> Path:
     project = tmp / "project"
     for status in ("open", "in-progress", "in-review", "done"):
         (project / "tasks" / status).mkdir(parents=True)
+    (project / "specs").mkdir()
     return project
 
 
@@ -104,6 +106,24 @@ def _write_task(project: Path, task_id: str, slug: str, body: str):
     return code, stderr.getvalue()
 
 
+def _write_spec(project: Path, spec_id: str, plan_ref="BUILD-04-008"):
+    args = argparse.Namespace(
+        project_root=str(project),
+        spec_id=spec_id,
+        content=(
+            f"# {spec_id}: Fixture\n\n"
+            f"Plan ref: {plan_ref}\n"
+            "Source guidance: n/a\n"
+        ),
+        content_file=None,
+        source=None,
+    )
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        code = write_spec.handler(args)
+    return code, stderr.getvalue()
+
+
 def _readiness_check(project: Path, task_path: Path):
     content = task_path.read_text(encoding="utf-8")
     headers, _presence = _parse_headers(content)
@@ -115,6 +135,16 @@ def _write_phase_file(project: Path, refs, phase="PHASE-01"):
     phases.mkdir(exist_ok=True)
     body = "# Phase fixture\n\n" + "".join(f"- `{ref}` — item\n" for ref in refs)
     (phases / f"{phase}.md").write_text(body, encoding="utf-8")
+    plan_path = project / "IMPLEMENTATION_PLAN.md"
+    existing = plan_path.read_text(encoding="utf-8") if plan_path.is_file() else ""
+    known = list(nc.extract_plan_refs(existing))
+    for ref in refs:
+        if nc.parse_plan_ref(ref) is not None and ref not in known:
+            known.append(ref)
+    plan_path.write_text(
+        "# Plan fixture\n\n" + "".join(f"- `{ref}` — item\n" for ref in known),
+        encoding="utf-8",
+    )
 
 
 class TestGrammar(unittest.TestCase):
@@ -141,20 +171,18 @@ class TestGrammar(unittest.TestCase):
 
 
 class TestClassifyBinding(unittest.TestCase):
-    def test_every_supported_kind_has_an_independent_counter(self):
-        # Every kind may start at 001 in the same phase while task ids proceed
-        # independently through their own sequence.
+    def test_every_supported_kind_uses_the_plan_allocated_suffix(self):
         for index, kind in enumerate(nc.SUPPORTED_KINDS, start=1):
             verdict = nc.classify_binding(
-                f"TASK-01-{index:03d}", f"{kind}-01-001"
+                f"TASK-01-{index:03d}", f"{kind}-01-{index:03d}"
             )
             self.assertEqual(verdict["classification"], "valid")
             self.assertFalse(verdict["blocking"])
 
-    def test_task_and_plan_ref_counters_are_independent(self):
+    def test_task_and_plan_ref_suffixes_must_match(self):
         verdict = nc.classify_binding("TASK-01-004", "RESEARCH-01-001")
-        self.assertEqual(verdict["classification"], "valid")
-        self.assertFalse(verdict["blocking"])
+        self.assertEqual(verdict["classification"], "plan-task-suffix-mismatch")
+        self.assertTrue(verdict["blocking"])
         self.assertEqual(verdict["task_counter"], "004")
         self.assertEqual(verdict["plan_ref_counter"], "001")
 
@@ -316,9 +344,10 @@ class TestMediatedAuthoring(unittest.TestCase):
             self.assertTrue(task.is_file())
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
-    def test_active_creation_accepts_kind_first_ref_and_records_governance(self):
+    def test_active_creation_accepts_aligned_kind_first_ref_and_records_governance(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["RESEARCH-01-002"])
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -326,16 +355,17 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-002",
                     "kind-first",
-                    _task_body("RESEARCH-01-001"),
+                    _task_body("RESEARCH-01-002"),
                 )
             self.assertEqual(code, 0, stderr)
             self.assertEqual(
                 nc.governed_task_ids(project), frozenset({"TASK-01-002"})
             )
 
-    def test_active_creation_accepts_an_independent_plan_ref_counter(self):
+    def test_active_creation_refuses_an_independent_plan_ref_counter(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["RESEARCH-01-001"])
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -345,14 +375,31 @@ class TestMediatedAuthoring(unittest.TestCase):
                     "independent-counter",
                     _task_body("RESEARCH-01-001"),
                 )
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual(
-                nc.governed_task_ids(project), frozenset({"TASK-01-004"})
-            )
+            self.assertEqual(code, 1)
+            self.assertIn("plan-task-suffix-mismatch", stderr)
+
+    def test_active_creation_fails_before_write_when_governance_marker_cannot_persist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-01-004"])
+            with (
+                mock.patch.object(nc, "activation_state", return_value=_active_state()),
+                mock.patch.object(nc, "record_governed_creation", return_value=False),
+            ):
+                code, stderr = _write_task(
+                    project,
+                    "TASK-01-004",
+                    "unrecorded",
+                    _task_body("BUILD-01-004"),
+                )
+            self.assertEqual(code, 1)
+            self.assertIn("numbering-provenance-unavailable", stderr)
+            self.assertFalse((project / "tasks" / "open" / "TASK-01-004.md").exists())
 
     def test_active_creation_refuses_the_old_phase_first_grammar(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-01-004"])
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -369,6 +416,7 @@ class TestMediatedAuthoring(unittest.TestCase):
     def test_active_creation_refuses_reusing_any_bound_plan_ref(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-01-004"])
             # A pre-activation, hand-preserved task already owns the ref.
             (project / "tasks" / "done" / "TASK-01-009.md").write_text(
                 _task_body("BUILD-01-004"), encoding="utf-8"
@@ -391,6 +439,9 @@ class TestMediatedAuthoring(unittest.TestCase):
         # Phase: header must name the task's own phase.
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(
+                project, ["CORRECTIVE-01-005", "CORRECTIVE-01-006"]
+            )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -411,6 +462,9 @@ class TestMediatedAuthoring(unittest.TestCase):
     def test_each_corrective_task_owns_a_distinct_plan_ref(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(
+                project, ["CORRECTIVE-01-005", "CORRECTIVE-01-006"]
+            )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -418,14 +472,14 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-005",
                     "corrective-one",
-                    _task_body("CORRECTIVE-01-001"),
+                    _task_body("CORRECTIVE-01-005"),
                 )
                 self.assertEqual(first, 0, stderr)
                 second, stderr = _write_task(
                     project,
                     "TASK-01-006",
                     "corrective-two",
-                    _task_body("CORRECTIVE-01-002"),
+                    _task_body("CORRECTIVE-01-006"),
                 )
                 self.assertEqual(second, 0, stderr)
                 # A third corrective task trying to ride on the first one's
@@ -435,10 +489,10 @@ class TestMediatedAuthoring(unittest.TestCase):
                     project,
                     "TASK-01-007",
                     "corrective-reuse",
-                    _task_body("CORRECTIVE-01-001"),
+                    _task_body("CORRECTIVE-01-005"),
                 )
             self.assertEqual(reused, 1)
-            self.assertIn("plan-ref-reused", stderr)
+            self.assertIn("plan-task-suffix-mismatch", stderr)
 
     def test_existing_canonical_task_updates_pass_untouched(self):
         # An existing mismatched pair is preserved history, not new work:
@@ -467,9 +521,10 @@ class TestMediatedAuthoring(unittest.TestCase):
             )
             self.assertEqual(nc.governed_task_ids(project), frozenset())
 
-    def test_governed_task_updates_accept_a_different_kind_local_counter(self):
+    def test_governed_task_updates_reject_a_different_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-01-002", "RESEARCH-01-001"])
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
@@ -486,7 +541,8 @@ class TestMediatedAuthoring(unittest.TestCase):
                     "aligned",
                     _task_body("RESEARCH-01-001"),
                 )
-            self.assertEqual(code, 0, stderr)
+            self.assertEqual(code, 1)
+            self.assertIn("plan-task-suffix-mismatch", stderr)
             self.assertEqual(
                 nc.governed_task_ids(project), frozenset({"TASK-01-002"})
             )
@@ -497,15 +553,15 @@ class TestReadinessAndAudit(unittest.TestCase):
 
     def _governed_project(self, tmp: Path):
         project = _make_project(tmp)
-        _write_phase_file(project, ["RESEARCH-01-001"])
+        _write_phase_file(project, ["RESEARCH-01-002"])
         with mock.patch.object(
             nc, "activation_state", return_value=_active_state()
         ):
             code, stderr = _write_task(
                 project,
                 "TASK-01-002",
-                "independent-counter",
-                _task_body("RESEARCH-01-001"),
+                "aligned",
+                _task_body("RESEARCH-01-002"),
             )
         assert code == 0, stderr
         return project, project / "tasks" / "open" / "TASK-01-002.md"
@@ -534,16 +590,16 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertTrue(check["pass"], check["reason"])
 
     def test_readiness_blocks_a_governed_task_declaring_a_foreign_phase(self):
-        # F1 probe: TASK-01-002 / RESEARCH-01-001 declaring an existing
+        # F1 probe: TASK-01-002 / RESEARCH-01-002 declaring an existing
         # PHASE-02-* file whose body never mentions the plan ref must fail —
-        # a valid kind-local counter alone is not a complete anchor chain.
+        # suffix alignment alone is not a complete anchor chain.
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
             _write_phase_file(
                 project, ["BUILD-02-001"], phase="PHASE-02"
             )
             task.write_text(
-                _task_body("RESEARCH-01-001", phase="PHASE-02"),
+                _task_body("RESEARCH-01-002", phase="PHASE-02"),
                 encoding="utf-8",
             )
             with mock.patch.object(
@@ -565,7 +621,7 @@ class TestReadinessAndAudit(unittest.TestCase):
             ):
                 check = _readiness_check(project, task)
             self.assertFalse(check["pass"])
-            self.assertIn("does not carry plan ref RESEARCH-01-001", check["reason"])
+            self.assertIn("does not carry plan ref RESEARCH-01-002", check["reason"])
 
     def test_readiness_blocks_when_the_declared_phase_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -578,7 +634,7 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertFalse(check["pass"])
             self.assertIn("phases/PHASE-01.md", check["reason"])
 
-    def test_rewritten_governed_task_keeps_independent_counters_valid(self):
+    def test_rewritten_governed_task_with_different_suffix_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, task = self._governed_project(Path(tmp))
             # Hand-rewriting the governed binding out of band cannot escape
@@ -590,8 +646,9 @@ class TestReadinessAndAudit(unittest.TestCase):
             ):
                 check = _readiness_check(project, task)
                 blockers, _state = _check_numbering_contract(project)
-            self.assertTrue(check["pass"], check["reason"])
-            self.assertEqual(blockers, [])
+            self.assertFalse(check["pass"])
+            self.assertIn("requires plan ref suffix 01-002", check["reason"])
+            self.assertEqual(blockers[0]["kind"], "plan-task-suffix-mismatch")
 
     def test_rewritten_governed_task_with_old_grammar_blocks(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -606,8 +663,6 @@ class TestReadinessAndAudit(unittest.TestCase):
             self.assertIn("does not match KIND-NN-NNN", check["reason"])
             self.assertEqual(len(blockers), 1)
             self.assertEqual(blockers[0]["kind"], "plan-ref-malformed")
-            self.assertEqual(blockers[0]["task_counter"], "002")
-            self.assertIsNone(blockers[0]["plan_ref_counter"])
 
     def test_pre_activation_mismatches_are_never_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -647,7 +702,7 @@ class TestReadinessAndAudit(unittest.TestCase):
             # A hand-written task binding the governed task's ref.
             (
                 project / "tasks" / "done" / "TASK-01-011.md"
-            ).write_text(_task_body("RESEARCH-01-001"), encoding="utf-8")
+            ).write_text(_task_body("RESEARCH-01-002"), encoding="utf-8")
             # Two purely pre-activation tasks sharing a ref stay history.
             for name in ("TASK-01-012.md", "TASK-01-013.md"):
                 (project / "tasks" / "done" / name).write_text(
@@ -659,7 +714,7 @@ class TestReadinessAndAudit(unittest.TestCase):
                 blockers, _state = _check_numbering_contract(project)
             reuse = [b for b in blockers if b["kind"] == "plan-ref-reused"]
             self.assertEqual(len(reuse), 1)
-            self.assertEqual(reuse[0]["plan_ref"], "RESEARCH-01-001")
+            self.assertEqual(reuse[0]["plan_ref"], "RESEARCH-01-002")
             self.assertIn("TASK-01-011", reuse[0]["task_ids"])
 
     def test_audit_is_idempotent_and_mutates_nothing(self):
@@ -705,62 +760,214 @@ class TestReadinessAndAudit(unittest.TestCase):
             )
 
 
-class TestKindLocalCounters(unittest.TestCase):
-    """Each work kind owns its own sequence within a phase."""
+class TestPhaseWideAllocation(unittest.TestCase):
+    """Every work kind draws from one phase-wide sequence."""
 
-    def test_build_and_test_may_both_start_at_001_in_phase_04(self):
+    def test_mixed_kinds_allocate_one_phase_wide_sequence(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
             _write_phase_file(
                 project,
-                ["BUILD-04-001", "TEST-04-001"],
+                [
+                    "DESIGN-04-001",
+                    "BUILD-04-002",
+                    "TEST-04-003",
+                    "CORRECTIVE-04-004",
+                ],
                 phase="PHASE-04",
             )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
-                first, stderr = _write_task(
-                    project,
-                    "TASK-04-001",
-                    "build",
-                    _task_body("BUILD-04-001", phase="PHASE-04"),
-                )
-                self.assertEqual(first, 0, stderr)
-                second, stderr = _write_task(
-                    project,
-                    "TASK-04-002",
-                    "test",
-                    _task_body("TEST-04-001", phase="PHASE-04"),
-                )
-                self.assertEqual(second, 0, stderr)
+                for index, kind in enumerate(
+                    ("DESIGN", "BUILD", "TEST", "CORRECTIVE"), start=1
+                ):
+                    code, stderr = _write_task(
+                        project,
+                        f"TASK-04-{index:03d}",
+                        kind.lower(),
+                        _task_body(
+                            f"{kind}-04-{index:03d}", phase="PHASE-04"
+                        ),
+                    )
+                    self.assertEqual(code, 0, stderr)
                 blockers, _state = _check_numbering_contract(project)
             self.assertEqual(blockers, [])
             self.assertEqual(
                 nc.governed_task_ids(project),
-                frozenset({"TASK-04-001", "TASK-04-002"}),
+                frozenset(
+                    {
+                        "TASK-04-001",
+                        "TASK-04-002",
+                        "TASK-04-003",
+                        "TASK-04-004",
+                    }
+                ),
             )
 
-    def test_exact_plan_ref_reuse_is_still_blocked(self):
+    def test_duplicate_phase_sequence_across_kinds_fails_closed(self):
+        findings = nc.validate_plan_allocations(
+            "DESIGN-04-001\nBUILD-04-001\n"
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["classification"], "plan-suffix-reused")
+        self.assertIn("DESIGN-04-001", findings[0]["detail"])
+        self.assertIn("BUILD-04-001", findings[0]["detail"])
+
+    def test_raw_duplicate_allocation_is_a_plan_audit_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
+            _write_phase_file(project, ["DESIGN-04-001"], phase="PHASE-04")
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                code, stderr = _write_task(
+                    project,
+                    "TASK-04-001",
+                    "design",
+                    _task_body("DESIGN-04-001", phase="PHASE-04"),
+                )
+            self.assertEqual(code, 0, stderr)
+            (project / "IMPLEMENTATION_PLAN.md").write_text(
+                "DESIGN-04-001\nBUILD-04-001\n", encoding="utf-8"
+            )
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                blockers, _state = _check_numbering_contract(project)
+            collisions = [b for b in blockers if b["kind"] == "plan-suffix-reused"]
+            self.assertEqual(len(collisions), 1)
+            self.assertIn("04-001", collisions[0]["detail"])
+
+    def test_exact_plan_ref_owned_by_historical_task_is_not_reallocated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-04-001"], phase="PHASE-04")
+            (project / "tasks" / "done" / "TASK-04-009.md").write_text(
+                _task_body("BUILD-04-001", phase="PHASE-04"), encoding="utf-8"
+            )
             with mock.patch.object(
                 nc, "activation_state", return_value=_active_state()
             ):
-                first, stderr = _write_task(
+                code, stderr = _write_task(
                     project,
                     "TASK-04-001",
                     "first",
                     _task_body("BUILD-04-001", phase="PHASE-04"),
                 )
+            self.assertEqual(code, 1)
+            self.assertIn("plan-ref-reused", stderr)
+
+
+class TestTaskScopedTrace(unittest.TestCase):
+    def _project_with_spec(self, tmp: Path):
+        project = _make_project(tmp)
+        _write_phase_file(project, ["BUILD-04-008"], phase="PHASE-04")
+        with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+            code, stderr = _write_task(
+                project,
+                "TASK-04-008",
+                "aligned",
+                _task_body(
+                    "BUILD-04-008",
+                    phase="PHASE-04",
+                    spec="SPEC-04-008.md",
+                ),
+            )
+            assert code == 0, stderr
+            code, stderr = _write_spec(project, "SPEC-04-008")
+            assert code == 0, stderr
+        return project, project / "tasks" / "open" / "TASK-04-008.md"
+
+    def test_task_spec_and_every_derived_artifact_share_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, task = self._project_with_spec(Path(tmp))
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                check = _readiness_check(project, task)
+            self.assertTrue(check["pass"], check["reason"])
+            expected = {
+                "suffix": "04-008",
+                "plan_ref": "BUILD-04-008",
+                "task_id": "TASK-04-008",
+                "spec_id": "SPEC-04-008",
+                "prompt_id": "PROMPT-04-008",
+                "completion_report_id": "REPORT-04-008",
+                "review_report_id": "REPORT-04-008-review",
+                "review_id": "REVIEW-04-008",
+            }
+            for identifier in (
+                "BUILD-04-008",
+                "TASK-04-008",
+                "SPEC-04-008",
+                "PROMPT-04-008",
+                "REPORT-04-008",
+                "REPORT-04-008-review",
+                "REVIEW-04-008",
+            ):
+                trace = nc.resolve_trace(project, identifier)
+                for key, value in expected.items():
+                    self.assertEqual(trace[key], value)
+
+    def test_mismatched_task_spec_fails_readiness_and_audit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, task = self._project_with_spec(Path(tmp))
+            task.write_text(
+                _task_body(
+                    "BUILD-04-008",
+                    phase="PHASE-04",
+                    spec="SPEC-04-001.md",
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                check = _readiness_check(project, task)
+                blockers, _state = _check_numbering_contract(project)
+            self.assertFalse(check["pass"])
+            self.assertIn("may reference only SPEC-04-008.md", check["reason"])
+            self.assertEqual(blockers[0]["kind"], "task-spec-suffix-mismatch")
+
+    def test_spec_with_foreign_plan_ref_fails_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, task = self._project_with_spec(Path(tmp))
+            (project / "specs" / "SPEC-04-008.md").write_text(
+                "# SPEC-04-008\n\nPlan ref: BUILD-04-001\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                check = _readiness_check(project, task)
+            self.assertFalse(check["pass"])
+            self.assertIn("must declare Plan ref: BUILD-04-008", check["reason"])
+
+    def test_shared_umbrella_spec_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            _write_phase_file(
+                project, ["BUILD-04-001", "BUILD-04-002"], phase="PHASE-04"
+            )
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                first, stderr = _write_task(
+                    project,
+                    "TASK-04-001",
+                    "first",
+                    _task_body(
+                        "BUILD-04-001", phase="PHASE-04", spec="SPEC-04-001.md"
+                    ),
+                )
                 self.assertEqual(first, 0, stderr)
                 second, stderr = _write_task(
                     project,
                     "TASK-04-002",
-                    "reuse",
-                    _task_body("BUILD-04-001", phase="PHASE-04"),
+                    "second",
+                    _task_body(
+                        "BUILD-04-002", phase="PHASE-04", spec="SPEC-04-001.md"
+                    ),
                 )
             self.assertEqual(second, 1)
-            self.assertIn("plan-ref-reused", stderr)
+            self.assertIn("task-spec-suffix-mismatch", stderr)
+
+    def test_spec_writer_requires_the_aligned_owning_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            with mock.patch.object(nc, "activation_state", return_value=_active_state()):
+                code, stderr = _write_spec(project, "SPEC-04-001")
+            self.assertEqual(code, 1)
+            self.assertIn("spec-task-owner-missing", stderr)
 
 
 _TOML_PROJECT = (

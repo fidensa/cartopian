@@ -1,11 +1,13 @@
 # SPEC-NN-NNN: <short noun-phrase title>
 
+The `NN-NNN` is the owning task's plan-allocated suffix. One task-scoped spec belongs to exactly one `TASK-NN-NNN`; do not reuse an umbrella spec with a different suffix.
+
 Status: <draft | locked>
 Profile: <software | general>
 Author: <name or role>
 Reviewer: <name or role>
 Date: YYYY-MM-DD
-Plan refs: <KIND-NN-NNN, KIND-NN-NNN | n/a>
+Plan ref: <KIND-NN-NNN>
 Source: <BL-NNN | n/a>
 Source guidance: <required | n/a>
 

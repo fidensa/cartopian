@@ -143,7 +143,7 @@ When an external source is authoritative rather than merely contextual, record i
 
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output); keep the description in the heading, not the filename.
 
-Within each phase, assign `KIND-NN-NNN` plan refs. Every supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) has an independent counter starting at `001` within that phase. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
+Within each phase, assign `KIND-NN-NNN` plan refs from one sequence shared by every supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`), starting at `001`. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.
 
 **Requirement coverage:**
 
@@ -197,7 +197,7 @@ For each build and research item in the active phase, author `tasks/open/TASK-NN
 cartopian write-task <project-root> --task-id TASK-NN-NNN --content-file <body-path>
 ```
 
-Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
+The plan ref allocates the task suffix. Author `KIND-NN-NNN` as `TASK-NN-NNN`, and preserve that suffix for the optional spec, prompt, reports, and review. Never restart numbering for a different work kind or bind the plan ref to a differently numbered task.
 
 Populate all fields:
 
@@ -215,6 +215,8 @@ For tasks that need specs (new interfaces, schemas, contracts), author `specs/SP
 ```
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --content-file <body-path>
 ```
+
+Use the owning task's exact `NN-NNN`, and declare it in the task before writing the spec. A task may not reuse a differently numbered umbrella spec.
 
 Before authoring each spec, classify the outcome governed by that spec and set `Profile: software | general`; classify the spec itself, not the overall project. Use `software` when the end outcome is executable software or a technical contract intended for software implementation (including applications, services, libraries, CLIs, automation scripts, or implementable schemas, APIs, and integrations). Use `general` for genuinely non-software outcomes such as research reports, operating procedures, launch activities, or creative assets. A project may contain both profiles.
 

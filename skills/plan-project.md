@@ -169,7 +169,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 - **Work topology**: which repos or other work locations are involved and what each owns. Include no-repo projects when applicable.
 - **Phase sequence**: each phase with:
   - Goal
-  - Plan ref table (`KIND-NN-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Within each phase, each kind owns an independent counter starting at `001`.
+  - Plan ref table (`KIND-NN-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Within each phase, all kinds draw from one sequence starting at `001`.
   - Exit criteria
 - **Requirement coverage matrix**: every requirement from `REQUIREMENTS.md` mapped to plan ref(s) and phase(s). Every requirement must appear. Deferred requirements note the reason.
 - **Open questions by phase**: questions that arose during planning.
@@ -238,7 +238,7 @@ Authoring task files is **PM-performed**. For each build and research item in th
 cartopian write-task <project-root> --task-id TASK-NN-NNN --content-file <body-path>
 ```
 
-Allocate task ids from the task sequence for the active phase. Plan refs use independent kind-local counters (`KIND-NN-NNN`), so a plan ref's final number does not determine or need to match its task id's final number. Preserve each identifier once allocated.
+The plan ref has already allocated the task identity: author `KIND-NN-NNN` as `TASK-NN-NNN`. Preserve that suffix unchanged for the task's optional spec, prompt, reports, and review. Never restart numbering for a new kind or map a plan ref to a differently numbered task.
 
 New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advances them from there. Populate the body from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 
@@ -251,6 +251,8 @@ For tasks that need specs (new interfaces, schemas, contracts), author `specs/SP
 ```
 cartopian write-spec <project-root> --spec-id SPEC-NN-NNN --content-file <body-path>
 ```
+
+Use the owning task's exact `NN-NNN`. The task must declare that spec before it is authored. Do not create or reuse a differently numbered phase-wide umbrella spec.
 
 Not every task needs a spec. Use judgment: configuration tasks, documentation tasks, and simple implementation tasks typically do not need specs.
 

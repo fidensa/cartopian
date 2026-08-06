@@ -56,6 +56,12 @@ def handler(args: argparse.Namespace) -> int:
                     "prompt-target-mismatch",
                     "task prompt identity must match the target task identity",
                 )
+            from cli import numbering_contract
+            refusal = numbering_contract.guard_existing_task_trace(
+                root, task.resolve()
+            )
+            if refusal is not None:
+                raise RequestRefusal(refusal[0], refusal[1])
             context = context_for_task_assignment(root, task.resolve())
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
@@ -80,6 +86,12 @@ def handler(args: argparse.Namespace) -> int:
                         "prompt-target-mismatch",
                         "task prompt identity must match the target task identity",
                     )
+                from cli import numbering_contract
+                refusal = numbering_contract.guard_existing_task_trace(
+                    root, task.resolve()
+                )
+                if refusal is not None:
+                    raise RequestRefusal(refusal[0], refusal[1])
                 context = context_for_task(
                     root,
                     task.resolve(),
@@ -105,4 +117,18 @@ def handler(args: argparse.Namespace) -> int:
             "request_state": "unavailable-for-legacy" if context.legacy else "resolved",
             "request_measures": context.as_record()["measures"],
         })
+    if variant == "task":
+        from cli import numbering_contract
+
+        task_path = Path(args.task or "")
+        if task_path.is_absolute() and task_path.is_file():
+            refusal = numbering_contract.guard_task_scoped_artifact(
+                root,
+                task_path.resolve(),
+                args.prompt_id,
+                content if isinstance(content, str) else "",
+            )
+            if refusal is not None:
+                _writers.stderr("guard", f"{refusal[0]}: {refusal[1]}")
+                return _writers.EXIT_FAIL
     return _writers.perform_write(args, action="write-prompt", dest_kind="prompt", relative_target=f"{args.prompt_id}.md", content=content, extra_details=details)

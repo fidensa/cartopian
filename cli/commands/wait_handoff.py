@@ -264,6 +264,15 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"project config not found for task: {raw_path}")
         return EXIT_ENV
 
+    from cli import numbering_contract
+
+    refusal = numbering_contract.guard_existing_task_trace(
+        project_root, task_path
+    )
+    if refusal is not None:
+        stderr_guard(f"numbering trace invalid ({refusal[0]}): {refusal[1]}")
+        return EXIT_FAIL
+
     task_id = handoff_packet._extract_task_id(task_path) or task_path.stem
     # An in-review task's handoff is task review: observe the independent
     # review-report slot. The preserved completion report cannot satisfy a

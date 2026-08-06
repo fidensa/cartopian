@@ -22,10 +22,10 @@ Which repos or other work locations are involved, what each owns, and how they i
 
 | Plan ref        | Kind     | Description |
 | --------------- | -------- | ----------- |
-| BUILD-00-001    | build    | …           |
-| RESEARCH-00-001 | research | …           |
+| DESIGN-00-001 | design | … |
+| BUILD-00-002  | build  | … |
 
-Within each phase, every work kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) has an independent three-digit counter starting at `001`. Task ids use their own phase-wide counter; a plan ref and its task do not need matching numeric suffixes. Each corrective item receives its own new ref.
+Within each phase, every work kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`) draws from one three-digit sequence starting at `001`. The plan ref allocates `NN-NNN`; its task and every task-scoped artifact reuse that suffix unchanged. Each corrective item receives its own new ref.
 
 **Exit criteria:**
 

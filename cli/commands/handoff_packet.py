@@ -243,6 +243,14 @@ def handler(args: argparse.Namespace) -> int:
         return err.exit_code
 
     task_id = _extract_task_id(task_path) or task_path.stem
+    from cli import numbering_contract
+
+    refusal = numbering_contract.guard_existing_task_trace(
+        project_root, task_path
+    )
+    if refusal is not None:
+        stderr_guard(f"numbering trace invalid ({refusal[0]}): {refusal[1]}")
+        return EXIT_FAIL
     task_title = _first_heading(content) or task_path.stem
     completion_report_path = _expected_report_path(project_root, task_id)
     expected_report_path = _expected_handoff_report_path(

@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from cli import report_identity
+from cli import numbering_contract, report_identity
 
 
 REQUESTS_DIRNAME = "requests"
@@ -26,10 +26,8 @@ HOST_CHAT_DIRNAME = "chat"
 REQUEST_ID_RE = re.compile(r"^REQUEST-\d{3}$")
 CORRECTION_ID_RE = re.compile(r"^(REQUEST-\d{3})-CORRECTION-(\d{3})$")
 CHAT_RECORD_ID_RE = re.compile(r"^CHAT-[A-Z0-9][A-Z0-9-]{1,79}$")
-PHASE_ID_RE = re.compile(r"^PHASE-\d{2}$")
-PLAN_REF_RE = re.compile(
-    r"^(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}$"
-)
+PHASE_ID_RE = numbering_contract.PHASE_NAME_RE
+PLAN_REF_RE = numbering_contract.SUPPORTED_PLAN_REF_RE
 CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}$")
 REVIEW_KINDS = ("planning", "task-closure")
 UNIT_KINDS = ("project", "planning", "task")
@@ -822,6 +820,10 @@ def _task_has_project_intent_ancestry(
     task_text = read_contained_text(
         project_root, task_path, what="task intent-ancestry target"
     )
+    from cli import numbering_contract
+
+    if numbering_contract.guard_existing_task_trace(project_root, task_path) is not None:
+        return False
     task_match = re.fullmatch(r"TASK-(\d{2})-\d{3}", task_path.stem)
     phase_id = _phase_from_text(task_text)
     plan_ref = _header(task_text, "Plan ref")

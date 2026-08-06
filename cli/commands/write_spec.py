@@ -81,6 +81,19 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
+    from cli import numbering_contract
+
+    refusal = numbering_contract.guard_spec_write(
+        root,
+        spec_id,
+        spec_text,
+        creating=not matches,
+        state=numbering_contract.activation_state(),
+    )
+    if refusal is not None:
+        _writers.stderr("guard", f"{refusal[0]}: {refusal[1]}")
+        return _writers.EXIT_FAIL
+
     extra_details = {"spec_id": spec_id}
     if source_id is not None:
         extra_details["source"] = source_id

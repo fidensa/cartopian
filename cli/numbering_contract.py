@@ -1,10 +1,9 @@
-"""Authoritative resolver for the prospective plan/task numbering contract.
+"""Authoritative resolver for Cartopian task-scoped numbering.
 
 Under the corrected contract, a plan ref is ``KIND-NN-NNN``: work kind first,
-then phase number, then a counter local to that kind within the phase. Task ids
-remain ``TASK-NN-NNN`` and use their own phase-wide sequence. Plan-ref and task
-counters are therefore independent and are not required to match. The
-corrected contract is genuinely prospective: it governs only
+then phase number, then one counter shared by every work kind in the phase.
+The plan allocates ``NN-NNN`` and every downstream task-scoped artifact carries
+that suffix unchanged. The corrected contract is genuinely prospective: it governs only
 plan/task pairs authored *after* the reviewed correction is carried by an
 operator-owned release tag, installed, and proven active in the running
 process. Nothing that already exists is migrated, inventoried, renumbered,
@@ -34,18 +33,19 @@ exactly those tasks and leave every other artifact — all pre-activation and
 hand-preserved history — valid and untouched. Hand-typed task prose,
 caller-selected dates, and filenames play no part in the boundary.
 
-Every consumer — mediated task authoring, task readiness, task bundles, plan
-audit, and the MCP tools derived from those commands — resolves the contract
-through this module so CLI and MCP surfaces cannot drift.
+Every consumer — mediated plan, phase, task, spec, and prompt authoring; task
+readiness and lifecycle movement; task bundles; plan audit; and the MCP tools
+derived from those commands — resolves the contract through this module so
+CLI and MCP surfaces cannot drift.
 """
 import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-# Closed classification vocabulary for governed work kinds. Each kind owns an
-# independent counter within a phase.
+# Closed classification vocabulary for governed work kinds. Kind classifies an
+# allocation; it never owns a counter.
 SUPPORTED_KINDS = (
     "BUILD",
     "DESIGN",
@@ -58,7 +58,10 @@ SUPPORTED_KINDS = (
 
 # Contract identities reported in structured records.
 CONTRACT_LEGACY = "phase-first-plan-refs"
-CONTRACT_KIND_FIRST = "kind-first-kind-local-counters"
+CONTRACT_ALIGNED = "kind-first-phase-wide-aligned-suffix"
+# Compatibility alias for callers that consumed the old constant name. Its
+# value deliberately reports the restored contract, not the regressed model.
+CONTRACT_KIND_FIRST = CONTRACT_ALIGNED
 
 # The authoritative activation boundary, reported in structured records.
 ACTIVATION_BOUNDARY = "reviewed-tag-installed-fresh-runtime"
@@ -68,11 +71,24 @@ ACTIVATION_BOUNDARY = "reviewed-tag-installed-fresh-runtime"
 GOVERNED_ACTION = "numbering-governed"
 
 PLAN_REF_RE = re.compile(r"^([A-Z][A-Z0-9]*)-(\d{2})-(\d{3})$")
+SUPPORTED_PLAN_REF_RE = re.compile(
+    rf"^(?:{'|'.join(SUPPORTED_KINDS)})-\d{{2}}-\d{{3}}$"
+)
 PHASE_NAME_RE = re.compile(r"^PHASE-(\d{2})$")
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2})-(\d{3})$")
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 _PLAN_REF_HEADER_RE = re.compile(r"^Plan ref:\s*(.*)$")
+_PLAN_REFS_HEADER_RE = re.compile(r"^Plan refs?:\s*(.*)$")
 _PHASE_HEADER_RE = re.compile(r"^Phase:\s*(.*)$")
+_SPEC_HEADER_RE = re.compile(r"^Spec:\s*(.*)$")
+_PLAN_REF_TOKEN_RE = re.compile(
+    r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*-\d{2}-\d{3})(?![A-Z0-9-])"
+)
+_SPEC_ID_RE = re.compile(r"^SPEC-(\d{2})-(\d{3})$")
+_TASK_SCOPED_ID_RE = re.compile(
+    r"^(TASK|SPEC|PROMPT|REVIEW)-(\d{2})-(\d{3})$"
+)
+_REPORT_ID_RE = re.compile(r"^REPORT-(\d{2})-(\d{3})(?:-review)?$")
 
 _STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 
@@ -229,7 +245,7 @@ def evaluate_activation(
                 loaded.get("mcp_verification") or "unknown"
             )
             return state
-    state["contract"] = CONTRACT_KIND_FIRST
+    state["contract"] = CONTRACT_ALIGNED
     state["active"] = True
     state["reason"] = "active"
     return state
@@ -260,7 +276,7 @@ def classify_binding(
     Callers apply this only to newly governed work under the active contract —
     never to pre-activation artifacts, which remain valid unchanged. The
     verdict carries structured evidence: classification, blocking status,
-    both independent counters, and an actionable detail string.
+    both observed suffixes, and an actionable detail string.
 
     ``phase_header`` is the task body's declared ``Phase:`` value. When the
     caller supplies it (pass ``None`` only when no task body is in hand), the
@@ -274,7 +290,7 @@ def classify_binding(
         "task_id": task_id,
         "plan_ref": plan_ref,
         "phase_header": phase_header.strip() if phase_header else phase_header,
-        "contract": CONTRACT_KIND_FIRST,
+        "contract": CONTRACT_ALIGNED,
         "classification": "valid",
         "blocking": False,
         "task_counter": task["counter"] if task else None,
@@ -320,6 +336,16 @@ def classify_binding(
             f"names phase {ref['phase']}"
         )
         return verdict
+    if ref["counter"] != task["counter"]:
+        verdict["classification"] = "plan-task-suffix-mismatch"
+        verdict["blocking"] = True
+        verdict["detail"] = (
+            f"{task_id} requires plan ref suffix {task['phase']}-{task['counter']} "
+            f"but {plan_ref} carries {ref['phase']}-{ref['counter']}; use "
+            f"{ref['kind']}-{task['phase']}-{task['counter']} or allocate the "
+            "task from the governing plan ref"
+        )
+        return verdict
     if phase_header is not None:
         declared = phase_header.strip()
         if not declared:
@@ -350,10 +376,399 @@ def classify_binding(
             )
             return verdict
     verdict["detail"] = (
-        f"{task_id} binds {plan_ref} in phase {task['phase']}; task and "
-        "plan-ref counters are independent"
+        f"{task_id} binds {plan_ref}; both carry the plan-allocated suffix "
+        f"{task['phase']}-{task['counter']}"
     )
     return verdict
+
+
+def spec_header_value(content: str) -> Optional[str]:
+    """The task body's first ``Spec:`` header value, or ``None``."""
+    return _header_value(content, _SPEC_HEADER_RE)
+
+
+def plan_refs_header_value(content: str) -> Optional[str]:
+    """The first singular/plural plan-ref header in an artifact."""
+    return _header_value(content, _PLAN_REFS_HEADER_RE)
+
+
+def extract_plan_refs(content: str) -> Tuple[str, ...]:
+    """Return supported, grammar-valid plan refs in first-seen order."""
+    seen = set()
+    refs = []
+    for match in _PLAN_REF_TOKEN_RE.finditer(content):
+        value = match.group(1)
+        parsed = parse_plan_ref(value)
+        if parsed is None or not parsed["kind_supported"] or value in seen:
+            continue
+        seen.add(value)
+        refs.append(value)
+    return tuple(refs)
+
+
+def validate_plan_allocations(content: str) -> List[Dict[str, Any]]:
+    """Find conflicting phase-wide allocations in one plan projection.
+
+    Repeating the same ref in coverage tables is valid. Two different refs
+    carrying the same ``NN-NNN`` are not: work kind is classification, so the
+    suffix identifies exactly one phase allocation.
+    """
+    by_suffix: Dict[str, str] = {}
+    findings: List[Dict[str, Any]] = []
+    for plan_ref in extract_plan_refs(content):
+        parsed = parse_plan_ref(plan_ref)
+        assert parsed is not None
+        suffix = f"{parsed['phase']}-{parsed['counter']}"
+        prior = by_suffix.get(suffix)
+        if prior is not None and prior != plan_ref:
+            findings.append({
+                "classification": "plan-suffix-reused",
+                "blocking": True,
+                "suffix": suffix,
+                "plan_refs": [prior, plan_ref],
+                "detail": (
+                    f"phase suffix {suffix} is allocated by both {prior} and "
+                    f"{plan_ref}; allocate one phase-wide sequence across all "
+                    "work kinds"
+                ),
+            })
+        else:
+            by_suffix[suffix] = plan_ref
+    return findings
+
+
+def validate_phase_projection(
+    plan_content: str, phase_id: str, phase_content: str
+) -> List[Dict[str, Any]]:
+    """Validate that a phase file projects only its plan's allocations."""
+    phase = parse_phase_name(phase_id)
+    findings = validate_plan_allocations(plan_content)
+    plan_refs = set(extract_plan_refs(plan_content))
+    for plan_ref in extract_plan_refs(phase_content):
+        parsed = parse_plan_ref(plan_ref)
+        assert parsed is not None
+        if parsed["phase"] != phase:
+            findings.append({
+                "classification": "phase-plan-ref-mismatch",
+                "blocking": True,
+                "plan_ref": plan_ref,
+                "detail": f"{phase_id} cannot carry foreign-phase plan ref {plan_ref}",
+            })
+        elif plan_ref not in plan_refs:
+            findings.append({
+                "classification": "phase-plan-ref-unallocated",
+                "blocking": True,
+                "plan_ref": plan_ref,
+                "detail": (
+                    f"{phase_id} carries {plan_ref}, but IMPLEMENTATION_PLAN.md "
+                    "has not allocated that ref"
+                ),
+            })
+    return findings
+
+
+def _canonical_spec_id(raw: Optional[str]) -> Optional[str]:
+    value = (raw or "").strip()
+    if not value or value.lower() in {"none", "n/a"}:
+        return None
+    name = Path(value).name
+    if name.endswith(".md"):
+        name = name[:-3]
+    return name if _SPEC_ID_RE.fullmatch(name) else ""
+
+
+def _find_task_paths(project_root: Path, task_id: str) -> List[Path]:
+    paths = []
+    for status in _STATUS_DIRS:
+        candidate = Path(project_root) / "tasks" / status / f"{task_id}.md"
+        if candidate.is_file():
+            paths.append(candidate)
+    return paths
+
+
+def validate_task_trace(
+    project_root: Path,
+    task_id: str,
+    content: str,
+    *,
+    require_plan: bool = True,
+    require_phase: bool = True,
+    require_spec_file: bool = True,
+) -> List[Dict[str, Any]]:
+    """Validate the complete plan→task→spec trace for one governed task."""
+    findings: List[Dict[str, Any]] = []
+    plan_ref = plan_ref_header_value(content) or ""
+    verdict = classify_binding(task_id, plan_ref, phase_header_value(content) or "")
+    if verdict["blocking"]:
+        findings.append(verdict)
+        return findings
+
+    plan_path = Path(project_root) / "IMPLEMENTATION_PLAN.md"
+    if require_plan:
+        try:
+            plan_text = plan_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            findings.append({
+                "classification": "implementation-plan-unreadable",
+                "blocking": True,
+                "detail": f"IMPLEMENTATION_PLAN.md is missing or unreadable: {exc}",
+            })
+        else:
+            findings.extend(validate_plan_allocations(plan_text))
+            if plan_ref not in set(extract_plan_refs(plan_text)):
+                findings.append({
+                    "classification": "plan-ref-unallocated",
+                    "blocking": True,
+                    "plan_ref": plan_ref,
+                    "detail": (
+                        f"{plan_ref} is not an allocated plan ref in "
+                        "IMPLEMENTATION_PLAN.md; the plan must allocate the "
+                        "suffix before task-scoped artifacts are authored"
+                    ),
+                })
+    if require_phase:
+        anchor = verify_phase_anchor(
+            project_root, phase_header_value(content) or "", plan_ref
+        )
+        if anchor is not None:
+            findings.append({
+                "classification": anchor[0],
+                "blocking": True,
+                "detail": anchor[1],
+            })
+
+    task = parse_task_id(task_id)
+    assert task is not None
+    expected_spec = f"SPEC-{task['phase']}-{task['counter']}"
+    declared_spec = _canonical_spec_id(spec_header_value(content))
+    if declared_spec == "":
+        findings.append({
+            "classification": "spec-id-malformed",
+            "blocking": True,
+            "detail": (
+                f"{task_id} Spec: value must be {expected_spec}.md, none, or n/a"
+            ),
+        })
+    elif declared_spec is not None and declared_spec != expected_spec:
+        findings.append({
+            "classification": "task-spec-suffix-mismatch",
+            "blocking": True,
+            "task_id": task_id,
+            "spec_id": declared_spec,
+            "detail": (
+                f"{task_id} may reference only {expected_spec}.md; "
+                f"{declared_spec}.md breaks the plan-allocated suffix chain"
+            ),
+        })
+    elif declared_spec is not None and require_spec_file:
+        spec_path = Path(project_root) / "specs" / f"{declared_spec}.md"
+        if not spec_path.is_file():
+            findings.append({
+                "classification": "spec-file-missing",
+                "blocking": True,
+                "detail": f"declared spec file not found: specs/{declared_spec}.md",
+            })
+        else:
+            try:
+                spec_text = spec_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                findings.append({
+                    "classification": "spec-file-unreadable",
+                    "blocking": True,
+                    "detail": f"declared spec file unreadable: {exc}",
+                })
+            else:
+                spec_ref = plan_refs_header_value(spec_text)
+                if spec_ref != plan_ref:
+                    findings.append({
+                        "classification": "spec-plan-ref-mismatch",
+                        "blocking": True,
+                        "detail": (
+                            f"{declared_spec}.md must declare Plan ref: {plan_ref}; "
+                            f"observed {spec_ref or '<missing>'}"
+                        ),
+                    })
+    return findings
+
+
+def guard_spec_write(
+    project_root: Path,
+    spec_id: str,
+    content: str,
+    *,
+    creating: bool,
+    state: Optional[Dict[str, Any]] = None,
+) -> Optional[Tuple[str, str]]:
+    """Require a new spec to be owned by its one aligned governed task."""
+    state = activation_state() if state is None else state
+    if not state["active"]:
+        return None
+    match = _SPEC_ID_RE.fullmatch(spec_id)
+    if match is None:
+        return ("spec-id-malformed", f"invalid spec id: {spec_id}")
+    task_id = f"TASK-{match.group(1)}-{match.group(2)}"
+    paths = _find_task_paths(project_root, task_id)
+    governed = governed_task_ids(project_root)
+    if not creating and task_id not in governed:
+        return None
+    if len(paths) != 1:
+        return (
+            "spec-task-owner-missing" if not paths else "spec-task-owner-ambiguous",
+            f"{spec_id} requires exactly one owning {task_id}; found {len(paths)}",
+        )
+    try:
+        task_text = paths[0].read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return ("spec-task-owner-unreadable", f"cannot read {paths[0]}: {exc}")
+    findings = validate_task_trace(
+        project_root, task_id, task_text, require_spec_file=False
+    )
+    if findings:
+        return (findings[0]["classification"], findings[0]["detail"])
+    declared = _canonical_spec_id(spec_header_value(task_text))
+    if declared != spec_id:
+        return (
+            "spec-task-binding-missing",
+            f"{task_id} must declare Spec: {spec_id}.md before that spec is authored",
+        )
+    task_ref = plan_ref_header_value(task_text) or ""
+    spec_ref = plan_refs_header_value(content)
+    if spec_ref != task_ref:
+        return (
+            "spec-plan-ref-mismatch",
+            f"{spec_id} must declare Plan ref: {task_ref}; observed "
+            f"{spec_ref or '<missing>'}",
+        )
+    return None
+
+
+def guard_existing_task_trace(
+    project_root: Path,
+    task_path: Path,
+    *,
+    state: Optional[Dict[str, Any]] = None,
+) -> Optional[Tuple[str, str]]:
+    """Re-verify a governed task before a downstream artifact or movement."""
+    match = _TASK_FILENAME_RE.fullmatch(task_path.name)
+    if match is None or match.group(1) not in governed_task_ids(project_root):
+        return None
+    state = activation_state() if state is None else state
+    if not state["active"]:
+        return None
+    try:
+        content = task_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return ("task-unreadable", f"cannot read {task_path}: {exc}")
+    findings = validate_task_trace(project_root, match.group(1), content)
+    if findings:
+        return (findings[0]["classification"], findings[0]["detail"])
+    return None
+
+
+def guard_task_scoped_artifact(
+    project_root: Path,
+    task_path: Path,
+    artifact_id: str,
+    artifact_content: str = "",
+    *,
+    state: Optional[Dict[str, Any]] = None,
+) -> Optional[Tuple[str, str]]:
+    """Bind a downstream artifact id and any identity headers to its task."""
+    task_match = _TASK_FILENAME_RE.fullmatch(task_path.name)
+    if task_match is None or task_match.group(1) not in governed_task_ids(project_root):
+        return None
+    state = activation_state() if state is None else state
+    if not state["active"]:
+        return None
+    trace_refusal = guard_existing_task_trace(
+        project_root, task_path, state=state
+    )
+    if trace_refusal is not None:
+        return trace_refusal
+    task_id = task_match.group(1)
+    task = parse_task_id(task_id)
+    assert task is not None
+    expected_suffix = f"{task['phase']}-{task['counter']}"
+    stem = Path(artifact_id).stem
+    artifact_match = _TASK_SCOPED_ID_RE.fullmatch(stem)
+    report_match = _REPORT_ID_RE.fullmatch(stem)
+    if artifact_match is not None:
+        observed_suffix = f"{artifact_match.group(2)}-{artifact_match.group(3)}"
+    elif report_match is not None:
+        observed_suffix = f"{report_match.group(1)}-{report_match.group(2)}"
+    else:
+        return (
+            "artifact-id-malformed",
+            f"task-scoped artifact id is malformed: {artifact_id}",
+        )
+    if observed_suffix != expected_suffix:
+        return (
+            "artifact-task-suffix-mismatch",
+            f"{artifact_id} carries suffix {observed_suffix}, but {task_id} "
+            f"requires {expected_suffix}",
+        )
+    task_text = task_path.read_text(encoding="utf-8")
+    bound_ref = plan_ref_header_value(task_text) or ""
+    declared_ref = plan_ref_header_value(artifact_content)
+    if declared_ref is not None and declared_ref.strip().lower() != "n/a" and declared_ref != bound_ref:
+        return (
+            "artifact-plan-ref-mismatch",
+            f"{artifact_id} declares {declared_ref}, but {task_id} binds {bound_ref}",
+        )
+    target_match = re.search(r"^Target:\s*(\S+)\s*$", artifact_content, re.MULTILINE)
+    if target_match is not None:
+        target = Path(target_match.group(1)).stem
+        allowed = {task_id, f"SPEC-{expected_suffix}"}
+        if target not in allowed:
+            return (
+                "review-target-mismatch",
+                f"{artifact_id} targets {target}, but its suffix belongs to {task_id}",
+            )
+    return None
+
+
+def resolve_trace(project_root: Path, identifier: str) -> Dict[str, Any]:
+    """Resolve forward or backward task trace identity deterministically."""
+    raw = Path(identifier).name
+    stem = raw[:-3] if raw.endswith(".md") else raw
+    plan = parse_plan_ref(stem)
+    if plan is not None and plan["kind_supported"]:
+        suffix = f"{plan['phase']}-{plan['counter']}"
+        plan_ref = stem
+    else:
+        match = _TASK_SCOPED_ID_RE.fullmatch(stem) or _REPORT_ID_RE.fullmatch(stem)
+        if match is None:
+            raise ValueError(f"identifier is not task-scoped: {identifier!r}")
+        if len(match.groups()) == 3:
+            suffix = f"{match.group(2)}-{match.group(3)}"
+        else:
+            suffix = f"{match.group(1)}-{match.group(2)}"
+        plan_ref = None
+    task_id = f"TASK-{suffix}"
+    paths = _find_task_paths(project_root, task_id)
+    if len(paths) != 1:
+        raise ValueError(
+            f"trace for {identifier} requires exactly one {task_id}; found {len(paths)}"
+        )
+    task_text = paths[0].read_text(encoding="utf-8")
+    bound_ref = plan_ref_header_value(task_text) or ""
+    verdict = classify_binding(task_id, bound_ref, phase_header_value(task_text) or "")
+    if verdict["blocking"]:
+        raise ValueError(verdict["detail"])
+    if plan_ref is not None and bound_ref != plan_ref:
+        raise ValueError(f"{plan_ref} resolves by suffix to {task_id}, but it binds {bound_ref}")
+    declared_spec = _canonical_spec_id(spec_header_value(task_text))
+    return {
+        "suffix": suffix,
+        "plan_ref": bound_ref,
+        "task_id": task_id,
+        "task_path": str(paths[0].resolve()),
+        "spec_id": declared_spec,
+        "prompt_id": f"PROMPT-{suffix}",
+        "completion_report_id": f"REPORT-{suffix}",
+        "review_report_id": f"REPORT-{suffix}-review",
+        "review_id": f"REVIEW-{suffix}",
+    }
 
 
 def verify_phase_anchor(
@@ -365,9 +780,9 @@ def verify_phase_anchor(
     governed work after :func:`classify_binding` accepts the header
     comparison: the declared phase file must exist and carry the task's plan
     ref, per ``templates/TASK.md`` ("the matching phase file must carry the
-    same plan ref"). Authoring does not consume this — a task may be written
-    before its phase file — but a governed task is not ready until its
-    anchors resolve.
+    same plan ref"). Task authoring and every downstream readiness/lifecycle
+    surface consume the same check, so the plan and phase allocation must
+    exist before the task-scoped chain begins.
     """
     declared = (phase_header or "").strip()
     phase_relpath = f"phases/{declared}.md"
@@ -477,10 +892,10 @@ def record_governed_creation(
 ) -> bool:
     """Record that a task was newly created under the active contract.
 
-    Called by the mediated task writer after a successful post-activation
-    creation. Best-effort like every provenance append: a missed record
-    degrades to the task not being re-verified downstream — the write-time
-    guard has already enforced the contract for it — never to a false verdict.
+    Called by the mediated task writer immediately before a post-activation
+    creation. Unlike ordinary drift provenance, this boundary record is
+    required: the writer refuses before creating the task if it cannot persist
+    the marker, so newly authored work is never silently exempt downstream.
     """
     from cli.provenance import record_write
 
@@ -523,11 +938,18 @@ def guard_task_write(
         # The writer's schema gate already refused invalid UTF-8.
         content = content.decode("utf-8", errors="replace")
     plan_ref = plan_ref_header_value(content)
-    verdict = classify_binding(
-        task_id, plan_ref, phase_header_value(content) or ""
+    findings = validate_task_trace(
+        Path(project_root),
+        task_id,
+        content,
+        require_plan=True,
+        require_phase=True,
+        # Stage 4 authors the task first and then its declared spec. Readiness
+        # requires the file; task authoring requires the identity to align.
+        require_spec_file=False,
     )
-    if verdict["blocking"]:
-        return (verdict["classification"], verdict["detail"])
+    if findings:
+        return (findings[0]["classification"], findings[0]["detail"])
     duplicate = duplicate_binding(
         task_id, plan_ref, collect_task_plan_refs(project_root)
     )
