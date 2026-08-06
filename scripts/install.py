@@ -26,10 +26,11 @@ that behaves identically from PowerShell, cmd, Git Bash, zsh, or bash::
 Mechanics follow the STANDARDS.md "Build / Distribution" install-behavior
 table: tool-shipped paths (``protocol/``, ``templates/``, ``skills/``,
 ``wrappers/``, ``bin/cartopian``, ``bin/cartopian.cmd``, ``cli/``,
-``CHANGELOG.md``) are symlinked or copied from the source repo and
-replaced on upgrade; operator-owned paths (``cartopian.toml``,
-``projects.json``) are seeded on first install and never overwritten
-thereafter.
+``CHANGELOG.md``) are copied from the source repo and replaced on
+upgrade; operator-owned paths (``cartopian.toml``, ``projects.json``)
+are seeded on first install and never overwritten thereafter. The
+install itself is planned and applied by ``cli.install_workflow``
+loaded from the source tree; this script is the bootstrap around it.
 
 ``bin/cartopian.cmd`` is the native-Windows PATH shim that forwards to
 the extensionless ``bin/cartopian`` Python entrypoint via the system
@@ -37,14 +38,10 @@ the extensionless ``bin/cartopian`` Python entrypoint via the system
 ``.cmd`` files are not in ``PATHEXT``); the install root is single-tree
 across platforms and tests assume the shim is present.
 
-The canonical V1 install path is a manual ``git clone + symlink``; this
-script is a zero-extra-dependency helper that performs that flow uniformly
-across platforms. It requires Python 3.11+ and invokes no package managers
-or ``pip install``.
-
-Re-running the script after ``git pull`` in the source repo is the
-upgrade flow: symlink targets resolve automatically; copies are
-refreshed in place; operator-owned files are preserved.
+The script requires Python 3.11+ and invokes no package managers or
+``pip install``. Re-running it after ``git pull`` in the source repo is
+the upgrade flow: tool-shipped copies are refreshed in place;
+operator-owned files are preserved.
 """
 from __future__ import annotations
 
@@ -67,37 +64,9 @@ EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_BAD_PYTHON = 3
 
-# Tool-shipped paths: (target_name_in_install_root, source_path_in_repo).
-# "replace on upgrade" — these are re-created every install run.
-TOOL_SHIPPED: Tuple[Tuple[str, str], ...] = (
-    ("protocol", "protocol"),
-    ("templates", "templates"),
-    ("skills", "skills"),
-    ("wrappers", "wrappers"),
-    ("cli", "cli"),
-    ("mcp_server", "mcp_server"),
-    ("bin/cartopian", "bin/cartopian"),
-    ("bin/cartopian.cmd", "bin/cartopian.cmd"),
-    ("bin/cartopian-mcp", "bin/cartopian-mcp"),
-    ("bin/cartopian-mcp.cmd", "bin/cartopian-mcp.cmd"),
-    ("install-cartopian.md", "install-cartopian.md"),
-    # Ship the installer itself so upgrades need no bootstrap download:
-    # the next upgrade is `<python> <root>/scripts/install.py --from-github`.
-    ("scripts/install.py", "scripts/install.py"),
-    ("CHANGELOG.md", "protocol/CHANGELOG.md"),
-)
-
-# CHANGELOG.md is documented as "copy" (not "copy or symlink") in the
-# install-behavior table — keep it a real copy even in symlink mode so
-# upgrades replace its content rather than chasing a symlink that already
-# lives inside ``protocol/``.
-COPY_ALWAYS = frozenset({"CHANGELOG.md"})
-
-# Operator-owned paths: seeded only if absent, never overwritten.
-OPERATOR_TOML = "cartopian.toml"
+# Operator-owned registry, seeded by the coordinated workflow and read here
+# by the project-schema reconciliation gate.
 OPERATOR_REGISTRY = "projects.json"
-GLOBAL_TOML_TEMPLATE = "templates/global.cartopian.toml"
-EMPTY_REGISTRY = "[]\n"  # empty registry initialised as a JSON empty array.
 
 MIN_PYTHON = (3, 11)
 
@@ -144,105 +113,6 @@ def _resolve_source_root(explicit: Optional[Path]) -> Path:
             "        pass --source <path> if the script is run outside the repo."
         )
     return root
-
-
-def _atomic_remove(path: Path) -> None:
-    """Remove a file, directory, or symlink at ``path`` if present."""
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-        return
-    if path.is_dir():
-        shutil.rmtree(path)
-
-
-def _install_one(
-    install_root: Path,
-    target_rel: str,
-    source: Path,
-    mode: str,
-    actions: List[str],
-) -> None:
-    target = install_root / target_rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    # CHANGELOG.md is always a real copy per the install-behavior table.
-    effective_mode = "copy" if target_rel in COPY_ALWAYS else mode
-
-    if effective_mode == "symlink":
-        if target.is_symlink():
-            try:
-                current = os.readlink(target)
-            except OSError:
-                current = None
-            if current and Path(current) == source:
-                actions.append(f"unchanged  symlink  {target_rel} -> {source}")
-                return
-        _atomic_remove(target)
-        try:
-            os.symlink(str(source), str(target), target_is_directory=source.is_dir())
-        except OSError as exc:
-            # Native Windows without Developer Mode / admin: symlink creation
-            # may fail. Surface a clear error pointing at --mode copy.
-            raise SystemExit(
-                f"[error] failed to create symlink {target} -> {source}: {exc}\n"
-                "        On native Windows, enable Developer Mode or re-run\n"
-                "        with --mode copy."
-            )
-        actions.append(f"linked     {target_rel} -> {source}")
-        return
-
-    # copy mode
-    _atomic_remove(target)
-    if source.is_dir():
-        shutil.copytree(source, target, symlinks=False)
-    else:
-        shutil.copy2(source, target)
-    actions.append(f"copied     {target_rel} <- {source}")
-
-
-def _seed_operator_files(install_root: Path, source_root: Path, actions: List[str]) -> None:
-    toml_target = install_root / OPERATOR_TOML
-    if toml_target.exists():
-        actions.append(f"preserved  {OPERATOR_TOML}")
-    else:
-        template = source_root / GLOBAL_TOML_TEMPLATE
-        if not template.exists():
-            raise SystemExit(
-                f"[error] global TOML template missing at {template}"
-            )
-        shutil.copy2(template, toml_target)
-        actions.append(f"seeded     {OPERATOR_TOML} <- {template}")
-
-    registry_target = install_root / OPERATOR_REGISTRY
-    if registry_target.exists():
-        actions.append(f"preserved  {OPERATOR_REGISTRY}")
-    else:
-        registry_target.write_text(EMPTY_REGISTRY, encoding="utf-8")
-        actions.append(f"seeded     {OPERATOR_REGISTRY} (empty array)")
-
-
-def install(
-    source_root: Path,
-    install_root: Path,
-    mode: str = "symlink",
-) -> List[str]:
-    """Perform install or upgrade; return human-readable action log."""
-    if mode not in ("symlink", "copy"):
-        raise ValueError(f"unknown mode: {mode!r}")
-
-    install_root.mkdir(parents=True, exist_ok=True)
-    actions: List[str] = []
-
-    for target_rel, source_rel in TOOL_SHIPPED:
-        source = source_root / source_rel
-        if not source.exists():
-            raise SystemExit(
-                f"[error] expected source path missing: {source}"
-            )
-        _install_one(install_root, target_rel, source, mode, actions)
-
-    _seed_operator_files(install_root, source_root, actions)
-    return actions
 
 
 # --- GitHub self-bootstrap (--from-github) ---------------------------------
@@ -340,6 +210,21 @@ def fetch_github_source(tarball_url: str, workdir: Path) -> Path:
 
 
 def write_version_marker(install_root: Path, ref: str, actions: List[str]) -> None:
+    """Record the installed-ref receipt, only for a ref the reader honors.
+
+    ``cli.version_identities`` reads ``VERSION`` under a closed grammar
+    (release tags, plus the literal ``main`` fallback). Persisting any other
+    token would write a receipt the reader rejects as malformed, so a
+    non-conforming ref is reported and left unrecorded instead. The import
+    resolves from the source tree ``main()`` placed on ``sys.path``.
+    """
+    from cli.version_identities import is_receipt_ref
+
+    if not is_receipt_ref(ref):
+        actions.append(
+            f"skipped    VERSION marker: ref {ref!r} is not a release tag or main"
+        )
+        return
     (install_root / "VERSION").write_text(f"{ref}\n", encoding="utf-8")
     actions.append(f"recorded   VERSION = {ref}")
 
@@ -675,20 +560,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="cartopian source repo root (default: the repo containing this script).",
     )
     p.add_argument(
-        "--mode",
-        choices=("symlink", "copy"),
-        default=None,
-        help=(
-            "how to materialize tool-shipped paths (default: symlink; "
-            "--from-github implies copy)."
-        ),
-    )
-    p.add_argument(
         "--from-github",
         action="store_true",
         help=(
             "download the source from GitHub (latest release, or --ref) instead "
-            "of installing from a local repo; implies --mode copy."
+            "of installing from a local repo."
         ),
     )
     p.add_argument(
@@ -789,7 +665,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             (
                 args.prefix is not None,
                 args.source is not None,
-                args.mode is not None,
                 args.from_github,
                 args.ref is not None,
                 args.patch_path,
@@ -818,12 +693,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_OK
     if args.from_github and args.source is not None:
         parser.error("--from-github and --source are mutually exclusive")
-    mode = args.mode or ("copy" if args.from_github else "symlink")
-    if args.from_github and mode == "symlink":
-        parser.error(
-            "--from-github requires copy mode "
-            "(the downloaded source is deleted after install)"
-        )
     install_root = (args.prefix or default_install_root()).expanduser().resolve()
 
     workdir: Optional[Path] = None
@@ -866,7 +735,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 source_root=source_root,
                 install_root=install_root,
                 operation=operation,
-                mode=mode,
                 clients=tuple(args.client),
                 decisions=decisions,
                 release_ref=ref,
@@ -928,7 +796,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.quiet:
         for line in actions:
             print(line)
-    print(f"cartopian installed at {install_root} (mode={mode}).")
+    print(f"cartopian installed at {install_root}.")
     if workflow_result["outcome"]["status"] == "complete-qualified":
         print(
             "cartopian install/update result is qualified; see "

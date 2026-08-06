@@ -2,8 +2,7 @@
 
 End-to-end install on a clean home dir produces the minimum layout;
 simulated upgrade preserves the operator-authored ``cartopian.toml`` and
-a registered ``projects.json``. Tests cover both symlink (canonical) and
-copy modes.
+a registered ``projects.json``. Every install is a copy install.
 """
 import importlib.util
 import json
@@ -53,31 +52,39 @@ class _InstallTestBase(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.install_root = Path(self.tmp.name) / ".cartopian"
 
+    def run_script(self, *extra: str) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--source",
+                str(REPO_ROOT),
+                "--prefix",
+                str(self.install_root),
+                *extra,
+            ],
+            capture_output=True,
+            text=True,
+        )
 
-class InstallSymlinkTests(_InstallTestBase):
-    def test_first_install_creates_full_layout(self) -> None:
-        actions = install_mod.install(REPO_ROOT, self.install_root, mode="symlink")
 
-        # Tool-shipped paths present and (except CHANGELOG.md) are symlinks
-        # pointing back at the source repo.
+class InstallCopyTests(_InstallTestBase):
+    def test_first_install_copies_full_layout(self) -> None:
+        result = self.run_script("--quiet")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
         for target_rel in TOOL_SHIPPED_TARGETS:
             target = self.install_root / target_rel
             self.assertTrue(target.exists(), f"missing {target_rel}")
-            if target_rel == "CHANGELOG.md":
-                self.assertFalse(target.is_symlink(), "CHANGELOG.md must be a real copy")
-            else:
-                self.assertTrue(target.is_symlink(), f"{target_rel} must be a symlink")
+            self.assertFalse(
+                target.is_symlink(),
+                f"{target_rel} must be a real copy",
+            )
 
-        # bin/cartopian resolves to the repo entrypoint.
-        bin_link = self.install_root / "bin" / "cartopian"
-        self.assertEqual(
-            Path(os.readlink(bin_link)).resolve(),
-            (REPO_ROOT / "bin" / "cartopian").resolve(),
-        )
-
-        # cli symlink covers the _vendor/tomli_w.py file.
+        # cli/_vendor/tomli_w.py copied into place.
         vendor = self.install_root / "cli" / "_vendor" / "tomli_w.py"
-        self.assertTrue(vendor.exists(), "cli/_vendor/tomli_w.py must resolve via symlink")
+        self.assertTrue(vendor.is_file())
+        self.assertFalse(vendor.is_symlink())
 
         # CHANGELOG.md is a real copy of repo protocol/CHANGELOG.md.
         installed_changelog = (self.install_root / "CHANGELOG.md").read_text()
@@ -94,123 +101,56 @@ class InstallSymlinkTests(_InstallTestBase):
         self.assertEqual(registry_text, "[]\n")
         self.assertEqual(json.loads(registry_text), [])
 
-        # Action log records seeded operator paths.
-        self.assertTrue(any("seeded     cartopian.toml" in a for a in actions))
-        self.assertTrue(any("seeded     projects.json" in a for a in actions))
+    def test_upgrade_replaces_tool_shipped_preserves_operator(self) -> None:
+        result = self.run_script("--quiet")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
 
-    def test_upgrade_preserves_operator_owned_files(self) -> None:
-        # First install creates the layout.
-        install_mod.install(REPO_ROOT, self.install_root, mode="symlink")
+        # Simulate operator state. The registered project must carry a real,
+        # current config: the script's reconciliation gate reads every
+        # registered project and fails closed on an unreadable one.
+        import re
 
-        # Operator edits cartopian.toml (e.g., uncomments a key) and registers
-        # a project in projects.json.
-        operator_toml = self.install_root / "cartopian.toml"
-        operator_toml.write_text(
-            '[automation]\nconfirmation = "until-blocked"\n',
+        changelog = (REPO_ROOT / "protocol" / "CHANGELOG.md").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r"^### (v[0-9][^\s]*)\s", changelog, flags=re.MULTILINE)
+        assert match is not None
+        target_schema = match.group(1)
+        project_dir = Path(self.tmp.name) / "project-x"
+        project_dir.mkdir()
+        (project_dir / "cartopian.toml").write_text(
+            "[project]\n"
+            'id = "x"\n'
+            'name = "x"\n'
+            f'project_schema_version = "{target_schema}"\n',
             encoding="utf-8",
         )
-        registry = self.install_root / "projects.json"
-        registry.write_text(
-            json.dumps(
-                [{"id": "demo", "path": "/abs/path/to/demo"}],
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-
-        # Simulated upgrade (re-run the installer; equivalent to `git pull`
-        # then a no-op re-link).
-        actions = install_mod.install(REPO_ROOT, self.install_root, mode="symlink")
-
-        # Operator-owned files are byte-identical to what the operator wrote.
-        self.assertEqual(
-            operator_toml.read_text(),
-            '[automation]\nconfirmation = "until-blocked"\n',
-        )
-        self.assertEqual(
-            json.loads(registry.read_text()),
-            [{"id": "demo", "path": "/abs/path/to/demo"}],
-        )
-
-        # Action log says "preserved" for both, not "seeded".
-        self.assertTrue(any("preserved  cartopian.toml" in a for a in actions))
-        self.assertTrue(any("preserved  projects.json" in a for a in actions))
-
-        # Tool-shipped symlinks still resolve to the source repo.
-        for target_rel in TOOL_SHIPPED_TARGETS:
-            if target_rel == "CHANGELOG.md":
-                continue
-            target = self.install_root / target_rel
-            self.assertTrue(target.is_symlink())
-            resolved = Path(os.readlink(target)).resolve()
-            expected = (REPO_ROOT / target_rel).resolve()
-            # Special case: ``bin/cartopian`` source rel matches its target rel.
-            self.assertEqual(resolved, expected)
-
-    def test_upgrade_repairs_stale_tool_shipped_symlink(self) -> None:
-        install_mod.install(REPO_ROOT, self.install_root, mode="symlink")
-
-        # Operator (or a corrupted file system) replaces the cli/ symlink with
-        # a stale one pointing somewhere else.
-        cli_link = self.install_root / "cli"
-        cli_link.unlink()
-        stale_target = Path(self.tmp.name) / "stale-cli"
-        stale_target.mkdir()
-        os.symlink(str(stale_target), str(cli_link), target_is_directory=True)
-
-        actions = install_mod.install(REPO_ROOT, self.install_root, mode="symlink")
-        # Now points back at the repo cli/.
-        self.assertEqual(
-            Path(os.readlink(cli_link)).resolve(),
-            (REPO_ROOT / "cli").resolve(),
-        )
-        self.assertTrue(any("linked     cli ->" in a for a in actions))
-
-
-class InstallCopyTests(_InstallTestBase):
-    def test_first_install_copy_mode(self) -> None:
-        install_mod.install(REPO_ROOT, self.install_root, mode="copy")
-
-        for target_rel in TOOL_SHIPPED_TARGETS:
-            target = self.install_root / target_rel
-            self.assertTrue(target.exists())
-            self.assertFalse(
-                target.is_symlink(),
-                f"{target_rel} must be a real copy in copy mode",
-            )
-
-        # cli/_vendor/tomli_w.py copied into place.
-        vendor = self.install_root / "cli" / "_vendor" / "tomli_w.py"
-        self.assertTrue(vendor.is_file())
-        self.assertFalse(vendor.is_symlink())
-
-        # Operator-owned seeds still applied.
-        self.assertEqual((self.install_root / "projects.json").read_text(), "[]\n")
-
-    def test_upgrade_copy_replaces_tool_shipped_preserves_operator(self) -> None:
-        install_mod.install(REPO_ROOT, self.install_root, mode="copy")
-
-        # Simulate operator state.
         operator_toml = self.install_root / "cartopian.toml"
         operator_toml.write_text("# operator override\n", encoding="utf-8")
         registry = self.install_root / "projects.json"
-        registry.write_text('[{"id":"x","path":"/p"}]\n', encoding="utf-8")
+        registry_content = (
+            json.dumps([{"id": "x", "path": str(project_dir)}]) + "\n"
+        )
+        registry.write_text(registry_content, encoding="utf-8")
 
         # Operator scribbles inside a tool-shipped copy. Upgrade must replace.
         drifted = self.install_root / "skills" / "DRIFT.md"
         drifted.write_text("drift", encoding="utf-8")
 
-        actions = install_mod.install(REPO_ROOT, self.install_root, mode="copy")
+        result = self.run_script("--quiet")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
 
         # Tool-shipped copy refreshed: drift file gone, replaced by upstream.
         self.assertFalse(drifted.exists(), "tool-shipped path must be replaced on upgrade")
 
         # Operator-owned files preserved.
         self.assertEqual(operator_toml.read_text(), "# operator override\n")
-        self.assertEqual(registry.read_text(), '[{"id":"x","path":"/p"}]\n')
-        self.assertTrue(any("preserved  cartopian.toml" in a for a in actions))
-        self.assertTrue(any("preserved  projects.json" in a for a in actions))
+        self.assertEqual(registry.read_text(), registry_content)
+
+    def test_mode_flag_is_removed(self) -> None:
+        result = self.run_script("--mode", "copy")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unrecognized arguments", result.stderr)
 
 
 class InstallScriptInvocationTests(_InstallTestBase):
@@ -292,8 +232,24 @@ class VersionMarkerTests(_InstallTestBase):
         )
 
     def test_no_ref_leaves_version_untouched(self) -> None:
-        install_mod.install(REPO_ROOT, self.install_root, mode="copy")
+        result = self.run_script("--quiet")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertFalse((self.install_root / "VERSION").exists())
+
+    def test_non_receipt_ref_is_reported_and_not_recorded(self) -> None:
+        # The receipt grammar is enforced at the writer: a branch ref other
+        # than ``main`` must never persist a marker the reader rejects.
+        result = self.run_script("--ref", "local-writer-fix")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertFalse((self.install_root / "VERSION").exists())
+        self.assertIn("skipped    VERSION marker", result.stdout)
+
+    def test_main_branch_ref_is_recorded(self) -> None:
+        result = self.run_script("--ref", "main", "--quiet")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(
+            (self.install_root / "VERSION").read_text(), "main\n"
+        )
 
 
 class GithubBootstrapTests(_InstallTestBase):
@@ -351,23 +307,6 @@ class GithubBootstrapTests(_InstallTestBase):
             root = install_mod.fetch_github_source("https://example/tarball", workdir)
         self.assertEqual(root.name, "fidensa-cartopian-abc123")
         self.assertTrue((root / "bin" / "cartopian").is_file())
-
-    def test_from_github_rejects_symlink_mode(self) -> None:
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(SCRIPT),
-                "--from-github",
-                "--mode",
-                "symlink",
-                "--prefix",
-                str(self.install_root),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("copy mode", result.stderr)
 
     def test_from_github_rejects_source(self) -> None:
         result = subprocess.run(

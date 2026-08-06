@@ -79,7 +79,7 @@ Request evidence: none
 
 - Review ID: REVIEW-01-003
 - Prompt path: {root / 'prompts' / 'PROMPT-01-003.md'}
-- Task path: {root / 'tasks' / 'in-review' / 'TASK-01-003-demo.md'}
+- Task path: {root / 'tasks' / 'in-review' / 'TASK-01-003.md'}
 - Review file path: {root / 'reviews' / 'REVIEW-01-003.md'}
 
 ## Evidence reviewed
@@ -100,7 +100,7 @@ def _config() -> str:
     return """[project]
 id = "split-report-contract"
 name = "split-report-contract"
-project_schema_version = "v0.9.0"
+project_schema_version = "v0.10.0"
 
 [roles.coder]
 description = "Implements tasks."
@@ -124,10 +124,10 @@ task_role = "reviewer"
 
 def _task(scaffold, status: str = "in-review") -> Path:
     return scaffold.write(
-        f"tasks/{status}/TASK-01-003-demo.md",
+        f"tasks/{status}/TASK-01-003.md",
         """# TASK-01-003: Demo
 
-Phase: PHASE-01-demo
+Phase: PHASE-01
 Plan ref: BUILD-01-003
 Work root: tool-repo
 Assignee: coder
@@ -1002,7 +1002,7 @@ def test_close_audit_and_cleanup_reject_malformed_report_names_in_parity(capsys)
 def test_task_bundle_emits_both_task_report_identities(capsys):
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path = _task(scaffold, "open")
-        scaffold.write("phases/PHASE-01-demo.md", "# PHASE-01: Demo\n")
+        scaffold.write("phases/PHASE-01.md", "# PHASE-01: Demo\n")
         args = argparse.Namespace(task_path=str(task_path))
         rc = task_bundle.handler(args)
 
@@ -1055,10 +1055,10 @@ def test_planning_review_report_identity_is_unchanged():
     from cli import report_identity
 
     assert (
-        report_identity.variant_for_report_name("REPORT-PLAN-001-baseline.md")
+        report_identity.variant_for_report_name("REPORT-PLAN-001.md")
         == "planning-review"
     )
-    assert delete_report.REPORT_FILENAME_RE.match("REPORT-PLAN-001-baseline.md")
+    assert delete_report.REPORT_FILENAME_RE.match("REPORT-PLAN-001.md")
     # A planning slug ending in "-review" stays a planning identity; the task
     # grammar's -review marker binds only to the NN-NNN form.
     assert (

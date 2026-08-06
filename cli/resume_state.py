@@ -178,7 +178,6 @@ _DIAGNOSIS_BY_SURFACE_STATE: "OrderedDict[str, str]" = OrderedDict(
         ("not-applicable", "current"),
         ("stale", "stale"),
         ("dirty", "stale"),
-        ("symlink-divergent", "stale"),
         ("missing", "missing"),
         ("declined", "declined"),
         ("deferred", "pending"),

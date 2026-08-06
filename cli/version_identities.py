@@ -123,6 +123,57 @@ def _ref_marker(root: Path, name: str) -> Optional[str]:
     return token
 
 
+def is_release_tag(value: Optional[str]) -> bool:
+    """Return whether ``value`` is a release tag as the installer records one.
+
+    Single source of truth for the release-ref grammar. Every writer that
+    records a release claim and every reader that honors one must agree on it;
+    when they diverge, a persisted row asserts a release version that no reader
+    will accept, and the disagreement surfaces to the operator as an
+    unexplained ``unknown``.
+    """
+    return value is not None and _RELEASE_TAG.match(value) is not None
+
+
+def is_receipt_ref(value: Optional[str]) -> bool:
+    """Return whether ``value`` is a ref the ``VERSION`` receipt may carry.
+
+    Single source of truth for the receipt grammar: release tags plus the
+    literal ``main`` fallback. ``scripts/install.py`` writes the marker only
+    through this predicate and ``_install_receipt`` reads it through the same
+    one, so a token outside the grammar genuinely cannot be an installer
+    receipt.
+    """
+    return value is not None and (
+        value in _RECEIPT_BRANCH_REFS or is_release_tag(value)
+    )
+
+
+def observed_release_marker(root: Path) -> Tuple[Optional[str], str]:
+    """Report the release marker observed at ``root``, for explanation only.
+
+    ``release_version`` withholds a claim for anything outside the release-tag
+    grammar, which is correct but says nothing about *what* was installed. This
+    returns the token actually on disk together with why it was not honored, so
+    an operator reading ``unknown`` can see the cause without reading this
+    module. The token is provenance for a withheld claim, never a claim itself:
+    callers must not promote it to a release version.
+    """
+    for name in ("RELEASE_VERSION", "VERSION"):
+        path = root / name
+        if not path.is_symlink() and not path.exists():
+            continue
+        token = _ref_marker(root, name)
+        if token is None:
+            return None, "malformed"
+        if is_release_tag(token):
+            return token, "release-tag"
+        if token in _RECEIPT_BRANCH_REFS:
+            return token, "branch-ref"
+        return token, "non-release-ref"
+    return None, "absent"
+
+
 def _git(root: Path, *args: str) -> Optional[str]:
     if not (root / ".git").exists():
         return None
@@ -195,22 +246,6 @@ def _content_digest(
             digest.update(payload)
     identity = "sha256:" + digest.hexdigest() if found and complete else None
     return identity, complete
-
-
-def _contains_symlink(root: Path, paths: Sequence[str]) -> bool:
-    """Report whether a surface set is materialized through any symlink."""
-    for relative in paths:
-        path = root / relative
-        try:
-            if path.is_symlink():
-                return True
-            if path.is_dir() and any(
-                child.is_symlink() for child in path.rglob("*")
-            ):
-                return True
-        except OSError:
-            return True
-    return False
 
 
 def _digest_field(row: Mapping[str, Any], name: str) -> Tuple[Optional[str], bool]:
@@ -495,9 +530,7 @@ def _install_receipt(root: Path) -> Tuple[Optional[str], str]:
     if not path.is_symlink() and not path.exists():
         return None, "absent"
     token = _ref_marker(root, "VERSION")
-    if token is None:
-        return None, "malformed"
-    if token not in _RECEIPT_BRANCH_REFS and not _RELEASE_TAG.match(token):
+    if token is None or not is_receipt_ref(token):
         return None, "malformed"
     return token, "known"
 
@@ -533,7 +566,7 @@ def release_version(root: Path) -> Dict[str, Any]:
         ("VERSION", "installed-release-marker"),
     ):
         value = _ref_marker(root, name)
-        if value is None or not _RELEASE_TAG.match(value):
+        if not is_release_tag(value):
             continue
         return {
             "value": value,
@@ -541,13 +574,18 @@ def release_version(root: Path) -> Dict[str, Any]:
             "authority": identity_contract()["release_version"]["authority"],
             "verification": "verified",
             "attribution": attribution,
+            "observed_ref": value,
+            "observed_ref_state": "release-tag",
         }
+    observed_ref, observed_ref_state = observed_release_marker(root)
     return {
         "value": None,
         "state": "unknown",
         "authority": identity_contract()["release_version"]["authority"],
         "verification": "unknown",
         "attribution": "unavailable",
+        "observed_ref": observed_ref,
+        "observed_ref_state": observed_ref_state,
     }
 
 
@@ -602,9 +640,7 @@ def installed_content(root: Path) -> Dict[str, Any]:
     revision = _git(loaded_root, "rev-parse", "HEAD")
     status = _git(loaded_root, "status", "--porcelain")
     recorded_ref, receipt_state = _install_receipt(logical_root)
-    if logical_root.is_symlink():
-        materialization = "symlink"
-    elif (loaded_root / ".git").exists():
+    if (loaded_root / ".git").exists():
         materialization = "source-checkout"
     else:
         materialization = "copy"
@@ -612,13 +648,10 @@ def installed_content(root: Path) -> Dict[str, Any]:
     mcp = mcp_content_identity(logical_root)
     mcp_complete = mcp["completeness"] == "complete"
     revision_attribution = "git-revision" if revision is not None else "unavailable"
-    # Git and symlink-divergence verdicts already speak for the whole loaded
-    # tree; only the copy path derives a separately attributed MCP verdict.
+    # A git verdict already speaks for the whole loaded tree; only the
+    # digest path derives a separately attributed MCP verdict.
     mcp_verification: Optional[str] = None
-    if logical_root.is_symlink() and logical_root != loaded_root:
-        verification = "symlink-divergent"
-        evidence = "symlink-target-divergence"
-    elif revision is not None and status:
+    if revision is not None and status:
         verification = "dirty"
         evidence = "git-worktree-modified"
     elif revision is not None:
@@ -630,16 +663,8 @@ def installed_content(root: Path) -> Dict[str, Any]:
         state = evidence["status"]
         recorded_identity = evidence["installed_identity"]
         recorded_mcp = evidence["mcp_identity"]
-        # A recorded identity digests link targets, not the content behind
-        # them, so it is only comparable with copied content.
-        comparable = state == _STATE_PRESENT and not _contains_symlink(
-            logical_root, INSTALLED_CONTENT_PATHS
-        )
-        mcp_comparable = (
-            state == _STATE_PRESENT
-            and recorded_mcp is not None
-            and not _contains_symlink(logical_root, MCP_CONTENT_PATHS)
-        )
+        comparable = state == _STATE_PRESENT
+        mcp_comparable = state == _STATE_PRESENT and recorded_mcp is not None
         if identity is not None:
             revision = identity
             revision_attribution = "installed-content-digest"
@@ -659,10 +684,8 @@ def installed_content(root: Path) -> Dict[str, Any]:
             verification = "verified"
             evidence = "install-state-record"
         elif recorded_ref is not None:
-            # No comparable digest record (absent, or a symlink materialization
-            # whose recorded links cannot be compared with resolved content):
-            # the receipt plus a complete surface set is the weaker evidence
-            # class an ordinary install carries.
+            # No digest record at all: the receipt plus a complete surface
+            # set is the weaker evidence class an ordinary install carries.
             verification = "verified"
             evidence = "recorded-install-content"
         elif receipt_state == "malformed":
@@ -707,9 +730,7 @@ def running_server(
     """Identify the connected process and the content it loaded."""
     verification = content.get("mcp_verification", "unknown")
     completeness = content.get("mcp_completeness", "unknown")
-    if verification == "symlink-divergent":
-        state = "stale-runtime"
-    elif completeness != "complete":
+    if completeness != "complete":
         state = "unknown"
     elif verification == "verified":
         state = "current"

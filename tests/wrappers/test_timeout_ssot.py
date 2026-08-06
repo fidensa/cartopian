@@ -142,7 +142,7 @@ def _handoff_packet_project(tmp_path: Path, toml_body: str, task_id: str):
     )
     tasks = root / "tasks" / "in-progress"
     tasks.mkdir(parents=True)
-    task = tasks / f"TASK-{task_id}-demo.md"
+    task = tasks / f"TASK-{task_id}.md"
     task.write_text("# Demo task\n", encoding="utf-8")
     return root, task
 
@@ -161,7 +161,7 @@ def test_launcher_resolves_configured_timeout(tmp_path):
         '[project]\n'
         'id = "timeout-probe"\n'
         'name = "Timeout Probe"\n'
-        'project_schema_version = "v0.9.0"\n'
+        'project_schema_version = "v0.10.0"\n'
         '\n'
         '[roles.coder]\n'
         'description = "Implements tasks."\n'

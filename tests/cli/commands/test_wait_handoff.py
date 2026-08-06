@@ -39,7 +39,7 @@ def _write(path: Path, text: str) -> None:
 CONFIG_BODY = """[project]
 id = "wait-handoff-fixture"
 name = "Wait Handoff Fixture"
-project_schema_version = "v0.9.0"
+project_schema_version = "v0.10.0"
 
 [roles.coder]
 description = "Implements tasks per spec."
@@ -51,7 +51,7 @@ timeout = "{timeout}"
 CONFIG_NO_TIMEOUT = """[project]
 id = "wait-handoff-fixture"
 name = "Wait Handoff Fixture"
-project_schema_version = "v0.9.0"
+project_schema_version = "v0.10.0"
 
 [roles.coder]
 description = "Implements tasks per spec."
@@ -61,7 +61,7 @@ auto_launch = ["task_run"]
 
 TASK_BODY = """# TASK-01-003: Implement wait-handoff CLI command
 
-Phase: PHASE-01-stdio-wait-primitives
+Phase: PHASE-01
 Plan ref: BUILD-01-003
 Work root: tool-repo
 Assignee: coder
@@ -77,7 +77,7 @@ ACCEPTED_REPORT = "\n".join(
         "",
         "- Task ID: TASK-01-003",
         "- Prompt path: /tmp/PROMPT-01-003.md",
-        "- Task path: /tmp/TASK-01-003-wait-handoff.md",
+        "- Task path: /tmp/TASK-01-003.md",
         "- Work root: tool-repo",
         "",
         "## Files changed",
@@ -115,8 +115,8 @@ def _make_project(tmp_path: Path, config_body: str = None) -> Path:
     body = config_body if config_body is not None else CONFIG_BODY.format(timeout="60m")
     _write(project / "cartopian.toml", body)
     _write(project / "IMPLEMENTATION_PLAN.md", "# Plan\n")
-    _write(project / "phases" / "PHASE-01-stdio-wait-primitives.md", "# Phase\n")
-    task_path = project / "tasks" / "in-progress" / "TASK-01-003-wait-handoff.md"
+    _write(project / "phases" / "PHASE-01.md", "# Phase\n")
+    task_path = project / "tasks" / "in-progress" / "TASK-01-003.md"
     _write(task_path, TASK_BODY)
     return task_path
 

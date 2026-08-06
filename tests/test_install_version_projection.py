@@ -16,7 +16,6 @@ installed copy.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import re
@@ -44,31 +43,20 @@ from cli.version_identities import (  # noqa: E402
 )
 from mcp_server import server  # noqa: E402
 
-INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install.py"
 FIXTURE_REF = "v9.9.9"
 
 _TMP: Optional[tempfile.TemporaryDirectory] = None
 _PRISTINE: Optional[Path] = None
-_INSTALLER: Any = None
-
-
-def _load_install_module():
-    spec = importlib.util.spec_from_file_location(
-        "cartopian_install_for_projection", INSTALL_SCRIPT
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
 
 
 def setUpModule() -> None:
-    """Build one real copy-mode install; tests clone it per scenario."""
-    global _TMP, _PRISTINE, _INSTALLER
+    """Build one real copy install; tests clone it per scenario."""
+    global _TMP, _PRISTINE
+    from tests._install_fixture import install_copy_fixture
+
     _TMP = tempfile.TemporaryDirectory()
     _PRISTINE = Path(_TMP.name) / "pristine"
-    _INSTALLER = _load_install_module()
-    _INSTALLER.install(REPO_ROOT, _PRISTINE, mode="copy")
+    install_copy_fixture(REPO_ROOT, _PRISTINE)
 
 
 def tearDownModule() -> None:
@@ -285,7 +273,6 @@ class TestCoordinatedInstallEvidence(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=install_root,
                 operation="fresh-install",
-                mode="copy",
                 client_home=client_home,
                 clients=("codex",),
             )
@@ -598,6 +585,116 @@ class TestInstallReceiptGrammar(unittest.TestCase):
                 )
 
 
+class TestWithheldReleaseClaimNamesItsCause(unittest.TestCase):
+    """A withheld release claim reports the ref that caused it to be withheld.
+
+    Withholding is correct, but a bare ``unknown`` is indistinguishable from a
+    defect: an operator installing from a branch has no way to tell an intended
+    fail-closed refusal from a broken resolver without reading this module. The
+    observed ref is provenance for the refusal and never becomes a claim.
+    """
+
+    def test_branch_receipt_is_named_without_becoming_a_claim(self) -> None:
+        record = release_version(copy_install(self, ref="main"))
+        self.assertIsNone(record["value"])
+        self.assertEqual(record["state"], "unknown")
+        self.assertEqual(record["observed_ref"], "main")
+        self.assertEqual(record["observed_ref_state"], "branch-ref")
+
+    def test_non_release_ref_is_named_without_becoming_a_claim(self) -> None:
+        record = release_version(copy_install(self, ref="local-writer-fix"))
+        self.assertIsNone(record["value"])
+        self.assertEqual(record["observed_ref"], "local-writer-fix")
+        self.assertEqual(record["observed_ref_state"], "non-release-ref")
+
+    def test_malformed_marker_reports_no_ref(self) -> None:
+        root = copy_install(self, ref="v9.9.9")
+        (root / "VERSION").write_text("two tokens\n", encoding="utf-8")
+        record = release_version(root)
+        self.assertIsNone(record["value"])
+        self.assertIsNone(record["observed_ref"])
+        self.assertEqual(record["observed_ref_state"], "malformed")
+
+    def test_absent_marker_reports_no_ref(self) -> None:
+        root = copy_install(self, ref="v9.9.9")
+        (root / "VERSION").unlink()
+        record = release_version(root)
+        self.assertIsNone(record["value"])
+        self.assertIsNone(record["observed_ref"])
+        self.assertEqual(record["observed_ref_state"], "absent")
+
+    def test_release_tag_reports_itself_as_the_observed_ref(self) -> None:
+        record = release_version(copy_install(self, ref=FIXTURE_REF))
+        self.assertEqual(record["value"], FIXTURE_REF)
+        self.assertEqual(record["observed_ref"], FIXTURE_REF)
+        self.assertEqual(record["observed_ref_state"], "release-tag")
+
+    def test_installed_cli_version_flag_names_a_non_release_ref(self) -> None:
+        root = copy_install(self, ref="local-writer-fix")
+        proc = subprocess.run(
+            [sys.executable, str(root / "bin" / "cartopian"), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(
+            proc.stdout.strip(),
+            "cartopian unknown (installed from ref local-writer-fix)",
+        )
+
+
+class TestRecordedClaimMatchesReaderGrammar(unittest.TestCase):
+    """The install record may not assert a release the reader will refuse.
+
+    ``_version_records`` writes the ``release_version`` row and
+    ``release_version`` reads it back. When the writer accepts any non-empty
+    ref and the reader accepts only release tags, a branch install persists a
+    ``known``/``verified`` row that every reader then reports as unknown — the
+    state file and the runtime disagree about the same install.
+    """
+
+    def _row(self, ref: str) -> Dict[str, Any]:
+        from cli.install_workflow import _version_records
+
+        rows = _version_records(
+            REPO_ROOT,
+            copy_install(self, ref=ref),
+            "sha256:" + "0" * 64,
+            "current",
+            release_ref=ref,
+        )
+        return next(row for row in rows if row["kind"] == "release_version")
+
+    def test_non_release_ref_is_recorded_as_unknown(self) -> None:
+        for ref in ("local-writer-fix", "main", "feature/x", "a" * 40):
+            with self.subTest(ref=ref):
+                row = self._row(ref)
+                self.assertIsNone(row["value"])
+                self.assertEqual(row["state"], "unknown")
+                self.assertEqual(row["verification"], "unknown")
+
+    def test_release_tag_is_recorded_as_a_verified_claim(self) -> None:
+        row = self._row("v9.9.9")
+        self.assertEqual(row["value"], "v9.9.9")
+        self.assertEqual(row["state"], "known")
+        self.assertEqual(row["verification"], "verified")
+
+    def test_every_recorded_claim_reads_back_identically(self) -> None:
+        for ref in ("v9.9.9", "v2.0.0-rc.1", "main", "local-writer-fix"):
+            with self.subTest(ref=ref):
+                root = copy_install(self, ref=ref)
+                from cli.install_workflow import _version_records
+
+                rows = _version_records(
+                    REPO_ROOT, root, "sha256:" + "0" * 64, "current", release_ref=ref
+                )
+                recorded = next(
+                    row for row in rows if row["kind"] == "release_version"
+                )
+                self.assertEqual(recorded["value"], release_version(root)["value"])
+
+
 class TestSourceCheckoutIdentitiesUnchanged(unittest.TestCase):
     """Git provenance keeps precedence and never becomes a release claim."""
 
@@ -710,21 +807,6 @@ class TestTruthfulUnknownStates(unittest.TestCase):
         self.assertEqual(content["verification"], "verified")
         self.assertEqual(content["verification_evidence"], "install-state-record")
 
-    def test_symlinked_content_is_not_compared_against_a_link_digest(self) -> None:
-        # A contributor install materializes surfaces as symlinks, and the
-        # installer records the digest of the *links*. Comparing it against
-        # resolved content would report a healthy install as tampered with.
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name) / ".cartopian"
-        _INSTALLER.install(REPO_ROOT, root, mode="symlink")
-        (root / "VERSION").write_text(f"{FIXTURE_REF}\n", encoding="utf-8")
-        write_state(root, [recorded_row(root)])
-        content = installed_content(root)
-        self.assertNotEqual(content["verification"], "dirty")
-        self.assertEqual(content["verification"], "verified")
-        self.assertEqual(content["verification_evidence"], "recorded-install-content")
-
 
 # ---------------------------------------------------------------------------
 # Connected-process attribution for in-process MCP tool calls
@@ -835,7 +917,15 @@ class TestMcpPreludeProjection(unittest.TestCase):
         (root / "VERSION").unlink(missing_ok=True)
         text = "\n".join(self.install_context(root))
         self.assertIn("- Release version: `unknown` (unknown)", text)
+        self.assertIn("no release marker recorded", text)
         self.assertIn("verification `unverified`", text)
+
+    def test_prelude_explains_a_withheld_claim_from_a_branch_install(self) -> None:
+        root = copy_install(self, ref="local-writer-fix")
+        text = "\n".join(self.install_context(root))
+        self.assertIn("- Release version: `unknown` (unknown)", text)
+        self.assertIn("installed from ref `local-writer-fix`", text)
+        self.assertIn("not a release tag", text)
 
     def test_initialize_instructions_and_server_version(self) -> None:
         from tests.mcp_server.test_server import single

@@ -70,6 +70,7 @@ from cli.resume_state import (
 from cli.version_identities import (
     content_bound_restart_candidate,
     install_state_evidence,
+    is_release_tag,
     restart_evidence_withheld,
 )
 
@@ -100,7 +101,6 @@ TOOL_SHIPPED: Tuple[Tuple[str, str], ...] = (
 INSTALLED_TARGETS: Tuple[str, ...] = tuple(
     target for target, _source in TOOL_SHIPPED
 )
-COPY_ALWAYS = frozenset(("CHANGELOG.md",))
 OPERATOR_FILES = ("cartopian.toml", "projects.json")
 
 CORE_TARGETS = (
@@ -412,9 +412,6 @@ def _validate_decisions(decisions: Mapping[str, str]) -> Dict[str, str]:
 
 
 def _iter_files(path: Path) -> Iterable[Tuple[str, bytes]]:
-    if path.is_symlink():
-        yield "@symlink", os.readlink(path).encode("utf-8")
-        return
     if path.is_file():
         yield "@file", path.read_bytes()
         return
@@ -426,11 +423,7 @@ def _iter_files(path: Path) -> Iterable[Tuple[str, bytes]]:
             continue
         if child.suffix in (".pyc", ".pyo"):
             continue
-        if child.is_symlink():
-            yield relative.as_posix() + "@symlink", os.readlink(child).encode(
-                "utf-8"
-            )
-        elif child.is_file():
+        if child.is_file():
             yield relative.as_posix(), child.read_bytes()
 
 
@@ -477,45 +470,16 @@ def _surface_digest(
     return _digest_entries(entries)
 
 
-def _observed_surface_digest(
-    source_root: Path,
-    install_root: Path,
-    target_rels: Sequence[str],
-    *,
-    mode: str,
-) -> str:
-    entries: List[Tuple[str, bytes]] = []
-    for target_rel in target_rels:
-        target = install_root / target_rel
-        source = _source_for_target(source_root, target_rel)
-        use_source = False
-        if (
-            mode == "symlink"
-            and target_rel not in COPY_ALWAYS
-            and target.is_symlink()
-        ):
-            try:
-                use_source = Path(os.readlink(target)) == source
-            except OSError:
-                use_source = False
-        observed = source if use_source else target
-        for nested, payload in _iter_files(observed):
-            entries.append((f"{target_rel}/{nested}", payload))
-    return _digest_entries(entries)
-
-
 def _materialization_identity(
     install_root: Path,
     target_rels: Sequence[str],
     *,
-    mode: str,
     desired: bool,
 ) -> str:
     entries: List[Tuple[str, bytes]] = []
     for target_rel in target_rels:
-        expected = "copy" if target_rel in COPY_ALWAYS else mode
         if desired:
-            materialization = expected
+            materialization = "copy"
         else:
             target = install_root / target_rel
             path = target
@@ -528,6 +492,8 @@ def _materialization_identity(
                     break
                 path = path.parent
             if symlinked:
+                # Never desired: a linked surface (e.g. a legacy install) is
+                # materialization drift and must not verify as current.
                 materialization = "symlink"
             elif target.exists():
                 materialization = "copy"
@@ -832,6 +798,11 @@ def _version_records(
 ) -> List[Dict[str, Any]]:
     authorities = identity_contract()
     release = release_ref or _release_version(source_root)
+    # Record a release claim only for a ref the reader will honor. A branch or
+    # commit ref installs fine, but it is not a release; persisting it as
+    # ``known``/``verified`` puts a claim in the state file that
+    # ``version_identities.release_version`` refuses to read back.
+    release_claim = release if is_release_tag(release) else None
     target_schema = _target_schema(source_root)
     if migration_state == "current":
         project_schema_value = target_schema
@@ -863,10 +834,10 @@ def _version_records(
     return [
         {
             "kind": "release_version",
-            "value": release,
-            "state": "known" if release else "unknown",
+            "value": release_claim,
+            "state": "known" if release_claim else "unknown",
             "authority": authorities["release_version"]["authority"],
-            "verification": "verified" if release else "unknown",
+            "verification": "verified" if release_claim else "unknown",
         },
         {
             "kind": "installed_content",
@@ -912,16 +883,14 @@ def _version_records(
 
 
 def _required_surface(
-    kind: str, source_root: Path, install_root: Path, *, mode: str
+    kind: str, source_root: Path, install_root: Path
 ) -> Dict[str, Any]:
     targets = _SURFACE_ROWS[kind]
     try:
         desired_content = _surface_digest(
             source_root, targets, source_root=source_root
         )
-        observed_content = _observed_surface_digest(
-            source_root, install_root, targets, mode=mode
-        )
+        observed_content = _surface_digest(install_root, targets)
         content_completeness = "complete"
         verification = "verified"
     except OSError:
@@ -930,10 +899,10 @@ def _required_surface(
         content_completeness = "incomplete"
         verification = "unverified"
     desired_materialization = _materialization_identity(
-        install_root, targets, mode=mode, desired=True
+        install_root, targets, desired=True
     )
     observed_materialization = _materialization_identity(
-        install_root, targets, mode=mode, desired=False
+        install_root, targets, desired=False
     )
     desired = f"{desired_content};materialization={desired_materialization}"
     observed = (
@@ -1056,7 +1025,6 @@ def _decision_context(
     surface: Mapping[str, Any],
     source_identity: str,
     clients: Sequence[str],
-    mode: str,
 ) -> Dict[str, Any]:
     return {
         "context_schema": "coordinated-repair-v1",
@@ -1069,7 +1037,9 @@ def _decision_context(
             "value": source_identity,
             "authority": "maintainer-source-content",
         },
-        "materialization_mode": mode,
+        # Copy is the only materialization Cartopian installs; the literal
+        # keeps previously persisted decision contexts comparable.
+        "materialization_mode": "copy",
     }
 
 
@@ -1402,7 +1372,6 @@ def plan_workflow(
     source_root: Path,
     install_root: Path,
     operation: str,
-    mode: str = "copy",
     client_home: Optional[Path] = None,
     clients: Sequence[str] = (),
     decisions: Optional[Mapping[str, str]] = None,
@@ -1419,8 +1388,6 @@ def plan_workflow(
     """
     if operation not in ("fresh-install", "update", "repair", "verification"):
         raise WorkflowRefusal(f"unsupported operation: {operation}")
-    if mode not in ("copy", "symlink"):
-        raise WorkflowRefusal(f"unsupported materialization mode: {mode}")
     source, install = _validate_roots(source_root, install_root)
     selected = _validate_clients(clients)
     dispositions = _validate_decisions(decisions or {})
@@ -1483,9 +1450,7 @@ def plan_workflow(
 
     surfaces: List[Dict[str, Any]] = []
     for kind in ("core-files", "mcp-server-files", "wrappers"):
-        surfaces.append(
-            _required_surface(kind, source, install, mode=mode)
-        )
+        surfaces.append(_required_surface(kind, source, install))
     surfaces.append(
         _aggregate_optional("bridges", bridge_facts, bridge_desired)
     )
@@ -1501,9 +1466,7 @@ def plan_workflow(
         }
     )
     surfaces.append(
-        _required_surface(
-            "verification-content", source, install, mode=mode
-        )
+        _required_surface("verification-content", source, install)
     )
 
     migrations, migration_state = _migration_offers(install, source)
@@ -1600,7 +1563,6 @@ def plan_workflow(
             surface=surface,
             source_identity=source_identity,
             clients=selected,
-            mode=mode,
         )
         choice = _choice(
             kind,
@@ -1712,7 +1674,6 @@ def plan_workflow(
             "install_root": str(install),
             "client_home": str(home),
             "clients": list(selected),
-            "mode": mode,
             "release_ref": release_ref,
             "running_server_fact": running_observation,
             "restart_observation_available": restart_observation_available,
@@ -1752,20 +1713,11 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def _replace_tool_path(
-    source: Path, target: Path, *, mode: str, force_copy: bool = False
-) -> bool:
-    effective_mode = "copy" if force_copy else mode
+def _replace_tool_path(source: Path, target: Path) -> bool:
     desired = _digest_path(source)
     observed = _digest_path(target)
-    if effective_mode == "copy" and desired == observed and not target.is_symlink():
+    if desired == observed and not target.is_symlink():
         return False
-    if effective_mode == "symlink" and target.is_symlink():
-        try:
-            if Path(os.readlink(target)) == source:
-                return False
-        except OSError:
-            pass
     target.parent.mkdir(parents=True, exist_ok=True)
     stage_parent = Path(
         tempfile.mkdtemp(prefix=".cartopian-stage-", dir=str(target.parent))
@@ -1773,9 +1725,7 @@ def _replace_tool_path(
     staged = stage_parent / "payload"
     backup = target.parent / f".{target.name}.cartopian-backup"
     try:
-        if effective_mode == "symlink":
-            os.symlink(str(source), str(staged), target_is_directory=source.is_dir())
-        elif source.is_dir():
+        if source.is_dir():
             shutil.copytree(
                 source, staged, symlinks=False, ignore=_ignore_transients
             )
@@ -1808,7 +1758,6 @@ def _seed_operator_files(source_root: Path, install_root: Path) -> None:
         _replace_tool_path(
             source_root / "templates" / "global.cartopian.toml",
             config,
-            mode="copy",
         )
     registry = install_root / "projects.json"
     if not registry.exists():
@@ -1944,11 +1893,7 @@ def _apply_bridges(
 ) -> None:
     for client in clients:
         for source_rel, destination in _client_bridge_rows(client, client_home):
-            _replace_tool_path(
-                source_root / source_rel,
-                destination,
-                mode="copy",
-            )
+            _replace_tool_path(source_root / source_rel, destination)
 
 
 def _write_state(record: Mapping[str, Any]) -> None:
@@ -2253,7 +2198,6 @@ def apply_workflow(
         Path(str(internal["source_root"])),
         Path(str(internal["install_root"])),
     )
-    mode = str(internal.get("mode"))
     clients = _validate_clients(internal.get("clients", ()))
     client_home = Path(str(internal["client_home"])).resolve()
     choices = {
@@ -2430,7 +2374,6 @@ def apply_workflow(
             install_root=install_root,
             client_home=client_home,
             clients=clients,
-            mode=mode,
             choices=choices,
             surfaces=surfaces,
             profiles=profiles,
@@ -2448,7 +2391,6 @@ def _apply_under_lease(
     install_root: Path,
     client_home: Path,
     clients: Sequence[str],
-    mode: str,
     choices: Mapping[str, Mapping[str, Any]],
     surfaces: Mapping[str, Mapping[str, Any]],
     profiles: Sequence[Mapping[str, Any]],
@@ -2495,12 +2437,7 @@ def _apply_under_lease(
             )
             for target_rel in _SURFACE_ROWS[surface_kind]:
                 source = _source_for_target(source_root, target_rel)
-                _replace_tool_path(
-                    source,
-                    install_root / target_rel,
-                    mode=mode,
-                    force_copy=target_rel in COPY_ALWAYS,
-                )
+                _replace_tool_path(source, install_root / target_rel)
         refused_surface = "core-files"
         attempted_action = "seed-operator-files"
         recovery = (
@@ -2703,7 +2640,6 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     )
     client_home = Path(str(internal["client_home"])).resolve()
     clients = _validate_clients(internal.get("clients", ()))
-    mode = str(internal.get("mode"))
     choices = {
         item["surface"]: item
         for item in record.get("choices", [])
@@ -2713,9 +2649,7 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     verified_surfaces: List[Dict[str, Any]] = []
     failed_kinds: set[str] = set()
     for kind in ("core-files", "mcp-server-files", "wrappers"):
-        surface = _required_surface(
-            kind, source_root, install_root, mode=mode
-        )
+        surface = _required_surface(kind, source_root, install_root)
         if surface["affected"]:
             surface["state"] = "failed"
             failed_kinds.add(kind)
@@ -2762,7 +2696,7 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
         verified_surfaces.append(surface)
 
     verification = _required_surface(
-        "verification-content", source_root, install_root, mode=mode
+        "verification-content", source_root, install_root
     )
     if verification["affected"]:
         verification["state"] = "failed"

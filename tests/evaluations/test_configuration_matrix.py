@@ -117,7 +117,6 @@ class ConfigurationCompatibilityMatrixTests(unittest.TestCase):
         for name in (
             "clean_installed",
             "dirty_installed",
-            "symlink_installed",
         ):
             observation = version["rerun_comparison"]["observations"][name]
             self.assertEqual(observation["execution"], "simulated/static")

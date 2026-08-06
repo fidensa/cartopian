@@ -208,48 +208,6 @@ class RestartAdapterTruthTests(unittest.TestCase):
         self.assertEqual(dirty["verification"], "dirty")
         self.assertEqual(dirty["mcp_verification"], "dirty")
 
-    def test_symlink_divergence_maps_running_fact_to_stale_runtime(self) -> None:
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        parent = Path(temporary.name)
-        target = parent / "target"
-        target.mkdir()
-        _write_mcp_surface(target)
-        logical = parent / "logical-install"
-        try:
-            logical.symlink_to(target, target_is_directory=True)
-        except OSError as exc:
-            self.skipTest(f"symlink fixture unavailable: {exc}")
-        content = installed_content(logical)
-        self.assertEqual(content["verification"], "symlink-divergent")
-        self.assertEqual(
-            content["mcp_verification"], "symlink-divergent"
-        )
-        loaded = running_server(
-            content, process_id=3200, instance_id="process:3200"
-        )
-        self.assertEqual(loaded["state"], "stale-runtime")
-
-        result = evaluate_restart(
-            installed={
-                "identity": content["mcp_identity"],
-                "state": "verified",
-                "verification": "verified",
-                "completeness": "complete",
-            },
-            running=loaded,
-            affected_surfaces={
-                "mcp_affecting_change": True,
-                "verification": "verified",
-            },
-            client=normalize_client_context("codex"),
-            prior_process={
-                "process_id": 3200,
-                "instance_id": "process:3200",
-            },
-        )
-        self.assertEqual(result["reason_code"], "running_content_stale")
-
     def test_mid_read_oserror_cannot_return_partial_identity(self) -> None:
         root = self._root()
         failed_path = root / "mcp_server" / "b.py"
@@ -403,7 +361,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=self.install_root,
                 operation="fresh-install",
-                mode="copy",
                 client_home=self.client_home,
                 clients=("codex",),
             )
@@ -429,7 +386,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
             source_root=REPO_ROOT,
             install_root=self.install_root,
             operation="update",
-            mode="copy",
             client_home=self.client_home,
             clients=("codex",),
         )
@@ -443,7 +399,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=self.install_root,
                 operation="update",
-                mode="copy",
                 client_home=self.client_home,
                 clients=("codex",),
                 running_server_fact=self._running(
@@ -482,7 +437,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=self.install_root,
                 operation="verification",
-                mode="copy",
                 client_home=self.client_home,
                 clients=("codex",),
                 running_server_fact=self._running(
@@ -512,7 +466,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=self.install_root,
                 operation="update",
-                mode="copy",
                 client_home=self.client_home,
                 clients=("codex",),
                 running_server_fact=self._running(
@@ -540,7 +493,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=self.install_root,
                 operation="update",
-                mode="copy",
                 client_home=self.client_home,
                 clients=("codex",),
                 running_server_fact=self._running(
@@ -576,7 +528,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 "mcp-server-files",
                 REPO_ROOT,
                 self.install_root,
-                mode="copy",
             )
         self.assertEqual(surface["completeness"], "incomplete")
         self.assertEqual(surface["verification"], "unverified")
@@ -603,7 +554,6 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
             source_root=REPO_ROOT,
             install_root=self.install_root,
             operation="update",
-            mode="copy",
             client_home=self.client_home,
             clients=("codex",),
         )

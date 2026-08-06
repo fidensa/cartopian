@@ -72,7 +72,6 @@ plan = workflow.plan_workflow(
     source_root=Path(sys.argv[1]),
     install_root=Path(sys.argv[2]),
     operation="fresh-install",
-    mode="copy",
     client_home=Path(sys.argv[3]),
     clients=("codex",),
 )
@@ -94,7 +93,6 @@ class ResumableProgressTestCase(unittest.TestCase):
             "source_root": REPO_ROOT,
             "install_root": self.install_root,
             "operation": "update",
-            "mode": "copy",
             "client_home": self.client_home,
             "clients": ("codex",),
         }

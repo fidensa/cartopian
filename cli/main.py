@@ -302,7 +302,13 @@ def _resolve_version() -> str:
     from cli.version_identities import release_version
 
     root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return release_version(root)["value"] or "unknown"
+    record = release_version(root)
+    if record["value"]:
+        return record["value"]
+    # No release claim: name the installed ref rather than print a bare
+    # ``unknown`` the operator cannot act on.
+    observed = record.get("observed_ref")
+    return f"unknown (installed from ref {observed})" if observed else "unknown"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

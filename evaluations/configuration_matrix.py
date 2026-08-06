@@ -605,11 +605,7 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
             clean = version_identities.installed_content(root)
         with mock.patch.object(version_identities, "_git", dirty_git):
             dirty = version_identities.installed_content(root)
-        link = Path(raw) / "linked-content"
-        link.symlink_to(root, target_is_directory=True)
-        with mock.patch.object(version_identities, "_git", clean_git):
-            divergent = version_identities.installed_content(link)
-        running = version_identities.running_server(divergent, process_id=7)
+        running = version_identities.running_server(dirty, process_id=7)
         peers = version_identities.version_identities(
             root,
             project_schema={
@@ -632,8 +628,7 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
         "release": peers["release_version"]["state"],
         "clean_installed": clean["state"],
         "dirty_installed": dirty["state"],
-        "symlink_installed": divergent["state"],
-        "running_symlink": running["state"],
+        "running_dirty": running["state"],
         "project_schema": peers["project_schema_version"]["state"],
         "mcp_transport": peers["mcp_protocol_version"]["state"],
         "schema_classifications": classifications,
@@ -642,8 +637,7 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
         "release": "unknown",
         "clean_installed": "verified",
         "dirty_installed": "dirty",
-        "symlink_installed": "symlink-divergent",
-        "running_symlink": "stale-runtime",
+        "running_dirty": "unknown",
         "project_schema": "older",
         "mcp_transport": "supported",
         "schema_classifications": {
@@ -660,8 +654,8 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
             "surface": "installed-content git state synthesis",
             "status": "simulated/static",
             "reason": (
-                "clean, dirty, and symlink-divergent records patch the git "
-                "inspection seam; canonical version suites cover native execution"
+                "clean and dirty records patch the git inspection seam; "
+                "canonical version suites cover native execution"
             ),
         }
     ]
@@ -675,12 +669,6 @@ def _version_probe(_case: dict[str, Any]) -> dict[str, Any]:
         "dirty_installed": {
             "state": dirty["state"],
             "verification": dirty["verification"],
-            "execution": "simulated/static",
-            "limitation": "patched-git-helper",
-        },
-        "symlink_installed": {
-            "state": divergent["state"],
-            "verification": divergent["verification"],
             "execution": "simulated/static",
             "limitation": "patched-git-helper",
         },

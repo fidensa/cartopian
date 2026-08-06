@@ -38,13 +38,7 @@ UNGATED_ROLES = (
 )
 
 
-def _install_module():
-    path = REPO_ROOT / "scripts" / "install.py"
-    spec = importlib.util.spec_from_file_location("cartopian_install_activation", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+from tests._install_fixture import install_copy_fixture
 
 
 def _fake_claude(fake_bin: Path, capture: Path) -> None:
@@ -133,10 +127,9 @@ def _settings_argument(argv: list[str]) -> dict:
     return json.loads(argv[argv.index("--settings") + 1])
 
 
-@pytest.mark.parametrize("mode", ["copy", "symlink"])
-def test_installed_posix_dispatch_receives_capability_and_completion_hooks(tmp_path, mode):
-    install_root = tmp_path / f"Cartopian {mode} install"
-    _install_module().install(REPO_ROOT, install_root, mode=mode)
+def test_installed_posix_dispatch_receives_capability_and_completion_hooks(tmp_path):
+    install_root = tmp_path / "Cartopian copy install"
+    install_copy_fixture(REPO_ROOT, install_root)
     project, prompt, report = _project(tmp_path, gated=True)
     settings_path = project / ".claude" / "settings.json"
     settings_path.parent.mkdir()
@@ -155,7 +148,7 @@ def test_installed_posix_dispatch_receives_capability_and_completion_hooks(tmp_p
         prompt,
         report,
         tmp_path / "fake bin",
-        tmp_path / f"{mode} argv.txt",
+        tmp_path / "copy argv.txt",
     )
     hooks = _settings_argument(argv)["hooks"]
     assert set(hooks) == {"PreToolUse", "Stop"}
@@ -294,7 +287,7 @@ def test_windows_settings_json_and_commands_quote_space_paths(tmp_path):
 
 def test_posix_generated_stop_command_runs_from_install_path_with_spaces(tmp_path):
     install_root = tmp_path / "Cartopian copy install with spaces"
-    _install_module().install(REPO_ROOT, install_root, mode="copy")
+    install_copy_fixture(REPO_ROOT, install_root)
     report = tmp_path / "report path with spaces" / "REPORT-01-401.md"
     report.parent.mkdir()
     settings = claude_launch_settings.build_settings(

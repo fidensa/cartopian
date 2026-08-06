@@ -47,7 +47,7 @@ Request evidence: none
 
 - Review ID: REVIEW-01-003
 - Prompt path: /tmp/PROMPT-01-003.md
-- Task path: /tmp/TASK-01-003-demo.md
+- Task path: /tmp/TASK-01-003.md
 - Review file path: /tmp/REVIEW-01-003.md
 
 ## Evidence reviewed
@@ -93,7 +93,7 @@ def _config() -> str:
     return """[project]
 id = "handoff-contract"
 name = "handoff-contract"
-project_schema_version = "v0.9.0"
+project_schema_version = "v0.10.0"
 
 [roles.coder]
 description = "Implements tasks."
@@ -117,10 +117,10 @@ task_role = "reviewer"
 
 def _task(scaffold, status: str = "in-progress") -> Path:
     return scaffold.write(
-        f"tasks/{status}/TASK-01-003-demo.md",
+        f"tasks/{status}/TASK-01-003.md",
         """# TASK-01-003: Demo
 
-Phase: PHASE-01-demo
+Phase: PHASE-01
 Plan ref: BUILD-01-003
 Work root: tool-repo
 Assignee: coder

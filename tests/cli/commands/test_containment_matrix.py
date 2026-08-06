@@ -9,7 +9,6 @@ everywhere, and every advisory row plainly names the detection-floor residual
 write).
 """
 import io
-import importlib.util
 import json
 import os
 import unittest
@@ -294,15 +293,11 @@ class TestAdvisoryDisclosure(_Fixture):
 
 
 class TestInstalledProcessChainEvidence(_Fixture):
-    def install_root(self, mode="copy"):
-        spec = importlib.util.spec_from_file_location(
-            f"matrix_install_{mode}", REPO_ROOT / "scripts" / "install.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-        root = self.scaffold.root / f"Cartopian {mode} install"
-        module.install(REPO_ROOT, root, mode=mode)
+    def install_root(self):
+        from tests._install_fixture import install_copy_fixture
+
+        root = self.scaffold.root / "Cartopian copy install"
+        install_copy_fixture(REPO_ROOT, root)
         return root
 
     def rows_at(self, install_root):
@@ -312,13 +307,11 @@ class TestInstalledProcessChainEvidence(_Fixture):
         ):
             return self.rows()
 
-    def test_copy_and_symlink_layouts_have_healthy_process_chain(self):
-        for mode in ("copy", "symlink"):
-            with self.subTest(mode=mode):
-                _, rows = self.rows_at(self.install_root(mode))
-                evidence = rows["claude-code"]["process_scoped_evidence"]
-                self.assertTrue(evidence["process_scoped"])
-                self.assertTrue(evidence["wrapper_chain_valid"])
+    def test_installed_layout_has_healthy_process_chain(self):
+        _, rows = self.rows_at(self.install_root())
+        evidence = rows["claude-code"]["process_scoped_evidence"]
+        self.assertTrue(evidence["process_scoped"])
+        self.assertTrue(evidence["wrapper_chain_valid"])
 
     def test_missing_hook_downgrades(self):
         root = self.install_root()

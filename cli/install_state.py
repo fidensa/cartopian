@@ -70,7 +70,6 @@ SURFACE_STATES: Tuple[str, ...] = (
     "deferred",
     "missing",
     "dirty",
-    "symlink-divergent",
     "unverified",
     "unknown",
     "malformed",
@@ -338,7 +337,6 @@ _PENDING_SURFACE_STATES = frozenset(
         "offered",
         "missing",
         "dirty",
-        "symlink-divergent",
         "unverified",
         "unknown",
         "malformed",
@@ -350,7 +348,6 @@ _HARD_IDENTITY_STATES = frozenset(
     (
         "missing",
         "dirty",
-        "symlink-divergent",
         "malformed",
         "unsupported-newer",
         "contradictory",
@@ -925,13 +922,7 @@ def _validate_versions(
                 )
             )
         state = item.get("state")
-        allowed_states = tuple(contract[kind].get("states", ())) + (
-            "unknown",
-            "missing",
-            "contradictory",
-            "unsupported-newer",
-        )
-        if state not in allowed_states:
+        if state not in identity_state_vocabulary(kind):
             diagnostics.append(
                 _diagnostic(
                     "unknown-vocabulary",

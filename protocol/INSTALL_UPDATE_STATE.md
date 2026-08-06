@@ -53,7 +53,7 @@ it says so in the contract's own vocabulary: a state that is neither outside
 the closed state vocabulary, nor one that contradicts the identity, nor one
 that leaves it unresolved; a `verification` of `verified`; and the identity
 value the row claims to have proven. A row that is unknown, unverified,
-dirty, symlink-divergent, malformed, or described in values the vocabulary
+dirty, malformed, or described in values the vocabulary
 does not contain attests only that content the run never proved is still
 unproved. Such a record is unusable on the same terms as an unreadable one —
 it fails closed, and no weaker evidence class is substituted for it.

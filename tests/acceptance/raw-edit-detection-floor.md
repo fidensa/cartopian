@@ -22,8 +22,7 @@ modes, and this scenario asserts both.
 Prerequisites: Python 3.11+ (macOS: on `PATH` as `python`; Windows: via the
 `py` launcher) and Cartopian installed at `~/.cartopian`
 (`%USERPROFILE%\.cartopian` on Windows) via `python scripts/install.py`
-(macOS) or `py scripts\install.py --mode copy` (Windows) from the source
-repo.
+(macOS) or `py scripts\install.py` (Windows) from the source repo.
 
 Throughout, `$CART` means the install root:
 

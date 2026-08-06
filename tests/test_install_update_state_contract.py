@@ -235,7 +235,6 @@ class SchemaVersionAndPositiveSemanticsTests(unittest.TestCase):
                                 "dirty",
                                 "older",
                                 "stale-runtime",
-                                "symlink-divergent",
                                 "malformed",
                                 "unsupported",
                                 "unsupported-newer",
@@ -332,7 +331,6 @@ class TransitionAndTerminalSafetyTests(unittest.TestCase):
         unresolved = (
             "unknown",
             "dirty",
-            "symlink-divergent",
             "missing",
             "malformed",
             "unsupported-newer",

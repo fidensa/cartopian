@@ -426,6 +426,34 @@ def _restart_projection() -> Dict[str, Any]:
     )
 
 
+_REF_STATE_REASON = {
+    "branch-ref": "a branch ref, not a release tag",
+    "non-release-ref": "not a release tag",
+    "malformed": "unreadable as a single ref token",
+    "absent": "no release marker recorded",
+}
+
+
+def _release_claim_text(release: Dict[str, Any]) -> str:
+    """Render the release claim, and when withheld, why.
+
+    A bare ``unknown (unknown)`` gives the operator nothing to act on and reads
+    as a defect. The withheld claim stands either way; this only names the ref
+    that was actually installed so the cause is visible without source-diving.
+    """
+    if release["value"]:
+        return f"`{release['value']}` ({release['state']})"
+    ref_state = release.get("observed_ref_state", "absent")
+    reason = _REF_STATE_REASON.get(ref_state, ref_state)
+    observed = release.get("observed_ref")
+    if observed:
+        return (
+            f"`unknown` ({release['state']}) — installed from ref "
+            f"`{observed}`, {reason}; no release version is claimed"
+        )
+    return f"`unknown` ({release['state']}) — {reason}"
+
+
 def _install_context_lines() -> List[str]:
     identities = _identity_records()
     release = identities["release_version"]
@@ -441,8 +469,7 @@ def _install_context_lines() -> List[str]:
         "**Cartopian install context** (authoritative — do not re-derive by "
         "scanning the filesystem):",
         f"- Install root: `{ROOT}`",
-        f"- Release version: `{release['value'] or 'unknown'}` "
-        f"({release['state']})",
+        f"- Release version: {_release_claim_text(release)}",
         f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
         f"materialization `{content['materialization']}`, verification "
         f"`{content['verification']}`",

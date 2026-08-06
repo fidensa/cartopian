@@ -93,7 +93,6 @@ IDENTITY_CONTRACT: "OrderedDict[str, Dict[str, Any]]" = OrderedDict(
                     "verified",
                     "unknown",
                     "dirty",
-                    "symlink-divergent",
                     "unverified",
                 ),
                 "substitutes_for": (),

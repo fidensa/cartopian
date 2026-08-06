@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,6 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
             "source_root": REPO_ROOT,
             "install_root": self.install_root,
             "operation": "fresh-install",
-            "mode": "copy",
             "client_home": self.client_home,
             "clients": ("codex",),
         }
@@ -534,8 +534,6 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
                     str(REPO_ROOT),
                     "--prefix",
                     str(install_root),
-                    "--mode",
-                    "copy",
                     "--client",
                     "codex",
                     "--quiet",
@@ -754,7 +752,9 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
         self.assertTrue(config.is_symlink())
         self.assertEqual(actual.read_text(encoding="utf-8"), 'model = "owned"\n')
 
-    def test_shipped_installer_converts_copy_and_symlink_modes(self) -> None:
+    def test_shipped_installer_converts_legacy_symlinked_surface_to_copy(
+        self,
+    ) -> None:
         install_root = self.root / "mode-install"
         isolated_home = self.root / "mode-home"
         isolated_home.mkdir()
@@ -770,7 +770,7 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
             "--quiet",
         ]
         subprocess.run(
-            [*command, "--mode", "copy"],
+            command,
             check=True,
             capture_output=True,
             text=True,
@@ -778,26 +778,21 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
         )
         self.assertFalse((install_root / "protocol").is_symlink())
 
-        symlinked = subprocess.run(
-            [*command, "--mode", "symlink"],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=environment,
+        # A legacy symlink-mode install left a linked surface behind; an
+        # update must replace it with a real copy.
+        shutil.rmtree(install_root / "protocol")
+        (install_root / "protocol").symlink_to(
+            REPO_ROOT / "protocol", target_is_directory=True
         )
-        self.assertTrue((install_root / "protocol").is_symlink())
-        self.assertIn("mode=symlink", symlinked.stdout)
-        self.assertFalse((install_root / "CHANGELOG.md").is_symlink())
-
-        copied = subprocess.run(
-            [*command, "--mode", "copy"],
+        subprocess.run(
+            command,
             check=True,
             capture_output=True,
             text=True,
             env=environment,
         )
         self.assertFalse((install_root / "protocol").is_symlink())
-        self.assertIn("mode=copy", copied.stdout)
+        self.assertTrue((install_root / "protocol").is_dir())
 
     def test_persisted_evidence_is_stable_and_portable(self) -> None:
         apply_workflow(self.plan(clients=()))

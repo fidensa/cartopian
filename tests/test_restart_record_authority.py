@@ -45,7 +45,6 @@ record and candidate kept as the positive controls the distinction protects.
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import os
 import shutil
@@ -91,7 +90,6 @@ from cli.version_identities import (  # noqa: E402
 )
 from mcp_server import server  # noqa: E402
 
-INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install.py"
 FIXTURE_REF = "v9.9.9"
 STALE_PROCESS = 7100
 STALE_INSTANCE = "process:7100:old"
@@ -107,16 +105,6 @@ _WORKFLOW: Optional[Path] = None
 # ---------------------------------------------------------------------------
 # Module fixtures: one copy install, and one real restart-pending install
 # ---------------------------------------------------------------------------
-
-def _load_install_module():
-    spec = importlib.util.spec_from_file_location(
-        "cartopian_install_for_restart_authority", INSTALL_SCRIPT
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
 
 def _running(identity: Optional[str], process_id: int, instance_id: str):
     """A connected-process fact claiming verified, complete loaded content."""
@@ -151,7 +139,6 @@ def _build_restart_pending_install(root: Path) -> Path:
             source_root=REPO_ROOT,
             install_root=install_root,
             operation="fresh-install",
-            mode="copy",
             client_home=client_home,
             clients=("codex",),
         )
@@ -162,7 +149,6 @@ def _build_restart_pending_install(root: Path) -> Path:
         source_root=REPO_ROOT,
         install_root=install_root,
         operation="update",
-        mode="copy",
         client_home=client_home,
         clients=("codex",),
     )
@@ -176,7 +162,6 @@ def _build_restart_pending_install(root: Path) -> Path:
             source_root=REPO_ROOT,
             install_root=install_root,
             operation="update",
-            mode="copy",
             client_home=client_home,
             clients=("codex",),
             running_server_fact=_running(
@@ -193,7 +178,9 @@ def setUpModule() -> None:
     _TMP = tempfile.TemporaryDirectory()
     base = Path(_TMP.name)
     _PRISTINE = base / "pristine"
-    _load_install_module().install(REPO_ROOT, _PRISTINE, mode="copy")
+    from tests._install_fixture import install_copy_fixture
+
+    install_copy_fixture(REPO_ROOT, _PRISTINE)
     (_PRISTINE / "VERSION").write_text(f"{FIXTURE_REF}\n", encoding="utf-8")
     _WORKFLOW = base / "workflow"
     _UPDATED = _build_restart_pending_install(_WORKFLOW)
@@ -1099,7 +1086,6 @@ class InstallerWorkflowRestartAuthorityTests(unittest.TestCase):
             source_root=REPO_ROOT,
             install_root=install_root,
             operation="update",
-            mode="copy",
             client_home=client_home,
             clients=("codex",),
             decisions={
@@ -1299,7 +1285,6 @@ class InstallerWorkflowRestartAuthorityTests(unittest.TestCase):
                 source_root=REPO_ROOT,
                 install_root=install_root,
                 operation="update",
-                mode="copy",
                 client_home=client_home,
                 clients=("codex",),
                 running_server_fact=_running(

@@ -47,7 +47,7 @@ stderr/session evidence plus before/after file hashes.
 The automated argv/integration coverage in
 `tests/wrappers/test_claude_stop_hook_activation.py` is the non-billable
 evidence for activation, settings preservation, interpreter/path quoting,
-copy/symlink layouts, bare mode, and compatibility de-duplication. Behavioral
+install layouts, bare mode, and compatibility de-duplication. Behavioral
 allow/deny details remain covered by `tests/cli/test_claude_refusal_hook.py`.
 
 ## Residuals and pass criteria

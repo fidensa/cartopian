@@ -34,9 +34,6 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         default="update",
     )
     subparser.add_argument(
-        "--mode", choices=("copy", "symlink"), default="copy"
-    )
-    subparser.add_argument(
         "--apply",
         action="store_true",
         help="apply required and explicitly authorized plan actions",
@@ -100,7 +97,6 @@ def handler(args: argparse.Namespace) -> int:
             source_root=args.source_root,
             install_root=args.install_root,
             operation=args.operation,
-            mode=args.mode,
             clients=tuple(args.client),
             decisions=_decisions(args.decision),
             running_server_fact=running_fact,

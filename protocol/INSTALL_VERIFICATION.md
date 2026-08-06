@@ -214,48 +214,13 @@ If you did not keep a backup, sanity-check by re-listing your registered project
 
 Tool-shipped paths are replaced on every install/upgrade (per the `STANDARDS.md` install-behavior table). After a fresh install or upgrade, the content under `~/.cartopian/protocol/`, `templates/`, `skills/`, `wrappers/`, `cli/`, `bin/cartopian`, `bin/cartopian.cmd`, and `CHANGELOG.md` must match the source you installed from.
 
-There are two install shapes; pick the section that matches your install:
-
-- **Copy mode (primary end-user path)** — driven by the `install-cartopian` skill (the README's primary `Install` flow). Tool-shipped paths under `~/.cartopian/` are real copies of an extracted release tarball. There is no on-disk source clone; verify against the upstream tag recorded in `~/.cartopian/VERSION` if you need a remote comparison.
-- **Symlink mode (contributor path)** — `git clone` + `python3 scripts/install.py` (no `--mode copy`). Tool-shipped paths under `~/.cartopian/` are symlinks back into your local clone.
+Every tool-shipped path is a real copy — `scripts/install.py` installs copies whether it runs from a local clone (contributor path) or via `--from-github` (primary end-user path, driven by the `install-cartopian` skill). With `--from-github` there is no on-disk source clone; verify against the upstream tag recorded in `~/.cartopian/VERSION` if you need a remote comparison.
 
 The commands below assume the source clone lives at `~/src/cartopian` (POSIX) or `$env:USERPROFILE\src\cartopian` (Windows) for any clone-relative checks. Adjust the source path if you cloned elsewhere.
 
-`CHANGELOG.md` is a special case: per `scripts/install.py` it is always a real copy of `protocol/CHANGELOG.md`, even in symlink mode. A `git pull` of the source clone refreshes the source file but does not touch `~/.cartopian/CHANGELOG.md` until the install script is rerun.
+`CHANGELOG.md` is a copy of `protocol/CHANGELOG.md`. A `git pull` of the source clone refreshes the source file but does not touch `~/.cartopian/CHANGELOG.md` until the install script is rerun.
 
-### 6a. Symlink mode (contributor install)
-
-In symlink mode each tool-shipped directory, `bin/cartopian`, and `bin/cartopian.cmd` is a symlink into the cloned source tree; confirm each link target resolves into your clone. Then compare `CHANGELOG.md` to its source because it is always a real copy.
-
-**macOS / Linux / WSL:**
-
-```sh
-ls -l ~/.cartopian/protocol ~/.cartopian/templates ~/.cartopian/skills \
-      ~/.cartopian/wrappers ~/.cartopian/cli \
-      ~/.cartopian/bin/cartopian ~/.cartopian/bin/cartopian.cmd
-diff -u ~/src/cartopian/protocol/CHANGELOG.md ~/.cartopian/CHANGELOG.md
-```
-
-**Native Windows (PowerShell):**
-
-```powershell
-foreach ($p in 'protocol','templates','skills','wrappers','cli','bin\cartopian','bin\cartopian.cmd') {
-  $item = Get-Item -Force "$env:USERPROFILE\.cartopian\$p"
-  "{0,-20} {1} -> {2}" -f $p, $item.LinkType, $item.Target
-}
-Compare-Object `
-  (Get-Content $env:USERPROFILE\src\cartopian\protocol\CHANGELOG.md) `
-  (Get-Content $env:USERPROFILE\.cartopian\CHANGELOG.md)
-```
-
-Pass when:
-
-- Each directory, `bin/cartopian`, and `bin/cartopian.cmd` is a symlink (leading `l` in `ls -l`; `LinkType` `SymbolicLink` in PowerShell) whose target is the matching path inside your local clone, and the target exists.
-- The `CHANGELOG.md` `diff` / `Compare-Object` returns no output.
-
-### 6b. Copy mode (primary end-user install)
-
-In copy mode every tool-shipped path is a real copy. If you also keep a local source clone (e.g., for contributor work) you can compare against it; otherwise rely on step 7 (the `VERSION` marker) to confirm which upstream ref the copy was taken from. Drift in any path below means the install script did not re-run after the source was updated.
+If you keep a local source clone (e.g., for contributor work) you can compare against it; otherwise rely on step 7 (the `VERSION` marker) to confirm which upstream ref the copy was taken from. Drift in any path below means the install script did not re-run after the source was updated.
 
 **macOS / Linux / WSL:**
 
