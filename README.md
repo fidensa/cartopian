@@ -94,6 +94,8 @@ Status is a directory. Moving a task file from `tasks/open/` to `tasks/in-progre
 
 Projects can live anywhere. Cartopian finds them through its registry (`projects.json`) rather than a fixed tree.
 
+**Tip: Where to store your project on disk** Usually, you will want to store your project management directory and your actual project work in separate places. A good practice is to name your project management directory the same name as your project, but with `-manager` appended. For example, `/cartopian` is the work root for this project and the project management directory is `/cartopian-manager`
+
 ## Roles and who does the work
 
 The default roster is **PM** and **Operator**, the planner and the decision-maker. Add whatever roles your project needs: coder, reviewer, designer, researcher, photographer, or anything else. Each role gets a one-line description that helps the PM match work to the right assignee.
