@@ -40,6 +40,7 @@ from cli.install_state import (
     supported_record_schema_version,
     validate_portable_evidence,
 )
+from cli.provenance import PM_IDENTIFIER_RE
 
 PROGRESS_SCHEMA_IDENTITY = "cartopian-install-update-progress-v1"
 PROGRESS_SCHEMA_VERSION = 1
@@ -202,12 +203,10 @@ _RETRY_RANK = {
 
 # Project-management identifiers must never reach portable evidence.  The
 # closed field allowlist in ``cli.install_state`` covers structure; this covers
-# identifier text smuggled inside an otherwise-allowed scalar.
-_GOVERNANCE_TEXT = re.compile(
-    r"\b(?:TASK|SPEC|PHASE|PROMPT|REVIEW|REPORT|REQUEST|DEC|FR|NF|PLAN|REQ)"
-    r"-[0-9]|\b(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)"
-    r"-[0-9]{2}-[0-9]{3}\b|\bP[0-9]{2}-[A-Z]"
-)
+# identifier text smuggled inside an otherwise-allowed scalar.  The grammar is
+# owned by ``cli.provenance`` so this boundary and the product-code scan can
+# never disagree about what counts as an identifier.
+_GOVERNANCE_TEXT = PM_IDENTIFIER_RE
 _PRIVATE_TEXT = re.compile(
     r"(?i)\b(?:api[_-]?key|secret|password|passwd|bearer|private[_-]?key|"
     r"authorization|credential)\b"

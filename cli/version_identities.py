@@ -74,9 +74,6 @@ _STATE_ROW_FIELDS: Tuple[str, ...] = (
 INSTALL_STATE_ABSENT = "absent"
 INSTALL_STATE_UNUSABLE = "unusable"
 INSTALL_STATE_PRESENT = "present"
-_STATE_ABSENT = INSTALL_STATE_ABSENT
-_STATE_UNUSABLE = INSTALL_STATE_UNUSABLE
-_STATE_PRESENT = INSTALL_STATE_PRESENT
 # Verdicts for a persisted restart candidate read through the shared
 # content-binding rule (:func:`content_bound_restart_candidate`).
 RESTART_EVIDENCE_ABSENT = "absent"
@@ -663,15 +660,15 @@ def installed_content(root: Path) -> Dict[str, Any]:
         state = evidence["status"]
         recorded_identity = evidence["installed_identity"]
         recorded_mcp = evidence["mcp_identity"]
-        comparable = state == _STATE_PRESENT
-        mcp_comparable = state == _STATE_PRESENT and recorded_mcp is not None
+        comparable = state == INSTALL_STATE_PRESENT
+        mcp_comparable = state == INSTALL_STATE_PRESENT and recorded_mcp is not None
         if identity is not None:
             revision = identity
             revision_attribution = "installed-content-digest"
         if not complete or not mcp_complete:
             verification = "unverified"
             evidence = "incomplete-installed-content"
-        elif state == _STATE_UNUSABLE:
+        elif state == INSTALL_STATE_UNUSABLE:
             verification = "unverified"
             evidence = "install-state-unusable"
         elif comparable and recorded_identity != identity:

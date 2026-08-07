@@ -197,15 +197,21 @@ def _append_record(project_root: Path, record: Dict[str, object]) -> bool:
 # structural launch-scope fix and the injected coding directive: a single regex
 # over the bytes of changed work-root files, with no model round-trip.
 # ---------------------------------------------------------------------------
-# The optional ``(?:[A-Z]+-)?`` segment catches word-segment id forms the
-# project actually uses — ``PROMPT-PLAN-NNN``, ``REVIEW-PLAN-NNN`` — which a
-# plain ``PREFIX-<digits>`` pattern would miss. Digit segments stay two-to-three
-# wide so a four-digit year-like suffix does not false-match.
+# Single authority for the PM-identifier grammar. Both boundaries that enforce
+# "no project-management identifier may leak" — this product-code scan and the
+# portable-evidence governance check in ``cli.resume_state`` — read this one
+# pattern, so they cannot disagree about what counts as an identifier
+# (``tests/test_install_grammar_parity.py``). The optional ``(?:[A-Z]+-)``
+# segments catch word-segment id forms the project actually uses —
+# ``PROMPT-PLAN-NNN``, ``REVIEW-PLAN-NNN``, ``P04-BUILD-005``. Digit widths are
+# open (``\d+``) because the grammar is fail-closed: a year-like suffix reads
+# as an identifier rather than letting a real one leak.
 PM_IDENTIFIER_RE = re.compile(
-    r"\b(?:FR|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC)-(?:[A-Z]+-)?\d{2,3}(?:-\d{2,3})?\b"
+    r"\b(?:FR|NF|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC|REQUEST|PLAN|REQ)"
+    r"-(?:[A-Z]+-)?\d+(?:-\d+)*\b"
     r"|\b(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}\b"
     # Historical phase-first plan refs are still management identifiers.
-    r"|\bP\d{2}-(?:[A-Z]+-)?\d{2,3}\b"
+    r"|\bP\d{2}-(?:[A-Z]+-)*(?:[A-Z]+|\d+)(?:-\d+)*\b"
 )
 
 

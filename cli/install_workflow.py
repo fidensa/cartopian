@@ -41,6 +41,7 @@ from cli.install_state import (
     stable_projection,
     supported_record_schema_version,
 )
+from cli.protocol_gate import read_shipped_project_schema_version
 from cli.restart_state import (
     client_context_from_environment,
     evaluate_restart,
@@ -151,7 +152,6 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
                 ".claude/commands/use-cartopian.md",
             ),
         ),
-        "restart": "none",
     },
     "codex": {
         "config": ".codex/config.toml",
@@ -162,7 +162,6 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
                 ".codex/skills/use-cartopian/SKILL.md",
             ),
         ),
-        "restart": "restart-client",
     },
     "gemini": {
         "config": ".gemini/settings.json",
@@ -173,7 +172,6 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
                 ".gemini/commands/use-cartopian.toml",
             ),
         ),
-        "restart": "restart-client",
     },
     "devin": {
         "config": ".config/devin/config.json",
@@ -185,7 +183,6 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
                 ".config/devin/skills/use-cartopian/SKILL.md",
             ),
         ),
-        "restart": "restart-client",
     },
     "windsurf": {
         "config": ".codeium/windsurf/mcp_config.json",
@@ -203,20 +200,17 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
                 "Windsurf/workflows/use-cartopian.md",
             ),
         ),
-        "restart": "restart-client",
     },
     "claude-desktop": {
         "config": "Library/Application Support/Claude/claude_desktop_config.json",
         "config_windows": "Claude/claude_desktop_config.json",
         "format": "json",
         "bridges": (),
-        "restart": "restart-client",
     },
     "cursor": {
         "config": ".cursor/mcp.json",
         "format": "json",
         "bridges": (),
-        "restart": "restart-client",
     },
 }
 
@@ -711,14 +705,18 @@ def _release_version(source_root: Path) -> Optional[str]:
 
 
 def _target_schema(source_root: Path) -> Optional[str]:
+    """The shipped project-schema version, read through the gate's grammar.
+
+    ``cli.protocol_gate`` owns the CHANGELOG heading grammar; the installer's
+    gate and this migration planner must never disagree about what version a
+    source tree ships (``tests/test_install_grammar_parity.py``).
+    """
     try:
-        content = (source_root / "protocol" / "CHANGELOG.md").read_text(
-            encoding="utf-8"
+        return read_shipped_project_schema_version(
+            source_root / "protocol" / "CHANGELOG.md"
         )
-    except OSError:
+    except (OSError, RuntimeError):
         return None
-    match = re.search(r"^### (v[0-9][^\s]*)\s", content, flags=re.MULTILINE)
-    return match.group(1) if match else None
 
 
 def _version_key(value: str) -> Tuple[int, ...]:
@@ -1346,10 +1344,6 @@ def _plan_actions(
                 if kind == "mcp-server-files"
                 else ("reopen-shell" if kind == "wrappers" else "none")
             )
-        elif kind == "project-schema-migration-offers":
-            action = "none"
-            authorization = "separate-project-approval"
-            restart = "none"
         else:
             action = "verify"
             authorization = "required" if surface["required"] else "not-required"
