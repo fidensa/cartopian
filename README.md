@@ -1,154 +1,104 @@
 # Cartopian
 
-**Structure any project into plans, phases, and tasks for humans or AI agents. Add governance, bounded automation, and optional review while keeping context focused and token use low.**
+**Turn any project into plans, phases, and tasks for people or AI agents. Add governance, bounded automation, and optional review while keeping context focused and token use low.**
 
-Cartopian turns "I want to do X" into clear requirements, a comprehensive plan, logical phases, structured tasks, practical work specifications, and tracked outcomes. It can govern technical and nontechnical projects alike, from building a SaaS product to launching an Etsy store or organizing a weekend garage sale. Tasks can go to AI agents or people. The Project Manager coordinates assignments, evidence, and progress; automates agent handoffs within limits you set; and can add independent review loops that catch gaps and errors before they spread.
+Cartopian turns "I want to do X" into clear requirements, a plan, phases, tasks, work specifications, and tracked results. It governs technical and non-technical projects alike, from building a SaaS product to launching an Etsy store or organizing a garage sale. Tasks go to AI agents or to people. An AI Project Manager coordinates assignments, evidence, and progress, hands work off within limits you set, and can add independent review that catches gaps before they spread.
 
-Cartopian also treats an AI model's context window and token budget as scarce resources. Deterministic bookkeeping runs through the CLI instead of consuming model reasoning, and each command returns a compact answer rather than making the model reread project files. Protocol runbooks and task materials enter context only when the current step needs them, and tools are made available as the workflow calls for them. Curated, task-sized handoffs and a compact state file keep agents focused without carrying the entire project history into every conversation.
+Everything is plain markdown on your disk. There is no database, no hosted service, and no third-party Python package.
 
-## What it actually does
+## What it does
 
-- **Plans the work.** An AI Project Manager interviews you, drafts requirements, breaks them into phases, and emits tasks with acceptance criteria.
-- **Reviews the plan when you want it to.** Planning review is an explicit project policy, independent of task-closure review, and can be assigned to any named role.
-- **Tracks progress.** Phases, tasks, decisions, reviews, and session state live as plain markdown, so progress is visible at a glance and survives any tool change.
-- **Writes the specs.** Each task gets a real spec, not a vibes-based prompt. Decisions get recorded as they happen, so your future self knows why.
-- **Orchestrates the doers.** Roles map tasks to the right assignee. Work can go to an AI agent, a human collaborator, or you in any role the project needs, such as researcher, programmer, reviewer, designer, or photographer. Only the Operator and Project Manager roles are required. The PM hands off, collects results, and integrates.
-- **Closes the loop.** Every task produces durable completion evidence. Projects that require task review add a verdict loop: `approve` lands the task in `done`, `request-changes` returns it to the assignee with findings, and `reject` reopens it. Projects that turn task review off close directly from an accepted report.
-- **Spends your tokens carefully.** Status reads, task selection, prompt assembly, report parsing, and plan audits are computations rather than conversations. The CLI handles them without bloating the model's context.
-- **Stays out of your way.** No database, SaaS control plane, or third-party Python package is required. Git and automation are optional, roles are operator-chosen, and every decision is overridable.
-
-## How it works
-
-Once Cartopian is installed and registered with your agent, open it from any directory and enter PM mode with the entry trigger. In most clients, that is the `/use-cartopian` command. See [Entry point](#entry-point) for the form used by each client. There is no working directory to set or path to remember because project context comes from the registry rather than the current directory.
-
-That one command is roughly the last command you type. The PM checks for updates, finds your registered projects, and asks which one to open. If you have none, it scaffolds a new one. From there, it drives the whole lifecycle itself:
-
-```text
-init project   →   plan project   →   start session   →   run tasks   →   close plan
-```
-
-Those are the runbooks the PM follows, not commands you memorize. On a new project, it interviews you, produces a requirements document, drafts a plan, breaks it into phases and tasks, and stores everything on disk as plain markdown. When you return, it reads the current state, tells you where things stand, and continues with the next task. It can dispatch that task to a configured CLI agent or assign it directly to you. When the plan is complete, it offers to close and archive it. Your side of the session is conversational: describe what you want, answer the PM's questions, and make the decisions the protocol reserves for you.
-
-## The loops: plan → optional review and outcome → optional review
-
-Cartopian has two independent review policies. A project may require planning review only, task-closure review only, both, or neither. Review policy names the role responsible for the checkpoint; role descriptions help assignment, while capability grants independently control what that role may access.
-
-**Plan → optional review.** When `[reviews].planning = "required"`, the role named by `planning_role` gets a checkpoint after each planning stage: requirements, the implementation plan, the phase breakdown, and the tasks/specs. The findings land as a durable review file; the PM integrates them before moving on. Add `"planning_review"` to that role's `auto_launch` list when the PM should launch the checkpoint automatically. When planning review is off, the PM advances without manufacturing a reviewer role or an empty review artifact.
-
-**Outcome → optional review.** During `run task`, the assignee completes the requested outcome and writes a completion report. With `[reviews].task_closure = "required"`, the PM moves the task to `in-review` and hands it to `task_role`; the verdict drives the next move deterministically. With task review off, an accepted report moves directly to `done`. In both modes the CLI verifies the evidence on disk before moving the task.
-
-Require both review policies and opt in to each automation layer, and the loop runs from end to end. The following example is a complete unattended configuration that uses the conventional `reviewer` role name:
-
-```toml
-[automation]
-initiation = "auto"              # runs may begin without you saying "continue"
-confirmation = "until-blocked"   # chain through tasks until something needs a human
-max_handoffs_per_run = 2         # bounded unattended runs
-
-[roles.coder]
-description = "Implements tasks per spec"
-grants = ["coder-like"]
-auto_launch = ["task_run"]
-
-agent = "cartopian-codex"
-
-[roles.reviewer]
-description = "Reviews against acceptance criteria and original operator intent"
-grants = ["reviewer-like"]
-auto_launch = ["task_review", "planning_review"]
-
-agent = "cartopian-gemini"
-
-[reviews]
-planning = "required"
-planning_role = "reviewer"
-task_closure = "required"
-task_role = "reviewer"
-
-[defaults]
-git_versioning = false     # git automation can be enabled; more robust support is coming soon
-```
-
-With that configuration, running a task means: assign → complete → report → review → apply verdict → start the next task. The run stops only for blockers, failures, phase boundaries, decisions reserved for you, or the run budget. The three automation authorities are separate. `initiation` determines **whether a run begins**, `confirmation` controls **pace** within a run, and **selection** is never gated. Task order is deterministic: Cartopian selects the first open task in plan order whose dependencies are satisfied. The question "Which task comes next?" is therefore a computation rather than a conversation, although a ready queue does not itself grant permission to run. The defaults require your participation: `initiation = "operator"` means the PM names the next task and waits for you to say "continue," while `confirmation = "each-handoff"` allows one handoff at a time. Asking "What's next?" is always read-only, and "stop" always takes precedence over configuration.
-
-## Built for small context windows
-
-Token burn and context noise are first-class design constraints, not afterthoughts:
-
-- **Bookkeeping is code, not reasoning.** Reading state, choosing the next task, validating readiness, assembling handoff inputs, parsing completion reports, and auditing the plan are all `cartopian` CLI subcommands exposed as MCP tools. Each returns one compact, structured record. The model consumes that answer instead of deriving it again from raw files, which reduces token use and produces consistent results.
-- **Only what is needed, when it is needed.** The PM brings the relevant protocol runbook and task materials into context, then uses only the tools required for the current step. It does not load the entire protocol and project history at once.
-- **Status is a directory.** Moving a task file between status directories *is* the status update. Nothing to sync, nothing to reconcile, nothing to reread and summarize.
-- **Handoffs are curated, not dumped.** A dispatched agent receives exactly what the task needs, including the specification, acceptance criteria, and absolute paths. It does not receive your conversation history or irrelevant project archaeology. Optional capability grants go further: a contained coder can read its prompt and the product tree but cannot read governance documents, reports, or reviews it does not need.
-- **Session state is one small file.** `STATE.md` is capped at 5KB and names the current phase, active work, open work, blockers, and the exact next action. That's the entire cost of resuming a project.
-- **Transients get cleaned up.** Prompts and handoff status files are deleted when superseded; durable knowledge is distilled into tasks, reviews, and decisions. The working set stays small on disk and in context.
-
-> **Recommendation: start a new session after each task.** Everything the next task needs is already on disk in `STATE.md`, the task file, and the specification. A fresh `/use-cartopian` rebuilds the working context from a few kilobytes and continues where you left off. A long-running session, by contrast, carries every previous task's conversation as noise. Starting a new session for each task provides maximum savings without losing state.
+- **Plans the work.** The Project Manager interviews you, drafts requirements, breaks them into phases, and writes tasks with acceptance criteria.
+- **Writes real specifications.** Each task gets a work contract, not a vague prompt. Decisions get recorded as they happen, so your future self knows why.
+- **Tracks progress in the open.** Phases, tasks, decisions, reviews, and session state are markdown files. Progress is visible at a glance and survives any tool change.
+- **Hands work to the right doer.** You name the roles your project needs. Work goes to an AI agent, a teammate, or you.
+- **Reviews the plan, if you want it to.** Planning review is a policy you set. It is independent of task review and can be assigned to any role you name.
+- **Closes the loop.** Every task produces durable evidence. With task review on, `approve` moves the task to done, `request-changes` sends it back, and `reject` reopens it.
+- **Checks the work against your own words.** Reviews compare what was delivered with the exact request you made, not just with what the PM wrote down.
+- **Spends tokens carefully.** Status reads, task selection, prompt assembly, report parsing, and audits are computations, not conversations.
+- **Stays out of your way.** Git and automation are optional, roles are yours to choose, and every decision is yours to override.
 
 ## Install
 
-Requirements: **Python 3.11+** on your PATH. The stock `/usr/bin/python3` on macOS is version 3.9, so use `brew install python@3.11` or any Python 3.11+ interpreter. That is all. No Git knowledge is required.
+You need **Python 3.11 or newer** on your PATH. The `/usr/bin/python3` that ships with macOS is 3.9, so install a newer one with `brew install python@3.11` or any equivalent. Nothing else is required, and you do not need to know Git.
 
-Open a shell-capable AI agent, such as Claude Code, Codex, Gemini CLI, Devin, or Windsurf. Any MCP-aware agent that can read a URL and run shell commands will work. Tell it:
+Open a shell-capable AI agent such as Claude Code, Codex, Gemini CLI, Devin, or Windsurf. Any MCP-aware agent that can read a URL and run shell commands works. Tell it:
 
 > Install Cartopian by following https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md
 
-That step-by-step runbook guides the agent through detecting your platform, fetching the latest release, planning every affected core and client surface before mutation, copying it into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), adding `bin/` and the platform wrapper directory to your user PATH, **registering Cartopian's MCP server with your agent and installing its entry trigger**, and verifying the installation. Operator-owned files (`cartopian.toml`, `projects.json`) are preserved across reruns. Repairs that need new authority remain offered until accepted, declined, or deferred. An unchanged decline is remembered even while another repair offer remains open; defers and materially changed decision contexts are offered again. Governed-project schema migration remains a separate approval. The verified stable result, or a bounded refusal/failure result when the state destination remains writable, is written to `<install-root>/install-update-state.json`. The full runbook is `install-cartopian.md`.
+That runbook walks the agent through detecting your platform, fetching the latest release, planning every change before making it, copying files into `~/.cartopian/` (or `%USERPROFILE%\.cartopian\` on Windows), adding `bin/` and the wrapper directory to your PATH, **registering Cartopian's MCP server with your agent and installing its entry trigger**, and verifying the result.
 
-**Upgrade** the same way: ask any Cartopian-aware agent to `check for updates`. It compares your installed version against the latest release and reinstalls on your approval.
+Your own files, `cartopian.toml` and `projects.json`, are preserved across reinstalls. Repairs that need new permission stay on offer until you accept, decline, or defer them. The final verified result is written to `<install-root>/install-update-state.json`. The full runbook is `install-cartopian.md`.
 
-Verify the install with:
+Check the install with:
 
 ```bash
 cartopian --help
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | cartopian-mcp
 ```
 
-The first command exits 0 with the CLI subcommand list. The second emits a single JSON-RPC line containing `"name":"cartopian"` (the `initialize` response's server info). On native Windows, the installer ships `bin/cartopian.cmd` and `bin/cartopian-mcp.cmd` shims so both commands resolve in PowerShell and `cmd.exe` once `bin/` is on PATH (open a new shell first). The post-install checklist lives at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
+The first command lists the CLI subcommands. The second prints one JSON line containing `"name":"cartopian"`. On Windows, the installer ships `bin/cartopian.cmd` and `bin/cartopian-mcp.cmd` so both work in PowerShell and `cmd.exe` once `bin/` is on PATH. Open a new shell first. The post-install checklist is at `~/.cartopian/protocol/INSTALL_VERIFICATION.md`.
 
-## Entry point
+**Upgrading** works the same way. Ask any Cartopian-aware agent to `check for updates`. It compares your installed version against the latest release and reinstalls once you approve.
 
-Registration installs a small **trigger bridge** for each supported agent. Use it from any directory after any client-specific restart. The bridge directly reads the authoritative `cartopian://skills/use_cartopian` resource, enters PM mode through registry-first project selection, and routes to `start session` for a selected project or `init project` when the registry is empty.
+## Starting a session
 
-The reliable, cross-client form is the **`/use-cartopian`** command. Where a description-matched skill bridge is installed, the bare phrase **"use cartopian"** also works. By client:
+Registration installs a small trigger for each supported agent. Use it from any directory, after whatever restart your client needs. There is no working directory to set and no path to remember, since project context comes from a registry rather than the current folder.
+
+The reliable cross-client form is the **`/use-cartopian`** command. Where a description-matched skill is installed, the plain phrase **"use cartopian"** works too.
 
 | Client | Enter PM mode with |
 | --- | --- |
 | Claude Code | say "use cartopian" or `/use-cartopian` |
 | Codex | `/use-cartopian` |
 | Gemini | `/use-cartopian` |
-| Windsurf | `/use-cartopian` (the natural-language phrase is best-effort) |
+| Windsurf | `/use-cartopian` (the plain phrase is best-effort) |
 | Devin for Terminal | say "use cartopian" or `/use-cartopian` |
-| Claude Desktop, Cursor | invoke the `use_cartopian` MCP prompt from the client's prompt picker (MCP only; no local bridge) |
+| Claude Desktop, Cursor | pick the `use_cartopian` prompt from the client's MCP prompt picker |
 
-To register more agents later or reinstall a trigger bridge, run the `register mcp` skill. See `install-cartopian.md` for the installation and registration flow and the authoritative instructions for each client.
+To register more agents later, or to reinstall a trigger, run the `register mcp` skill.
 
-## Getting started
+That one command is roughly the last command you type. The PM checks for updates, finds your registered projects, and asks which one to open. If you have none, it scaffolds one. From there it drives the lifecycle itself:
 
-Once you are in PM mode, everything happens through plain conversation. There is no command vocabulary to learn. The PM proposes the next protocol action; you say yes, no, or what you actually want; and it routes to the appropriate runbook. In a typical session, you describe the project, answer interview questions, and rule on the decisions the protocol reserves for you. The PM handles the rest.
+```text
+init project   →   plan project   →   start session   →   run tasks   →   close plan
+```
 
-Under the hood, the PM is executing these skills:
+Those are runbooks the PM follows, not commands you memorize. On a new project it interviews you, produces a requirements document, drafts a plan, breaks it into phases and tasks, and stores everything as markdown. When you come back, it reads the current state, tells you where things stand, and continues with the next task. Your side of the session is a conversation: describe what you want, answer questions, and make the calls the protocol reserves for you.
 
-| Skill | What the PM does with it |
-| --- | --- |
-| `init workspace` | Sets up your config defaults (global and project `cartopian.toml`) |
-| `init project` | Scaffolds and registers a new project |
-| `adopt requirements` | Imports requirements from JIRA, a PRD, Confluence, etc. |
-| `adopt plan` | Pulls an existing plan into Cartopian's shape |
-| `plan project` | Drives the full lifecycle: requirements → plan → phases → tasks |
-| `start session` | Answers "Where were we?" by reading state and continuing with the next action |
-| `run task` | Drives one task from assignment through evidence-supported closure and any required review |
-| `run handoff` | Executes one prompt/report handoff |
-| `close plan` | Closes the active plan and resets for the next |
-| `register mcp` | Registers `cartopian-mcp` with more agents and installs their entry trigger |
-| `check for updates` | Compares the installed version with the latest release and upgrades on approval |
+> **Tip: start a new session after each task.** Everything the next task needs is already on disk. A fresh `/use-cartopian` rebuilds your working context from a few kilobytes. A long session carries every earlier task's chatter as noise.
 
-You can name any of these skills to jump straight to it. This is useful for an occasional out-of-band action, such as importing requirements midstream, registering another agent, or forcing an update check. The entry point already checks for updates on its own, and you will not need to name skills during an ordinary session.
+## What lives on disk
 
-See `skills/README.md` for the full index.
+A Cartopian project is a normal folder:
 
-## Roles and AI orchestration
+```text
+my-project/
+  cartopian.toml          project settings, safe to commit
+  cartopian.local.toml    absolute paths for this machine, never committed
+  REQUIREMENTS.md         what you asked for
+  IMPLEMENTATION_PLAN.md  the live plan, one per project
+  STANDARDS.md            tools, conventions, and constraints
+  STATE.md                where you left off, capped at 5KB
+  phases/                 PHASE-01.md, PHASE-02.md, ...
+  tasks/open|in-progress|in-review|done/
+  specs/                  the work contract for each task
+  prompts/                handoffs in flight, deleted when superseded
+  reports/                what each assignee delivered
+  reviews/                review verdicts and findings
+  decisions/              why you chose what you chose
+  resources/              reference material the project needs
+```
 
-The default roster is **PM** and **Operator**, the planner and the decision-maker. From there, you can name whatever roles your project needs: Coder, Reviewer, Designer, Researcher, Photographer, or any other role. Each role gets a one-line description, which the PM uses to match tasks to the appropriate resource. Names and descriptions do not confer protocol authority. Review responsibility comes only from `[reviews]`, and access comes only from capability grants when containment is active. `reviewer` is the conventional example below, although a project may assign the same policy to another role name.
+Status is a directory. Moving a task file from `tasks/open/` to `tasks/in-progress/` **is** the status update. There is nothing to sync and no database to migrate.
+
+Projects can live anywhere. Cartopian finds them through its registry (`projects.json`) rather than a fixed tree.
+
+## Roles and who does the work
+
+The default roster is **PM** and **Operator**, the planner and the decision-maker. Add whatever roles your project needs: coder, reviewer, designer, researcher, photographer, or anything else. Each role gets a one-line description that helps the PM match work to the right assignee.
+
+Names and descriptions carry no authority. Review duty comes only from `[reviews]`. Access comes only from capability grants. `reviewer` below is a conventional name, not a special one.
 
 ```toml
 [roles.coder]
@@ -159,24 +109,132 @@ description = "Checks selected plans and outcomes against acceptance evidence."
 
 [roles.designer]
 description = "Owns visual contracts and design decisions."
-
-[reviews]
-planning = "required"
-planning_role = "reviewer"
-task_closure = "off"
 ```
 
-The same agent can wear multiple hats, and you can, too.
+The same agent can wear several hats, and so can you.
 
-Roles can also carry **capability grants** (`grants = [...]`), which turn the description into an enforced boundary. What a role may read and write is gated at the harness level and determined solely by its grants. Presets such as `coder-like` and `reviewer-like` cover common configurations; `reviewer-like` includes the governance and report reads needed to inspect assigned planning and task-closure evidence directly, without lifecycle or implementation writes. Capability grants are fully optional; configurations without them behave exactly as before. See `CAPABILITIES.md`.
+Roles can also carry **capability grants**, which turn a description into an enforced boundary. Presets such as `coder-like` and `reviewer-like` cover the common cases, and you can compose them with individual capabilities. Grants are optional, and a project without them behaves exactly as before. See `CAPABILITIES.md` for the full list and how it is enforced.
 
-### Automated handoffs (optional)
+### Handing work to an AI agent
 
-Give a role a handoff agent and, separately, the applicable automatic-launch permissions:
+Give a role an agent, and separately give it permission to launch:
 
 ```toml
 [roles.coder]
 description = "Completes assigned outcomes per spec."
+grants = ["coder-like"]
+auto_launch = ["task_run"]
+
+agent = "cartopian-codex"
+model = "gpt-5-codex"
+effort = "high"
+timeout = "60m"
+```
+
+Cartopian ships wrappers for **Codex, Claude Code, Gemini, and Devin**: `cartopian-codex`, `cartopian-claude`, `cartopian-gemini`, and `cartopian-devin`. They set the non-interactive flags, choose the right working directory, and follow one simple contract: `<agent> <prompt-path>`. Bring your own agent if you prefer. Anything that fits the contract is valid.
+
+`model` pins the agent to one model. `effort` sets a thinking or effort level. Cartopian passes both to the wrapper, which translates them into that tool's own flags. A value a tool does not recognize is dropped with a short notice, and the agent runs at its default. Gemini and Devin have no effort flag, so their wrappers ignore it.
+
+`auto_launch` accepts only `task_run`, `task_review`, and `planning_review`. Each value applies to one kind of assigned work. It never turns a review stage on, assigns review duty, starts a run, or picks a task. A role with an agent but no permission still works through handoffs you start yourself. See `wrappers/README.md` for setup and `CONFIG-MAPPING.md` for every accepted value.
+
+## The two review loops
+
+Cartopian has two independent review policies. A project can require planning review, task review, both, or neither.
+
+**Plan, then optional review.** With `[reviews] planning = "required"`, the role named by `planning_role` gets a checkpoint after each planning stage: requirements, the plan, the phase breakdown, and the tasks and specs. Findings land in a review file, and the PM works them in before moving on. With planning review off, the PM advances without inventing a reviewer or an empty review file.
+
+**Outcome, then optional review.** During `run task`, the assignee delivers the outcome and writes a completion report. With `task_closure = "required"`, the PM moves the task to `in-review` and hands it to `task_role`. The verdict decides the next move. With task review off, an accepted report moves the task straight to done. Either way, Cartopian verifies the evidence on disk before moving anything.
+
+### Your own words are part of every review
+
+A review that only compares the work against PM-written instructions cannot catch the PM drifting from what you actually asked for. Cartopian closes that gap.
+
+Before a task assignment or any review, Cartopian gathers the exact wording of your request from decisions that quote you, supported chat records your client provides, and optional saved request records. It puts those quotations into the prompt under their own heading, kept separate from everything the PM wrote later. The reviewer compares the two.
+
+Every excerpt keeps its source, its position in the sequence, and a fingerprint of its exact text, so nothing can be quietly reworded. Explicit corrections you make later stay in order. Unrelated conversation and the assistant's own words are never promoted into the trace.
+
+The review then records one of these:
+
+```text
+Request alignment: aligned | drifted | unavailable-for-legacy
+```
+
+`drifted` blocks approval, even when every PM document agrees with the implementation. Added features, changed destinations, quietly narrowed scope, and dropped requirements are all drift. Permission to propose an option is not permission to build it. Work that genuinely predates this capture is marked `unavailable-for-legacy` and does not block.
+
+There is no setting for any of this, and no role can weaken it. Tasks generated from an approved plan inherit the project's request through their verified plan ancestry, so you never restate yourself for each task. An ad-hoc task with no plan lineage inherits nothing and needs its own evidence.
+
+## Bounded automation
+
+Three separate settings control how much runs without you:
+
+```toml
+[automation]
+initiation = "auto"              # a run may begin without you saying "continue"
+confirmation = "until-blocked"   # keep going until something needs a human
+max_handoffs_per_run = 2         # never more than this in one run
+```
+
+`initiation` decides **whether a run begins**. `confirmation` controls the **pace** inside a run. `max_handoffs_per_run` is the **ceiling**. Task selection is never gated: Cartopian always takes the first open task in plan order whose dependencies are met, so "what comes next?" is a computation rather than a discussion. A ready queue is not permission to run.
+
+The defaults keep you involved. `initiation = "operator"` means the PM names the next task and waits. `confirmation = "each-handoff"` means one handoff at a time. Asking "what's next?" is always read-only, and "stop" always wins over configuration.
+
+## Risk and practice
+
+Every new task records five plain observations: how far its effects reach, how reversible it is, whether authority is settled, how ambiguous it is, and how well the evidence covers it. Cartopian turns those into one band, from `routine` up through `bounded`, `consequential`, and `critical`. There are no scores and no averaging. The highest observation sets the band.
+
+The band scales expectations for evidence, independent review, operator approval, and contingency. It never edits your configured policy. When the band expects more review than your settings provide, Cartopian surfaces the difference for you to decide.
+
+Cartopian also selects a **practice pack** for a task when one clearly applies, drawing on packs for software, research, marketing, operations, and policy work. Selection is deterministic, and no pack overrides your configuration.
+
+## Configuration
+
+Cartopian reads a global file, a project file, and an optional machine-local file. Built-in defaults fill anything you leave unset.
+
+- **Global:** `~/.cartopian/cartopian.toml` holds defaults for every project. The installer seeds it fully commented out, so it starts empty.
+- **Project:** `<project-root>/cartopian.toml` identifies the project and carries its settings. Commit it.
+- **Machine-local:** `<project-root>/cartopian.local.toml` maps work-root names to absolute paths on one machine. It is gitignored.
+
+| Section | Where it belongs | Purpose |
+| --- | --- | --- |
+| `[project]` | Project | Required `name`, `id`, and `project_schema_version`, plus optional `work_roots` names |
+| `[defaults]` | Global or project | The `git_versioning` switch |
+| `[git]` | Global or project | Branch ownership, branch naming, and merge strategy |
+| `[automation]` | Global or project | Run initiation, pace, and the per-run handoff ceiling |
+| `[roles.<name>]` | Global or project | One flat table per role: description, grants, agent, launch options, and launch permissions |
+| `[reviews]` | Global or project | The two independent review policies and the role assigned to each |
+| `[work_roots]` | Machine-local only | Absolute paths for the names `[project].work_roots` declares |
+
+Project values beat global values, key by key. `cartopian resolve-config <project-root>` merges all three files, validates them together, and shows the effective result with the source of each value. It fails rather than guesses when something does not line up, such as a declared work root with no path or a review that names a role nobody defined.
+
+**`CONFIG-MAPPING.md` is the complete field reference.** It lists every setting, every accepted value, every capability and preset, every wrapper name, and every flag for creating and editing configuration.
+
+Run `init workspace` to set global defaults and `init project` to create a project. Inside a project, ask the PM for a change and it applies it with `cartopian update-config`, which validates the result and preserves your comments.
+
+### A complete example
+
+This project requires both reviews and runs unattended in short bursts:
+
+```toml
+[project]
+id = "my-project"
+name = "My Project"
+project_schema_version = "v0.10.0"
+work_roots = ["product"]
+
+[automation]
+initiation = "auto"
+confirmation = "until-blocked"
+max_handoffs_per_run = 2
+
+[reviews]
+planning = "required"
+planning_role = "reviewer"
+task_closure = "required"
+task_role = "reviewer"
+
+[roles.coder]
+description = "Implements tasks per spec."
+grants = ["coder-like"]
 auto_launch = ["task_run"]
 
 agent = "cartopian-codex"
@@ -185,87 +243,66 @@ effort = "high"
 timeout = "60m"
 
 [roles.reviewer]
-description = "Checks selected plans and outcomes against acceptance evidence."
+description = "Reviews against acceptance evidence and the original request."
+grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
 agent = "cartopian-gemini"
 timeout = "30m"
+
+[defaults]
+git_versioning = false
 ```
 
-Cartopian ships cross-platform wrappers for **Codex, Claude Code, Gemini, and Devin** under `wrappers/`. They handle non-interactive flags, set the appropriate working directory, and conform to the simple `<agent> <prompt-path>` contract. You can also bring your own agent; anything that fits the contract is valid.
+The matching machine-local file supplies the path that only exists on your computer:
 
-The optional `model` key pins the assigned agent to a specific model. Dispatch exports it to the wrapper as the agent-neutral `CARTOPIAN_MODEL` environment variable; all four shipped wrappers translate it into the tool's `--model` flag. When unset, the tool's own default model applies.
+```toml
+# cartopian.local.toml
+[work_roots]
+product = "/Users/<name>/Projects/my-product"
+```
 
-The optional `effort` key sets an effort or thinking level in the same way. Dispatch exports it as `CARTOPIAN_EFFORT`, and the wrapper translates it into the tool-specific flag (`claude --effort`, codex `-c model_reasoning_effort=`). A value outside the wrapper's vocabulary degrades gracefully. The wrapper prints a one-line notice to standard error, omits the flag, and launches the agent at its default effort. The Gemini and Devin CLIs have no effort flag, so those wrappers ignore `CARTOPIAN_EFFORT` with a notice.
+With that in place, one task runs as: assign, complete, report, review, apply the verdict, start the next. The run stops for blockers, failures, phase boundaries, decisions reserved for you, and the handoff ceiling.
 
-`auto_launch` accepts only `task_run`, `task_review`, and `planning_review`. Each permission applies to one assigned work type. It never enables a review stage, assigns review responsibility, starts a run, or selects a task; `[reviews]`, `[automation]`, and deterministic task order own those decisions. The list is empty by default and `cartopian dispatch` enforces it fail-closed.
+### Keeping a project current
 
-The defaults require your participation: execution starts on your directive, and confirmation occurs for each handoff. Bounded unattended runs are available when you want them. Each layer (`initiation`, `confirmation`, and the applicable role-local permission) is a separate opt-in, as shown above. Manual handoff is always supported, and automation remains optional.
+`project_schema_version` records the layout a project uses, so Cartopian knows when a project needs updating. It is separate from the Cartopian release version, the connected server identity, and the MCP protocol version. The `migrate project` skill advances it, only with your approval and only after validation passes.
 
-See `wrappers/README.md` for setup and `protocol/CONVENTIONS.md` for the full contract.
+## Built for small context windows
 
-## Configuration
+Token burn and context noise are design constraints here, not afterthoughts.
 
-Cartopian uses a global configuration file, a committed configuration file for each project, and an optional machine-local work-root map. Built-in protocol defaults provide fallback behavior, but they are not another file or a TOML section. Each configuration section has its own resolution rules.
+- **Bookkeeping is code, not reasoning.** Reading state, choosing the next task, validating readiness, assembling handoffs, parsing reports, and auditing the plan are CLI subcommands exposed as MCP tools. Each returns one compact record. The model uses that answer instead of deriving it again from raw files.
+- **Only what is needed, when it is needed.** The PM loads the runbook and materials for the current step, then uses only the tools that step requires.
+- **Status is a directory.** Nothing to sync, nothing to reconcile, nothing to reread.
+- **Handoffs are curated.** A dispatched agent gets the specification, the acceptance criteria, your original request, and the absolute paths it needs. It does not get your conversation history. With grants active, a contained coder can read its prompt and the product tree and nothing else.
+- **Session state is one small file.** `STATE.md` is capped at 5KB and names the current phase, active work, open work, blockers, and the exact next action. That is the whole cost of resuming.
+- **Transients get cleaned up.** Prompts and handoff status files are deleted once superseded. Durable knowledge is distilled into tasks, reviews, and decisions.
 
-### Configuration files
+## Skills the PM runs
 
-- **Global configuration:** `~/.cartopian/cartopian.toml` holds workspace-wide defaults for projects that do not override them.
-- **Project configuration:** `<project-root>/cartopian.toml` identifies the project, declares its portable settings, and overrides supported global values. This file is committed with the project when Git versioning is enabled.
-- **Machine-local work roots:** `<project-root>/cartopian.local.toml` maps declared work-root names to absolute paths on one machine. It is gitignored and is not a general configuration override file.
+You do not need these names in normal use. The PM proposes the next action and routes there itself.
 
-### TOML sections
+| Skill | What it does |
+| --- | --- |
+| `init workspace` | Sets up your global and project `cartopian.toml` defaults |
+| `init project` | Scaffolds and registers a new project |
+| `adopt requirements` | Imports requirements from JIRA, a PRD, Confluence, or similar |
+| `adopt plan` | Pulls an existing plan into Cartopian's shape |
+| `plan project` | Drives requirements, plan, phases, tasks, and specs |
+| `start session` | Answers "where were we?" and continues with the next action |
+| `run task` | Drives one task from assignment through evidence-backed closure and any required review |
+| `run handoff` | Executes one prompt and report handoff |
+| `close plan` | Closes the active plan, optionally archives it, and resets for the next |
+| `migrate project` | Brings a project's schema current, with your approval |
+| `register mcp` | Registers `cartopian-mcp` with more agents and installs their trigger |
+| `check for updates` | Compares your installed version with the latest release and upgrades on approval |
 
-| Section | Where it belongs | Purpose |
-| --- | --- | --- |
-| `[project]` | Project | Required project `name`, `id`, and `project_schema_version`, plus optional `work_roots` names |
-| `[defaults]` | Global or project | The `git_versioning` switch |
-| `[git]` | Global or project | Optional PM-owned product-branch behavior, branch naming, and merge strategy |
-| `[automation]` | Global or project | Run initiation, confirmation pace, and the handoff limit for each run |
-| `[roles.<name>]` | Global or project | One flat role table containing descriptions, capability grants, a handoff agent, launch options, and assigned-work launch permissions |
-| `[reviews]` | Global or project | Independent planning and task-closure policies and the role assigned to each required loop |
-| `[work_roots]` | Machine-local file only | Absolute path mappings for names declared by `[project].work_roots` |
-
-For sections shared by the global and project files, project values take precedence over global values. Resolution is performed at the key or role level as appropriate for that section. Built-in defaults fill supported values that remain unset, including the `pm` and `operator` roles, attended automation, reviews set to `off`, and Git versioning set to `false`. The `[project]` table comes only from the project file. The machine-local `[work_roots]` table only supplies paths for names declared in that project's `[project].work_roots` list.
-
-`cartopian resolve-config <project-root>` validates these sources together and returns the effective configuration. It fails when, for example, a declared work root has no machine-local path, a required review names an undeclared role, or an automatic-launch permission is not applicable to the role.
-
-Run `init workspace` to establish global defaults and `init project` to create a project configuration. The PM manages changes inside a project through the validated `cartopian update-config` command after you request them. The workspace setup flow owns the global file, which can also be edited directly by the operator.
-
-The `[project].project_schema_version` value records the project's configuration format so Cartopian can identify applicable migrations. It is separate from the installed Cartopian release version, the connected server identity, and the MCP wire protocol version. The migration workflow advances it only after operator approval and successful validation.
-
-### Original operator request in reviews
-
-Cartopian resolves exact operator excerpts from applicable decision artifacts,
-supported host-provided chat records, and optional immutable `requests/`
-records. A native host callback is one possible intake adapter, not a
-completion requirement when an applicable decision already preserves the
-exact request. Explicit corrections remain ordered; duplicate content and
-unrelated conversation are excluded.
-
-Planning, task-assignment, and task-closure prompts carry that verbatim channel
-separately from PM-derived guidance and delivery evidence.
-`cartopian review-context` is the read-only CLI/MCP projection used by prompt
-generation, automatic dispatch, and manual handoff preflight. Drift blocks
-approval. Historical work that genuinely predates capture remains explicitly
-non-blocking and is never rewritten.
-
-Every excerpt carries its source path and identity, governed unit, evidence
-order, and exact-text hash. Ordinary decision, plan, spec, task, prompt, and
-report prose stays PM-derived. A plan can select operator evidence only through
-an explicitly marked source reference. Optional `capture-request` ingress is
-absent from managed-agent MCP tools and refuses dispatched-role or in-process
-MCP markers. A planned task inherits project intent through its verified
-task-to-phase-to-plan ancestry, so executing the approved plan does not require
-the operator to restate the request for each generated task. Direct task-bound
-evidence takes precedence; ad-hoc or unanchored tasks do not inherit unrelated
-project intent.
+Name any of them to jump straight there. This is handy for occasional out-of-band work such as importing requirements midstream or registering another agent. See `skills/README.md` for the full index.
 
 ## Protocol
 
-The contracts are in `protocol/CONVENTIONS.md`, the authoritative reference for project structure, lifecycle, roles, and handoffs. The executable workflows are in `skills/`. Both are plain markdown intended for humans and agents alike.
-
-Status is a directory: moving a task file between status directories *is* the status update. There is no metadata to synchronize and no database to migrate. Projects can live anywhere on disk and are found through the registry (`projects.json`) rather than a fixed directory tree.
+`protocol/CONVENTIONS.md` is the authoritative reference for project structure, lifecycle, naming, roles, reviews, request evidence, handoffs, and Git behavior. `skills/` holds the executable workflows. Both are plain markdown, written for people and agents alike.
 
 ## License
 
