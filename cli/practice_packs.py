@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -23,6 +24,7 @@ MAX_ENVELOPE_VALUES = 32
 MAX_BODY_BUDGET_BYTES = 64 * 1024
 
 _IDENTITY_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _BODY_REF_RE = re.compile(r"^packs/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.md$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _FACT_TO_ENVELOPE = {
@@ -32,6 +34,27 @@ _FACT_TO_ENVELOPE = {
     "exclusion": "exclusions",
     "lifecycle_substrate": "lifecycle_substrate_activities",
 }
+_SOURCE_CLASSES = ("governing", "conditional", "structural-exemplar", "watchlist")
+_SOURCE_STATUSES = ("current", "stale", "unknown")
+_CONFLICT_DISPOSITIONS = ("none", "resolved", "unresolved")
+# Source applicability conditions may additionally declare scope facts;
+# pack matching never reads them.
+_SOURCE_CONDITION_FACTS = (*_FACT_TO_ENVELOPE, "domain_scope")
+_SOURCE_RECORD_FIELDS = (
+    "source_id",
+    "class",
+    "title",
+    "context",
+    "verified_on",
+    "status",
+    "governed_scope",
+    "applicability_boundary",
+    "applies_when",
+    "exclusions",
+    "precedence_scope",
+    "conflict_disposition",
+    "refresh_trigger",
+)
 
 
 class PracticePackError(ValueError):
@@ -192,8 +215,227 @@ def _normalized_conditions(
     return tuple(normalized)
 
 
+def _source_error(detail: str) -> PracticePackError:
+    return PracticePackError("pack-source-record-invalid", detail)
+
+
+def _source_records(
+    registry: Mapping[str, Any],
+    records_override: object = None,
+) -> dict[str, dict[str, Any]]:
+    """Validate the complete closed source-record catalog before any use.
+
+    ``records_override`` is a test-only fixture seam; the authoritative
+    catalog lives in the registry's ``source_stack``.
+    """
+    if records_override is None:
+        try:
+            raw = registry["packs"]["source_stack"]["records"]
+        except (KeyError, TypeError) as exc:
+            raise _source_error(
+                "the classified source-record catalog is missing"
+            ) from exc
+    else:
+        raw = records_override
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise _source_error("the classified source-record catalog is not a list")
+    records: dict[str, dict[str, Any]] = {}
+    for record in raw:
+        if not isinstance(record, Mapping):
+            raise _source_error("a source record is not an object")
+        source_id = record.get("source_id")
+        if not isinstance(source_id, str) or not _IDENTITY_RE.fullmatch(source_id):
+            raise _source_error("a source record has no stable source identity")
+        if source_id in records:
+            raise _source_error(f"{source_id} is declared more than once")
+        _validate_source_record(source_id, record)
+        records[source_id] = dict(record)
+    return records
+
+
+def _validate_source_record(source_id: str, record: Mapping[str, Any]) -> None:
+    """Enforce the closed source-record schema; every violation fails closed."""
+    missing = [field for field in _SOURCE_RECORD_FIELDS if field not in record]
+    if missing:
+        raise _source_error(f"{source_id} is missing {','.join(missing)}")
+    unknown = sorted(set(record) - set(_SOURCE_RECORD_FIELDS))
+    if unknown:
+        raise _source_error(
+            f"{source_id} declares fields outside the closed schema: {','.join(unknown)}"
+        )
+    source_class = record["class"]
+    if source_class not in _SOURCE_CLASSES:
+        raise _source_error(f"{source_id} has an undeclared source class")
+    if record["status"] not in _SOURCE_STATUSES:
+        raise _source_error(f"{source_id} has an undeclared status")
+    for field in ("title", "context", "governed_scope", "refresh_trigger"):
+        value = record[field]
+        if not isinstance(value, str) or not value.strip():
+            raise _source_error(f"{source_id}.{field} is not a non-empty string")
+    verified_on = record["verified_on"]
+    if not isinstance(verified_on, str) or not _DATE_RE.fullmatch(verified_on):
+        raise _source_error(f"{source_id}.verified_on is not a YYYY-MM-DD date")
+    try:
+        date.fromisoformat(verified_on)
+    except ValueError as exc:
+        raise _source_error(
+            f"{source_id}.verified_on is not a real calendar date"
+        ) from exc
+    exclusions = record["exclusions"]
+    if (
+        not isinstance(exclusions, list)
+        or not exclusions
+        or any(not isinstance(item, str) or not item.strip() for item in exclusions)
+    ):
+        raise _source_error(
+            f"{source_id}.exclusions is not a non-empty list of non-empty strings"
+        )
+    precedence_scope = record["precedence_scope"]
+    if not isinstance(precedence_scope, str) or not _IDENTITY_RE.fullmatch(
+        precedence_scope
+    ):
+        raise _source_error(
+            f"{source_id}.precedence_scope is not one stable scope identity"
+        )
+    if record["conflict_disposition"] not in _CONFLICT_DISPOSITIONS:
+        raise _source_error(f"{source_id} has an undeclared conflict disposition")
+    boundary = record["applicability_boundary"]
+    conditions = record["applies_when"]
+    if not isinstance(conditions, list):
+        raise _source_error(f"{source_id}.applies_when is not a list")
+    if source_class == "conditional":
+        if not isinstance(boundary, str) or not boundary.strip():
+            raise _source_error(
+                f"{source_id} is conditional without an applicability boundary"
+            )
+        if not conditions:
+            raise _source_error(
+                f"{source_id} is conditional without applicability conditions"
+            )
+    else:
+        if boundary is not None:
+            raise _source_error(
+                f"{source_id} declares an applicability boundary outside the "
+                "conditional class"
+            )
+        if conditions:
+            raise _source_error(
+                f"{source_id} declares applicability conditions outside the "
+                "conditional class"
+            )
+    for index, condition in enumerate(conditions):
+        _validate_source_condition(source_id, index, condition)
+
+
+def _validate_source_condition(source_id: str, index: int, condition: object) -> None:
+    """One closed condition form: a declared fact with exactly one value shape."""
+    if not isinstance(condition, Mapping):
+        raise _source_error(f"{source_id} condition {index} is not an object")
+    fact = condition.get("fact")
+    if not isinstance(fact, str) or fact not in _SOURCE_CONDITION_FACTS:
+        raise _source_error(f"{source_id} condition {index} has an undeclared fact")
+    has_value = "value" in condition
+    has_any = "any_of" in condition
+    if has_value == has_any:
+        raise _source_error(
+            f"{source_id} condition {index} requires exactly one of value or any_of"
+        )
+    unknown = sorted(set(condition) - {"fact", "value", "any_of"})
+    if unknown:
+        raise _source_error(
+            f"{source_id} condition {index} declares keys outside the closed "
+            f"form: {','.join(unknown)}"
+        )
+    raw_values = [condition["value"]] if has_value else condition["any_of"]
+    if not isinstance(raw_values, list) or not raw_values:
+        raise _source_error(f"{source_id} condition {index} has no values")
+    values: list[str] = []
+    for value in raw_values:
+        if not isinstance(value, str) or not _IDENTITY_RE.fullmatch(value):
+            raise _source_error(
+                f"{source_id} condition {index} has a value that is not a "
+                "stable identity"
+            )
+        values.append(value)
+    if len(values) != len(set(values)):
+        raise _source_error(f"{source_id} condition {index} repeats a value")
+
+
+def _validate_source_stack(
+    pack_id: str,
+    raw_sources: object,
+    records: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """Fail closed on missing authority, staleness, malformation, or conflict."""
+    if not isinstance(raw_sources, list) or not raw_sources:
+        raise PracticePackError(
+            "pack-metadata-invalid",
+            f"{pack_id}.sources must be a non-empty list",
+            pack_id=pack_id,
+        )
+    source_ids: list[str] = []
+    for source_id in raw_sources:
+        if not isinstance(source_id, str) or source_id not in records:
+            raise PracticePackError(
+                "pack-source-record-invalid",
+                f"{pack_id} references an unknown source {source_id!r}",
+                pack_id=pack_id,
+            )
+        source_ids.append(source_id)
+    if len(source_ids) != len(set(source_ids)):
+        raise PracticePackError(
+            "pack-metadata-invalid",
+            f"{pack_id}.sources repeats a source",
+            pack_id=pack_id,
+        )
+    referenced = [records[source_id] for source_id in source_ids]
+    for record in referenced:
+        if record["conflict_disposition"] == "unresolved":
+            raise PracticePackError(
+                "pack-source-conflict-unresolved",
+                f"{record['source_id']} records an unresolved conflict",
+                pack_id=pack_id,
+            )
+    scopes: dict[tuple[str, str], list[str]] = {}
+    for record in referenced:
+        scopes.setdefault(
+            (record["class"], record["precedence_scope"]), []
+        ).append(record["source_id"])
+    for (source_class, scope), members in scopes.items():
+        if len(members) < 2:
+            continue
+        unresolved = [
+            source_id
+            for source_id in members
+            if records[source_id]["conflict_disposition"] != "resolved"
+        ]
+        if unresolved:
+            raise PracticePackError(
+                "pack-source-conflict-unresolved",
+                f"{pack_id} has an unresolved equal-scope conflict in {scope}",
+                pack_id=pack_id,
+            )
+    if not any(record["class"] == "governing" for record in referenced):
+        raise PracticePackError(
+            "pack-source-authority-missing",
+            f"{pack_id} references no governing source; exemplars and watchlists never substitute",
+            pack_id=pack_id,
+        )
+    for record in referenced:
+        if record["class"] in ("governing", "conditional") and record["status"] != "current":
+            raise PracticePackError(
+                "pack-source-stale",
+                f"{record['source_id']} is {record['status']} and cannot back {pack_id}",
+                pack_id=pack_id,
+            )
+    return tuple(source_ids)
+
+
 def validate_pack_catalog(
-    metadata: Iterable[Mapping[str, object]], *, require_initial_catalog: bool = True
+    metadata: Iterable[Mapping[str, object]],
+    *,
+    require_initial_catalog: bool = True,
+    source_records: Sequence[Mapping[str, object]] | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Validate metadata completely before selection can retrieve a body."""
     registry = _load_registry()
@@ -210,6 +452,7 @@ def validate_pack_catalog(
     }
     fact_classes = packs_contract["fact_precedence_classes"]
     forbidden = set(registry["independence"]["forbidden_pack_metadata_fields"])
+    records = _source_records(registry, source_records)
     try:
         candidates = list(metadata)
     except TypeError as exc:
@@ -312,6 +555,7 @@ def validate_pack_catalog(
             raise PracticePackError(
                 "pack-metadata-invalid", f"{pack_id}.body_budget_bytes is invalid", pack_id=pack_id
             )
+        sources = _validate_source_stack(pack_id, candidate.get("sources"), records)
         areas = candidate.get("content_areas")
         if not isinstance(areas, list) or not areas:
             raise PracticePackError(
@@ -346,6 +590,7 @@ def validate_pack_catalog(
                 "tie_key": tie_key,
                 "body_ref": body_ref,
                 "body_budget_bytes": budget,
+                "sources": sources,
                 "content_areas": normalized_areas,
                 "evidence_shape": evidence_shape.strip(),
             }
@@ -539,12 +784,14 @@ def select_practice_pack(
     *,
     metadata: Iterable[Mapping[str, object]] | None = None,
     protocol_root: Path | str = DEFAULT_PROTOCOL_ROOT,
+    source_records: Sequence[Mapping[str, object]] | None = None,
 ) -> dict[str, Any]:
     """Resolve exactly one eligible pack or none, then load only that body."""
     try:
         registry = _load_registry()
         candidates = validate_pack_catalog(
-            load_pack_catalog() if metadata is None else metadata
+            load_pack_catalog() if metadata is None else metadata,
+            source_records=source_records,
         )
         facts = _normalize_envelope(envelope)
     except PracticePackError as exc:

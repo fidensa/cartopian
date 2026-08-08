@@ -26,6 +26,10 @@ def _catalog() -> list[dict]:
     )
 
 
+def _source_stack_records() -> list[dict]:
+    return copy.deepcopy(_registry()["packs"]["source_stack"]["records"])
+
+
 def _envelope(outcome: str, **extra: object) -> dict[str, object]:
     envelope: dict[str, object] = {
         "primary_outcomes": [outcome],
@@ -414,6 +418,296 @@ class PracticePackSurfaceParityTests(unittest.TestCase):
         self.assertEqual(record["outcome"], "ambiguous")
         self.assertEqual(record["loaded_body_bytes"], 0)
         self.assertIsNone(record["body"])
+
+
+class SourceRecordContractTests(unittest.TestCase):
+    """The bounded corrective contract: a closed, fail-closed source-record schema.
+
+    The prior contract accepted malformed or incomplete source records: it did
+    not validate identity stability or uniqueness, exclusions, precedence
+    scope, or verification-date shape, it accepted a condition carrying both
+    ``value`` and ``any_of``, and a list-valued precedence scope escaped as a
+    raw TypeError. Every malformed case below must instead produce the
+    canonical structured invalid result: zero bodies, zero loaded bytes, and
+    no partial body.
+    """
+
+    def _select(self, records: object = None, catalog: list | None = None) -> dict:
+        from cli.practice_packs import select_practice_pack
+
+        return select_practice_pack(
+            _envelope("supported-finding"),
+            metadata=catalog,
+            source_records=records,
+        )
+
+    def assert_invalid(
+        self, result: dict, code: str = "pack-source-record-invalid"
+    ) -> None:
+        self.assertEqual(result["outcome"], "invalid")
+        self.assertEqual(result["bodies_loaded"], 0)
+        self.assertEqual(result["loaded_body_bytes"], 0)
+        self.assertIsNone(result["body"])
+        self.assertEqual(result["error"]["code"], code)
+
+    def test_the_unmutated_catalog_still_routes_through_the_seam(self) -> None:
+        result = self._select(records=_source_stack_records())
+        self.assertEqual(result["outcome"], "selected")
+        self.assertEqual(result["pack_id"], "research-inquiry")
+        self.assertEqual(result["bodies_loaded"], 1)
+
+    def test_the_authoritative_catalog_satisfies_the_closed_schema(self) -> None:
+        import cli.practice_packs as packs
+
+        catalog = packs.validate_pack_catalog(packs.load_pack_catalog())
+        stack = _registry()["packs"]["source_stack"]
+        self.assertEqual(
+            [item["id"] for item in stack["classes"]],
+            ["governing", "conditional", "structural-exemplar", "watchlist"],
+        )
+        records = {record["source_id"]: record for record in stack["records"]}
+        for pack in catalog:
+            with self.subTest(pack=pack["pack_id"]):
+                referenced = [records[source_id] for source_id in pack["sources"]]
+                self.assertTrue(
+                    any(item["class"] == "governing" for item in referenced),
+                    "every pack needs at least one governing source",
+                )
+                for record in referenced:
+                    if record["class"] in {"governing", "conditional"}:
+                        self.assertEqual(record["status"], "current")
+                    if record["class"] == "conditional":
+                        self.assertTrue(record["applicability_boundary"].strip())
+                        self.assertTrue(record["applies_when"])
+
+    def test_every_declared_record_field_is_required(self) -> None:
+        declared = [
+            item["id"]
+            for item in _registry()["packs"]["source_stack"]["record_fields"]
+        ]
+        self.assertEqual(len(declared), 13)
+        for field in declared:
+            records = _source_stack_records()
+            del records[0][field]
+            with self.subTest(field=field):
+                self.assert_invalid(self._select(records=records))
+
+    def test_malformed_field_values_fail_closed_without_raw_exceptions(self) -> None:
+        cases = {
+            "unstable-source-id": ("source_id", "NIST SSDF (latest)"),
+            "wrong-typed-source-id": ("source_id", 42),
+            "undeclared-class": ("class", "advisory"),
+            "undeclared-status": ("status", "fresh"),
+            "empty-title": ("title", ""),
+            "wrong-typed-context": ("context", 2022),
+            "malformed-verification-date": ("verified_on", "verified 2026-08-07"),
+            "impossible-verification-date": ("verified_on", "2026-13-40"),
+            "null-exclusions": ("exclusions", None),
+            "empty-exclusions": ("exclusions", []),
+            "wrong-typed-exclusion-entry": ("exclusions", ["one exclusion", 3]),
+            "list-valued-precedence-scope": (
+                "precedence_scope",
+                ["one-scope", "another-scope"],
+            ),
+            "malformed-precedence-scope": ("precedence_scope", "Not A Scope"),
+            "undeclared-conflict-disposition": ("conflict_disposition", "tbd"),
+            "wrong-typed-applies-when": ("applies_when", "always"),
+            "empty-governed-scope": ("governed_scope", "  "),
+            "empty-refresh-trigger": ("refresh_trigger", ""),
+        }
+        for name, (field, value) in cases.items():
+            records = _source_stack_records()
+            records[0][field] = value
+            with self.subTest(case=name):
+                self.assert_invalid(self._select(records=records))
+
+    def test_empty_exclusions_fail_closed_before_body_retrieval(self) -> None:
+        import cli.practice_packs as packs
+
+        records = _source_stack_records()
+        records[0]["exclusions"] = []
+        with patch.object(packs, "_load_selected_body") as loader:
+            result = self._select(records=records)
+        loader.assert_not_called()
+        self.assert_invalid(result)
+
+    def test_the_record_schema_and_catalog_shape_are_closed(self) -> None:
+        records = _source_stack_records()
+        records.append(copy.deepcopy(records[0]))
+        with self.subTest(case="duplicate-identity"):
+            self.assert_invalid(self._select(records=records))
+
+        records = _source_stack_records()
+        records[0]["confidence"] = "high"
+        with self.subTest(case="undeclared-record-field"):
+            self.assert_invalid(self._select(records=records))
+
+        with self.subTest(case="catalog-not-a-list"):
+            self.assert_invalid(self._select(records={"source_id": "x"}))
+        with self.subTest(case="record-not-an-object"):
+            self.assert_invalid(self._select(records=["not-a-record"]))
+
+    def test_applicability_conditions_are_a_closed_contract(self) -> None:
+        def mutated(apply) -> list[dict]:
+            records = _source_stack_records()
+            record = next(
+                item for item in records if item["class"] == "conditional"
+            )
+            apply(record)
+            return records
+
+        def set_condition(record: dict, condition: object) -> None:
+            record["applies_when"][0] = condition
+
+        cases = {
+            "value-and-any-of": lambda record: set_condition(
+                record,
+                {
+                    "fact": "domain_scope",
+                    "value": "web-application",
+                    "any_of": ["web-service"],
+                },
+            ),
+            "neither-value-nor-any-of": lambda record: set_condition(
+                record, {"fact": "domain_scope"}
+            ),
+            "undeclared-condition-key": lambda record: set_condition(
+                record,
+                {"fact": "domain_scope", "value": "web-application", "weight": 2},
+            ),
+            "undeclared-fact": lambda record: set_condition(
+                record, {"fact": "vibes", "value": "good"}
+            ),
+            "non-object-condition": lambda record: set_condition(
+                record, "domain_scope=web"
+            ),
+            "empty-any-of": lambda record: set_condition(
+                record, {"fact": "domain_scope", "any_of": []}
+            ),
+            "non-identity-value": lambda record: set_condition(
+                record, {"fact": "domain_scope", "value": "Web Application"}
+            ),
+            "repeated-any-of-value": lambda record: set_condition(
+                record,
+                {"fact": "domain_scope", "any_of": ["web-content", "web-content"]},
+            ),
+            "conditional-without-conditions": lambda record: record.update(
+                applies_when=[]
+            ),
+            "conditional-without-boundary": lambda record: record.update(
+                applicability_boundary=None
+            ),
+        }
+        for name, apply in cases.items():
+            with self.subTest(case=name):
+                self.assert_invalid(self._select(records=mutated(apply)))
+
+        records = _source_stack_records()
+        records[0]["applies_when"] = [
+            {"fact": "domain_scope", "value": "web-application"}
+        ]
+        with self.subTest(case="conditions-outside-conditional-class"):
+            self.assert_invalid(self._select(records=records))
+
+        records = _source_stack_records()
+        records[0]["applicability_boundary"] = "everywhere"
+        with self.subTest(case="boundary-outside-conditional-class"):
+            self.assert_invalid(self._select(records=records))
+
+    def test_missing_stale_or_conflicting_authority_fails_closed(self) -> None:
+        records = _source_stack_records()
+        by_id = {record["source_id"]: record for record in records}
+
+        def research_catalog(mutate) -> list[dict]:
+            catalog = _catalog()
+            research = next(
+                item for item in catalog if item["family"] == "research"
+            )
+            mutate(research)
+            return catalog
+
+        with self.subTest(case="no-governing-source"):
+            catalog = research_catalog(
+                lambda research: research.update(
+                    sources=[
+                        source_id
+                        for source_id in research["sources"]
+                        if by_id[source_id]["class"] != "governing"
+                    ]
+                )
+            )
+            self.assert_invalid(
+                self._select(catalog=catalog), "pack-source-authority-missing"
+            )
+
+        with self.subTest(case="exemplar-never-substitutes"):
+            catalog = research_catalog(
+                lambda research: research.update(sources=["agent-skills-exemplar"])
+            )
+            self.assert_invalid(
+                self._select(catalog=catalog), "pack-source-authority-missing"
+            )
+
+        for status in ("stale", "unknown"):
+            with self.subTest(case=f"{status}-governing-source"):
+                records = _source_stack_records()
+                next(
+                    item
+                    for item in records
+                    if item["source_id"] == "allea-code-2023"
+                )["status"] = status
+                self.assert_invalid(
+                    self._select(records=records), "pack-source-stale"
+                )
+
+        with self.subTest(case="unresolved-conflict-disposition"):
+            records = _source_stack_records()
+            records[0]["conflict_disposition"] = "unresolved"
+            self.assert_invalid(
+                self._select(records=records), "pack-source-conflict-unresolved"
+            )
+
+        with self.subTest(case="unresolved-equal-scope-conflict"):
+            records = _source_stack_records()
+            by_id = {record["source_id"]: record for record in records}
+            by_id["nist-csf-2-0"]["precedence_scope"] = by_id["nist-ssdf-1-1"][
+                "precedence_scope"
+            ]
+            self.assert_invalid(
+                self._select(records=records), "pack-source-conflict-unresolved"
+            )
+
+        with self.subTest(case="unknown-source-reference"):
+            catalog = research_catalog(
+                lambda research: research.update(
+                    sources=[*research["sources"], "not-a-source"]
+                )
+            )
+            self.assert_invalid(self._select(catalog=catalog))
+
+        with self.subTest(case="repeated-source-reference"):
+            catalog = research_catalog(
+                lambda research: research.update(
+                    sources=[*research["sources"], research["sources"][0]]
+                )
+            )
+            self.assert_invalid(
+                self._select(catalog=catalog), "pack-metadata-invalid"
+            )
+
+        with self.subTest(case="sources-missing-from-metadata"):
+            catalog = research_catalog(lambda research: research.pop("sources"))
+            self.assert_invalid(
+                self._select(catalog=catalog), "pack-metadata-invalid"
+            )
+
+        with self.subTest(case="sources-not-a-list"):
+            catalog = research_catalog(
+                lambda research: research.update(sources="nist-ssdf-1-1")
+            )
+            self.assert_invalid(
+                self._select(catalog=catalog), "pack-metadata-invalid"
+            )
 
 
 if __name__ == "__main__":

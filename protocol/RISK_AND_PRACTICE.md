@@ -242,6 +242,7 @@ What the operator excluded was a 24-skill mandatory specialist catalog preloaded
 | `body_budget_bytes` | Declared maximum size of the guidance body. A body over budget fails closed and loads nothing. |
 | `content_areas` | The approved guidance content areas this pack's body must cover. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band. |
 | `evidence_shape` | The kind of task evidence this profile helps interpret. It cannot impose a universal gate or change the risk band. |
+| `sources` | Ordered references into the classified source-record catalog. At least one current governing source is required; structural exemplars and watchlists never satisfy that requirement. |
 
 ### The task-envelope facts selection reads
 
@@ -294,6 +295,7 @@ When the declared facts do not resolve to one eligible pack, selection fails clo
 | `no-match-is-none` | Zero eligible candidates return none. That is a valid result, not an error, and core governance continues without specialist guidance. |
 | `single-body-admission` | A selected outcome admits exactly one pack body into active context. Every other outcome admits zero. |
 | `retrieval-after-resolution` | Selection resolves an identity. The body is retrieved only after the outcome resolves to selected. |
+| `source-stack-validated-before-retrieval` | A pack whose source stack lacks current governing authority, references a stale or unknown governing or conditional source, carries a malformed source record, or has an unresolved equal-scope conflict is invalid before any body is retrieved. |
 
 ### Outcomes
 
@@ -306,7 +308,20 @@ When the declared facts do not resolve to one eligible pack, selection fails clo
 
 A stale, oversized, unreadable, or out-of-bounds body is `invalid`. It loads nothing and returns no partial content.
 
-The active shared surface is `cartopian select-practice-pack` (and the equivalent `select_practice_pack` MCP tool). It accepts only the declared envelope facts above. It validates the complete metadata catalog before matching, emits a structured `selected`, `none`, `ambiguous`, or `invalid` result, and retrieves `protocol/packs/*.md` only after one eligible identity resolves. The selected body is returned with its exact UTF-8 byte count; every unmatched body contributes zero returned body bytes.
+The active shared surface is `cartopian select-practice-pack` (and the equivalent `select_practice_pack` MCP tool). It accepts only the declared envelope facts above. It validates the complete metadata catalog — including the classified source-record catalog and each pack's source stack — before matching, emits a structured `selected`, `none`, `ambiguous`, or `invalid` result, and retrieves `protocol/packs/*.md` only after one eligible identity resolves. The selected body is returned with its exact UTF-8 byte count; every unmatched body contributes zero returned body bytes.
+
+### The classified source stack
+
+Each pack records an applicability-aware source stack in the registry's `source_stack`, stored once and projected without duplicated behavioral definitions. Source classes have closed meanings:
+
+| Class | Meaning |
+| --- | --- |
+| `governing` | Binds the pack within its declared governed scope. |
+| `conditional` | Binds only when the selected task's declared domain, jurisdiction, platform, artifact, or method facts satisfy its declared applicability. |
+| `structural-exemplar` | May inform mini-skill anatomy but never authorizes a domain claim, catalog size, activation rule, or quality conclusion. |
+| `watchlist` | Records drafts or likely successors. Never satisfies governing-authority readiness until finalized and deliberately adopted. |
+
+Every source record is a closed deterministic schema: a stable identity, class, title, publication or version context, verification date, `current`/`stale`/`unknown` status, governed scope, an applicability boundary when conditional, machine applicability conditions for conditional sources, exclusions, a precedence scope, a conflict disposition, and a refresh trigger — no other field, and no field omitted. A condition declares exactly one of one exact `value` or a closed `any_of` set. A missing, empty, malformed, unstable, duplicate, or wrong-typed record field is `invalid` before any body is retrieved and returns the structured result with zero bodies and zero loaded bytes. Source precedence is scoped rather than global: applicable jurisdictional, organizational, product, operator, and task authority outranks generic pack guidance, and a narrower current authority wins only inside its governed scope. Unresolved equal-scope conflicts fail closed. Source refresh is maintenance and review work, not runtime retrieval: selection and handoff perform no network fetch.
 
 ### The five profile shapes share one contract
 

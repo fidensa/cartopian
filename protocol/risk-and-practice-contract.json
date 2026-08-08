@@ -622,6 +622,13 @@
         "use": "semantics",
         "meaning": "The kind of task evidence this profile helps interpret. It cannot impose a universal gate or change the risk band.",
         "breaks_selection_ties": false
+      },
+      {
+        "id": "sources",
+        "required": true,
+        "use": "source-stack",
+        "meaning": "Ordered references into the classified source-record catalog. At least one current governing source is required; structural exemplars and watchlists never satisfy that requirement.",
+        "breaks_selection_ties": false
       }
     ],
     "envelope_facts": [
@@ -724,6 +731,10 @@
       {
         "id": "retrieval-after-resolution",
         "rule": "Selection resolves an identity. The body is retrieved only after the outcome resolves to selected."
+      },
+      {
+        "id": "source-stack-validated-before-retrieval",
+        "rule": "A pack whose source stack lacks current governing authority, references a stale or unknown governing or conditional source, carries a malformed source record, or has an unresolved equal-scope conflict is invalid before any body is retrieved."
       }
     ],
     "outcomes": [
@@ -1118,7 +1129,587 @@
         "blocked_by": null,
         "authoring_owner": "BUILD-04-003"
       }
-    }
+    },
+    "source_stack": {
+      "statement": "Each pack synthesizes actionable guidance from an applicability-aware source stack: governing authority, conditional domain authority, structural exemplars, and non-governing watchlists are recorded separately and cannot silently substitute for one another. Source records are stored once here and projected without duplicated behavioral definitions.",
+      "classes": [
+        {
+          "id": "governing",
+          "meaning": "Binds the pack within its declared governed scope."
+        },
+        {
+          "id": "conditional",
+          "meaning": "Binds only when the selected task's declared domain, jurisdiction, platform, artifact, or method facts satisfy its declared applicability."
+        },
+        {
+          "id": "structural-exemplar",
+          "meaning": "May inform mini-skill anatomy but never authorizes a domain claim, catalog size, activation rule, or quality conclusion."
+        },
+        {
+          "id": "watchlist",
+          "meaning": "Records drafts or likely successors. Never satisfies governing-authority readiness until finalized and deliberately adopted."
+        }
+      ],
+      "statuses": [
+        "current",
+        "stale",
+        "unknown"
+      ],
+      "applies_when_semantics": "any",
+      "applies_when_semantics_meaning": "A conditional source is applicable to a selection when any one of its declared conditions matches the declared task envelope. Conditions read only declared envelope facts; nothing is inferred.",
+      "precedence_rule": "Source precedence is scoped rather than global. Applicable jurisdictional, organizational, product, operator, and task authority outranks generic pack guidance; a narrower current authority wins only inside its governed scope. Two same-class sources sharing a precedence scope must record a resolved conflict disposition; unresolved equal-scope conflicts fail closed.",
+      "refresh_rule": "Source refresh is maintenance and review work, not runtime retrieval. Pack authoring and substantive revision reverify every pinned source. A superseded, withdrawn, stale, unknown, or newly out-of-scope source blocks acceptance until replaced, narrowed, or explicitly retained by the named authority. Selection and handoff perform no network fetch.",
+      "record_fields": [
+        {
+          "id": "source_id",
+          "meaning": "Stable identity of the source record."
+        },
+        {
+          "id": "class",
+          "meaning": "One of the closed source classes."
+        },
+        {
+          "id": "title",
+          "meaning": "Stable source title or locator."
+        },
+        {
+          "id": "context",
+          "meaning": "Publication, effective, edition, or version context."
+        },
+        {
+          "id": "verified_on",
+          "meaning": "The date this source's status was last verified."
+        },
+        {
+          "id": "status",
+          "meaning": "current, stale, or unknown. A referenced governing or conditional source that is not current fails closed."
+        },
+        {
+          "id": "governed_scope",
+          "meaning": "The claims or decisions this source governs or informs."
+        },
+        {
+          "id": "applicability_boundary",
+          "meaning": "The jurisdiction, platform, artifact, or method boundary for a conditional source; null when not applicable."
+        },
+        {
+          "id": "applies_when",
+          "meaning": "Machine applicability conditions over declared envelope facts. Required for conditional sources; empty for every other class."
+        },
+        {
+          "id": "exclusions",
+          "meaning": "What this source never authorizes."
+        },
+        {
+          "id": "precedence_scope",
+          "meaning": "The scope inside which this source's precedence operates."
+        },
+        {
+          "id": "conflict_disposition",
+          "meaning": "none, resolved, or unresolved. Unresolved fails closed before any body is retrieved."
+        },
+        {
+          "id": "refresh_trigger",
+          "meaning": "The maintenance event that requires reverifying or replacing this source."
+        }
+      ],
+      "records": [
+        {
+          "source_id": "nist-ssdf-1-1",
+          "class": "governing",
+          "title": "NIST SP 800-218, Secure Software Development Framework version 1.1",
+          "context": "final 2022 edition, version status verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Broad final secure-software-development baseline for the software pack.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Does not supply web-application verification depth; OWASP ASVS carries that conditional scope."
+          ],
+          "precedence_scope": "secure-software-development-baseline",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify on pack authoring or substantive revision; NIST SSDF 1.2 becoming final triggers a deliberate adoption review."
+        },
+        {
+          "source_id": "nist-ssdf-1-2-draft",
+          "class": "watchlist",
+          "title": "NIST SSDF version 1.2 draft",
+          "context": "draft under development, observed 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Tracked successor to NIST SSDF 1.1. Never governs production guidance while a draft.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Never satisfies governing-authority readiness until final and deliberately adopted."
+          ],
+          "precedence_scope": "secure-software-development-watchlist",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Final publication triggers a replacement review of nist-ssdf-1-1."
+        },
+        {
+          "source_id": "owasp-asvs-5-0-0",
+          "class": "conditional",
+          "title": "OWASP Application Security Verification Standard 5.0.0",
+          "context": "stable release 2025-05-30, verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Web-application technical security design and verification.",
+          "applicability_boundary": "Applies only to web-application security verification, not universal software guidance.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "web-application",
+                "web-service"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not universal software security guidance outside web-application scope."
+          ],
+          "precedence_scope": "web-application-security-verification",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify the stable release on pack authoring or substantive revision."
+        },
+        {
+          "source_id": "w3c-wcag-2-2",
+          "class": "conditional",
+          "title": "W3C Web Content Accessibility Guidelines 2.2",
+          "context": "W3C Recommendation 2023-10-05, updated Recommendation 2024-12-12, verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Web-content accessibility and compatible accessibility scopes.",
+          "applicability_boundary": "Applies only to web content and compatible accessibility scopes; WCAG 3 remains watchlist-only.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "web-content",
+                "web-application"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not a universal accessibility gate outside web-content and compatible scopes."
+          ],
+          "precedence_scope": "web-content-accessibility",
+          "conflict_disposition": "resolved",
+          "refresh_trigger": "Reverify the Recommendation status on pack authoring or substantive revision; a WCAG 3 final triggers a deliberate adoption review."
+        },
+        {
+          "source_id": "iso-iec-40500-2025",
+          "class": "conditional",
+          "title": "ISO/IEC 40500:2025",
+          "context": "approved 2025-10-21 from the WCAG 2.2 Recommendation text dated 2023-10-05, verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "International-standard identity for web accessibility.",
+          "applicability_boundary": "Carries the WCAG 2.2 Recommendation text dated 2023-10-05; later W3C WCAG 2.2 updates require separate applicability verification.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "web-content",
+                "web-application"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Does not carry later W3C WCAG 2.2 updates without separate verification."
+          ],
+          "precedence_scope": "web-content-accessibility",
+          "conflict_disposition": "resolved",
+          "refresh_trigger": "A W3C WCAG 2.2 update or ISO revision triggers reverification of which text each identity carries."
+        },
+        {
+          "source_id": "wcag-3-draft",
+          "class": "watchlist",
+          "title": "W3C WCAG 3",
+          "context": "incomplete draft, observed 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Tracked successor accessibility guidelines. Never governs production guidance while an incomplete draft.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Never satisfies governing-authority readiness until final and deliberately adopted."
+          ],
+          "precedence_scope": "web-content-accessibility-watchlist",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A WCAG 3 Recommendation triggers a replacement review of w3c-wcag-2-2."
+        },
+        {
+          "source_id": "google-sre-workbook",
+          "class": "conditional",
+          "title": "Google Site Reliability Engineering Workbook, Incident Response, Configuration Design, Monitoring, and Canarying Releases chapters",
+          "context": "current online edition verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Operational practice for ownership, safe change, coordination, monitoring, rollback, and recovery.",
+          "applicability_boundary": "Practice guidance for executed operational outcomes and declared software operability scope; not governing law and not universal ceremony.",
+          "applies_when": [
+            {
+              "fact": "primary_outcome",
+              "any_of": [
+                "executed-service-action",
+                "executed-process-transition",
+                "executed-handoff-outcome",
+                "executed-recovery",
+                "executed-contingency"
+              ]
+            },
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "operability",
+                "service-operation"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not governing law and not a universal operations ceremony."
+          ],
+          "precedence_scope": "operational-practice",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify the online edition on pack authoring or substantive revision."
+        },
+        {
+          "source_id": "nist-csf-2-0",
+          "class": "governing",
+          "title": "NIST Cybersecurity Framework 2.0",
+          "context": "final 2024-02-26 edition verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Broadly applicable cybersecurity risk-management outcomes for software and operations, applied proportionally.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Does not supply incident-response procedure depth; NIST SP 800-61 Rev. 3 carries that conditional scope."
+          ],
+          "precedence_scope": "cybersecurity-risk-outcomes",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify the edition on pack authoring or substantive revision."
+        },
+        {
+          "source_id": "nist-sp-800-61r3",
+          "class": "conditional",
+          "title": "NIST SP 800-61 Rev. 3",
+          "context": "final 2025-04-03 edition verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Cybersecurity incident-response preparation, detection, response, and recovery.",
+          "applicability_boundary": "Applies only to cybersecurity incident response.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "cybersecurity-incident"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not guidance for non-security operational incidents."
+          ],
+          "precedence_scope": "cybersecurity-incident-response",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify the edition on pack authoring or substantive revision."
+        },
+        {
+          "source_id": "nist-sp-800-34r1",
+          "class": "conditional",
+          "title": "NIST SP 800-34 Rev. 1",
+          "context": "final May 2010, updated November 2010, publication status verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Federal information-system contingency planning only.",
+          "applicability_boundary": "Applies only to federal information-system contingency planning; not a universal modern operations baseline.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "federal-information-system"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not a universal modern operations baseline."
+          ],
+          "precedence_scope": "federal-contingency-planning",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A successor contingency-planning publication triggers a replacement review."
+        },
+        {
+          "source_id": "allea-code-2023",
+          "class": "governing",
+          "title": "ALLEA European Code of Conduct for Research Integrity, revised edition 2023",
+          "context": "published 2023-06-23 and verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Cross-disciplinary research-integrity baseline; governing force only where adopted or required.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Does not supply method-specific reporting or synthesis requirements; PRISMA and Cochrane carry those conditional scopes."
+          ],
+          "precedence_scope": "research-integrity-baseline",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Reverify the revised edition on pack authoring or substantive revision."
+        },
+        {
+          "source_id": "prisma-2020",
+          "class": "conditional",
+          "title": "PRISMA 2020 Statement and applicable official extensions",
+          "context": "2020 statement and official extension catalog verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Reporting guidance for systematic reviews and applicable evidence-synthesis types.",
+          "applicability_boundary": "Applies only to systematic reviews and applicable evidence-synthesis types, not general research methodology.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "systematic-review",
+                "evidence-synthesis"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not general research methodology."
+          ],
+          "precedence_scope": "systematic-review-reporting",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A PRISMA successor statement triggers a replacement review."
+        },
+        {
+          "source_id": "cochrane-handbook-6-5-1",
+          "class": "conditional",
+          "title": "Cochrane Handbook for Systematic Reviews of Interventions 6.5.1",
+          "context": "2025 update plus the official 2026 maintenance update under the same 6.5.1 label, verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Methods guidance for systematic reviews of healthcare interventions.",
+          "applicability_boundary": "Applies only to systematic reviews of healthcare interventions.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "healthcare-intervention-review"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not methods authority outside healthcare-intervention reviews."
+          ],
+          "precedence_scope": "healthcare-intervention-review-methods",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A Cochrane Handbook version change triggers reverification."
+        },
+        {
+          "source_id": "icc-marketing-code-11",
+          "class": "governing",
+          "title": "ICC Advertising and Marketing Communications Code, 11th edition",
+          "context": "September 2024 edition verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Global self-regulatory marketing baseline, subordinate to applicable law and regulator guidance.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Not legal authority; applicable jurisdictional law and regulator guidance outrank it inside their scopes."
+          ],
+          "precedence_scope": "marketing-self-regulatory-baseline",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A new ICC Code edition triggers a replacement review."
+        },
+        {
+          "source_id": "ftc-advertising-authority",
+          "class": "conditional",
+          "title": "U.S. Federal Trade Commission advertising authority set",
+          "context": "FTC Act and claim-substantiation authority, Endorsement Guides revised 2023, Consumer Reviews and Testimonials Rule effective 2024-10-21, official guidance verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "United States advertising claims, endorsements, disclosures, reviews, and testimonials.",
+          "applicability_boundary": "Applies only when United States jurisdiction governs the marketing work; other jurisdictions first resolve their own governing law and regulator guidance.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "united-states"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not authority outside United States jurisdiction."
+          ],
+          "precedence_scope": "us-advertising-law",
+          "conflict_disposition": "none",
+          "refresh_trigger": "New FTC rules or guide revisions trigger reverification."
+        },
+        {
+          "source_id": "oecd-legal-0390",
+          "class": "governing",
+          "title": "OECD Recommendation of the Council on Regulatory Policy and Governance, OECD/LEGAL/0390",
+          "context": "adopted 2012-03-22, official in-force instrument verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Foundational regulatory-policy and governance principles.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Applicable governing law, jurisdiction, and decision authority remain primary."
+          ],
+          "precedence_scope": "regulatory-governance-principles",
+          "conflict_disposition": "none",
+          "refresh_trigger": "An amended or replaced instrument triggers reverification."
+        },
+        {
+          "source_id": "oecd-ria-2020",
+          "class": "conditional",
+          "title": "OECD Regulatory Impact Assessment, Best Practice Principles for Regulatory Policy",
+          "context": "2020 edition verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Regulatory-impact-assessment design and proportionality.",
+          "applicability_boundary": "Applies only to regulatory-impact-assessment design and proportionality.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "regulatory-impact-assessment"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not general policy authority outside impact assessment."
+          ],
+          "precedence_scope": "regulatory-impact-assessment",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A revised edition triggers reverification."
+        },
+        {
+          "source_id": "oecd-legal-0464",
+          "class": "conditional",
+          "title": "OECD Recommendation for Agile Regulatory Governance to Harness Innovation, OECD/LEGAL/0464",
+          "context": "adopted 2021-10-06 and verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Governance of innovation, experimentation, foresight, and adaptive regulation.",
+          "applicability_boundary": "Applies only to agile governance of innovation, experimentation, foresight, and adaptive regulation.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "regulatory-innovation",
+                "regulatory-experimentation"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not authority outside agile regulatory governance."
+          ],
+          "precedence_scope": "agile-regulatory-governance",
+          "conflict_disposition": "none",
+          "refresh_trigger": "An amended or replaced instrument triggers reverification."
+        },
+        {
+          "source_id": "oecd-legal-0475",
+          "class": "conditional",
+          "title": "OECD Recommendation on International Regulatory Co-operation to Tackle Global Challenges, OECD/LEGAL/0475",
+          "context": "adopted 2022-06-10 and verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Transboundary regulatory co-operation.",
+          "applicability_boundary": "Applies only to transboundary regulatory co-operation.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "transboundary-regulation"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not authority outside transboundary co-operation."
+          ],
+          "precedence_scope": "international-regulatory-cooperation",
+          "conflict_disposition": "none",
+          "refresh_trigger": "An amended or replaced instrument triggers reverification."
+        },
+        {
+          "source_id": "oecd-outlook-2025",
+          "class": "conditional",
+          "title": "OECD Regulatory Policy Outlook 2025",
+          "context": "published 2025-04-09 and verified 2026-08-07",
+          "verified_on": "2026-08-07",
+          "status": "current",
+          "governed_scope": "Implementation evidence on stakeholder engagement, distributional analysis, risk-based approaches, agility, enforcement, and review.",
+          "applicability_boundary": "Supporting implementation evidence; not a substitute for governing law.",
+          "applies_when": [
+            {
+              "fact": "domain_scope",
+              "any_of": [
+                "regulatory-implementation"
+              ]
+            }
+          ],
+          "exclusions": [
+            "Not a substitute for governing law."
+          ],
+          "precedence_scope": "regulatory-implementation-evidence",
+          "conflict_disposition": "none",
+          "refresh_trigger": "A later Outlook edition triggers reverification."
+        },
+        {
+          "source_id": "agent-skills-exemplar",
+          "class": "structural-exemplar",
+          "title": "addyosmani/agent-skills README.md and skills/interview-me/SKILL.md",
+          "context": "GitHub main snapshot observed 2026-08-05",
+          "verified_on": "2026-08-05",
+          "status": "current",
+          "governed_scope": "Mini-skill anatomy only: progressive disclosure, triggers, exclusions, process, failure patterns, verification, and stopping behavior.",
+          "applicability_boundary": null,
+          "applies_when": [],
+          "exclusions": [
+            "Never authorizes a domain claim, catalog size, activation rule, or quality conclusion."
+          ],
+          "precedence_scope": "mini-skill-anatomy-exemplar",
+          "conflict_disposition": "none",
+          "refresh_trigger": "Re-observe the snapshot on substantive pack revision."
+        }
+      ]
+    },
+    "source_failure_modes": [
+      {
+        "id": "missing-governing-authority",
+        "condition": "No referenced source of class governing backs the pack; exemplars and watchlists never satisfy the requirement.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "stale-or-unknown-authority",
+        "condition": "A referenced governing or conditional source is stale or unknown.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "malformed-source-record",
+        "condition": "A referenced source record is missing, has an invalid class or status, lacks version context, or is a conditional source without an applicability boundary.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      },
+      {
+        "id": "unresolved-source-conflict",
+        "condition": "A referenced source records an unresolved conflict, or two same-class sources share a precedence scope without a resolved disposition.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
+      }
+    ]
   },
   "independence": {
     "statement": "Risk classification, judgment-card activation, and practice-pack selection are independent mechanisms with independent record identities. None silently activates another.",
@@ -2042,6 +2633,12 @@
       "state": "proven",
       "test_anchor": "tests/test_practice_packs.py",
       "requirement": "All five required initial pack bodies exist, each within its declared body budget, before Phase 04 exits."
+    },
+    {
+      "id": "source-stacks-are-classified-and-fail-closed",
+      "state": "proven",
+      "test_anchor": "tests/test_practice_packs.py",
+      "requirement": "Every pack references at least one current governing source; stale, unknown, malformed, or unresolved-conflict source stacks are invalid before any body is retrieved, and exemplars or watchlists never substitute for authority."
     }
   ],
   "fixtures": {
@@ -2413,7 +3010,13 @@
           "policy"
         ],
         "demonstrates_shapes_reason": "Research is the claim-shaped exemplar. Marketing and policy declare the same contract shape: a positive condition on a claim-style primary outcome and a negative condition that withholds the pack when the subject matter appears without being the outcome.",
-        "required_initial_pack": true
+        "required_initial_pack": true,
+        "sources": [
+          "allea-code-2023",
+          "prisma-2020",
+          "cochrane-handbook-6-5-1",
+          "agent-skills-exemplar"
+        ]
       },
       {
         "pack_id": "operations-change",
@@ -2481,7 +3084,14 @@
           "software"
         ],
         "demonstrates_shapes_reason": "Operations is the change-shaped exemplar. Software delivery declares the same contract shape: a positive condition on an executed-and-verified outcome and target-state plus recovery evidence. Operations additionally carries the incidental-subject and lifecycle-substrate vetoes.",
-        "required_initial_pack": true
+        "required_initial_pack": true,
+        "sources": [
+          "nist-csf-2-0",
+          "google-sre-workbook",
+          "nist-sp-800-61r3",
+          "nist-sp-800-34r1",
+          "agent-skills-exemplar"
+        ]
       },
       {
         "pack_id": "software-delivery",
@@ -2520,7 +3130,18 @@
           "software"
         ],
         "demonstrates_shapes_reason": "Software delivery declares no ownership, handoff, stop-condition, or contingency evidence, so it does not represent the operations shape.",
-        "required_initial_pack": true
+        "required_initial_pack": true,
+        "sources": [
+          "nist-ssdf-1-1",
+          "owasp-asvs-5-0-0",
+          "w3c-wcag-2-2",
+          "iso-iec-40500-2025",
+          "google-sre-workbook",
+          "nist-csf-2-0",
+          "nist-ssdf-1-2-draft",
+          "wcag-3-draft",
+          "agent-skills-exemplar"
+        ]
       },
       {
         "pack_id": "marketing-claim",
@@ -2559,7 +3180,12 @@
           "marketing"
         ],
         "demonstrates_shapes_reason": "Marketing declares the narrowest claim shape — audience and channel fit — and does not represent research provenance or policy authority.",
-        "required_initial_pack": true
+        "required_initial_pack": true,
+        "sources": [
+          "icc-marketing-code-11",
+          "ftc-advertising-authority",
+          "agent-skills-exemplar"
+        ]
       },
       {
         "pack_id": "policy-governance",
@@ -2598,7 +3224,15 @@
           "policy"
         ],
         "demonstrates_shapes_reason": "Policy declares an authority-bound interpretation shape and does not represent research provenance or marketing channel fit.",
-        "required_initial_pack": true
+        "required_initial_pack": true,
+        "sources": [
+          "oecd-legal-0390",
+          "oecd-ria-2020",
+          "oecd-legal-0464",
+          "oecd-legal-0475",
+          "oecd-outlook-2025",
+          "agent-skills-exemplar"
+        ]
       }
     ],
     "context_measurement": {
