@@ -7,6 +7,7 @@ standard library.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from functools import lru_cache
@@ -123,12 +124,34 @@ def _base_record(declaration: str, owner_kind: Optional[str], owner_path: Option
     }
 
 
+def _deidentified_source_identity(identity: str) -> str:
+    """Return a stable assignee-facing alias for PM-scoped source identities."""
+    if not deidentify.list_identifiers(identity):
+        return identity
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"project-management-source sha256:{digest}"
+
+
+def _deidentified_authoritative_sources(record: Dict[str, Any]) -> List[Dict[str, str]]:
+    return [
+        {
+            **source,
+            "identity": _deidentified_source_identity(source.get("identity", "")),
+        }
+        for source in record["authoritative_sources"]
+    ]
+
+
 def _finalize(record: Dict[str, Any]) -> Dict[str, Any]:
     record["blocker_codes"] = [item["code"] for item in record["blockers"]]
     if record["outcome"] not in {"not-declared", "not-applicable"}:
         record["outcome"] = "invalid" if record["blockers"] else "valid"
     if record["outcome"] == "valid":
-        rendered = render_guidance(record)
+        projected = {
+            **record,
+            "authoritative_sources": _deidentified_authoritative_sources(record),
+        }
+        rendered = render_guidance(projected)
         record["deidentified_guidance"] = deidentify.deidentify_spec(rendered)[0]
     return record
 
@@ -511,7 +534,7 @@ def resolve_report_evidence(task_path: Path, report_content: str) -> Dict[str, A
         (item.get("identity"), item.get("applicable_context"))
         for item in evidence["authoritative_sources"]
     }
-    for source in guidance["authoritative_sources"]:
+    for source in _deidentified_authoritative_sources(guidance):
         key = (source.get("identity"), source.get("applicable_context"))
         if key not in applied:
             blockers.append(_blocker(

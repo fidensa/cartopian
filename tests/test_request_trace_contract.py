@@ -96,6 +96,25 @@ class RequestTraceContract(unittest.TestCase):
             "# PHASE-02\n\n- `BUILD-02-010` — Trace work.\n", encoding="utf-8"
         )
 
+    def approve_planning_checkpoint(
+        self,
+        checkpoint: str,
+        *,
+        plan_ref: str,
+        evidence: list[str],
+        emphasized: bool = False,
+    ) -> None:
+        value = (lambda text: f"**{text}**") if emphasized else (lambda text: text)
+        (self.root / "reviews" / f"REVIEW-{checkpoint}.md").write_text(
+            f"# REVIEW-{checkpoint}\n\n"
+            f"Target: planning:{checkpoint}\n"
+            f"Plan ref: {plan_ref}\n"
+            f"Verdict: {value('approve')}\n"
+            f"Request alignment: {value('aligned')}\n"
+            f"Request evidence: {', '.join(evidence)}\n",
+            encoding="utf-8",
+        )
+
     def run_cli(self, *argv: str) -> tuple[int, list[dict], str]:
         parser = build_parser()
         stdout = io.StringIO()
@@ -543,6 +562,65 @@ class RequestTraceContract(unittest.TestCase):
         self.assertEqual(closure.trace[0].unit, expected_unit)
         self.assertEqual(assignment.evidence_ids, ["REQUEST-001"])
         self.assertEqual(closure.evidence_ids, ["REQUEST-001"])
+
+    def test_planned_task_prefers_approved_checkpoint_evidence(self) -> None:
+        self.write_decision(
+            "DEC-001",
+            "Unrelated historical project direction.",
+            unit="project:project",
+        )
+        self.write_decision(
+            "DEC-002",
+            "Implement the reviewed plan item after this checkpoint approves.",
+            unit="planning:PLAN-016",
+        )
+        self.seed_task()
+        self.seed_plan_ancestry()
+        self.approve_planning_checkpoint(
+            "PLAN-016",
+            plan_ref="BUILD-02-009 through BUILD-02-011 (reviewed batch)",
+            evidence=["DEC-001-QUOTE-001", "DEC-002-QUOTE-001"],
+            emphasized=True,
+        )
+
+        context = request_trace.context_for_task_assignment(self.root, self.task)
+
+        self.assertEqual(context.evidence_ids, ["DEC-002-QUOTE-001"])
+        self.assertEqual(
+            [item.text for item in context.trace],
+            ["Implement the reviewed plan item after this checkpoint approves."],
+        )
+        self.assertEqual(
+            context.trace[0].unit,
+            request_trace.GovernedUnit("planning", "PLAN-016"),
+        )
+
+    def test_assignment_binding_ignores_stale_report_and_review_slots(self) -> None:
+        self.capture(ORIGINAL)
+        self.seed_task()
+        self.seed_plan_ancestry()
+        report = self.root / "reports/REPORT-02-010.md"
+        review = self.root / "reviews/REVIEW-02-010.md"
+        report.write_text("# stale report\n", encoding="utf-8")
+        review.write_text("# stale review\n", encoding="utf-8")
+
+        context = request_trace.context_for_task_assignment(self.root, self.task)
+        prompt_text = request_trace.upsert_request_sections(
+            "# Assignment prompt\n", context.section
+        )
+        report.unlink()
+        review.unlink()
+        current = request_trace.context_for_task_assignment(
+            self.root,
+            self.task,
+            prompt_text=prompt_text,
+        )
+
+        self.assertNotIn("reports/REPORT-02-010.md", context.management_artifacts)
+        self.assertNotIn("reviews/REVIEW-02-010.md", context.management_artifacts)
+        self.assertTrue(
+            request_trace.preflight_prompt_binding(current, prompt_text)["ok"]
+        )
 
     def test_planned_prompt_matches_assignment_and_handoff_identity(self) -> None:
         self.capture(ORIGINAL)

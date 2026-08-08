@@ -141,6 +141,26 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
         self.assertEqual(record["source_guidance"]["outcome"], "valid")
         self.assertNotIn("SPEC-04-002", record["source_guidance"]["deidentified_guidance"])
 
+    def test_management_source_identity_has_stable_deidentified_alias(self) -> None:
+        section = _source_section().replace(
+            "Identity: Service operating policy",
+            "Identity: decisions/DEC-050.md",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(_task_body(section), encoding="utf-8")
+            guidance = source_guidance.resolve_task_guidance(task)
+            projected = guidance["deidentified_guidance"]
+            report = projected.replace(
+                "## Source guidance", "## Source evidence", 1
+            )
+            evidence = source_guidance.resolve_report_evidence(task, report)
+
+        self.assertNotIn("DEC-050", projected)
+        self.assertNotIn("decisions/.md", projected)
+        self.assertIn("project-management-source sha256:", projected)
+        self.assertEqual(evidence["outcome"], "valid")
+
 
 class SourceGuidanceProjectionTests(unittest.TestCase):
     def _scaffold(self):

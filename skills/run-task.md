@@ -132,6 +132,19 @@ If the task's work product is a durable document (research, design, evaluation) 
 
 Persist the chosen value into the task via `cartopian write-task` so it enters the trace chain, then re-run `handoff-packet` so the record carries the resolved `deliverable`. See `cartopian://protocol/CONVENTIONS/project-resources` and `cartopian://protocol/CONVENTIONS/document-deliverables`.
 
+Before authoring or regenerating the assignment prompt, clear the task's stale
+completion-report slot through the Core CLI. This ordering prevents an old
+report from entering the assignment snapshot; task-assignment request contexts
+also exclude completion and review slots by contract:
+
+```text
+cartopian delete-report <report-path>
+```
+
+The expected `<report-path>` is the absolute completion-report path returned by
+`task-bundle` / `handoff-packet`. The command also clears its transient status
+and retained launch-log companions.
+
 Then author the assignment prompt. This is a **PM-performed** write; the contained PM has no raw `Write` tool, so create or update `prompts/PROMPT-NN-NNN.md` through the mediated writer:
 
 ```
@@ -157,14 +170,6 @@ The command resolves the allowlisted `prompts/` destination from the `--prompt-i
 - A reminder that assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 - When `git.pm_owns_product_branches = true` and the task declares one or more `Work root:` names, a reminder that assignees do not stage, commit, push, branch, open PRs, merge, or otherwise perform product-repo git plumbing.
 - When the assignment is **verification-only** (it directs the assignee to inspect or run gates and explicitly forbids implementation changes), state the effective git operating model from the handoff packet. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), say explicitly: Cartopian git versioning is off; product-repository branches are not PM-owned; the work root may already contain uncommitted deliverables from earlier completed tasks; that dirty steady state is expected and is not evidence that this verification task modified files. The assignee must distinguish pre-existing work-root state from changes made during its own handoff and must report only the latter as a scope violation.
-
-Remove any stale report using the Core CLI before assigning or retrying the task:
-
-```text
-cartopian delete-report <report-path>
-```
-
-The expected `<report-path>` is the absolute path for this task's completion report in the project `reports/` directory. This also removes the companion `<report-path>.status` wrapper status file when present, so a reused report slot never carries a stale early-crash signal into the next handoff.
 
 ---
 

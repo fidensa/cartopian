@@ -22,7 +22,7 @@ Each source carries `current`, `stale`, or `unknown` applicability. Each conflic
 
 Missing authority, absent or stale date/version context, unresolved source conflict, and decisive unverified claims are dominance conditions. Any one fails closed with an actionable reason; other favorable observations never average it down. The record contains no numeric score.
 
-`task-bundle` and `handoff-packet` expose the same resolved `source_guidance` object, including a deidentified assignee rendering. `validate-task-readiness` and `dispatch` refuse invalid declared records. Complete source-backed reports carry the same shape under `## Source evidence`; `parse-report` and `report-action` project it and refuse completion when governing sources are absent or a decisive claim remains unverified. CLI and MCP use the same command handlers and runtime projection.
+`task-bundle` and `handoff-packet` expose the same resolved `source_guidance` object, including a deidentified assignee rendering. A source identity containing a PM identifier is represented across that boundary by a stable `project-management-source sha256:...` alias; the same alias is the expected completion-evidence identity, so deidentification never produces a broken locator or an impossible raw/deidentified comparison. `validate-task-readiness` and `dispatch` refuse invalid declared records. Complete source-backed reports carry the same shape under `## Source evidence`; `parse-report` and `report-action` project it and refuse completion when governing sources are absent or a decisive claim remains unverified. CLI and MCP use the same command handlers and runtime projection.
 
 ## Risk classification
 

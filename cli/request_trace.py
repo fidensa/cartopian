@@ -29,6 +29,9 @@ CHAT_RECORD_ID_RE = re.compile(r"^CHAT-[A-Z0-9][A-Z0-9-]{1,79}$")
 PHASE_ID_RE = numbering_contract.PHASE_NAME_RE
 PLAN_REF_RE = numbering_contract.SUPPORTED_PLAN_REF_RE
 CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}$")
+PLAN_REF_TOKEN_RE = re.compile(
+    r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*-\d{2}-\d{3})(?![A-Z0-9-])"
+)
 REVIEW_KINDS = ("planning", "task-closure")
 UNIT_KINDS = ("project", "planning", "task")
 REQUEST_SECTION_HEADING = "## Original operator request (verbatim)"
@@ -861,6 +864,117 @@ def _task_has_project_intent_ancestry(
     )
 
 
+def _review_header(text: str, name: str) -> Optional[str]:
+    """Read one review header with bounded historical emphasis compatibility."""
+    value = _header(text, name)
+    if value is None:
+        return None
+    for marker in ("**", "__"):
+        if value.startswith(marker) and value.endswith(marker) and len(value) > 4:
+            return value[len(marker):-len(marker)].strip()
+    return value
+
+
+def _review_covers_plan_ref(review_value: str, plan_ref: str) -> bool:
+    """Return whether a canonical review Plan ref header covers ``plan_ref``."""
+    tokens = [
+        match.group(0)
+        for match in PLAN_REF_TOKEN_RE.finditer(review_value)
+    ]
+    if plan_ref in tokens:
+        return True
+    if "through" not in review_value.lower() or len(tokens) != 2:
+        return False
+    start = numbering_contract.PLAN_REF_RE.fullmatch(tokens[0])
+    end = numbering_contract.PLAN_REF_RE.fullmatch(tokens[1])
+    target = numbering_contract.PLAN_REF_RE.fullmatch(plan_ref)
+    if start is None or end is None or target is None:
+        return False
+    if start.group(1, 2) != end.group(1, 2) or start.group(1, 2) != target.group(1, 2):
+        return False
+    return int(start.group(3)) <= int(target.group(3)) <= int(end.group(3))
+
+
+def _approved_planning_trace(
+    project_root: Path, task_path: Path
+) -> List[RequestEvidence]:
+    """Resolve exact evidence inherited through approved planning checkpoints.
+
+    An approved checkpoint is the durable applicability decision for its plan
+    refs.  A descendant task inherits the checkpoint-bound excerpts recorded
+    by that review, not every historical ``project:project`` quotation.  When
+    a checkpoint has no checkpoint-bound excerpt, its reviewed project trace
+    remains the compatibility fallback.
+    """
+    task_text = read_contained_text(
+        project_root, task_path, what="task planning-evidence target"
+    )
+    plan_ref = _header(task_text, "Plan ref")
+    if plan_ref is None or PLAN_REF_RE.fullmatch(plan_ref) is None:
+        return []
+    reviews_dir = Path(project_root) / "reviews"
+    if not reviews_dir.is_dir():
+        return []
+
+    inherited: List[RequestEvidence] = []
+    for path in sorted(reviews_dir.glob("REVIEW-PLAN-*.md")):
+        match = re.fullmatch(r"REVIEW-(PLAN-\d{3})\.md", path.name)
+        if match is None:
+            continue
+        review_text = read_contained_text(
+            project_root, path, what="planning approval evidence"
+        )
+        if (_review_header(review_text, "Verdict") or "").lower() != "approve":
+            continue
+        if (_review_header(review_text, ALIGNMENT_FIELD) or "").lower() != "aligned":
+            continue
+        review_plan_ref = _review_header(review_text, "Plan ref") or ""
+        if not _review_covers_plan_ref(review_plan_ref, plan_ref):
+            continue
+        raw_ids = _review_header(review_text, ALIGNMENT_EVIDENCE_FIELD) or ""
+        evidence_ids = [
+            item.strip() for item in raw_ids.split(",")
+            if item.strip() and item.strip().lower() != "none"
+        ]
+        if not evidence_ids:
+            raise RequestRefusal(
+                "stale-planning-approval-evidence",
+                f"{path.name} approves {plan_ref} but records no exact request evidence",
+                "regenerate the planning review from current exact request evidence",
+            )
+        checkpoint = match.group(1)
+        available = _resolve_trace(
+            project_root,
+            GovernedUnit("planning", checkpoint),
+            (),
+            allow_project_origin=True,
+        )
+        by_id = {item.record_id: item for item in available}
+        missing = [item for item in evidence_ids if item not in by_id]
+        if missing:
+            raise RequestRefusal(
+                "stale-planning-approval-evidence",
+                f"{path.name} references unavailable request evidence: {', '.join(missing)}",
+                "restore the exact source or rerun the planning review",
+            )
+        reviewed = [by_id[item] for item in evidence_ids]
+        checkpoint_unit = GovernedUnit("planning", checkpoint)
+        checkpoint_bound = [item for item in reviewed if item.unit == checkpoint_unit]
+        inherited.extend(checkpoint_bound or reviewed)
+
+    identities: set[str] = set()
+    unique: List[RequestEvidence] = []
+    for evidence in inherited:
+        if evidence.identity in identities:
+            continue
+        identities.add(evidence.identity)
+        unique.append(evidence)
+    return [
+        replace(evidence, sequence=index)
+        for index, evidence in enumerate(unique, start=1)
+    ]
+
+
 def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optional[List[str]]:
     """Reuse a generated prompt's artifact snapshot during binding checks.
 
@@ -948,11 +1062,11 @@ def _management_artifacts(
             add("spec", spec)
         if review_kind == "task-closure":
             add("prompt", project_root / "prompts" / f"PROMPT-{suffix}.md")
-        # Only the preserved completion report is management input; the
-        # task-review report slot (REPORT-NN-NNN-review.md) is this review's
-        # output and must not fold into the bound context identity.
-        add("report", report_identity.completion_report_path(project_root, suffix))
-        add("review", project_root / "reviews" / f"REVIEW-{suffix}.md")
+            # Only task closure consumes the preserved completion report and
+            # durable review. Assignment retries deliberately ignore stale
+            # report/review slots that dispatch will clear before launch.
+            add("report", report_identity.completion_report_path(project_root, suffix))
+            add("review", project_root / "reviews" / f"REVIEW-{suffix}.md")
     elif checkpoint_id:
         resolved_phase = phase_id or _phase_from_text(checkpoint_text or "")
         if resolved_phase:
@@ -1429,7 +1543,7 @@ def _context(
     # inherit it only through a complete task -> phase -> plan anchor chain;
     # an ad-hoc task remains a distinct intake unit and fails closed without
     # task-bound evidence.
-    allow_project_origin = review_kind == "planning" or (
+    planned_task = (
         review_kind in ("task-assignment", "task-closure")
         and task_path is not None
         and _task_has_project_intent_ancestry(project_root, task_path)
@@ -1441,12 +1555,29 @@ def _context(
         phase_id=phase_id,
         checkpoint_text=checkpoint_text,
     )
-    trace = _resolve_trace(
-        project_root,
-        target,
-        source_texts,
-        allow_project_origin=allow_project_origin,
-    )
+    if planned_task and task_path is not None:
+        trace = _resolve_trace(
+            project_root,
+            target,
+            source_texts,
+            allow_project_origin=False,
+        )
+        if not trace:
+            trace = _approved_planning_trace(project_root, task_path)
+        if not trace:
+            trace = _resolve_trace(
+                project_root,
+                target,
+                source_texts,
+                allow_project_origin=True,
+            )
+    else:
+        trace = _resolve_trace(
+            project_root,
+            target,
+            source_texts,
+            allow_project_origin=review_kind == "planning",
+        )
     if (
         not trace
         and request_capture_enforced(project_schema_version(project_root))

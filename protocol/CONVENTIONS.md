@@ -273,6 +273,13 @@ Non-decisive unverified claims may remain only when the full failure signal is e
 
 Source identities and scopes carried into coder prompts remain subject to normal deidentification. `handoff-packet.source_guidance.deidentified_guidance` is the assignee-facing rendering; the PM does not paste raw task or spec identifiers into a prompt. Containment is unchanged: delegated spec guidance must resolve inside the selected project's `specs/` directory, and source guidance grants no filesystem, lifecycle, request-intent, publication, or operator authority of its own.
 
+When a source identity itself contains a PM identifier, the assignee rendering
+uses a deterministic `project-management-source sha256:...` alias instead of
+leaving an unusable partial path such as `decisions/.md`. Completion evidence
+is validated against the same projected identity. The raw owner record retains
+its full PM identity; the alias exists only across the deidentified handoff
+boundary.
+
 ## Risk Classification and Scaled Governance
 
 Every new task records the five observable conditions defined in `protocol/risk-and-practice-contract.json`: consequence reach, reversibility, authority, ambiguity, and evidence coverage. Each record carries one declared state and a bounded supporting fact identity. Missing observations fail closed; an observation that cannot be established uses its declared `unknown` state. No numeric confidence or averaging is used.
@@ -427,16 +434,27 @@ a review prompt takes a new snapshot. Any selected-source mutation or prompt
 omission makes the binding stale. Exact content is bounded to 24 KiB per
 excerpt and is never truncated.
 
+Task-assignment snapshots exclude completion-report and task-review slots.
+Those are outputs of the handoff being prepared, so a stale retry artifact may
+be cleared without invalidating the new assignment binding. Task-closure
+snapshots continue to bind the preserved completion report and applicable
+review evidence.
+
 Generated text names both the review target and every excerpt's governed unit.
 Planning checkpoints explicitly consume project-planning evidence. A planned
-task inherits the same project request without another operator restatement
+task inherits approved planning evidence without another operator restatement
 only when Cartopian can verify the complete ancestry chain: the task ID, its
 `Phase:` header, and its `Plan ref:` share one phase; the plan ref exists in
 both `IMPLEMENTATION_PLAN.md` and the canonical phase file. Assignment and
-task-closure review revalidate that chain before using project-origin evidence.
-Direct task-bound evidence takes precedence when present, allowing an explicit
-operator correction or scope addition to govern that task without mixing it
-with the inherited channel.
+task-closure review revalidate that chain, then select checkpoint-bound exact
+evidence from every canonical planning review whose `Plan ref:` covers the
+task, whose verdict is `approve`, and whose request alignment is `aligned`.
+Canonical same-kind ranges written as `REF through REF` are supported. A stale
+or missing evidence identity in an applicable approval fails closed. When no
+applicable approved checkpoint carries exact evidence, the verified planned
+task falls back to project-origin intake for compatibility. Direct task-bound
+evidence still takes precedence, allowing an explicit correction or scope
+addition to govern that task without mixing it with inherited evidence.
 
 An ad-hoc task (`Plan ref: n/a`), a task with malformed or mismatched ancestry,
 or a task whose plan anchors are missing never inherits project intent. When no
