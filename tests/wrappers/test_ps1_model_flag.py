@@ -33,6 +33,7 @@ PS1_TAIL_APPEND = {
     "cartopian-codex.ps1": "$Args += $PromptPathAbs",
     "cartopian-gemini.ps1": "$Args += @('-p', $PromptPathAbs)",
     "cartopian-devin.ps1": "$Args += @('--prompt-file', $PromptPathAbs)",
+    "cartopian-opencode.ps1": "$Args += $PromptPathAbs",
 }
 
 

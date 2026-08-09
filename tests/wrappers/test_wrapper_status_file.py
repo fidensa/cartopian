@@ -37,6 +37,7 @@ BASH_WRAPPERS = [
     ("cartopian-claude", "claude"),
     ("cartopian-gemini", "gemini"),
     ("cartopian-devin", "devin"),
+    ("cartopian-opencode", "opencode"),
 ]
 
 CONFIG_BODY = """[project]
@@ -317,6 +318,7 @@ def test_bash_wrapper_sources_helper_and_writes_status(wrapper, _tool):
 @pytest.mark.parametrize("wrapper", [
     "cartopian-codex.ps1", "cartopian-claude.ps1",
     "cartopian-gemini.ps1", "cartopian-devin.ps1",
+    "cartopian-opencode.ps1",
 ])
 def test_ps1_wrapper_dot_sources_helper_and_writes_status(wrapper):
     text = (PS1_DIR / wrapper).read_text(encoding="utf-8")

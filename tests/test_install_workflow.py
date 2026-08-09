@@ -873,5 +873,170 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
         )
 
 
+class OpencodeCoordinatedWorkflowTests(unittest.TestCase):
+    """opencode registration + bridge through the full coordinated workflow,
+    plus the D9 guarantee: destinations resolve once, at plan time, and an
+    environment flip between authorization and apply refuses instead of
+    routing an authorized write to a destination the plan never displayed."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.install_root = self.root / "install"
+        self.client_home = self.root / "home"
+        self.client_home.mkdir()
+        # opencode's resolvers are environment-driven; pin the environment so
+        # ambient operator settings can neither leak in nor be written to.
+        env_patch = patch.dict(os.environ)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        for name in ("OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME"):
+            os.environ.pop(name, None)
+
+    def plan(self, **overrides):
+        values = {
+            "source_root": REPO_ROOT,
+            "install_root": self.install_root,
+            "operation": "fresh-install",
+            "client_home": self.client_home,
+            "clients": ("opencode",),
+        }
+        values.update(overrides)
+        return plan_workflow(**values)
+
+    def _config_pair(self):
+        base = self.client_home / ".config" / "opencode"
+        return base / "opencode.json", base / "opencode.jsonc"
+
+    def _bridge_path(self):
+        return (
+            self.client_home
+            / ".config"
+            / "opencode"
+            / "commands"
+            / "use-cartopian.md"
+        )
+
+    def test_fresh_install_registers_and_bridges_then_replans_current(self) -> None:
+        result = apply_workflow(self.plan())
+        self.assertIn(
+            result["outcome"]["status"], ("complete", "complete-qualified")
+        )
+        json_path, jsonc_path = self._config_pair()
+        self.assertTrue(json_path.is_file())
+        self.assertFalse(jsonc_path.exists())
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        entry = data["mcp"]["cartopian"]
+        self.assertEqual(entry["type"], "local")
+        self.assertEqual(
+            entry["command"],
+            [str(self.install_root / "bin" / "cartopian-mcp")],
+        )
+        self.assertEqual(entry["enabled"], True)
+        self.assertEqual(entry["timeout"], 600000)
+        bridge = self._bridge_path()
+        self.assertTrue(bridge.is_file())
+        self.assertEqual(
+            bridge.read_bytes(),
+            (
+                REPO_ROOT
+                / "templates"
+                / "clients"
+                / "opencode"
+                / "commands"
+                / "use-cartopian.md"
+            ).read_bytes(),
+        )
+
+        replanned = self.plan(operation="update")
+        registration = next(
+            item
+            for item in replanned["surfaces"]
+            if item["kind"] == "client-registrations"
+        )
+        bridges = next(
+            item for item in replanned["surfaces"] if item["kind"] == "bridges"
+        )
+        self.assertEqual(registration["state"], "current")
+        self.assertEqual(bridges["state"], "current")
+
+    def test_nonstrict_jsonc_blocks_and_preserves_through_the_workflow(self) -> None:
+        json_path, jsonc_path = self._config_pair()
+        jsonc_path.parent.mkdir(parents=True)
+        jsonc_path.write_text(
+            '{\n  // operator comment\n  "theme": "dark",\n}\n', encoding="utf-8"
+        )
+        before = jsonc_path.read_bytes()
+        with self.assertRaisesRegex(WorkflowRefusal, "malformed and was preserved"):
+            apply_workflow(self.plan())
+        self.assertEqual(jsonc_path.read_bytes(), before)
+        self.assertFalse(json_path.exists())
+
+    def test_plan_records_the_resolved_destinations(self) -> None:
+        plan = self.plan()
+        destinations = plan["internal"]["client_destinations"]["opencode"]
+        json_path, jsonc_path = self._config_pair()
+        self.assertEqual(
+            destinations["registration"], [str(json_path), str(jsonc_path)]
+        )
+        self.assertEqual(destinations["bridges"], [str(self._bridge_path())])
+        registration_choice = next(
+            item
+            for item in plan["choices"]
+            if item["surface"] == "client-registrations"
+        )
+        self.assertEqual(
+            registration_choice["decision_context"]["destinations"]["opencode"],
+            destinations,
+        )
+
+    def test_environment_flip_between_plan_and_apply_is_refused(self) -> None:
+        """Flipping any destination-resolving variable after authorization must
+        refuse; no destination the plan did not display may be written."""
+        flips = {
+            "OPENCODE_CONFIG": str(self.root / "flipped" / "explicit.json"),
+            "OPENCODE_CONFIG_DIR": str(self.root / "flipped-dir"),
+            "XDG_CONFIG_HOME": str(self.root / "flipped-xdg"),
+        }
+        for variable, value in flips.items():
+            with self.subTest(variable=variable):
+                install_root = self.root / f"install-{variable}"
+                plan = self.plan(install_root=install_root)
+                os.environ[variable] = value
+                try:
+                    with self.assertRaisesRegex(
+                        WorkflowRefusal,
+                        "changed between planning and apply",
+                    ):
+                        apply_workflow(plan)
+                finally:
+                    os.environ.pop(variable, None)
+                flipped = Path(value)
+                self.assertFalse(
+                    flipped.exists(),
+                    msg=f"{variable}: a destination the plan never displayed "
+                    "was written",
+                )
+
+    def test_unflipped_environment_applies_to_the_planned_destinations(self) -> None:
+        """The D9 guard does not disturb an ordinary plan/apply run under a
+        redirected-but-stable environment."""
+        override = self.root / "opencode-dir"
+        os.environ["OPENCODE_CONFIG_DIR"] = override.as_posix()
+        try:
+            result = apply_workflow(self.plan())
+        finally:
+            os.environ.pop("OPENCODE_CONFIG_DIR", None)
+        self.assertIn(
+            result["outcome"]["status"], ("complete", "complete-qualified")
+        )
+        data = json.loads(
+            (override / "opencode.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("cartopian", data["mcp"])
+        self.assertTrue((override / "commands" / "use-cartopian.md").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

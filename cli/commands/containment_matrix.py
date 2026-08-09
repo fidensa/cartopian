@@ -74,6 +74,10 @@ HOST_CEILINGS: Dict[str, Tuple[str, str]] = {
     "chatgpt-app": ("ChatGPT app", TIER_ADVISORY),
     "antigravity-ide": ("Antigravity graphical IDE", TIER_ADVISORY),
     "devin": ("Devin", TIER_ADVISORY),
+    # opencode has no filesystem sandbox and no PreToolUse-hook equivalent;
+    # an `edit` deny is bypassable in one step via a shell write, so the
+    # advisory ceiling is the honest entry. Windows behavior is unverified.
+    "opencode": ("opencode (CLI / TUI)", TIER_ADVISORY),
 }
 
 _WRITE_RESIDUAL = (

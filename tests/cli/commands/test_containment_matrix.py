@@ -140,6 +140,7 @@ class TestHonestTiersFromEvidence(_Fixture):
             "antigravity-tui",
             "antigravity-ide",
             "devin",
+            "opencode",
         ):
             with self.subTest(host=host):
                 self.assertEqual(rows[host]["tier"], "advisory+detection")
@@ -151,7 +152,7 @@ class TestHonestTiersFromEvidence(_Fixture):
         self.assertEqual(claude["tier"], "contained-partial")
         self.assertTrue(claude["interception_registered"])
 
-    def test_all_seven_hosts_present_with_assigned_ceilings(self):
+    def test_all_eight_hosts_present_with_assigned_ceilings(self):
         _, rows = self.rows()
         expected_ceilings = {
             "claude-code": "contained",
@@ -161,6 +162,7 @@ class TestHonestTiersFromEvidence(_Fixture):
             "chatgpt-app": "advisory+detection",
             "antigravity-ide": "advisory+detection",
             "devin": "advisory+detection",
+            "opencode": "advisory+detection",
         }
         self.assertEqual(
             {host: row["ceiling"] for host, row in rows.items()}, expected_ceilings

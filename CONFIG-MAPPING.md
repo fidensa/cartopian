@@ -112,7 +112,7 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 
 ### Which agent runs the work
 
-`agent` is any command Cartopian can run on your PATH. Cartopian ships four wrappers that add the right non-interactive flags for popular CLIs. Use the wrapper name, not the raw tool name.
+`agent` is any command Cartopian can run on your PATH. Cartopian ships five wrappers that add the right non-interactive flags for popular CLIs. Use the wrapper name, not the raw tool name.
 
 | Wrapper name | Runs | Effort words it understands |
 | --- | --- | --- |
@@ -120,8 +120,9 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 | `cartopian-codex` | Codex | low, medium, high, xhigh, max, ultra |
 | `cartopian-gemini` | Gemini CLI | none; the tool has no effort flag, so the wrapper skips it |
 | `cartopian-devin` | Devin | none; the tool has no effort flag, so the wrapper skips it |
+| `cartopian-opencode` | opencode | none, minimal, low, medium, high, xhigh, max, thinking |
 
-The same four names work on Windows, where the installer ships `.cmd` and `.ps1` versions. Any other program is valid too, as long as it accepts one absolute prompt path as its argument. See `wrappers/README.md`.
+The same five names work on Windows, where the installer ships `.cmd` and `.ps1` versions (opencode's Windows wrapper is unverified on native Windows). Any other program is valid too, as long as it accepts one absolute prompt path as its argument. See `wrappers/README.md`.
 
 `model` and `effort` are passed through as the environment variables `CARTOPIAN_MODEL` and `CARTOPIAN_EFFORT`. Each wrapper turns them into its own flags. An effort word a wrapper does not recognize is dropped with a one-line notice, and the agent runs at its default.
 

@@ -48,6 +48,7 @@ PS1_WRAPPERS = [
     ("cartopian-codex.ps1", "codex"),
     ("cartopian-gemini.ps1", "gemini"),
     ("cartopian-devin.ps1", "devin"),
+    ("cartopian-opencode.ps1", "opencode"),
 ]
 
 PWSH = shutil.which("pwsh")

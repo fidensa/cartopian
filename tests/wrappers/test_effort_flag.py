@@ -31,7 +31,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
 # Wrappers whose CLI supports an effort flag, and those that must ignore it.
-TRANSLATING_WRAPPERS = ["cartopian-claude", "cartopian-codex"]
+TRANSLATING_WRAPPERS = ["cartopian-claude", "cartopian-codex", "cartopian-opencode"]
 IGNORING_WRAPPERS = ["cartopian-gemini", "cartopian-devin"]
 WRAPPERS = TRANSLATING_WRAPPERS + IGNORING_WRAPPERS
 # Each wrapper -> the underlying CLI binary it invokes.
@@ -40,10 +40,11 @@ WRAPPER_CLI = {
     "cartopian-codex": "codex",
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
+    "cartopian-opencode": "opencode",
 }
 # Tokens that must never appear in argv unless the wrapper translated a valid
 # effort value. The prompt body is free of these substrings by construction.
-EFFORT_TOKENS = ("--effort", "model_reasoning_effort")
+EFFORT_TOKENS = ("--effort", "model_reasoning_effort", "--variant")
 
 bash = shutil.which("bash")
 pytestmark = pytest.mark.skipif(bash is None, reason="bash not available")
@@ -159,6 +160,29 @@ def test_claude_rejects_codex_only_level(tmp_path):
     received, stderr = _captured(tmp_path, "cartopian-claude", "ultra")
     _assert_no_effort_argv("cartopian-claude", received)
     assert "CARTOPIAN_EFFORT=ultra" in stderr, f"stderr={stderr!r}"
+
+
+def test_opencode_translates_effort_to_variant_flag(tmp_path):
+    received, _ = _captured(tmp_path, "cartopian-opencode", "xhigh")
+    assert "--variant" in received, f"argv={received!r}"
+    idx = received.index("--variant")
+    assert received[idx + 1] == "xhigh", f"argv={received!r}"
+
+
+def test_opencode_accepts_its_own_wider_vocabulary(tmp_path):
+    """`thinking` (and `none`/`minimal`) are opencode vocabulary that claude
+    and codex both reject — each wrapper mirrors its own tool."""
+    received, _ = _captured(tmp_path, "cartopian-opencode", "thinking")
+    idx = received.index("--variant")
+    assert received[idx + 1] == "thinking", f"argv={received!r}"
+
+
+def test_opencode_rejects_codex_only_level(tmp_path):
+    """`ultra` is codex vocabulary, not opencode's — opencode must fall back."""
+    received, stderr = _captured(tmp_path, "cartopian-opencode", "ultra")
+    _assert_no_effort_argv("cartopian-opencode", received)
+    assert "CARTOPIAN_EFFORT=ultra" in stderr, f"stderr={stderr!r}"
+    assert "default effort" in stderr, f"stderr={stderr!r}"
 
 
 @pytest.mark.parametrize("wrapper", WRAPPERS)

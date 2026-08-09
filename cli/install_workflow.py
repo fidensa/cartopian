@@ -136,7 +136,88 @@ SUPPORTED_CLIENTS = (
     "windsurf",
     "claude-desktop",
     "cursor",
+    "opencode",
 )
+
+# The registered opencode entry carries a 600000ms idle timeout: opencode's
+# unconfigured default is a 60s idle window, and while Cartopian's blocking
+# waits heartbeat every 5s, the non-heartbeating tools (install, plan-audit)
+# need silence headroom. 10 minutes of silence keeps the role launch timeout
+# as the single binding timer.
+OPENCODE_REGISTRATION_TIMEOUT_MS = 600000
+
+
+def _opencode_config_dir_base(client_home: Path) -> Path:
+    """opencode's global config directory: XDG on every platform (v1.18.15)."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg).expanduser() if xdg else client_home / ".config"
+    return base / "opencode"
+
+
+def _opencode_install_target(client_home: Path) -> Dict[str, Any]:
+    """Installation-target resolver: where Cartopian writes the registration.
+
+    `$OPENCODE_CONFIG_DIR` names the highest-precedence *file* layer opencode
+    loads, so its pair is the target when set — an entry there cannot be
+    shadowed by global, `$OPENCODE_CONFIG`, or project config. Otherwise an
+    explicit `$OPENCODE_CONFIG` file is the only target (opencode does not
+    load a sibling of it, so there is no pair). Otherwise the global XDG pair.
+    """
+    config_dir = os.environ.get("OPENCODE_CONFIG_DIR")
+    if config_dir:
+        base = Path(config_dir).expanduser()
+        return {
+            "kind": "pair",
+            "json": base / "opencode.json",
+            "jsonc": base / "opencode.jsonc",
+        }
+    explicit = os.environ.get("OPENCODE_CONFIG")
+    if explicit:
+        return {"kind": "file", "file": Path(explicit).expanduser()}
+    base = _opencode_config_dir_base(client_home)
+    return {
+        "kind": "pair",
+        "json": base / "opencode.json",
+        "jsonc": base / "opencode.jsonc",
+    }
+
+
+def _opencode_target_candidates(target: Mapping[str, Any]) -> Tuple[Path, ...]:
+    """Candidate files in load order — the later-loaded member wins conflicts."""
+    if target["kind"] == "file":
+        return (target["file"],)
+    return (target["json"], target["jsonc"])
+
+
+def _opencode_config_path(client_home: Path) -> Path:
+    """Representative config path for detection and display.
+
+    Prefers the latest-loaded existing candidate (the effective member of the
+    pair); when nothing exists yet, the `opencode.json` default a fresh write
+    would create.
+    """
+    candidates = _opencode_target_candidates(_opencode_install_target(client_home))
+    for candidate in reversed(candidates):
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _opencode_bridge_rows(client_home: Path) -> Tuple[Tuple[str, Path], ...]:
+    """Command-bridge rows: `$OPENCODE_CONFIG_DIR` redirects command discovery;
+    `$OPENCODE_CONFIG` names a config *file* and never does."""
+    config_dir = os.environ.get("OPENCODE_CONFIG_DIR")
+    if config_dir:
+        commands = Path(config_dir).expanduser() / "commands"
+    else:
+        commands = _opencode_config_dir_base(client_home) / "commands"
+    return (
+        (
+            "templates/clients/opencode/commands/use-cartopian.md",
+            commands / "use-cartopian.md",
+        ),
+    )
+
 
 _CLIENTS: Dict[str, Dict[str, Any]] = {
     "claude-code": {
@@ -210,6 +291,16 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
     "cursor": {
         "config": ".cursor/mcp.json",
         "format": "json",
+        "bridges": (),
+    },
+    "opencode": {
+        # opencode's config location is environment-driven ($OPENCODE_CONFIG /
+        # $OPENCODE_CONFIG_DIR / $XDG_CONFIG_HOME) and a directory target is a
+        # candidate *pair*, so both the config path and the bridge destination
+        # resolve dynamically instead of through the static fields.
+        "config_resolver": _opencode_config_path,
+        "bridge_resolver": _opencode_bridge_rows,
+        "format": "opencode-json",
         "bridges": (),
     },
 }
@@ -517,15 +608,33 @@ def _appdata_root(client_home: Path) -> Path:
 
 def _client_config_path(client: str, client_home: Path) -> Path:
     descriptor = _CLIENTS[client]
+    resolver = descriptor.get("config_resolver")
+    if resolver is not None:
+        # Opt-in per descriptor; the static branches below are untouched for
+        # every client without a dynamic resolver.
+        return resolver(client_home)
     if os.name == "nt" and "config_windows" in descriptor:
         return _appdata_root(client_home) / descriptor["config_windows"]
     return client_home / descriptor["config"]
+
+
+def _registration_candidate_paths(
+    client: str, client_home: Path
+) -> Tuple[Path, ...]:
+    """Every file a client's registration read or write may touch, load order."""
+    descriptor = _CLIENTS[client]
+    if descriptor["format"] == "opencode-json":
+        return _opencode_target_candidates(_opencode_install_target(client_home))
+    return (_client_config_path(client, client_home),)
 
 
 def _client_bridge_rows(
     client: str, client_home: Path
 ) -> Tuple[Tuple[str, Path], ...]:
     descriptor = _CLIENTS[client]
+    resolver = descriptor.get("bridge_resolver")
+    if resolver is not None:
+        return resolver(client_home)
     if os.name == "nt" and "bridges_windows" in descriptor:
         return tuple(
             (source, _appdata_root(client_home) / destination)
@@ -589,18 +698,140 @@ def _toml_registration(path: Path, expected: str) -> Tuple[str, str]:
     return "dirty", f"configuration-fingerprint:{fingerprint}"
 
 
+def _opencode_strict_load(
+    path: Path,
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Classify one candidate: ``absent`` / ``strict`` (with data) / ``malformed``.
+
+    Strict-parseability is the only real discriminator — opencode feeds both
+    filenames through a lenient JSONC parser, so the extension signals nothing
+    (V20), and a file Python cannot read strictly may still be loading fine in
+    opencode with content this tool cannot see.
+    """
+    if not path.exists():
+        return "absent", None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "malformed", None
+    if not isinstance(data, dict):
+        return "malformed", None
+    return "strict", data
+
+
+def _opencode_entry_expected(entry: Any, expected: str) -> bool:
+    return (
+        isinstance(entry, dict)
+        and entry.get("type") == "local"
+        and entry.get("command") == [expected]
+    )
+
+
+def _opencode_registration(
+    target: Mapping[str, Any], expected: str
+) -> Tuple[str, str]:
+    """Shadow-aware registration state across the target's candidate files.
+
+    ``current`` requires our entry in the effective (latest-loaded readable)
+    location, no readable shadowing ``mcp.cartopian`` in a later-loaded file,
+    and no non-strict candidate loading after our write target — a shadow
+    cannot be ruled out inside a file this tool cannot read, so the state
+    fails closed to ``malformed`` there instead of claiming the registration
+    is in effect.
+    """
+    rows: List[Tuple[Path, str, Any, bool]] = []
+    for path in _opencode_target_candidates(target):
+        state, data = _opencode_strict_load(path)
+        servers = data.get("mcp") if state == "strict" else None
+        has_entry = isinstance(servers, dict) and "cartopian" in servers
+        entry = servers.get("cartopian") if has_entry else None
+        rows.append((path, state, entry, has_entry))
+    effective_index: Optional[int] = None
+    for index, (_path, state, _entry, has_entry) in enumerate(rows):
+        if state == "strict" and has_entry:
+            effective_index = index
+    malformed = [path for path, state, _e, _h in rows if state == "malformed"]
+    if effective_index is None:
+        if malformed:
+            return (
+                "malformed",
+                "unreadable-client-configuration:"
+                + ",".join(path.name for path in malformed),
+            )
+        return "missing", "absent"
+    later_malformed = [
+        path
+        for index, (path, state, _e, _h) in enumerate(rows)
+        if index > effective_index and state == "malformed"
+    ]
+    if later_malformed:
+        return (
+            "malformed",
+            "shadow-undecidable:unreadable-later-loaded:"
+            + ",".join(path.name for path in later_malformed),
+        )
+    path, _state, entry, _has_entry = rows[effective_index]
+    if _opencode_entry_expected(entry, expected):
+        return "current", "expected-command"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            entry, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+    ).hexdigest()
+    earlier_expected = any(
+        _opencode_entry_expected(row_entry, expected)
+        for index, (_p, state, row_entry, has_entry) in enumerate(rows)
+        if index < effective_index and state == "strict" and has_entry
+    )
+    if earlier_expected:
+        return (
+            "dirty",
+            f"shadowed-by:{path.name};configuration-fingerprint:{fingerprint}",
+        )
+    return "dirty", f"configuration-fingerprint:{fingerprint}"
+
+
+def _read_toml_registration(
+    client: str, client_home: Path, expected: str
+) -> Tuple[str, str]:
+    return _toml_registration(_client_config_path(client, client_home), expected)
+
+
+def _read_json_registration(
+    client: str, client_home: Path, expected: str
+) -> Tuple[str, str]:
+    return _json_registration(_client_config_path(client, client_home), expected)
+
+
+def _read_opencode_registration(
+    client: str, client_home: Path, expected: str
+) -> Tuple[str, str]:
+    return _opencode_registration(_opencode_install_target(client_home), expected)
+
+
+def _registration_state(
+    client: str, client_home: Path, expected: str
+) -> Tuple[str, str]:
+    """Read one client's registration through the closed format adapter map.
+
+    An unrecognized format raises instead of falling through to some other
+    client's adapter.
+    """
+    fmt = str(_CLIENTS[client]["format"])
+    adapter = _REGISTRATION_ADAPTERS.get(fmt)
+    if adapter is None:
+        raise WorkflowRefusal(f"unsupported registration format: {fmt}")
+    reader, _writer = adapter
+    return reader(client, client_home, expected)
+
+
 def _registration_observations(
     clients: Sequence[str], client_home: Path, install_root: Path
 ) -> Dict[str, Dict[str, str]]:
     expected = _expected_mcp_command(install_root)
     observations: Dict[str, Dict[str, str]] = {}
     for client in clients:
-        descriptor = _CLIENTS[client]
-        path = _client_config_path(client, client_home)
-        if descriptor["format"] == "toml":
-            state, identity = _toml_registration(path, expected)
-        else:
-            state, identity = _json_registration(path, expected)
+        state, identity = _registration_state(client, client_home, expected)
         observations[client] = {
             "state": state,
             "identity": identity,
@@ -1023,8 +1254,9 @@ def _decision_context(
     surface: Mapping[str, Any],
     source_identity: str,
     clients: Sequence[str],
+    destinations: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return {
+    context = {
         "context_schema": "coordinated-repair-v1",
         "surface": str(surface["kind"]),
         "desired_identity": str(surface["desired_identity"]),
@@ -1039,6 +1271,11 @@ def _decision_context(
         # keeps previously persisted decision contexts comparable.
         "materialization_mode": "copy",
     }
+    if destinations:
+        # The plan-time-resolved destinations the operator authorizes (D9);
+        # apply refuses to write anywhere these do not name.
+        context["destinations"] = copy.deepcopy(dict(destinations))
+    return context
 
 
 def _prior_declined_contexts(
@@ -1430,6 +1667,9 @@ def plan_workflow(
     )
     registration_facts = _registration_observations(selected, home, install)
     bridge_facts = _bridge_observations(selected, source, home)
+    # Destinations resolve exactly once, here (D9): apply consumes these
+    # recorded paths and refuses if re-resolution would differ.
+    client_destinations = _client_destinations(selected, home)
     registration_desired = _digest_entries(
         (
             client,
@@ -1557,6 +1797,7 @@ def plan_workflow(
             surface=surface,
             source_identity=source_identity,
             clients=selected,
+            destinations=client_destinations,
         )
         choice = _choice(
             kind,
@@ -1678,6 +1919,7 @@ def plan_workflow(
             "affected_surface_plan": plan_actions,
             "registration_observations": registration_facts,
             "bridge_observations": bridge_facts,
+            "client_destinations": client_destinations,
             "surface_retry_profiles": surface_retry_profiles(),
             "progress_read": OrderedDict(
                 (
@@ -1864,18 +2106,187 @@ def _merge_toml_registration(path: Path, command: str) -> None:
     _atomic_write_text(path, updated)
 
 
+def _merge_opencode_registration(
+    target: Mapping[str, Any], command: str
+) -> None:
+    """Precedence-safe merge into the opencode candidate pair (D4).
+
+    The write file is selected so the merged entry can never be silently
+    shadowed by a sibling this tool cannot read: refuse under a non-strict
+    later-loaded member, prefer the later-loaded member when both are strict,
+    and fall back only *upward* in precedence. A refused operator file is left
+    byte-identical.
+    """
+    if target["kind"] == "file":
+        write_path = target["file"]
+        state, data = _opencode_strict_load(write_path)
+        if state == "malformed":
+            raise WorkflowRefusal(
+                "client configuration is malformed and was preserved: "
+                f"{write_path} is not strictly parseable JSON (it may carry "
+                "comments or trailing commas opencode accepts but this tool "
+                "cannot round-trip)"
+            )
+        data = data if data is not None else {}
+    else:
+        json_path = target["json"]
+        jsonc_path = target["jsonc"]
+        json_state, json_data = _opencode_strict_load(json_path)
+        jsonc_state, jsonc_data = _opencode_strict_load(jsonc_path)
+        if jsonc_state == "malformed":
+            # The later-loaded member is unreadable to us (opencode may be
+            # loading it fine), so a write to either sibling could be silently
+            # shadowed. Refuse and preserve, regardless of the sibling's state.
+            raise WorkflowRefusal(
+                "client configuration is malformed and was preserved: "
+                f"{jsonc_path} is not strictly parseable JSON and loads after "
+                "every sibling, so a merged registration could be silently "
+                "shadowed"
+            )
+        if jsonc_state == "strict":
+            # Later-loaded and readable: our entry cannot be shadowed here.
+            write_path, data = jsonc_path, jsonc_data
+        elif json_state == "strict":
+            # Safe: no unreadable higher-precedence sibling exists above it.
+            write_path, data = json_path, json_data
+        elif json_state == "malformed":
+            # Fall back only upward in precedence: the unreadable lower-loaded
+            # file cannot shadow a later-loaded write (V21/V23). The operator's
+            # non-strict file is left byte-identical.
+            write_path, data = jsonc_path, {}
+        else:
+            write_path, data = json_path, {}
+    _validate_operator_config_target(write_path)
+    servers = data.get("mcp")
+    if servers is None:
+        servers = {}
+        data["mcp"] = servers
+    if not isinstance(servers, dict):
+        raise WorkflowRefusal(
+            "client mcp value is not an object and was preserved"
+        )
+    servers["cartopian"] = {
+        "type": "local",
+        "command": [command],
+        "enabled": True,
+        "timeout": OPENCODE_REGISTRATION_TIMEOUT_MS,
+    }
+    _atomic_write_text(
+        write_path,
+        json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+
+
+def _write_toml_registration(
+    client: str, client_home: Path, command: str
+) -> None:
+    _merge_toml_registration(_client_config_path(client, client_home), command)
+
+
+def _write_json_registration(
+    client: str, client_home: Path, command: str
+) -> None:
+    _merge_json_registration(_client_config_path(client, client_home), command)
+
+
+def _write_opencode_registration(
+    client: str, client_home: Path, command: str
+) -> None:
+    _merge_opencode_registration(_opencode_install_target(client_home), command)
+
+
+# Closed format → (reader, writer) adapter map. Both dispatch sites consult it,
+# so a format absent here fails loudly instead of routing a client through some
+# other format's adapter.
+_REGISTRATION_ADAPTERS: Dict[str, Tuple[Any, Any]] = {
+    "toml": (_read_toml_registration, _write_toml_registration),
+    "json": (_read_json_registration, _write_json_registration),
+    "opencode-json": (_read_opencode_registration, _write_opencode_registration),
+}
+
+
+def _verify_frozen_destinations(
+    clients: Sequence[str],
+    client_home: Path,
+    recorded: Optional[Mapping[str, Any]],
+    kind: str,
+) -> None:
+    """Refuse when apply would resolve a destination the plan never displayed.
+
+    Destinations resolve once, at plan time (D9). Environment-driven resolvers
+    turn plan/apply re-resolution into a redirection hazard, so apply compares
+    its own resolution against the recorded one and refuses on any difference
+    instead of writing to an unauthorized path.
+    """
+    if not isinstance(recorded, Mapping):
+        return
+    for client in clients:
+        entry = recorded.get(client)
+        if not isinstance(entry, Mapping):
+            continue
+        if kind == "registration":
+            current = [
+                str(path)
+                for path in _registration_candidate_paths(client, client_home)
+            ]
+        else:
+            current = [
+                str(destination)
+                for _source, destination in _client_bridge_rows(
+                    client, client_home
+                )
+            ]
+        planned = [str(item) for item in entry.get(kind, [])]
+        if planned != current:
+            raise WorkflowRefusal(
+                f"{client}: {kind} destination changed between planning and "
+                "apply (the resolving environment changed); re-plan so the "
+                "operator authorizes the destination that would actually be "
+                "written"
+            )
+
+
+def _client_destinations(
+    clients: Sequence[str], client_home: Path
+) -> Dict[str, Dict[str, List[str]]]:
+    """Resolve every registration and bridge destination once (D9)."""
+    return {
+        client: {
+            "registration": [
+                str(path)
+                for path in _registration_candidate_paths(client, client_home)
+            ],
+            "bridges": [
+                str(destination)
+                for _source, destination in _client_bridge_rows(
+                    client, client_home
+                )
+            ],
+        }
+        for client in clients
+    }
+
+
 def _apply_registrations(
-    clients: Sequence[str], client_home: Path, install_root: Path
+    clients: Sequence[str],
+    client_home: Path,
+    install_root: Path,
+    recorded_destinations: Optional[Mapping[str, Any]] = None,
 ) -> None:
     command = _expected_mcp_command(install_root)
+    _verify_frozen_destinations(
+        clients, client_home, recorded_destinations, "registration"
+    )
     for client in clients:
-        descriptor = _CLIENTS[client]
-        path = _client_config_path(client, client_home)
+        fmt = str(_CLIENTS[client]["format"])
+        adapter = _REGISTRATION_ADAPTERS.get(fmt)
+        if adapter is None:
+            raise WorkflowRefusal(
+                f"{client}: unsupported registration format: {fmt}"
+            )
+        _reader, writer = adapter
         try:
-            if descriptor["format"] == "toml":
-                _merge_toml_registration(path, command)
-            else:
-                _merge_json_registration(path, command)
+            writer(client, client_home, command)
         except WorkflowRefusal as exc:
             raise WorkflowRefusal(
                 f"{client}: {exc}"
@@ -1883,8 +2294,14 @@ def _apply_registrations(
 
 
 def _apply_bridges(
-    clients: Sequence[str], source_root: Path, client_home: Path
+    clients: Sequence[str],
+    source_root: Path,
+    client_home: Path,
+    recorded_destinations: Optional[Mapping[str, Any]] = None,
 ) -> None:
+    _verify_frozen_destinations(
+        clients, client_home, recorded_destinations, "bridges"
+    )
     for client in clients:
         for source_rel, destination in _client_bridge_rows(client, client_home):
             _replace_tool_path(source_root / source_rel, destination)
@@ -2361,6 +2778,7 @@ def apply_workflow(
         release_lease(install_root, owner)
         raise WorkflowRefusal(exc.detail) from exc
 
+    destinations = internal.get("client_destinations")
     try:
         return _apply_under_lease(
             plan,
@@ -2373,6 +2791,9 @@ def apply_workflow(
             profiles=profiles,
             owner=owner,
             progress_recovery=progress_recovery,
+            destinations=(
+                destinations if isinstance(destinations, Mapping) else None
+            ),
         )
     finally:
         release_lease(install_root, owner)
@@ -2390,6 +2811,7 @@ def _apply_under_lease(
     profiles: Sequence[Mapping[str, Any]],
     owner: str,
     progress_recovery: Optional[Mapping[str, Any]],
+    destinations: Optional[Mapping[str, Any]] = None,
 ) -> "OrderedDict[str, Any]":
     try:
         progress = begin_progress(
@@ -2467,7 +2889,9 @@ def _apply_under_lease(
                 phase="repair",
                 owner=owner,
             )
-            _apply_bridges(clients, source_root, client_home)
+            _apply_bridges(
+                clients, source_root, client_home, destinations
+            )
 
         registration_authorized = any(
             choices.get(surface, {}).get("state") == "authorized"
@@ -2489,7 +2913,9 @@ def _apply_under_lease(
                 phase="repair",
                 owner=owner,
             )
-            _apply_registrations(clients, client_home, install_root)
+            _apply_registrations(
+                clients, client_home, install_root, destinations
+            )
     except (WorkflowRefusal, OSError) as exc:
         os_failure = isinstance(exc, OSError)
         failure_recovery = recovery

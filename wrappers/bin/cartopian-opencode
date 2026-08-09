@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# cartopian-opencode — Cartopian wrapper for the opencode CLI/TUI agent.
+#
+# Usage:  cartopian-opencode <absolute-prompt-path>
+#
+# Reads the prompt file path and passes it to `opencode run` with
+# non-interactive flags. Verified against opencode 1.18.15.
+#
+# Note on git-repo check: unlike codex, `opencode run` does not require the
+# cwd to be inside a git repository, so no skip flag is needed under the
+# Cartopian launch-cwd convention.
+#
+# Note on effort: `--variant` is opencode's provider-specific reasoning-effort
+# selector. The CLI does not validate the value and does not persist it to
+# opencode's model state; a value a specific model does not offer is passed
+# through and the outcome is the tool's own behavior. The vocabulary below is
+# opencode's own per-model union and may drift as upstream evolves.
+#
+# Note on permissions: opencode has no filesystem sandbox — only allow/ask/deny
+# rules — and an `edit` deny does not cover shell writes (the model can bypass
+# it in one step via a shell redirect). This wrapper therefore deliberately
+# injects NO permission policy: one would look like a write boundary in the
+# operator's config while being one `printf` away from bypass. Containment for
+# opencode is advisory+detection; see the containment matrix.
+#
+# Exit codes:
+#   0   — opencode completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   124 — killed at the CARTOPIAN_TIMEOUT deadline
+#   *   — upstream opencode exit code
+
+set -euo pipefail
+
+# --- Status-file helper (early-crash signal for wait-handoff) --------
+# Source the shared helper that emits <report-path>.status on assignee
+# exit. Optional: if the helper is missing, degrade to no-op stubs so the
+# wrapper still runs (the status file is never a hard requirement).
+_CARTOPIAN_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
+  # shellcheck source=_cartopian-status.sh
+  source "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh"
+else
+  cartopian_status_path() { echo ""; }
+  cartopian_write_status() { return 0; }
+  cartopian_report_complete() { return 1; }
+  cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
+fi
+# --------------------------------------------------------------------
+
+# --- Configuration ---------------------------------------------------
+# --auto bypasses configured `ask` permission rules, which would otherwise
+# auto-reject in a non-interactive run (opencode never blocks waiting for an
+# answer). Set CARTOPIAN_OPENCODE_AUTO=false to preserve that ask behavior.
+# Explicit deny rules and OS permissions apply either way; opencode grants
+# everything by default when no permission rules are configured.
+OPENCODE_AUTO="${CARTOPIAN_OPENCODE_AUTO:-true}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-opencode: error: missing prompt path argument" >&2
+  echo "usage: cartopian-opencode <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-opencode: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v opencode &>/dev/null; then
+  echo "cartopian-opencode: error: 'opencode' not found in PATH" >&2
+  echo "Install: https://opencode.ai" >&2
+  exit 1
+fi
+
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
+# markdown body as a command-line argument is brittle across shells (it mangles
+# under PowerShell on the Windows wrapper); the agent opens the file itself.
+PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+
+# Derive the optional status-file path now, before any cd, so a relative
+# prompt path still resolves. Empty when the prompt is outside a project.
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
+
+# --- Launch directory ------------------------------------------------
+# Assignee CLIs run with cwd set to the Cartopian project root
+# (the registered project path). Prompts always live at
+# <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
+# root is derivable from the prompt path alone.
+#
+# Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
+# skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
+# or per-repo-sandbox setups. A non-existent path is a hard error, not
+# a silent fallback.
+if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
+  if [[ ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
+    echo "cartopian-opencode: CARTOPIAN_LAUNCH_CWD='$CARTOPIAN_LAUNCH_CWD' is not a directory" >&2
+    exit 1
+  fi
+  LAUNCH_CWD="$(cd "$CARTOPIAN_LAUNCH_CWD" && pwd)"
+  cd "$LAUNCH_CWD"
+  echo "cartopian-opencode: cwd=$LAUNCH_CWD (CARTOPIAN_LAUNCH_CWD override)" >&2
+else
+  PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+  PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
+  PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
+  # Launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
+    cd "$PROJECT_DIR"
+    echo "cartopian-opencode: cwd=$PROJECT_DIR" >&2
+  else
+    echo "cartopian-opencode: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+  fi
+fi
+# --------------------------------------------------------------------
+
+CMD=(opencode run)
+
+# --auto on by default: opencode needs no path-widening flag; --auto only
+# bypasses configured `ask` rules, which auto-reject in non-interactive runs.
+if [[ "$OPENCODE_AUTO" == "true" ]]; then
+  CMD+=(--auto)
+fi
+
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved dispatch model; translate it into opencode's --model flag.
+# Unset means opencode's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
+
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved dispatch effort; translate it into opencode's --variant flag
+# (provider-specific reasoning effort). Values outside opencode's CLI-wide
+# variant vocabulary fall back to the default effort (warn + omit). A
+# vocabulary-valid variant a specific model does not offer is passed through —
+# that outcome is the tool's own behavior. The vocabulary tracks the installed
+# opencode CLI generation and may drift as it evolves.
+if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
+  EFFORT_LC="$(printf '%s' "$CARTOPIAN_EFFORT" | tr '[:upper:]' '[:lower:]')"
+  case "$EFFORT_LC" in
+    none|minimal|low|medium|high|xhigh|max|thinking)
+      CMD+=(--variant "$EFFORT_LC")
+      ;;
+    *)
+      echo "cartopian-opencode: CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT is not a supported opencode variant (none|minimal|low|medium|high|xhigh|max|thinking); launching with the default effort" >&2
+      ;;
+  esac
+fi
+
+# Optional opencode agent selection (opencode's own agent concept, e.g. a
+# custom build/plan agent configured by the operator).
+if [[ -n "${CARTOPIAN_OPENCODE_AGENT:-}" ]]; then
+  CMD+=(--agent "$CARTOPIAN_OPENCODE_AGENT")
+fi
+
+# Work-root no-op notice: opencode has no path-widening flag, so declared work
+# roots need no grant here. Actual access remains subject to OS permissions
+# and any operator-configured permission rules.
+if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+  echo "cartopian-opencode: opencode has no path-widening flag; work roots need no grant here, and actual access remains subject to OS permissions and any operator permission rules (CARTOPIAN_WORK_ROOTS=$CARTOPIAN_WORK_ROOTS)" >&2
+fi
+
+CMD+=("$PROMPT_PATH_ABS")
+
+# --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
+# Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
+# upstream process at the configured deadline (default 60m). The PM
+# sets CARTOPIAN_TIMEOUT from the resolved dispatch timeout;
+# it does not poll or watchdog the running process. SIGTERM at deadline
+# returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
+TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
+# Whether an OS timeout wraps the command — lets the status file distinguish
+# a deadline kill (exit 124) from a plain non-zero exit.
+TIMEOUT_APPLIED=false
+if command -v timeout &>/dev/null; then
+  CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+elif command -v gtimeout &>/dev/null; then
+  CMD=(gtimeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+else
+  echo "cartopian-opencode: warning: no 'timeout'/'gtimeout' on PATH; running without OS-enforced deadline (macOS: brew install coreutils)" >&2
+  TIMEOUT_DURATION="unbounded"
+fi
+# --------------------------------------------------------------------
+
+echo "cartopian-opencode: running opencode run (auto=$OPENCODE_AUTO, timeout=$TIMEOUT_DURATION)" >&2
+
+# Run the assignee (not exec) so we can capture its exit outcome and emit
+# the optional status file wait-handoff polls for early-crash detection.
+#
+# cartopian_run_supervised wraps the run with a report-completion supervisor:
+# once the authoritative report file appears, a lingering child (MCP stdio /
+# trailing turn) is reaped promptly so a finished handoff exits 0/clean instead
+# of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the single SSOT
+# timer, applied above via `timeout`) is untouched — a genuine hang that writes
+# no report still hits it (exit 124). The watched report path is the status path
+# without its ".status" suffix.
+REPORT_PATH="${STATUS_PATH%.status}"
+[[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
+
+set +e
+cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
+ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+set -e
+cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
+exit "$ASSIGNEE_EXIT"

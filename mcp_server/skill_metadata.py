@@ -102,6 +102,12 @@ BRIDGE_TARGETS: Mapping[str, BridgeTarget] = {
         "toml",
         "direct_command",
     ),
+    "opencode_command": BridgeTarget(
+        "use_cartopian",
+        Path("templates/clients/opencode/commands/use-cartopian.md"),
+        "yaml",
+        "direct_command",
+    ),
     "windsurf_command": BridgeTarget(
         "use_cartopian",
         Path("templates/clients/windsurf/use-cartopian.md"),

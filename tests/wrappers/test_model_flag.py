@@ -25,13 +25,20 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
-WRAPPERS = ["cartopian-claude", "cartopian-codex", "cartopian-gemini", "cartopian-devin"]
+WRAPPERS = [
+    "cartopian-claude",
+    "cartopian-codex",
+    "cartopian-gemini",
+    "cartopian-devin",
+    "cartopian-opencode",
+]
 # Each wrapper -> the underlying CLI binary it invokes.
 WRAPPER_CLI = {
     "cartopian-claude": "claude",
     "cartopian-codex": "codex",
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
+    "cartopian-opencode": "opencode",
 }
 
 bash = shutil.which("bash")

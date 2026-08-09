@@ -39,6 +39,7 @@ BIN_DIR = REPO_ROOT / "wrappers" / "bin"
 BASH_WRAPPERS = [
     ("cartopian-claude", "claude"),
     ("cartopian-codex", "codex"),
+    ("cartopian-opencode", "opencode"),
 ]
 
 _TIMEOUT_BIN = shutil.which("timeout") or shutil.which("gtimeout")

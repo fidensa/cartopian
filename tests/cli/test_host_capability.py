@@ -33,6 +33,10 @@ def clean_host_env(monkeypatch):
         "MCP_TOOL_TIMEOUT",
         "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT",
         "CODEX_HOME",
+        "OPENCODE_CONFIG",
+        "OPENCODE_CONFIG_DIR",
+        "OPENCODE_CONFIG_CONTENT",
+        "XDG_CONFIG_HOME",
     ):
         monkeypatch.delenv(name, raising=False)
     yield
@@ -241,6 +245,223 @@ def test_gemini_default_ceiling(monkeypatch, tmp_path):
     budget = host_capability.resolve_host_budget()
     assert budget.host == "gemini-cli"
     assert budget.effective_seconds == 600
+
+
+# --- opencode --------------------------------------------------------------
+
+
+def _opencode_env(monkeypatch, tmp_path):
+    """Isolated opencode config surface: empty XDG home, config-free cwd."""
+    _as_client(monkeypatch, "opencode", version="1.18.15")
+    xdg = tmp_path / "xdg"
+    (xdg / "opencode").mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    return xdg / "opencode"
+
+
+def test_opencode_default_is_a_progress_resettable_idle_window(
+    monkeypatch, tmp_path
+):
+    """opencode imposes no wall clock; unconfigured it has a 60s idle window
+    that a progress notification resets."""
+    _opencode_env(monkeypatch, tmp_path)
+
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "opencode"
+    assert budget.wall_clock_seconds is None
+    assert budget.wall_clock_source == "not-imposed"
+    assert budget.idle_seconds == 60
+    assert budget.idle_source == "host-default"
+    assert budget.progress_resets_idle is True
+    assert budget.progress_resets_wall_clock is False
+
+    # Without a progress channel the raw idle window is the binding ceiling.
+    assert budget.effective_seconds == 60
+    assert budget.limiting_ceiling() == "idle"
+
+    # With the Cartopian heartbeat channel installed, the resettable idle
+    # window no longer caps total wait duration (D3: heartbeats every 5s).
+    emit.set_progress_sink(lambda _progress, _total, _message: None)
+    budget = host_capability.resolve_host_budget()
+    assert budget.effective_seconds is None
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is True
+    assert refusal is None
+
+
+def test_opencode_reads_the_registered_timeout(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps(
+            {
+                "mcp": {
+                    "cartopian": {
+                        "type": "local",
+                        "command": ["/x/bin/cartopian-mcp"],
+                        "timeout": 600000,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 600
+    assert budget.idle_source == "host-config"
+
+
+def test_opencode_server_timeout_wins_over_experimental(monkeypatch, tmp_path):
+    """Resolution chain is mcp.<server>.timeout ?? experimental.mcp_timeout,
+    regardless of which layer supplied each key."""
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps(
+            {
+                "experimental": {"mcp_timeout": 120000},
+                "mcp": {"cartopian": {"timeout": 600000}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 600
+    assert budget.idle_source == "host-config"
+
+
+def test_opencode_experimental_timeout_applies_without_a_server_entry(
+    monkeypatch, tmp_path
+):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.jsonc").write_text(
+        json.dumps({"experimental": {"mcp_timeout": 90000}}),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 90
+    assert budget.idle_source == "host-config"
+
+
+def test_opencode_finds_the_server_registered_under_another_name(
+    monkeypatch, tmp_path
+):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps(
+            {
+                "mcp": {
+                    "my-cartopian": {
+                        "type": "local",
+                        "command": ["/opt/cartopian/bin/cartopian-mcp"],
+                        "timeout": 300000,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 300
+    assert budget.idle_source == "host-config"
+
+
+def test_opencode_later_loaded_jsonc_overrides_json(monkeypatch, tmp_path):
+    """Within a directory pair, opencode.jsonc loads after opencode.json and
+    wins a same-key conflict (V21/V23)."""
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 120000}}}),
+        encoding="utf-8",
+    )
+    (config_dir / "opencode.jsonc").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 600000}}}),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 600
+
+
+def test_opencode_project_layer_overrides_global(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 120000}}}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "cwd"  # created by _opencode_env; already the cwd
+    (project / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 480000}}}),
+        encoding="utf-8",
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 480
+    assert budget.idle_source == "host-config"
+
+
+def test_opencode_config_dir_layer_overrides_everything(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 120000}}}),
+        encoding="utf-8",
+    )
+    override_dir = tmp_path / "override"
+    override_dir.mkdir()
+    (override_dir / "opencode.jsonc").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 900000}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(override_dir))
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 900
+
+
+def test_opencode_nonstrict_layer_fails_closed_to_unknown(monkeypatch, tmp_path):
+    """A present-but-unparseable layer could shadow either timeout key, so the
+    ceiling is reported unknown — never an invented number — and the dispatch
+    gate refuses even a short role timeout."""
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 600000}}}),
+        encoding="utf-8",
+    )
+    (config_dir / "opencode.jsonc").write_text(
+        '{\n  // an operator comment\n  "mcp": {},\n}\n', encoding="utf-8"
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "opencode"
+    assert budget.idle_seconds is None
+    assert budget.idle_source == "unknown"
+    assert any("opencode.jsonc" in item for item in budget.evidence)
+
+    ok, gate_budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+    assert gate_budget.host == "opencode"
+    assert "cannot be resolved" in refusal
+
+
+def test_opencode_uninspectable_inline_layer_fails_closed(monkeypatch, tmp_path):
+    _opencode_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", "{ not json }")
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds is None
+    assert budget.idle_source == "unknown"
+
+
+def test_opencode_without_progress_channel_refuses_an_oversized_role(
+    monkeypatch, tmp_path
+):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    (config_dir / "opencode.json").write_text(
+        json.dumps({"mcp": {"cartopian": {"timeout": 600000}}}),
+        encoding="utf-8",
+    )
+    ok, budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is False
+    assert budget.effective_seconds == 600
+    assert "idle ceiling" in refusal
+    # The refusal names the exact key that fixes it.
+    assert "timeout" in refusal
 
 
 # --- Unknown host: fail closed --------------------------------------------

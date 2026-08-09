@@ -74,6 +74,7 @@ CLIENT_RESTART_INSTRUCTIONS: "OrderedDict[str, OrderedDict[str, str]]" = (
             ("windsurf", _instruction("Restart Windsurf.")),
             ("claude-desktop", _instruction("Restart Claude Desktop.")),
             ("cursor", _instruction("Restart Cursor.")),
+            ("opencode", _instruction("Restart opencode.")),
         )
     )
 )
@@ -88,6 +89,7 @@ _CLIENT_ALIASES: Tuple[Tuple[str, str], ...] = (
     ("windsurf", "windsurf"),
     ("cursor", "cursor"),
     ("devin", "devin"),
+    ("opencode", "opencode"),
     ("codex", "codex"),
 )
 

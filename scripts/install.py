@@ -607,6 +607,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "windsurf",
             "claude-desktop",
             "cursor",
+            "opencode",
         ),
         help=(
             "select a supported client for fresh registration/bridge setup; "

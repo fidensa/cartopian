@@ -37,6 +37,7 @@ Check for the presence of each supported agent using the platform-appropriate si
 | Windsurf | `~/.codeium/windsurf/` dir exists | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Windsurf\mcp_config.json` |
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/` dir exists | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
+| opencode | `opencode` on PATH | `~/.config/opencode/opencode.json` or `opencode.jsonc` | `%USERPROFILE%\.config\opencode\opencode.json` or `opencode.jsonc` (XDG on every platform; **Windows unverified**) |
 
 For Claude Code: run `claude mcp list` and check for a `cartopian` entry to determine registration status.
 
@@ -44,9 +45,11 @@ For Codex: run `codex mcp list` and check for a `cartopian` entry to determine r
 
 For Gemini: run `gemini mcp list` and check for a `cartopian` entry to determine registration status. (The underlying store is `~/.gemini/settings.json` under `mcpServers.cartopian`, but the CLI is the supported interface.)
 
+For opencode: run `opencode mcp list` and check for a `cartopian` entry — it prints each server's resolved command and connect status without any model call, so it is the first check after any registration change. (The underlying store is the global `opencode.json`/`opencode.jsonc` pair under the top-level `mcp` key; note opencode's schema is **not** the `mcpServers` shape the other JSON agents use.)
+
 For JSON-config agents: read the file (if it exists) and check for `mcpServers.cartopian`.
 
-For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
+For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf, opencode), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
 
 Mark each agent as one of:
 
@@ -96,7 +99,7 @@ Apply the recipe for each agent the operator selected. Always confirm before wri
 - **Part A — register the MCP server** so the `cartopian` tools, prompt, and resources are reachable.
 - **Part B — install the "use cartopian" trigger bridge.** Registering the MCP server alone is *not* enough: the supported bridge clients need a native skill or command for the entry phrase. Each bridge directly tells its host to read the authoritative `cartopian://skills/use_cartopian` resource with that host's MCP resource reader. The bridge bodies ship as templates under `<install_root>/templates/clients/<agent>/` — copy them verbatim into the agent's command/skill directory. Create any missing parent directories. Do not edit the template content during the copy; operators can tune it in place afterward.
 
-The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
+The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf, opencode) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
 
 ### Claude Code
 
@@ -345,6 +348,50 @@ Copy-Item "$installRoot\templates\clients\devin\skills\use-cartopian\SKILL.md" `
 
 The bridge skill carries `triggers: [user, model]`, so the operator can say "use cartopian" or type `/use-cartopian`.
 
+### opencode
+
+opencode's config schema is a genuine third format: the server table lives under a top-level `mcp` key (not `mcpServers`), each entry carries a required `"type"` discriminator, and `command` is an **array**. Both `opencode.json` and `opencode.jsonc` load if present and deep-merge, with `opencode.jsonc` loading later and winning same-key conflicts — and either filename may contain comments or trailing commas, which opencode's lenient parser accepts silently. A file that fails to parse is silently ignored by opencode, so verify with `opencode mcp list` after every change.
+
+**Part A — register the MCP server.** Merge the entry into the global config (prefer the pair member that already exists; when both exist, edit `opencode.jsonc` because it loads later; when neither exists, create `opencode.json`), preserving every existing key:
+
+**macOS/Linux:** `~/.config/opencode/opencode.json` (or `opencode.jsonc`)
+**Windows:** `%USERPROFILE%\.config\opencode\opencode.json` — opencode uses the XDG layout on every platform, including Windows (**unverified on native Windows**; check `opencode mcp list` after writing)
+
+```json
+{
+  "mcp": {
+    "cartopian": {
+      "type": "local",
+      "command": ["<install_root>/bin/cartopian-mcp"],
+      "enabled": true,
+      "timeout": 600000
+    }
+  }
+}
+```
+
+On Windows, use the `.cmd` shim (`<installRoot>\\bin\\cartopian-mcp.cmd`) inside the array. The `timeout` is opencode's per-server tool-call **idle** window in milliseconds (see Stage 4). If the operator has set `$OPENCODE_CONFIG_DIR`, write to that directory's pair instead; if `$OPENCODE_CONFIG` names an explicit file, that exact file is the only target.
+
+Verify with `opencode mcp list` — it must show `cartopian` connected and pointing at the install root's binary. Restart any running opencode sessions before the server is available.
+
+**Part B — install the `/use-cartopian` command bridge.** Copy the command template into opencode's global commands directory (or `$OPENCODE_CONFIG_DIR/commands/` when that variable is set — `$OPENCODE_CONFIG` never redirects command discovery):
+
+```bash
+mkdir -p ~/.config/opencode/commands
+cp "$install_root/templates/clients/opencode/commands/use-cartopian.md" \
+   ~/.config/opencode/commands/use-cartopian.md
+```
+
+**Windows (PowerShell):**
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\opencode\commands" | Out-Null
+Copy-Item "$installRoot\templates\clients\opencode\commands\use-cartopian.md" `
+  "$env:USERPROFILE\.config\opencode\commands\use-cartopian.md" -Force
+```
+
+After a restart the operator types `/use-cartopian` in the opencode TUI or IDE. (opencode also surfaces the MCP prompt as `/use_cartopian` — underscore, keyed by the raw prompt name — but the hyphenated command bridge is the supported entry.)
+
 ### Other agents
 
 Agents not covered above are outside the coordinated registration vocabulary.
@@ -368,6 +415,7 @@ Apply the setting for each agent the operator registered, sizing it above the la
 | Codex | `tool_timeout_sec` (seconds) | **300** — below the protocol default | `[mcp_servers.cartopian]` in `~/.codex/config.toml` |
 | Gemini | `timeout` (milliseconds) | **600000** — below the protocol default | `mcpServers.cartopian` in `~/.gemini/settings.json` |
 | Claude Code | `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` (milliseconds; `0` disables) | **1800000** idle — below the protocol default | the environment Claude Code launches with |
+| opencode | `timeout` (milliseconds) | **60000 idle** — but progress notifications reset it | `mcp.cartopian` in the global `opencode.json`/`opencode.jsonc` |
 | Claude Desktop, Cursor, Windsurf, Devin | no documented per-server tool-call timeout | unknown | see the note below |
 
 Codex — add the key under the existing entry, then restart Codex:
@@ -385,6 +433,8 @@ Gemini — add the key under the existing entry in `~/.gemini/settings.json`, th
 ```
 
 Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait.
+
+opencode — the registration recipe above already carries `"timeout": 600000`. Unlike the wall-clock caps on other hosts, opencode's is an **idle** window that a progress notification resets, and Cartopian's blocking waits heartbeat every 5 seconds — so the value bounds silence from non-heartbeating tools, not handoff length, and 10 minutes needs no upward sizing for long roles. One acknowledged cost: the same timeout governs catalog/list operations, so against a hung server `opencode mcp list` and TUI startup enumeration wait it out before failing.
 
 **Hosts with no documented setting.** Do not guess a value and do not assume a long blocking call survives. Cartopian resolves an unrecognized host to an *unknown* budget, which fails the dispatch gate by design. On such a host, either lower `roles.<role>.timeout` to a duration confirmed to survive, or dispatch that role manually and monitor the report path — never fall back to periodic status checks.
 
@@ -412,9 +462,10 @@ Report, per agent the operator selected:
   | Gemini | `/use-cartopian` |
   | Devin for Terminal | say "use cartopian" (skill trigger) or `/use-cartopian` |
   | Windsurf | `/use-cartopian` |
+  | opencode | `/use-cartopian` |
   | Claude Desktop / Cursor | invoke the `use_cartopian` MCP prompt from the client's prompt picker (MCP-only — no bridge) |
 
-- Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor). Claude Code needs no restart.
+- Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor, opencode). Claude Code needs no restart.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
 Once an agent has both parts and any required restart is complete, the operator opens it in any directory and uses the entry phrase/command above. The installed bridge reads the `use_cartopian` resource, which enters PM mode through registry-first project selection and routes to `start_session` for a selected project or `init_project` when the registry is empty.

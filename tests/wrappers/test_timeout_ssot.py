@@ -37,13 +37,20 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
 RUN_HANDOFF_SKILL = REPO_ROOT / "skills" / "run-handoff.md"
-WRAPPERS = ["cartopian-claude", "cartopian-codex", "cartopian-gemini", "cartopian-devin"]
+WRAPPERS = [
+    "cartopian-claude",
+    "cartopian-codex",
+    "cartopian-gemini",
+    "cartopian-devin",
+    "cartopian-opencode",
+]
 # Each wrapper -> the underlying CLI binary it invokes.
 WRAPPER_CLI = {
     "cartopian-claude": "claude",
     "cartopian-codex": "codex",
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
+    "cartopian-opencode": "opencode",
 }
 
 # Per-tool timeout flags that would constitute a competing timer (RM-003). The

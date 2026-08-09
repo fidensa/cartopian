@@ -22,6 +22,15 @@ For `claude-code`, confirm:
 Every host without a verified native adapter remains `advisory+detection`,
 regardless of its static ceiling.
 
+For `opencode` (tier `advisory+detection`), the clearance probe is the shell
+bypass: configure an `edit` `deny` rule for a path, run a handoff that first
+attempts a structured write there (must be refused with a rule citation), then
+have the agent write the same path via a shell redirect (`printf ... > file`).
+The shell write succeeding is the expected residual — `edit` policy does not
+cover shell writes — and confirms the advisory ceiling is the honest entry.
+The macOS run alone clears this entry; opencode on **Windows is unverified**
+until the deferred native-Windows pass runs.
+
 ## Honest degradation
 
 Use disposable **copy-mode** install roots for these destructive probes; do

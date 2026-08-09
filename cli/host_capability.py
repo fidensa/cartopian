@@ -241,6 +241,14 @@ CLAUDE_CODE_DEFAULT_IDLE_SECONDS = 1_800
 # `mcpServers`, defaulting to 600000ms.
 GEMINI_DEFAULT_WALL_SECONDS = 600
 
+# opencode passes `resetTimeoutOnProgress: true` with an installed `onprogress`
+# hook and no `maxTotalTimeout` (mcp/catalog.ts), so it imposes an idle ceiling
+# only — never a wall clock — and a progress notification resets it. The idle
+# window is `mcp.<server>.timeout` ?? `experimental.mcp_timeout` ?? the MCP SDK
+# default of 60s (mcp/index.ts requestTimeout). Both config keys are stored in
+# milliseconds.
+OPENCODE_DEFAULT_IDLE_SECONDS = 60
+
 
 def _codex_config_path() -> Path:
     override = os.environ.get("CODEX_HOME")
@@ -451,6 +459,234 @@ def _resolve_gemini(client_name: str, client_version: Optional[str]) -> HostBudg
     )
 
 
+def _opencode_config_layers() -> List[Tuple[str, Path]]:
+    """Every inspectable opencode config *file* layer, in load order.
+
+    Mirrors the opencode v1.18.15 loader: global pair (`opencode.json` then
+    `opencode.jsonc`, later-loaded wins) → `$OPENCODE_CONFIG` (explicit file)
+    → project pair → `$OPENCODE_CONFIG_DIR` pair. Inline and managed layers are
+    not files and are handled by the caller.
+    """
+    layers: List[Tuple[str, Path]] = []
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    global_dir = (
+        Path(xdg).expanduser() if xdg else Path.home() / ".config"
+    ) / "opencode"
+    layers.append(("global", global_dir / "opencode.json"))
+    layers.append(("global", global_dir / "opencode.jsonc"))
+    explicit = os.environ.get("OPENCODE_CONFIG")
+    if explicit:
+        layers.append(("OPENCODE_CONFIG", Path(explicit).expanduser()))
+    project_dir = _opencode_project_config_dir()
+    if project_dir is not None:
+        layers.append(("project", project_dir / "opencode.json"))
+        layers.append(("project", project_dir / "opencode.jsonc"))
+    config_dir = os.environ.get("OPENCODE_CONFIG_DIR")
+    if config_dir:
+        base = Path(config_dir).expanduser()
+        layers.append(("OPENCODE_CONFIG_DIR", base / "opencode.json"))
+        layers.append(("OPENCODE_CONFIG_DIR", base / "opencode.jsonc"))
+    return layers
+
+
+def _opencode_project_config_dir() -> Optional[Path]:
+    """Nearest ancestor of the working directory carrying an opencode config."""
+    try:
+        current = Path.cwd()
+    except OSError:
+        return None
+    for candidate in (current, *current.parents):
+        if (candidate / "opencode.json").is_file() or (
+            candidate / "opencode.jsonc"
+        ).is_file():
+            return candidate
+    return None
+
+
+def _opencode_timeouts(data: Dict[str, Any]) -> Tuple[Optional[Any], Optional[Any], bool]:
+    """Extract (server timeout, experimental timeout, server entry present)."""
+    server_timeout: Optional[Any] = None
+    entry_present = False
+    servers = data.get("mcp")
+    if isinstance(servers, dict):
+        name = _server_name()
+        entry = servers.get(name)
+        if not isinstance(entry, dict):
+            entry = None
+            for candidate in servers.values():
+                if not isinstance(candidate, dict):
+                    continue
+                command = candidate.get("command")
+                if isinstance(command, list):
+                    haystack = " ".join(str(part) for part in command)
+                else:
+                    haystack = str(command or "")
+                if _COMMAND_FINGERPRINT in haystack.lower():
+                    entry = candidate
+                    break
+        if isinstance(entry, dict):
+            entry_present = True
+            if "timeout" in entry:
+                server_timeout = entry.get("timeout")
+    experimental_timeout: Optional[Any] = None
+    experimental = data.get("experimental")
+    if isinstance(experimental, dict) and "mcp_timeout" in experimental:
+        experimental_timeout = experimental.get("mcp_timeout")
+    return server_timeout, experimental_timeout, entry_present
+
+
+def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBudget:
+    """D8 effective-configuration resolver for opencode's idle ceiling.
+
+    Merges every inspectable file layer in stack order (later over earlier),
+    then resolves `mcp.<server>.timeout` ?? `experimental.mcp_timeout` ??
+    the 60s SDK default from the merged result. Fails closed: a layer that is
+    present but not strictly parseable could carry either key under a
+    higher-precedence position, so the ceiling is reported unknown rather than
+    invented.
+    """
+    evidence: List[str] = []
+    unreadable: List[str] = []
+    server_timeout_raw: Optional[Any] = None
+    server_timeout_path: Optional[Path] = None
+    experimental_raw: Optional[Any] = None
+    experimental_path: Optional[Path] = None
+    consulted = 0
+    for _label, path in _opencode_config_layers():
+        if not path.exists():
+            continue
+        consulted += 1
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unreadable.append(str(path))
+            continue
+        if not isinstance(data, dict):
+            unreadable.append(str(path))
+            continue
+        server_value, experimental_value, _present = _opencode_timeouts(data)
+        if server_value is not None:
+            server_timeout_raw = server_value
+            server_timeout_path = path
+        if experimental_value is not None:
+            experimental_raw = experimental_value
+            experimental_path = path
+    inline = os.environ.get("OPENCODE_CONFIG_CONTENT")
+    if inline and inline.strip():
+        consulted += 1
+        try:
+            data = json.loads(inline)
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            unreadable.append("OPENCODE_CONFIG_CONTENT (inline configuration)")
+        else:
+            server_value, experimental_value, _present = _opencode_timeouts(data)
+            if server_value is not None:
+                server_timeout_raw = server_value
+                server_timeout_path = None
+                evidence.append(
+                    "OPENCODE_CONFIG_CONTENT sets an inline per-server timeout"
+                )
+            if experimental_value is not None:
+                experimental_raw = experimental_value
+                experimental_path = None
+
+    name = _server_name()
+    remediation_dir = (
+        Path(os.environ.get("OPENCODE_CONFIG_DIR")).expanduser()
+        if os.environ.get("OPENCODE_CONFIG_DIR")
+        else (
+            Path(os.environ["XDG_CONFIG_HOME"]).expanduser()
+            if os.environ.get("XDG_CONFIG_HOME")
+            else Path.home() / ".config"
+        )
+        / "opencode"
+    )
+    remediation = [
+        f'raise the ceiling: set "timeout" (milliseconds) on the {name} entry '
+        f'under "mcp" in {remediation_dir / "opencode.json"}, then restart opencode',
+        "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+    ]
+
+    if unreadable:
+        # Fail closed: an uninspectable layer may override either timeout key.
+        evidence.append(
+            "opencode configuration layer(s) could not be strictly read, so "
+            "the effective idle ceiling cannot be resolved: "
+            + "; ".join(unreadable)
+        )
+        return HostBudget(
+            host="opencode",
+            display="opencode (CLI / TUI)",
+            client_name=client_name,
+            client_version=client_version,
+            wall_clock_seconds=None,
+            idle_seconds=None,
+            wall_clock_source="not-imposed",
+            idle_source="unknown",
+            progress_resets_wall_clock=False,
+            progress_resets_idle=True,
+            progress_channel_available=emit.progress_available(),
+            evidence=evidence,
+            remediation=remediation,
+        )
+
+    idle = OPENCODE_DEFAULT_IDLE_SECONDS
+    source = "host-default"
+    if server_timeout_raw is not None:
+        configured = _positive_int(server_timeout_raw)
+        if configured is None:
+            evidence.append(
+                f"mcp.{name}.timeout is not a positive integer; "
+                "using the opencode default"
+            )
+        else:
+            idle = max(1, configured // 1000)
+            source = "host-config"
+            evidence.append(
+                f"{server_timeout_path or 'inline configuration'}: "
+                f"mcp.{name}.timeout = {server_timeout_raw}ms"
+            )
+    elif experimental_raw is not None:
+        configured = _positive_int(experimental_raw)
+        if configured is None:
+            evidence.append(
+                "experimental.mcp_timeout is not a positive integer; "
+                "using the opencode default"
+            )
+        else:
+            idle = max(1, configured // 1000)
+            source = "host-config"
+            evidence.append(
+                f"{experimental_path or 'inline configuration'}: "
+                f"experimental.mcp_timeout = {experimental_raw}ms"
+            )
+    if source == "host-default":
+        evidence.append(
+            "no opencode configuration sets a Cartopian tool-call timeout "
+            f"({consulted} layer(s) consulted); using the MCP SDK default"
+        )
+    return HostBudget(
+        host="opencode",
+        display="opencode (CLI / TUI)",
+        client_name=client_name,
+        client_version=client_version,
+        wall_clock_seconds=None,
+        idle_seconds=idle,
+        wall_clock_source="not-imposed",
+        idle_source=source,
+        progress_resets_wall_clock=False,
+        # opencode passes resetTimeoutOnProgress with an onprogress hook and no
+        # maxTotalTimeout, so a progress notification resets the idle window
+        # and no wall clock exists.
+        progress_resets_idle=True,
+        progress_channel_available=emit.progress_available(),
+        evidence=evidence,
+        remediation=remediation,
+    )
+
+
 def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBudget:
     return HostBudget(
         host="unknown",
@@ -484,6 +720,7 @@ _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
     ("codex-mcp-client", _resolve_codex),
     ("claude-code", _resolve_claude_code),
     ("gemini-cli", _resolve_gemini),
+    ("opencode", _resolve_opencode),
     ("codex", _resolve_codex),
     ("gemini", _resolve_gemini),
 )
@@ -567,6 +804,32 @@ def check_wait_budget(
                 f"host wait budget is unknown, so a blocking wait of "
                 f"{format_duration(role_timeout_seconds)} for role {role!r} cannot "
                 f"be guaranteed to survive. {detail}.\nResolve by one of:\n{options}"
+            ),
+        )
+
+    unresolved = [
+        label
+        for label, source in (
+            ("wall-clock", budget.wall_clock_source),
+            ("idle", budget.idle_source),
+        )
+        if source == "unknown"
+    ]
+    if unresolved:
+        # A known host whose ceiling could not be resolved fails closed: the
+        # host imposes a ceiling, but an uninspectable configuration layer may
+        # set it below the role timeout.
+        detail = "; ".join(budget.evidence)
+        options = "\n".join(f"  - {item}" for item in budget.remediation)
+        return (
+            False,
+            budget,
+            (
+                f"{budget.display} imposes a {' and '.join(unresolved)} ceiling "
+                f"whose configured value cannot be resolved, so a blocking wait "
+                f"of {format_duration(role_timeout_seconds)} for role {role!r} "
+                f"cannot be guaranteed to survive. {detail}.\n"
+                f"Resolve by one of:\n{options}"
             ),
         )
 

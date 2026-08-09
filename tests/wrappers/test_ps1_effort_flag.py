@@ -36,6 +36,10 @@ TRANSLATING = {
         "$Args += @('-c', \"model_reasoning_effort=$EffortLc\")",
         "@('low', 'medium', 'high', 'xhigh', 'max', 'ultra')",
     ),
+    "cartopian-opencode.ps1": (
+        "$Args += @('--variant', $EffortLc)",
+        "@('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'thinking')",
+    ),
 }
 IGNORING = ["cartopian-gemini.ps1", "cartopian-devin.ps1"]
 
@@ -46,6 +50,7 @@ PS1_TAIL_APPEND = {
     "cartopian-codex.ps1": "$Args += $PromptPathAbs",
     "cartopian-gemini.ps1": "$Args += @('-p', $PromptPathAbs)",
     "cartopian-devin.ps1": "$Args += @('--prompt-file', $PromptPathAbs)",
+    "cartopian-opencode.ps1": "$Args += $PromptPathAbs",
 }
 
 
