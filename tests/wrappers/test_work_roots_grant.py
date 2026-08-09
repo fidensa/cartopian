@@ -16,6 +16,9 @@ cartopian-codex bug):
 * cartopian-gemini / cartopian-devin — their sandboxes expose no per-path
   grant surface; when the sandbox is active and work roots are declared, the
   wrapper warns on stderr so a work-root write failure is traceable.
+* cartopian-opencode — the tool imposes no filesystem sandbox at all, so
+  declared work roots need no grant; the wrapper prints an explicit no-op
+  notice instead of inventing a policy flag.
 
 Exercised against the *real* Bash wrappers with fake CLIs capturing the exact
 argv the underlying tool receives (same harness as test_model_flag.py).
@@ -174,6 +177,24 @@ def test_gemini_default_no_sandbox_no_warning(tmp_path):
     received, res = _captured(tmp_path, "cartopian-gemini", "gemini", ROOTS_ENV)
     assert "--sandbox" not in received
     assert "may not be writable" not in res.stderr
+
+
+def test_opencode_emits_noop_notice_and_no_grant_flag(tmp_path):
+    """opencode has no sandbox to widen: work roots produce the explicit no-op
+    notice on stderr and nothing grant-shaped in argv."""
+    received, res = _captured(tmp_path, "cartopian-opencode", "opencode", ROOTS_ENV)
+    assert "--auto" in received
+    assert "work roots need no grant here" in res.stderr, (
+        f"opencode + work roots must print the no-op notice. stderr={res.stderr!r}"
+    )
+    assert not any("wr-product" in a or "wr-docs" in a for a in received), (
+        f"opencode must not receive a work-root grant flag. argv={received!r}"
+    )
+
+
+def test_opencode_no_notice_when_unset(tmp_path):
+    _received, res = _captured(tmp_path, "cartopian-opencode", "opencode", None)
+    assert "work roots" not in res.stderr
 
 
 def test_devin_warns_when_sandbox_active_with_work_roots(tmp_path):

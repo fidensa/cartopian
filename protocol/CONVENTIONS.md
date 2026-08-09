@@ -656,7 +656,7 @@ Every automated handoff follows this argument contract:
 
 The prompt path is passed as one argument. Tool-specific non-interactive flags, sandbox settings, approval settings, and environment variables belong in a wrapper executable, not in `cartopian.toml`.
 
-Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin) are in `wrappers/`. See `wrappers/README.md` for installation.
+Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin, opencode) are in `wrappers/`. See `wrappers/README.md` for installation.
 
 ### Foreground Completion
 
