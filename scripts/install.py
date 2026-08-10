@@ -608,6 +608,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "claude-desktop",
             "cursor",
             "opencode",
+            "hermes",
         ),
         help=(
             "select a supported client for fresh registration/bridge setup; "
@@ -637,6 +638,29 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--unregister",
+        default=None,
+        metavar="CLIENT",
+        choices=(
+            "claude-code",
+            "codex",
+            "gemini",
+            "devin",
+            "windsurf",
+            "claude-desktop",
+            "cursor",
+            "opencode",
+            "hermes",
+        ),
+        help=(
+            "standalone cleanup: remove CLIENT's Cartopian MCP registration. "
+            "Automated removal currently exists for hermes only (a guarded "
+            "`hermes config unset` that preserves foreign or unreadable "
+            "entries); other clients receive a manual instruction. Does not "
+            "run install/update and never touches bridges or wrappers."
+        ),
+    )
+    p.add_argument(
         "--claude-hook",
         type=Path,
         default=None,
@@ -656,6 +680,49 @@ def main(argv: Optional[List[str]] = None) -> int:
     _require_python()
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.unregister is not None:
+        # Standalone bounded cleanup, mirroring --claude-hook: no install,
+        # update, or planning runs, and only the one client's registration
+        # entry may change. --prefix selects the install root the expected
+        # command is derived from; --source selects where the workflow module
+        # is loaded from (default: the repo containing this script).
+        conflicting = any(
+            (
+                args.from_github,
+                args.ref is not None,
+                args.patch_path,
+                args.plan_only,
+                bool(args.client),
+                bool(args.repair),
+                bool(args.inspected),
+                args.claude_hook is not None,
+            )
+        )
+        if conflicting:
+            parser.error(
+                "--unregister is a standalone cleanup operation and cannot "
+                "be combined with install, update, repair, or planning "
+                "options"
+            )
+        install_root = (
+            (args.prefix or default_install_root()).expanduser().resolve()
+        )
+        source_root = _resolve_source_root(args.source)
+        if str(source_root) not in sys.path:
+            sys.path.insert(0, str(source_root))
+        from cli.install_workflow import WorkflowRefusal, unregister_client
+
+        try:
+            unregister_client(args.unregister, install_root)
+        except WorkflowRefusal as exc:
+            print(f"[error] {exc}", file=sys.stderr)
+            return EXIT_FAIL
+        if not args.quiet:
+            print(
+                f"{args.unregister}: cartopian registration removed "
+                "(no-op when it was already absent)"
+            )
+        return EXIT_OK
     if args.claude_hook is not None:
         # This historical spelling is now a bounded cleanup command, not an
         # install modifier. Handle it before source/install-root validation so

@@ -1038,5 +1038,245 @@ class OpencodeCoordinatedWorkflowTests(unittest.TestCase):
         self.assertTrue((override / "commands" / "use-cartopian.md").is_file())
 
 
+_HERMES_STUB_TEMPLATE = '''#!/usr/bin/env python3
+"""Stateful stub `hermes` for coordinated-workflow tests: `config set` writes
+land in a JSON state file that `config get --json` answers from, so a written
+registration reads back `current` on re-plan exactly like the real CLI."""
+import json
+import sys
+from pathlib import Path
+
+CTRL = Path(__CTRL__)
+args = sys.argv[1:]
+# The registration adapter pins reads and writes to the resolved profile
+# identity: a root-like home arrives as a leading `-p default`, exactly like
+# the real CLI's pre-parse it is stripped before subcommand dispatch.
+if args[:1] == ["-p"]:
+    args = args[2:]
+if args[:1] == ["--version"]:
+    print((CTRL / "version").read_text().strip())
+    sys.exit(0)
+if args[:2] == ["config", "path"]:
+    print((CTRL / "config_path").read_text().strip())
+    sys.exit(0)
+state = CTRL / "entry.json"
+if args[:2] == ["config", "get"]:
+    if not state.exists():
+        print("Config key not set", file=sys.stderr)
+        sys.exit(1)
+    print(state.read_text())
+    sys.exit(0)
+if args[:2] == ["config", "set"]:
+    key, value = args[2], args[3]
+    parts = key.split(".")
+    entry = json.loads(state.read_text()) if state.exists() else {}
+    node = entry
+    for part in parts[2:-1]:
+        node = node.setdefault(part, {})
+    if value in ("true", "false"):
+        coerced = value == "true"
+    else:
+        try:
+            coerced = int(value)
+        except ValueError:
+            coerced = value
+    node[parts[-1]] = coerced
+    state.write_text(json.dumps(entry))
+    sys.exit(0)
+if args[:2] == ["config", "unset"]:
+    state.unlink(missing_ok=True)
+    sys.exit(0)
+sys.exit(0)
+'''
+
+
+class HermesCoordinatedWorkflowTests(unittest.TestCase):
+    """Hermes registration + skill bridge through the full coordinated
+    workflow, against a stateful stub `hermes` on a restricted PATH. Pins the
+    D10 guarantee: destinations, executable, and version freeze at plan time,
+    and a profile/config-path change between authorization and apply refuses
+    instead of driving a toolchain the plan never displayed."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.install_root = self.root / "install"
+        self.client_home = self.root / "home"
+        self.client_home.mkdir()
+        self.profile_home = self.root / "hermes-profile"
+        self.profile_home.mkdir()
+        ctrl = self.root / "hermes-ctrl"
+        ctrl.mkdir()
+        self.ctrl = ctrl
+        (ctrl / "version").write_text("hermes 0.20.0 (2026.8.3)", encoding="utf-8")
+        (ctrl / "config_path").write_text(
+            str(self.profile_home / "config.yaml"), encoding="utf-8"
+        )
+        bin_dir = self.root / "hermesbin"
+        bin_dir.mkdir()
+        stub = bin_dir / "hermes"
+        stub.write_text(
+            _HERMES_STUB_TEMPLATE.replace("__CTRL__", repr(str(ctrl))),
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        env_patch = patch.dict(os.environ)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ["PATH"] = os.pathsep.join(
+            [str(bin_dir), "/usr/bin", "/bin"]
+        )
+        os.environ.pop("HERMES_HOME", None)
+
+    def plan(self, **overrides):
+        values = {
+            "source_root": REPO_ROOT,
+            "install_root": self.install_root,
+            "operation": "fresh-install",
+            "client_home": self.client_home,
+            "clients": ("hermes",),
+        }
+        values.update(overrides)
+        return plan_workflow(**values)
+
+    def _entry(self):
+        state = self.ctrl / "entry.json"
+        return json.loads(state.read_text(encoding="utf-8")) if state.exists() else None
+
+    def _bundle(self):
+        return self.profile_home / "skills" / "cartopian"
+
+    def test_fresh_install_registers_and_bridges_then_replans_current(self) -> None:
+        result = apply_workflow(self.plan())
+        self.assertIn(
+            result["outcome"]["status"], ("complete", "complete-qualified")
+        )
+        entry = self._entry()
+        self.assertEqual(
+            entry["command"], str(self.install_root / "bin" / "cartopian-mcp")
+        )
+        self.assertEqual(entry["timeout"], 3900)
+        self.assertEqual(entry["enabled"], True)
+        self.assertEqual(entry["env"]["CARTOPIAN_MCP_HOST"], "hermes")
+        self.assertEqual(
+            entry["env"]["CARTOPIAN_HERMES_HOME"], str(self.profile_home)
+        )
+        skill = self._bundle() / "use-cartopian" / "SKILL.md"
+        description = self._bundle() / "DESCRIPTION.md"
+        self.assertTrue(skill.is_file())
+        self.assertTrue(description.is_file())
+        self.assertEqual(
+            skill.read_bytes(),
+            (
+                REPO_ROOT
+                / "templates"
+                / "clients"
+                / "hermes"
+                / "skills"
+                / "use-cartopian"
+                / "SKILL.md"
+            ).read_bytes(),
+        )
+
+        replanned = self.plan(operation="update")
+        registration = next(
+            item
+            for item in replanned["surfaces"]
+            if item["kind"] == "client-registrations"
+        )
+        bridges = next(
+            item for item in replanned["surfaces"] if item["kind"] == "bridges"
+        )
+        self.assertEqual(registration["state"], "current")
+        self.assertEqual(bridges["state"], "current")
+
+    def test_plan_records_destinations_executable_and_version(self) -> None:
+        plan = self.plan()
+        destinations = plan["internal"]["client_destinations"]["hermes"]
+        self.assertEqual(
+            destinations["registration"],
+            [str(self.profile_home / "config.yaml")],
+        )
+        self.assertEqual(
+            destinations["bridges"],
+            [
+                str(self._bundle() / "DESCRIPTION.md"),
+                str(self._bundle() / "use-cartopian" / "SKILL.md"),
+            ],
+        )
+        self.assertEqual(
+            destinations["executable"],
+            [str((self.root / "hermesbin" / "hermes").resolve())],
+        )
+        self.assertEqual(destinations["version"], ["hermes 0.20.0 (2026.8.3)"])
+        registration_choice = next(
+            item
+            for item in plan["choices"]
+            if item["surface"] == "client-registrations"
+        )
+        self.assertEqual(
+            registration_choice["decision_context"]["destinations"]["hermes"],
+            destinations,
+        )
+
+    def test_profile_flip_between_plan_and_apply_is_refused(self) -> None:
+        """A different `hermes config path` answer at apply (profile switch,
+        HERMES_HOME change) must refuse; no destination the plan never
+        displayed may be written."""
+        plan = self.plan()
+        flipped = self.root / "flipped-profile"
+        flipped.mkdir()
+        (self.ctrl / "config_path").write_text(
+            str(flipped / "config.yaml"), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(
+            WorkflowRefusal, "changed between planning and apply"
+        ):
+            apply_workflow(plan)
+        self.assertIsNone(self._entry())
+        self.assertFalse((flipped / "skills").exists())
+
+    def test_hermes_version_flip_between_plan_and_apply_is_refused(self) -> None:
+        """The frozen-fact refusal must fire before EITHER optional surface
+        mutates: bridges apply before registrations, so a registration-only
+        check would leave the skill bundle installed after the refusal."""
+        plan = self.plan()
+        (self.ctrl / "version").write_text("hermes 0.21.0", encoding="utf-8")
+        with self.assertRaisesRegex(WorkflowRefusal, "version changed"):
+            apply_workflow(plan)
+        self.assertIsNone(self._entry())
+        self.assertFalse(
+            self._bundle().exists(),
+            "the skill bridge was written before the version-change refusal",
+        )
+
+    def test_hermes_config_path_failure_at_plan_time_refuses(self) -> None:
+        """A runnable `hermes` that cannot report its config location must
+        refuse the plan instead of freezing a guessed profile home."""
+        stub = self.root / "hermesbin" / "hermes"
+        stub.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1 $2" = "config path" ]; then\n'
+            '  echo "boom" >&2; exit 3\n'
+            "fi\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        with self.assertRaisesRegex(
+            WorkflowRefusal, "cannot report its profile-scoped config"
+        ):
+            self.plan()
+
+    def test_stable_environment_applies_to_the_planned_destinations(self) -> None:
+        """The D10 guard does not disturb an ordinary plan/apply run."""
+        result = apply_workflow(self.plan())
+        self.assertIn(
+            result["outcome"]["status"], ("complete", "complete-qualified")
+        )
+        self.assertIsNotNone(self._entry())
+
+
 if __name__ == "__main__":
     unittest.main()

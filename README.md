@@ -22,7 +22,7 @@ Everything is plain markdown on your disk. There is no database, no hosted servi
 
 You need **Python 3.11 or newer** on your PATH. The `/usr/bin/python3` that ships with macOS is 3.9, so install a newer one with `brew install python@3.11` or any equivalent. Nothing else is required, and you do not need to know Git.
 
-Open a shell-capable AI agent such as Claude Code, Codex, Gemini CLI, Devin, Windsurf, or opencode. Any MCP-aware agent that can read a URL and run shell commands works. Tell it:
+Open a shell-capable AI agent such as Claude Code, Codex, Gemini CLI, Devin, Windsurf, opencode, or Hermes. Any MCP-aware agent that can read a URL and run shell commands works. Tell it:
 
 > Install Cartopian by following https://raw.githubusercontent.com/fidensa/cartopian/main/install-cartopian.md
 
@@ -55,6 +55,7 @@ The reliable cross-client form is the **`/use-cartopian`** command. Where a desc
 | Windsurf | `/use-cartopian` (the plain phrase is best-effort) |
 | Devin for Terminal | say "use cartopian" or `/use-cartopian` |
 | opencode | `/use-cartopian` |
+| Hermes | say "use cartopian" (or preload with `-s use-cartopian`) |
 | Claude Desktop, Cursor | pick the `use_cartopian` prompt from the client's MCP prompt picker |
 
 To register more agents later, or to reinstall a trigger, run the `register mcp` skill.
@@ -134,9 +135,9 @@ effort = "high"
 timeout = "60m"
 ```
 
-Cartopian ships wrappers for **Codex, Claude Code, Gemini, Devin, and opencode**: `cartopian-codex`, `cartopian-claude`, `cartopian-gemini`, `cartopian-devin`, and `cartopian-opencode`. They set the non-interactive flags, choose the right working directory, and follow one simple contract: `<agent> <prompt-path>`. Bring your own agent if you prefer. Anything that fits the contract is valid.
+Cartopian ships wrappers for **Codex, Claude Code, Gemini, Devin, opencode, and Hermes** (Hermes experimental — see above): `cartopian-codex`, `cartopian-claude`, `cartopian-gemini`, `cartopian-devin`, `cartopian-opencode`, and `cartopian-hermes`. They set the non-interactive flags, choose the right working directory, and follow one simple contract: `<agent> <prompt-path>`. Bring your own agent if you prefer. Anything that fits the contract is valid.
 
-`model` pins the agent to one model. `effort` sets a thinking or effort level. Cartopian passes both to the wrapper, which translates them into that tool's own flags. A value a tool does not recognize is dropped with a short notice, and the agent runs at its default. Gemini and Devin have no effort flag, so their wrappers ignore it; opencode translates effort into its `--variant` flag.
+`model` pins the agent to one model. `effort` sets a thinking or effort level. Cartopian passes both to the wrapper, which translates them into that tool's own flags. A value a tool does not recognize is dropped with a short notice, and the agent runs at its default. Gemini and Devin have no effort flag, so their wrappers ignore it; opencode translates effort into its `--variant` flag, and Hermes into its `--reasoning` flag.
 
 `auto_launch` accepts only `task_run`, `task_review`, and `planning_review`. Each value applies to one kind of assigned work. It never turns a review stage on, assigns review duty, starts a run, or picks a task. A role with an agent but no permission still works through handoffs you start yourself. See `wrappers/README.md` for setup and `CONFIG-MAPPING.md` for every accepted value.
 

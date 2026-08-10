@@ -9,13 +9,16 @@ authorized client configuration.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import functools
 import hashlib
 import json
 import os
 import re
 import shutil
 import stat
+import subprocess
 import tempfile
 import tomllib
 from collections import OrderedDict
@@ -32,6 +35,7 @@ from typing import (
     Tuple,
 )
 
+from cli.bounded_run import CaptureOverflow, run_bounded
 from cli.config_schema import identity_contract
 from cli.install_state import (
     SCHEMA_IDENTITY,
@@ -137,6 +141,7 @@ SUPPORTED_CLIENTS = (
     "claude-desktop",
     "cursor",
     "opencode",
+    "hermes",
 )
 
 # The registered opencode entry carries a 600000ms idle timeout: opencode's
@@ -217,6 +222,446 @@ def _opencode_bridge_rows(client_home: Path) -> Tuple[Tuple[str, Path], ...]:
             commands / "use-cartopian.md",
         ),
     )
+
+
+# The registered Hermes entry carries a 3,900-second timeout. Hermes's
+# `timeout` is a hard wall-clock total per tool call (default 300s, nothing
+# resets it), and Cartopian's completion mechanism is a single terminal wait
+# sized by `roles.<role>.timeout` — 60 minutes by default — with `dispatch`
+# refusing before launch when the host ceiling is short. 3,600s protocol
+# default + 300s response/serialization margin keeps the role timeout the
+# single binding timer for default roles; longer roles still refuse cleanly
+# at dispatch with the standard remedies.
+HERMES_REGISTRATION_TIMEOUT_SECONDS = 3900
+
+# Subprocess hygiene for every Hermes CLI invocation (adapter, resolver, and
+# freeze checks alike): fixed timeout, stdin closed, bounded captured output,
+# shell-free argv list.
+_HERMES_SUBPROCESS_TIMEOUT_SECONDS = 30
+_HERMES_MAX_CAPTURE_BYTES = 1_000_000
+
+# The Hermes generation this integration was verified against (v0.20.0). An
+# older or unparseable version refuses at plan time rather than driving a CLI
+# whose config/one-shot semantics were never checked.
+HERMES_MIN_SUPPORTED_VERSION = (0, 20)
+
+
+def _hermes_executable() -> Optional[str]:
+    """PATH resolution for the `hermes` CLI; None when it is not installed."""
+    return shutil.which("hermes")
+
+
+def _run_hermes(
+    executable: str,
+    args: Sequence[str],
+    *,
+    extra_env: Optional[Mapping[str, str]] = None,
+) -> Tuple[int, str, str]:
+    """Run one Hermes CLI command under the fixed subprocess-hygiene posture.
+
+    Raises :class:`WorkflowRefusal` when the CLI hangs past the fixed timeout
+    (the child is killed), cannot be launched, or floods either stream past
+    the capture bound (the bound is enforced while the child runs, so a
+    flooding process is killed instead of buffered). Never uses a shell;
+    never reads this process's stdin (under MCP-hosted execution stdin is the
+    protocol pipe).
+    """
+    env = {**os.environ, **extra_env} if extra_env else None
+    argv = [executable, *args]
+    try:
+        code, stdout, stderr = run_bounded(
+            argv,
+            timeout=_HERMES_SUBPROCESS_TIMEOUT_SECONDS,
+            max_bytes=_HERMES_MAX_CAPTURE_BYTES,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise WorkflowRefusal(
+            f"`{' '.join(argv)}` did not answer within "
+            f"{_HERMES_SUBPROCESS_TIMEOUT_SECONDS}s and was killed"
+        ) from exc
+    except CaptureOverflow as exc:
+        raise WorkflowRefusal(
+            f"`{' '.join(argv)}` produced more than "
+            f"{_HERMES_MAX_CAPTURE_BYTES} bytes on {exc.stream} and was "
+            "killed; refusing to parse the truncated capture"
+        ) from exc
+    except OSError as exc:
+        raise WorkflowRefusal(
+            f"`{' '.join(argv)}` could not be launched: {exc}"
+        ) from exc
+    return (
+        code,
+        stdout.decode("utf-8", "replace"),
+        stderr.decode("utf-8", "replace"),
+    )
+
+
+def _hermes_home_fallback(client_home: Path) -> Path:
+    """Static default Hermes home, used only when the CLI cannot answer."""
+    override = os.environ.get("HERMES_HOME")
+    if override:
+        return Path(override).expanduser()
+    return client_home / ".hermes"
+
+
+# Per-operation cache of `hermes config path` answers, keyed by client home.
+# ``None`` outside a resolution scope (every call re-resolves, as before).
+_HERMES_RESOLVED_PATHS: Optional[Dict[str, Path]] = None
+
+
+@contextlib.contextmanager
+def _hermes_resolution_scope():
+    """Resolve the Hermes profile home at most once per operation.
+
+    `hermes config path` folds the sticky `active_profile` into every answer,
+    and a single plan/apply/verify operation consults it for registration
+    reads, bridge rows, runtime facts, frozen-destination verification, and
+    the mutation itself. Re-running that resolution at each point lets a
+    concurrent sticky-profile switch split those surfaces across homes — or
+    redirect the actual write to a home the operation verified moments
+    earlier but no longer names. Inside this scope the first resolution per
+    client home is authoritative and every later consult reuses it, so
+    verification and mutation are guaranteed to target the same profile home.
+    Nested scopes join the outermost one.
+    """
+    global _HERMES_RESOLVED_PATHS
+    if _HERMES_RESOLVED_PATHS is not None:
+        yield
+        return
+    _HERMES_RESOLVED_PATHS = {}
+    try:
+        yield
+    finally:
+        _HERMES_RESOLVED_PATHS = None
+
+
+def _hermes_scoped(func):
+    """Run ``func`` inside one :func:`_hermes_resolution_scope`."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _hermes_resolution_scope():
+            return func(*args, **kwargs)
+
+    wrapper._hermes_scoped = True
+    return wrapper
+
+
+def _hermes_config_path(client_home: Path) -> Path:
+    """Hermes's profile-scoped config file, resolved by Hermes itself (D10).
+
+    Inside a :func:`_hermes_resolution_scope` the first answer per client
+    home is cached and reused, so one operation's verification and mutation
+    cannot be split by a concurrent sticky-profile switch; outside a scope
+    every call re-resolves.
+    """
+    cache = _HERMES_RESOLVED_PATHS
+    key = str(client_home)
+    if cache is not None and key in cache:
+        return cache[key]
+    resolved = _hermes_config_path_now(client_home)
+    if cache is not None:
+        cache[key] = resolved
+    return resolved
+
+
+def _hermes_config_path_now(client_home: Path) -> Path:
+    """The uncached `hermes config path` resolution behind
+    :func:`_hermes_config_path`.
+
+    `hermes config path` folds in every selection input — the `-p` pre-parse's
+    `HERMES_HOME` rewrite, the sticky `active_profile` default, and ambient
+    `HERMES_HOME` — so the printed path is authoritative and profile-scoped by
+    construction. When `hermes` is installed but cannot report its config
+    location (nonzero exit, empty output, a non-absolute path, a hanging or
+    flooding CLI), this refuses: a static guess could name a different profile
+    than the one Hermes actually uses, silently splitting the registration and
+    the skill bridge across two homes. Only a completely absent CLI falls back
+    to the static default location, which is enough for client *detection*;
+    planning with hermes selected refuses on the missing CLI anyway.
+    """
+    executable = _hermes_executable()
+    if executable is None:
+        return _hermes_home_fallback(client_home) / "config.yaml"
+    code, stdout, stderr = _run_hermes(executable, ("config", "path"))
+    if code != 0:
+        detail = f": {stderr.strip()}" if stderr.strip() else ""
+        raise WorkflowRefusal(
+            f"`hermes config path` failed with exit {code}{detail}; Hermes "
+            "cannot report its profile-scoped config location, so its "
+            "destinations cannot be resolved without guessing — repair the "
+            "Hermes installation (or remove `hermes` from PATH) and re-plan"
+        )
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    if not lines:
+        raise WorkflowRefusal(
+            "`hermes config path` printed nothing; Hermes cannot report its "
+            "profile-scoped config location, so its destinations cannot be "
+            "resolved without guessing — repair the Hermes installation and "
+            "re-plan"
+        )
+    candidate = Path(lines[-1]).expanduser()
+    if not candidate.is_absolute():
+        raise WorkflowRefusal(
+            f"`hermes config path` printed the non-absolute path "
+            f"{lines[-1]!r}; refusing to derive Hermes destinations from an "
+            "ambiguous location — repair the Hermes installation and re-plan"
+        )
+    return candidate
+
+
+def _hermes_profile_pin(
+    hermes_home: Path,
+) -> Tuple[Tuple[str, ...], Dict[str, str]]:
+    """Argv prefix and env that pin one Hermes invocation to a resolved home.
+
+    `hermes config path` folds the sticky `active_profile` into its answer,
+    but every later invocation re-runs that resolution from scratch — a
+    profile switch between the whole-entry read and the per-key writes could
+    redirect or split them across configs, defeating both destination
+    freezing and enabled-last interruption safety. Hermes v0.20's `-p`
+    pre-parse trusts a `HERMES_HOME` whose parent directory is named
+    `profiles` verbatim (it returns before consulting `active_profile`), so
+    that env alone pins a named-profile home. Any other home — the standard
+    root or a custom root — is still overridden by a sticky `active_profile`,
+    so those additionally need the explicit `-p default` identity, which
+    resolves to the root home even when `HERMES_HOME` names a custom root.
+    """
+    env = {"HERMES_HOME": str(hermes_home)}
+    if hermes_home.parent.name == "profiles":
+        return (), env
+    return ("-p", "default"), env
+
+
+def _hermes_bridge_rows(client_home: Path) -> Tuple[Tuple[str, Path], ...]:
+    """Skill-bundle rows under the profile-scoped skills dir.
+
+    The skills dir derives from the config path's parent (`get_config_path()`
+    and `get_skills_dir()` share `HERMES_HOME`), so both surfaces move together
+    under a profile or `HERMES_HOME` override. A file-dropped bundle is
+    discovered by Hermes with no install step.
+    """
+    bundle = _hermes_config_path(client_home).parent / "skills" / "cartopian"
+    return (
+        (
+            "templates/clients/hermes/skills/DESCRIPTION.md",
+            bundle / "DESCRIPTION.md",
+        ),
+        (
+            "templates/clients/hermes/skills/use-cartopian/SKILL.md",
+            bundle / "use-cartopian" / "SKILL.md",
+        ),
+    )
+
+
+def _hermes_runtime_facts(client_home: Path) -> Dict[str, str]:
+    """Freeze the hermes executable, version, and config path (D10).
+
+    Everything here is re-resolved at apply and compared against the plan's
+    recorded values: destination freezing alone would not catch a PATH change
+    swapping in a different executable between plan and apply. A missing CLI,
+    a version below the verified floor, or an unparseable version banner
+    refuses at plan time, never mid-apply.
+    """
+    executable = _hermes_executable()
+    if executable is None:
+        raise WorkflowRefusal(
+            "the 'hermes' CLI is not on PATH, so its registration cannot be "
+            "planned; install Hermes (https://hermes-agent.nousresearch.com) "
+            "or deselect the hermes client"
+        )
+    resolved = str(Path(executable).resolve())
+    code, stdout, stderr = _run_hermes(executable, ("--version",))
+    banner = (stdout.strip() or stderr.strip()).splitlines()
+    version_line = banner[0].strip() if banner else ""
+    if code != 0 or not version_line:
+        raise WorkflowRefusal(
+            f"`hermes --version` failed (exit {code}); the installed Hermes "
+            "cannot be identified, so its registration is refused"
+        )
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", version_line)
+    if match is None:
+        raise WorkflowRefusal(
+            f"hermes version could not be parsed from {version_line!r}; "
+            "refusing to drive an unidentifiable Hermes generation"
+        )
+    if (int(match.group(1)), int(match.group(2))) < HERMES_MIN_SUPPORTED_VERSION:
+        floor = ".".join(str(part) for part in HERMES_MIN_SUPPORTED_VERSION)
+        raise WorkflowRefusal(
+            f"hermes {version_line!r} is below the minimum verified version "
+            f"({floor}); upgrade Hermes before registering Cartopian"
+        )
+    config_path = _hermes_config_path(client_home)
+    return {
+        "executable": resolved,
+        "version": version_line,
+        "config_path": str(config_path),
+        "skills_dir": str(config_path.parent / "skills"),
+    }
+
+
+def _hermes_desired_entry(command: str, hermes_home: str) -> Dict[str, Any]:
+    """The complete desired `mcp_servers.cartopian` entry the writer converges on."""
+    return {
+        "command": command,
+        "timeout": HERMES_REGISTRATION_TIMEOUT_SECONDS,
+        "env": {
+            "CARTOPIAN_MCP_HOST": "hermes",
+            "CARTOPIAN_HERMES_HOME": hermes_home,
+        },
+        "enabled": True,
+    }
+
+
+# The complete set of entry fields (and env fields) the registration owns
+# and converges. Hermes reads fields this tool never writes as launch inputs
+# — `url` in particular takes precedence over `command` when both are present
+# — and the per-key `config set` sequence can only add or overwrite keys,
+# never remove one. An entry carrying unmanaged fields is therefore refused,
+# not repaired: calling it current would report Cartopian as registered while
+# Hermes connects somewhere else entirely.
+_HERMES_MANAGED_KEYS = frozenset({"command", "timeout", "env", "enabled"})
+_HERMES_MANAGED_ENV_KEYS = frozenset(
+    {"CARTOPIAN_MCP_HOST", "CARTOPIAN_HERMES_HOME"}
+)
+
+
+def _hermes_unmanaged_keys(entry: Mapping[str, Any]) -> List[str]:
+    """Fields of an existing entry outside the managed shape (env dotted)."""
+    extras = [
+        str(key) for key in entry if key not in _HERMES_MANAGED_KEYS
+    ]
+    env = entry.get("env")
+    if isinstance(env, Mapping):
+        extras.extend(
+            f"env.{key}"
+            for key in env
+            if key not in _HERMES_MANAGED_ENV_KEYS
+        )
+    return sorted(extras)
+
+
+def _hermes_set_sequence(
+    command: str, hermes_home: str, *, disable_first: bool
+) -> Tuple[Tuple[str, str], ...]:
+    """Per-key write sequence; `enabled: true` is always last, and a repair of
+    an existing owned entry writes `enabled: false` first.
+
+    Writing `enabled: true` last alone is not enough for repairs: an owned
+    drifted entry that is already enabled would stay *active* through an
+    interrupted repair with partially updated fields. Disabling first makes
+    every interruption point of a repair inert. A fresh write of an absent
+    entry must not lead with `enabled: false`, though — an interruption right
+    after it would leave a command-less entry the foreign-entry guard refuses
+    to touch, breaking convergence; command-first ordering is already inert
+    at every interruption point there (`enabled` never lands until last)."""
+    prefix: Tuple[Tuple[str, str], ...] = (
+        (("mcp_servers.cartopian.enabled", "false"),) if disable_first else ()
+    )
+    return prefix + (
+        ("mcp_servers.cartopian.command", command),
+        (
+            "mcp_servers.cartopian.timeout",
+            str(HERMES_REGISTRATION_TIMEOUT_SECONDS),
+        ),
+        ("mcp_servers.cartopian.env.CARTOPIAN_MCP_HOST", "hermes"),
+        ("mcp_servers.cartopian.env.CARTOPIAN_HERMES_HOME", hermes_home),
+        ("mcp_servers.cartopian.enabled", "true"),
+    )
+
+
+def _hermes_manual_snippet(command: str, hermes_home: str) -> str:
+    return (
+        "to register manually, add this entry under `mcp_servers` in Hermes's "
+        "config.yaml (`hermes config path` prints its location):\n"
+        "mcp_servers:\n"
+        "  cartopian:\n"
+        f"    command: {command}\n"
+        f"    timeout: {HERMES_REGISTRATION_TIMEOUT_SECONDS}\n"
+        "    env:\n"
+        "      CARTOPIAN_MCP_HOST: hermes\n"
+        f"      CARTOPIAN_HERMES_HOME: {hermes_home}\n"
+        "    enabled: true"
+    )
+
+
+def _hermes_entry_read(
+    executable: str,
+    pin_args: Tuple[str, ...] = (),
+    pin_env: Optional[Mapping[str, str]] = None,
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Whole-entry read: one subprocess, `hermes config get --json`.
+
+    ``pin_args``/``pin_env`` (from :func:`_hermes_profile_pin`) pin the read
+    to the same profile home the caller resolved, so it cannot race a sticky
+    profile switch onto a different config than the subsequent writes.
+
+    Returns ``("absent", None)`` when the key is not set, ``("entry", data)``
+    on a strict parse, and ``("malformed", None)`` for everything else —
+    unexpected exit codes, unparseable or non-object JSON, a hanging or
+    flooding CLI. Fail closed: a partial read may hide a shadowing state this
+    tool cannot see.
+    """
+    try:
+        code, stdout, stderr = _run_hermes(
+            executable,
+            (*pin_args, "config", "get", "--json", "mcp_servers.cartopian"),
+            extra_env=pin_env,
+        )
+    except WorkflowRefusal:
+        return "malformed", None
+    if code != 0:
+        if code == 1 and "config key not set" in (stdout + stderr).lower():
+            return "absent", None
+        return "malformed", None
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return "malformed", None
+    if not isinstance(data, dict):
+        return "malformed", None
+    return "entry", data
+
+
+def _hermes_verdict(
+    state: str,
+    entry: Optional[Mapping[str, Any]],
+    desired: Mapping[str, Any],
+) -> str:
+    """Five-way verdict over the complete desired structure (plus ``malformed``).
+
+    - ``absent`` — no entry at all.
+    - ``current`` — our command, every other desired field matches, and no
+      field outside the managed shape is present.
+    - ``owned-but-drifted`` — our command, any managed field missing or
+      different (including an interrupted write where ``enabled`` never
+      landed); re-applying the per-key sets converges.
+    - ``unmanaged`` — our command plus at least one field this tool does not
+      own (``url`` above all: Hermes prefers it over ``command``, so such an
+      entry launches something else while looking registered). Never repaired
+      — the per-key sets cannot remove a field — and never current.
+    - ``foreign`` — any other command; never overwritten.
+    """
+    if state == "absent":
+        return "absent"
+    if state != "entry" or entry is None:
+        return "malformed"
+    if entry.get("command") != desired["command"]:
+        return "foreign"
+    if _hermes_unmanaged_keys(entry):
+        return "unmanaged"
+    env = entry.get("env")
+    env = env if isinstance(env, Mapping) else {}
+    desired_env = desired["env"]
+    current = (
+        entry.get("enabled") is True
+        and entry.get("timeout") == desired["timeout"]
+        and env.get("CARTOPIAN_MCP_HOST") == desired_env["CARTOPIAN_MCP_HOST"]
+        and env.get("CARTOPIAN_HERMES_HOME")
+        == desired_env["CARTOPIAN_HERMES_HOME"]
+    )
+    return "current" if current else "owned-but-drifted"
 
 
 _CLIENTS: Dict[str, Dict[str, Any]] = {
@@ -301,6 +746,18 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
         "config_resolver": _opencode_config_path,
         "bridge_resolver": _opencode_bridge_rows,
         "format": "opencode-json",
+        "bridges": (),
+    },
+    "hermes": {
+        # Hermes's config location is profile-scoped (`-p` flag, sticky
+        # active_profile, ambient HERMES_HOME) and is resolved by asking
+        # Hermes itself (`hermes config path`), never by env-var guesswork;
+        # the skills dir derives from the config path's parent. Registration
+        # goes through the Hermes CLI (`config set`/`config get --json`), not
+        # through file merges — Hermes owns YAML fidelity.
+        "config_resolver": _hermes_config_path,
+        "bridge_resolver": _hermes_bridge_rows,
+        "format": "hermes-cli",
         "bridges": (),
     },
 }
@@ -807,6 +1264,43 @@ def _read_opencode_registration(
     client: str, client_home: Path, expected: str
 ) -> Tuple[str, str]:
     return _opencode_registration(_opencode_install_target(client_home), expected)
+
+
+def _read_hermes_registration(
+    client: str, client_home: Path, expected: str
+) -> Tuple[str, str]:
+    """One-subprocess whole-entry read, projected onto the shared state model.
+
+    The five-way verdict maps as: absent → ``missing``; current → ``current``;
+    owned-but-drifted, unmanaged, and foreign → ``dirty`` (the writer
+    distinguishes them — drift converges, unmanaged and foreign refuse);
+    anything unreadable → ``malformed``.
+    """
+    executable = _hermes_executable()
+    if executable is None:
+        # Fail closed: without a runnable CLI the entry cannot be read at all.
+        return "malformed", "hermes-cli-absent"
+    hermes_home = _hermes_config_path(client_home).parent
+    pin_args, pin_env = _hermes_profile_pin(hermes_home)
+    desired = _hermes_desired_entry(expected, str(hermes_home))
+    state, entry = _hermes_entry_read(executable, pin_args, pin_env)
+    verdict = _hermes_verdict(state, entry, desired)
+    if verdict == "absent":
+        return "missing", "absent"
+    if verdict == "current":
+        return "current", "expected-command"
+    if verdict == "malformed":
+        return "malformed", "unreadable-hermes-configuration"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            entry, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+    ).hexdigest()
+    if verdict == "foreign":
+        return "dirty", f"foreign-command;configuration-fingerprint:{fingerprint}"
+    if verdict == "unmanaged":
+        return "dirty", f"unmanaged-keys;configuration-fingerprint:{fingerprint}"
+    return "dirty", f"configuration-fingerprint:{fingerprint}"
 
 
 def _registration_state(
@@ -1598,6 +2092,7 @@ def _plan_actions(
     return actions
 
 
+@_hermes_scoped
 def plan_workflow(
     *,
     source_root: Path,
@@ -2195,6 +2690,139 @@ def _write_opencode_registration(
     _merge_opencode_registration(_opencode_install_target(client_home), command)
 
 
+def _write_hermes_registration(
+    client: str, client_home: Path, command: str
+) -> None:
+    """Convergent registration through `hermes config set` (D4).
+
+    `mcp add` is disqualified as a writer (it probes the network, prompts on
+    three paths, and exits 0 whether or not it saved); `config set` is
+    promptless, atomic, per-key, and exit-code-honest, with YAML fidelity
+    owned by Hermes. The write is a per-key sequence in which `enabled: true`
+    is always last and a repair of an existing owned entry writes
+    `enabled: false` first: every interruption point leaves an inert entry —
+    even when a drifted prior registration was already enabled — which the
+    reader classifies as owned-but-drifted, and re-apply converges by
+    re-running the sets.
+
+    The profile home is resolved once, and the read plus every set carry the
+    resulting :func:`_hermes_profile_pin` identity: without it each
+    invocation would re-evaluate Hermes's sticky profile, and a mid-sequence
+    profile switch could redirect or split the writes across configs.
+    """
+    executable = _hermes_executable()
+    if executable is None:
+        raise WorkflowRefusal(
+            "the 'hermes' CLI is not on PATH, so the registration cannot be "
+            "written; " + _hermes_manual_snippet(command, "<hermes home>")
+        )
+    home_path = _hermes_config_path(client_home).parent
+    hermes_home = str(home_path)
+    pin_args, pin_env = _hermes_profile_pin(home_path)
+    desired = _hermes_desired_entry(command, hermes_home)
+    state, entry = _hermes_entry_read(executable, pin_args, pin_env)
+    verdict = _hermes_verdict(state, entry, desired)
+    if verdict == "malformed":
+        raise WorkflowRefusal(
+            "the existing mcp_servers.cartopian entry could not be strictly "
+            "read (`hermes config get --json` failed or returned an "
+            "unexpected shape) and was preserved; "
+            + _hermes_manual_snippet(command, hermes_home)
+        )
+    if verdict == "foreign":
+        raise WorkflowRefusal(
+            "an mcp_servers.cartopian entry with a different command already "
+            "exists in Hermes's config and was preserved; if it is not "
+            "wanted, remove it with `hermes config unset "
+            "mcp_servers.cartopian`, then re-apply"
+        )
+    if verdict == "unmanaged":
+        extras = ", ".join(_hermes_unmanaged_keys(entry or {}))
+        raise WorkflowRefusal(
+            "the existing mcp_servers.cartopian entry carries fields this "
+            f"tool does not manage ({extras}); Hermes can prefer such fields "
+            "over the managed command (`url` in particular), and the per-key "
+            "write sequence cannot remove them, so the entry was preserved — "
+            "inspect it with `hermes config get mcp_servers.cartopian`, "
+            "remove the unmanaged fields (or run `hermes config unset "
+            "mcp_servers.cartopian`), then re-apply"
+        )
+    if verdict == "current":
+        return
+    sequence = _hermes_set_sequence(
+        command,
+        hermes_home,
+        # Repairing an existing owned entry disables it before touching any
+        # field, so an interrupted repair can never leave a partially updated
+        # entry active; a fresh write stays command-first (see the sequence
+        # docstring for why it must not lead with `enabled: false`).
+        disable_first=verdict == "owned-but-drifted",
+    )
+    for key, value in sequence:
+        code, _stdout, stderr = _run_hermes(
+            executable,
+            (*pin_args, "config", "set", key, value),
+            extra_env=pin_env,
+        )
+        if code != 0:
+            detail = f": {stderr.strip()}" if stderr.strip() else ""
+            raise WorkflowRefusal(
+                f"`hermes config set {key}` failed with exit {code}{detail}; "
+                "the entry was left inert (`enabled` is never true "
+                "mid-sequence: a repair disables the entry first and "
+                "re-enables it last) and re-apply converges; "
+                + _hermes_manual_snippet(command, hermes_home)
+            )
+
+
+def _uninstall_hermes_registration(client_home: Path, expected: str) -> None:
+    """Promptless uninstall via `hermes config unset`, guarded by the ours-check.
+
+    `mcp remove` is not used: its confirmation prompt reads stdin, and under
+    MCP-hosted execution stdin is the Cartopian protocol pipe. A foreign or
+    unreadable entry is preserved with an instruction, never removed.
+
+    The read and the unset carry the same :func:`_hermes_profile_pin`
+    identity, resolved once — otherwise a profile switch between them could
+    pass the ours-check against one config and unset the key in another.
+    """
+    executable = _hermes_executable()
+    if executable is None:
+        raise WorkflowRefusal(
+            "the 'hermes' CLI is not on PATH, so the registration cannot be "
+            "removed; run `hermes config unset mcp_servers.cartopian` once it "
+            "is installed"
+        )
+    home_path = _hermes_config_path(client_home).parent
+    pin_args, pin_env = _hermes_profile_pin(home_path)
+    state, entry = _hermes_entry_read(executable, pin_args, pin_env)
+    if state == "absent":
+        return
+    if state != "entry" or entry is None:
+        raise WorkflowRefusal(
+            "the existing mcp_servers.cartopian entry could not be strictly "
+            "read and was preserved; inspect it with `hermes config get "
+            "mcp_servers.cartopian` before removing it manually"
+        )
+    if entry.get("command") != expected:
+        raise WorkflowRefusal(
+            "the mcp_servers.cartopian entry carries a different command and "
+            "was preserved; remove it manually with `hermes config unset "
+            "mcp_servers.cartopian` if that is intended"
+        )
+    code, _stdout, stderr = _run_hermes(
+        executable,
+        (*pin_args, "config", "unset", "mcp_servers.cartopian"),
+        extra_env=pin_env,
+    )
+    if code != 0:
+        detail = f": {stderr.strip()}" if stderr.strip() else ""
+        raise WorkflowRefusal(
+            f"`hermes config unset mcp_servers.cartopian` failed with exit "
+            f"{code}{detail}"
+        )
+
+
 # Closed format → (reader, writer) adapter map. Both dispatch sites consult it,
 # so a format absent here fails loudly instead of routing a client through some
 # other format's adapter.
@@ -2202,7 +2830,43 @@ _REGISTRATION_ADAPTERS: Dict[str, Tuple[Any, Any]] = {
     "toml": (_read_toml_registration, _write_toml_registration),
     "json": (_read_json_registration, _write_json_registration),
     "opencode-json": (_read_opencode_registration, _write_opencode_registration),
+    "hermes-cli": (_read_hermes_registration, _write_hermes_registration),
 }
+
+# Closed format → uninstaller map for clients with an automated removal path.
+# Formats absent here have no automated unregistration; `unregister_client`
+# refuses with a manual instruction instead of guessing at a file edit.
+_REGISTRATION_UNINSTALLERS: Dict[str, Any] = {
+    "hermes-cli": _uninstall_hermes_registration,
+}
+
+
+@_hermes_scoped
+def unregister_client(
+    client: str,
+    install_root: Path,
+    client_home: Optional[Path] = None,
+) -> None:
+    """Remove one client's Cartopian registration through the closed
+    uninstaller map (the user-facing path for D4's guarded uninstall).
+
+    Only formats with a safe automated removal are wired; everything else
+    refuses with a manual instruction. The Hermes uninstaller preserves
+    foreign or unreadable entries and raises :class:`WorkflowRefusal` with
+    the reason.
+    """
+    if client not in SUPPORTED_CLIENTS:
+        raise WorkflowRefusal(f"unsupported client: {client}")
+    home = (client_home or Path.home()).expanduser().resolve()
+    fmt = str(_CLIENTS[client]["format"])
+    uninstaller = _REGISTRATION_UNINSTALLERS.get(fmt)
+    if uninstaller is None:
+        raise WorkflowRefusal(
+            f"{client}: no automated unregistration path; remove the "
+            "cartopian entry from "
+            f"{_client_config_path(client, home)} manually"
+        )
+    uninstaller(home, _expected_mcp_command(install_root))
 
 
 def _verify_frozen_destinations(
@@ -2244,13 +2908,36 @@ def _verify_frozen_destinations(
                 "operator authorizes the destination that would actually be "
                 "written"
             )
+        if client == "hermes":
+            # D10: apply revalidates the frozen executable and version too — a
+            # PATH change between plan and apply must not silently swap the
+            # binary the adapter drives. This runs for every hermes surface,
+            # not just the registration: bridges apply first, so a
+            # registration-only check would mutate the skill bridge before a
+            # version-change refusal fires.
+            facts = _hermes_runtime_facts(client_home)
+            for fact_key in ("executable", "version"):
+                recorded_fact = [str(item) for item in entry.get(fact_key, [])]
+                if recorded_fact and recorded_fact != [facts[fact_key]]:
+                    raise WorkflowRefusal(
+                        f"hermes: the hermes {fact_key} changed between "
+                        f"planning and apply ({recorded_fact[0]!r} -> "
+                        f"{facts[fact_key]!r}); re-plan so the operator "
+                        "authorizes the toolchain that would actually run"
+                    )
 
 
 def _client_destinations(
     clients: Sequence[str], client_home: Path
 ) -> Dict[str, Dict[str, List[str]]]:
-    """Resolve every registration and bridge destination once (D9)."""
-    return {
+    """Resolve every registration and bridge destination once (D9).
+
+    For hermes the frozen facts additionally cover the absolute executable
+    path and its version (D10): destination freezing alone would not catch a
+    PATH change swapping in a different executable between plan and apply.
+    A missing or unsupported `hermes` refuses here — at plan time.
+    """
+    destinations = {
         client: {
             "registration": [
                 str(path)
@@ -2265,8 +2952,14 @@ def _client_destinations(
         }
         for client in clients
     }
+    if "hermes" in destinations:
+        facts = _hermes_runtime_facts(client_home)
+        destinations["hermes"]["executable"] = [facts["executable"]]
+        destinations["hermes"]["version"] = [facts["version"]]
+    return destinations
 
 
+@_hermes_scoped
 def _apply_registrations(
     clients: Sequence[str],
     client_home: Path,
@@ -2293,6 +2986,7 @@ def _apply_registrations(
             ) from exc
 
 
+@_hermes_scoped
 def _apply_bridges(
     clients: Sequence[str],
     source_root: Path,
@@ -2591,6 +3285,7 @@ def _blocked_apply_record(
     return evaluate_record(updated)
 
 
+@_hermes_scoped
 def apply_workflow(
     plan: Mapping[str, Any], *, inspected: Sequence[str] = ()
 ) -> "OrderedDict[str, Any]":
@@ -3049,6 +3744,7 @@ def _verification_checkpoint(
     }
 
 
+@_hermes_scoped
 def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
     """Re-inventory a planned/applied run and attach portable evidence."""
     internal = record.get("internal")

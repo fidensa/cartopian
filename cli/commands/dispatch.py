@@ -593,12 +593,17 @@ def handler(args: argparse.Namespace) -> int:
     launch_cwd = str(project_root)
     env = dict(os.environ)
     # Connected-host identity belongs to the MCP boundary.  It is evidence for
-    # this preflight only and must not leak into the detached assignee.
+    # this preflight only and must not leak into the detached assignee. The
+    # trusted host marker and its Hermes home companion override clientInfo,
+    # so inheriting them would misclassify nested Cartopian processes and
+    # restart context as the launching host.
     for private_host_marker in (
         host_capability.CONNECTED_ENV,
         host_capability.CLIENT_ENV,
         host_capability.CLIENT_VERSION_ENV,
         host_capability.CLIENT_TITLE_ENV,
+        host_capability.HOST_MARKER_ENV,
+        host_capability.HERMES_HOME_ENV,
         "CARTOPIAN_MCP_TOOL_CALL",
     ):
         env.pop(private_host_marker, None)

@@ -91,6 +91,21 @@ class TestStartupGuidanceContract(unittest.TestCase):
         self.assertIn(startup["mcp_host_action"], text)
         self.assertIsNone(IMPOSSIBLE_THEN_FALLBACK.search(text))
 
+    def test_hermes_bridge_keeps_cartopian_uris_on_the_mcp_resource_surface(self) -> None:
+        text = (
+            ROOT
+            / "templates"
+            / "clients"
+            / "hermes"
+            / "skills"
+            / "use-cartopian"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Every `cartopian://...` URI", text)
+        self.assertIn("Cartopian MCP resource reader", text)
+        self.assertIn("Hermes's `skill_view` tool", text)
+
 
 class TestAssignmentLaunchGuidanceContract(unittest.TestCase):
     def test_assignment_template_matches_dispatch_and_wrapper_behavior(self) -> None:

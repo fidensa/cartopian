@@ -20,6 +20,7 @@ from cli.restart_state import (
     RESTART_REASON_CODES,
     RESTART_STATUSES,
     RUNNING_SERVER_ENV,
+    client_context_from_environment,
     evaluate_restart,
     normalize_client_context,
     running_server_from_environment,
@@ -274,6 +275,7 @@ class ClientInstructionTests(unittest.TestCase):
             "Windsurf": "windsurf",
             "Claude Desktop": "claude-desktop",
             "Cursor": "cursor",
+            "Hermes": "hermes",
         }
         for raw, expected in aliases.items():
             with self.subTest(raw=raw):
@@ -282,6 +284,39 @@ class ClientInstructionTests(unittest.TestCase):
                 self.assertEqual(first, second)
                 self.assertEqual(first["id"], expected)
                 self.assertEqual(first["state"], "supported")
+
+    def test_host_marker_beats_client_info(self) -> None:
+        """A well-formed registration-injected CARTOPIAN_MCP_HOST marker names
+        the client even when clientInfo is the unmatchable SDK default."""
+        with patch.dict(
+            os.environ,
+            {
+                "CARTOPIAN_MCP_HOST": "hermes",
+                "CARTOPIAN_MCP_CLIENT": "mcp",
+                "CARTOPIAN_MCP_CONNECTED": "1",
+            },
+            clear=False,
+        ):
+            context = client_context_from_environment()
+        self.assertEqual(context["id"], "hermes")
+        self.assertEqual(context["state"], "supported")
+        self.assertEqual(context["source"], "registration-env-marker")
+
+    def test_unknown_host_marker_falls_through_to_client_info(self) -> None:
+        """A marker outside the closed supported set is ignored — resolution
+        falls through to clientInfo and stays fail-closed."""
+        with patch.dict(
+            os.environ,
+            {
+                "CARTOPIAN_MCP_HOST": "rogue-host",
+                "CARTOPIAN_MCP_CLIENT": "mcp",
+                "CARTOPIAN_MCP_CONNECTED": "1",
+            },
+            clear=False,
+        ):
+            context = client_context_from_environment()
+        self.assertEqual(context["id"], "unsupported")
+        self.assertEqual(context["state"], "unsupported")
 
     def test_each_supported_client_gets_exactly_one_direct_instruction(self) -> None:
         for client, mapping in CLIENT_RESTART_INSTRUCTIONS.items():

@@ -289,7 +289,7 @@ function Invoke-CartopianSupervisedRun {
 
 # Derive the authoritative report path the supervisor watches from the status
 # path: the same `<report>.status` mapping wait-handoff owns, minus the
-# suffix. Single home for the suffix contract so the five wrappers cannot
+# suffix. Single home for the suffix contract so the six wrappers cannot
 # drift. $null when there is no status path (prompt outside a project layout).
 function Get-CartopianReportPath {
     param([AllowEmptyString()][AllowNull()][string]$StatusPath)

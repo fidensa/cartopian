@@ -111,6 +111,8 @@ if capture:
                 "mcp_client_version": os.environ.get("CARTOPIAN_MCP_CLIENT_VERSION"),
                 "mcp_client_title": os.environ.get("CARTOPIAN_MCP_CLIENT_TITLE"),
                 "mcp_tool_call": os.environ.get("CARTOPIAN_MCP_TOOL_CALL"),
+                "mcp_host": os.environ.get("CARTOPIAN_MCP_HOST"),
+                "hermes_home": os.environ.get("CARTOPIAN_HERMES_HOME"),
                 "cwd": os.getcwd(),
             },
             fh,
@@ -1555,6 +1557,68 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
             self.assertIn("[guard]", stderr)
             self.assertIn("manually", stderr)
             self.assertFalse(capture.exists())
+
+    def test_hermes_host_markers_do_not_leak_into_the_assignee(self) -> None:
+        """The trusted CARTOPIAN_MCP_HOST marker overrides clientInfo, and
+        CARTOPIAN_HERMES_HOME redirects Hermes config reads — inherited by a
+        detached assignee, the pair would misclassify nested Cartopian
+        processes and restart context as the launching host. Dispatch must
+        strip both, like every other connected-host identity variable."""
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="30m"))
+            task_path = _write_task_and_prompt(scaffold)
+
+            # A stub `hermes` first on PATH answers the host-budget read with
+            # a ceiling above the role timeout, so the gate clears.
+            marker_home = tmp_path / "hermes-home"
+            marker_home.mkdir()
+            hermes_bin = tmp_path / "hermesbin"
+            hermes_bin.mkdir()
+            entry = json.dumps(
+                {"command": "/x/cartopian-mcp", "enabled": True, "timeout": 3900}
+            )
+            hermes = hermes_bin / "hermes"
+            hermes.write_text(f"#!/bin/sh\necho '{entry}'\n", encoding="utf-8")
+            hermes.chmod(
+                hermes.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "STUB_NO_REPORT": "1",
+                "PATH": os.pathsep.join(
+                    [str(hermes_bin), os.environ.get("PATH", "")]
+                ),
+                host_capability.CONNECTED_ENV: "1",
+                host_capability.CLIENT_ENV: "mcp",
+                host_capability.HOST_MARKER_ENV: "hermes",
+                host_capability.HERMES_HOME_ENV: str(marker_home),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads([ln for ln in stdout.split("\n") if ln][0])
+            self.assertEqual(rec["host_wait_budget"]["host"], "hermes")
+
+            cap = None
+            deadline = time.monotonic() + 5.0
+            while cap is None and time.monotonic() < deadline:
+                try:
+                    cap = json.loads(capture.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.05)
+            self.assertIsNotNone(cap, "stub wrapper did not run")
+            self.assertIsNone(cap["mcp_connected"])
+            self.assertIsNone(cap["mcp_client"])
+            self.assertIsNone(cap["mcp_host"])
+            self.assertIsNone(cap["hermes_home"])
 
     def test_no_mcp_host_means_no_gate(self) -> None:
         """A plain shell invocation has no tools/call ceiling to violate."""

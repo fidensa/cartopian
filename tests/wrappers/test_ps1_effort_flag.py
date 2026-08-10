@@ -40,11 +40,18 @@ TRANSLATING = {
         "$Args += @('--variant', $EffortLc)",
         "@('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'thinking')",
     ),
+    "cartopian-hermes.ps1": (
+        "$Args += @('--reasoning', $EffortLc)",
+        "@('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')",
+    ),
 }
 IGNORING = ["cartopian-gemini.ps1", "cartopian-devin.ps1"]
 
 # Each wrapper -> the trailing append that must come AFTER the effort block so
 # the underlying CLI receives the effort flag before its positional/prompt.
+# cartopian-hermes.ps1 is absent by design: its prompt rides the `-z` flag
+# pair appended before the effort block, so there is no trailing positional
+# an effort flag-value pair could be split by.
 PS1_TAIL_APPEND = {
     "cartopian-claude.ps1": "$Args += $PromptPathAbs",
     "cartopian-codex.ps1": "$Args += $PromptPathAbs",

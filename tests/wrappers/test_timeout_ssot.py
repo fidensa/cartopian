@@ -43,6 +43,7 @@ WRAPPERS = [
     "cartopian-gemini",
     "cartopian-devin",
     "cartopian-opencode",
+    "cartopian-hermes",
 ]
 # Each wrapper -> the underlying CLI binary it invokes.
 WRAPPER_CLI = {
@@ -51,6 +52,7 @@ WRAPPER_CLI = {
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
+    "cartopian-hermes": "hermes",
 }
 
 # Per-tool timeout flags that would constitute a competing timer (RM-003). The

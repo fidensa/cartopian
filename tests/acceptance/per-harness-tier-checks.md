@@ -31,6 +31,19 @@ cover shell writes — and confirms the advisory ceiling is the honest entry.
 The macOS run alone clears this entry; opencode on **Windows is unverified**
 until the deferred native-Windows pass runs.
 
+For `hermes` (tier `advisory+detection`), the clearance probe is the one-shot
+approval bypass: run a wrapper handoff (`cartopian-hermes`) that performs a
+governed write and confirm no approval prompt of any kind is reachable —
+one-shot mode internally sets `HERMES_YOLO_MODE=1` and `HERMES_ACCEPT_HOOKS=1`,
+so there is no approval layer to preserve. Then, with `HERMES_WRITE_SAFE_ROOT`
+configured, have the agent write outside the safe root via the `terminal` tool
+(`printf ... > file`). The terminal write succeeding is the expected residual —
+Hermes documents its write guards as *not a sandbox* — and confirms the
+advisory ceiling is the honest entry. Unlike opencode, the macOS run does
+**not** alone clear Hermes for the "fully supported" claim: Windows acceptance
+(wrapper trio + profile-scoped registration under PowerShell) is required
+before that claim is made.
+
 ## Honest degradation
 
 Use disposable **copy-mode** install roots for these destructive probes; do

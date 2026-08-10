@@ -31,6 +31,7 @@ WRAPPERS = [
     "cartopian-gemini",
     "cartopian-devin",
     "cartopian-opencode",
+    "cartopian-hermes",
 ]
 # Each wrapper -> the underlying CLI binary it invokes.
 WRAPPER_CLI = {
@@ -39,7 +40,12 @@ WRAPPER_CLI = {
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
+    "cartopian-hermes": "hermes",
 }
+# Each wrapper -> the model flag its CLI takes. Uniform `--model` everywhere
+# except Hermes, whose one-shot mode takes `-m` (provider/model compounds ok).
+MODEL_FLAG = {wrapper: "--model" for wrapper in WRAPPERS}
+MODEL_FLAG["cartopian-hermes"] = "-m"
 
 bash = shutil.which("bash")
 pytestmark = pytest.mark.skipif(bash is None, reason="bash not available")
@@ -107,15 +113,16 @@ def _captured_argv(tmp_path: Path, wrapper: str, model: str | None) -> list[str]
 
 @pytest.mark.parametrize("wrapper", WRAPPERS)
 def test_wrapper_passes_cartopian_model_as_model_flag(tmp_path, wrapper):
-    """With CARTOPIAN_MODEL set, the wrapper injects `--model <value>`."""
+    """With CARTOPIAN_MODEL set, the wrapper injects its model flag + value."""
+    flag = MODEL_FLAG[wrapper]
     received = _captured_argv(tmp_path, wrapper, "test-model-x")
-    assert "--model" in received, (
-        f"{wrapper}: CARTOPIAN_MODEL was set but no --model flag reached the "
+    assert flag in received, (
+        f"{wrapper}: CARTOPIAN_MODEL was set but no {flag} flag reached the "
         f"underlying CLI. argv={received!r}"
     )
-    idx = received.index("--model")
+    idx = received.index(flag)
     assert received[idx + 1] == "test-model-x", (
-        f"{wrapper}: --model value mismatch. argv={received!r}"
+        f"{wrapper}: {flag} value mismatch. argv={received!r}"
     )
 
 
@@ -123,8 +130,72 @@ def test_wrapper_passes_cartopian_model_as_model_flag(tmp_path, wrapper):
 def test_wrapper_passes_no_model_flag_when_unset(tmp_path, wrapper):
     """With CARTOPIAN_MODEL unset, the wrapper must not invent a model flag —
     the underlying tool's own default model applies."""
+    flag = MODEL_FLAG[wrapper]
     received = _captured_argv(tmp_path, wrapper, None)
-    assert "--model" not in received, (
-        f"{wrapper}: passed --model with no CARTOPIAN_MODEL set; the tool's "
+    assert flag not in received, (
+        f"{wrapper}: passed {flag} with no CARTOPIAN_MODEL set; the tool's "
         f"default model must apply. argv={received!r}"
     )
+
+
+# --- hermes profile knob (same harness; env -> argv translation) -------------
+
+
+def _captured_hermes(tmp_path: Path, extra_env: dict[str, str]):
+    """Run cartopian-hermes with a fake CLI capturing argv AND its environment."""
+    root = _project(tmp_path)
+    prompt = _prompt(root, "01-400")
+    fake_bin = tmp_path / "fakebin"
+    args_out = tmp_path / "argv.txt"
+    env_out = tmp_path / "env.txt"
+    _make_fake_cli(
+        fake_bin,
+        "hermes",
+        f'printf "%s\\n" "$@" > "{args_out}"\nenv > "{env_out}"\nexit 0',
+    )
+    path_parts = [str(fake_bin), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    tbin = shutil.which("timeout") or shutil.which("gtimeout")
+    if tbin:
+        path_parts.insert(1, str(Path(tbin).parent))
+    env = {
+        "PATH": os.pathsep.join(path_parts),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "CARTOPIAN_TIMEOUT": "30m",
+        **extra_env,
+    }
+    res = subprocess.run(
+        [bash, str(WRAPPER_DIR / "cartopian-hermes"), str(prompt)],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert res.returncode == 0, res.stderr
+    assert args_out.exists(), f"fake hermes was never invoked: {res.stderr}"
+    return args_out.read_text().splitlines(), env_out.read_text().splitlines()
+
+
+def test_hermes_profile_knob_becomes_p_flag(tmp_path):
+    """CARTOPIAN_HERMES_PROFILE lands as `-p <profile>` on the command line —
+    the only selection mechanism Hermes honors (the flag is pre-parsed and
+    rewrites HERMES_HOME before imports)."""
+    received, _child_env = _captured_hermes(
+        tmp_path, {"CARTOPIAN_HERMES_PROFILE": "reviewer"}
+    )
+    assert "-p" in received, f"argv={received!r}"
+    idx = received.index("-p")
+    assert received[idx + 1] == "reviewer", f"argv={received!r}"
+
+
+def test_hermes_profile_knob_does_not_export_hermes_profile(tmp_path):
+    """Regression: exporting HERMES_PROFILE selects nothing (Hermes uses it
+    for Kanban author attribution), so the wrapper must never set it — a
+    silent mislabel would be worse than a no-op."""
+    _received, child_env = _captured_hermes(
+        tmp_path, {"CARTOPIAN_HERMES_PROFILE": "reviewer"}
+    )
+    assert not any(line.startswith("HERMES_PROFILE=") for line in child_env), (
+        f"the wrapper exported HERMES_PROFILE; env={child_env!r}"
+    )
+
+
+def test_hermes_no_profile_flag_when_unset(tmp_path):
+    received, _child_env = _captured_hermes(tmp_path, {})
+    assert "-p" not in received, f"argv={received!r}"

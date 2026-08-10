@@ -38,6 +38,7 @@ Check for the presence of each supported agent using the platform-appropriate si
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/` dir exists | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
 | opencode | `opencode` on PATH | `~/.config/opencode/opencode.json` or `opencode.jsonc` | `%USERPROFILE%\.config\opencode\opencode.json` or `opencode.jsonc` (XDG on every platform; **Windows unverified**) |
+| Hermes | `hermes` on PATH | the file `hermes config path` prints (profile-scoped; default `~/.hermes/config.yaml`) | the file `hermes config path` prints (**Windows unverified**) |
 
 For Claude Code: run `claude mcp list` and check for a `cartopian` entry to determine registration status.
 
@@ -47,9 +48,11 @@ For Gemini: run `gemini mcp list` and check for a `cartopian` entry to determine
 
 For opencode: run `opencode mcp list` and check for a `cartopian` entry — it prints each server's resolved command and connect status without any model call, so it is the first check after any registration change. (The underlying store is the global `opencode.json`/`opencode.jsonc` pair under the top-level `mcp` key; note opencode's schema is **not** the `mcpServers` shape the other JSON agents use.)
 
+For Hermes: run `hermes config get --json mcp_servers.cartopian` — exit 0 with the entry means registered; exit 1 with "Config key not set" means not registered. The store is the single YAML file `hermes config path` prints, under the top-level `mcp_servers` key; the `hermes config` CLI is the supported interface (never edit or parse the YAML directly — Hermes owns file fidelity).
+
 For JSON-config agents: read the file (if it exists) and check for `mcpServers.cartopian`.
 
-For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf, opencode), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
+For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf, opencode, Hermes), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
 
 Mark each agent as one of:
 
@@ -99,7 +102,7 @@ Apply the recipe for each agent the operator selected. Always confirm before wri
 - **Part A — register the MCP server** so the `cartopian` tools, prompt, and resources are reachable.
 - **Part B — install the "use cartopian" trigger bridge.** Registering the MCP server alone is *not* enough: the supported bridge clients need a native skill or command for the entry phrase. Each bridge directly tells its host to read the authoritative `cartopian://skills/use_cartopian` resource with that host's MCP resource reader. The bridge bodies ship as templates under `<install_root>/templates/clients/<agent>/` — copy them verbatim into the agent's command/skill directory. Create any missing parent directories. Do not edit the template content during the copy; operators can tune it in place afterward.
 
-The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf, opencode) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
+The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf, opencode, Hermes) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
 
 ### Claude Code
 
@@ -392,6 +395,99 @@ Copy-Item "$installRoot\templates\clients\opencode\commands\use-cartopian.md" `
 
 After a restart the operator types `/use-cartopian` in the opencode TUI or IDE. (opencode also surfaces the MCP prompt as `/use_cartopian` — underscore, keyed by the raw prompt name — but the hyphenated command bridge is the supported entry.)
 
+### Hermes
+
+Hermes's config is a single profile-scoped YAML file that the `hermes config`
+CLI owns. **Never edit or parse the YAML directly, and never use `hermes mcp
+add` or `hermes mcp remove` for automation** — `mcp add` probes the network,
+prompts on three separate paths, and exits 0 whether or not it saved; `mcp
+remove` prompts on stdin. The promptless per-key `config set` / `config get
+--json` / `config unset` commands are the supported interface.
+
+**Part A — register the MCP server.** Run these five commands **in this
+order** — `enabled` last, so an interrupted sequence can never leave a
+partially configured entry active (a half-written entry stays inert and
+re-running the sequence converges). When **repairing an existing
+Cartopian-owned entry** (drifted values), first run
+`hermes config set mcp_servers.cartopian.enabled false`, then the five
+commands — otherwise an interruption could leave the still-enabled entry
+active with partially updated fields. `<hermes home>` is the parent directory
+of the file `hermes config path` prints:
+
+```bash
+hermes config set mcp_servers.cartopian.command "$install_root/bin/cartopian-mcp"
+hermes config set mcp_servers.cartopian.timeout 3900
+hermes config set mcp_servers.cartopian.env.CARTOPIAN_MCP_HOST hermes
+hermes config set mcp_servers.cartopian.env.CARTOPIAN_HERMES_HOME "<hermes home>"
+hermes config set mcp_servers.cartopian.enabled true
+```
+
+**Windows (PowerShell) — use the `.cmd` shim** for the `command` value
+(`$installRoot\bin\cartopian-mcp.cmd`); the other four commands are identical
+(**unverified on native Windows**).
+
+If an `mcp_servers.cartopian` entry with a *different* command already exists,
+stop and ask the operator — never overwrite a foreign entry. Stop and ask
+likewise if the existing entry carries any field outside the five keys above
+(`url` especially: Hermes prefers `url` over `command`, so such an entry
+connects elsewhere while looking registered, and re-running the `config set`
+sequence can only add or overwrite keys, never remove one). The two `env`
+markers matter: Hermes sends only the SDK-default MCP `clientInfo` ("mcp"), so
+`CARTOPIAN_MCP_HOST` is how Cartopian identifies the host, and Hermes's
+filtered subprocess environment never passes `HERMES_HOME` through, so
+`CARTOPIAN_HERMES_HOME` is how capability resolution finds the registering
+profile's config. The `timeout` sizing rationale is in Stage 4.
+
+Verify with `hermes config get mcp_servers.cartopian` (prints the whole block)
+or `hermes mcp test cartopian`. Start a new Hermes session before the server
+is available — `config set` does not hot-load servers (`/reload-mcp` exists
+in-session for value-only changes, but command/env changes need the new
+session).
+
+**Part B — install the trigger bridge.** Hermes discovers file-dropped skill
+bundles with no install step. Copy the bundle into the profile-scoped skills
+directory (`<config dir>/skills`, sibling of the config file):
+
+```bash
+skills_dir="$(dirname "$(hermes config path)")/skills"
+mkdir -p "$skills_dir/cartopian/use-cartopian"
+cp "$install_root/templates/clients/hermes/skills/DESCRIPTION.md" \
+   "$skills_dir/cartopian/DESCRIPTION.md"
+cp "$install_root/templates/clients/hermes/skills/use-cartopian/SKILL.md" \
+   "$skills_dir/cartopian/use-cartopian/SKILL.md"
+```
+
+Confirm with `hermes skills list` — the skill appears as `source: local,
+status: enabled`. The operator then says "use cartopian" in a Hermes session
+(or preloads the skill with `hermes -s use-cartopian`).
+
+**Unregistering.** The guarded automated path is
+`python3 <install_root>/scripts/install.py --unregister hermes` — it removes
+the `mcp_servers.cartopian` entry via a promptless `hermes config unset`,
+preserving foreign or unreadable entries with an instruction instead of
+touching them. The manual equivalent is
+`hermes config unset mcp_servers.cartopian` (verify with
+`hermes config get mcp_servers.cartopian` first that the entry's `command`
+is Cartopian's). Never use `hermes mcp remove` (it prompts on stdin).
+
+**Gateway boundary.** A direct-message Slack acceptance scenario has passed on
+macOS: the conversation entered PM mode, dispatched and waited through MCP,
+and received the terminal handoff result. Hermes also rendered its own generic
+tool-activity message for calls including `dispatch` and `wait_handoff`.
+Cartopian does **not** provide granular assignee-output or report-progress
+events during the blocking wait; that host-neutral enhancement is a backlog
+item in the repository's `ROADMAP.md` and does not gate the accepted
+integration behavior.
+
+Slack setup remains Hermes-owned. Use Hermes's generated gateway manifest and
+setup/check commands; Cartopian never handles Slack credentials. The tested
+direct-message path required the `chat:write` and `im:history` bot scopes and
+the `message.im` bot event. Reinstall an existing Slack app after changing its
+scopes or event subscriptions. Other gateway adapters and Slack conversation
+types are not claimed by this scenario. Hermes support remains
+**experimental** only until native Windows acceptance closes; the evidence is
+recorded in the repository's `tests/acceptance/hermes-macos.md`.
+
 ### Other agents
 
 Agents not covered above are outside the coordinated registration vocabulary.
@@ -416,6 +512,7 @@ Apply the setting for each agent the operator registered, sizing it above the la
 | Gemini | `timeout` (milliseconds) | **600000** — below the protocol default | `mcpServers.cartopian` in `~/.gemini/settings.json` |
 | Claude Code | `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` (milliseconds; `0` disables) | **1800000** idle — below the protocol default | the environment Claude Code launches with |
 | opencode | `timeout` (milliseconds) | **60000 idle** — but progress notifications reset it | `mcp.cartopian` in the global `opencode.json`/`opencode.jsonc` |
+| Hermes | `timeout` (seconds) | **300** hard wall clock per call — below the protocol default; nothing resets it | `mcp_servers.cartopian` via `hermes config set` |
 | Claude Desktop, Cursor, Windsurf, Devin | no documented per-server tool-call timeout | unknown | see the note below |
 
 Codex — add the key under the existing entry, then restart Codex:
@@ -435,6 +532,8 @@ Gemini — add the key under the existing entry in `~/.gemini/settings.json`, th
 Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait.
 
 opencode — the registration recipe above already carries `"timeout": 600000`. Unlike the wall-clock caps on other hosts, opencode's is an **idle** window that a progress notification resets, and Cartopian's blocking waits heartbeat every 5 seconds — so the value bounds silence from non-heartbeating tools, not handoff length, and 10 minutes needs no upward sizing for long roles. One acknowledged cost: the same timeout governs catalog/list operations, so against a hung server `opencode mcp list` and TUI startup enumeration wait it out before failing.
+
+Hermes — the registration recipe above already carries `timeout: 3900` (seconds). Unlike opencode's resettable idle window, Hermes's `timeout` is a **hard wall-clock total per tool call** with no progress callback — nothing resets it, so heartbeats buy nothing and the value must clear the *full* role timeout in one terminal wait. 3,900 s = the 3,600 s protocol default + 300 s response/serialization margin. Roles configured above ~65 minutes still refuse cleanly at dispatch; raise the entry's timeout (`hermes config set mcp_servers.cartopian.timeout <seconds>`, then a new session or `/reload-mcp`) or lower the role timeout. One acknowledged cost: the same per-call ceiling governs every Cartopian tool call in that session.
 
 **Hosts with no documented setting.** Do not guess a value and do not assume a long blocking call survives. Cartopian resolves an unrecognized host to an *unknown* budget, which fails the dispatch gate by design. On such a host, either lower `roles.<role>.timeout` to a duration confirmed to survive, or dispatch that role manually and monitor the report path — never fall back to periodic status checks.
 
@@ -463,9 +562,10 @@ Report, per agent the operator selected:
   | Devin for Terminal | say "use cartopian" (skill trigger) or `/use-cartopian` |
   | Windsurf | `/use-cartopian` |
   | opencode | `/use-cartopian` |
+  | Hermes | say "use cartopian" (skill) — or preload with `hermes -s use-cartopian` |
   | Claude Desktop / Cursor | invoke the `use_cartopian` MCP prompt from the client's prompt picker (MCP-only — no bridge) |
 
-- Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor, opencode). Claude Code needs no restart.
+- Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor, opencode, Hermes — for Hermes a new session, or `/reload-mcp` for value-only config changes). Claude Code needs no restart.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
 Once an agent has both parts and any required restart is complete, the operator opens it in any directory and uses the entry phrase/command above. The installed bridge reads the `use_cartopian` resource, which enters PM mode through registry-first project selection and routes to `start_session` for a selected project or `init_project` when the registry is empty.

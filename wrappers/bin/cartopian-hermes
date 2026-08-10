@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# cartopian-hermes — Cartopian wrapper for the Hermes CLI agent (Nous Research).
+#
+# Usage:  cartopian-hermes <absolute-prompt-path>
+#
+# Reads the prompt file path and passes it to Hermes one-shot mode (`hermes -z`)
+# with non-interactive flags. Verified against Hermes Agent v0.20.0 (2026.8.3).
+#
+# Note on one-shot mode: `hermes -z` prints only the final response to stdout
+# and auto-bypasses every interactive surface — clarify prompts return a
+# synthetic default, shell hooks are auto-approved (HERMES_ACCEPT_HOOKS=1 is
+# set internally), and dangerous-command approval is bypassed (HERMES_YOLO_MODE=1
+# internally). No wrapper flag is needed to prevent hangs — and no wrapper flag
+# can restore approvals in one-shot mode.
+#
+# Note on permissions: because one-shot mode has no approval layer at all and
+# Hermes's write guards are documented as bypassable via the `terminal` tool,
+# this wrapper deliberately injects NO permission policy — a wrapper-set
+# HERMES_WRITE_SAFE_ROOT would look like a write boundary while the terminal
+# tool sidesteps it. Containment for Hermes is advisory+detection; see the
+# containment matrix.
+#
+# Note on profiles: Hermes profile selection is the `-p/--profile` flag, which
+# Hermes pre-parses before any module import so it can rewrite HERMES_HOME.
+# Exporting HERMES_PROFILE selects nothing (Hermes uses it only for Kanban
+# author attribution), so this wrapper translates CARTOPIAN_HERMES_PROFILE
+# into the flag.
+#
+# Exit codes:
+#   0   — hermes completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments), or hermes
+#         agent failure / empty final response
+#   2   — hermes run reported failed/partial with no text
+#   124 — killed at the CARTOPIAN_TIMEOUT deadline
+#   *   — upstream hermes exit code
+
+set -euo pipefail
+
+# --- Status-file helper (early-crash signal for wait-handoff) --------
+# Source the shared helper that emits <report-path>.status on assignee
+# exit. Optional: if the helper is missing, degrade to no-op stubs so the
+# wrapper still runs (the status file is never a hard requirement).
+_CARTOPIAN_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
+  # shellcheck source=_cartopian-status.sh
+  source "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh"
+else
+  cartopian_status_path() { echo ""; }
+  cartopian_write_status() { return 0; }
+  cartopian_report_complete() { return 1; }
+  cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
+fi
+# --------------------------------------------------------------------
+
+# --- Configuration ---------------------------------------------------
+# CARTOPIAN_HERMES_PROVIDER   -> --provider (optional; -m accepts provider/model compounds)
+# CARTOPIAN_HERMES_PROFILE    -> -p/--profile flag (the only selection mechanism)
+# CARTOPIAN_HERMES_USAGE_FILE -> --usage-file (opt-in spend evidence; written even on failure)
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-hermes: error: missing prompt path argument" >&2
+  echo "usage: cartopian-hermes <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-hermes: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v hermes &>/dev/null; then
+  echo "cartopian-hermes: error: 'hermes' not found in PATH" >&2
+  echo "Install: https://hermes-agent.nousresearch.com" >&2
+  exit 1
+fi
+HERMES_CLI="$(command -v hermes)"
+
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
+# markdown body as a command-line argument is brittle across shells (it mangles
+# under PowerShell on the Windows wrapper); the agent opens the file itself.
+PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+
+# Derive the optional status-file path now, before any cd, so a relative
+# prompt path still resolves. Empty when the prompt is outside a project.
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
+
+# --- Launch directory ------------------------------------------------
+# Assignee CLIs run with cwd set to the Cartopian project root
+# (the registered project path). Prompts always live at
+# <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
+# root is derivable from the prompt path alone.
+#
+# Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
+# skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
+# or per-repo-sandbox setups. A non-existent path is a hard error, not
+# a silent fallback.
+if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
+  if [[ ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
+    echo "cartopian-hermes: CARTOPIAN_LAUNCH_CWD='$CARTOPIAN_LAUNCH_CWD' is not a directory" >&2
+    exit 1
+  fi
+  LAUNCH_CWD="$(cd "$CARTOPIAN_LAUNCH_CWD" && pwd)"
+  cd "$LAUNCH_CWD"
+  echo "cartopian-hermes: cwd=$LAUNCH_CWD (CARTOPIAN_LAUNCH_CWD override)" >&2
+else
+  PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+  PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
+  PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
+  # Launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
+    cd "$PROJECT_DIR"
+    echo "cartopian-hermes: cwd=$PROJECT_DIR" >&2
+  else
+    echo "cartopian-hermes: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+  fi
+fi
+# --------------------------------------------------------------------
+
+CMD=("$HERMES_CLI")
+
+# Profile selection is the -p flag, pre-parsed by Hermes before imports.
+# Exporting HERMES_PROFILE selects nothing (it is Kanban author attribution).
+if [[ -n "${CARTOPIAN_HERMES_PROFILE:-}" ]]; then
+  CMD+=(-p "$CARTOPIAN_HERMES_PROFILE")
+fi
+
+# One-shot mode: pass the prompt file PATH as the one-shot prompt; Hermes
+# loads AGENTS.md from the launch cwd and reads the file with its own tools.
+CMD+=(-z "$PROMPT_PATH_ABS")
+
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved dispatch model; translate it into Hermes's -m flag verbatim
+# (Hermes accepts provider/model compounds without --provider).
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(-m "$CARTOPIAN_MODEL")
+fi
+
+# Optional provider disambiguation for bare model ids.
+if [[ -n "${CARTOPIAN_HERMES_PROVIDER:-}" ]]; then
+  CMD+=(--provider "$CARTOPIAN_HERMES_PROVIDER")
+fi
+
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved dispatch effort; translate it into Hermes's --reasoning flag over
+# Hermes's own closed vocabulary. Values outside it fall back to the default
+# effort (warn + omit). The vocabulary tracks the installed Hermes CLI
+# generation and may drift as it evolves.
+if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
+  EFFORT_LC="$(printf '%s' "$CARTOPIAN_EFFORT" | tr '[:upper:]' '[:lower:]')"
+  case "$EFFORT_LC" in
+    none|minimal|low|medium|high|xhigh|max|ultra)
+      CMD+=(--reasoning "$EFFORT_LC")
+      ;;
+    *)
+      echo "cartopian-hermes: CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT is not a supported hermes reasoning level (none|minimal|low|medium|high|xhigh|max|ultra); launching with the default effort" >&2
+      ;;
+  esac
+fi
+
+# Opt-in spend evidence: Hermes writes a JSON cost/token report to this path,
+# even on failure. Opt-in keeps report directories within protocol file
+# conventions by default.
+if [[ -n "${CARTOPIAN_HERMES_USAGE_FILE:-}" ]]; then
+  CMD+=(--usage-file "$CARTOPIAN_HERMES_USAGE_FILE")
+fi
+
+# No permission-policy injection: one-shot mode has no approval layer (it
+# internally sets HERMES_YOLO_MODE=1 and HERMES_ACCEPT_HOOKS=1), and a
+# wrapper-set write guard would misrepresent containment (see header).
+
+# Work-root no-op notice: Hermes imposes no default path sandbox, so declared
+# work roots need no grant here. Actual access remains subject to OS
+# permissions and any operator-configured Hermes guards.
+if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+  echo "cartopian-hermes: hermes has no default path sandbox; work roots need no grant here, and actual access remains subject to OS permissions and any operator-configured hermes guards (CARTOPIAN_WORK_ROOTS=$CARTOPIAN_WORK_ROOTS)" >&2
+fi
+
+# --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
+# Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
+# upstream process at the configured deadline (default 60m). The PM
+# sets CARTOPIAN_TIMEOUT from the resolved dispatch timeout;
+# it does not poll or watchdog the running process. SIGTERM at deadline
+# returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
+TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
+# Whether an OS timeout wraps the command — lets the status file distinguish
+# a deadline kill (exit 124) from a plain non-zero exit.
+TIMEOUT_APPLIED=false
+if command -v timeout &>/dev/null; then
+  CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+elif command -v gtimeout &>/dev/null; then
+  CMD=(gtimeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+else
+  echo "cartopian-hermes: warning: no 'timeout'/'gtimeout' on PATH; running without OS-enforced deadline (macOS: brew install coreutils)" >&2
+  TIMEOUT_DURATION="unbounded"
+fi
+# --------------------------------------------------------------------
+
+echo "cartopian-hermes: running hermes -z (timeout=$TIMEOUT_DURATION)" >&2
+
+# Run the assignee (not exec) so we can capture its exit outcome and emit
+# the optional status file wait-handoff polls for early-crash detection.
+#
+# cartopian_run_supervised wraps the run with a report-completion supervisor:
+# once the authoritative report file appears, a lingering child (MCP stdio /
+# trailing turn) is reaped promptly so a finished handoff exits 0/clean instead
+# of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the single SSOT
+# timer, applied above via `timeout`) is untouched — a genuine hang that writes
+# no report still hits it (exit 124). The watched report path is the status path
+# without its ".status" suffix.
+#
+# Hermes's own exit contract (0 success / 1 agent failure or empty response /
+# 2 failed-or-partial with no text) needs no mapping: the supervisor records
+# any nonzero exit as failure, 2 included.
+REPORT_PATH="${STATUS_PATH%.status}"
+[[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
+
+set +e
+cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
+ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+set -e
+cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
+exit "$ASSIGNEE_EXIT"

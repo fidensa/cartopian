@@ -78,6 +78,12 @@ HOST_CEILINGS: Dict[str, Tuple[str, str]] = {
     # an `edit` deny is bypassable in one step via a shell write, so the
     # advisory ceiling is the honest entry. Windows behavior is unverified.
     "opencode": ("opencode (CLI / TUI)", TIER_ADVISORY),
+    # Hermes one-shot runs internally set HERMES_YOLO_MODE=1 and
+    # HERMES_ACCEPT_HOOKS=1, so wrapper-launched Hermes has no approval layer
+    # at all; write guards are documented-bypassable via the terminal tool,
+    # and container backends are unattestable host config. No interception,
+    # no attestable deny — advisory is the honest ceiling.
+    "hermes": ("Hermes (CLI)", TIER_ADVISORY),
 }
 
 _WRITE_RESIDUAL = (

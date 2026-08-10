@@ -75,6 +75,14 @@ CLIENT_RESTART_INSTRUCTIONS: "OrderedDict[str, OrderedDict[str, str]]" = (
             ("claude-desktop", _instruction("Restart Claude Desktop.")),
             ("cursor", _instruction("Restart Cursor.")),
             ("opencode", _instruction("Restart opencode.")),
+            (
+                "hermes",
+                _instruction(
+                    "Start a new Hermes session (/reload-mcp refreshes "
+                    "value-only config changes in-session; a changed command "
+                    "or env entry needs the new session)."
+                ),
+            ),
         )
     )
 )
@@ -90,6 +98,10 @@ _CLIENT_ALIASES: Tuple[Tuple[str, str], ...] = (
     ("cursor", "cursor"),
     ("devin", "devin"),
     ("opencode", "opencode"),
+    # For contexts where a future Hermes version sends real clientInfo; the
+    # current generation sends the SDK default "mcp" and is identified by the
+    # registration-injected CARTOPIAN_MCP_HOST marker instead.
+    ("hermes", "hermes"),
     ("codex", "codex"),
 )
 
@@ -139,6 +151,17 @@ def client_context_from_environment(
     """Resolve the current interaction, falling back to one selected client."""
     from cli import host_capability
 
+    # A well-formed registration-injected host marker beats clientInfo
+    # matching (D12): hosts whose MCP client sends the SDK-default name
+    # ("mcp") are unmatchable by name. Validated against the closed supported
+    # set; an unknown value is ignored and resolution falls through.
+    marker = (
+        os.environ.get(host_capability.HOST_MARKER_ENV, "").strip().lower()
+    )
+    if marker in CLIENT_RESTART_INSTRUCTIONS:
+        return normalize_client_context(
+            marker, source="registration-env-marker"
+        )
     name = os.environ.get(host_capability.CLIENT_ENV)
     title = os.environ.get(host_capability.CLIENT_TITLE_ENV)
     if name or title or host_capability.under_mcp_host():

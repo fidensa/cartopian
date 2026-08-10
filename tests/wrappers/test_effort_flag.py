@@ -31,7 +31,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
 # Wrappers whose CLI supports an effort flag, and those that must ignore it.
-TRANSLATING_WRAPPERS = ["cartopian-claude", "cartopian-codex", "cartopian-opencode"]
+TRANSLATING_WRAPPERS = [
+    "cartopian-claude",
+    "cartopian-codex",
+    "cartopian-opencode",
+    "cartopian-hermes",
+]
 IGNORING_WRAPPERS = ["cartopian-gemini", "cartopian-devin"]
 WRAPPERS = TRANSLATING_WRAPPERS + IGNORING_WRAPPERS
 # Each wrapper -> the underlying CLI binary it invokes.
@@ -41,10 +46,11 @@ WRAPPER_CLI = {
     "cartopian-gemini": "gemini",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
+    "cartopian-hermes": "hermes",
 }
 # Tokens that must never appear in argv unless the wrapper translated a valid
 # effort value. The prompt body is free of these substrings by construction.
-EFFORT_TOKENS = ("--effort", "model_reasoning_effort", "--variant")
+EFFORT_TOKENS = ("--effort", "model_reasoning_effort", "--variant", "--reasoning")
 
 bash = shutil.which("bash")
 pytestmark = pytest.mark.skipif(bash is None, reason="bash not available")
@@ -182,6 +188,29 @@ def test_opencode_rejects_codex_only_level(tmp_path):
     received, stderr = _captured(tmp_path, "cartopian-opencode", "ultra")
     _assert_no_effort_argv("cartopian-opencode", received)
     assert "CARTOPIAN_EFFORT=ultra" in stderr, f"stderr={stderr!r}"
+    assert "default effort" in stderr, f"stderr={stderr!r}"
+
+
+def test_hermes_translates_effort_to_reasoning_flag(tmp_path):
+    received, _ = _captured(tmp_path, "cartopian-hermes", "xhigh")
+    assert "--reasoning" in received, f"argv={received!r}"
+    idx = received.index("--reasoning")
+    assert received[idx + 1] == "xhigh", f"argv={received!r}"
+
+
+def test_hermes_accepts_ultra(tmp_path):
+    """`ultra` is in Hermes's vocabulary (opencode's set plus `ultra`, minus
+    `thinking`) — the wrapper mirrors its own tool."""
+    received, _ = _captured(tmp_path, "cartopian-hermes", "ultra")
+    idx = received.index("--reasoning")
+    assert received[idx + 1] == "ultra", f"argv={received!r}"
+
+
+def test_hermes_rejects_opencode_only_level(tmp_path):
+    """`thinking` is opencode vocabulary, not Hermes's — hermes must fall back."""
+    received, stderr = _captured(tmp_path, "cartopian-hermes", "thinking")
+    _assert_no_effort_argv("cartopian-hermes", received)
+    assert "CARTOPIAN_EFFORT=thinking" in stderr, f"stderr={stderr!r}"
     assert "default effort" in stderr, f"stderr={stderr!r}"
 
 

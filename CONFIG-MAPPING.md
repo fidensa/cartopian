@@ -112,7 +112,7 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 
 ### Which agent runs the work
 
-`agent` is any command Cartopian can run on your PATH. Cartopian ships five wrappers that add the right non-interactive flags for popular CLIs. Use the wrapper name, not the raw tool name.
+`agent` is any command Cartopian can run on your PATH. Cartopian ships six wrappers that add the right non-interactive flags for popular CLIs. Use the wrapper name, not the raw tool name.
 
 | Wrapper name | Runs | Effort words it understands |
 | --- | --- | --- |
@@ -121,8 +121,9 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 | `cartopian-gemini` | Gemini CLI | none; the tool has no effort flag, so the wrapper skips it |
 | `cartopian-devin` | Devin | none; the tool has no effort flag, so the wrapper skips it |
 | `cartopian-opencode` | opencode | none, minimal, low, medium, high, xhigh, max, thinking |
+| `cartopian-hermes` | Hermes | none, minimal, low, medium, high, xhigh, max, ultra |
 
-The same five names work on Windows, where the installer ships `.cmd` and `.ps1` versions (opencode's Windows wrapper is unverified on native Windows). Any other program is valid too, as long as it accepts one absolute prompt path as its argument. See `wrappers/README.md`.
+The same six names work on Windows, where the installer ships `.cmd` and `.ps1` versions (the opencode and Hermes Windows wrappers are unverified on native Windows). Any other program is valid too, as long as it accepts one absolute prompt path as its argument. See `wrappers/README.md`.
 
 `model` and `effort` are passed through as the environment variables `CARTOPIAN_MODEL` and `CARTOPIAN_EFFORT`. Each wrapper turns them into its own flags. An effort word a wrapper does not recognize is dropped with a one-line notice, and the agent runs at its default.
 
@@ -270,7 +271,3 @@ Every one of these commands is also an MCP tool, generated from the same handler
 14. `defaults_attribution`
 
 Each resolved role carries `description`, `effective_grants`, `assigned_work_types`, `launch`, `auto_launch`, and `attribution`, where `attribution` names the file each value came from.
-
-Smaller lifecycle views repeat `record_schema_version`, `schema_identity`, and `project_schema_version`, then keep only the facts their step needs. Dispatch passes the resolved agent, its options, and the launch location to the wrapper. Wrappers never read raw configuration and never reinterpret review, permission, capability, or identity policy.
-
-Project, task, spec, dependency, prompt, and report paths come back as fully resolved absolute paths. Machine-local work-root values are already absolute and keep the exact spelling you wrote. Use either form as given rather than resolving it again.

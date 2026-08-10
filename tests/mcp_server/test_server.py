@@ -172,6 +172,13 @@ class TestServerVersionResolution(unittest.TestCase):
 
 
 class TestRpcErrorContract(unittest.TestCase):
+    def test_run_snapshots_process_host_budget_before_serving(self):
+        with patch.object(
+            server.host_capability, "snapshot_process_host_budget"
+        ) as snapshot:
+            server.run(stdin=io.StringIO(""), stdout=io.StringIO())
+        snapshot.assert_called_once_with()
+
     def test_unknown_method_returns_method_not_found(self):
         response = single("does/not/exist")
         self.assertIn("error", response)

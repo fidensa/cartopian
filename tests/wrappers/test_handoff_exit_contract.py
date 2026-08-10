@@ -40,6 +40,7 @@ BASH_WRAPPERS = [
     ("cartopian-claude", "claude"),
     ("cartopian-codex", "codex"),
     ("cartopian-opencode", "opencode"),
+    ("cartopian-hermes", "hermes"),
 ]
 
 _TIMEOUT_BIN = shutil.which("timeout") or shutil.which("gtimeout")
@@ -213,3 +214,21 @@ def test_report_complete_and_self_exit_is_clean(tmp_path, wrapper, tool):
     fields = _parse_status(status.read_text(encoding="utf-8"))
     assert fields["exit_code"] == "0", fields
     assert fields["reason"] == "clean", fields
+
+
+# --- hermes exit contract: `2` (failed/partial, no text) is a failure --------
+
+
+def test_hermes_exit_two_propagates_as_failure(tmp_path):
+    """Hermes one-shot exits 2 when the run reports failed/partial with no
+    text; the wrapper needs no mapping — the exit propagates verbatim and the
+    status file records it as a crash signal for wait-handoff."""
+    prompt = _make_project(tmp_path)
+    proc = _run_wrapper("cartopian-hermes", "hermes", prompt, "exit 2")
+    assert proc.returncode == 2, (
+        f"hermes exit 2 must propagate verbatim. stderr={proc.stderr!r}"
+    )
+    status = _status_path(prompt)
+    fields = _parse_status(status.read_text(encoding="utf-8"))
+    assert fields["exit_code"] == "2", fields
+    assert wait_handoff._status_exit_code(status) == 2

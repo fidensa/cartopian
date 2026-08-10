@@ -46,7 +46,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from cli import emit
+from cli import emit, host_capability
 from cli.restart_state import (
     RUNNING_SERVER_ENV,
     evaluate_restart,
@@ -1617,6 +1617,10 @@ def run(stdin=None, stdout=None) -> int:
     session rather than running beside it.
     """
     global _wire_writer
+    # Hermes captures the configured per-tool timeout before it launches this
+    # process. Pin Cartopian's view at the matching process-start boundary,
+    # before any request can change or depend on host capability evidence.
+    host_capability.snapshot_process_host_budget()
     reader = _byte_reader(stdin)
     writer = _byte_writer(stdout)
     _wire_writer = writer

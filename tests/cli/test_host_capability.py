@@ -24,12 +24,16 @@ from cli.main import EXIT_OK, build_parser
 def clean_host_env(monkeypatch):
     """Start every test outside an MCP host, with no host config leaking in."""
     prior_sink = emit.set_progress_sink(None)
+    # The Hermes ceiling is pinned per server process; tests are not sessions.
+    monkeypatch.setattr(host_capability, "_HERMES_SESSION_CEILINGS", {})
     for name in (
         host_capability.CONNECTED_ENV,
         host_capability.CLIENT_ENV,
         host_capability.CLIENT_VERSION_ENV,
         host_capability.CLIENT_TITLE_ENV,
         host_capability.SERVER_NAME_ENV,
+        host_capability.HOST_MARKER_ENV,
+        host_capability.HERMES_HOME_ENV,
         "MCP_TOOL_TIMEOUT",
         "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT",
         "CODEX_HOME",
@@ -462,6 +466,352 @@ def test_opencode_without_progress_channel_refuses_an_oversized_role(
     assert "idle ceiling" in refusal
     # The refusal names the exact key that fixes it.
     assert "timeout" in refusal
+
+
+# --- Hermes ----------------------------------------------------------------
+#
+# Hermes identifies as the SDK-default clientInfo name "mcp", which no matcher
+# may claim, so resolution happens only through the registration-injected
+# CARTOPIAN_MCP_HOST env marker (D12). Its ceiling is a HARD WALL CLOCK per
+# tool call — no progress callback, nothing resets it — read via a stub
+# `hermes config get --json` on a restricted PATH.
+
+
+import os as _os
+import stat as _stat
+
+
+def _hermes_stub(tmp_path, monkeypatch, body):
+    """Install a stub `hermes` as the only hermes on PATH; return its dir."""
+    bin_dir = tmp_path / "hermesbin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "hermes"
+    stub.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
+    stub.chmod(stub.stat().st_mode | _stat.S_IEXEC | _stat.S_IXGRP | _stat.S_IXOTH)
+    monkeypatch.setenv(
+        "PATH", _os.pathsep.join([str(bin_dir), "/usr/bin", "/bin"])
+    )
+    return bin_dir
+
+
+def _as_hermes(monkeypatch):
+    """The environment a Hermes-launched Cartopian server actually sees:
+    default-SDK clientInfo plus the registration-injected marker."""
+    _as_client(monkeypatch, "mcp", version="0.1.0")
+    monkeypatch.setenv(host_capability.HOST_MARKER_ENV, "hermes")
+
+
+def _entry_stdout(timeout=None):
+    entry = {"command": "/x/cartopian-mcp", "enabled": True}
+    if timeout is not None:
+        entry["timeout"] = timeout
+    return json.dumps(entry)
+
+
+def test_bare_mcp_client_info_stays_unknown(monkeypatch):
+    """Regression: no host matcher may claim the SDK default name "mcp" —
+    that string is what any default-SDK client sends."""
+    _as_client(monkeypatch, "mcp", version="0.1.0")
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "unknown"
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+    assert "unknown" in refusal
+
+
+def test_hermes_marker_beats_client_info(monkeypatch, tmp_path):
+    """The registration-injected marker resolves Hermes; the classification is
+    a hard wall clock (idle is not imposed, progress resets nothing)."""
+    _as_hermes(monkeypatch)
+    _hermes_stub(tmp_path, monkeypatch, f"echo '{_entry_stdout(3900)}'")
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "hermes"
+    assert budget.wall_clock_seconds == 3900
+    assert budget.wall_clock_source == "host-config"
+    assert budget.idle_seconds is None
+    assert budget.progress_resets_wall_clock is False
+    assert budget.progress_resets_idle is False
+    assert budget.limiting_ceiling() == "wall-clock"
+
+
+def test_invalid_marker_value_is_ignored(monkeypatch):
+    """A marker outside the closed set falls through to clientInfo matching —
+    nothing outside the set may gain a budget."""
+    _as_client(monkeypatch, "mcp")
+    monkeypatch.setenv(host_capability.HOST_MARKER_ENV, "rogue-host")
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "unknown"
+
+
+def test_hermes_absent_entry_uses_the_hermes_default(monkeypatch, tmp_path):
+    _as_hermes(monkeypatch)
+    _hermes_stub(
+        tmp_path, monkeypatch, "echo 'Config key not set' >&2\nexit 1"
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "hermes"
+    assert (
+        budget.wall_clock_seconds
+        == host_capability.HERMES_DEFAULT_CALL_TIMEOUT_SECONDS
+    )
+    assert budget.wall_clock_source == "host-default"
+
+
+def test_hermes_exit_two_with_absent_text_fails_closed(monkeypatch, tmp_path):
+    """Only Hermes's documented exit 1 means an absent config key.
+
+    A different failure may repeat the same text as incidental diagnostics;
+    treating it as absence would invent the 300-second default.
+    """
+    _as_hermes(monkeypatch)
+    _hermes_stub(
+        tmp_path, monkeypatch, "echo 'Config key not set' >&2\nexit 2"
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "unknown"
+    assert budget.wall_clock_seconds is None
+
+
+def test_hermes_process_start_snapshot_precedes_first_dispatch(monkeypatch):
+    """A config raise after process start cannot widen the live session.
+
+    Hermes already captured the old value when it created the handler that
+    spawned this process, so Cartopian must retain the startup value even when
+    first dispatch occurs after the on-disk entry changes.
+    """
+    state = {"value": ("host-config", 300, ["timeout = 300s"])}
+    monkeypatch.setattr(
+        host_capability,
+        "_hermes_entry_timeout_now",
+        lambda _name: state["value"],
+    )
+    monkeypatch.setenv(host_capability.HOST_MARKER_ENV, "hermes")
+    host_capability.snapshot_process_host_budget()
+
+    state["value"] = ("host-config", 3900, ["timeout = 3900s"])
+    _as_client(monkeypatch, "mcp", version="0.1.0")
+    budget = host_capability.resolve_host_budget()
+
+    assert budget.wall_clock_seconds == 300
+    assert any("process started" in item for item in budget.evidence)
+
+
+def test_hermes_process_start_unknown_stays_fail_closed(monkeypatch):
+    """Repairing an unreadable entry also requires a new Hermes session."""
+    state = {"value": ("unknown", None, ["unreadable at startup"])}
+    monkeypatch.setattr(
+        host_capability,
+        "_hermes_entry_timeout_now",
+        lambda _name: state["value"],
+    )
+    monkeypatch.setenv(host_capability.HOST_MARKER_ENV, "hermes")
+    host_capability.snapshot_process_host_budget()
+
+    state["value"] = ("host-config", 3900, ["timeout = 3900s"])
+    _as_client(monkeypatch, "mcp", version="0.1.0")
+    budget = host_capability.resolve_host_budget()
+
+    assert budget.wall_clock_source == "unknown"
+    assert budget.wall_clock_seconds is None
+
+
+def test_hermes_reads_the_registered_timeout_key(monkeypatch, tmp_path):
+    _as_hermes(monkeypatch)
+    _hermes_stub(tmp_path, monkeypatch, f"echo '{_entry_stdout(1200)}'")
+    budget = host_capability.resolve_host_budget()
+    assert budget.effective_seconds == 1200
+    assert any("timeout = 1200s" in item for item in budget.evidence)
+
+
+@pytest.mark.parametrize("bad_timeout", ['"soon"', "0", "-5", "3.5", "null"])
+def test_hermes_malformed_timeout_fails_closed(monkeypatch, tmp_path, bad_timeout):
+    """A timeout key that is present but not a positive integer must resolve
+    to unknown, never to the 300s default: Hermes uses configured values
+    as-is, so a malformed value does not behave like an absent one."""
+    _as_hermes(monkeypatch)
+    entry = (
+        '{"command": "/x/cartopian-mcp", "enabled": true, '
+        f'"timeout": {bad_timeout}}}'
+    )
+    _hermes_stub(tmp_path, monkeypatch, f"echo '{entry}'")
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "unknown"
+    assert budget.wall_clock_seconds is None
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+    assert "cannot be resolved" in refusal
+
+
+def test_hermes_read_targets_the_marker_home(monkeypatch, tmp_path):
+    """The resolver's subprocess sets HERMES_HOME from CARTOPIAN_HERMES_HOME:
+    Hermes's filtered stdio env never delivers it, so without the marker a
+    non-default profile's config would silently not be read."""
+    _as_hermes(monkeypatch)
+    profile_home = tmp_path / "profile-home"
+    profile_home.mkdir()
+    seen = tmp_path / "seen-home.txt"
+    _hermes_stub(
+        tmp_path,
+        monkeypatch,
+        f'printf "%s" "$HERMES_HOME" > "{seen}"\n'
+        f"echo '{_entry_stdout(3900)}'",
+    )
+    monkeypatch.setenv(host_capability.HERMES_HOME_ENV, str(profile_home))
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == 3900
+    assert seen.read_text(encoding="utf-8") == str(profile_home)
+
+
+def test_hermes_root_marker_home_is_pinned_with_p_default(monkeypatch, tmp_path):
+    """Hermes v0.20 intentionally lets the sticky active_profile override a
+    root/default HERMES_HOME, so the env alone cannot target the registering
+    config — the read must carry the explicit `-p default` identity."""
+    _as_hermes(monkeypatch)
+    root_home = tmp_path / "root-home"
+    root_home.mkdir()
+    seen = tmp_path / "seen-argv.txt"
+    _hermes_stub(
+        tmp_path,
+        monkeypatch,
+        f'printf "%s" "$*" > "{seen}"\n'
+        f"echo '{_entry_stdout(3900)}'",
+    )
+    monkeypatch.setenv(host_capability.HERMES_HOME_ENV, str(root_home))
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == 3900
+    argv = seen.read_text(encoding="utf-8")
+    assert argv.startswith("-p default config get ")
+    assert any("-p default" in item for item in budget.evidence)
+
+
+def test_hermes_profile_parented_marker_home_pins_via_env(monkeypatch, tmp_path):
+    """A HERMES_HOME whose parent directory is named `profiles` is trusted
+    verbatim by Hermes's pre-parse (active_profile is never consulted), so the
+    env is the pin and no `-p` flag is added — `-p default` there would
+    wrongly redirect the read to the root profile."""
+    _as_hermes(monkeypatch)
+    profile_home = tmp_path / "profiles" / "coder"
+    profile_home.mkdir(parents=True)
+    seen_argv = tmp_path / "seen-argv.txt"
+    seen_home = tmp_path / "seen-home.txt"
+    _hermes_stub(
+        tmp_path,
+        monkeypatch,
+        f'printf "%s" "$*" > "{seen_argv}"\n'
+        f'printf "%s" "$HERMES_HOME" > "{seen_home}"\n'
+        f"echo '{_entry_stdout(3900)}'",
+    )
+    monkeypatch.setenv(host_capability.HERMES_HOME_ENV, str(profile_home))
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == 3900
+    assert seen_argv.read_text(encoding="utf-8").startswith("config get ")
+    assert seen_home.read_text(encoding="utf-8") == str(profile_home)
+
+
+def test_hermes_nonsensical_marker_home_fails_closed(monkeypatch, tmp_path):
+    _as_hermes(monkeypatch)
+    _hermes_stub(tmp_path, monkeypatch, f"echo '{_entry_stdout(3900)}'")
+    monkeypatch.setenv(
+        host_capability.HERMES_HOME_ENV, str(tmp_path / "does-not-exist")
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "unknown"
+    assert budget.wall_clock_seconds is None
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+    assert "cannot be resolved" in refusal
+
+
+def test_hermes_cli_absent_fails_closed(monkeypatch, tmp_path):
+    _as_hermes(monkeypatch)
+    empty = tmp_path / "emptybin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    budget = host_capability.resolve_host_budget()
+    assert budget.host == "hermes"
+    assert budget.wall_clock_source == "unknown"
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+
+
+def test_hermes_malformed_entry_fails_closed(monkeypatch, tmp_path):
+    _as_hermes(monkeypatch)
+    _hermes_stub(tmp_path, monkeypatch, "echo 'not json at all'")
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "unknown"
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 30)
+    assert ok is False
+    assert "cannot be resolved" in refusal
+
+
+def test_hermes_ceiling_is_pinned_for_the_server_process(monkeypatch, tmp_path):
+    """A config raise without a reload must not widen the running session's
+    budget: Hermes captured its ceiling when the session's MCP handler was
+    created, so the resolver holds its first successful reading for the
+    process lifetime instead of re-reading a disk value the live handler
+    does not enforce."""
+    _as_hermes(monkeypatch)
+    bin_dir = _hermes_stub(tmp_path, monkeypatch, f"echo '{_entry_stdout(300)}'")
+    assert host_capability.resolve_host_budget().wall_clock_seconds == 300
+
+    # The operator raises the timeout on disk mid-session, without a reload.
+    (bin_dir / "hermes").write_text(
+        f"#!/bin/sh\necho '{_entry_stdout(3900)}'\n", encoding="utf-8"
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == 300
+    assert any("pinned for this server process" in item for item in budget.evidence)
+
+    # The gate still refuses the 60-minute wait the live handler would kill.
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is False
+    assert "wall-clock" in refusal
+
+
+def test_hermes_unresolved_ceiling_is_never_pinned(monkeypatch, tmp_path):
+    """Only a successful resolution is held: an unreadable configuration must
+    stay fail-closed *and* retryable, so a repaired config (plus the session
+    reload the remediation demands) resolves later in the same process."""
+    _as_hermes(monkeypatch)
+    bin_dir = _hermes_stub(tmp_path, monkeypatch, "echo 'not json at all'")
+    assert host_capability.resolve_host_budget().wall_clock_source == "unknown"
+
+    (bin_dir / "hermes").write_text(
+        f"#!/bin/sh\necho '{_entry_stdout(1200)}'\n", encoding="utf-8"
+    )
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "host-config"
+    assert budget.wall_clock_seconds == 1200
+
+
+def test_hermes_budget_contract_default_role_fits_registered_ceiling(
+    monkeypatch, tmp_path
+):
+    """The D5 sizing fix: under the installed 3,900s entry a default 60-minute
+    role passes the gate in one terminal wait; a role above it refuses cleanly
+    before launch with the config key named."""
+    from cli.install_workflow import HERMES_REGISTRATION_TIMEOUT_SECONDS
+
+    _as_hermes(monkeypatch)
+    _hermes_stub(
+        tmp_path,
+        monkeypatch,
+        f"echo '{_entry_stdout(HERMES_REGISTRATION_TIMEOUT_SECONDS)}'",
+    )
+    ok, budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is True
+    assert budget.effective_seconds == HERMES_REGISTRATION_TIMEOUT_SECONDS
+    assert refusal is None
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 7200)
+    assert ok is False
+    assert "wall-clock" in refusal
+    assert "config set" in refusal
 
 
 # --- Unknown host: fail closed --------------------------------------------

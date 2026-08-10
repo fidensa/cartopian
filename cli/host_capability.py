@@ -29,14 +29,25 @@ which ``mcp_server.server`` exports into every in-process CLI invocation. Absent
 that marker the CLI is not running under an MCP host at all (a direct shell
 invocation, a wrapper, a test), no host-imposed ceiling exists, and the gate
 does not apply.
+
+One precedence step comes before clientInfo matching: a well-formed
+``CARTOPIAN_MCP_HOST`` value in the server's own environment — written into
+the host's registration entry by the install workflow, never a runtime
+self-report — names the host directly. Hosts whose MCP client sends only the
+SDK-default ``clientInfo`` (Hermes sends ``"mcp"``) are unmatchable by name;
+the marker is validated against a closed set and an unknown value is ignored,
+so fail-closed behavior is unchanged for everyone else.
 """
 import json
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from cli import emit
+from cli.bounded_run import CaptureOverflow, run_bounded
 
 # Exported by mcp_server.server around each in-process tool invocation. Absent
 # means "not running under an MCP host", which is distinct from "running under
@@ -49,6 +60,19 @@ CONNECTED_ENV = "CARTOPIAN_MCP_CONNECTED"
 CLIENT_ENV = "CARTOPIAN_MCP_CLIENT"
 CLIENT_VERSION_ENV = "CARTOPIAN_MCP_CLIENT_VERSION"
 CLIENT_TITLE_ENV = "CARTOPIAN_MCP_CLIENT_TITLE"
+
+# Registration-injected host identity marker (D12): written into the server
+# entry's env map by the install workflow for hosts whose clientInfo is the
+# unmatchable SDK default. Installer-written config, not runtime self-report;
+# validated against the closed resolver set below, unknown values ignored.
+HOST_MARKER_ENV = "CARTOPIAN_MCP_HOST"
+
+# Registration-injected Hermes profile home (D12): Hermes's filtered stdio
+# env never passes HERMES_HOME to a server process, so without this marker a
+# capability read under a non-default profile would silently target the wrong
+# config. Data, not trust — it only says where to read; anything unreadable
+# falls through to an unknown ceiling and the dispatch gate refuses.
+HERMES_HOME_ENV = "CARTOPIAN_HERMES_HOME"
 
 # The name the operator registered this server under, which keys the per-server
 # timeout entry in the host's own config. `skills/register-mcp.md` registers it
@@ -687,6 +711,227 @@ def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBu
     )
 
 
+# Hermes enforces a HARD WALL-CLOCK total timeout per tool call around
+# session.call_tool (mcp_servers.<name>.timeout ?? 300 s;
+# tools/mcp_tool.py:338,3150,5302) with no progress callback — nothing
+# resets it, so it is wall_clock_seconds, idle_seconds=None.
+# idle_timeout_seconds / max_lifetime_seconds recycle the server process
+# between calls — evidence only, never a ceiling.
+HERMES_DEFAULT_CALL_TIMEOUT_SECONDS = 300
+
+# Subprocess hygiene for the Hermes config read, mirroring the registration
+# adapter's posture: fixed timeout, stdin closed, bounded capture, shell-free.
+_HERMES_READ_TIMEOUT_SECONDS = 30
+_HERMES_READ_MAX_BYTES = 1_000_000
+
+# Hermes hands each tool wrapper its timeout when the session's MCP handler
+# is created (session start / /reload-mcp), not when a call is made: a later
+# `hermes config set ...timeout` does not reach the running session until it
+# reloads, and a reload also respawns this server process. Cartopian therefore
+# snapshots the entry when this MCP server process starts, before accepting
+# requests, and pins even an unknown result for the process lifetime. Reading
+# later at first dispatch could observe a freshly raised value the already-
+# running Hermes handler does not honor and approve a wait the host kills
+# early.
+_HERMES_SESSION_CEILINGS: Dict[str, Tuple[str, Optional[int], Tuple[str, ...]]] = {}
+
+
+def snapshot_process_host_budget() -> None:
+    """Pin startup-time host evidence whose lifetime is the server process.
+
+    Most host budgets come from environment or static config that the host
+    supplies directly. Hermes is different: Cartopian must query Hermes's
+    profile-scoped registration, while Hermes itself captured that entry's
+    timeout immediately before spawning this server. Snapshotting here keeps
+    both sides on the same configuration generation. An unreadable outcome is
+    pinned too; repairing disk config requires the same new-session or
+    ``/reload-mcp`` boundary as changing a resolved timeout.
+    """
+    marker = os.environ.get(HOST_MARKER_ENV, "").strip().lower()
+    if marker != "hermes":
+        return
+    name = _server_name()
+    if name in _HERMES_SESSION_CEILINGS:
+        return
+    source, wall, evidence = _hermes_entry_timeout_now(name)
+    evidence = evidence + [
+        "ceiling snapshotted when this Cartopian MCP server process started: "
+        "Hermes captures each tool's timeout when the session's MCP handler "
+        "is created, so any later config edit takes effect only after a new "
+        "Hermes session or /reload-mcp (which restarts this server)"
+    ]
+    _HERMES_SESSION_CEILINGS[name] = (source, wall, tuple(evidence))
+
+
+def _hermes_entry_timeout(name: str) -> Tuple[str, Optional[int], List[str]]:
+    """Return the session-pinned Hermes ceiling.
+
+    The MCP entry point calls :func:`snapshot_process_host_budget` before it
+    accepts requests. The lazy branch is retained for direct library callers;
+    it pins resolved values while leaving an unknown value retryable because
+    those callers have no Hermes session boundary. Production MCP dispatch
+    always observes the startup snapshot, including a pinned unknown result.
+    """
+    cached = _HERMES_SESSION_CEILINGS.get(name)
+    if cached is not None:
+        source, wall, evidence = cached
+        return source, wall, list(evidence)
+    source, wall, evidence = _hermes_entry_timeout_now(name)
+    if source != "unknown":
+        evidence = evidence + [
+            "ceiling pinned for this server process by a direct library "
+            "caller; MCP server entry points snapshot this value before "
+            "accepting requests"
+        ]
+        _HERMES_SESSION_CEILINGS[name] = (source, wall, tuple(evidence))
+    return source, wall, list(evidence)
+
+
+def _hermes_entry_timeout_now(
+    name: str,
+) -> Tuple[str, Optional[int], List[str]]:
+    """Read ``mcp_servers.<name>`` via ``hermes config get --json``.
+
+    Returns ``(source, wall_clock_seconds, evidence)`` where source is
+    ``host-config``, ``host-default``, or ``unknown`` (fail closed: a missing
+    CLI, an unusable profile-home marker, a hanging or flooding subprocess, or
+    unparseable output all mean the ceiling cannot be resolved).
+    """
+    evidence: List[str] = []
+    executable = shutil.which("hermes")
+    if executable is None:
+        return "unknown", None, ["the 'hermes' CLI is not on PATH, so the "
+                                 "registered tool-call ceiling cannot be read"]
+    env = None
+    pin: Tuple[str, ...] = ()
+    marker_home = os.environ.get(HERMES_HOME_ENV, "").strip()
+    if marker_home:
+        home = Path(marker_home).expanduser()
+        if not home.is_absolute() or not home.is_dir():
+            return "unknown", None, [
+                f"{HERMES_HOME_ENV}={marker_home!r} is not an existing "
+                "absolute directory, so the registering profile's config "
+                "cannot be read"
+            ]
+        # Hermes's own filtered stdio env never delivers HERMES_HOME; the
+        # registration-injected marker names the home the read must target.
+        env = {**os.environ, "HERMES_HOME": str(home)}
+        if home.parent.name == "profiles":
+            # Hermes's -p pre-parse trusts a profile-parented HERMES_HOME
+            # verbatim (it returns before consulting the sticky
+            # active_profile), so the env alone pins the read.
+            evidence.append(
+                f"reading the profile home from {HERMES_HOME_ENV}={home}"
+            )
+        else:
+            # A root/default HERMES_HOME does NOT pin by itself: Hermes
+            # intentionally lets the sticky active_profile override it. The
+            # explicit `-p default` identity names the root profile, and it
+            # resolves to the marker home even when that is a custom root.
+            pin = ("-p", "default")
+            evidence.append(
+                f"reading the profile home from {HERMES_HOME_ENV}={home}, "
+                "pinned with `-p default` so the sticky active_profile "
+                "cannot redirect the read"
+            )
+    try:
+        returncode, stdout_bytes, stderr_bytes = run_bounded(
+            [executable, *pin, "config", "get", "--json", f"mcp_servers.{name}"],
+            timeout=_HERMES_READ_TIMEOUT_SECONDS,
+            max_bytes=_HERMES_READ_MAX_BYTES,
+            env=env,
+        )
+    except CaptureOverflow:
+        # The bound is enforced while the child runs: a flooding process is
+        # killed at the cap instead of buffered into memory first.
+        return "unknown", None, evidence + [
+            "`hermes config get` produced an implausibly large capture and "
+            "was killed; refusing to parse it"
+        ]
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return "unknown", None, evidence + [
+            f"`hermes config get --json mcp_servers.{name}` failed: {exc}"
+        ]
+    stdout = stdout_bytes.decode("utf-8", "replace")
+    stderr = stderr_bytes.decode("utf-8", "replace")
+    if returncode != 0:
+        if (
+            returncode == 1
+            and "config key not set" in (stdout + stderr).lower()
+        ):
+            evidence.append(
+                f"no mcp_servers.{name} entry; using the Hermes default"
+            )
+            return "host-default", HERMES_DEFAULT_CALL_TIMEOUT_SECONDS, evidence
+        return "unknown", None, evidence + [
+            f"`hermes config get --json mcp_servers.{name}` exited "
+            f"{returncode} without a recognizable outcome"
+        ]
+    try:
+        entry = json.loads(stdout)
+    except ValueError:
+        return "unknown", None, evidence + [
+            f"mcp_servers.{name} did not parse as JSON; the configured "
+            "ceiling cannot be resolved"
+        ]
+    if not isinstance(entry, dict):
+        return "unknown", None, evidence + [
+            f"mcp_servers.{name} is not an object; the configured ceiling "
+            "cannot be resolved"
+        ]
+    if "timeout" not in entry:
+        evidence.append(
+            f"mcp_servers.{name} sets no timeout; using the Hermes default"
+        )
+        return "host-default", HERMES_DEFAULT_CALL_TIMEOUT_SECONDS, evidence
+    configured = _positive_int(entry.get("timeout"))
+    if configured is None:
+        # Fail closed, never substitute the default: Hermes hands the
+        # configured value to its own timeout machinery as-is, so a malformed
+        # value does not behave like an absent one — the call may die
+        # immediately rather than at 300s.
+        return "unknown", None, evidence + [
+            f"mcp_servers.{name}.timeout is set but is not a positive "
+            "integer, so the configured ceiling cannot be resolved; fix or "
+            "remove the timeout key"
+        ]
+    evidence.append(f"mcp_servers.{name}.timeout = {configured}s")
+    return "host-config", configured, evidence
+
+
+def _resolve_hermes(client_name: str, client_version: Optional[str]) -> HostBudget:
+    """D6 resolver for Hermes's hard wall-clock per-call ceiling.
+
+    Hermes wraps ``session.call_tool`` in a fixed total timeout with no
+    progress callback: nothing resets it, so the ceiling is wall-clock, an
+    idle ceiling is not imposed, and progress notifications buy nothing.
+    Anything ambiguous reports ``wall_clock_source = "unknown"``, which the
+    dispatch gate refuses.
+    """
+    name = _server_name()
+    source, wall, evidence = _hermes_entry_timeout(name)
+    return HostBudget(
+        host="hermes",
+        display="Hermes (CLI)",
+        client_name=client_name,
+        client_version=client_version,
+        wall_clock_seconds=wall,
+        idle_seconds=None,
+        wall_clock_source=source,
+        idle_source="not-imposed",
+        progress_resets_wall_clock=False,
+        progress_resets_idle=False,
+        progress_channel_available=emit.progress_available(),
+        evidence=evidence,
+        remediation=[
+            f"raise the ceiling: `hermes config set mcp_servers.{name}.timeout "
+            f"<seconds>` (seconds, hard wall clock per call), then start a new "
+            f"Hermes session or run /reload-mcp",
+            "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+        ],
+    )
+
+
 def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBudget:
     return HostBudget(
         host="unknown",
@@ -716,6 +961,10 @@ def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBud
 # pattern first, because hosts version their client names (Codex identifies as
 # `codex-mcp-client`). A host absent from this table resolves to `unknown` and
 # fails the dispatch gate rather than inheriting some other host's numbers.
+# Hermes deliberately has NO entry here: it identifies as the SDK default
+# clientInfo name "mcp", and matching that substring would claim every
+# default-SDK client. Hermes resolves only through the registration-injected
+# CARTOPIAN_MCP_HOST marker below.
 _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
     ("codex-mcp-client", _resolve_codex),
     ("claude-code", _resolve_claude_code),
@@ -724,6 +973,17 @@ _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
     ("codex", _resolve_codex),
     ("gemini", _resolve_gemini),
 )
+
+# Closed set of host ids a CARTOPIAN_MCP_HOST marker may name. A well-formed
+# marker beats clientInfo matching; an unknown value is ignored and resolution
+# falls through to clientInfo, so nothing outside this set gains a budget.
+_MARKER_RESOLVERS: Dict[str, Any] = {
+    "codex": _resolve_codex,
+    "claude-code": _resolve_claude_code,
+    "gemini-cli": _resolve_gemini,
+    "opencode": _resolve_opencode,
+    "hermes": _resolve_hermes,
+}
 
 
 def under_mcp_host() -> bool:
@@ -743,9 +1003,16 @@ def resolve_host_budget() -> Optional[HostBudget]:
     if not under_mcp_host():
         return None
     client_name = os.environ.get(CLIENT_ENV, "").strip()
+    client_version = os.environ.get(CLIENT_VERSION_ENV, "").strip() or None
+    marker = os.environ.get(HOST_MARKER_ENV, "").strip().lower()
+    if marker:
+        resolver = _MARKER_RESOLVERS.get(marker)
+        if resolver is not None:
+            # Registration-injected identity beats clientInfo matching (D12);
+            # an unknown marker value falls through to clientInfo instead.
+            return resolver(client_name or marker, client_version)
     if not client_name:
         return _resolve_unknown("", None)
-    client_version = os.environ.get(CLIENT_VERSION_ENV, "").strip() or None
     haystack = f"{client_name} {os.environ.get(CLIENT_TITLE_ENV, '')}".lower()
     for pattern, resolver in _HOST_MATCHERS:
         if pattern in haystack:

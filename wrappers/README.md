@@ -16,7 +16,7 @@ These wrappers fix that. They accept a prompt path, read the prompt file, and ca
 
 ### Prerequisites
 
-- A supported agent CLI on PATH (`codex`, `claude`, `gemini`, `devin`, or `opencode`).
+- A supported agent CLI on PATH (`codex`, `claude`, `gemini`, `devin`, `opencode`, or `hermes`).
 - **macOS only:** GNU coreutils provides the `gtimeout` binary the bash wrappers use to enforce `CARTOPIAN_TIMEOUT` at the OS level:
   ```bash
   brew install coreutils
@@ -88,6 +88,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
 | Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode <autonomous\|dangerous> --prompt-file <abs path>` (mode spelling depends on the installed CLI's detected permission surface — see [Devin](#devin)) |
 | opencode | `cartopian-opencode` | `opencode run --auto ...` (no filesystem sandbox exists to configure — see [opencode](#opencode); **Windows: unverified**) |
+| Hermes (Nous Research) | `cartopian-hermes` | `hermes -z <prompt-path> ...` (one-shot mode; approvals are self-bypassed by the tool — see [Hermes](#hermes); **Windows: unverified**) |
 
 By default, every wrapper runs its underlying CLI fully autonomously — no permission prompts, no TTY interaction. This is required for the PM→assignee handoff to complete without a human in the loop. If autonomy is not desired, use the operator-performed launch path instead of dispatching the wrapper. Tighten an individual wrapper's defaults via the env vars in [Configuration](#configuration) if you need a more restrictive posture for a specific tool.
 
@@ -126,7 +127,7 @@ The wrappers no longer `exec` into the CLI: they run it as a child, capture its 
 
 `cartopian dispatch` places the configured wrapper inside the common
 standard-library output supervisor before detaching it. This outer boundary
-is agent-neutral: all Codex, Claude, Gemini, Devin, and opencode wrappers use
+is agent-neutral: all Codex, Claude, Gemini, Devin, opencode, and Hermes wrappers use
 it on both POSIX and native PowerShell/CMD launch paths. It continuously drains combined
 wrapper output so the child cannot block on a full pipe and publishes only a
 bounded `<report-path>.launch.log`; excess bytes are discarded without
@@ -304,9 +305,9 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline from the resolved dispatch record. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
-| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`, `opencode run --model`). Unset means the tool's own default model. |
-| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude, Codex, and opencode translate it into their tool-specific flags (`--effort`, `-c model_reasoning_effort=...`, `--variant`); Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
-| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. opencode imposes no filesystem sandbox at all, so its wrapper prints an explicit no-op notice: work roots need no grant there, and actual access remains subject to OS permissions and any operator permission rules. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
+| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`, `opencode run --model`, `hermes -m`). Unset means the tool's own default model. |
+| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude, Codex, opencode, and Hermes translate it into their tool-specific flags (`--effort`, `-c model_reasoning_effort=...`, `--variant`, `--reasoning`); Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
+| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. opencode imposes no filesystem sandbox at all, so its wrapper prints an explicit no-op notice: work roots need no grant there, and actual access remains subject to OS permissions and any operator permission rules; Hermes has no default path sandbox either, so its wrapper prints the same no-op notice. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
 | `CARTOPIAN_ROLE` | _(unset on manual launch)_ | Dispatch role/config boundary inherited by the capability hook. On Claude it also asks the settings helper to resolve whether process-scoped capability enforcement is active; it never authorizes by role name. |
 | `CARTOPIAN_PYTHON` | _(unset on manual launch)_ | Current Python interpreter exported by dispatch for per-launch hook commands, avoiding stale install-time interpreter paths. |
@@ -413,6 +414,57 @@ after the fact by plan-audit provenance. Two more residuals worth knowing:
 | --- | --- | --- |
 | `CARTOPIAN_OPENCODE_AUTO` | `true` | Pass `--auto` (bypass configured `ask` rules). Set `false` to preserve ask behavior — asks then auto-reject in non-interactive runs; explicit deny rules and OS permissions apply either way. No filesystem sandbox exists in either setting. |
 | `CARTOPIAN_OPENCODE_AGENT` | _(unset)_ | Pass `--agent <name>` to select one of the operator's configured opencode agents. Unset uses opencode's default agent. |
+
+### Hermes
+
+Verified against Hermes Agent `v0.20.0 (2026.8.3)` on macOS. **Native Windows
+behavior is unverified**: the `.ps1`/`.cmd` wrapper pair ships on static parity
+tests and source reading alone, and — unlike the opencode precedent — Windows
+acceptance is *required* before Hermes is claimed fully supported.
+
+The wrapper launches Hermes one-shot mode (`hermes -z <prompt-path>`): a single
+prompt in, only the final response on stdout, no banner or spinner. Hermes
+loads AGENTS.md from the launch cwd and reads the prompt file with its own
+tools. Exit contract: `0` success, `1` agent failure or empty final response,
+`2` when the run reports failed/partial with no text — no mapping is needed;
+any nonzero exit records as a handoff failure.
+
+**One-shot mode has no approval layer, and the wrapper injects no permission
+policy.** One-shot runs internally set `HERMES_YOLO_MODE=1` (dangerous-command
+approval bypassed) and `HERMES_ACCEPT_HOOKS=1` (shell hooks auto-approved);
+clarify prompts return a synthetic default. No wrapper flag is needed to
+prevent hangs — and no wrapper flag can restore approvals in one-shot mode.
+Hermes's write guards (`write_file`/`patch` denylist, `HERMES_WRITE_SAFE_ROOT`)
+are documented as *not a sandbox* — the `terminal` tool runs as the same OS
+user and bypasses them — so a wrapper-set guard would misrepresent
+containment. Hermes carries the `advisory+detection` containment ceiling.
+
+**Profiles are a launch knob, not a protocol concept.** Hermes profile
+selection is the `-p/--profile` flag, which Hermes pre-parses before any
+module import so it can rewrite `HERMES_HOME`. Exporting `HERMES_PROFILE`
+selects nothing (Hermes uses that variable for Kanban author attribution), so
+the wrapper translates `CARTOPIAN_HERMES_PROFILE` into the flag. The launch
+config offers no per-role environment variables, so pinning one role's
+handoffs to a specific Hermes profile requires a small custom wrapper
+executable that exports the knob and delegates:
+
+```bash
+#!/usr/bin/env bash
+export CARTOPIAN_HERMES_PROFILE=reviewer
+exec /absolute/install/wrappers/bin/cartopian-hermes "$@"
+```
+
+Then set that role's configured agent to the custom wrapper's absolute path
+through the mediated editor, exactly as shown in
+[Alternative installation](#alternative-installation). Exporting
+`CARTOPIAN_HERMES_PROFILE` in the operator's own shell instead pins *every*
+Hermes role launched from that session, not one role.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CARTOPIAN_HERMES_PROFILE` | _(unset)_ | Pass `-p <profile>` to run the handoff under a named Hermes profile (the only selection mechanism Hermes honors). Unset uses Hermes's sticky default profile. |
+| `CARTOPIAN_HERMES_PROVIDER` | _(unset)_ | Pass `--provider <name>` to disambiguate a bare model id. Unneeded for `provider/model` compound ids, which `-m` accepts directly. |
+| `CARTOPIAN_HERMES_USAGE_FILE` | _(unset)_ | Pass `--usage-file <path>`: Hermes writes a JSON cost/token report there, even on failure. Opt-in so report directories stay within protocol file conventions by default. |
 
 ## Alternative installation
 

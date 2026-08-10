@@ -19,6 +19,8 @@ cartopian-codex bug):
 * cartopian-opencode — the tool imposes no filesystem sandbox at all, so
   declared work roots need no grant; the wrapper prints an explicit no-op
   notice instead of inventing a policy flag.
+* cartopian-hermes — same posture as opencode: no default path sandbox, so
+  work roots produce the explicit no-op notice and no grant flag.
 
 Exercised against the *real* Bash wrappers with fake CLIs capturing the exact
 argv the underlying tool receives (same harness as test_model_flag.py).
@@ -194,6 +196,24 @@ def test_opencode_emits_noop_notice_and_no_grant_flag(tmp_path):
 
 def test_opencode_no_notice_when_unset(tmp_path):
     _received, res = _captured(tmp_path, "cartopian-opencode", "opencode", None)
+    assert "work roots" not in res.stderr
+
+
+def test_hermes_emits_noop_notice_and_no_grant_flag(tmp_path):
+    """hermes has no default path sandbox to widen: work roots produce the
+    explicit no-op notice on stderr and nothing grant-shaped in argv."""
+    received, res = _captured(tmp_path, "cartopian-hermes", "hermes", ROOTS_ENV)
+    assert "-z" in received
+    assert "work roots need no grant here" in res.stderr, (
+        f"hermes + work roots must print the no-op notice. stderr={res.stderr!r}"
+    )
+    assert not any("wr-product" in a or "wr-docs" in a for a in received), (
+        f"hermes must not receive a work-root grant flag. argv={received!r}"
+    )
+
+
+def test_hermes_no_notice_when_unset(tmp_path):
+    _received, res = _captured(tmp_path, "cartopian-hermes", "hermes", None)
     assert "work roots" not in res.stderr
 
 

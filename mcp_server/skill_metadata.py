@@ -102,6 +102,11 @@ BRIDGE_TARGETS: Mapping[str, BridgeTarget] = {
         "toml",
         "direct_command",
     ),
+    "hermes_skill": BridgeTarget(
+        "use_cartopian",
+        Path("templates/clients/hermes/skills/use-cartopian/SKILL.md"),
+        "yaml",
+    ),
     "opencode_command": BridgeTarget(
         "use_cartopian",
         Path("templates/clients/opencode/commands/use-cartopian.md"),

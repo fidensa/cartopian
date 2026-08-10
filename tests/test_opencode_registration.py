@@ -108,7 +108,9 @@ def test_static_clients_resolve_to_the_same_paths_as_before(tmp_path):
         "cursor": ".cursor/mcp.json",
     }
     for client in SUPPORTED_CLIENTS:
-        if client == "opencode":
+        if client in ("opencode", "hermes"):
+            # Both resolve dynamically (opencode: env-driven pair; hermes:
+            # `hermes config path` subprocess) — covered by their own suites.
             continue
         assert _client_config_path(client, tmp_path) == tmp_path / expected[client]
 

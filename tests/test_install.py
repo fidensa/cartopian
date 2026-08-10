@@ -374,6 +374,96 @@ class PatchPathTests(_InstallTestBase):
         self.assertTrue(any("add manually" in a for a in actions))
 
 
+class UnregisterTests(_InstallTestBase):
+    """`--unregister` is the user-facing path to the guarded registration
+    removal (D4): standalone, bounded, and refusing rather than guessing."""
+
+    def _hermes_stub(self, entry_command: str):
+        bin_dir = Path(self.tmp.name) / "hermesbin"
+        bin_dir.mkdir()
+        hermes_home = Path(self.tmp.name) / "hermes-home"
+        hermes_home.mkdir()
+        log = Path(self.tmp.name) / "unset.log"
+        entry = json.dumps({"command": entry_command, "enabled": True})
+        stub = bin_dir / "hermes"
+        stub.write_text(
+            "#!/bin/sh\n"
+            # The uninstall resolves the profile home first, then pins the
+            # read and the unset to it (`-p default` for a root-like home).
+            'if [ "$1" = "-p" ]; then shift 2; fi\n'
+            'if [ "$1 $2" = "config path" ]; then\n'
+            f"  printf '%s\\n' '{hermes_home / 'config.yaml'}'\n"
+            "  exit 0\n"
+            "fi\n"
+            'if [ "$1 $2" = "config get" ]; then\n'
+            f"  printf '%s' '{entry}'\n"
+            "  exit 0\n"
+            "fi\n"
+            'if [ "$1 $2" = "config unset" ]; then\n'
+            f'  echo "$3" >> "{log}"\n'
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return bin_dir, log
+
+    def _run_unregister(self, client: str, bin_dir: Path):
+        env = dict(
+            os.environ,
+            PATH=os.pathsep.join([str(bin_dir), "/usr/bin", "/bin"]),
+        )
+        return subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--source",
+                str(REPO_ROOT),
+                "--prefix",
+                str(self.install_root),
+                "--unregister",
+                client,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_unregister_hermes_removes_our_entry(self) -> None:
+        # The script resolves --prefix, so the stub entry must carry the
+        # resolved spelling (macOS tempdirs live behind a /var symlink).
+        expected = str(
+            self.install_root.resolve() / "bin" / "cartopian-mcp"
+        )
+        bin_dir, log = self._hermes_stub(expected)
+        result = self._run_unregister("hermes", bin_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            log.read_text(encoding="utf-8").split(),
+            ["mcp_servers.cartopian"],
+        )
+
+    def test_unregister_hermes_preserves_a_foreign_entry(self) -> None:
+        bin_dir, log = self._hermes_stub("/somebody/elses/server")
+        result = self._run_unregister("hermes", bin_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("preserved", result.stderr)
+        self.assertFalse(log.exists())
+
+    def test_unregister_without_an_automated_path_instructs_manually(self) -> None:
+        bin_dir = Path(self.tmp.name) / "emptybin"
+        bin_dir.mkdir()
+        result = self._run_unregister("codex", bin_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("manually", result.stderr)
+
+    def test_unregister_is_a_standalone_operation(self) -> None:
+        result = self.run_script("--unregister", "hermes", "--plan-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("standalone cleanup", result.stderr)
+
+
 class InstallRootPlatformTests(unittest.TestCase):
     """Per-platform install-path expansion per ENGINEERING.md."""
 

@@ -171,6 +171,7 @@
           "codex_skill",
           "devin_skill",
           "gemini_command",
+          "hermes_skill",
           "opencode_command",
           "windsurf_command"
         ]

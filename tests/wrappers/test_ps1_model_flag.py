@@ -92,6 +92,25 @@ def test_model_block_precedes_trailing_append(wrapper):
     )
 
 
+def test_hermes_model_append_only_inside_env_guard():
+    """cartopian-hermes.ps1 appends `-m` (Hermes's model flag) exactly once,
+    inside the CARTOPIAN_MODEL guard. It is absent from PS1_TAIL_APPEND by
+    design: the prompt rides the `-z` flag pair appended before the model
+    block, so there is no trailing positional a flag pair could be split by."""
+    wrapper = "cartopian-hermes.ps1"
+    text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+    start, end = _model_block_span(text, wrapper)
+    append = "$Args += @('-m', $env:CARTOPIAN_MODEL)"
+    appends = [m.start() for m in re.finditer(re.escape(append), text)]
+    assert len(appends) == 1, (
+        f"{wrapper}: expected exactly one {append!r}; found {len(appends)}"
+    )
+    assert start < appends[0] < end, (
+        f"{wrapper}: the -m append is outside the if "
+        f"($env:CARTOPIAN_MODEL) guard; an unset model would still inject a flag"
+    )
+
+
 def test_devin_prompt_file_append_is_unconditional():
     """cartopian-devin.ps1 argv identity: --prompt-file is appended on every
     path (top-level statement, not inside any if/else), so with
