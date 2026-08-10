@@ -364,6 +364,88 @@ class OutputSafetySupervisorTests(unittest.TestCase):
             self.assertTrue(ready.terminal)
             self.assertEqual(ready.classification, "accepted")
 
+    def test_published_snapshot_releases_stale_running_retention_marker(
+        self,
+    ) -> None:
+        """A lost status flip cannot strand an already completed handoff.
+
+        The supervisor atomically publishes the bounded log before changing
+        ``retained_log_ready``.  If that secondary status update is lost, the
+        published companion itself proves that the retention boundary passed.
+        """
+        with tempfile.TemporaryDirectory(prefix="cartopian-retention-race-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            status = Path(str(report) + ".status")
+            launch_log = Path(str(report) + ".launch.log")
+            report.write_text(REPORT_TEXT, encoding="utf-8")
+            status.write_text(
+                "state=running\n"
+                "launch_id=synthetic\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
+            launch_log.write_bytes(b"published bounded snapshot\n")
+
+            original_read_text = Path.read_text
+
+            def guarded_read_text(path: Path, *args, **kwargs):
+                if str(path).endswith(".launch.log"):
+                    raise AssertionError("observer read launch-log body")
+                return original_read_text(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", guarded_read_text):
+                observation = handoff_observer.observe_once(
+                    report,
+                    expected_variant="task",
+                )
+
+            self.assertTrue(observation.terminal)
+            self.assertEqual(observation.classification, "accepted")
+            self.assertEqual(observation.wrapper.state, "running")
+            self.assertEqual(
+                observation.wrapper.metadata["retained_log_ready"],
+                "false",
+            )
+
+    def test_unsafe_snapshot_does_not_release_running_retention_marker(
+        self,
+    ) -> None:
+        """Only the supervisor's safe publication shape proves readiness."""
+        for kind in ("directory", "hardlink"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(
+                prefix=f"cartopian-retention-unsafe-{kind}-"
+            ) as tmp:
+                root = Path(tmp)
+                report = root / "REPORT-01-001.md"
+                status = Path(str(report) + ".status")
+                launch_log = Path(str(report) + ".launch.log")
+                target = root / "untrusted-log-target"
+                report.write_text(REPORT_TEXT, encoding="utf-8")
+                status.write_text(
+                    "state=running\n"
+                    "launch_id=synthetic\n"
+                    "expected_variant=task\n"
+                    "guarantee_scope=retained-launch-log\n"
+                    "retained_log_ready=false\n",
+                    encoding="utf-8",
+                )
+                target.write_text("not a supervisor snapshot\n", encoding="utf-8")
+                if kind == "directory":
+                    launch_log.mkdir()
+                else:
+                    os.link(target, launch_log)
+
+                observation = handoff_observer.observe_once(
+                    report,
+                    expected_variant="task",
+                )
+
+                self.assertFalse(observation.terminal)
+                self.assertIsNone(observation.classification)
+
     def test_exited_wrapper_fails_open_complete_report_with_pending_retention(
         self,
     ) -> None:

@@ -9,6 +9,7 @@ failures.
 from __future__ import annotations
 
 import hashlib
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -142,6 +143,29 @@ def observe_report(
     )
 
 
+def _retained_snapshot_published(report_path: Path) -> bool:
+    """Whether this launch's bounded log snapshot is already observable.
+
+    Dispatch removes the prior slot's launch log before it publishes the
+    matching ``state=running`` retention barrier.  The outer supervisor then
+    atomically publishes the current snapshot *before* it flips
+    ``retained_log_ready``.  Observing a safe regular file at the deterministic
+    companion path is therefore sufficient publication evidence when that
+    secondary status update is lost or raced.  Only metadata is inspected;
+    wait surfaces never open the launch-log body.
+    """
+    launch_log = Path(str(report_path) + ".launch.log")
+    try:
+        info = launch_log.lstat()
+    except OSError:
+        return False
+    return (
+        not launch_log.is_symlink()
+        and stat.S_ISREG(info.st_mode)
+        and info.st_nlink == 1
+    )
+
+
 def observe_once(
     report_path: Path,
     *,
@@ -157,6 +181,7 @@ def observe_once(
             and wrapper.metadata.get("retained_log_ready") != "true"
             and wrapper.state == "running"
             and wrapper.variant_matches
+            and not _retained_snapshot_published(report_path)
         )
         if retention_pending:
             return HandoffObservation(False, None, report, wrapper)

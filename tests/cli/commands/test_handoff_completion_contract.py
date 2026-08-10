@@ -377,6 +377,58 @@ def test_wait_surfaces_hold_complete_report_at_live_retention_barrier(
         assert record["still_running"] is True
 
 
+@pytest.mark.parametrize("wait_kind", ("task", "report"))
+def test_wait_surfaces_return_when_snapshot_exists_despite_stale_marker(
+    capsys,
+    wait_kind,
+):
+    """The atomic retained snapshot is the boundary, not a fallible flag.
+
+    A supervisor that published the current launch log but lost the following
+    status replacement must not leave Hermes (or another MCP host) blocked in
+    its one terminal wait after the subprocess and report are complete.
+    """
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task_path = _task(scaffold)
+        report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        Path(str(report_path) + ".status").write_text(
+            "state=running\n"
+            "launch_id=launch-current\n"
+            "expected_variant=task\n"
+            "guarantee_scope=retained-launch-log\n"
+            "retained_log_ready=false\n",
+            encoding="utf-8",
+        )
+        Path(str(report_path) + ".launch.log").write_text(
+            "current bounded snapshot\n",
+            encoding="utf-8",
+        )
+
+        if wait_kind == "task":
+            args = argparse.Namespace(
+                task_path=str(task_path),
+                role="coder",
+                max_block="1s",
+                poll_interval=0.01,
+            )
+            rc = wait_handoff.handler(args)
+        else:
+            args = argparse.Namespace(
+                report_path=str(report_path),
+                role="coder",
+                variant="task",
+                max_block="1s",
+                poll_interval=0.01,
+            )
+            rc = wait_report.handler(args)
+
+    record = json.loads(capsys.readouterr().out)
+    assert rc == EXIT_OK
+    assert record["classification"] == "accepted"
+    assert record["publication_state"] == "complete"
+    assert record["wrapper_state"] == "running"
+
+
 def test_report_path_wait_without_variant_rejects_stale_review_content(capsys):
     """An unmarked ordinary report slot defaults to task, not its own bytes."""
     with project_scaffold(cartopian_toml=_config()) as scaffold:
