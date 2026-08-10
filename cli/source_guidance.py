@@ -530,17 +530,17 @@ def resolve_report_evidence(task_path: Path, report_content: str) -> Dict[str, A
         owner_path=None,
     )
     blockers = list(evidence["blockers"])
-    applied = {
+    governed = {
         (item.get("identity"), item.get("applicable_context"))
-        for item in evidence["authoritative_sources"]
+        for item in _deidentified_authoritative_sources(guidance)
     }
-    for source in _deidentified_authoritative_sources(guidance):
+    for source in evidence["authoritative_sources"]:
         key = (source.get("identity"), source.get("applicable_context"))
-        if key not in applied:
+        if key not in governed:
             blockers.append(_blocker(
-                "governing-source-not-evidenced",
-                f"completion evidence does not name governing source {source.get('identity')!r} in context {source.get('applicable_context')!r}",
-                "record the governing source as applied or report the work blocked",
+                "source-evidence-not-in-guidance",
+                f"completion evidence names source {source.get('identity')!r} in context {source.get('applicable_context')!r}, which is not present in the governing guidance",
+                "record only sources actually applied from the governing guidance, or amend the guidance before completing the task",
             ))
     codes = [item["code"] for item in blockers]
     return {

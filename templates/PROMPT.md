@@ -91,7 +91,7 @@ Omit this section for code-only tasks.>
 
 <The before-and-after evidence required: test target, fixture run, validation script, fact-check pass, approval checklist, inspection, rehearsal, or n/a with reason.>
 
-For source-backed work, require the completion report to carry `## Source evidence` in the same record shape. A complete report must name the governing sources and applicable contexts actually used, the conflict disposition, and all claims that remain explicitly unverified.
+For source-backed work, require the completion report to carry `## Source evidence` in the same record shape. A complete report must name the non-empty subset of governing sources and applicable contexts actually used, the conflict disposition, and all claims that remain explicitly unverified. Every evidenced source identity/context must come from the supplied guidance; do not copy guidance sources that were not applied.
 
 ## What not to do
 

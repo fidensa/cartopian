@@ -39,6 +39,20 @@ def _task_body(source_section: str, *, source_owner: str = "task") -> str:
     )
 
 
+def _single_source_evidence(*, identity: str = "Service operating policy") -> str:
+    return (
+        "## Source evidence\n\n"
+        "### Authoritative sources\n\n"
+        f"- Identity: {identity}; Applicable context: version 3, effective "
+        "2026-08-01; Status: current; Scope: restart authorization\n\n"
+        "### Conflict resolution\n\n"
+        "- Status: none; Rule: no conflict among the sources applied to this "
+        "task; Decision: n/a\n\n"
+        "### Unverified claims\n\n"
+        "- none\n"
+    )
+
+
 class SourceGuidanceNegativeFixtureTests(unittest.TestCase):
     def test_missing_authority_fails_closed(self) -> None:
         result = source_guidance.resolve_task_guidance(
@@ -161,6 +175,39 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
         self.assertIn("project-management-source sha256:", projected)
         self.assertEqual(evidence["outcome"], "valid")
 
+    def test_report_evidence_may_name_only_the_sources_actually_applied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(
+                _task_body(_source_section()),
+                encoding="utf-8",
+            )
+            evidence = source_guidance.resolve_report_evidence(
+                task,
+                _single_source_evidence(),
+            )
+
+        self.assertEqual(evidence["outcome"], "valid")
+        self.assertEqual(len(evidence["evidence"]["authoritative_sources"]), 1)
+
+    def test_report_evidence_rejects_a_source_outside_governing_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(
+                _task_body(_source_section()),
+                encoding="utf-8",
+            )
+            evidence = source_guidance.resolve_report_evidence(
+                task,
+                _single_source_evidence(identity="Unapproved operating memo"),
+            )
+
+        self.assertEqual(evidence["outcome"], "invalid")
+        self.assertIn(
+            "source-evidence-not-in-guidance",
+            evidence["blocker_codes"],
+        )
+
 
 class SourceGuidanceProjectionTests(unittest.TestCase):
     def _scaffold(self):
@@ -233,7 +280,7 @@ class SourceGuidanceProjectionTests(unittest.TestCase):
             tail = "\n## Remaining risks\n\nnone.\n\n## Ready to close\n\nyes\n"
             report = scaffold.write(
                 "reports/REPORT-04-002.md",
-                base + _source_section(heading="Source evidence") + tail,
+                base + _single_source_evidence() + tail,
             )
             good_out = io.StringIO()
             with contextlib.redirect_stdout(good_out):

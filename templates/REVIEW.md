@@ -36,7 +36,7 @@ Required when the reviewed outcome uses implementation/git evidence. For documen
 
 ## Source evidence review
 
-When the task is source-backed, compare the governing source guidance with the completion report's `## Source evidence`. Confirm that source identities and applicable dates/versions match, conflicts are resolved by the declared rule or authority, and remaining non-decisive unverified claims carry the full failure signal. Missing or conflicting decisive authority blocks approval. Use `n/a — task is not source-backed` otherwise.
+When the task is source-backed, compare the governing source guidance with the completion report's `## Source evidence`. Confirm that every evidenced source identity and applicable date/version comes from the guidance, that the report includes the sources actually applied without requiring unused guidance sources, that conflicts are resolved by the declared rule or authority, and that remaining non-decisive unverified claims carry the full failure signal. Missing or conflicting decisive authority blocks approval. Use `n/a — task is not source-backed` otherwise.
 
 ## Findings
 

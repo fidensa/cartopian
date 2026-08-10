@@ -16,7 +16,7 @@ The `Work root:` value carries names only — the same names declared in the pro
 
 ## Source evidence
 
-<Include for a source-backed task. Omit when the task's resolved source guidance is `n/a` or legacy-not-declared. Use the same three-subsection record as the governing guidance, naming the sources and applicable contexts actually used. A decisive claim may not remain unverified in a complete report.>
+<Include for a source-backed task. Omit when the task's resolved source guidance is `n/a` or legacy-not-declared. Use the same three-subsection record as the governing guidance, naming the non-empty subset of sources and applicable contexts actually used. Every evidenced source identity/context must come from the supplied guidance; omit guidance sources that were not applied. A decisive claim may not remain unverified in a complete report.>
 
 ### Authoritative sources
 
