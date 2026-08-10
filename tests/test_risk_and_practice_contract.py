@@ -700,6 +700,24 @@ class PackSelectionTests(unittest.TestCase):
         covered = {item["profile_shape"] for item in registry["fixtures"]["pack_candidates"]}
         self.assertEqual(shape_ids, covered)
 
+    def test_software_shape_rationale_keys_on_the_declared_contract(self) -> None:
+        # The one-shape rationale must distinguish software delivery by its
+        # declared positive condition and evidence shape, not by claiming its
+        # body lacks ownership, stop, handoff, or contingency guidance.
+        registry = _registry()
+        candidate = next(
+            item
+            for item in registry["fixtures"]["pack_candidates"]
+            if item["pack_id"] == "software-delivery"
+        )
+        self.assertEqual(candidate["demonstrates_shapes"], ["software"])
+        reason = candidate["demonstrates_shapes_reason"]
+        for condition in candidate["applies_when"]:
+            self.assertIn(condition["value"], reason)
+        for term in ("artifact behavior", "target-state", "recovery"):
+            self.assertIn(term, reason.lower())
+        self.assertNotIn("declares no", reason)
+
 
 class OperationsPrimaryOutcomeTests(unittest.TestCase):
     """Ordinary Cartopian lifecycle mechanics are process substrate.
@@ -1065,10 +1083,27 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
     own words. They are restated here as a literal so the registry cannot drift
     from them silently: if the registry loses a family or a content area, these
     checks fail rather than re-deriving the expectation from the registry.
+
+    The software entry was deliberately revised to the operational mini-skill
+    contract: its content areas are now the operational mini-skill sections,
+    and the former topic areas live on as reviewed domain coverage inside the
+    body rather than as headings.
     """
 
     APPROVED_FAMILIES = {
-        "software": ["testing", "security", "accessibility", "delivery"],
+        "software": [
+            "intended-outcome",
+            "when-to-apply",
+            "when-not-to-apply",
+            "principles-and-heuristics",
+            "working-process",
+            "decision-gates",
+            "failure-modes",
+            "evidence-and-verification",
+            "examples-and-counterexamples",
+            "stop-and-escalation",
+            "sources",
+        ],
         "research": ["source-quality", "methodology", "fact-checking"],
         "marketing": ["audience", "brand", "legal-review", "launch-measurement"],
         "operations": ["rehearsal", "handoff", "rollback", "monitoring"],
@@ -1251,14 +1286,19 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
         core = next(
             item for item in measurement["specimens"] if item["kind"] == "core"
         )
-        budget = max(
+        budgets = [
             item["body_budget_bytes"] for item in registry["fixtures"]["pack_candidates"]
-        )
+        ]
         self.assertEqual(admission["required_pack_count"], 5)
-        self.assertEqual(admission["authored_body_budget_bytes_per_pack"], budget)
-        self.assertEqual(admission["total_authored_body_bytes"], budget * 5)
-        self.assertEqual(admission["peak_active_body_bytes"], budget)
-        self.assertEqual(admission["peak_active_bytes"], core["exact_bytes"] + budget)
+        # Budgets are declared per pack and need not be uniform; peak active
+        # context is the core line plus the largest declared budget because at
+        # most one body is ever admitted.
+        self.assertEqual(admission["largest_declared_body_budget_bytes"], max(budgets))
+        self.assertEqual(admission["total_authored_body_bytes"], sum(budgets))
+        self.assertEqual(admission["peak_active_body_bytes"], max(budgets))
+        self.assertEqual(
+            admission["peak_active_bytes"], core["exact_bytes"] + max(budgets)
+        )
 
 
 class MechanismValidationExemplarTests(unittest.TestCase):
@@ -1312,7 +1352,6 @@ class MechanismValidationExemplarTests(unittest.TestCase):
         core = next(
             item for item in measurement["specimens"] if item["kind"] == "core"
         )
-        budget = max(item["body_budget_bytes"] for item in candidates.values())
         recommended = next(item for item in sets if item["verdict"] == "recommended")
 
         for entry in sets:
@@ -1362,13 +1401,17 @@ class MechanismValidationExemplarTests(unittest.TestCase):
                     entry["delta_estimated_tokens_vs_recommended"],
                     tokens - recommended["resident_metadata_estimated_tokens"],
                 )
+                set_budgets = [
+                    candidates[pack]["body_budget_bytes"] for pack in packs
+                ]
                 self.assertEqual(
-                    entry["authored_body_budget_bytes"], budget * len(packs)
+                    entry["authored_body_budget_bytes"], sum(set_budgets)
                 )
-                # At most one body is ever admitted, so peak active context does
+                # At most one body is ever admitted, so peak active context is
+                # the core line plus the set's largest declared budget; it does
                 # not grow with the size of the set.
                 self.assertEqual(
-                    entry["peak_active_bytes"], core["exact_bytes"] + budget
+                    entry["peak_active_bytes"], core["exact_bytes"] + max(set_budgets)
                 )
                 self.assertIn(
                     entry["verdict"],

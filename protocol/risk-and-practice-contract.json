@@ -613,7 +613,14 @@
         "id": "content_areas",
         "required": true,
         "use": "semantics",
-        "meaning": "The approved guidance content areas this pack's body must cover. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band.",
+        "meaning": "The approved guidance content areas this pack's body must cover. A pack revised to the operational mini-skill contract declares its operational sections here. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band.",
+        "breaks_selection_ties": false
+      },
+      {
+        "id": "domain_coverage",
+        "required": false,
+        "use": "semantics",
+        "meaning": "The approved domain areas an operational mini-skill body must address inside its operational sections. Coverage is judged by semantic review against the pack's accepted source stack; the areas never form a runtime gate and never change the risk band.",
         "breaks_selection_ties": false
       },
       {
@@ -1045,10 +1052,17 @@
           "family": "software",
           "pack_id": "software-delivery",
           "content_areas": [
-            "testing",
-            "security",
-            "accessibility",
-            "delivery"
+            "intended-outcome",
+            "when-to-apply",
+            "when-not-to-apply",
+            "principles-and-heuristics",
+            "working-process",
+            "decision-gates",
+            "failure-modes",
+            "evidence-and-verification",
+            "examples-and-counterexamples",
+            "stop-and-escalation",
+            "sources"
           ],
           "applicability_boundary": "The primary outcome changes or verifies executable behavior, configuration behavior, or a software artifact.",
           "not_applicable_when": "Software is only the subject of research, policy analysis, promotion, or an operational record, or the envelope excludes software guidance."
@@ -1981,8 +1995,8 @@
         "resident_metadata_estimated_tokens": 46,
         "delta_bytes_vs_recommended": 8,
         "delta_estimated_tokens_vs_recommended": 2,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 8192,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 20480,
         "verdict_reasons": [
           "Neither exemplar declares a lifecycle-substrate veto, so the operations-primary-outcome safeguards cannot be demonstrated on an exemplar body.",
           "Both exemplars read as software-adjacent, which invites the reading the domain-neutral core exists to prevent.",
@@ -2014,8 +2028,8 @@
         "resident_metadata_estimated_tokens": 46,
         "delta_bytes_vs_recommended": 7,
         "delta_estimated_tokens_vs_recommended": 2,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 8192,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 20480,
         "verdict_reasons": [
           "No claim-shaped exemplar, so research, marketing, and policy are left with no exemplar carrying their contract shape.",
           "Both exemplars are change-shaped, so the set demonstrates one side of the contract twice."
@@ -2239,8 +2253,8 @@
         "resident_metadata_estimated_tokens": 24,
         "delta_bytes_vs_recommended": -79,
         "delta_estimated_tokens_vs_recommended": -20,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 4096,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 16384,
         "verdict_reasons": [
           "A single candidate can never produce an equal-precedence collision or demonstrate exactly-one-of-many admission.",
           "Represents one shape only and makes the core look software-specific."
@@ -2275,8 +2289,8 @@
         "resident_metadata_estimated_tokens": 68,
         "delta_bytes_vs_recommended": 94,
         "delta_estimated_tokens_vs_recommended": 24,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 12288,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 24576,
         "verdict_reasons": [
           "Adds a third resident metadata line and a third authored body for no mechanism-validation coverage the recommended pair does not already provide.",
           "Exceeds the one-or-two exemplar bound for the minimal mechanism-validation set. This is not a delivery verdict: software-delivery ships as one of the five required initial packs regardless."
@@ -2313,8 +2327,8 @@
         "resident_metadata_estimated_tokens": 114,
         "delta_bytes_vs_recommended": 274,
         "delta_estimated_tokens_vs_recommended": 70,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 20480,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 32768,
         "verdict_reasons": [
           "This set is the Phase 04 delivery scope, not a candidate for the minimal mechanism-validation set. All five packs ship and none of them is rejected.",
           "It is outside the exemplar comparison only because a five-pack set cannot be the smallest set that exercises collision, cross-shape veto, and single-body admission. That is a statement about minimality, not about whether five packs are wanted.",
@@ -3097,7 +3111,7 @@
         "pack_id": "software-delivery",
         "family": "software",
         "profile_shape": "software",
-        "revision": 1,
+        "revision": 2,
         "contract_version": 1,
         "applies_when": [
           {
@@ -3118,18 +3132,37 @@
         "precedence_class": "primary-outcome",
         "tie_key": "software-delivery",
         "body_ref": "packs/software-delivery.md",
-        "body_budget_bytes": 4096,
+        "body_budget_bytes": 16384,
         "content_areas": [
+          "intended-outcome",
+          "when-to-apply",
+          "when-not-to-apply",
+          "principles-and-heuristics",
+          "working-process",
+          "decision-gates",
+          "failure-modes",
+          "evidence-and-verification",
+          "examples-and-counterexamples",
+          "stop-and-escalation",
+          "sources"
+        ],
+        "domain_coverage": [
+          "requirements-and-constraints",
+          "design-cohesion-and-coupling",
+          "interfaces-and-error-models",
           "testing",
-          "security",
+          "security-and-privacy",
           "accessibility",
-          "delivery"
+          "performance-and-observability",
+          "compatibility-and-migration",
+          "delivery-and-rollback",
+          "avoiding-speculative-abstraction"
         ],
         "evidence_shape": "Artifact behavior, target-state verification, and recovery evidence.",
         "demonstrates_shapes": [
           "software"
         ],
-        "demonstrates_shapes_reason": "Software delivery declares no ownership, handoff, stop-condition, or contingency evidence, so it does not represent the operations shape.",
+        "demonstrates_shapes_reason": "Software delivery demonstrates the software shape through its declared contract: a positive condition on the software-behavior-change primary outcome and an evidence shape of artifact behavior, target-state verification, and recovery evidence. Its body also carries ownership, recovery, contingency, stop, escalation, and handoff guidance, but the accepted mapping keys on the declared contract rather than body prose, so operations-change remains the representative of the operations shape.",
         "required_initial_pack": true,
         "sources": [
           "nist-ssdf-1-1",
@@ -3379,12 +3412,12 @@
         }
       ],
       "body_admission": {
-        "statement": "Five authored bodies exist as maintenance surface. At most one enters active context, so peak active context is the core line plus one declared body budget no matter how many required packs ship.",
+        "statement": "Five authored bodies exist as maintenance surface within their individually declared budgets. At most one enters active context, so peak active context is the core line plus the largest declared body budget no matter how many required packs ship.",
         "required_pack_count": 5,
-        "authored_body_budget_bytes_per_pack": 4096,
-        "total_authored_body_bytes": 20480,
-        "peak_active_body_bytes": 4096,
-        "peak_active_bytes": 4174,
+        "largest_declared_body_budget_bytes": 16384,
+        "total_authored_body_bytes": 32768,
+        "peak_active_body_bytes": 16384,
+        "peak_active_bytes": 16462,
         "unmatched_body_bytes_in_active_context": 0
       }
     },

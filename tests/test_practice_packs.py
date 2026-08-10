@@ -710,5 +710,121 @@ class SourceRecordContractTests(unittest.TestCase):
             )
 
 
+class SoftwareDeliveryMiniSkillTests(unittest.TestCase):
+    """The software body is an operational mini-skill, not a topic checklist.
+
+    These checks are structural and fail-closed only: they prove the declared
+    operational-section contract, the approved domain coverage, the measured
+    selected-body ceiling, source-identity alignment, and context exclusion.
+    They deliberately do not score prose quality; whether the guidance is
+    actionable, proportionate, and source-aligned stays with semantic review.
+    """
+
+    OPERATIONAL_SECTIONS = [
+        "intended-outcome",
+        "when-to-apply",
+        "when-not-to-apply",
+        "principles-and-heuristics",
+        "working-process",
+        "decision-gates",
+        "failure-modes",
+        "evidence-and-verification",
+        "examples-and-counterexamples",
+        "stop-and-escalation",
+        "sources",
+    ]
+    DOMAIN_COVERAGE = [
+        "requirements-and-constraints",
+        "design-cohesion-and-coupling",
+        "interfaces-and-error-models",
+        "testing",
+        "security-and-privacy",
+        "accessibility",
+        "performance-and-observability",
+        "compatibility-and-migration",
+        "delivery-and-rollback",
+        "avoiding-speculative-abstraction",
+    ]
+    SELECTED_BODY_CEILING = 16 * 1024
+
+    @staticmethod
+    def _heading_identities(body: str, level: str) -> list[str]:
+        import re
+
+        pattern = re.compile(rf"^{level}\s+(.+?)\s*$", re.MULTILINE)
+        return [
+            "-".join(match.strip().casefold().replace("-", " ").split())
+            for match in pattern.findall(body)
+        ]
+
+    def _selected(self) -> dict:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(_envelope("software-behavior-change"))
+        self.assertEqual(result["outcome"], "selected")
+        self.assertEqual(result["pack_id"], "software-delivery")
+        self.assertEqual(result["bodies_loaded"], 1)
+        return result
+
+    def test_metadata_declares_the_operational_section_contract(self) -> None:
+        registry = _registry()
+        candidate = next(
+            item
+            for item in registry["fixtures"]["pack_candidates"]
+            if item["pack_id"] == "software-delivery"
+        )
+        scope_entry = next(
+            entry
+            for entry in registry["packs"]["delivery_scope"]["required_initial_packs"]
+            if entry["pack_id"] == "software-delivery"
+        )
+        self.assertEqual(candidate["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(scope_entry["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(candidate["domain_coverage"], self.DOMAIN_COVERAGE)
+        # The ceiling is a declared bound, not a quality target; there is no
+        # minimum byte count.
+        self.assertEqual(candidate["body_budget_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_carries_every_operational_section_in_order(self) -> None:
+        result = self._selected()
+        headings = self._heading_identities(
+            result["body"].split("\n---\n", 1)[1], "##"
+        )
+        self.assertEqual(headings, self.OPERATIONAL_SECTIONS)
+        self.assertEqual(
+            result["loaded_body_bytes"], len(result["body"].encode("utf-8"))
+        )
+        self.assertLessEqual(result["loaded_body_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_covers_each_approved_domain_area(self) -> None:
+        subsections = self._heading_identities(self._selected()["body"], "###")
+        for area in self.DOMAIN_COVERAGE:
+            with self.subTest(area=area):
+                self.assertIn(area, subsections)
+
+    def test_body_source_identities_stay_inside_their_declared_scopes(self) -> None:
+        body = self._selected()["body"]
+        for pin in ("SP 800-218", "5.0.0", "2.2", "40500:2025", "Cybersecurity Framework 2.0"):
+            with self.subTest(pin=pin):
+                self.assertIn(pin, body)
+        sources_at = body.index("## Sources")
+        for watchlist in ("SSDF 1.2", "WCAG 3"):
+            with self.subTest(watchlist=watchlist):
+                # Draft successors are tracked, never governing: they may be
+                # named only inside the Sources section, as watchlist entries.
+                self.assertGreater(body.index(watchlist), sources_at)
+
+    def test_incidental_software_subject_alone_loads_zero_bytes(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(
+            _envelope("local-text-correction", incidental_terms=["software-subject"])
+        )
+        self.assertEqual(result["outcome"], "none")
+        self.assertEqual(result["bodies_loaded"], 0)
+        self.assertEqual(result["loaded_body_bytes"], 0)
+        self.assertIsNone(result["body"])
+
+
 if __name__ == "__main__":
     unittest.main()

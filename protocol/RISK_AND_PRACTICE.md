@@ -22,7 +22,7 @@ Each source carries `current`, `stale`, or `unknown` applicability. Each conflic
 
 Missing authority, absent or stale date/version context, unresolved source conflict, and decisive unverified claims are dominance conditions. Any one fails closed with an actionable reason; other favorable observations never average it down. The record contains no numeric score.
 
-`task-bundle` and `handoff-packet` expose the same resolved `source_guidance` object, including a deidentified assignee rendering. A source identity containing a PM identifier is represented across that boundary by a stable `project-management-source sha256:...` alias; the same alias is the expected completion-evidence identity, so deidentification never produces a broken locator or an impossible raw/deidentified comparison. `validate-task-readiness` and `dispatch` refuse invalid declared records. Complete source-backed reports carry the same shape under `## Source evidence`; `parse-report` and `report-action` project it and refuse completion when governing sources are absent or a decisive claim remains unverified. CLI and MCP use the same command handlers and runtime projection.
+`task-bundle` and `handoff-packet` expose the same resolved `source_guidance` object, including a deidentified assignee rendering. A source identity containing a PM identifier is represented across that boundary by a stable `project-management-source sha256:...` alias; the same alias is the expected completion-evidence identity, so deidentification never produces a broken locator or an impossible raw/deidentified comparison. `validate-task-readiness` and `dispatch` refuse invalid declared records. Complete source-backed reports carry the same shape under `## Source evidence` and name the non-empty subset of guidance sources actually applied. `parse-report` and `report-action` refuse completion when that evidence is absent, introduces a source identity/context outside the guidance, or leaves a decisive claim unverified; unused guidance sources need not be copied into the report. CLI and MCP use the same command handlers and runtime projection.
 
 ## Risk classification
 
@@ -208,7 +208,7 @@ Phase 04 ships **exactly five** initial optional practice packs, one per approve
 
 | Family | Pack | Approved content areas |
 | --- | --- | --- |
-| `software` | `software-delivery` | `testing`, `security`, `accessibility`, `delivery` |
+| `software` | `software-delivery` | `intended-outcome`, `when-to-apply`, `when-not-to-apply`, `principles-and-heuristics`, `working-process`, `decision-gates`, `failure-modes`, `evidence-and-verification`, `examples-and-counterexamples`, `stop-and-escalation`, `sources` |
 | `research` | `research-inquiry` | `source-quality`, `methodology`, `fact-checking` |
 | `marketing` | `marketing-claim` | `audience`, `brand`, `legal-review`, `launch-measurement` |
 | `operations` | `operations-change` | `rehearsal`, `handoff`, `rollback`, `monitoring` |
@@ -221,6 +221,8 @@ These three remain out of scope:
 | `profiles-beyond-the-five-initial-families` | A sixth family is a later decision with its own evidence. |
 | `mandatory-packs` | No pack may be required for any task. A no-match envelope returns `none` and core governance continues unchanged. |
 | `always-loaded-catalogs` | No pack body is resident. A body is retrieved only after selection resolves to `selected`, and only for the one selected pack. |
+
+A pack revised to the operational mini-skill contract declares its **operational mini-skill sections** as its content areas — intended outcome, applicability and exclusions, conditional principles, working process, decision gates, failure modes, evidence, examples, stopping behavior, and sources — and carries its approved domain coverage as `domain_coverage`, judged by semantic review inside those sections. `software-delivery` is revised to that contract; the remaining packs keep their original topic areas until their own revisions land.
 
 `research-inquiry` and `operations-change` are the accepted **mechanism-validation exemplars** because two packs are the smallest set that can exercise every selection outcome. They validate the mechanism, not the delivery scope. All five bodies are authored, and a missing or invalid body for any one of them blocks Phase 04 exit even when both exemplars pass.
 
@@ -240,7 +242,8 @@ What the operator excluded was a 24-skill mandatory specialist catalog preloaded
 | `tie_key` | Stable key that orders candidates inside a diagnostic. It never chooses a winner; equal precedence fails closed instead. |
 | `body_ref` | Logical locator of the bounded guidance body. Retrieved only after the outcome resolves to selected. |
 | `body_budget_bytes` | Declared maximum size of the guidance body. A body over budget fails closed and loads nothing. |
-| `content_areas` | The approved guidance content areas this pack's body must cover. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band. |
+| `content_areas` | The approved guidance content areas this pack's body must cover. A pack revised to the operational mini-skill contract declares its operational sections here. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band. |
+| `domain_coverage` | The approved domain areas an operational mini-skill body must address inside its operational sections. Coverage is judged by semantic review against the pack's accepted source stack; the areas never form a runtime gate and never change the risk band. |
 | `evidence_shape` | The kind of task evidence this profile helps interpret. It cannot impose a universal gate or change the risk band. |
 | `sources` | Ordered references into the classified source-record catalog. At least one current governing source is required; structural exemplars and watchlists never satisfy that requirement. |
 
@@ -439,7 +442,7 @@ The eligible universe is one 78-byte core line plus one specimen line for each o
 
 In every case active bytes plus excluded bytes equal 525 exactly, and in every selected case the excluded bytes are exactly the weight of the other four required packs. When the outcome is not `selected`, the pack contribution is zero bytes — measurable non-selection, not an instruction to ignore prose that already loaded.
 
-Bodies behave the same way. Five authored bodies at a 4,096-byte budget each are 20,480 bytes of maintenance surface, but **peak active context is 4,174 bytes — the core line plus one body — no matter how many packs ship**, because at most one body is ever admitted. Shipping the other four adds zero active bytes.
+Bodies behave the same way. Five authored bodies within their declared budgets — 16,384 bytes for the revised `software-delivery` mini-skill, 4,096 bytes for each of the other four — are 32,768 bytes of maintenance surface, but **peak active context is the core line plus the largest declared body budget — at most 16,462 bytes — no matter how many packs ship**, because at most one body is ever admitted. Shipping the other four adds zero active bytes.
 
 ## The mechanism-validation exemplars
 
@@ -460,9 +463,9 @@ Together they exercise positive primary-outcome matching, negative veto in both 
 
 ### What the cost figures actually show
 
-Resident metadata bytes are the declared specimen lines for the packs in a set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. **Peak active bytes are the core line plus one declared body budget — 4,174 bytes — for every set with at least one pack, because at most one body is ever admitted.** Adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.
+Resident metadata bytes are the declared specimen lines for the packs in a set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. **Peak active bytes are the core line plus the set's largest declared body budget — 4,174 bytes for sets of the original 4,096-byte packs, 16,462 bytes for sets containing the revised `software-delivery` mini-skill — because at most one body is ever admitted.** Adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.
 
-So context cost is *not* a discriminator among the two-pack candidates: the whole spread is 8 bytes and 2 estimated tokens. Mechanism coverage is the discriminator. The five-pack figures — 447 resident bytes and 20,480 bytes of authored body, of which zero unmatched bytes reach active context — are the measured cost of the required delivery scope, not an argument against shipping it.
+So context cost is *not* a discriminator among the two-pack candidates: the whole spread is 8 bytes and 2 estimated tokens. Mechanism coverage is the discriminator. The five-pack figures — 447 resident bytes and 32,768 bytes of authored body, of which zero unmatched bytes reach active context — are the measured cost of the required delivery scope, not an argument against shipping it.
 
 ### Every candidate set considered
 
@@ -471,17 +474,17 @@ Shapes counts the profile shapes the set's packs demonstrate. Δ is against the 
 | Candidate set | Verdict | Shapes | Resident bytes | Est. tokens | Δ bytes | Δ tokens | Authored bodies |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `research-and-operations` | **recommended** | 5 | 173 | 44 | — | — | 8,192 |
-| `research-and-software` | rejected as exemplar set | 4 | 181 | 46 | +8 | +2 | 8,192 |
-| `software-and-operations` | rejected as exemplar set | 2 | 180 | 46 | +7 | +2 | 8,192 |
+| `research-and-software` | rejected as exemplar set | 4 | 181 | 46 | +8 | +2 | 20,480 |
+| `software-and-operations` | rejected as exemplar set | 2 | 180 | 46 | +7 | +2 | 20,480 |
 | `research-and-policy` | rejected as exemplar set | 3 | 174 | 44 | +1 | 0 | 8,192 |
 | `research-and-marketing` | rejected as exemplar set | 3 | 180 | 46 | +7 | +2 | 8,192 |
 | `marketing-and-operations` | rejected as exemplar set | 3 | 179 | 46 | +6 | +2 | 8,192 |
 | `policy-and-operations` | rejected as exemplar set | 3 | 173 | 44 | 0 | 0 | 8,192 |
 | `research-only` | rejected as exemplar set | 3 | 87 | 22 | −86 | −22 | 4,096 |
 | `operations-only` | rejected as exemplar set | 2 | 86 | 22 | −87 | −22 | 4,096 |
-| `software-only` | rejected as exemplar set | 1 | 94 | 24 | −79 | −20 | 4,096 |
-| `research-operations-and-software` | rejected as exemplar set | 5 | 267 | 68 | +94 | +24 | 12,288 |
-| `all-five-shapes` | **is the delivery scope** | 5 | 447 | 114 | +274 | +70 | 20,480 |
+| `software-only` | rejected as exemplar set | 1 | 94 | 24 | −79 | −20 | 16,384 |
+| `research-operations-and-software` | rejected as exemplar set | 5 | 267 | 68 | +94 | +24 | 24,576 |
+| `all-five-shapes` | **is the delivery scope** | 5 | 447 | 114 | +274 | +70 | 32,768 |
 
 Why each was set aside as an exemplar set:
 
