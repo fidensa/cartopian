@@ -40,7 +40,7 @@ RUN_HANDOFF_SKILL = REPO_ROOT / "skills" / "run-handoff.md"
 WRAPPERS = [
     "cartopian-claude",
     "cartopian-codex",
-    "cartopian-gemini",
+    "cartopian-agy",
     "cartopian-devin",
     "cartopian-opencode",
     "cartopian-hermes",
@@ -49,7 +49,7 @@ WRAPPERS = [
 WRAPPER_CLI = {
     "cartopian-claude": "claude",
     "cartopian-codex": "codex",
-    "cartopian-gemini": "gemini",
+    "cartopian-agy": "agy",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
     "cartopian-hermes": "hermes",
@@ -243,6 +243,77 @@ def test_wrapper_passes_no_independent_timeout_flag_to_cli(tmp_path, wrapper):
             f"CARTOPIAN_TIMEOUT OS-level deadline must be the sole timer. "
             f"argv={received!r}"
         )
+
+
+def _captured_agy_argv(tmp_path: Path, timeout_spec: str) -> list[str]:
+    root = _project(tmp_path)
+    prompt = _prompt(root, "01-303")
+    fake_bin = tmp_path / "fakebin"
+    args_out = tmp_path / "argv.txt"
+    _make_fake_cli(fake_bin, "agy", f'printf "%s\\n" "$@" > "{args_out}"\nexit 0')
+    res = _run_wrapper("cartopian-agy", prompt, fake_bin, timeout_spec)
+    assert res.returncode == 0, res.stderr
+    assert args_out.exists(), f"fake agy was never invoked: {res.stderr}"
+    return args_out.read_text().splitlines()
+
+
+def test_agy_print_timeout_is_raised_to_ssot_deadline(tmp_path):
+    """agy print mode carries its own internal wait timer (--print-timeout,
+    default 5m) that runs whether or not the wrapper passes the flag. Left at
+    its default it would preempt any longer CARTOPIAN_TIMEOUT — a competing
+    shorter timer by omission. The wrapper therefore raises it to the same
+    duration as the OS deadline, whose clock starts first and so remains the
+    sole enforcer (exit 124). This is derived neutralization of a builtin
+    timer, not an independent second timer (RM-003)."""
+    received = _captured_agy_argv(tmp_path, "30m")
+    assert "--print-timeout" in received, f"argv={received!r}"
+    idx = received.index("--print-timeout")
+    assert received[idx + 1] == "30m", f"argv={received!r}"
+
+
+def test_agy_print_timeout_normalizes_unitless_seconds(tmp_path):
+    """GNU timeout reads a bare number as seconds; agy parses Go durations,
+    which require a unit. The wrapper appends `s` so both timers read the
+    same duration instead of agy rejecting the flag at launch."""
+    received = _captured_agy_argv(tmp_path, "90")
+    idx = received.index("--print-timeout")
+    assert received[idx + 1] == "90s", f"argv={received!r}"
+
+
+def test_agy_internal_timeout_preserves_contract_without_coreutils(tmp_path):
+    """When timeout/gtimeout is absent, agy's aligned internal expiry remains
+    bounded and must still publish Cartopian's exit-124 timeout outcome."""
+    root = _project(tmp_path)
+    prompt = _prompt(root, "01-304")
+    fake_bin = tmp_path / "no-coreutils-bin"
+    _make_fake_cli(fake_bin, "agy", "exit 124")
+
+    # Give the wrapper only the ordinary utilities it needs, deliberately
+    # excluding timeout/gtimeout so the macOS fallback branch is exercised.
+    for name in ("awk", "basename", "dirname", "grep", "mkdir", "mv", "rm", "sleep", "tr"):
+        source = shutil.which(name)
+        assert source is not None, f"test prerequisite missing: {name}"
+        (fake_bin / name).symlink_to(source)
+
+    env = {
+        "PATH": str(fake_bin),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "CARTOPIAN_TIMEOUT": "1s",
+    }
+    res = subprocess.run(
+        [bash, str(WRAPPER_DIR / "cartopian-agy"), str(prompt)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+
+    assert res.returncode == 124, res.stderr
+    assert "internal --print-timeout deadline" in res.stderr
+    assert "unbounded" not in res.stderr
+    data = _read_status(root / "reports" / "REPORT-01-304.md.status")
+    assert data["exit_code"] == "124"
+    assert data["reason"] == "timeout"
 
 
 @pytest.mark.skipif(

@@ -8,8 +8,11 @@ variable. Unlike model (uniform `--model`), the translation is per-agent:
   low|medium|high|xhigh|max;
 * cartopian-codex — `-c model_reasoning_effort=<level>`, CLI-wide vocabulary
   low|medium|high|xhigh|max|ultra;
-* cartopian-gemini / cartopian-devin — the underlying CLI has no
-  effort/thinking flag; the wrapper ignores CARTOPIAN_EFFORT with a notice.
+* cartopian-agy — `--effort <level>`, CLI-wide vocabulary low|medium|high;
+  dropped with a notice when the pinned model id already encodes an effort
+  suffix (agy hard-fails a conflicting --model/--effort pair);
+* cartopian-devin — the underlying CLI has no effort/thinking flag; the
+  wrapper ignores CARTOPIAN_EFFORT with a notice.
 
 Fallback contract: the value is lowercased and checked against the wrapper's
 CLI-wide vocabulary; anything outside it produces a one-line stderr notice and
@@ -34,16 +37,17 @@ WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
 TRANSLATING_WRAPPERS = [
     "cartopian-claude",
     "cartopian-codex",
+    "cartopian-agy",
     "cartopian-opencode",
     "cartopian-hermes",
 ]
-IGNORING_WRAPPERS = ["cartopian-gemini", "cartopian-devin"]
+IGNORING_WRAPPERS = ["cartopian-devin"]
 WRAPPERS = TRANSLATING_WRAPPERS + IGNORING_WRAPPERS
 # Each wrapper -> the underlying CLI binary it invokes.
 WRAPPER_CLI = {
     "cartopian-claude": "claude",
     "cartopian-codex": "codex",
-    "cartopian-gemini": "gemini",
+    "cartopian-agy": "agy",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
     "cartopian-hermes": "hermes",
@@ -78,7 +82,13 @@ def _prompt(root: Path, rid: str) -> Path:
     return p
 
 
-def _run_wrapper(wrapper: str, prompt: Path, fake_bin: Path, effort: str | None):
+def _run_wrapper(
+    wrapper: str,
+    prompt: Path,
+    fake_bin: Path,
+    effort: str | None,
+    extra_env: dict[str, str] | None = None,
+):
     """Run a Bash wrapper with a fake assignee on a RESTRICTED PATH.
 
     PATH excludes ``cartopian`` so the wrapper's access-grants step is skipped,
@@ -96,13 +106,20 @@ def _run_wrapper(wrapper: str, prompt: Path, fake_bin: Path, effort: str | None)
     }
     if effort is not None:
         env["CARTOPIAN_EFFORT"] = effort
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(
         [bash, str(WRAPPER_DIR / wrapper), str(prompt)],
         capture_output=True, text=True, env=env, timeout=60,
     )
 
 
-def _captured(tmp_path: Path, wrapper: str, effort: str | None):
+def _captured(
+    tmp_path: Path,
+    wrapper: str,
+    effort: str | None,
+    extra_env: dict[str, str] | None = None,
+):
     """Return (argv_lines, stderr) after running the wrapper to completion."""
     root = _project(tmp_path)
     prompt = _prompt(root, "01-400")
@@ -111,7 +128,7 @@ def _captured(tmp_path: Path, wrapper: str, effort: str | None):
     cli = WRAPPER_CLI[wrapper]
     _make_fake_cli(fake_bin, cli, f'printf "%s\\n" "$@" > "{args_out}"\nexit 0')
 
-    res = _run_wrapper(wrapper, prompt, fake_bin, effort)
+    res = _run_wrapper(wrapper, prompt, fake_bin, effort, extra_env)
     assert res.returncode == 0, res.stderr
     assert args_out.exists(), f"{wrapper}: fake {cli} was never invoked: {res.stderr}"
     return args_out.read_text().splitlines(), res.stderr
@@ -214,6 +231,48 @@ def test_hermes_rejects_opencode_only_level(tmp_path):
     assert "default effort" in stderr, f"stderr={stderr!r}"
 
 
+def test_agy_translates_effort_to_effort_flag(tmp_path):
+    received, _ = _captured(tmp_path, "cartopian-agy", "medium")
+    assert "--effort" in received, f"argv={received!r}"
+    idx = received.index("--effort")
+    assert received[idx + 1] == "medium", f"argv={received!r}"
+
+
+def test_agy_rejects_claude_only_level(tmp_path):
+    """`xhigh` is claude vocabulary, not agy's — agy must fall back."""
+    received, stderr = _captured(tmp_path, "cartopian-agy", "xhigh")
+    _assert_no_effort_argv("cartopian-agy", received)
+    assert "CARTOPIAN_EFFORT=xhigh" in stderr, f"stderr={stderr!r}"
+    assert "default effort" in stderr, f"stderr={stderr!r}"
+
+
+def test_agy_effort_suffixed_model_pin_wins(tmp_path):
+    """Most agy model ids encode an effort level (`gemini-3.5-flash-high`),
+    and agy hard-fails a conflicting --model/--effort pair. The wrapper must
+    drop the effort with a notice instead of failing the launch."""
+    received, stderr = _captured(
+        tmp_path, "cartopian-agy", "low",
+        extra_env={"CARTOPIAN_MODEL": "gemini-3.5-flash-high"},
+    )
+    _assert_no_effort_argv("cartopian-agy", received)
+    assert "already encodes an effort level" in stderr, f"stderr={stderr!r}"
+    assert "ignoring CARTOPIAN_EFFORT=low" in stderr, f"stderr={stderr!r}"
+    # The model pin itself must still reach the CLI untouched.
+    idx = received.index("--model")
+    assert received[idx + 1] == "gemini-3.5-flash-high", f"argv={received!r}"
+
+
+def test_agy_unsuffixed_model_pin_keeps_effort(tmp_path):
+    """A model id without an effort suffix has nothing to conflict with —
+    both flags reach the CLI."""
+    received, _ = _captured(
+        tmp_path, "cartopian-agy", "low",
+        extra_env={"CARTOPIAN_MODEL": "claude-sonnet-4-6"},
+    )
+    idx = received.index("--effort")
+    assert received[idx + 1] == "low", f"argv={received!r}"
+
+
 @pytest.mark.parametrize("wrapper", WRAPPERS)
 def test_no_effort_argv_when_unset(tmp_path, wrapper):
     """With CARTOPIAN_EFFORT unset, no wrapper may invent an effort flag —
@@ -228,7 +287,7 @@ def test_no_effort_argv_when_unset(tmp_path, wrapper):
 
 @pytest.mark.parametrize("wrapper", IGNORING_WRAPPERS)
 def test_unsupported_cli_ignores_effort_with_notice(tmp_path, wrapper):
-    """gemini/devin have no effort/thinking flag: even a vocabulary-valid
+    """devin has no effort/thinking flag: even a vocabulary-valid
     value is ignored with a notice; nothing effort-shaped reaches the CLI."""
     received, stderr = _captured(tmp_path, wrapper, "high")
     _assert_no_effort_argv(wrapper, received)

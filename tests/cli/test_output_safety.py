@@ -565,7 +565,7 @@ class OutputSafetySurfaceParityTests(unittest.TestCase):
         self,
     ) -> None:
         root = Path(__file__).resolve().parents[2]
-        for agent in ("codex", "claude", "gemini", "devin"):
+        for agent in ("codex", "claude", "agy", "devin"):
             with self.subTest(agent=agent, surface="posix"):
                 self.assertTrue((root / "wrappers" / "bin" / f"cartopian-{agent}").is_file())
             with self.subTest(agent=agent, surface="powershell"):

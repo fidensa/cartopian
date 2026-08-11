@@ -31,7 +31,7 @@ MODEL_APPEND = "$Args += @('--model', $env:CARTOPIAN_MODEL)"
 PS1_TAIL_APPEND = {
     "cartopian-claude.ps1": "$Args += $PromptPathAbs",
     "cartopian-codex.ps1": "$Args += $PromptPathAbs",
-    "cartopian-gemini.ps1": "$Args += @('-p', $PromptPathAbs)",
+    "cartopian-agy.ps1": "$Args += @('-p', $PromptPathAbs)",
     "cartopian-devin.ps1": "$Args += @('--prompt-file', $PromptPathAbs)",
     "cartopian-opencode.ps1": "$Args += $PromptPathAbs",
 }

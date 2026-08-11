@@ -119,7 +119,7 @@ class TestAssignmentLaunchGuidanceContract(unittest.TestCase):
         self.assertNotIn("cwd set to the **primary work root**", lowered)
         self.assertIn("cartopian_work_roots", lowered)
         self.assertIn("declared work-root access does not grant", lowered)
-        for wrapper in ("codex", "claude", "gemini", "devin"):
+        for wrapper in ("codex", "claude", "antigravity", "devin"):
             self.assertIn(wrapper, lowered)
         self.assertIn("may be unwritable", lowered)
 
@@ -135,7 +135,7 @@ class TestAssignmentLaunchGuidanceContract(unittest.TestCase):
         self.assertIn("does not grant pm lifecycle authority", lowered)
         self.assertIn("codex", lowered)
         self.assertIn("claude", lowered)
-        self.assertIn("gemini", lowered)
+        self.assertIn("antigravity", lowered)
         self.assertIn("devin", lowered)
         self.assertIn("may be unwritable", lowered)
 

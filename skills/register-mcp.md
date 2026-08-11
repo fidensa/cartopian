@@ -32,7 +32,7 @@ Check for the presence of each supported agent using the platform-appropriate si
 | --- | --- | --- | --- |
 | Claude Code | `claude` on PATH | n/a — uses CLI | n/a — uses CLI |
 | Codex | `codex` on PATH | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
-| Gemini | `gemini` on PATH | `~/.gemini/settings.json` | `%USERPROFILE%\.gemini\settings.json` |
+| Antigravity | `agy` on PATH | `~/.gemini/config/mcp_config.json` | `%USERPROFILE%\.gemini\config\mcp_config.json` |
 | Devin | `devin` on PATH **or** config file exists | `~/.config/devin/config.json` | `%APPDATA%\devin\config.json` |
 | Windsurf | `~/.codeium/windsurf/` dir exists | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Windsurf\mcp_config.json` |
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
@@ -44,7 +44,7 @@ For Claude Code: run `claude mcp list` and check for a `cartopian` entry to dete
 
 For Codex: run `codex mcp list` and check for a `cartopian` entry to determine registration status. (The underlying store is `~/.codex/config.toml` under `[mcp_servers.cartopian]`, but the CLI is the supported interface.)
 
-For Gemini: run `gemini mcp list` and check for a `cartopian` entry to determine registration status. (The underlying store is `~/.gemini/settings.json` under `mcpServers.cartopian`, but the CLI is the supported interface.)
+For Antigravity: read `~/.gemini/config/mcp_config.json` and check for `mcpServers.cartopian`. (Antigravity keeps `~/.gemini` as its config home, inherited from Gemini CLI, but MCP definitions live in this dedicated central config — shared by the agy CLI, the IDE, and the SDK. `agy` has no `mcp` management subcommand; the file is the interface, and `/mcp` inside an interactive session shows live server status.)
 
 For opencode: run `opencode mcp list` and check for a `cartopian` entry — it prints each server's resolved command and connect status without any model call, so it is the first check after any registration change. (The underlying store is the global `opencode.json`/`opencode.jsonc` pair under the top-level `mcp` key; note opencode's schema is **not** the `mcpServers` shape the other JSON agents use.)
 
@@ -52,7 +52,7 @@ For Hermes: run `hermes config get --json mcp_servers.cartopian` — exit 0 with
 
 For JSON-config agents: read the file (if it exists) and check for `mcpServers.cartopian`.
 
-For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Gemini, Devin, Windsurf, opencode, Hermes), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
+For agents that are **already registered** and use a trigger bridge (Claude Code, Codex, Antigravity, Devin, Windsurf, opencode, Hermes), also check whether the *bridge itself* is current: compare the installed bridge file (per-agent paths are in Stage 3) byte-for-byte against its source template under `<install_root>/templates/clients/<agent>/`. A missing bridge file, or one that differs from the template, is **drifted** — this is the common case after a Cartopian upgrade changed the bridge wording, because re-registration only ever installs a bridge for a *newly* registered agent. (Skip this comparison for Claude Desktop and Cursor — they have no bridge.)
 
 Mark each agent as one of:
 
@@ -72,7 +72,7 @@ Agent           Status
 ──────────────  ─────────────────────────────────────────────
 Claude Code     present — not registered
 Codex           present — already registered, bridge update available
-Gemini          present — already registered, bridge current
+Antigravity     present — already registered, bridge current
 Devin           not detected
 Windsurf        present — not registered
 Claude Desktop  not detected
@@ -102,7 +102,7 @@ Apply the recipe for each agent the operator selected. Always confirm before wri
 - **Part A — register the MCP server** so the `cartopian` tools, prompt, and resources are reachable.
 - **Part B — install the "use cartopian" trigger bridge.** Registering the MCP server alone is *not* enough: the supported bridge clients need a native skill or command for the entry phrase. Each bridge directly tells its host to read the authoritative `cartopian://skills/use_cartopian` resource with that host's MCP resource reader. The bridge bodies ship as templates under `<install_root>/templates/clients/<agent>/` — copy them verbatim into the agent's command/skill directory. Create any missing parent directories. Do not edit the template content during the copy; operators can tune it in place afterward.
 
-The named agents below (Claude Code, Codex, Gemini, Devin, Windsurf, opencode, Hermes) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
+The named agents below (Claude Code, Codex, Antigravity, Devin, Windsurf, opencode, Hermes) get both parts. Claude Desktop and Cursor are MCP-only — they have no general-purpose local command/skill mechanism to bridge onto, so the operator triggers Cartopian there by invoking the `use_cartopian` MCP prompt directly from the client's prompt picker.
 
 ### Claude Code
 
@@ -172,21 +172,9 @@ Copy-Item "$installRoot\templates\clients\codex\skills\use-cartopian\SKILL.md" `
 
 After a restart, the operator can enter PM mode by saying "use cartopian" (triggering description matching) or typing `$use-cartopian` (or `/use-cartopian` if integrated in the slash auto-complete).
 
-### Gemini
+### Antigravity
 
-**Part A — register the MCP server.** The CLI is the supported interface. **Pass `--scope user`** — `gemini mcp add` defaults to `--scope project`, which would write a `.gemini/settings.json` into the current working directory instead of the global config. The user scope writes `mcpServers.cartopian` into `~/.gemini/settings.json`.
-
-```bash
-gemini mcp add cartopian "$install_root/bin/cartopian-mcp" --scope user
-```
-
-**Windows (PowerShell) — use the `.cmd` shim:**
-
-```powershell
-gemini mcp add cartopian "$installRoot\bin\cartopian-mcp.cmd" --scope user
-```
-
-If the installed `gemini` lacks `mcp add`, merge the entry into `~/.gemini/settings.json` (Windows: `%USERPROFILE%\.gemini\settings.json`) by hand, preserving existing keys:
+**Part A — register the MCP server.** There is no `agy mcp add`; the central config file is the interface. Merge the entry into the **global** config `~/.gemini/config/mcp_config.json` (Windows: `%USERPROFILE%\.gemini\config\mcp_config.json`), creating the file with an empty JSON object first if it does not exist and preserving existing keys:
 
 ```json
 {
@@ -198,25 +186,29 @@ If the installed `gemini` lacks `mcp add`, merge the entry into `~/.gemini/setti
 }
 ```
 
-Verify with `gemini mcp list` (or `/mcp` inside a Gemini session). Restart Gemini before the server is available.
+**Windows: point `command` at the `.cmd` shim** (`<install_root>\bin\cartopian-mcp.cmd`).
 
-**Part B — install the trigger bridge.** Copy the TOML custom-command into Gemini's global commands directory:
+Register in the global config, not a workspace-local `.agents/mcp_config.json`, so Cartopian is available from any directory. Registration scope does not grant tool permission: unconfigured MCP tools and resources default to **Ask**. If the operator wants Cartopian calls to run without prompts, they must explicitly add `mcp(cartopian/*)` to Antigravity's Allow permissions; otherwise leave the Ask default in place. Inline comments are not supported in the MCP config file.
+
+Verify with `/mcp` inside an interactive `agy` session (the MCP manager overlay shows server status and can reload configurations). Restart agy — or reload from that overlay — before the server is available.
+
+**Part B — install the trigger bridge.** Copy the Agent Skill into Antigravity's global skills directory. Antigravity skills are directory packages whose `SKILL.md` begins with YAML frontmatter:
 
 ```bash
-mkdir -p ~/.gemini/commands
-cp "$install_root/templates/clients/gemini/use-cartopian.toml" \
-   ~/.gemini/commands/use-cartopian.toml
+mkdir -p ~/.gemini/config/skills/use-cartopian
+cp "$install_root/templates/clients/antigravity/skills/use-cartopian/SKILL.md" \
+   ~/.gemini/config/skills/use-cartopian/SKILL.md
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.gemini\commands" | Out-Null
-Copy-Item "$installRoot\templates\clients\gemini\use-cartopian.toml" `
-  "$env:USERPROFILE\.gemini\commands\use-cartopian.toml" -Force
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.gemini\config\skills\use-cartopian" | Out-Null
+Copy-Item "$installRoot\templates\clients\antigravity\skills\use-cartopian\SKILL.md" `
+  "$env:USERPROFILE\.gemini\config\skills\use-cartopian\SKILL.md" -Force
 ```
 
-After this the operator types `/use-cartopian` (run `/commands reload` or restart Gemini to pick up the new command).
+After this the operator says "use cartopian" or types `/use-cartopian` (restart agy to discover the new skill).
 
 ### Claude Desktop
 
@@ -509,7 +501,7 @@ Apply the setting for each agent the operator registered, sizing it above the la
 | Agent | Setting | Default | Where |
 | --- | --- | --- | --- |
 | Codex | `tool_timeout_sec` (seconds) | **300** — below the protocol default | `[mcp_servers.cartopian]` in `~/.codex/config.toml` |
-| Gemini | `timeout` (milliseconds) | **600000** — below the protocol default | `mcpServers.cartopian` in `~/.gemini/settings.json` |
+| Antigravity | none — the ceiling cannot be raised | **180 s** hard wall clock per call; progress does not reset it | see the Antigravity note below |
 | Claude Code | `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` (milliseconds; `0` disables) | **1800000** idle — below the protocol default | the environment Claude Code launches with |
 | opencode | `timeout` (milliseconds) | **60000 idle** — but progress notifications reset it | `mcp.cartopian` in the global `opencode.json`/`opencode.jsonc` |
 | Hermes | `timeout` (seconds) | **300** hard wall clock per call — below the protocol default; nothing resets it | `mcp_servers.cartopian` via `hermes config set` |
@@ -523,11 +515,7 @@ command = "/path/to/.cartopian/bin/cartopian-mcp"
 tool_timeout_sec = 3900
 ```
 
-Gemini — add the key under the existing entry in `~/.gemini/settings.json`, then restart Gemini:
-
-```json
-"cartopian": { "command": "/path/to/.cartopian/bin/cartopian-mcp", "timeout": 3900000 }
-```
+Antigravity — there is nothing to write. agy enforces a fixed 180-second wall clock on each MCP tool call (verified against agy 1.1.11): the central `mcp_config.json` accepts no per-server timeout key (the Gemini CLI-era `timeout` milliseconds key is retired upstream), no environment variable overrides it, and progress notifications do not extend it. Cartopian resolves the host to that fixed budget, so `cartopian dispatch` refuses any role timeout above it rather than orphaning the handoff. On this host, dispatch roles manually and observe with `max_block` slices below the ceiling (e.g. `max_block=2m`, repeating until a terminal outcome), or lower `roles.<role>.timeout` to fit. Re-check after agy upgrades — a future build may lift or expose the ceiling.
 
 Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait.
 
@@ -558,14 +546,14 @@ Report, per agent the operator selected:
   | --- | --- |
   | Claude Code | say "use cartopian" (skill) or `/use-cartopian` |
   | Codex | say "use cartopian" (skill) or `/use-cartopian` / `$use-cartopian` |
-  | Gemini | `/use-cartopian` |
+  | Antigravity | `/use-cartopian` |
   | Devin for Terminal | say "use cartopian" (skill trigger) or `/use-cartopian` |
   | Windsurf | `/use-cartopian` |
   | opencode | `/use-cartopian` |
   | Hermes | say "use cartopian" (skill) — or preload with `hermes -s use-cartopian` |
   | Claude Desktop / Cursor | invoke the `use_cartopian` MCP prompt from the client's prompt picker (MCP-only — no bridge) |
 
-- Each agent that requires a restart before the bridge is live (Codex, Gemini, Windsurf, Devin, Claude Desktop, Cursor, opencode, Hermes — for Hermes a new session, or `/reload-mcp` for value-only config changes). Claude Code needs no restart.
+- Each agent that requires a restart before the bridge is live (Codex, Antigravity, Windsurf, Devin, Claude Desktop, Cursor, opencode, Hermes — for Hermes a new session, or `/reload-mcp` for value-only config changes; for Antigravity the `/mcp` overlay can reload servers, but skill discovery needs the restart). Claude Code needs no restart.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
 Once an agent has both parts and any required restart is complete, the operator opens it in any directory and uses the entry phrase/command above. The installed bridge reads the `use_cartopian` resource, which enters PM mode through registry-first project selection and routes to `start_session` for a selected project or `init_project` when the registry is empty.

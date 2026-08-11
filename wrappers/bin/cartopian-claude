@@ -53,8 +53,8 @@ CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
 # this, claude will hang waiting on TTY input the first time it tries
 # to write a file or run a shell command. This matches the autonomy
 # posture of cartopian-codex (workspace-write sandbox) and
-# cartopian-gemini (--approval-mode yolo). Set to "false" to re-enable
-# permission prompts (only useful for interactive debugging).
+# cartopian-agy (--dangerously-skip-permissions). Set to "false" to
+# re-enable permission prompts (only useful for interactive debugging).
 CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-true}"
 # ------------------------------------------------------------------
 

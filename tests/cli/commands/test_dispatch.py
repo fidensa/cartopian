@@ -1498,6 +1498,31 @@ class TestDispatchHostWaitBudgetGate(unittest.TestCase):
             # Nothing was launched: the stub never ran.
             self.assertFalse(capture.exists())
 
+    def test_antigravity_refusal_makes_sliced_wait_manual_only(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write("cartopian.toml", _toml(str(stub), timeout="60m"))
+            task_path = _write_task_and_prompt(scaffold)
+
+            env = {
+                "STUB_CAPTURE": str(capture),
+                "CARTOPIAN_MCP_CONNECTED": "1",
+                "CARTOPIAN_MCP_CLIENT": "antigravity-client",
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("launch this role manually, then observe", stderr)
+            self.assertIn("max_block", stderr)
+            self.assertFalse(capture.exists())
+
     def test_raised_host_ceiling_permits_the_launch(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:

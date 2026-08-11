@@ -135,7 +135,7 @@ VERIFICATION_TARGETS = ("protocol/INSTALL_VERIFICATION.md",)
 SUPPORTED_CLIENTS = (
     "claude-code",
     "codex",
-    "gemini",
+    "antigravity",
     "devin",
     "windsurf",
     "claude-desktop",
@@ -689,13 +689,18 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
             ),
         ),
     },
-    "gemini": {
-        "config": ".gemini/settings.json",
+    # Antigravity (agy) inherits `~/.gemini` as its config home from Gemini
+    # CLI, but MCP definitions live in the dedicated central config
+    # (`config/mcp_config.json`, shared by the agy CLI, the IDE, and the SDK)
+    # rather than the legacy settings.json. Its trigger bridge is a global
+    # Agent Skill, not a Gemini CLI-era TOML custom command.
+    "antigravity": {
+        "config": ".gemini/config/mcp_config.json",
         "format": "json",
         "bridges": (
             (
-                "templates/clients/gemini/use-cartopian.toml",
-                ".gemini/commands/use-cartopian.toml",
+                "templates/clients/antigravity/skills/use-cartopian/SKILL.md",
+                ".gemini/config/skills/use-cartopian/SKILL.md",
             ),
         ),
     },

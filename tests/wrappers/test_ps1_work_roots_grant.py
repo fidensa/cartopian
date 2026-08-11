@@ -13,8 +13,10 @@ PowerShell mirrors hold the same invariants:
 * ``cartopian-claude.ps1`` appends ``--add-dir`` per work root only inside an
   ``if ($env:CARTOPIAN_WORK_ROOTS)`` guard, after the positional prompt so
   Claude's variadic option cannot consume it;
-* ``cartopian-gemini.ps1`` / ``cartopian-devin.ps1`` warn on stderr when their
-  sandbox is active and work roots are declared (no per-path grant surface).
+* ``cartopian-agy.ps1`` appends ``--add-dir`` per work root only inside the
+  same guard (agy's ``-p`` is a value flag, so ordering is unconstrained);
+* ``cartopian-devin.ps1`` warns on stderr when its sandbox is active and work
+  roots are declared (no per-path grant surface).
 """
 from pathlib import Path
 
@@ -63,15 +65,24 @@ def test_claude_ps1_adds_work_roots_as_add_dir():
     assert text.count(append) == 1
 
 
-def test_gemini_ps1_warns_inside_sandbox_and_roots_guard():
-    text = (PS1_DIR / "cartopian-gemini.ps1").read_text(encoding="utf-8")
-    assert WARNING_TEXT in text, "gemini.ps1: missing work-root sandbox warning"
-    warn_idx = text.find(WARNING_TEXT)
-    sandbox_idx = text.find("if ($Sandbox) {")
-    roots_idx = text.find("if ($env:CARTOPIAN_WORK_ROOTS) {")
-    assert sandbox_idx != -1 and roots_idx != -1
-    assert sandbox_idx < roots_idx < warn_idx, (
-        "gemini.ps1: the warning must be guarded by sandbox-on AND work-roots-set"
+def test_agy_ps1_adds_work_roots_as_add_dir():
+    text = (PS1_DIR / "cartopian-agy.ps1").read_text(encoding="utf-8")
+    guard = "if ($env:CARTOPIAN_WORK_ROOTS) {"
+    append = "$Args += @('--add-dir', $root)"
+    guard_idx = text.find(guard)
+    append_idx = text.find(append)
+    assert guard_idx != -1, "agy.ps1: missing CARTOPIAN_WORK_ROOTS guard"
+    assert append_idx != -1, "agy.ps1: missing --add-dir append"
+    assert append_idx > guard_idx, (
+        "agy.ps1: --add-dir append must sit inside the CARTOPIAN_WORK_ROOTS "
+        "guard; unset work roots would still inject a flag"
+    )
+    assert text.count(append) == 1
+    # No sandbox warning: agy's --add-dir grant surface is independent of its
+    # boolean --sandbox, unlike the retired gemini wrapper.
+    assert WARNING_TEXT not in text, (
+        "agy.ps1: carries the no-grant-surface warning although --add-dir is "
+        "its grant surface"
     )
 
 

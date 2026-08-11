@@ -99,7 +99,7 @@ def test_static_clients_resolve_to_the_same_paths_as_before(tmp_path):
     expected = {
         "claude-code": ".claude.json",
         "codex": ".codex/config.toml",
-        "gemini": ".gemini/settings.json",
+        "antigravity": ".gemini/config/mcp_config.json",
         "devin": ".config/devin/config.json",
         "windsurf": ".codeium/windsurf/mcp_config.json",
         "claude-desktop": (

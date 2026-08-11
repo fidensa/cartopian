@@ -56,7 +56,7 @@ $OutputFormat = if ($env:CARTOPIAN_CLAUDE_FORMAT) { $env:CARTOPIAN_CLAUDE_FORMAT
 # when their independent dispatch boundaries apply.
 $Bare = if ($env:CARTOPIAN_CLAUDE_BARE -eq 'true') { $true } else { $false }
 # Skip permission prompts so claude runs non-interactively. Matches
-# the autonomy posture of cartopian-codex and cartopian-gemini. Set
+# the autonomy posture of cartopian-codex and cartopian-agy. Set
 # CARTOPIAN_CLAUDE_SKIP_PERMS=false to re-enable prompts.
 $SkipPermissions = if ($env:CARTOPIAN_CLAUDE_SKIP_PERMS -eq 'false') { $false } else { $true }
 # ------------------------------------------------------------------

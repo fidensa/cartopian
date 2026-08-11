@@ -69,7 +69,13 @@ CLIENT_RESTART_INSTRUCTIONS: "OrderedDict[str, OrderedDict[str, str]]" = (
         (
             ("claude-code", _instruction("Restart Claude Code.")),
             ("codex", _instruction("Restart Codex.")),
-            ("gemini", _instruction("Restart Gemini CLI.")),
+            (
+                "antigravity",
+                _instruction(
+                    "Restart Antigravity (agy) — or run /mcp and reload "
+                    "servers in-session."
+                ),
+            ),
             ("devin", _instruction("Restart Devin.")),
             ("windsurf", _instruction("Restart Windsurf.")),
             ("claude-desktop", _instruction("Restart Claude Desktop.")),
@@ -92,8 +98,8 @@ _CLIENT_ALIASES: Tuple[Tuple[str, str], ...] = (
     ("claude-code", "claude-code"),
     ("claude desktop", "claude-desktop"),
     ("claude-desktop", "claude-desktop"),
-    ("gemini-cli", "gemini"),
-    ("gemini", "gemini"),
+    ("antigravity-client", "antigravity"),
+    ("antigravity", "antigravity"),
     ("windsurf", "windsurf"),
     ("cursor", "cursor"),
     ("devin", "devin"),

@@ -236,19 +236,56 @@ def test_claude_code_zero_idle_timeout_disables_the_check(monkeypatch):
     assert budget.idle_source == "host-config-disabled"
 
 
-# --- Gemini ----------------------------------------------------------------
+# --- Antigravity -----------------------------------------------------------
 
 
-def test_gemini_default_ceiling(monkeypatch, tmp_path):
-    _as_client(monkeypatch, "gemini-cli")
-    monkeypatch.setattr(
-        host_capability,
-        "_gemini_settings_paths",
-        lambda: [tmp_path / "missing-settings.json"],
-    )
+def test_antigravity_fixed_ceiling(monkeypatch):
+    """agy enforces a fixed 180s wall clock per tools/call with no config
+    surface to read and nothing progress can reset (verified against 1.1.11);
+    the resolver reports that constant as a host default."""
+    _as_client(monkeypatch, "antigravity-client")
     budget = host_capability.resolve_host_budget()
-    assert budget.host == "gemini-cli"
-    assert budget.effective_seconds == 600
+    assert budget.host == "antigravity"
+    assert budget.wall_clock_seconds == 180
+    assert budget.wall_clock_source == "host-default"
+    assert budget.idle_seconds is None
+    assert budget.progress_resets_wall_clock is False
+    assert budget.effective_seconds == 180
+    assert budget.limiting_ceiling() == "wall-clock"
+
+
+def test_antigravity_refuses_default_role_timeout(monkeypatch):
+    """A 60m role timeout cannot fit agy's 180s ceiling: the dispatch gate
+    must refuse with the un-raisable-ceiling remediation, not launch a wait
+    that dies mid-handoff."""
+    _as_client(monkeypatch, "antigravity-client")
+    ok, budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is False
+    assert budget.host == "antigravity"
+    assert "180" in refusal or "3m" in refusal
+    assert "max_block" in refusal
+
+
+def test_antigravity_dispatch_refusal_couples_manual_launch_and_sliced_wait(
+    monkeypatch,
+):
+    """Dispatch cannot offer a sliced wait as though it bypassed dispatch's
+    own whole-role gate; the sliced remedy begins with a manual launch."""
+    _as_client(monkeypatch, "antigravity-client")
+    ok, _budget, refusal = host_capability.check_wait_budget(
+        "coder", 3600, context="dispatch"
+    )
+    assert ok is False
+    assert "launch this role manually, then observe" in refusal
+    assert "max_block" in refusal
+    assert "retry this wait" not in refusal
+
+
+def test_antigravity_allows_role_timeout_under_ceiling(monkeypatch):
+    _as_client(monkeypatch, "antigravity-client")
+    ok, budget, refusal = host_capability.check_wait_budget("coder", 120)
+    assert ok is True
+    assert refusal is None
 
 
 # --- opencode --------------------------------------------------------------

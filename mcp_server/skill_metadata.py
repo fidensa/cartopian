@@ -96,11 +96,10 @@ BRIDGE_TARGETS: Mapping[str, BridgeTarget] = {
         Path("templates/clients/devin/skills/use-cartopian/SKILL.md"),
         "yaml",
     ),
-    "gemini_command": BridgeTarget(
+    "antigravity_skill": BridgeTarget(
         "use_cartopian",
-        Path("templates/clients/gemini/use-cartopian.toml"),
-        "toml",
-        "direct_command",
+        Path("templates/clients/antigravity/skills/use-cartopian/SKILL.md"),
+        "yaml",
     ),
     "hermes_skill": BridgeTarget(
         "use_cartopian",

@@ -179,6 +179,44 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
             result["outcome"]["status"], ("complete-qualified", "blocked")
         )
 
+    def test_antigravity_bridge_is_a_global_agent_skill(self) -> None:
+        plan = self.plan(clients=("antigravity",))
+        destination = (
+            self.client_home
+            / ".gemini"
+            / "config"
+            / "skills"
+            / "use-cartopian"
+            / "SKILL.md"
+        )
+        destinations = plan["internal"]["client_destinations"]["antigravity"]
+        self.assertEqual(destinations["bridges"], [str(destination.resolve())])
+
+        apply_workflow(plan)
+
+        template = (
+            REPO_ROOT
+            / "templates"
+            / "clients"
+            / "antigravity"
+            / "skills"
+            / "use-cartopian"
+            / "SKILL.md"
+        )
+        self.assertEqual(destination.read_bytes(), template.read_bytes())
+        self.assertTrue(destination.read_text(encoding="utf-8").startswith("---\n"))
+        self.assertFalse(
+            (self.client_home / ".gemini" / "commands" / "use-cartopian.toml").exists()
+        )
+
+    def test_antigravity_registration_guidance_preserves_ask_default(self) -> None:
+        text = (REPO_ROOT / "skills" / "register-mcp.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("unconfigured MCP tools and resources default to **Ask**", text)
+        self.assertIn("mcp(cartopian/*)", text)
+        self.assertNotIn("global servers are trusted", text)
+
     def test_invalid_client_and_unsafe_install_destination_fail_closed(self) -> None:
         with self.assertRaises(WorkflowRefusal):
             self.plan(clients=("unsupported-client",))
@@ -635,7 +673,7 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
             {"offered"},
         )
         changed_clients = self.plan(
-            operation="update", clients=("codex", "gemini")
+            operation="update", clients=("codex", "antigravity")
         )
         self.assertEqual(
             {item["state"] for item in changed_clients["choices"]},

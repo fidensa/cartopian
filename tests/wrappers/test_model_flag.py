@@ -4,7 +4,7 @@
 `cartopian dispatch` as the agent-neutral `CARTOPIAN_MODEL` environment
 variable. Each shipped wrapper translates it into the tool-specific
 model-selection flag (verified against the upstream CLI surfaces:
-`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`).
+`claude --model`, `codex exec --model`, `agy --model`, `devin --model`).
 
 Two halves per wrapper, exercised against the *real* Bash wrappers with fake
 CLIs capturing the exact argv the underlying tool receives:
@@ -28,7 +28,7 @@ WRAPPER_DIR = REPO_ROOT / "wrappers" / "bin"
 WRAPPERS = [
     "cartopian-claude",
     "cartopian-codex",
-    "cartopian-gemini",
+    "cartopian-agy",
     "cartopian-devin",
     "cartopian-opencode",
     "cartopian-hermes",
@@ -37,7 +37,7 @@ WRAPPERS = [
 WRAPPER_CLI = {
     "cartopian-claude": "claude",
     "cartopian-codex": "codex",
-    "cartopian-gemini": "gemini",
+    "cartopian-agy": "agy",
     "cartopian-devin": "devin",
     "cartopian-opencode": "opencode",
     "cartopian-hermes": "hermes",

@@ -86,7 +86,9 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(err.message)
         return err.exit_code
 
-    fits, _budget, refusal = host_capability.check_wait_budget(role, role_seconds)
+    fits, _budget, refusal = host_capability.check_wait_budget(
+        role, role_seconds, context="dispatch"
+    )
     record["role_timeout_seconds"] = role_seconds
     record["fits"] = fits
     record["refusal"] = refusal

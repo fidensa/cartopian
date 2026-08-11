@@ -24,6 +24,17 @@ class TestRepositorySkillMetadata(unittest.TestCase):
     def test_repository_metadata_and_derived_surfaces_are_valid(self):
         self.assertEqual(validate_repository(ROOT), [])
 
+    def test_antigravity_bridge_uses_agent_skill_layout(self):
+        target = BRIDGE_TARGETS["antigravity_skill"]
+        self.assertEqual(target.syntax, "yaml")
+        self.assertEqual(
+            target.path,
+            Path(
+                "templates/clients/antigravity/skills/"
+                "use-cartopian/SKILL.md"
+            ),
+        )
+
     def test_mcp_prompt_and_resource_descriptions_share_authority(self):
         records = load_metadata(ROOT)
         expected = {

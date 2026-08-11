@@ -458,7 +458,9 @@ def handler(args: argparse.Namespace) -> int:
     # discover it partway through the wait: an unlaunched handoff is
     # recoverable, an orphaned one is not.
     host_ok, host_budget, host_refusal = host_capability.check_wait_budget(
-        role, host_capability.parse_duration(str(timeout)) or DEFAULT_TIMEOUT_SECONDS
+        role,
+        host_capability.parse_duration(str(timeout)) or DEFAULT_TIMEOUT_SECONDS,
+        context="dispatch",
     )
     if not host_ok:
         stderr_guard(host_refusal)

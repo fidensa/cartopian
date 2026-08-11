@@ -270,7 +270,7 @@ class ClientInstructionTests(unittest.TestCase):
             "codex-mcp-client": "codex",
             "Codex": "codex",
             "claude-code": "claude-code",
-            "gemini-cli": "gemini",
+            "antigravity-client": "antigravity",
             "Devin": "devin",
             "Windsurf": "windsurf",
             "Claude Desktop": "claude-desktop",

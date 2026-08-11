@@ -1,20 +1,23 @@
 <#
 .SYNOPSIS
-    Cartopian wrapper for the Google Gemini CLI (PowerShell).
+    Cartopian wrapper for the Google Antigravity CLI (agy) (PowerShell).
 
 .DESCRIPTION
-    Reads a Cartopian prompt file and passes its content to gemini -p
+    Reads a Cartopian prompt file and passes its path to agy -p
     with non-interactive flags.
 
-    gemini's `--sandbox` flag is boolean (presence-only), not a value
-    flag. Autonomy is controlled via `--approval-mode` (default,
-    auto_edit, yolo, plan) or the legacy `-y/--yolo` boolean.
+    Autonomy is controlled via `--dangerously-skip-permissions` (default)
+    or an explicit `--mode` (accept-edits, plan). agy's `--sandbox` flag
+    is boolean (presence-only), not a value flag.
+
+    Assignee-surface counterpart of the Antigravity PM-host entries
+    (`antigravity-tui` / `antigravity-ide` in the containment matrix).
 
 .PARAMETER PromptPath
     Absolute path to the Cartopian prompt file.
 
 .EXAMPLE
-    .\cartopian-gemini.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
+    .\cartopian-agy.ps1 C:\projects\cartopian\projects\myproject\prompts\PROMPT-NN-NNN.md
 #>
 
 param(
@@ -50,24 +53,26 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 }
 
 # --- Configuration ---------------------------------------------------
-# Approval mode: 'default' | 'auto_edit' | 'yolo' | 'plan'.
-# Empty string falls back to the legacy --yolo / -y mechanism below.
-$ApprovalMode = if ($env:CARTOPIAN_GEMINI_APPROVAL) { $env:CARTOPIAN_GEMINI_APPROVAL } else { 'yolo' }
+# Execution mode: '' (agy default) | 'accept-edits' | 'plan'.
+# Autonomy normally comes from the skip-permissions toggle below.
+$Mode = if ($env:CARTOPIAN_AGY_MODE) { $env:CARTOPIAN_AGY_MODE } else { '' }
 
-# Legacy YOLO toggle (used only if $ApprovalMode is empty).
-$AutoYes = if ($env:CARTOPIAN_GEMINI_YES -eq 'true') { $true } else { $false }
+# Skip all permission prompts so agy runs non-interactively (matches the
+# autonomy posture of the other shipped wrappers). Set the env var to
+# 'false' to re-enable prompts (only useful for interactive debugging).
+$SkipPermissions = if ($env:CARTOPIAN_AGY_SKIP_PERMS -eq 'false') { $false } else { $true }
 
 # Sandbox toggle (boolean flag).
-$Sandbox = if ($env:CARTOPIAN_GEMINI_SANDBOX -eq 'true') { $true } else { $false }
+$Sandbox = if ($env:CARTOPIAN_AGY_SANDBOX -eq 'true') { $true } else { $false }
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {
-    Write-Error "cartopian-gemini: prompt file not found: $PromptPath"
+    Write-Error "cartopian-agy: prompt file not found: $PromptPath"
     exit 1
 }
 
-if (-not (Get-Command gemini -ErrorAction SilentlyContinue)) {
-    Write-Error "cartopian-gemini: 'gemini' not found in PATH. Install: https://github.com/google-gemini/gemini-cli"
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
+    Write-Error "cartopian-agy: 'agy' not found in PATH. Install: https://antigravity.google/docs/cli/install"
     exit 1
 }
 
@@ -92,55 +97,78 @@ $StatusPath = Get-CartopianStatusPath $PromptPath
 # a silent fallback.
 if ($env:CARTOPIAN_LAUNCH_CWD) {
     if (-not (Test-Path -PathType Container $env:CARTOPIAN_LAUNCH_CWD)) {
-        Write-Error "cartopian-gemini: CARTOPIAN_LAUNCH_CWD='$($env:CARTOPIAN_LAUNCH_CWD)' is not a directory"
+        Write-Error "cartopian-agy: CARTOPIAN_LAUNCH_CWD='$($env:CARTOPIAN_LAUNCH_CWD)' is not a directory"
         exit 1
     }
     $LaunchCwd = (Resolve-Path $env:CARTOPIAN_LAUNCH_CWD).Path
     Set-Location $LaunchCwd
-    Write-Host "cartopian-gemini: cwd=$LaunchCwd (CARTOPIAN_LAUNCH_CWD override)" -ForegroundColor DarkGray
+    Write-Host "cartopian-agy: cwd=$LaunchCwd (CARTOPIAN_LAUNCH_CWD override)" -ForegroundColor DarkGray
 } else {
     $PromptAbs    = (Resolve-Path $PromptPath).Path
     $PromptsDir   = Split-Path -Parent $PromptAbs
     $ProjectDir   = Split-Path -Parent $PromptsDir
     if ((Split-Path -Leaf $PromptsDir) -eq 'prompts') {
         Set-Location $ProjectDir
-        Write-Host "cartopian-gemini: cwd=$ProjectDir" -ForegroundColor DarkGray
+        Write-Host "cartopian-agy: cwd=$ProjectDir" -ForegroundColor DarkGray
     } else {
-        Write-Host "cartopian-gemini: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
+        Write-Host "cartopian-agy: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" -ForegroundColor DarkGray
     }
 }
 # --------------------------------------------------------------------
 
-$Args = @()
-if ($ApprovalMode) {
-    $Args += @('--approval-mode', $ApprovalMode)
-} elseif ($AutoYes) {
-    $Args += '-y'
+# --disable-slash-commands is unconditional: agy print mode expands a
+# leading "/" as a slash command or skill, and the -p value here is always
+# an absolute path — it must reach the agent as literal text.
+$Args = @('--disable-slash-commands')
+if ($Mode) {
+    $Args += @('--mode', $Mode)
+}
+if ($SkipPermissions) {
+    $Args += '--dangerously-skip-permissions'
 }
 if ($Sandbox) {
     $Args += '--sandbox'
-    # gemini's boolean --sandbox exposes no per-path grant surface, so the
-    # declared work roots dispatch exports (CARTOPIAN_WORK_ROOTS) cannot be
-    # added to it — writes there may fail inside the sandbox. Warn so a
-    # work-root write failure is traceable to the tool's sandbox, not the
-    # launch contract. The default (sandbox off) leaves work roots writable.
-    if ($env:CARTOPIAN_WORK_ROOTS) {
-        [Console]::Error.WriteLine("cartopian-gemini: warning: gemini --sandbox has no writable-roots surface; declared work roots may not be writable inside the sandbox: $($env:CARTOPIAN_WORK_ROOTS)")
-    }
 }
 # Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
-# resolved dispatch model; translate it into gemini's --model flag.
-# Unset means gemini's own default model.
+# resolved dispatch model; translate it into agy's --model flag.
+# Unset means agy's own default model.
 if ($env:CARTOPIAN_MODEL) {
     $Args += @('--model', $env:CARTOPIAN_MODEL)
 }
-# Gemini has no effort/thinking-level flag. The resolved dispatch effort
-# cannot be translated, so it is ignored with a
-# notice and gemini runs at its own default.
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved dispatch effort; translate it into agy's --effort flag over agy's
+# own closed vocabulary. Values outside it fall back to the default effort
+# (warn + omit). The vocabulary tracks the installed agy CLI generation and
+# may drift as it evolves.
+#
+# Most agy model ids already encode an effort level as a -low/-medium/-high
+# suffix, and agy hard-fails a --model/--effort combination that conflicts.
+# When the pinned model carries such a suffix the pin wins: --effort is
+# dropped with a notice instead of failing the launch.
 if ($env:CARTOPIAN_EFFORT) {
-    [Console]::Error.WriteLine("cartopian-gemini: gemini has no effort/thinking flag; ignoring CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT)")
+    $EffortLc = $env:CARTOPIAN_EFFORT.ToLowerInvariant()
+    if ($EffortLc -in @('low', 'medium', 'high')) {
+        if ($env:CARTOPIAN_MODEL -match '-(low|medium|high)$') {
+            [Console]::Error.WriteLine("cartopian-agy: model '$($env:CARTOPIAN_MODEL)' already encodes an effort level; ignoring CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT)")
+        } else {
+            $Args += @('--effort', $EffortLc)
+        }
+    } else {
+        [Console]::Error.WriteLine("cartopian-agy: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported agy effort level (low|medium|high); launching with the default effort")
+    }
 }
 $Args += @('-p', $PromptPathAbs)
+
+# Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (an os.pathsep-joined
+# list — ';' on Windows — of the project's resolved work-root absolute paths).
+# Declared work roots become additional workspace directories (--add-dir) so
+# access there is an explicit grant, not a side effect of
+# --dangerously-skip-permissions.
+if ($env:CARTOPIAN_WORK_ROOTS) {
+    foreach ($root in $env:CARTOPIAN_WORK_ROOTS -split ';') {
+        if ($root) { $Args += @('--add-dir', $root) }
+    }
+}
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Spawn the upstream CLI as a child process and kill it deterministically
@@ -166,11 +194,15 @@ $TimeoutSpec = if ($env:CARTOPIAN_TIMEOUT) { $env:CARTOPIAN_TIMEOUT } else { '60
 $TimeoutSec = ConvertTo-CartopianTimeoutSeconds $TimeoutSpec
 # --------------------------------------------------------------------
 
-if ($ApprovalMode) {
-    Write-Host "cartopian-gemini: running gemini -p (approval=$ApprovalMode, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
-} else {
-    Write-Host "cartopian-gemini: running gemini -p (yolo=$AutoYes, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
-}
+# agy print mode carries its own internal wait timer (--print-timeout,
+# default 5m) that would preempt the Cartopian deadline on any longer
+# handoff. Raise it to the same duration so the supervisor's deadline
+# stays the single SSOT timer (its clock starts first, so it always wins
+# the tie). agy parses Go durations, which require a unit — pass the
+# already-normalized seconds value.
+$Args += @('--print-timeout', "${TimeoutSec}s")
+
+Write-Host "cartopian-agy: running agy -p (skip-perms=$SkipPermissions, timeout=$TimeoutSpec)" -ForegroundColor DarkGray
 
 # Run under the report-completion supervisor (parity with the bash
 # cartopian_run_supervised): once the authoritative report file appears, a
@@ -182,9 +214,9 @@ if ($ApprovalMode) {
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
-$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath gemini -ArgumentList $Args -TimeoutSec $TimeoutSec
+$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath agy -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
-    Write-Host "cartopian-gemini: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
+    Write-Host "cartopian-agy: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }
 Write-CartopianStatus -StatusPath $StatusPath -ExitCode $run.ExitCode -TimedOut $run.TimedOut
 exit $run.ExitCode

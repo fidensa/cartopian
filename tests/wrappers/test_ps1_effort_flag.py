@@ -6,12 +6,12 @@
 exercised live by ``test_effort_flag.py``; this file asserts the PowerShell
 mirrors hold the same invariants:
 
-* claude/codex append their effort flag ONLY inside an
+* claude/codex/agy append their effort flag ONLY inside an
   ``if ($env:CARTOPIAN_EFFORT)`` guard, after lowercasing and checking the
   CLI-wide vocabulary (unset or out-of-vocabulary → no flag, tool default);
 * the effort block precedes the wrapper's trailing positional/prompt append,
   so the flag-value pair can never be split by the positional argument;
-* gemini/devin never append an effort flag — inside their guard there is only
+* devin never appends an effort flag — inside its guard there is only
   the ignore notice; and
 * every fallback/ignore path emits a stderr notice naming CARTOPIAN_EFFORT.
 """
@@ -44,8 +44,12 @@ TRANSLATING = {
         "$Args += @('--reasoning', $EffortLc)",
         "@('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')",
     ),
+    "cartopian-agy.ps1": (
+        "$Args += @('--effort', $EffortLc)",
+        "@('low', 'medium', 'high')",
+    ),
 }
-IGNORING = ["cartopian-gemini.ps1", "cartopian-devin.ps1"]
+IGNORING = ["cartopian-devin.ps1"]
 
 # Each wrapper -> the trailing append that must come AFTER the effort block so
 # the underlying CLI receives the effort flag before its positional/prompt.
@@ -55,7 +59,7 @@ IGNORING = ["cartopian-gemini.ps1", "cartopian-devin.ps1"]
 PS1_TAIL_APPEND = {
     "cartopian-claude.ps1": "$Args += $PromptPathAbs",
     "cartopian-codex.ps1": "$Args += $PromptPathAbs",
-    "cartopian-gemini.ps1": "$Args += @('-p', $PromptPathAbs)",
+    "cartopian-agy.ps1": "$Args += @('-p', $PromptPathAbs)",
     "cartopian-devin.ps1": "$Args += @('--prompt-file', $PromptPathAbs)",
     "cartopian-opencode.ps1": "$Args += $PromptPathAbs",
 }
@@ -139,7 +143,7 @@ def test_effort_block_precedes_trailing_append(wrapper):
 
 @pytest.mark.parametrize("wrapper", IGNORING)
 def test_unsupported_cli_never_appends_effort(wrapper):
-    """gemini/devin have no effort/thinking flag: their guard contains only
+    """devin has no effort/thinking flag: its guard contains only
     the stderr ignore notice, never an $Args append."""
     text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
     start, end = _effort_block_span(text, wrapper)

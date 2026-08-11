@@ -34,8 +34,8 @@ Ask the operator about workspace-wide defaults:
 
 For each role that may use CLI launch, ask the operator:
 
-1. **CLI handoff agent** — Should this role have a named agent executable or Cartopian agent wrapper for CLI handoff automation? If yes, what is its name? (e.g., `cartopian-codex`, `cartopian-gemini`, `cartopian-claude`)
-2. **Effort** — Should this role pin an effort/thinking level? Valid levels depend on the chosen agent CLI (e.g., claude: `low|medium|high|xhigh|max`; codex: `low|medium|high|xhigh|max|ultra`; opencode: `none|minimal|low|medium|high|xhigh|max|thinking`; hermes: `none|minimal|low|medium|high|xhigh|max|ultra`; gemini/devin: not supported). Unsupported values fall back to the tool's default with a warning at launch. Leave blank to use the tool's default.
+1. **CLI handoff agent** — Should this role have a named agent executable or Cartopian agent wrapper for CLI handoff automation? If yes, what is its name? (e.g., `cartopian-codex`, `cartopian-agy`, `cartopian-claude`)
+2. **Effort** — Should this role pin an effort/thinking level? Valid levels depend on the chosen agent CLI (e.g., claude: `low|medium|high|xhigh|max`; codex: `low|medium|high|xhigh|max|ultra`; agy: `low|medium|high`; opencode: `none|minimal|low|medium|high|xhigh|max|thinking`; hermes: `none|minimal|low|medium|high|xhigh|max|ultra`; devin: not supported). Unsupported values fall back to the tool's default with a warning at launch. Leave blank to use the tool's default.
 3. **Timeout** — Should this handoff have a custom timeout? Use one positive duration such as `30m` or `2h`. Leave blank to use the protocol default of `60m`.
 4. **Automatic-launch permissions** — Which assigned work types may the PM launch automatically for this role: `task_run`, `task_review`, and/or `planning_review`? The list defaults empty; `[reviews]` independently decides whether review checkpoints exist and who owns them.
 

@@ -11,11 +11,11 @@ cartopian-codex bug):
 
 * cartopian-codex — `--sandbox workspace-write` confines writes to the launch
   cwd; the wrapper adds `-c sandbox_workspace_write.writable_roots=[...]`.
-* cartopian-claude — the wrapper passes `--add-dir <root>` per work root so
-  the grant is explicit in every permission mode.
-* cartopian-gemini / cartopian-devin — their sandboxes expose no per-path
-  grant surface; when the sandbox is active and work roots are declared, the
-  wrapper warns on stderr so a work-root write failure is traceable.
+* cartopian-claude / cartopian-agy — the wrapper passes `--add-dir <root>`
+  per work root so the grant is explicit in every permission mode.
+* cartopian-devin — its sandbox exposes no per-path grant surface; when the
+  sandbox is active and work roots are declared, the wrapper warns on stderr
+  so a work-root write failure is traceable.
 * cartopian-opencode — the tool imposes no filesystem sandbox at all, so
   declared work roots need no grant; the wrapper prints an explicit no-op
   notice instead of inventing a policy flag.
@@ -166,19 +166,37 @@ def test_claude_no_add_dir_when_unset(tmp_path):
     )
 
 
-def test_gemini_warns_when_sandbox_active_with_work_roots(tmp_path):
-    env = dict(ROOTS_ENV, CARTOPIAN_GEMINI_SANDBOX="true")
-    received, res = _captured(tmp_path, "cartopian-gemini", "gemini", env)
-    assert "--sandbox" in received
-    assert "declared work roots may not be writable inside the sandbox" in res.stderr, (
-        f"gemini sandbox + work roots must warn on stderr. stderr={res.stderr!r}"
+def test_agy_adds_each_work_root_as_add_dir(tmp_path):
+    received, _ = _captured(tmp_path, "cartopian-agy", "agy", ROOTS_ENV)
+    pairs = [
+        received[i + 1]
+        for i, a in enumerate(received)
+        if a == "--add-dir" and i + 1 < len(received)
+    ]
+    assert pairs == ROOTS, (
+        f"agy must receive one --add-dir per declared work root, in order. argv={received!r}"
     )
 
 
-def test_gemini_default_no_sandbox_no_warning(tmp_path):
-    received, res = _captured(tmp_path, "cartopian-gemini", "gemini", ROOTS_ENV)
-    assert "--sandbox" not in received
-    assert "may not be writable" not in res.stderr
+def test_agy_no_add_dir_when_unset(tmp_path):
+    received, _ = _captured(tmp_path, "cartopian-agy", "agy", None)
+    assert "--add-dir" not in received, (
+        f"agy received --add-dir with no work roots declared. argv={received!r}"
+    )
+
+
+def test_agy_sandbox_still_grants_work_roots(tmp_path):
+    """Unlike the retired gemini wrapper, agy's --add-dir grant surface is
+    independent of its boolean --sandbox — the grant rides along either way."""
+    env = dict(ROOTS_ENV, CARTOPIAN_AGY_SANDBOX="true")
+    received, _ = _captured(tmp_path, "cartopian-agy", "agy", env)
+    assert "--sandbox" in received
+    pairs = [
+        received[i + 1]
+        for i, a in enumerate(received)
+        if a == "--add-dir" and i + 1 < len(received)
+    ]
+    assert pairs == ROOTS, f"argv={received!r}"
 
 
 def test_opencode_emits_noop_notice_and_no_grant_flag(tmp_path):

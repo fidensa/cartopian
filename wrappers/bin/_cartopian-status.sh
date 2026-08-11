@@ -248,7 +248,9 @@ cartopian_run_supervised() {
 # Args:
 #   $1 = status path (from cartopian_status_path; empty => skip)
 #   $2 = assignee exit code (integer)
-#   $3 = "true" when an OS-level timeout wrapped the command, else "false"
+#   $3 = "true" when exit 124 denotes an active deadline enforcer (normally
+#        coreutils timeout; agy's aligned internal print timeout is the
+#        no-coreutils fallback), else "false"
 cartopian_write_status() {
   local status_path="$1" code="$2" timeout_applied="$3"
   [ -n "$status_path" ] || return 0
@@ -258,9 +260,9 @@ cartopian_write_status() {
   if [ "$code" -eq 0 ] 2>/dev/null; then
     reason="clean"
   elif [ "$timeout_applied" = "true" ] && [ "$code" -eq 124 ] 2>/dev/null; then
-    # coreutils `timeout` returns 124 when it kills the child at the
-    # deadline (CONVENTIONS.md § Handoffs). Distinguish it from a plain
-    # non-zero exit while keeping the consumer-visible exit_code non-zero.
+    # The deadline enforcer returns 124 when the deadline expires
+    # (CONVENTIONS.md § Handoffs). Distinguish it from a plain non-zero exit
+    # while keeping the consumer-visible exit_code non-zero.
     reason="timeout"
   else
     reason="error"

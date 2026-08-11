@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# cartopian-agy — Cartopian wrapper for the Google Antigravity CLI (agy).
+#
+# Usage:  cartopian-agy <absolute-prompt-path>
+#
+# Reads the prompt file and passes its path to `agy -p` with
+# non-interactive flags. Edit the Configuration section below to change
+# tool-specific settings.
+#
+# Exit codes:
+#   0   — agy completed successfully
+#   1   — wrapper error (missing file, missing CLI, bad arguments)
+#   *   — upstream agy exit code
+#
+# Assignee-surface counterpart of the Antigravity PM-host entries
+# (`antigravity-tui` / `antigravity-ide` in the containment matrix).
+
+set -euo pipefail
+
+# --- Status-file helper (early-crash signal for wait-handoff) --------
+# Source the shared helper that emits <report-path>.status on assignee
+# exit. Optional: if the helper is missing, degrade to no-op stubs so the
+# wrapper still runs (the status file is never a hard requirement).
+_CARTOPIAN_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
+  # shellcheck source=_cartopian-status.sh
+  source "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh"
+else
+  cartopian_status_path() { echo ""; }
+  cartopian_write_status() { return 0; }
+  cartopian_report_complete() { return 1; }
+  cartopian_run_supervised() { shift; "$@"; CARTOPIAN_ASSIGNEE_EXIT=$?; return 0; }
+fi
+# --------------------------------------------------------------------
+
+# --- Configuration ---------------------------------------------------
+# Execution mode. One of:
+#   ""            — agy's default mode (autonomy comes from the
+#                   skip-permissions toggle below)
+#   accept-edits  — auto-approve edit tools, prompt for the rest
+#   plan          — read-only planning mode
+AGY_MODE="${CARTOPIAN_AGY_MODE:-}"
+
+# Skip all permission prompts so agy runs non-interactively. Without
+# this, agy waits on approval the first time it tries to write a file or
+# run a shell command. This matches the autonomy posture of
+# cartopian-codex (workspace-write sandbox) and cartopian-claude
+# (--dangerously-skip-permissions). Set to "false" to re-enable
+# permission prompts (only useful for interactive debugging).
+AGY_SKIP_PERMISSIONS="${CARTOPIAN_AGY_SKIP_PERMS:-true}"
+
+# Sandbox toggle. agy's `--sandbox` is a BOOLEAN flag, not a value
+# flag — it enables sandboxed execution with terminal restrictions.
+#   "true"  — pass --sandbox
+#   "false" — leave sandbox disabled (agy default)
+AGY_SANDBOX="${CARTOPIAN_AGY_SANDBOX:-false}"
+# ------------------------------------------------------------------
+
+readonly PROMPT_PATH="${1:-}"
+
+if [[ -z "$PROMPT_PATH" ]]; then
+  echo "cartopian-agy: error: missing prompt path argument" >&2
+  echo "usage: cartopian-agy <absolute-prompt-path>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROMPT_PATH" ]]; then
+  echo "cartopian-agy: error: prompt file not found: $PROMPT_PATH" >&2
+  exit 1
+fi
+
+if ! command -v agy &>/dev/null; then
+  echo "cartopian-agy: error: 'agy' not found in PATH" >&2
+  echo "Install: https://antigravity.google/docs/cli/install" >&2
+  exit 1
+fi
+
+# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
+# markdown body as a command-line argument is brittle across shells (it mangles
+# under PowerShell on the Windows wrapper); the agent opens the file itself.
+PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+
+# Derive the optional status-file path now, before any cd, so a relative
+# prompt path still resolves. Empty when the prompt is outside a project.
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
+
+# --- Launch directory ------------------------------------------------
+# Assignee CLIs run with cwd set to the Cartopian project root
+# (the registered project path). Prompts always live at
+# <workspace>/projects/<project-id>/prompts/PROMPT-*.md, so the project
+# root is derivable from the prompt path alone.
+#
+# Override: set CARTOPIAN_LAUNCH_CWD to an absolute or relative path to
+# skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
+# or per-repo-sandbox setups. A non-existent path is a hard error, not
+# a silent fallback.
+if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
+  if [[ ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
+    echo "cartopian-agy: CARTOPIAN_LAUNCH_CWD='$CARTOPIAN_LAUNCH_CWD' is not a directory" >&2
+    exit 1
+  fi
+  LAUNCH_CWD="$(cd "$CARTOPIAN_LAUNCH_CWD" && pwd)"
+  cd "$LAUNCH_CWD"
+  echo "cartopian-agy: cwd=$LAUNCH_CWD (CARTOPIAN_LAUNCH_CWD override)" >&2
+else
+  PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
+  PROMPTS_DIR="$(dirname "$PROMPT_ABS")"
+  PROJECT_DIR="$(dirname "$PROMPTS_DIR")"
+  # launch-cwd: trigger when basename("$PROMPTS_DIR")) == "prompts"
+  if [[ "$(basename "$PROMPTS_DIR")" == "prompts" ]]; then
+    cd "$PROJECT_DIR"
+    echo "cartopian-agy: cwd=$PROJECT_DIR" >&2
+  else
+    echo "cartopian-agy: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
+  fi
+fi
+# --------------------------------------------------------------------
+
+# Build the command. --disable-slash-commands is unconditional: agy print
+# mode expands a leading "/" as a slash command or skill, and the -p value
+# here is always an absolute path — it must reach the agent as literal text.
+CMD=(agy --disable-slash-commands)
+
+if [[ -n "$AGY_MODE" ]]; then
+  CMD+=(--mode "$AGY_MODE")
+fi
+
+if [[ "$AGY_SKIP_PERMISSIONS" == "true" ]]; then
+  CMD+=(--dangerously-skip-permissions)
+fi
+
+if [[ "$AGY_SANDBOX" == "true" ]]; then
+  CMD+=(--sandbox)
+fi
+
+# Agent-neutral model selection: dispatch exports CARTOPIAN_MODEL from the
+# resolved dispatch model; translate it into agy's --model flag.
+# Unset means agy's own default model.
+if [[ -n "${CARTOPIAN_MODEL:-}" ]]; then
+  CMD+=(--model "$CARTOPIAN_MODEL")
+fi
+
+# Agent-neutral effort selection: dispatch exports CARTOPIAN_EFFORT from the
+# resolved dispatch effort; translate it into agy's --effort flag over agy's
+# own closed vocabulary. Values outside it fall back to the default effort
+# (warn + omit). The vocabulary tracks the installed agy CLI generation and
+# may drift as it evolves.
+#
+# Most agy model ids already encode an effort level as a -low/-medium/-high
+# suffix, and agy hard-fails a --model/--effort combination that conflicts.
+# When the pinned model carries such a suffix the pin wins: --effort is
+# dropped with a notice instead of failing the launch.
+if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
+  EFFORT_LC="$(printf '%s' "$CARTOPIAN_EFFORT" | tr '[:upper:]' '[:lower:]')"
+  case "$EFFORT_LC" in
+    low|medium|high)
+      if [[ "${CARTOPIAN_MODEL:-}" =~ -(low|medium|high)$ ]]; then
+        echo "cartopian-agy: model '$CARTOPIAN_MODEL' already encodes an effort level; ignoring CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT" >&2
+      else
+        CMD+=(--effort "$EFFORT_LC")
+      fi
+      ;;
+    *)
+      echo "cartopian-agy: CARTOPIAN_EFFORT=$CARTOPIAN_EFFORT is not a supported agy effort level (low|medium|high); launching with the default effort" >&2
+      ;;
+  esac
+fi
+
+CMD+=(-p "$PROMPT_PATH_ABS")
+
+# Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a colon-joined
+# list of the project's resolved work-root absolute paths). Declared work
+# roots become additional workspace directories (--add-dir) so access there
+# is an explicit grant, not a side effect of --dangerously-skip-permissions.
+if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+  IFS=':' read -r -a _CARTOPIAN_ROOTS <<< "$CARTOPIAN_WORK_ROOTS"
+  for _root in "${_CARTOPIAN_ROOTS[@]}"; do
+    [[ -n "$_root" ]] && CMD+=(--add-dir "$_root")
+  done
+fi
+
+# --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
+# Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
+# upstream process at the configured deadline (default 60m). The PM
+# sets CARTOPIAN_TIMEOUT from the resolved dispatch timeout;
+# it does not poll or watchdog the running process. SIGTERM at deadline
+# returns exit code 124. See protocol/CONVENTIONS.md → Handoffs.
+TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
+
+# agy print mode carries its own internal wait timer (--print-timeout,
+# default 5m) that would preempt the Cartopian deadline on any longer
+# handoff. Raise it to the same duration so the OS `timeout` above stays
+# the single SSOT timer (its clock starts first, so it always wins the
+# tie). agy parses Go durations, which require a unit — normalize the
+# bare-seconds and days forms GNU timeout accepts but Go rejects.
+AGY_PRINT_TIMEOUT="$TIMEOUT_DURATION"
+if [[ "$AGY_PRINT_TIMEOUT" =~ ^[0-9]+$ ]]; then
+  AGY_PRINT_TIMEOUT="${AGY_PRINT_TIMEOUT}s"
+elif [[ "$AGY_PRINT_TIMEOUT" =~ ^([0-9]+)d$ ]]; then
+  AGY_PRINT_TIMEOUT="$((BASH_REMATCH[1] * 24))h"
+fi
+CMD+=(--print-timeout "$AGY_PRINT_TIMEOUT")
+
+# Whether a deadline enforcer is active — lets the status file distinguish
+# its exit 124 from a plain non-zero exit. Prefer the OS wrapper; when it is
+# unavailable, agy's aligned --print-timeout remains the enforcer.
+TIMEOUT_APPLIED=false
+if command -v timeout &>/dev/null; then
+  CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+elif command -v gtimeout &>/dev/null; then
+  CMD=(gtimeout "$TIMEOUT_DURATION" "${CMD[@]}")
+  TIMEOUT_APPLIED=true
+else
+  echo "cartopian-agy: warning: no 'timeout'/'gtimeout' on PATH; using agy's internal --print-timeout deadline (macOS: brew install coreutils for OS-level enforcement)" >&2
+  TIMEOUT_APPLIED=true
+fi
+# --------------------------------------------------------------------
+
+echo "cartopian-agy: running agy -p (skip-perms=$AGY_SKIP_PERMISSIONS, timeout=$TIMEOUT_DURATION)" >&2
+
+# Run the assignee (not exec) so we can capture its exit outcome and emit
+# the optional status file wait-handoff polls for early-crash detection.
+#
+# cartopian_run_supervised wraps the run with a report-completion supervisor:
+# once the authoritative report file appears, a lingering child (MCP stdio /
+# trailing turn) is reaped promptly so a finished handoff exits 0/clean instead
+# of idling to the CARTOPIAN_TIMEOUT deadline. The deadline (the single SSOT
+# timer, applied above via `timeout`) is untouched — a genuine hang that writes
+# no report still hits it (exit 124). The watched report path is the status path
+# without its ".status" suffix.
+REPORT_PATH="${STATUS_PATH%.status}"
+[[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
+
+set +e
+cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
+ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+set -e
+cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
+exit "$ASSIGNEE_EXIT"

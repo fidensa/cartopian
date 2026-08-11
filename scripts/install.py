@@ -602,7 +602,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=(
             "claude-code",
             "codex",
-            "gemini",
+            "antigravity",
             "devin",
             "windsurf",
             "claude-desktop",
@@ -644,7 +644,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=(
             "claude-code",
             "codex",
-            "gemini",
+            "antigravity",
             "devin",
             "windsurf",
             "claude-desktop",

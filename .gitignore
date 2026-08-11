@@ -12,6 +12,7 @@ __pycache__/
 # Personal Agents
 .claude/
 .gemini/
+.agents/
 AGENTS.md
 CLAUDE.md
 

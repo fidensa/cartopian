@@ -261,9 +261,14 @@ CODEX_DEFAULT_WALL_SECONDS = 300
 CLAUDE_CODE_DEFAULT_WALL_SECONDS = 100_800
 CLAUDE_CODE_DEFAULT_IDLE_SECONDS = 1_800
 
-# Gemini CLI reads `timeout` (milliseconds) per entry in settings.json
-# `mcpServers`, defaulting to 600000ms.
-GEMINI_DEFAULT_WALL_SECONDS = 600
+# Antigravity (agy) imposes a hard wall clock on each MCP tools/call.
+# Measured against agy 1.1.11 (2026-08-10): a call dies at exactly 3m0s
+# ("MCP tool call to server %q timed out after %s: context deadline
+# exceeded"), progress notifications do not extend it, and no configuration
+# surface changes it — the central mcp_config.json accepts no per-server
+# timeout key (the Gemini CLI-era `timeout` ms key is retired upstream), and
+# the binary defines no environment override. Re-verify on agy upgrades.
+ANTIGRAVITY_DEFAULT_WALL_SECONDS = 180
 
 # opencode passes `resetTimeoutOnProgress: true` with an installed `onprogress`
 # hook and no `maxTotalTimeout` (mcp/catalog.ts), so it imposes an idle ceiling
@@ -426,59 +431,39 @@ def _resolve_claude_code(client_name: str, client_version: Optional[str]) -> Hos
     )
 
 
-def _gemini_settings_paths() -> List[Path]:
-    return [Path.home() / ".gemini" / "settings.json"]
+def _resolve_antigravity(client_name: str, client_version: Optional[str]) -> HostBudget:
+    """Antigravity CLI (agy) — clientInfo.name `antigravity-client`.
 
-
-def _resolve_gemini(client_name: str, client_version: Optional[str]) -> HostBudget:
-    wall = GEMINI_DEFAULT_WALL_SECONDS
-    source = "host-default"
-    evidence: List[str] = []
-    name = _server_name()
-    for path in _gemini_settings_paths():
-        if not path.is_file():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            evidence.append(f"{path}: unreadable; using the Gemini CLI default")
-            continue
-        servers = data.get("mcpServers") if isinstance(data, dict) else None
-        entry = servers.get(name) if isinstance(servers, dict) else None
-        if not isinstance(entry, dict):
-            evidence.append(
-                f"{path}: no mcpServers.{name} entry; using the Gemini CLI default"
-            )
-            continue
-        raw = entry.get("timeout")
-        configured = _positive_int(raw)
-        if configured is None:
-            evidence.append(
-                f"{path}: mcpServers.{name} sets no timeout; using the Gemini CLI default"
-            )
-        else:
-            wall = max(1, configured // 1000)  # settings.json stores milliseconds
-            source = "host-config"
-            evidence.append(f"{path}: mcpServers.{name}.timeout = {raw}ms")
-    if not evidence:
-        evidence.append("no Gemini CLI settings.json found; using the host default")
+    The ceiling is a fixed host constant: agy exposes no per-server timeout
+    key in its central MCP config (`~/.gemini/config/mcp_config.json`) and no
+    environment override, so there is nothing to read and nothing to raise.
+    Canonical waits on this host must slice observation with `max_block`
+    below the ceiling instead of holding one long blocking call.
+    """
     return HostBudget(
-        host="gemini-cli",
-        display="Gemini CLI",
+        host="antigravity",
+        display="Antigravity (agy)",
         client_name=client_name,
         client_version=client_version,
-        wall_clock_seconds=wall,
+        wall_clock_seconds=ANTIGRAVITY_DEFAULT_WALL_SECONDS,
         idle_seconds=None,
-        wall_clock_source=source,
+        wall_clock_source="host-default",
         idle_source="not-imposed",
         progress_resets_wall_clock=False,
         progress_resets_idle=False,
         progress_channel_available=emit.progress_available(),
-        evidence=evidence,
+        evidence=[
+            "Antigravity (agy) enforces a fixed 180s wall clock per MCP "
+            "tools/call; progress notifications do not extend it, and its "
+            "central MCP config exposes no per-server timeout key "
+            "(verified against agy 1.1.11)"
+        ],
         remediation=[
-            f"raise the ceiling: set `mcpServers.{name}.timeout` (milliseconds) "
-            f"in ~/.gemini/settings.json, then restart Gemini CLI",
-            "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+            "the Antigravity ceiling cannot be raised: for a longer role, "
+            "launch it manually and observe with `max_block` below 180s "
+            "(e.g. 2m) until a terminal outcome",
+            "or lower `roles.<role>.timeout` in cartopian.toml so automatic "
+            "dispatch and its terminal wait fit the ceiling",
         ],
     )
 
@@ -966,12 +951,12 @@ def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBud
 # default-SDK client. Hermes resolves only through the registration-injected
 # CARTOPIAN_MCP_HOST marker below.
 _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
+    ("antigravity-client", _resolve_antigravity),
     ("codex-mcp-client", _resolve_codex),
     ("claude-code", _resolve_claude_code),
-    ("gemini-cli", _resolve_gemini),
+    ("antigravity", _resolve_antigravity),
     ("opencode", _resolve_opencode),
     ("codex", _resolve_codex),
-    ("gemini", _resolve_gemini),
 )
 
 # Closed set of host ids a CARTOPIAN_MCP_HOST marker may name. A well-formed
@@ -980,7 +965,7 @@ _HOST_MATCHERS: Tuple[Tuple[str, Any], ...] = (
 _MARKER_RESOLVERS: Dict[str, Any] = {
     "codex": _resolve_codex,
     "claude-code": _resolve_claude_code,
-    "gemini-cli": _resolve_gemini,
+    "antigravity": _resolve_antigravity,
     "opencode": _resolve_opencode,
     "hermes": _resolve_hermes,
 }
@@ -1046,8 +1031,27 @@ def format_duration(seconds: Optional[int]) -> str:
     return f"{seconds}s"
 
 
+def _remediation_for_context(budget: HostBudget, context: str) -> List[str]:
+    """Return remedies that are actionable at the caller's exact boundary."""
+    if budget.host != "antigravity":
+        return budget.remediation
+    if context == "dispatch":
+        return [
+            "lower `roles.<role>.timeout` in cartopian.toml to fit the 180s "
+            "ceiling",
+            "or launch this role manually, then observe its report with "
+            "`max_block` below 180s (e.g. 2m), repeating until a terminal "
+            "outcome",
+        ]
+    return [
+        "retry this wait with `max_block` below 180s (e.g. 2m), repeating "
+        "until a terminal outcome",
+        "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+    ]
+
+
 def check_wait_budget(
-    role: str, role_timeout_seconds: int
+    role: str, role_timeout_seconds: int, *, context: str = "wait"
 ) -> Tuple[bool, Optional[HostBudget], Optional[str]]:
     """Decide whether a blocking wait of ``role_timeout_seconds`` can survive.
 
@@ -1063,7 +1067,9 @@ def check_wait_budget(
     effective = budget.effective_seconds
     if effective is None and not budget.known:
         detail = "; ".join(budget.evidence)
-        options = "\n".join(f"  - {item}" for item in budget.remediation)
+        options = "\n".join(
+            f"  - {item}" for item in _remediation_for_context(budget, context)
+        )
         return (
             False,
             budget,
@@ -1087,7 +1093,9 @@ def check_wait_budget(
         # host imposes a ceiling, but an uninspectable configuration layer may
         # set it below the role timeout.
         detail = "; ".join(budget.evidence)
-        options = "\n".join(f"  - {item}" for item in budget.remediation)
+        options = "\n".join(
+            f"  - {item}" for item in _remediation_for_context(budget, context)
+        )
         return (
             False,
             budget,
@@ -1105,7 +1113,9 @@ def check_wait_budget(
 
     ceiling = budget.limiting_ceiling()
     detail = "; ".join(budget.evidence)
-    options = "\n".join(f"  - {item}" for item in budget.remediation)
+    options = "\n".join(
+        f"  - {item}" for item in _remediation_for_context(budget, context)
+    )
     return (
         False,
         budget,

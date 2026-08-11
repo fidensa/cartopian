@@ -632,7 +632,7 @@ description = "Reviews assigned checkpoints."
 grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
-agent = "cartopian-gemini"
+agent = "cartopian-agy"
 timeout = "30m"
 ```
 
@@ -646,7 +646,7 @@ Role launch and permission fields are:
 
 Legacy compatibility only: migration tooling recognizes `project.protocol_version`, `[roles.<role>.launch]`, `[handoffs.<role>]`, `auto_start`, `auto_start_tasks`, `auto_start_reviews`, and `planning_reviews` as migration-source vocabulary. Preferred validation rejects them, and current generation, editing, examples, CLI/MCP authored schemas, and canonical TOML never emit them. Resolved machine records may expose a derived `launch` projection.
 
-`roles.<role>.timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`). No other timer exists — no per-tool CLI timeout flag is set independently, and the PM runs no concurrent timer or watchdog — so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
+`roles.<role>.timeout` — resolved along the project → global chain, defaulting to `60m` — is the single source of truth for the handoff deadline. The launcher exports it to the wrapper as the `CARTOPIAN_TIMEOUT` environment variable (see `skills/run-handoff.md`), and the wrapper is the sole enforcer: it kills the assignee at that deadline (exit `124`); no per-tool CLI timeout flag is set independently — a required tool-native timer is derived from the same value — and the PM runs no concurrent timer or watchdog, so no second timer can kill a legitimate long-running handoff before the SSOT deadline. The PM observes completion through the wait primitives in [Waiting For Completion](#waiting-for-completion).
 
 Every automated handoff follows this argument contract:
 
@@ -656,7 +656,7 @@ Every automated handoff follows this argument contract:
 
 The prompt path is passed as one argument. Tool-specific non-interactive flags, sandbox settings, approval settings, and environment variables belong in a wrapper executable, not in `cartopian.toml`.
 
-Pre-built wrappers for common CLIs (Codex, Claude Code, Gemini, Devin, opencode, Hermes) are in `wrappers/`. See `wrappers/README.md` for installation.
+Pre-built wrappers for common CLIs (Codex, Claude Code, Antigravity, Devin, opencode, Hermes) are in `wrappers/`. See `wrappers/README.md` for installation.
 
 ### Foreground Completion
 
@@ -691,7 +691,7 @@ Assignee CLIs run with cwd set to the **cartopian project root** — the absolut
 
 Wrappers translate env → CLI flags, set the cwd, run the agent **autonomously** (so the unattended handoff completes), enforce the `CARTOPIAN_TIMEOUT` deadline, and emit the status signal. The Claude wrapper additionally attaches its native process-scoped hook when the dispatch role/config boundary activates grants; authorization decisions still occur inside that hook, and the wrapper never infers them from a role name. The same wrapper may back any operator-defined role. Locations outside the project root that a task needs (declared as **work roots**, below) are referenced by absolute path/URI inside the prompt the PM authors.
 
-**Work-root write grant.** The launched agent must be able to write to the union of the cartopian project root and the project's declared work roots. `cartopian dispatch` resolves the declared work roots fail-closed (an unmapped name or a mapped path missing on this machine refuses the launch) and exports the resolved absolute paths to the wrapper as the `CARTOPIAN_WORK_ROOTS` environment variable (`os.pathsep`-joined: `:` on POSIX, `;` on Windows; not exported when the project declares none, and a stale inherited value is cleared). A wrapper whose agent CLI imposes its own filesystem sandbox rooted at the launch cwd must **widen** that sandbox to cover these paths — the shipped codex wrapper adds them as `sandbox_workspace_write.writable_roots`, and the claude wrapper passes each as `--add-dir`. Widening a tool-imposed sandbox to match the launch contract is not scoping; wrappers still never *confine* the agent below what its own CLI does. Where a tool's sandbox exposes no per-path grant surface (gemini `--sandbox`, devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside that sandbox.
+**Work-root write grant.** The launched agent must be able to write to the union of the cartopian project root and the project's declared work roots. `cartopian dispatch` resolves the declared work roots fail-closed (an unmapped name or a mapped path missing on this machine refuses the launch) and exports the resolved absolute paths to the wrapper as the `CARTOPIAN_WORK_ROOTS` environment variable (`os.pathsep`-joined: `:` on POSIX, `;` on Windows; not exported when the project declares none, and a stale inherited value is cleared). A wrapper whose agent CLI imposes its own filesystem sandbox rooted at the launch cwd must **widen** that sandbox to cover these paths — the shipped codex wrapper adds them as `sandbox_workspace_write.writable_roots`, and the claude and agy wrappers pass each as `--add-dir`. Widening a tool-imposed sandbox to match the launch contract is not scoping; wrappers still never *confine* the agent below what its own CLI does. Where a tool's sandbox exposes no per-path grant surface (devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside that sandbox.
 
 Capability-based grant decisions remain the **harness's** responsibility. For Claude, the wrapper is responsible only for loading that harness interception point at the dispatched boundary. If approval-in-the-loop behavior is wanted for a role, omit the applicable work type from `auto_launch` and use the manual path rather than the wrapper — the wrapper path is the unattended-automation path, where there is no human to answer a prompt.
 
@@ -757,7 +757,7 @@ The completion contract is:
 - **A blocking wait occupies the session for its duration.** The MCP server processes one message at a time, so no other Cartopian tool is serviced while a wait is blocked. This is a property of the waiting model, not a fault to route around: dispatch one child handoff at a time and let the wait run to its terminal result.
 - **`still-running` is a nonterminal internal observation boundary, reachable only when `--max-block` was explicitly supplied.** `--max-block` bounds a single observation slice and exists for one purpose: to fit a wait inside a host ceiling that cannot be raised. When that explicitly requested budget elapses before the configured timeout, the assignee may still be working. It is not a blocker, completion result, handoff-budget event, or operator-confirmation boundary. Routine `still-running` / `still_running` slices are silent and context-neutral: the PM keeps the same initiated run active and re-invokes the same canonical wait primitive in bounded slices without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. A re-wait is read-only and does not launch or dispatch an assignee; the single launch remains the active handoff. Under `until-blocked`, the run therefore remains active across every nonterminal observation. Under `each-handoff`, control returns only after the handoff reaches a terminal result and that result is processed, never between observation slices. Slicing a wait to fit a host ceiling costs context on every slice, so prefer raising the ceiling; where the host cannot be raised and slices are unacceptable, declare manual monitoring instead of pretending the wait is automatic.
 
-The wrapper enforces the wall-clock deadline at the OS level (see the `timeout` field above); the wait commands observe the result rather than imposing a separate PM-side deadline.
+The wrapper enforces the wall-clock deadline (at the OS level when available; through agy's aligned internal print timer in the Antigravity bash wrapper's no-coreutils fallback). The wait commands observe the result rather than imposing a separate PM-side deadline.
 
 ## Dependencies
 

@@ -118,7 +118,7 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 | --- | --- | --- |
 | `cartopian-claude` | Claude Code | low, medium, high, xhigh, max |
 | `cartopian-codex` | Codex | low, medium, high, xhigh, max, ultra |
-| `cartopian-gemini` | Gemini CLI | none; the tool has no effort flag, so the wrapper skips it |
+| `cartopian-agy` | Antigravity (agy) | low, medium, high (dropped with a notice when the pinned model id already encodes an effort suffix) |
 | `cartopian-devin` | Devin | none; the tool has no effort flag, so the wrapper skips it |
 | `cartopian-opencode` | opencode | none, minimal, low, medium, high, xhigh, max, thinking |
 | `cartopian-hermes` | Hermes | none, minimal, low, medium, high, xhigh, max, ultra |
@@ -160,7 +160,7 @@ description = "Reviews against acceptance evidence."
 grants = ["reviewer-like"]
 auto_launch = ["task_review", "planning_review"]
 
-agent = "cartopian-gemini"
+agent = "cartopian-agy"
 timeout = "30m"
 ```
 

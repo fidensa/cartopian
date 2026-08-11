@@ -1,7 +1,7 @@
 """Cartopian MCP server — JSON-RPC over stdio, MCP protocol 2024-11-05.
 
 The server is the cross-agent entry point for Cartopian. Once an agent
-(Claude Code, Claude Desktop, Codex, Gemini CLI, anything that speaks
+(Claude Code, Claude Desktop, Codex, Antigravity, anything that speaks
 MCP) is configured to launch ``cartopian-mcp``, the operator can say
 "use cartopian" from any directory and the agent gets:
 

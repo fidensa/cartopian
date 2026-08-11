@@ -67,8 +67,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "not wait on it. Its silence is expected and is not a lapse in "
         "commentary: no model turn is in progress while the call is pending, "
         "so an instruction to narrate ongoing work does not govern it. "
-        "`max_block` is only for a host ceiling that cannot be raised. See "
-        "CONVENTIONS.md § Handoffs."
+        "`max_block` is only for observing a manually launched handoff when "
+        "the host ceiling cannot be raised; automatic `dispatch` refuses "
+        "before launching that mismatch. See CONVENTIONS.md § Handoffs."
     )
     subparser.add_argument(
         "report_path",

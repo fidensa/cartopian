@@ -106,9 +106,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "block; it returns the moment the report lands. Its silence is "
         "expected and is not a lapse in commentary: no model turn is in "
         "progress while the call is pending, so an instruction to narrate "
-        "ongoing work does not govern it. `max_block` is only for a host "
-        "ceiling that cannot be raised, and `dispatch` already refused to "
-        "launch if that were the case. A live automated retained-log marker "
+        "ongoing work does not govern it. `max_block` is only for observing "
+        "a manually launched handoff when the host ceiling cannot be raised; "
+        "automatic `dispatch` refuses before launching that mismatch. A live "
+        "automated retained-log marker "
         "may briefly coordinate publication; manual or exited-wrapper reports "
         "do not wait on it. See CONVENTIONS.md § Handoffs."
     )

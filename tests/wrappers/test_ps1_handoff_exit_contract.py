@@ -46,7 +46,7 @@ BASH_HELPER = BIN_DIR / "_cartopian-status.sh"
 PS1_WRAPPERS = [
     ("cartopian-claude.ps1", "claude"),
     ("cartopian-codex.ps1", "codex"),
-    ("cartopian-gemini.ps1", "gemini"),
+    ("cartopian-agy.ps1", "agy"),
     ("cartopian-devin.ps1", "devin"),
     ("cartopian-opencode.ps1", "opencode"),
     ("cartopian-hermes.ps1", "hermes"),

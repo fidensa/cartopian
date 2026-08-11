@@ -8,7 +8,7 @@ Cartopian's handoff contract is simple:
 <agent> <absolute prompt path>
 ```
 
-Each CLI has different flags for running non-interactively. When the PM runs `codex '/path/to/PROMPT-01-003.md'`, Codex opens an interactive TUI and waits for keyboard input, because it doesn't know it should run headlessly. Same with `gemini`, `claude`, and `devin`.
+Each CLI has different flags for running non-interactively. When the PM runs `codex '/path/to/PROMPT-01-003.md'`, Codex opens an interactive TUI and waits for keyboard input, because it doesn't know it should run headlessly. Same with `agy`, `claude`, and `devin`.
 
 These wrappers fix that. They accept a prompt path, read the prompt file, and call the real CLI with the right non-interactive flags baked in.
 
@@ -16,12 +16,12 @@ These wrappers fix that. They accept a prompt path, read the prompt file, and ca
 
 ### Prerequisites
 
-- A supported agent CLI on PATH (`codex`, `claude`, `gemini`, `devin`, `opencode`, or `hermes`).
+- A supported agent CLI on PATH (`codex`, `claude`, `agy`, `devin`, `opencode`, or `hermes`).
 - **macOS only:** GNU coreutils provides the `gtimeout` binary the bash wrappers use to enforce `CARTOPIAN_TIMEOUT` at the OS level:
   ```bash
   brew install coreutils
   ```
-  Without coreutils, the wrappers will warn at launch and run unbounded — handoffs will still execute, but a hung assignee can run forever instead of being killed at the configured deadline. Linux distributions ship `timeout` in coreutils by default; native Windows uses PowerShell's `Start-Process` + `WaitForExit` and needs no extra install.
+  Without coreutils, most bash wrappers warn at launch and run unbounded — handoffs still execute, but a hung assignee can run forever instead of being killed at the configured deadline. `cartopian-agy` is the exception: its aligned `--print-timeout` remains active and an internal expiry is reported through the normal exit-`124` timeout contract. Linux distributions ship `timeout` in coreutils by default; native Windows uses PowerShell's `Start-Process` + `WaitForExit` and needs no extra install.
 
 ### Step 1: Put the wrappers on your PATH
 
@@ -60,7 +60,7 @@ Use the mediated editor to change a role's handoff agent from the raw CLI name t
 ```bash
 cartopian update-config /absolute/project/path \
   --set-role-launch coder.agent=cartopian-codex \
-  --set-role-launch reviewer.agent=cartopian-gemini
+  --set-role-launch reviewer.agent=cartopian-agy
 ```
 
 That changes only the resolved agent/options. Review policy, role assignment, run automation, automatic-launch permission, capabilities, and identities remain owned by their separate configuration/lifecycle authorities. Dispatch resolves those facts before it invokes a wrapper.
@@ -85,7 +85,7 @@ Full environment variable reference is in the [Configuration](#configuration) se
 | --- | --- | --- |
 | Codex (OpenAI) | `cartopian-codex` | `codex exec --sandbox workspace-write ...` |
 | Claude Code | `cartopian-claude` | `claude -p --dangerously-skip-permissions ...` |
-| Gemini CLI | `cartopian-gemini` | `gemini --approval-mode yolo -p ...` |
+| Antigravity (Google) | `cartopian-agy` | `agy --disable-slash-commands --dangerously-skip-permissions -p ...` (**Windows: unverified**) |
 | Devin | `cartopian-devin` | `devin -p --sandbox --permission-mode <autonomous\|dangerous> --prompt-file <abs path>` (mode spelling depends on the installed CLI's detected permission surface — see [Devin](#devin)) |
 | opencode | `cartopian-opencode` | `opencode run --auto ...` (no filesystem sandbox exists to configure — see [opencode](#opencode); **Windows: unverified**) |
 | Hermes (Nous Research) | `cartopian-hermes` | `hermes -z <prompt-path> ...` (one-shot mode; approvals are self-bypassed by the tool — see [Hermes](#hermes); **Windows: unverified**) |
@@ -127,7 +127,7 @@ The wrappers no longer `exec` into the CLI: they run it as a child, capture its 
 
 `cartopian dispatch` places the configured wrapper inside the common
 standard-library output supervisor before detaching it. This outer boundary
-is agent-neutral: all Codex, Claude, Gemini, Devin, opencode, and Hermes wrappers use
+is agent-neutral: all Codex, Claude, Antigravity, Devin, opencode, and Hermes wrappers use
 it on both POSIX and native PowerShell/CMD launch paths. It continuously drains combined
 wrapper output so the child cannot block on a full pipe and publishes only a
 bounded `<report-path>.launch.log`; excess bytes are discarded without
@@ -217,7 +217,7 @@ The report file is always the authoritative signal. A valid report is immediatel
 
 A clean exit with no report is terminal (`classification=exited-without-report`) because `state=exited` means the process is gone. A malformed report is not failed immediately while `state=running`; after exit it deterministically becomes `failed-to-parse`.
 
-A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout` returns when it kills the child at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
+A timeout kill is recorded as `state=exited` with `exit_code=124` (the value coreutils `timeout`, and agy's internal no-coreutils fallback, returns at the deadline — see [§ Handoffs](../protocol/CONVENTIONS.md) and `CARTOPIAN_TIMEOUT`). It is surfaced to the consumer as a non-zero exit (a crash); the extra `reason=timeout` line distinguishes it from a plain non-zero exit for humans and custom tooling without changing the consumer-visible contract.
 
 ### Consumer / producer agreement
 
@@ -296,7 +296,7 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 
 The wrappers retain a **neutral launcher** role for ordinary CLI translation: they map the resolved dispatch environment into client flags, set cwd, enforce the deadline, and emit an exit signal. They do not interpret review policy, assignment, run automation, task selection, launch permission, schema identity, or application identity. The Claude wrapper has one additional responsibility: when dispatch supplies `CARTOPIAN_ROLE`, its settings helper resolves whether the project activates grants and, if so, loads the harness's PreToolUse refusal adapter. The wrapper never derives authorization from the role or wrapper name; the hook resolves effective grants. If you want approval-in-the-loop behavior, use the operator-performed path instead of the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
 
-One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). The launch contract grants the assignee write access to the union of the Cartopian project root and the project's declared work roots, so wrappers widen a tool-imposed sandbox to cover the work roots `cartopian dispatch` exports via `CARTOPIAN_WORK_ROOTS` — widening a sandbox up to the launch contract is not scoping, and wrappers never confine the agent below what its own CLI does. Where a tool's sandbox has no per-path grant surface (gemini `--sandbox`, devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
+One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). The launch contract grants the assignee write access to the union of the Cartopian project root and the project's declared work roots, so wrappers widen a tool-imposed sandbox to cover the work roots `cartopian dispatch` exports via `CARTOPIAN_WORK_ROOTS` — widening a sandbox up to the launch contract is not scoping, and wrappers never confine the agent below what its own CLI does. Where a tool's sandbox has no per-path grant surface (devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
 
 ## Configuration
 
@@ -305,9 +305,9 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline from the resolved dispatch record. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
-| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `gemini --model`, `devin --model`, `opencode run --model`, `hermes -m`). Unset means the tool's own default model. |
-| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude, Codex, opencode, and Hermes translate it into their tool-specific flags (`--effort`, `-c model_reasoning_effort=...`, `--variant`, `--reasoning`); Gemini and Devin ignore it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. |
-| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude wrapper passes each as `--add-dir` so the grant holds in every permission mode. The gemini and devin sandboxes expose no per-path grant surface, so those wrappers emit a stderr warning when their sandbox is active and work roots are declared. opencode imposes no filesystem sandbox at all, so its wrapper prints an explicit no-op notice: work roots need no grant there, and actual access remains subject to OS permissions and any operator permission rules; Hermes has no default path sandbox either, so its wrapper prints the same no-op notice. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
+| `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `agy --model`, `devin --model`, `opencode run --model`, `hermes -m`). Unset means the tool's own default model. |
+| `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude, Codex, Antigravity, opencode, and Hermes translate it into their tool-specific flags (`--effort`, `-c model_reasoning_effort=...`, `--effort`, `--variant`, `--reasoning`); Devin ignores it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. When a pinned agy model id already encodes an effort level (`-low`/`-medium`/`-high` suffix), the model pin wins and the wrapper drops the effort with a notice — agy hard-fails a conflicting `--model`/`--effort` pair. |
+| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral work-root write grant. Exported by `cartopian dispatch` as the project's resolved work-root absolute paths, joined with the OS path separator (`:` on POSIX, `;` on Windows). The codex wrapper widens its `workspace-write` sandbox with them (`-c sandbox_workspace_write.writable_roots=[...]` — without this, every write into a declared work root fails with "Operation not permitted"); the claude and agy wrappers pass each as `--add-dir` so the grant holds in every permission mode. The devin sandbox exposes no per-path grant surface, so that wrapper emits a stderr warning when its sandbox is active and work roots are declared. opencode imposes no filesystem sandbox at all, so its wrapper prints an explicit no-op notice: work roots need no grant there, and actual access remains subject to OS permissions and any operator permission rules; Hermes has no default path sandbox either, so its wrapper prints the same no-op notice. Unset means the project declares no work roots; dispatch never exports a stale inherited value. |
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
 | `CARTOPIAN_ROLE` | _(unset on manual launch)_ | Dispatch role/config boundary inherited by the capability hook. On Claude it also asks the settings helper to resolve whether process-scoped capability enforcement is active; it never authorizes by role name. |
 | `CARTOPIAN_PYTHON` | _(unset on manual launch)_ | Current Python interpreter exported by dispatch for per-launch hook commands, avoiding stale install-time interpreter paths. |
@@ -317,7 +317,7 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_LAUNCH_LOG_PATH` | _(unset when unavailable)_ | Safe destination selected for the bounded retained representation. Wait/status paths never read its body. |
 | `CARTOPIAN_STOP_GUARD_MAX_BLOCKS` | `3` | Claude Code only: stop-refusal ceiling for the completion-adapter Stop hook. See [Claude Code hooks](#claude-code-hooks). |
 
-> Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH the wrapper warns and runs unbounded, since deadline enforcement is preferable to refusing to run.
+> Bash wrappers require `timeout` (GNU coreutils) or `gtimeout` (macOS via `brew install coreutils`). If neither is on PATH, most wrappers warn and run unbounded, since degraded execution is preferable to refusing to run. `cartopian-agy` instead falls back to its aligned internal `--print-timeout` and preserves the exit-`124` timeout status contract.
 
 ### Codex
 
@@ -364,13 +364,36 @@ That explicit operation removes old Cartopian PreToolUse and Stop handlers while
 
 The Stop guard adds no timer — `CARTOPIAN_TIMEOUT` remains the only clock — and fails open on every error path (missing env, unreadable payload, unwritable counter, internal error). It is completion discipline, not capability enforcement. Capability refusal is point-of-use PreToolUse behavior. Governed-write provenance is after-the-fact detection. `exited-without-report` is only a completion classification. None of those mechanisms can reliably reveal unauthorized shell reads.
 
-### Gemini
+### Antigravity (agy)
+
+Verified against Antigravity CLI (`agy`) `1.1.11` on macOS. **Native Windows
+behavior is unverified**: the `.ps1`/`.cmd` wrapper pair ships on static parity
+tests and source reading alone, pending the deferred Windows acceptance pass.
+
+The wrapper launches agy print mode (`agy -p <prompt-path>`) with three fixed
+translations beyond the common flags:
+
+- **`--disable-slash-commands` is unconditional.** agy print mode expands a
+  leading `/` as a slash command or skill, and the `-p` value here is always
+  an absolute path — it must reach the agent as literal text.
+- **`--print-timeout` is raised to the Cartopian deadline.** agy's internal
+  print-mode wait timer defaults to 5m and would preempt `CARTOPIAN_TIMEOUT`
+  on any longer handoff. The wrapper passes the same duration to both, and the
+  OS `timeout` clock starts first, so it stays the single SSOT enforcer
+  (exit `124` on deadline). If `timeout`/`gtimeout` is unavailable, the wrapper
+  keeps the same configured duration, treats agy's internal timer as the
+  fallback enforcer, and records its exit `124` as `reason=timeout` instead of
+  claiming the run is unbounded.
+- **An effort-suffixed model pin wins over `CARTOPIAN_EFFORT`.** Most agy
+  model ids encode effort (`gemini-3.5-flash-high`), and agy hard-fails a
+  conflicting `--model`/`--effort` pair; the wrapper drops the effort with a
+  notice instead of failing the launch.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CARTOPIAN_GEMINI_APPROVAL` | `yolo` | Approval mode: `default`, `auto_edit`, `yolo`, `plan`. Set to empty string to fall back to the legacy `-y/--yolo` toggle below. |
-| `CARTOPIAN_GEMINI_YES` | `true` | Legacy auto-confirm (`-y`). Used only when `CARTOPIAN_GEMINI_APPROVAL` is empty. |
-| `CARTOPIAN_GEMINI_SANDBOX` | `false` | Boolean toggle for `--sandbox` (gemini's sandbox flag is presence-only, not a value flag). |
+| `CARTOPIAN_AGY_MODE` | _(unset)_ | Pass `--mode <value>` (`accept-edits`, `plan`) to pick an explicit execution mode. Unset relies on the skip-permissions toggle below for autonomy. |
+| `CARTOPIAN_AGY_SKIP_PERMS` | `true` | Pass `--dangerously-skip-permissions` so agy runs non-interactively. Set to `false` to re-enable permission prompts (interactive debugging only). |
+| `CARTOPIAN_AGY_SANDBOX` | `false` | Boolean toggle for `--sandbox` (agy's sandbox flag is presence-only, not a value flag). Declared work roots are still granted via `--add-dir` either way. |
 
 ### Devin
 
