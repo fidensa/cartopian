@@ -1084,27 +1084,29 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
     from them silently: if the registry loses a family or a content area, these
     checks fail rather than re-deriving the expectation from the registry.
 
-    The software entry was deliberately revised to the operational mini-skill
-    contract: its content areas are now the operational mini-skill sections,
-    and the former topic areas live on as reviewed domain coverage inside the
-    body rather than as headings.
+    The software and research entries were deliberately revised to the
+    operational mini-skill contract: their content areas are now the
+    operational mini-skill sections, and the former topic areas live on as
+    reviewed domain coverage inside each body rather than as headings.
     """
 
+    OPERATIONAL_SECTIONS = [
+        "intended-outcome",
+        "when-to-apply",
+        "when-not-to-apply",
+        "principles-and-heuristics",
+        "working-process",
+        "decision-gates",
+        "failure-modes",
+        "evidence-and-verification",
+        "examples-and-counterexamples",
+        "stop-and-escalation",
+        "sources",
+    ]
+
     APPROVED_FAMILIES = {
-        "software": [
-            "intended-outcome",
-            "when-to-apply",
-            "when-not-to-apply",
-            "principles-and-heuristics",
-            "working-process",
-            "decision-gates",
-            "failure-modes",
-            "evidence-and-verification",
-            "examples-and-counterexamples",
-            "stop-and-escalation",
-            "sources",
-        ],
-        "research": ["source-quality", "methodology", "fact-checking"],
+        "software": OPERATIONAL_SECTIONS,
+        "research": OPERATIONAL_SECTIONS,
         "marketing": ["audience", "brand", "legal-review", "launch-measurement"],
         "operations": ["rehearsal", "handoff", "rollback", "monitoring"],
         "policy": [
@@ -1455,6 +1457,72 @@ class MechanismValidationExemplarTests(unittest.TestCase):
         self.assertNotRegex(recommendation["measurement_vs_production_budgets"], _CONFIDENCE_RE)
         # The comparison survives as recorded evidence behind a closed decision.
         self.assertTrue(recommendation["representation_mapping"]["evidence_role"].strip())
+
+    def test_current_cost_narrative_cannot_contradict_the_computed_figures(self) -> None:
+        """Every byte figure the current finding quotes must be derivable from
+        the declared budgets and core line, so a budget revision that leaves the
+        prose behind fails here instead of shipping a stale narrative."""
+        registry = _registry()
+        recommendation = registry["mechanism_validation_exemplars"]
+        finding = recommendation["cost_finding"]
+        fixtures = registry["fixtures"]
+        budgets = [item["body_budget_bytes"] for item in fixtures["pack_candidates"]]
+        measurement = fixtures["context_measurement"]
+        core = next(
+            item for item in measurement["specimens"] if item["kind"] == "core"
+        )
+        resident = sum(
+            item["exact_bytes"]
+            for item in measurement["specimens"]
+            if item["kind"] == "pack"
+        )
+        current_peak = core["exact_bytes"] + max(budgets)
+        current_total = sum(budgets)
+
+        admission = measurement["body_admission"]
+        self.assertEqual(admission["peak_active_bytes"], current_peak)
+        self.assertEqual(admission["total_authored_body_bytes"], current_total)
+
+        # The current narrative must state the computed current figures.
+        self.assertIn(f"{current_peak} bytes", finding)
+        self.assertIn(f"{current_total} bytes", finding)
+        self.assertIn(f"{resident} resident bytes", finding)
+        # And it may not quote a byte figure the declared evidence cannot
+        # produce: each quoted figure is a declared budget, the core line plus
+        # a declared budget, or the total across all declared budgets.
+        derivable = set(budgets)
+        derivable.update(core["exact_bytes"] + budget for budget in set(budgets))
+        derivable.add(current_total)
+        quoted = {
+            int(match) for match in re.findall(r"(\d{4,})(?:-byte| bytes)", finding)
+        }
+        self.assertLessEqual(quoted, derivable, finding)
+
+    def test_historical_cost_figures_are_a_labelled_dated_snapshot(self) -> None:
+        registry = _registry()
+        recommendation = registry["mechanism_validation_exemplars"]
+        snapshot = recommendation["cost_finding_at_acceptance"]
+        self.assertIn(recommendation["accepted_on"], snapshot)
+        self.assertIn("snapshot", snapshot.lower())
+        self.assertIn("acceptance", snapshot.lower())
+        # The snapshot must point back at the current authority so its figures
+        # cannot be read as present-tense state.
+        self.assertIn("cost_finding", snapshot)
+
+    def test_projection_cost_narrative_matches_the_current_authority(self) -> None:
+        registry = _registry()
+        fixtures = registry["fixtures"]
+        budgets = [item["body_budget_bytes"] for item in fixtures["pack_candidates"]]
+        core = next(
+            item
+            for item in fixtures["context_measurement"]["specimens"]
+            if item["kind"] == "core"
+        )
+        current_peak = core["exact_bytes"] + max(budgets)
+        current_total = sum(budgets)
+        text = _projection()
+        self.assertIn(f"{current_peak:,} bytes", text)
+        self.assertIn(f"{current_total:,} bytes", text)
 
     def test_no_pack_body_ships_before_the_activation_gate_is_met(self) -> None:
         registry = _registry()

@@ -209,7 +209,7 @@ Phase 04 ships **exactly five** initial optional practice packs, one per approve
 | Family | Pack | Approved content areas |
 | --- | --- | --- |
 | `software` | `software-delivery` | `intended-outcome`, `when-to-apply`, `when-not-to-apply`, `principles-and-heuristics`, `working-process`, `decision-gates`, `failure-modes`, `evidence-and-verification`, `examples-and-counterexamples`, `stop-and-escalation`, `sources` |
-| `research` | `research-inquiry` | `source-quality`, `methodology`, `fact-checking` |
+| `research` | `research-inquiry` | `intended-outcome`, `when-to-apply`, `when-not-to-apply`, `principles-and-heuristics`, `working-process`, `decision-gates`, `failure-modes`, `evidence-and-verification`, `examples-and-counterexamples`, `stop-and-escalation`, `sources` |
 | `marketing` | `marketing-claim` | `audience`, `brand`, `legal-review`, `launch-measurement` |
 | `operations` | `operations-change` | `rehearsal`, `handoff`, `rollback`, `monitoring` |
 | `policy` | `policy-governance` | `stakeholder-review`, `compliance`, `publication`, `effective-date-checks` |
@@ -222,7 +222,7 @@ These three remain out of scope:
 | `mandatory-packs` | No pack may be required for any task. A no-match envelope returns `none` and core governance continues unchanged. |
 | `always-loaded-catalogs` | No pack body is resident. A body is retrieved only after selection resolves to `selected`, and only for the one selected pack. |
 
-A pack revised to the operational mini-skill contract declares its **operational mini-skill sections** as its content areas — intended outcome, applicability and exclusions, conditional principles, working process, decision gates, failure modes, evidence, examples, stopping behavior, and sources — and carries its approved domain coverage as `domain_coverage`, judged by semantic review inside those sections. `software-delivery` is revised to that contract; the remaining packs keep their original topic areas until their own revisions land.
+A pack revised to the operational mini-skill contract declares its **operational mini-skill sections** as its content areas — intended outcome, applicability and exclusions, conditional principles, working process, decision gates, failure modes, evidence, examples, stopping behavior, and sources — and carries its approved domain coverage as `domain_coverage`, judged by semantic review inside those sections. `software-delivery` and `research-inquiry` are revised to that contract; the remaining packs keep their original topic areas until their own revisions land.
 
 `research-inquiry` and `operations-change` are the accepted **mechanism-validation exemplars** because two packs are the smallest set that can exercise every selection outcome. They validate the mechanism, not the delivery scope. All five bodies are authored, and a missing or invalid body for any one of them blocks Phase 04 exit even when both exemplars pass.
 
@@ -442,7 +442,7 @@ The eligible universe is one 78-byte core line plus one specimen line for each o
 
 In every case active bytes plus excluded bytes equal 525 exactly, and in every selected case the excluded bytes are exactly the weight of the other four required packs. When the outcome is not `selected`, the pack contribution is zero bytes — measurable non-selection, not an instruction to ignore prose that already loaded.
 
-Bodies behave the same way. Five authored bodies within their declared budgets — 16,384 bytes for the revised `software-delivery` mini-skill, 4,096 bytes for each of the other four — are 32,768 bytes of maintenance surface, but **peak active context is the core line plus the largest declared body budget — at most 16,462 bytes — no matter how many packs ship**, because at most one body is ever admitted. Shipping the other four adds zero active bytes.
+Bodies behave the same way. Five authored bodies within their declared budgets — 16,384 bytes each for the revised `software-delivery` and `research-inquiry` mini-skills, 4,096 bytes for each of the other three — are 45,056 bytes of maintenance surface, but **peak active context is the core line plus the largest declared body budget — at most 16,462 bytes — no matter how many packs ship**, because at most one body is ever admitted. Shipping the other four adds zero active bytes.
 
 ## The mechanism-validation exemplars
 
@@ -463,9 +463,9 @@ Together they exercise positive primary-outcome matching, negative veto in both 
 
 ### What the cost figures actually show
 
-Resident metadata bytes are the declared specimen lines for the packs in a set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. **Peak active bytes are the core line plus the set's largest declared body budget — 4,174 bytes for sets of the original 4,096-byte packs, 16,462 bytes for sets containing the revised `software-delivery` mini-skill — because at most one body is ever admitted.** Adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.
+Resident metadata bytes are the declared specimen lines for the packs in a set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. **Peak active bytes are the core line plus the set's largest declared body budget — 4,174 bytes for sets of the original 4,096-byte packs, 16,462 bytes for sets containing a revised mini-skill (`software-delivery` or `research-inquiry`) — because at most one body is ever admitted.** Adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.
 
-So context cost is *not* a discriminator among the two-pack candidates: the whole spread is 8 bytes and 2 estimated tokens. Mechanism coverage is the discriminator. The five-pack figures — 447 resident bytes and 32,768 bytes of authored body, of which zero unmatched bytes reach active context — are the measured cost of the required delivery scope, not an argument against shipping it.
+So context cost is *not* a discriminator among the two-pack candidates: the whole spread is 8 bytes and 2 estimated tokens. Mechanism coverage is the discriminator. The five-pack figures — 447 resident bytes and 45,056 bytes of authored body, of which zero unmatched bytes reach active context — are the measured cost of the required delivery scope, not an argument against shipping it.
 
 ### Every candidate set considered
 
@@ -473,18 +473,18 @@ Shapes counts the profile shapes the set's packs demonstrate. Δ is against the 
 
 | Candidate set | Verdict | Shapes | Resident bytes | Est. tokens | Δ bytes | Δ tokens | Authored bodies |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `research-and-operations` | **recommended** | 5 | 173 | 44 | — | — | 8,192 |
-| `research-and-software` | rejected as exemplar set | 4 | 181 | 46 | +8 | +2 | 20,480 |
+| `research-and-operations` | **recommended** | 5 | 173 | 44 | — | — | 20,480 |
+| `research-and-software` | rejected as exemplar set | 4 | 181 | 46 | +8 | +2 | 32,768 |
 | `software-and-operations` | rejected as exemplar set | 2 | 180 | 46 | +7 | +2 | 20,480 |
-| `research-and-policy` | rejected as exemplar set | 3 | 174 | 44 | +1 | 0 | 8,192 |
-| `research-and-marketing` | rejected as exemplar set | 3 | 180 | 46 | +7 | +2 | 8,192 |
+| `research-and-policy` | rejected as exemplar set | 3 | 174 | 44 | +1 | 0 | 20,480 |
+| `research-and-marketing` | rejected as exemplar set | 3 | 180 | 46 | +7 | +2 | 20,480 |
 | `marketing-and-operations` | rejected as exemplar set | 3 | 179 | 46 | +6 | +2 | 8,192 |
 | `policy-and-operations` | rejected as exemplar set | 3 | 173 | 44 | 0 | 0 | 8,192 |
-| `research-only` | rejected as exemplar set | 3 | 87 | 22 | −86 | −22 | 4,096 |
+| `research-only` | rejected as exemplar set | 3 | 87 | 22 | −86 | −22 | 16,384 |
 | `operations-only` | rejected as exemplar set | 2 | 86 | 22 | −87 | −22 | 4,096 |
 | `software-only` | rejected as exemplar set | 1 | 94 | 24 | −79 | −20 | 16,384 |
-| `research-operations-and-software` | rejected as exemplar set | 5 | 267 | 68 | +94 | +24 | 24,576 |
-| `all-five-shapes` | **is the delivery scope** | 5 | 447 | 114 | +274 | +70 | 32,768 |
+| `research-operations-and-software` | rejected as exemplar set | 5 | 267 | 68 | +94 | +24 | 36,864 |
+| `all-five-shapes` | **is the delivery scope** | 5 | 447 | 114 | +274 | +70 | 45,056 |
 
 Why each was set aside as an exemplar set:
 
