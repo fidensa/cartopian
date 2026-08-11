@@ -1084,9 +1084,9 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
     from them silently: if the registry loses a family or a content area, these
     checks fail rather than re-deriving the expectation from the registry.
 
-    The software and research entries were deliberately revised to the
-    operational mini-skill contract: their content areas are now the
-    operational mini-skill sections, and the former topic areas live on as
+    The software, research, and marketing entries were deliberately
+    revised to the operational mini-skill contract: their content areas are now
+    the operational mini-skill sections, and the former topic areas live on as
     reviewed domain coverage inside each body rather than as headings.
     """
 
@@ -1107,7 +1107,7 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
     APPROVED_FAMILIES = {
         "software": OPERATIONAL_SECTIONS,
         "research": OPERATIONAL_SECTIONS,
-        "marketing": ["audience", "brand", "legal-review", "launch-measurement"],
+        "marketing": OPERATIONAL_SECTIONS,
         "operations": ["rehearsal", "handoff", "rollback", "monitoring"],
         "policy": [
             "stakeholder-review",
