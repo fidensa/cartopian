@@ -1084,10 +1084,10 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
     from them silently: if the registry loses a family or a content area, these
     checks fail rather than re-deriving the expectation from the registry.
 
-    The software, research, marketing, and operations entries were deliberately
-    revised to the operational mini-skill contract: their content areas are now
-    the operational mini-skill sections, and the former topic areas live on as
-    reviewed domain coverage inside each body rather than as headings.
+    All five entries were deliberately revised to the operational mini-skill
+    contract: their content areas are now the operational mini-skill sections,
+    and the former topic areas live on as reviewed domain coverage inside each
+    body rather than as headings.
     """
 
     OPERATIONAL_SECTIONS = [
@@ -1109,12 +1109,7 @@ class RequiredInitialPackDeliveryTests(unittest.TestCase):
         "research": OPERATIONAL_SECTIONS,
         "marketing": OPERATIONAL_SECTIONS,
         "operations": OPERATIONAL_SECTIONS,
-        "policy": [
-            "stakeholder-review",
-            "compliance",
-            "publication",
-            "effective-date-checks",
-        ],
+        "policy": OPERATIONAL_SECTIONS,
     }
 
     def _scope(self, registry: dict) -> dict:

@@ -1259,5 +1259,181 @@ class OperationsChangeMiniSkillTests(unittest.TestCase):
         self.assertNotIn("operations-change", result["body"] or "")
 
 
+class PolicyGovernanceMiniSkillTests(unittest.TestCase):
+    """The policy body is an operational mini-skill, not a topic checklist.
+
+    These checks are structural and fail-closed only: they prove the declared
+    operational-section contract, the approved domain coverage, the measured
+    selected-body ceiling, source-identity alignment inside declared scopes,
+    and the incidental-subject veto. They deliberately do not score prose
+    quality; whether the authority, participation, publication, and
+    implementation guidance is actionable, proportionate, and source-aligned
+    stays with semantic review.
+    """
+
+    OPERATIONAL_SECTIONS = [
+        "intended-outcome",
+        "when-to-apply",
+        "when-not-to-apply",
+        "principles-and-heuristics",
+        "working-process",
+        "decision-gates",
+        "failure-modes",
+        "evidence-and-verification",
+        "examples-and-counterexamples",
+        "stop-and-escalation",
+        "sources",
+    ]
+    DOMAIN_COVERAGE = [
+        "governing-authority-and-jurisdiction",
+        "problem-and-objective",
+        "stakeholder-participation",
+        "evidence-and-impact",
+        "alternatives",
+        "conflicts-and-distributional-effects",
+        "compliance",
+        "decision-ownership",
+        "publication",
+        "effective-dates",
+        "implementation-ownership",
+        "monitoring",
+        "review-and-revision",
+    ]
+    SELECTED_BODY_CEILING = 16 * 1024
+
+    _heading_identities = staticmethod(
+        SoftwareDeliveryMiniSkillTests._heading_identities
+    )
+
+    def _selected(self, **extra: object) -> dict:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(_envelope("governing-interpretation", **extra))
+        self.assertEqual(result["outcome"], "selected")
+        self.assertEqual(result["pack_id"], "policy-governance")
+        self.assertEqual(result["bodies_loaded"], 1)
+        return result
+
+    def test_metadata_declares_the_operational_section_contract(self) -> None:
+        registry = _registry()
+        candidate = next(
+            item
+            for item in registry["fixtures"]["pack_candidates"]
+            if item["pack_id"] == "policy-governance"
+        )
+        scope_entry = next(
+            entry
+            for entry in registry["packs"]["delivery_scope"]["required_initial_packs"]
+            if entry["pack_id"] == "policy-governance"
+        )
+        self.assertEqual(candidate["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(scope_entry["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(candidate["domain_coverage"], self.DOMAIN_COVERAGE)
+        # The ceiling is a declared bound, not a quality target; there is no
+        # minimum byte count.
+        self.assertEqual(candidate["body_budget_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_carries_every_operational_section_in_order(self) -> None:
+        result = self._selected()
+        headings = self._heading_identities(
+            result["body"].split("\n---\n", 1)[1], "##"
+        )
+        self.assertEqual(headings, self.OPERATIONAL_SECTIONS)
+        self.assertEqual(
+            result["loaded_body_bytes"], len(result["body"].encode("utf-8"))
+        )
+        self.assertLessEqual(result["loaded_body_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_covers_each_approved_domain_area(self) -> None:
+        subsections = self._heading_identities(self._selected()["body"], "###")
+        for area in self.DOMAIN_COVERAGE:
+            with self.subTest(area=area):
+                self.assertIn(area, subsections)
+
+    def test_body_carries_an_executable_policy_development_process(self) -> None:
+        # The revision-1 body was four topic headings — stakeholder review,
+        # compliance, publication, effective-date checks — with no policy
+        # development process at all: no numbered sequence from authority to
+        # review, no gates to answer before binding anyone, no named failure
+        # modes, and no source. Those are the structural markers of the process
+        # this pack is required to carry.
+        body = self._selected()["body"]
+        process = body.split("## Working Process", 1)[1].split("\n## ", 1)[0]
+        steps = [
+            line for line in process.splitlines() if re.match(r"^\d+\. ", line.strip())
+        ]
+        self.assertGreaterEqual(len(steps), 8)
+        gates = body.split("## Decision Gates", 1)[1].split("\n## ", 1)[0]
+        self.assertGreaterEqual(
+            len([line for line in gates.splitlines() if line.startswith("- ")]), 6
+        )
+        failures = body.split("## Failure Modes", 1)[1].split("\n## ", 1)[0]
+        for failure in (
+            "missing authority",
+            "stakeholder theater",
+            "unsupported impact claim",
+            "unresolved conflict",
+            "ambiguous effective date",
+            "inaccessible publication",
+            "policy without implementation ownership",
+            "no review trigger",
+        ):
+            with self.subTest(failure=failure):
+                self.assertIn(failure, failures.casefold())
+
+    def test_body_source_identities_stay_inside_their_declared_scopes(self) -> None:
+        body = self._selected()["body"]
+        for pin in (
+            "OECD/LEGAL/0390",
+            "2012-03-22",
+            "Regulatory Impact Assessment",
+            "OECD/LEGAL/0464",
+            "2021-10-06",
+            "OECD/LEGAL/0475",
+            "2022-06-10",
+            "Regulatory Policy Outlook 2025",
+            "2025-04-09",
+        ):
+            with self.subTest(pin=pin):
+                self.assertIn(pin, body)
+        # The supplementary instruments are conditional: each may be named only
+        # alongside its declared scope, never as universal policy authority.
+        for index, line in enumerate(body.splitlines()):
+            if "OECD/LEGAL/0464" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"innovation|experimentation")
+            if "OECD/LEGAL/0475" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"transboundary|international")
+            if "Regulatory Policy Outlook 2025" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"supporting implementation evidence")
+            if "Regulatory Impact Assessment" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"impact[- ]assessment|applicability")
+        # Governing law stays primary over the generic instrument stack.
+        self.assertIn("outrank this pack", body)
+        # The structural exemplar informs mini-skill anatomy only: it may be
+        # named only inside the Sources section, never as domain guidance.
+        sources_at = body.index("## Sources")
+        self.assertGreater(body.index("agent-skills"), sources_at)
+
+    def test_incidental_policy_source_alone_loads_zero_bytes(self) -> None:
+        # Research, marketing, or software work that merely cites a policy
+        # never declares a governing interpretation, so it selects no policy
+        # body and contributes zero bytes.
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(
+            _envelope("supported-finding", incidental_terms=["policy-source"])
+        )
+        self.assertNotEqual(result["pack_id"], "policy-governance")
+        rejected = {
+            item["pack_id"]: item["reasons"] for item in result["rejected_candidates"]
+        }
+        self.assertIn("incidental_term:policy-source:matched", rejected["policy-governance"])
+        self.assertNotIn("policy-governance", result["body"] or "")
+
+
 if __name__ == "__main__":
     unittest.main()
