@@ -103,7 +103,20 @@ again. The installer ships itself to
 `<install_root>/scripts/install.py`, so the *next* upgrade is Step 2A: one
 command, no bootstrap.
 
-If the installer exits non-zero, stop and surface its stderr to the operator.
+The installer uses exit status `4` for one bounded continuation: every install
+surface is terminal and non-blocking, but process-scoped MCP restart-state
+verification cannot be observed from the terminal installer. Its stderr begins
+with `[verification-required]`. Do not retry, repair, or describe the update as
+active; record that connected verification remains pending and continue through
+Step 5. When this runbook was invoked by `check-for-updates`, return that fact to
+the parent workflow, whose Step 7 performs the connected MCP verification.
+Otherwise, after Step 5 call the MCP `verify_restart_state` tool with the
+resolved install root, passing `mcp_affecting_change = true` only when the
+printed affected-surface plan changed `mcp-server-files`. Preserve the tool's
+instruction and proof condition exactly when it reports a restart or pending
+verification.
+
+For every other non-zero exit, stop and surface stderr to the operator.
 
 Tell the operator to open a new terminal (or `source` the rc file on Unix) for the PATH change to take effect.
 
@@ -150,6 +163,10 @@ surface must have verified portable evidence. An `offered`, `declined`, or
 `deferred` repair prevents an unqualified fully-updated claim. A governed
 project schema difference appears only as a migration offer with `result =
 not-run`; do not run project migration from the installer.
+
+An installer exit status `4` remains "installed on disk; activation not yet
+proven" until the connected `verify_restart_state` observation resolves it. It
+is not an installation failure and is not permission to claim activation.
 
 If the install or update was interrupted, diagnose it before retrying:
 

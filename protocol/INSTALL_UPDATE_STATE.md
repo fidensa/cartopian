@@ -193,6 +193,15 @@ Governed-project schema differences appear only as
 `migrations` records with `result = not-run`; the supported `migrate-project`
 workflow remains separately authorized.
 
+The standalone installer reserves exit status `4` for a narrower adapter
+boundary: all install surfaces are terminal and non-blocking, while the only
+remaining evidence must come from the MCP process connected to the calling
+client. The persisted result remains fail-closed and no activation claim is
+allowed, but an orchestrating install/update runbook continues to the connected
+`verify_restart_state` observation instead of misclassifying the disk apply as
+failed or retrying it. Exit status `1` remains the failure status for an actual
+blocked or failed install surface.
+
 A prior decline suppresses a repeated offer only while its decision context is
 unchanged: surface, desired and observed identities, selected supported
 clients, source identity and authority, and materialization mode must all

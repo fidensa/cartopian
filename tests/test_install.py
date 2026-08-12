@@ -7,12 +7,16 @@ a registered ``projects.json``. Every install is a copy install.
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path, PureWindowsPath
 from unittest import mock
+
+from cli.install_workflow import apply_workflow, plan_workflow
+from cli.restart_state import normalize_client_context
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "install.py"
@@ -207,6 +211,85 @@ class InstallScriptInvocationTests(_InstallTestBase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertTrue((custom / "bin" / "cartopian").exists())
         self.assertEqual((custom / "projects.json").read_text(), "[]\n")
+
+
+class ConnectedVerificationContinuationTests(_InstallTestBase):
+    """A process-only verification residual must not become an update loop."""
+
+    def test_blocked_restart_record_returns_bounded_continuation(self) -> None:
+        client_home = Path(self.tmp.name) / "isolated-home"
+        client_home.mkdir()
+        initial = apply_workflow(
+            plan_workflow(
+                source_root=REPO_ROOT,
+                install_root=self.install_root,
+                operation="fresh-install",
+                client_home=client_home,
+                clients=("codex",),
+                running_server_fact={
+                    "process_id": 24814,
+                    "instance_id": "process:24814:started-ns:1",
+                    "loaded_identity": None,
+                    "state": "unknown",
+                    "verification": "unknown",
+                    "authority": "connected-mcp-process",
+                },
+                client_context=normalize_client_context(
+                    "codex-mcp-client", source="mcp-handshake"
+                ),
+            )
+        )
+        self.assertEqual(initial["outcome"]["status"], "in-progress")
+        self.assertEqual(initial["outcome"]["blocked_surfaces"], [])
+        self.assertEqual(
+            initial["restarts"][0]["status"], "restart_required"
+        )
+        self.assertEqual(
+            initial["restarts"][0]["reason_code"], "running_content_unknown"
+        )
+
+        # Reproduce the terminal updater's unavailable/multi-client context:
+        # the persisted restart row remains, but no single client can be
+        # selected from the isolated home for the next invocation.
+        shutil.rmtree(client_home)
+        client_home.mkdir()
+
+        environment = dict(
+            os.environ,
+            HOME=str(client_home),
+            USERPROFILE=str(client_home),
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--source",
+                str(REPO_ROOT),
+                "--prefix",
+                str(self.install_root),
+                "--quiet",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            install_mod.EXIT_CONNECTED_VERIFICATION,
+            f"stderr={completed.stderr}\nstdout={completed.stdout}",
+        )
+        self.assertIn("[verification-required]", completed.stderr)
+        self.assertNotIn("[residual]", completed.stderr)
+        persisted = json.loads(
+            (self.install_root / "install-update-state.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(persisted["outcome"]["status"], "blocked")
+        self.assertEqual(persisted["outcome"]["blocked_surfaces"], [])
+        self.assertFalse(persisted["outcome"]["fully_updated"])
 
 
 class VersionMarkerTests(_InstallTestBase):

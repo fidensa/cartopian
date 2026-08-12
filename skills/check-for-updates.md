@@ -89,6 +89,12 @@ The upgrade itself is normally **one single-line command** that behaves identica
 
 **Scope: runbook Steps 1–5 only.** Run the install runbook through Step 5 (verify) and **stop before Step 6** (Register the MCP server). Agent registration is a user-config write — for Codex it mutates `~/.codex/config.toml`, for Claude Desktop / Cursor / Windsurf it edits their JSON configs — and an update should not silently re-touch those files. Registration is handled explicitly in Step 6 of *this* skill so the operator decides per-agent.
 
+If the installer returns its documented exit status `4` with
+`[verification-required]`, carry that bounded continuation through Step 5 and
+then proceed to this workflow's Steps 6–7. Do not re-run the installer and do
+not treat the status as either an apply failure or activation proof. Any other
+non-zero exit still stops the workflow.
+
 **Pass the install root through.** If `$install_root` is not the platform default, invoke `scripts/install.py` with `--prefix "$install_root"`. Omitting `--prefix` on a non-default install root would create a second install at the default path and leave the original stale.
 
 To pin to a specific tag instead of latest, pass `--ref <tag>` to the installer.

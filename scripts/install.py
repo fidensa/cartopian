@@ -57,12 +57,70 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Mapping, Optional, Tuple
 
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_BAD_PYTHON = 3
+EXIT_CONNECTED_VERIFICATION = 4
+
+
+def _requires_connected_verification(
+    workflow_result: Mapping[str, Any],
+) -> bool:
+    """Return whether only process-scoped MCP verification remains.
+
+    A terminal installer cannot observe the MCP process connected to the
+    calling client.  Preserve the workflow's fail-closed ``blocked`` record,
+    but distinguish that bounded continuation from an apply failure when every
+    install surface has already reached a terminal, non-blocking state.
+    """
+    outcome = workflow_result.get("outcome")
+    if not isinstance(outcome, Mapping) or outcome.get("status") != "blocked":
+        return False
+    if outcome.get("pending_surfaces") or outcome.get("blocked_surfaces"):
+        return False
+
+    surfaces = workflow_result.get("surfaces")
+    if not isinstance(surfaces, list) or not surfaces:
+        return False
+    surface_kinds = {
+        surface.get("kind")
+        for surface in surfaces
+        if isinstance(surface, Mapping)
+    }
+    completed_surfaces = outcome.get("completed_surfaces")
+    if (
+        not isinstance(completed_surfaces, list)
+        or set(completed_surfaces) != surface_kinds
+    ):
+        return False
+    terminal_surface_states = {
+        "verified",
+        "current",
+        "not-applicable",
+        "declined",
+        "deferred",
+    }
+    if any(
+        not isinstance(surface, Mapping)
+        or surface.get("state") not in terminal_surface_states
+        for surface in surfaces
+    ):
+        return False
+
+    restarts = workflow_result.get("restarts")
+    if not isinstance(restarts, list) or len(restarts) != 1:
+        return False
+    restart = restarts[0]
+    return isinstance(restart, Mapping) and restart.get("status") in {
+        "blocked",
+        "restart_required",
+        "restart_instructed",
+        "verification_pending",
+        "unverified",
+    }
 
 # Operator-owned registry, seeded by the coordinated workflow and read here
 # by the project-schema reconciliation gate.
@@ -876,6 +934,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             "cartopian core installation is verified; client repair offers "
             f"remain pending in {install_root / 'install-update-state.json'}."
         )
+    elif _requires_connected_verification(workflow_result):
+        _eprint(
+            "[verification-required] installed surfaces are verified; "
+            "connected MCP restart-state verification remains required."
+        )
+        return EXIT_CONNECTED_VERIFICATION
     elif workflow_result["outcome"]["status"] in ("blocked", "failed"):
         _eprint(
             "[residual] coordinated install/update verification did not "
