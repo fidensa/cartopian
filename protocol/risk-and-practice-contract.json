@@ -636,6 +636,13 @@
         "use": "source-stack",
         "meaning": "Ordered references into the classified source-record catalog. At least one current governing source is required; structural exemplars and watchlists never satisfy that requirement.",
         "breaks_selection_ties": false
+      },
+      {
+        "id": "body_content_identity",
+        "required": true,
+        "use": "context-reference",
+        "meaning": "The sha256 identity of this pack's authored body bytes, declared as sha256:<64 lowercase hex>. The retrieved body is admitted only when its measured identity equals this value; a body edited out from under its metadata is stale and loads nothing.",
+        "breaks_selection_ties": false
       }
     ],
     "envelope_facts": [
@@ -662,6 +669,10 @@
       {
         "id": "lifecycle_substrate_activities",
         "meaning": "Cartopian's own lifecycle mechanics that this unit of work performs. Declaring one is a negative condition; it is never a primary outcome."
+      },
+      {
+        "id": "domain_scopes",
+        "meaning": "Declared jurisdiction, platform, artifact, or method scopes of the work. Read only to resolve conditional source applicability for the selected pack; pack matching never reads it, so declaring one can never select, veto, or change a pack."
       }
     ],
     "fact_precedence_classes": {
@@ -798,6 +809,13 @@
         "outcome": "invalid",
         "bodies_loaded": 0,
         "partial_content_returned": false
+      },
+      {
+        "id": "body-identity-mismatch",
+        "condition": "The retrieved body's measured sha256 identity does not match the metadata's declared body_content_identity.",
+        "outcome": "invalid",
+        "bodies_loaded": 0,
+        "partial_content_returned": false
       }
     ],
     "profile_shapes": [
@@ -843,9 +861,195 @@
       "rejected_candidates",
       "bodies_loaded",
       "loaded_body_bytes",
+      "body_identity",
+      "body_budget_bytes",
+      "applicable_sources",
+      "context_receipt",
       "body",
       "error"
     ],
+    "handoff_projection": {
+      "statement": "Handoff construction injects exactly the one validated selected body plus the compact routing fields of this result. It never injects another pack body, the metadata catalog, a full source document, a structural exemplar, or watchlist content, and it performs no network fetch.",
+      "injected": [
+        {
+          "id": "selected-body",
+          "rule": "The `body` string exactly as returned, and only when `outcome` is `selected`."
+        },
+        {
+          "id": "applicable-source-identities",
+          "rule": "The bounded `applicable_sources` identity records for the selected pack. Identity and applicability only; never source text."
+        },
+        {
+          "id": "routing-receipt",
+          "rule": "`pack_id`, `body_identity`, `loaded_body_bytes`, `body_budget_bytes`, ordered match and rejection reasons, `context_receipt`, and any `error`."
+        }
+      ],
+      "never_injected": [
+        {
+          "id": "unmatched-pack-bodies",
+          "rule": "The four unselected bodies contribute zero active-context bytes."
+        },
+        {
+          "id": "full-source-documents",
+          "rule": "No governing, conditional, exemplar, or watchlist document text is retrieved or injected. Identity records are not source text."
+        },
+        {
+          "id": "structural-exemplar-and-watchlist-identities",
+          "rule": "Structural exemplars and watchlists are never projected as applicable authority for a selection."
+        }
+      ]
+    },
+    "source_applicability": {
+      "statement": "After exactly one pack identity resolves, its declared source stack is partitioned into the authority that actually applies to this selection and the authority that does not. Only the applicable subset is projected.",
+      "rules": [
+        {
+          "id": "governing-always-applies",
+          "rule": "A governing source in the selected pack's stack applies to every selection of that pack, inside its declared governed scope."
+        },
+        {
+          "id": "conditional-applies-only-when-declared-facts-match",
+          "rule": "A conditional source applies only when at least one of its declared `applies_when` conditions matches the declared task envelope. A `domain_scope` condition reads `domain_scopes`; every other condition reads its own envelope fact. Nothing is inferred, so an undeclared scope yields no authority."
+        },
+        {
+          "id": "exemplars-and-watchlists-never-apply",
+          "rule": "Structural exemplars and watchlists are never projected as applicable authority, whatever the envelope declares."
+        },
+        {
+          "id": "applicability-never-changes-selection",
+          "rule": "Source applicability is resolved after selection and never selects, vetoes, reorders, or re-ranks a pack."
+        }
+      ],
+      "identity_fields": [
+        {
+          "id": "source_id",
+          "meaning": "Stable identity of the applicable source record."
+        },
+        {
+          "id": "class",
+          "meaning": "governing or conditional. No other class is ever projected."
+        },
+        {
+          "id": "title",
+          "meaning": "Stable source title or locator, not source text."
+        },
+        {
+          "id": "context",
+          "meaning": "Publication, effective, edition, or version context."
+        },
+        {
+          "id": "status",
+          "meaning": "Verified applicability status at the recorded verification date."
+        },
+        {
+          "id": "governed_scope",
+          "meaning": "The claims or decisions this source governs or informs."
+        },
+        {
+          "id": "applicability_boundary",
+          "meaning": "The jurisdiction, platform, artifact, or method boundary for a conditional source; null for a governing source."
+        },
+        {
+          "id": "precedence_scope",
+          "meaning": "The scope inside which this source's precedence operates."
+        }
+      ]
+    },
+    "context_receipt": {
+      "statement": "Every selection returns a receipt that separates compact routing metadata from the one admitted body, so an increase in authored body size is visible and cannot be confused with resident routing cost.",
+      "fields": [
+        {
+          "id": "routing_metadata_bytes",
+          "meaning": "Exact UTF-8 byte length of this result serialized as canonical compact JSON with `body` null and `context_receipt` omitted: sorted keys, no optional whitespace, non-ASCII preserved. This is the compact routing cost, measured rather than asserted."
+        },
+        {
+          "id": "selected_body_bytes",
+          "meaning": "Exact UTF-8 byte length of the one admitted body, or 0 when no body is admitted."
+        },
+        {
+          "id": "body_budget_bytes",
+          "meaning": "The selected pack's declared ceiling, or null when no body is admitted."
+        },
+        {
+          "id": "unmatched_body_bytes",
+          "meaning": "Active-context bytes contributed by every body other than the selected one. Always 0."
+        },
+        {
+          "id": "unloaded_pack_bodies",
+          "meaning": "Count of authored bodies deliberately not retrieved for this selection."
+        },
+        {
+          "id": "source_document_bytes",
+          "meaning": "Active-context bytes contributed by governing, conditional, exemplar, or watchlist source documents. Always 0: only bounded identities are projected."
+        }
+      ],
+      "increase_justification": "The revised bodies are larger than the retired lean bodies because a topic checklist could not change an assignee's questions, decisions, evidence, or stopping behavior. The increase is bounded three ways: it lands only in the one selected body, the declared ceiling caps it, and unmatched bodies stay at zero bytes. Peak active body cost is therefore one body, not the catalog, and the resident routing metadata did not grow with it. Length is an output of useful guidance, never a quality target and never a minimum."
+    },
+    "semantic_review": {
+      "statement": "Structural and source validation prove that a body is well-formed, identified, bounded, and backed by current declared authority. They never prove that its guidance is substantive. Semantic adequacy is established only by durable reviewer evidence recorded in the configured review loop's review record.",
+      "record_fields": [
+        {
+          "id": "dimension",
+          "meaning": "One of the declared semantic-review dimensions."
+        },
+        {
+          "id": "observation",
+          "meaning": "The reviewer's direct observation of the inspected body, in their own words."
+        },
+        {
+          "id": "disposition",
+          "meaning": "adequate or inadequate. A single inadequate dimension blocks acceptance of the pack."
+        }
+      ],
+      "dimensions": [
+        {
+          "id": "actionability",
+          "question": "Does the body change what the assignee asks, decides, or produces, rather than naming topics?"
+        },
+        {
+          "id": "conditional-domain-guidance",
+          "question": "Is domain guidance conditional — when it helps, when it does not apply, and the evidence for using it — rather than unconditional dogma?"
+        },
+        {
+          "id": "source-alignment-and-classification",
+          "question": "Is every source claim inside its declared class and applicability, with no exemplar or watchlist carrying domain authority and no current source applied universally?"
+        },
+        {
+          "id": "failure-handling",
+          "question": "Are the common failure modes named with the rationalizations that disguise them?"
+        },
+        {
+          "id": "evidence-and-verification",
+          "question": "Does the body require evidence a reviewer can check without trusting the author?"
+        },
+        {
+          "id": "examples-and-counterexamples",
+          "question": "Do the examples show both proportionate application and misapplication?"
+        },
+        {
+          "id": "stop-and-escalation-clarity",
+          "question": "Is it clear when to stop, what to escalate, and in what grammar?"
+        }
+      ],
+      "not_satisfied_by": [
+        {
+          "id": "heading-presence",
+          "reason": "Required content areas are a structural check. A body of approved headings and topic reminders passes it and still fails semantic review."
+        },
+        {
+          "id": "keyword-presence",
+          "reason": "Naming a framework is not applying it inside its scope."
+        },
+        {
+          "id": "byte-length",
+          "reason": "Length is an output of useful guidance. There is no minimum byte count and the declared ceiling is not a target."
+        },
+        {
+          "id": "numeric-quality-score",
+          "reason": "No automated heading, keyword, length, or numeric score is computed or represented as semantic-quality proof. The record carries observations and dispositions, never a score."
+        }
+      ],
+      "review_prompt_obligation": "A review whose scope includes a changed pack body requires direct inspection of that body and of each governing or conditional source that applies to it. Citing the automated validation suite does not satisfy the obligation."
+    },
     "metadata_catalog_ref": "fixtures.pack_candidates",
     "metadata_catalog_semantics": "This reference identifies the single authoritative five-pack metadata catalog. Runtime validation reads these records before selection; fixture envelopes consume them but do not redefine them.",
     "catalog_boundary": "The five approved families are the complete initial delivery scope: five optional, task-matched packs, one per family, no mandatory pack, no always-loaded catalog, and no sixth family. \"Not a mandatory catalog\" means no pack is preloaded and no task requires one; it does not mean fewer than five ship.",
@@ -3041,6 +3245,7 @@
         "precedence_class": "primary-outcome",
         "tie_key": "research-inquiry",
         "body_ref": "packs/research-inquiry.md",
+      "body_content_identity": "sha256:315c9b5b331c976477b27bdcce6da958f42d432f7c097e36e89db2ce6c796844",
         "body_budget_bytes": 16384,
         "content_areas": [
           "intended-outcome",
@@ -3137,6 +3342,7 @@
         "precedence_class": "primary-outcome",
         "tie_key": "operations-change",
         "body_ref": "packs/operations-change.md",
+      "body_content_identity": "sha256:2a1bb5fed2110615e90e792c1769a786238eb9431fabb37279e10b497b3a956f",
         "body_budget_bytes": 16384,
         "content_areas": [
           "intended-outcome",
@@ -3204,6 +3410,7 @@
         "precedence_class": "primary-outcome",
         "tie_key": "software-delivery",
         "body_ref": "packs/software-delivery.md",
+      "body_content_identity": "sha256:cabb3190618160aebfa2bad7bdaea083d910b156a267ddd7e84ea3cf27a725da",
         "body_budget_bytes": 16384,
         "content_areas": [
           "intended-outcome",
@@ -3273,6 +3480,7 @@
         "precedence_class": "primary-outcome",
         "tie_key": "marketing-claim",
         "body_ref": "packs/marketing-claim.md",
+      "body_content_identity": "sha256:430733b597e4f1057abdd99fbcf1d5d984766e938c71605b5f6b1fdbc29ce2aa",
         "body_budget_bytes": 16384,
         "content_areas": [
           "intended-outcome",
@@ -3337,6 +3545,7 @@
         "precedence_class": "primary-outcome",
         "tie_key": "policy-governance",
         "body_ref": "packs/policy-governance.md",
+      "body_content_identity": "sha256:3a06dae06dc40c9e2cb8f1eab3dbfc63f9b570d1307aabbace37cb4c46ac65a9",
         "body_budget_bytes": 16384,
         "content_areas": [
           "intended-outcome",
@@ -3532,7 +3741,46 @@
         "total_authored_body_bytes": 81920,
         "peak_active_body_bytes": 16384,
         "peak_active_bytes": 16462,
-        "unmatched_body_bytes_in_active_context": 0
+        "unmatched_body_bytes_in_active_context": 0,
+        "lean_prior_baseline": {
+          "statement": "The measured increase from the retired lean bodies to the revised operational mini-skills, recorded once so the context receipt's separation of routing metadata from the selected body can be checked against a stated baseline rather than an assertion.",
+          "prior_revision": 1,
+          "current_revision": 2,
+          "prior_authored_body_bytes": 7361,
+          "current_authored_body_bytes": 77987,
+          "prior_largest_body_bytes": 1607,
+          "current_largest_body_bytes": 16310,
+          "peak_active_body_increase_bytes": 14703,
+          "resident_routing_metadata_increase_bytes": 0,
+          "unmatched_body_increase_bytes": 0,
+          "per_pack": [
+            {
+              "pack_id": "software-delivery",
+              "prior_body_bytes": 1607,
+              "current_body_bytes": 13809
+            },
+            {
+              "pack_id": "research-inquiry",
+              "prior_body_bytes": 1270,
+              "current_body_bytes": 15580
+            },
+            {
+              "pack_id": "marketing-claim",
+              "prior_body_bytes": 1412,
+              "current_body_bytes": 16042
+            },
+            {
+              "pack_id": "operations-change",
+              "prior_body_bytes": 1491,
+              "current_body_bytes": 16246
+            },
+            {
+              "pack_id": "policy-governance",
+              "prior_body_bytes": 1581,
+              "current_body_bytes": 16310
+            }
+          ]
+        }
       }
     },
     "operations_boundary": [

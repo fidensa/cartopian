@@ -1075,6 +1075,175 @@ class ContextMeasurementTests(unittest.TestCase):
             envelope = envelopes[case["envelope"]]
             self.assertEqual(case["expected_selection"], envelope["expected_selection"])
 
+    def test_the_lean_prior_baseline_measures_the_authored_bodies(self) -> None:
+        """The recorded increase is measurable, not asserted."""
+        registry = _registry()
+        admission = registry["fixtures"]["context_measurement"]["body_admission"]
+        baseline = admission["lean_prior_baseline"]
+        packs_root = REPO_ROOT / "protocol" / "packs"
+        current = {
+            entry["pack_id"]: entry["current_body_bytes"]
+            for entry in baseline["per_pack"]
+        }
+        for candidate in registry["fixtures"]["pack_candidates"]:
+            pack_id = candidate["pack_id"]
+            with self.subTest(pack=pack_id):
+                measured = len((packs_root / f"{pack_id}.md").read_bytes())
+                self.assertEqual(measured, current[pack_id])
+                self.assertEqual(candidate["revision"], baseline["current_revision"])
+                self.assertLessEqual(measured, candidate["body_budget_bytes"])
+        self.assertEqual(
+            baseline["current_authored_body_bytes"],
+            sum(entry["current_body_bytes"] for entry in baseline["per_pack"]),
+        )
+        self.assertEqual(
+            baseline["prior_authored_body_bytes"],
+            sum(entry["prior_body_bytes"] for entry in baseline["per_pack"]),
+        )
+        self.assertEqual(
+            baseline["current_largest_body_bytes"],
+            max(entry["current_body_bytes"] for entry in baseline["per_pack"]),
+        )
+        self.assertEqual(
+            baseline["prior_largest_body_bytes"],
+            max(entry["prior_body_bytes"] for entry in baseline["per_pack"]),
+        )
+        self.assertEqual(
+            baseline["peak_active_body_increase_bytes"],
+            baseline["current_largest_body_bytes"]
+            - baseline["prior_largest_body_bytes"],
+        )
+        # The increase lands in the one selected body only: neither the
+        # resident routing metadata nor the unmatched bodies grew.
+        self.assertEqual(baseline["resident_routing_metadata_increase_bytes"], 0)
+        self.assertEqual(baseline["unmatched_body_increase_bytes"], 0)
+        self.assertEqual(admission["unmatched_body_bytes_in_active_context"], 0)
+
+
+class IntegratedProjectionContractTests(unittest.TestCase):
+    """Handoff projection, source applicability, receipts, and semantic review."""
+
+    def _packs(self) -> dict:
+        return _registry()["packs"]
+
+    def test_the_result_contract_matches_what_selection_returns(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        declared = self._packs()["result_fields"]
+        result = select_practice_pack(
+            {
+                "primary_outcomes": ["software-behavior-change"],
+                "artifact_kinds": [],
+                "incidental_terms": [],
+                "exclusions": [],
+                "lifecycle_substrate_activities": [],
+                "domain_scopes": ["web-application"],
+            }
+        )
+        self.assertEqual(sorted(result), sorted(declared))
+        for field in ("body_identity", "body_budget_bytes", "applicable_sources", "context_receipt"):
+            self.assertIn(field, declared)
+        self.assertEqual(
+            sorted(result["context_receipt"]),
+            sorted(item["id"] for item in self._packs()["context_receipt"]["fields"]),
+        )
+        for record in result["applicable_sources"]:
+            self.assertEqual(
+                sorted(record),
+                sorted(
+                    item["id"]
+                    for item in self._packs()["source_applicability"]["identity_fields"]
+                ),
+            )
+
+    def test_the_handoff_projection_declares_what_never_enters_context(self) -> None:
+        projection = self._packs()["handoff_projection"]
+        injected = {item["id"] for item in projection["injected"]}
+        never = {item["id"] for item in projection["never_injected"]}
+        self.assertEqual(
+            injected,
+            {"selected-body", "applicable-source-identities", "routing-receipt"},
+        )
+        self.assertEqual(
+            never,
+            {
+                "unmatched-pack-bodies",
+                "full-source-documents",
+                "structural-exemplar-and-watchlist-identities",
+            },
+        )
+        self.assertFalse(injected & never)
+
+    def test_source_applicability_rules_stay_separate_from_selection(self) -> None:
+        applicability = self._packs()["source_applicability"]
+        rules = {item["id"] for item in applicability["rules"]}
+        self.assertEqual(
+            rules,
+            {
+                "governing-always-applies",
+                "conditional-applies-only-when-declared-facts-match",
+                "exemplars-and-watchlists-never-apply",
+                "applicability-never-changes-selection",
+            },
+        )
+        # Every conditional source's applicability fact is a declared envelope
+        # fact, so nothing is inferred at selection time.
+        envelope_facts = {item["id"] for item in self._packs()["envelope_facts"]}
+        self.assertIn("domain_scopes", envelope_facts)
+        for record in self._packs()["source_stack"]["records"]:
+            if record["class"] != "conditional":
+                self.assertEqual(record["applies_when"], [], record["source_id"])
+                continue
+            self.assertTrue(record["applies_when"], record["source_id"])
+            for condition in record["applies_when"]:
+                fact = condition["fact"]
+                plural = "domain_scopes" if fact == "domain_scope" else f"{fact}s"
+                self.assertIn(plural, envelope_facts, record["source_id"])
+
+    def test_semantic_review_records_observations_and_never_a_score(self) -> None:
+        review = self._packs()["semantic_review"]
+        dimensions = {item["id"] for item in review["dimensions"]}
+        self.assertEqual(
+            dimensions,
+            {
+                "actionability",
+                "conditional-domain-guidance",
+                "source-alignment-and-classification",
+                "failure-handling",
+                "evidence-and-verification",
+                "examples-and-counterexamples",
+                "stop-and-escalation-clarity",
+            },
+        )
+        self.assertEqual(
+            {item["id"] for item in review["not_satisfied_by"]},
+            {
+                "heading-presence",
+                "keyword-presence",
+                "byte-length",
+                "numeric-quality-score",
+            },
+        )
+        self.assertEqual(
+            {item["id"] for item in review["record_fields"]},
+            {"dimension", "observation", "disposition"},
+        )
+        serialized = json.dumps(review).casefold()
+        for forbidden in ("weight", "threshold", "points", "percentage"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_the_review_template_requires_direct_body_inspection(self) -> None:
+        review = self._packs()["semantic_review"]
+        template = (REPO_ROOT / "templates" / "REVIEW.md").read_text(encoding="utf-8")
+        self.assertIn("Practice-pack semantic review", template)
+        for dimension in review["dimensions"]:
+            self.assertIn(dimension["id"], template)
+        skill = (REPO_ROOT / "skills" / "run-task.md").read_text(encoding="utf-8")
+        self.assertIn("Practice-pack semantic review", skill)
+        self.assertIn("--domain-scope", skill)
+        task_template = (REPO_ROOT / "templates" / "TASK.md").read_text(encoding="utf-8")
+        self.assertIn("domain-scopes", task_template)
+
 
 class RequiredInitialPackDeliveryTests(unittest.TestCase):
     """Phase 04 ships five optional packs; the exemplar pair only validates the mechanism.

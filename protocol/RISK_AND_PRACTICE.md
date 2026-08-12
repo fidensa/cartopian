@@ -241,6 +241,7 @@ What the operator excluded was a 24-skill mandatory specialist catalog preloaded
 | `precedence_class` | The most specific class among the pack's matched positive conditions, used to rank eligible candidates. |
 | `tie_key` | Stable key that orders candidates inside a diagnostic. It never chooses a winner; equal precedence fails closed instead. |
 | `body_ref` | Logical locator of the bounded guidance body. Retrieved only after the outcome resolves to selected. |
+| `body_content_identity` | The sha256 identity of this pack's authored body bytes, declared as `sha256:<64 lowercase hex>`. The retrieved body is admitted only when its measured identity equals this value; a body edited out from under its metadata is stale and loads nothing. |
 | `body_budget_bytes` | Declared maximum size of the guidance body. A body over budget fails closed and loads nothing. |
 | `content_areas` | The approved guidance content areas this pack's body must cover. A pack revised to the operational mini-skill contract declares its operational sections here. A body that omits an approved content area is invalid; the areas cannot impose a universal gate or change the risk band. |
 | `domain_coverage` | The approved domain areas an operational mini-skill body must address inside its operational sections. Coverage is judged by semantic review against the pack's accepted source stack; the areas never form a runtime gate and never change the risk band. |
@@ -257,6 +258,7 @@ What the operator excluded was a 24-skill mandatory specialist catalog preloaded
 | `exclusions` | Guidance or outcomes the task envelope explicitly excludes. |
 | `authorized_profile_hint` | An explicit profile hint, honored only when the envelope authorizes it. |
 | `lifecycle_substrate_activities` | Cartopian's own lifecycle mechanics that this unit of work performs. Declaring one is a negative condition; it is never a primary outcome. |
+| `domain_scopes` | Declared jurisdiction, platform, artifact, or method scopes of the work. Read only to resolve conditional source applicability for the selected pack; pack matching never reads it, so declaring one can never select, veto, or change a pack. |
 
 A condition declares either one exact `value` or a closed `any_of` set fixed in the registry. Both forms read only the declared facts above.
 
@@ -309,9 +311,79 @@ When the declared facts do not resolve to one eligible pack, selection fails clo
 | `ambiguous` | 0 | yes | Two or more candidates tied at the same precedence. Selection fails closed and loads nothing. |
 | `invalid` | 0 | yes | Metadata or a body failed validation. Selection fails closed and returns structured evidence without partial content. |
 
-A stale, oversized, unreadable, or out-of-bounds body is `invalid`. It loads nothing and returns no partial content.
+A stale, oversized, unreadable, or out-of-bounds body is `invalid`. It loads nothing and returns no partial content. A body whose measured sha256 no longer equals its declared `body_content_identity` is stale for the same reason: it is `body-identity-mismatch`, and it loads nothing even though it is otherwise well-formed.
 
 The active shared surface is `cartopian select-practice-pack` (and the equivalent `select_practice_pack` MCP tool). It accepts only the declared envelope facts above. It validates the complete metadata catalog — including the classified source-record catalog and each pack's source stack — before matching, emits a structured `selected`, `none`, `ambiguous`, or `invalid` result, and retrieves `protocol/packs/*.md` only after one eligible identity resolves. The selected body is returned with its exact UTF-8 byte count; every unmatched body contributes zero returned body bytes.
+
+### What the result returns
+
+| Result field | Meaning |
+| --- | --- |
+| `pack_id` | The one selected identity, or null. |
+| `ordered_match_reasons` | Why the selected pack matched, in declared order. |
+| `rejected_candidates` | Why every other candidate did not, including the veto that disqualified it. |
+| `bodies_loaded` | 1 for `selected`, 0 for every other outcome. |
+| `loaded_body_bytes` | Exact UTF-8 byte count of the one admitted body, or 0. |
+| `body_identity` | Measured sha256 of the admitted body, equal to the pack's declared `body_content_identity`. |
+| `body_budget_bytes` | The selected pack's declared ceiling, so the measured body can be checked against it without reading the catalog. |
+| `applicable_sources` | Bounded identity records for the governing and applicable conditional sources of the selection. |
+| `context_receipt` | The separation of compact routing metadata from the one admitted body. |
+| `error` | The fail-closed code and detail for `ambiguous` and `invalid`, otherwise null. |
+
+Handoff construction injects exactly the returned `body` — and only when the outcome is `selected` — plus these compact routing fields and the bounded `applicable_sources` identities. It never injects another pack body, the metadata catalog, a full source document, structural-exemplar text, or watchlist content, and it fetches nothing over a network.
+
+### Which sources actually apply
+
+Source applicability is resolved **after** exactly one identity resolves, and it never selects, vetoes, reorders, or re-ranks a pack.
+
+| Rule | Behavior |
+| --- | --- |
+| `governing-always-applies` | A governing source in the selected pack's stack applies to every selection of that pack, inside its declared governed scope. |
+| `conditional-applies-only-when-declared-facts-match` | A conditional source applies only when at least one declared `applies_when` condition matches the envelope. A `domain_scope` condition reads `domain_scopes`; every other condition reads its own envelope fact. Nothing is inferred, so an undeclared scope yields no authority. |
+| `exemplars-and-watchlists-never-apply` | Structural exemplars and watchlists are never projected as applicable authority, whatever the envelope declares. |
+| `applicability-never-changes-selection` | Applicability is a projection over the already-selected pack, never an input to selection. |
+
+Each projected record carries identity and applicability only — `source_id`, `class`, `title`, `context`, `status`, `governed_scope`, `applicability_boundary`, and `precedence_scope` — never source text. So a software selection with no declared scope carries its governing baseline alone; the same selection declaring `web-application` additionally carries the web security and accessibility authorities, and a selection outside those scopes carries neither. Current does not mean universally applicable.
+
+### The context receipt
+
+Every outcome returns a receipt that separates compact routing metadata from the one admitted body, so the authored-body increase is visible and cannot be mistaken for resident routing cost.
+
+| Receipt field | Meaning |
+| --- | --- |
+| `routing_metadata_bytes` | Exact UTF-8 byte length of the result serialized as canonical compact JSON with `body` null and `context_receipt` omitted: sorted keys, no optional whitespace, non-ASCII preserved. Measured, not asserted, and recomputable by any consumer. |
+| `selected_body_bytes` | Exact UTF-8 byte length of the one admitted body, or 0. |
+| `body_budget_bytes` | The selected pack's declared ceiling, or null when no body is admitted. |
+| `unmatched_body_bytes` | Active-context bytes from every body other than the selected one. Always 0. |
+| `unloaded_pack_bodies` | Count of authored bodies deliberately not retrieved for this selection. |
+| `source_document_bytes` | Active-context bytes from governing, conditional, exemplar, or watchlist documents. Always 0: only bounded identities are projected. |
+
+The revised bodies are larger than the retired lean bodies because a topic checklist could not change an assignee's questions, decisions, evidence, or stopping behavior. The increase is bounded three ways: it lands only in the one selected body, the declared ceiling caps it, and unmatched bodies stay at zero bytes.
+
+| Measure | Lean revision 1 | Operational revision 2 | Change |
+| --- | ---: | ---: | ---: |
+| Authored body bytes, all five packs | 7,361 | 77,987 | +70,626 maintenance surface |
+| Largest authored body | 1,607 | 16,310 | +14,703 peak active body bytes |
+| Unmatched body bytes in active context | 0 | 0 | 0 |
+| Resident routing metadata bytes | 447 | 447 | 0 |
+
+Peak active body cost is one body, never the catalog, and the resident routing metadata did not grow with the guidance. Length is an output of useful guidance, never a quality target and never a minimum.
+
+### Structural validation is not semantic proof
+
+Structural and source validation prove that a body is well-formed, identified, bounded, and backed by current declared authority. They never prove that its guidance is substantive. Semantic adequacy is established only by durable reviewer evidence recorded in the configured review loop's review record, against these dimensions:
+
+| Dimension | The question the reviewer answers |
+| --- | --- |
+| `actionability` | Does the body change what the assignee asks, decides, or produces, rather than naming topics? |
+| `conditional-domain-guidance` | Is domain guidance conditional — when it helps, when it does not apply, and the evidence for using it — rather than unconditional dogma? |
+| `source-alignment-and-classification` | Is every source claim inside its declared class and applicability, with no exemplar or watchlist carrying domain authority and no current source applied universally? |
+| `failure-handling` | Are the common failure modes named with the rationalizations that disguise them? |
+| `evidence-and-verification` | Does the body require evidence a reviewer can check without trusting the author? |
+| `examples-and-counterexamples` | Do the examples show both proportionate application and misapplication? |
+| `stop-and-escalation-clarity` | Is it clear when to stop, what to escalate, and in what grammar? |
+
+Each dimension carries an observation and an `adequate`/`inadequate` disposition. One `inadequate` dimension blocks acceptance of the pack. The record carries no score, and nothing satisfies it by proxy: `heading-presence` is a structural check a topic-only body passes; `keyword-presence` is naming a framework rather than applying it inside its scope; `byte-length` has no minimum and the ceiling is not a target; and `numeric-quality-score` is never computed or represented as semantic-quality proof. A review whose scope includes a changed pack body requires direct inspection of that body and of each governing or conditional source that applies to it — citing the automated validation suite does not satisfy the obligation.
 
 ### The classified source stack
 
@@ -393,18 +465,18 @@ These fixtures resolve deterministically from declared facts alone, and their re
 
 Rows 1 and 2 are the boundary the operator asked about directly: a routine handoff and a status move each declare an outcome that would otherwise qualify, and each is vetoed by the substrate it declares.
 
-### Pack bodies stay inactive
+### The runtime activation gate is met
 
-`practice-pack-body` and `runtime-pack-selection` are **inactive**. The contract is defined and validated; it is not activated. Two conditions remain unmet:
+Pack bodies and runtime pack selection activate only after every condition below is met. All four are met, so runtime selection validates metadata before matching and retrieves a body only after one identity resolves.
 
 | Condition | Met | Requirement |
 | --- | --- | --- |
 | `operations-safeguards-validated` | yes | The declared operational-outcome requirement, the lifecycle-substrate veto, the exhaustive negative applicability, and the six boundary fixtures resolve deterministically. |
 | `operator-exemplar-acceptance` | yes | The operator accepts the mechanism-validation exemplar set. Accepting the pair is not accepting a reduced delivery scope. |
-| `equivalent-cli-and-mcp-validation` | no | The safeguards and the selection result resolve identically on the command-line and tool surfaces from this shared authority. |
-| `task-review` | no | This contract passes task review. |
+| `equivalent-cli-and-mcp-validation` | yes | The safeguards and the selection result resolve identically on the command-line and tool surfaces from this shared authority. |
+| `task-review` | yes | This contract passes task review. |
 
-This gate defers activation. It does not reduce the five-pack delivery scope: all five bodies are still owed, and Phase 04 exit is recorded as blocked until they exist.
+Meeting the gate did not reduce the five-pack delivery scope: all five bodies ship, each as a revised operational mini-skill, and at most one ever enters active context.
 
 ## Worked outcomes
 

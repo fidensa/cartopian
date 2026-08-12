@@ -17,6 +17,15 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--exclusion", action="append", default=[])
     parser.add_argument("--lifecycle-substrate-activity", action="append", default=[])
     parser.add_argument(
+        "--domain-scope",
+        action="append",
+        default=[],
+        help=(
+            "Declared jurisdiction, platform, artifact, or method scope. Resolves "
+            "conditional source applicability only; it never selects or vetoes a pack"
+        ),
+    )
+    parser.add_argument(
         "--authorized-profile-hint",
         help="Authorized family or pack identity; only resolves an eligible collision",
     )
@@ -30,6 +39,7 @@ def handler(args: argparse.Namespace) -> int:
             "incidental_terms": args.incidental_term,
             "exclusions": args.exclusion,
             "lifecycle_substrate_activities": args.lifecycle_substrate_activity,
+            "domain_scopes": args.domain_scope,
             "authorized_profile_hint": args.authorized_profile_hint,
         }
     )

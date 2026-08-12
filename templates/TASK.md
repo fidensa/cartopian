@@ -67,13 +67,14 @@ Every new task records all five observable conditions below. Use one state from 
 
 ## Practice-pack envelope
 
-Declare only observable task facts used by `cartopian select-practice-pack`; do not infer a primary outcome from prose, filenames, project history, or Cartopian's own lifecycle activity. Use `none` for an empty list. More than one primary outcome can produce a fail-closed ambiguity. An authorized profile hint may resolve only an otherwise eligible collision and cannot override an exclusion.
+Declare only observable task facts used by `cartopian select-practice-pack`; do not infer a primary outcome from prose, filenames, project history, or Cartopian's own lifecycle activity. Use `none` for an empty list. More than one primary outcome can produce a fail-closed ambiguity. An authorized profile hint may resolve only an otherwise eligible collision and cannot override an exclusion. Declared domain scopes decide only which conditional sources apply to whichever pack is selected; they never select, veto, or change a pack, and an undeclared scope yields no authority rather than a default one.
 
 - primary-outcomes: <stable outcome identity, ... | none>
 - artifact-kinds: <stable artifact or state identity, ... | none>
 - incidental-terms: <stable subject identity, ... | none>
 - exclusions: <stable guidance or outcome identity, ... | none>
 - lifecycle-substrate-activities: <task-directory-movement | handoff-dispatch | review-routing | state-file-refresh | pm-cleanup | none>
+- domain-scopes: <declared jurisdiction, platform, artifact, or method scope, ... | none>
 - authorized-profile-hint: <software | research | marketing | operations | policy | pack identity | none>
 
 ## Source guidance

@@ -6,6 +6,7 @@ shared executable projection used by the CLI and MCP surfaces.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import date
@@ -26,6 +27,7 @@ MAX_BODY_BUDGET_BYTES = 64 * 1024
 _IDENTITY_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _BODY_REF_RE = re.compile(r"^packs/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.md$")
+_BODY_IDENTITY_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _FACT_TO_ENVELOPE = {
     "primary_outcome": "primary_outcomes",
@@ -40,6 +42,19 @@ _CONFLICT_DISPOSITIONS = ("none", "resolved", "unresolved")
 # Source applicability conditions may additionally declare scope facts;
 # pack matching never reads them.
 _SOURCE_CONDITION_FACTS = (*_FACT_TO_ENVELOPE, "domain_scope")
+_SOURCE_FACT_TO_ENVELOPE = {**_FACT_TO_ENVELOPE, "domain_scope": "domain_scopes"}
+# Only identity and applicability cross into a handoff; never source text.
+_SOURCE_IDENTITY_FIELDS = (
+    "source_id",
+    "class",
+    "title",
+    "context",
+    "status",
+    "governed_scope",
+    "applicability_boundary",
+    "precedence_scope",
+)
+_APPLICABLE_SOURCE_CLASSES = ("governing", "conditional")
 _SOURCE_RECORD_FIELDS = (
     "source_id",
     "class",
@@ -98,24 +113,33 @@ def _invalid(code: str, detail: str, *, pack_id: str | None = None) -> dict[str,
         registry = _load_registry()
         contract_id = registry["contract_id"]
         contract_version = registry["contract_version"]
+        authored_bodies = len(registry["fixtures"]["pack_candidates"])
     except PracticePackError:
         contract_id = "risk-and-practice"
         contract_version = None
+        authored_bodies = 0
     rejected = []
     if pack_id:
         rejected.append({"pack_id": pack_id, "reasons": [f"{code}:{detail}"]})
-    return {
-        "contract_id": contract_id,
-        "contract_version": contract_version,
-        "outcome": "invalid",
-        "pack_id": None,
-        "ordered_match_reasons": [],
-        "rejected_candidates": rejected,
-        "bodies_loaded": 0,
-        "loaded_body_bytes": 0,
-        "body": None,
-        "error": {"code": code, "detail": detail},
-    }
+    return _with_context_receipt(
+        {
+            "contract_id": contract_id,
+            "contract_version": contract_version,
+            "outcome": "invalid",
+            "pack_id": None,
+            "ordered_match_reasons": [],
+            "rejected_candidates": rejected,
+            "bodies_loaded": 0,
+            "loaded_body_bytes": 0,
+            "body_identity": None,
+            "body_budget_bytes": None,
+            "applicable_sources": [],
+            "context_receipt": None,
+            "body": None,
+            "error": {"code": code, "detail": detail},
+        },
+        authored_bodies=authored_bodies,
+    )
 
 
 def _base_result(registry: Mapping[str, Any], outcome: str) -> dict[str, Any]:
@@ -128,9 +152,47 @@ def _base_result(registry: Mapping[str, Any], outcome: str) -> dict[str, Any]:
         "rejected_candidates": [],
         "bodies_loaded": 0,
         "loaded_body_bytes": 0,
+        "body_identity": None,
+        "body_budget_bytes": None,
+        "applicable_sources": [],
+        "context_receipt": None,
         "body": None,
         "error": None,
     }
+
+
+def _routing_metadata_bytes(result: Mapping[str, Any]) -> int:
+    """Measure the compact routing projection: this result without the body.
+
+    The receipt is excluded so the measurement cannot depend on itself, and the
+    serialization is canonical so any consumer can recompute the same number.
+    """
+    projection = {
+        field: (None if field == "body" else value)
+        for field, value in result.items()
+        if field != "context_receipt"
+    }
+    canonical = json.dumps(
+        projection, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return len(canonical.encode("utf-8"))
+
+
+def _with_context_receipt(result: dict[str, Any], *, authored_bodies: int) -> dict[str, Any]:
+    """Separate compact routing metadata from the one admitted body.
+
+    Full source documents are never retrieved, so their active contribution is
+    a measured zero rather than an assertion.
+    """
+    result["context_receipt"] = {
+        "routing_metadata_bytes": _routing_metadata_bytes(result),
+        "selected_body_bytes": result["loaded_body_bytes"],
+        "body_budget_bytes": result["body_budget_bytes"],
+        "unmatched_body_bytes": 0,
+        "unloaded_pack_bodies": authored_bodies - result["bodies_loaded"],
+        "source_document_bytes": 0,
+    }
+    return result
 
 
 def _require_identity(value: object, field: str, pack_id: str | None) -> str:
@@ -545,6 +607,15 @@ def validate_pack_catalog(
             raise PracticePackError(
                 "pack-metadata-invalid", f"{pack_id}.body_ref is not bounded", pack_id=pack_id
             )
+        body_identity = candidate.get("body_content_identity")
+        if not isinstance(body_identity, str) or not _BODY_IDENTITY_RE.fullmatch(
+            body_identity
+        ):
+            raise PracticePackError(
+                "pack-metadata-invalid",
+                f"{pack_id}.body_content_identity is not a sha256 body identity",
+                pack_id=pack_id,
+            )
         budget = candidate.get("body_budget_bytes")
         if (
             not isinstance(budget, int)
@@ -589,6 +660,7 @@ def validate_pack_catalog(
                 "precedence_rank": precedence_ranks[declared_class],
                 "tie_key": tie_key,
                 "body_ref": body_ref,
+                "body_content_identity": body_identity,
                 "body_budget_bytes": budget,
                 "sources": sources,
                 "content_areas": normalized_areas,
@@ -623,7 +695,7 @@ def _normalize_envelope(envelope: Mapping[str, object]) -> dict[str, tuple[str, 
     if not isinstance(envelope, Mapping):
         raise PracticePackError("pack-envelope-invalid", "task envelope is not an object")
     normalized: dict[str, tuple[str, ...] | str | None] = {}
-    for field in _FACT_TO_ENVELOPE.values():
+    for field in sorted(set(_SOURCE_FACT_TO_ENVELOPE.values())):
         raw = envelope.get(field, [])
         if not isinstance(raw, (list, tuple)) or len(raw) > MAX_ENVELOPE_VALUES:
             raise PracticePackError(
@@ -698,7 +770,45 @@ def _read_body_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def _load_selected_body(metadata: Mapping[str, Any], protocol_root: Path) -> tuple[str, int]:
+def _source_condition_matches(
+    condition: Mapping[str, Any], envelope: Mapping[str, Any]
+) -> bool:
+    fact = str(condition["fact"])
+    declared = set(envelope[_SOURCE_FACT_TO_ENVELOPE[fact]])
+    values = [condition["value"]] if "value" in condition else condition["any_of"]
+    return bool(declared.intersection(values))
+
+
+def _applicable_sources(
+    metadata: Mapping[str, Any],
+    records: Mapping[str, Mapping[str, Any]],
+    envelope: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Project only the authority that applies to this selection.
+
+    Governing sources always apply inside their governed scope; a conditional
+    source applies only when the envelope declares a matching fact. Structural
+    exemplars and watchlists never carry applicable authority, so they are never
+    projected. Nothing here can change which pack was selected.
+    """
+    applicable: list[dict[str, Any]] = []
+    for source_id in metadata["sources"]:
+        record = records[source_id]
+        source_class = record["class"]
+        if source_class not in _APPLICABLE_SOURCE_CLASSES:
+            continue
+        if source_class == "conditional" and not any(
+            _source_condition_matches(condition, envelope)
+            for condition in record["applies_when"]
+        ):
+            continue
+        applicable.append({field: record[field] for field in _SOURCE_IDENTITY_FIELDS})
+    return applicable
+
+
+def _load_selected_body(
+    metadata: Mapping[str, Any], protocol_root: Path
+) -> tuple[str, int, str]:
     pack_id = metadata["pack_id"]
     root = Path(protocol_root)
     try:
@@ -776,7 +886,16 @@ def _load_selected_body(metadata: Mapping[str, Any], protocol_root: Path) -> tup
             f"{pack_id} body does not cover exactly its approved content areas",
             pack_id=pack_id,
         )
-    return body, len(raw)
+    # Last, because a structurally broken body deserves its specific diagnostic:
+    # this catches the body that is well-formed but no longer the authored one.
+    identity = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+    if identity != metadata["body_content_identity"]:
+        raise PracticePackError(
+            "pack-body-stale",
+            f"{pack_id} body content identity differs from its declared identity",
+            pack_id=pack_id,
+        )
+    return body, len(raw), identity
 
 
 def select_practice_pack(
@@ -793,9 +912,11 @@ def select_practice_pack(
             load_pack_catalog() if metadata is None else metadata,
             source_records=source_records,
         )
+        records = _source_records(registry, source_records)
         facts = _normalize_envelope(envelope)
     except PracticePackError as exc:
         return _invalid(exc.code, exc.detail, pack_id=exc.pack_id)
+    authored_bodies = len(candidates)
 
     eligible: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -835,7 +956,7 @@ def select_practice_pack(
     result = _base_result(registry, "none")
     result["rejected_candidates"] = rejected
     if not eligible:
-        return result
+        return _with_context_receipt(result, authored_bodies=authored_bodies)
 
     best_rank = min(item["metadata"]["precedence_rank"] for item in eligible)
     survivors = [item for item in eligible if item["metadata"]["precedence_rank"] == best_rank]
@@ -867,24 +988,31 @@ def select_practice_pack(
             "code": "pack-selection-ambiguous",
             "detail": "equal precedence: " + ",".join(colliding),
         }
-        return result
+        return _with_context_receipt(result, authored_bodies=authored_bodies)
 
     selected = survivors[0]
     result["ordered_match_reasons"] = selected["reasons"]
     try:
-        body, byte_count = _load_selected_body(selected["metadata"], Path(protocol_root))
+        body, byte_count, body_identity = _load_selected_body(
+            selected["metadata"], Path(protocol_root)
+        )
     except PracticePackError as exc:
         invalid = _invalid(exc.code, exc.detail, pack_id=exc.pack_id)
         invalid["ordered_match_reasons"] = selected["reasons"]
         invalid["rejected_candidates"] = rejected + invalid["rejected_candidates"]
-        return invalid
+        return _with_context_receipt(invalid, authored_bodies=authored_bodies)
     result.update(
         {
             "outcome": "selected",
             "pack_id": selected["metadata"]["pack_id"],
             "bodies_loaded": 1,
             "loaded_body_bytes": byte_count,
+            "body_identity": body_identity,
+            "body_budget_bytes": selected["metadata"]["body_budget_bytes"],
+            "applicable_sources": _applicable_sources(
+                selected["metadata"], records, facts
+            ),
             "body": body,
         }
     )
-    return result
+    return _with_context_receipt(result, authored_bodies=authored_bodies)

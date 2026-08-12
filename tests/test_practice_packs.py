@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 import subprocess
@@ -62,10 +63,47 @@ def _body(metadata: dict, *, revision: int | None = None,
 
 
 def _write_selected_body(root: Path, metadata: dict, body: bytes | None = None) -> Path:
+    """Write a fixture body and declare its identity, as authoring would.
+
+    Identity is declared rather than left stale so each fixture keeps failing
+    for the reason it names; the identity-mismatch case declares its own.
+    """
     path = root / metadata["body_ref"]
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_body(metadata) if body is None else body)
+    raw = _body(metadata) if body is None else body
+    path.write_bytes(raw)
+    metadata["body_content_identity"] = f"sha256:{hashlib.sha256(raw).hexdigest()}"
     return path
+
+
+# One distinctive sentence fragment per authored body. A failure case that
+# leaked any partial content would carry one of these; a zero-byte outcome
+# carries none of them.
+_BODY_FINGERPRINTS = {
+    "software-delivery": "Cargo-cult abstraction",
+    "research-inquiry": "cherry-pick",
+    "marketing-claim": "puffery",
+    "operations-change": "blast radius",
+    "policy-governance": "sunset",
+}
+
+
+def _authored_body_bytes(pack_id: str) -> bytes:
+    return (REPO_ROOT / "protocol" / "packs" / f"{pack_id}.md").read_bytes()
+
+
+def _assert_no_body_leaked(case: unittest.TestCase, result: dict) -> None:
+    """No fail-closed outcome may carry any fragment of any authored body."""
+    case.assertIsNone(result["body"])
+    case.assertEqual(result["loaded_body_bytes"], 0)
+    case.assertEqual(result["bodies_loaded"], 0)
+    case.assertEqual(result["body_identity"], None)
+    case.assertEqual(result["applicable_sources"], [])
+    case.assertEqual(result["context_receipt"]["selected_body_bytes"], 0)
+    case.assertEqual(result["context_receipt"]["unmatched_body_bytes"], 0)
+    serialized = json.dumps(result)
+    for pack_id, fingerprint in _BODY_FINGERPRINTS.items():
+        case.assertNotIn(fingerprint, serialized, pack_id)
 
 
 class PracticePackRuntimeTests(unittest.TestCase):
@@ -306,10 +344,8 @@ class PracticePackBodyFailureTests(unittest.TestCase):
 
     def assert_closed(self, result: dict, code: str) -> None:
         self.assertEqual(result["outcome"], "invalid")
-        self.assertEqual(result["bodies_loaded"], 0)
-        self.assertEqual(result["loaded_body_bytes"], 0)
-        self.assertIsNone(result["body"])
         self.assertEqual(result["error"]["code"], code)
+        _assert_no_body_leaked(self, result)
 
     def test_missing_stale_oversized_and_invalid_utf8_bodies_fail_closed(self) -> None:
         research = next(item for item in _catalog() if item["family"] == "research")
@@ -446,10 +482,8 @@ class SourceRecordContractTests(unittest.TestCase):
         self, result: dict, code: str = "pack-source-record-invalid"
     ) -> None:
         self.assertEqual(result["outcome"], "invalid")
-        self.assertEqual(result["bodies_loaded"], 0)
-        self.assertEqual(result["loaded_body_bytes"], 0)
-        self.assertIsNone(result["body"])
         self.assertEqual(result["error"]["code"], code)
+        _assert_no_body_leaked(self, result)
 
     def test_the_unmutated_catalog_still_routes_through_the_seam(self) -> None:
         result = self._select(records=_source_stack_records())
@@ -1433,6 +1467,408 @@ class PolicyGovernanceMiniSkillTests(unittest.TestCase):
         }
         self.assertIn("incidental_term:policy-source:matched", rejected["policy-governance"])
         self.assertNotIn("policy-governance", result["body"] or "")
+
+
+class SelectedBodyIdentityTests(unittest.TestCase):
+    """The one admitted body is the authored body, proven by measured identity."""
+
+    def test_every_declared_identity_matches_its_authored_body(self) -> None:
+        for candidate in _catalog():
+            with self.subTest(pack=candidate["pack_id"]):
+                measured = hashlib.sha256(
+                    _authored_body_bytes(candidate["pack_id"])
+                ).hexdigest()
+                self.assertEqual(
+                    candidate["body_content_identity"], f"sha256:{measured}"
+                )
+
+    def test_selection_returns_the_measured_identity_and_declared_ceiling(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        expected = {
+            "software-behavior-change": "software-delivery",
+            "supported-finding": "research-inquiry",
+            "audience-facing-claim": "marketing-claim",
+            "executed-service-action": "operations-change",
+            "governing-interpretation": "policy-governance",
+        }
+        declared = {item["pack_id"]: item for item in _catalog()}
+        for primary_outcome, pack_id in expected.items():
+            with self.subTest(pack=pack_id):
+                result = select_practice_pack(_envelope(primary_outcome))
+                raw = _authored_body_bytes(pack_id)
+                self.assertEqual(
+                    result["body_identity"],
+                    f"sha256:{hashlib.sha256(raw).hexdigest()}",
+                )
+                self.assertEqual(
+                    result["body_identity"], declared[pack_id]["body_content_identity"]
+                )
+                self.assertEqual(result["loaded_body_bytes"], len(raw))
+                self.assertEqual(
+                    result["body_budget_bytes"], declared[pack_id]["body_budget_bytes"]
+                )
+                self.assertLessEqual(
+                    result["loaded_body_bytes"], result["body_budget_bytes"]
+                )
+
+    def test_a_body_edited_out_from_under_its_metadata_is_stale(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        catalog = _catalog()
+        research = next(item for item in catalog if item["family"] == "research")
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            # Structurally valid and inside budget, but not the authored body.
+            _write_selected_body(root, research)
+            research["body_content_identity"] = "sha256:" + "0" * 64
+            result = select_practice_pack(
+                _envelope("supported-finding"), metadata=catalog, protocol_root=root
+            )
+        self.assertEqual(result["outcome"], "invalid")
+        self.assertEqual(result["error"]["code"], "pack-body-stale")
+        _assert_no_body_leaked(self, result)
+
+    def test_a_missing_or_malformed_declared_identity_fails_before_retrieval(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        for mutation in (None, "", "sha256:not-hex", "cabb3190", "SHA256:" + "a" * 64):
+            with self.subTest(identity=mutation):
+                catalog = _catalog()
+                research = next(item for item in catalog if item["family"] == "research")
+                if mutation is None:
+                    del research["body_content_identity"]
+                else:
+                    research["body_content_identity"] = mutation
+                with tempfile.TemporaryDirectory() as raw:
+                    root = Path(raw)
+                    result = select_practice_pack(
+                        _envelope("supported-finding"),
+                        metadata=catalog,
+                        protocol_root=root,
+                    )
+                self.assertEqual(result["outcome"], "invalid")
+                self.assertEqual(result["error"]["code"], "pack-metadata-invalid")
+                _assert_no_body_leaked(self, result)
+
+
+class ApplicableSourceProjectionTests(unittest.TestCase):
+    """Only the authority that governs or conditionally applies is projected."""
+
+    def _sources(self, result: dict) -> list[str]:
+        return [item["source_id"] for item in result["applicable_sources"]]
+
+    def test_governing_sources_always_apply_and_other_classes_never_do(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        records = {item["source_id"]: item for item in _source_stack_records()}
+        declared = {item["pack_id"]: item for item in _catalog()}
+        expected = {
+            "software-behavior-change": "software-delivery",
+            "supported-finding": "research-inquiry",
+            "audience-facing-claim": "marketing-claim",
+            "executed-service-action": "operations-change",
+            "governing-interpretation": "policy-governance",
+        }
+        for primary_outcome, pack_id in expected.items():
+            with self.subTest(pack=pack_id):
+                result = select_practice_pack(_envelope(primary_outcome))
+                projected = self._sources(result)
+                stack = declared[pack_id]["sources"]
+                governing = [
+                    source_id
+                    for source_id in stack
+                    if records[source_id]["class"] == "governing"
+                ]
+                self.assertTrue(governing)
+                for source_id in governing:
+                    self.assertIn(source_id, projected)
+                for source_id in stack:
+                    if records[source_id]["class"] in (
+                        "structural-exemplar",
+                        "watchlist",
+                    ):
+                        self.assertNotIn(source_id, projected)
+                for item in result["applicable_sources"]:
+                    self.assertIn(item["class"], ("governing", "conditional"))
+                    self.assertEqual(
+                        sorted(item),
+                        sorted(
+                            (
+                                "source_id",
+                                "class",
+                                "title",
+                                "context",
+                                "status",
+                                "governed_scope",
+                                "applicability_boundary",
+                                "precedence_scope",
+                            )
+                        ),
+                    )
+                    self.assertEqual(item["status"], "current")
+
+    def test_a_conditional_source_applies_only_inside_its_declared_scope(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        cases = (
+            ("software-behavior-change", "web-application", ("owasp-asvs-5-0-0", "w3c-wcag-2-2", "iso-iec-40500-2025")),
+            ("supported-finding", "systematic-review", ("prisma-2020",)),
+            ("supported-finding", "healthcare-intervention-review", ("cochrane-handbook-6-5-1",)),
+            ("audience-facing-claim", "united-states", ("ftc-advertising-authority",)),
+            ("executed-service-action", "federal-information-system", ("nist-sp-800-34r1",)),
+            ("governing-interpretation", "regulatory-impact-assessment", ("oecd-ria-2020",)),
+        )
+        for primary_outcome, scope, conditional_ids in cases:
+            with self.subTest(scope=scope):
+                undeclared = select_practice_pack(_envelope(primary_outcome))
+                declared = select_practice_pack(
+                    _envelope(primary_outcome, domain_scopes=[scope])
+                )
+                for source_id in conditional_ids:
+                    self.assertNotIn(source_id, self._sources(undeclared))
+                    self.assertIn(source_id, self._sources(declared))
+
+    def test_a_declared_scope_never_changes_the_selection(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        without = select_practice_pack(_envelope("software-behavior-change"))
+        with_scope = select_practice_pack(
+            _envelope(
+                "software-behavior-change",
+                domain_scopes=["web-application", "united-states"],
+            )
+        )
+        for field in (
+            "outcome",
+            "pack_id",
+            "ordered_match_reasons",
+            "rejected_candidates",
+            "bodies_loaded",
+            "loaded_body_bytes",
+            "body_identity",
+            "body",
+        ):
+            self.assertEqual(without[field], with_scope[field], field)
+        self.assertNotEqual(
+            self._sources(without), self._sources(with_scope)
+        )
+        # A scope belonging to another family's conditional source grants no
+        # authority here: applicability is read from the selected pack's stack.
+        self.assertNotIn("ftc-advertising-authority", self._sources(with_scope))
+
+    def test_no_source_document_text_is_projected(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(
+            _envelope("software-behavior-change", domain_scopes=["web-application"])
+        )
+        self.assertEqual(result["context_receipt"]["source_document_bytes"], 0)
+        for item in result["applicable_sources"]:
+            self.assertNotIn("applies_when", item)
+            self.assertNotIn("refresh_trigger", item)
+            self.assertLess(len(json.dumps(item).encode("utf-8")), 512)
+
+
+class ContextReceiptTests(unittest.TestCase):
+    """Compact routing metadata is measured separately from the one body."""
+
+    def _recompute_routing_bytes(self, result: dict) -> int:
+        projection = {
+            field: (None if field == "body" else value)
+            for field, value in result.items()
+            if field != "context_receipt"
+        }
+        return len(
+            json.dumps(
+                projection,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+    def test_the_receipt_separates_routing_metadata_from_the_selected_body(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        for primary_outcome in (
+            "software-behavior-change",
+            "supported-finding",
+            "audience-facing-claim",
+            "executed-service-action",
+            "governing-interpretation",
+        ):
+            with self.subTest(outcome=primary_outcome):
+                result = select_practice_pack(_envelope(primary_outcome))
+                receipt = result["context_receipt"]
+                self.assertEqual(
+                    receipt["routing_metadata_bytes"],
+                    self._recompute_routing_bytes(result),
+                )
+                self.assertEqual(
+                    receipt["selected_body_bytes"], result["loaded_body_bytes"]
+                )
+                self.assertEqual(
+                    receipt["body_budget_bytes"], result["body_budget_bytes"]
+                )
+                self.assertEqual(receipt["unmatched_body_bytes"], 0)
+                self.assertEqual(receipt["unloaded_pack_bodies"], 4)
+                self.assertEqual(receipt["source_document_bytes"], 0)
+                # Routing metadata stays compact: it is a small fraction of the
+                # one admitted body, not a second body-sized cost.
+                self.assertLess(
+                    receipt["routing_metadata_bytes"], receipt["selected_body_bytes"]
+                )
+
+    def test_unmatched_bodies_and_full_sources_contribute_zero_bytes(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(_envelope("software-behavior-change"))
+        selected = _authored_body_bytes("software-delivery")
+        self.assertEqual(result["body"].encode("utf-8"), selected)
+        serialized = json.dumps(result).encode("utf-8")
+        for pack_id, fingerprint in _BODY_FINGERPRINTS.items():
+            if pack_id == "software-delivery":
+                continue
+            with self.subTest(pack=pack_id):
+                self.assertNotIn(fingerprint.encode("utf-8"), serialized)
+                self.assertNotIn(
+                    _authored_body_bytes(pack_id)[:400], serialized
+                )
+        total_authored = sum(
+            len(_authored_body_bytes(item["pack_id"])) for item in _catalog()
+        )
+        # The four unmatched bodies exist as maintenance surface and none of
+        # them reaches the result.
+        self.assertGreater(total_authored - len(selected), 0)
+        self.assertEqual(result["context_receipt"]["unmatched_body_bytes"], 0)
+
+    def test_every_fail_closed_outcome_returns_a_zero_body_receipt(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        none_result = select_practice_pack(_envelope("routine-local-text-correction"))
+        self.assertEqual(none_result["outcome"], "none")
+        _assert_no_body_leaked(self, none_result)
+        self.assertEqual(none_result["context_receipt"]["unloaded_pack_bodies"], 5)
+
+        ambiguous = select_practice_pack(
+            {
+                "primary_outcomes": ["supported-finding", "audience-facing-claim"],
+                "artifact_kinds": [],
+                "incidental_terms": [],
+                "exclusions": [],
+                "lifecycle_substrate_activities": [],
+            }
+        )
+        self.assertEqual(ambiguous["outcome"], "ambiguous")
+        _assert_no_body_leaked(self, ambiguous)
+
+        vetoed = select_practice_pack(
+            _envelope("software-behavior-change", exclusions=["software-guidance"])
+        )
+        self.assertEqual(vetoed["outcome"], "none")
+        _assert_no_body_leaked(self, vetoed)
+
+        catalog = _catalog()
+        next(item for item in catalog if item["family"] == "research")[
+            "contract_version"
+        ] = 99
+        incompatible = select_practice_pack(
+            _envelope("supported-finding"), metadata=catalog
+        )
+        self.assertEqual(incompatible["error"]["code"], "pack-metadata-incompatible")
+        _assert_no_body_leaked(self, incompatible)
+
+
+class IntegratedProjectionParityTests(unittest.TestCase):
+    """CLI and MCP return one identical integrated projection."""
+
+    def _cli(self, *args: str) -> dict:
+        completed = subprocess.run(
+            [sys.executable, "-m", "cli", "select-practice-pack", *args],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return json.loads(completed.stdout)
+
+    def test_both_surfaces_return_identity_sources_ceiling_and_receipt(self) -> None:
+        from mcp_server import server
+
+        cli_record = self._cli(
+            "--primary-outcome",
+            "software-behavior-change",
+            "--domain-scope",
+            "web-application",
+        )
+        server._TOOL_CACHE = None
+        mcp_result = server.call_tool(
+            "select_practice_pack",
+            {
+                "primary_outcome": ["software-behavior-change"],
+                "domain_scope": ["web-application"],
+            },
+        )
+        self.assertFalse(mcp_result["isError"])
+        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(cli_record["pack_id"], "software-delivery")
+        self.assertTrue(cli_record["body_identity"].startswith("sha256:"))
+        self.assertEqual(cli_record["body_budget_bytes"], 16384)
+        self.assertIn(
+            "owasp-asvs-5-0-0",
+            [item["source_id"] for item in cli_record["applicable_sources"]],
+        )
+        self.assertEqual(cli_record["context_receipt"]["unmatched_body_bytes"], 0)
+
+    def test_both_surfaces_expose_the_same_collision_state(self) -> None:
+        from mcp_server import server
+
+        cli_record = self._cli(
+            "--primary-outcome",
+            "supported-finding",
+            "--primary-outcome",
+            "audience-facing-claim",
+        )
+        server._TOOL_CACHE = None
+        mcp_result = server.call_tool(
+            "select_practice_pack",
+            {"primary_outcome": ["supported-finding", "audience-facing-claim"]},
+        )
+        self.assertEqual(
+            mcp_result["structuredContent"]["records"][0]["error"], cli_record["error"]
+        )
+        self.assertEqual(cli_record["outcome"], "ambiguous")
+        _assert_no_body_leaked(self, {k: v for k, v in cli_record.items() if k != "action"})
+
+    def test_the_result_carries_no_numeric_quality_score(self) -> None:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(_envelope("software-behavior-change"))
+        # The body is authored guidance; the automated surface is everything
+        # else the result computes about it.
+        computed = json.dumps(
+            {key: value for key, value in result.items() if key != "body"}
+        ).casefold()
+        for forbidden in ("score", "grade", "rating", "rank", "percent"):
+            self.assertNotIn(forbidden, computed)
+        # The only numbers the result reports are measured byte counts and
+        # counts of bodies, never a judgment of the guidance.
+        self.assertEqual(
+            sorted(
+                key
+                for key, value in result["context_receipt"].items()
+                if isinstance(value, int)
+            ),
+            [
+                "body_budget_bytes",
+                "routing_metadata_bytes",
+                "selected_body_bytes",
+                "source_document_bytes",
+                "unloaded_pack_bodies",
+                "unmatched_body_bytes",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 ## Practice-pack result
 
-<Paste the structured result returned by `cartopian select-practice-pack` from the task's declared practice-pack envelope. Include the body only when the outcome is `selected`; `none` carries no body and core governance continues. Do not issue the handoff when the outcome is `ambiguous` or `invalid`. Pack selection does not change the risk result, activate judgment guidance, alter configured review policy, or require review.>
+<Paste the structured result returned by `cartopian select-practice-pack` from the task's declared practice-pack envelope. Preserve its `pack_id`, ordered match reasons, rejection reasons, `body_identity`, `loaded_body_bytes`, `body_budget_bytes`, `applicable_sources`, and `context_receipt` exactly. Include the body only when the outcome is `selected`, and then exactly the returned body — never a second pack body, the metadata catalog, a full source document, structural-exemplar text, or watchlist content. `none` carries no body and core governance continues. Do not issue the handoff when the outcome is `ambiguous` or `invalid`. The projected `applicable_sources` are identities and applicability boundaries, not source text: a source absent from that list carries no authority for this task. Pack selection does not change the risk result, activate judgment guidance, alter configured review policy, or require review.>
 
 ## Original operator request (verbatim)
 
