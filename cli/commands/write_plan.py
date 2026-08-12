@@ -27,7 +27,20 @@ def handler(args: argparse.Namespace) -> int:
             except UnicodeDecodeError:
                 _writers.stderr("guard", "implementation plan must be valid UTF-8 text")
                 return _writers.EXIT_FAIL
-        findings = numbering_contract.validate_plan_allocations(content)
+        plan_path = _root / "IMPLEMENTATION_PLAN.md"
+        if plan_path.is_file():
+            try:
+                existing_content = plan_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                _writers.stderr(
+                    "guard", f"implementation-plan-unreadable: {exc}"
+                )
+                return _writers.EXIT_FAIL
+        else:
+            existing_content = ""
+        findings = numbering_contract.validate_plan_revision(
+            existing_content, content
+        )
         if findings:
             finding = findings[0]
             _writers.stderr(

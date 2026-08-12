@@ -1033,7 +1033,14 @@ def _check_numbering_contract(
             plan_text = plan_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             plan_text = ""
-        for finding in numbering_contract.validate_plan_allocations(plan_text):
+        governed_refs = {
+            plan_ref
+            for task_id, plan_ref, _phase_header, _relpath, _content in bindings
+            if task_id in governed and plan_ref
+        }
+        for finding in numbering_contract.validate_plan_allocations_for_refs(
+            plan_text, governed_refs
+        ):
             blockers.append({
                 "kind": finding["classification"],
                 "contract": contract_state["contract"],

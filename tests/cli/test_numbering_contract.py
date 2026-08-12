@@ -21,7 +21,7 @@ from pathlib import Path
 from unittest import mock
 
 from cli import numbering_contract as nc
-from cli.commands import task_bundle, write_spec, write_task
+from cli.commands import task_bundle, write_plan, write_spec, write_task
 from cli.commands import validate_task_readiness as readiness_command
 from cli.commands.plan_audit import _check_numbering_contract
 from cli.commands.validate_task_readiness import (
@@ -103,6 +103,18 @@ def _write_task(project: Path, task_id: str, slug: str, body: str):
         stderr
     ):
         code = write_task.handler(args)
+    return code, stderr.getvalue()
+
+
+def _write_plan(project: Path, body: str):
+    args = argparse.Namespace(
+        project_root=str(project),
+        content=body,
+        content_file=None,
+    )
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        code = write_plan.handler(args)
     return code, stderr.getvalue()
 
 
@@ -814,6 +826,54 @@ class TestPhaseWideAllocation(unittest.TestCase):
         self.assertIn("DESIGN-04-001", findings[0]["detail"])
         self.assertIn("BUILD-04-001", findings[0]["detail"])
 
+    def test_plan_revision_preserves_only_identical_legacy_collision(self):
+        existing = "DESIGN-04-001\nBUILD-04-001\n"
+        candidate = existing + "BUILD-05-001\n"
+        self.assertEqual(nc.validate_plan_revision(existing, candidate), [])
+
+        introduced = candidate + "DESIGN-05-001\n"
+        findings = nc.validate_plan_revision(existing, introduced)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["suffix"], "05-001")
+
+        replaced = "DESIGN-04-001\nTEST-04-001\nBUILD-05-001\n"
+        findings = nc.validate_plan_revision(existing, replaced)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["suffix"], "04-001")
+
+    def test_plan_revision_rejects_new_retired_or_unsupported_ref(self):
+        existing = "P04-BUILD-001\nDESIGN-04-001\n"
+        findings = nc.validate_plan_revision(
+            existing, existing + "P05-DESIGN-006\nSMOKE-05-007\n"
+        )
+        self.assertEqual(
+            [finding["classification"] for finding in findings],
+            ["plan-ref-legacy-new-allocation", "plan-ref-kind-unsupported"],
+        )
+        self.assertIn("P05-DESIGN-006", findings[0]["detail"])
+        self.assertIn("SMOKE-05-007", findings[1]["detail"])
+
+    def test_active_writer_allows_unchanged_legacy_collision_but_no_new_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            plan = project / "IMPLEMENTATION_PLAN.md"
+            legacy = "DESIGN-04-001\nBUILD-04-001\n"
+            plan.write_text(legacy, encoding="utf-8")
+            with mock.patch.object(
+                nc, "activation_state", return_value=_active_state()
+            ):
+                code, stderr = _write_plan(
+                    project, legacy + "BUILD-05-001\n"
+                )
+                self.assertEqual(code, 0, stderr)
+                code, stderr = _write_plan(
+                    project,
+                    legacy + "BUILD-05-001\nDESIGN-05-001\n",
+                )
+            self.assertEqual(code, 1)
+            self.assertIn("plan-suffix-reused", stderr)
+            self.assertNotIn("DESIGN-05-001", plan.read_text(encoding="utf-8"))
+
     def test_raw_duplicate_allocation_is_a_plan_audit_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = _make_project(Path(tmp))
@@ -834,6 +894,52 @@ class TestPhaseWideAllocation(unittest.TestCase):
             collisions = [b for b in blockers if b["kind"] == "plan-suffix-reused"]
             self.assertEqual(len(collisions), 1)
             self.assertIn("04-001", collisions[0]["detail"])
+
+    def test_unrelated_legacy_collision_does_not_block_governed_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            _write_phase_file(project, ["BUILD-04-002"], phase="PHASE-04")
+            plan = project / "IMPLEMENTATION_PLAN.md"
+            plan.write_text(
+                "DESIGN-04-001\nBUILD-04-001\nBUILD-04-002\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                nc, "activation_state", return_value=_active_state()
+            ):
+                code, stderr = _write_task(
+                    project,
+                    "TASK-04-002",
+                    "governed",
+                    _task_body("BUILD-04-002", phase="PHASE-04"),
+                )
+                self.assertEqual(code, 0, stderr)
+                blockers, _state = _check_numbering_contract(project)
+            self.assertEqual(blockers, [])
+
+    def test_phase_projection_ignores_unrelated_collision_but_rejects_own(self):
+        unrelated = (
+            "DESIGN-04-001\nBUILD-04-001\n"
+            "DESIGN-05-006\n"
+        )
+        self.assertEqual(
+            nc.validate_phase_projection(
+                unrelated,
+                "PHASE-05",
+                "# PHASE-05\n\n- `DESIGN-05-006` — item\n",
+            ),
+            [],
+        )
+
+        related = unrelated + "BUILD-05-006\n"
+        findings = nc.validate_phase_projection(
+            related,
+            "PHASE-05",
+            "# PHASE-05\n\n- `BUILD-05-006` — item\n",
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["classification"], "plan-suffix-reused")
+        self.assertEqual(findings[0]["suffix"], "05-006")
 
     def test_exact_plan_ref_owned_by_historical_task_is_not_reallocated(self):
         with tempfile.TemporaryDirectory() as tmp:

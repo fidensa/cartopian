@@ -84,6 +84,9 @@ _SPEC_HEADER_RE = re.compile(r"^Spec:\s*(.*)$")
 _PLAN_REF_TOKEN_RE = re.compile(
     r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*-\d{2}-\d{3})(?![A-Z0-9-])"
 )
+_LEGACY_PLAN_REF_TOKEN_RE = re.compile(
+    r"(?<![A-Z0-9-])(P\d{2}-[A-Z][A-Z0-9]*-\d{3})(?![A-Z0-9-])"
+)
 _SPEC_ID_RE = re.compile(r"^SPEC-(\d{2})-(\d{3})$")
 _TASK_SCOPED_ID_RE = re.compile(
     r"^(TASK|SPEC|PROMPT|REVIEW)-(\d{2})-(\d{3})$"
@@ -406,6 +409,24 @@ def extract_plan_refs(content: str) -> Tuple[str, ...]:
     return tuple(refs)
 
 
+def _extract_plan_ref_tokens(content: str) -> Tuple[str, ...]:
+    """Return every grammar-valid kind-first token, including unknown kinds."""
+    return tuple(
+        dict.fromkeys(
+            match.group(1) for match in _PLAN_REF_TOKEN_RE.finditer(content)
+        )
+    )
+
+
+def _extract_legacy_plan_ref_tokens(content: str) -> Tuple[str, ...]:
+    """Return historical phase-first tokens in first-seen order."""
+    return tuple(
+        dict.fromkeys(
+            match.group(1) for match in _LEGACY_PLAN_REF_TOKEN_RE.finditer(content)
+        )
+    )
+
+
 def validate_plan_allocations(content: str) -> List[Dict[str, Any]]:
     """Find conflicting phase-wide allocations in one plan projection.
 
@@ -437,12 +458,88 @@ def validate_plan_allocations(content: str) -> List[Dict[str, Any]]:
     return findings
 
 
+def validate_plan_revision(
+    existing_content: str, candidate_content: str
+) -> List[Dict[str, Any]]:
+    """Reject allocation collisions introduced by a plan revision.
+
+    The aligned-suffix contract is prospective.  A mediated revision may
+    preserve a collision that was already present in the live plan before the
+    active runtime observed it, but it may not introduce a new collision,
+    replace either owner of an existing collision, or add another owner to the
+    same suffix.  Comparing normalized collision identities keeps that legacy
+    allowance exact and leaves all new allocations under the strict validator.
+    """
+
+    def collision_identity(finding: Dict[str, Any]) -> Tuple[str, Tuple[str, ...]]:
+        return (
+            str(finding["suffix"]),
+            tuple(sorted(str(value) for value in finding["plan_refs"])),
+        )
+
+    findings: List[Dict[str, Any]] = []
+    existing_legacy = set(_extract_legacy_plan_ref_tokens(existing_content))
+    for plan_ref in _extract_legacy_plan_ref_tokens(candidate_content):
+        if plan_ref not in existing_legacy:
+            findings.append({
+                "classification": "plan-ref-legacy-new-allocation",
+                "blocking": True,
+                "plan_ref": plan_ref,
+                "detail": (
+                    f"new allocation {plan_ref} uses the retired phase-first "
+                    "grammar; allocate KIND-NN-NNN while preserving only "
+                    "pre-existing legacy refs"
+                ),
+            })
+
+    existing_kind_first = set(_extract_plan_ref_tokens(existing_content))
+    for plan_ref in _extract_plan_ref_tokens(candidate_content):
+        parsed = parse_plan_ref(plan_ref)
+        assert parsed is not None
+        if not parsed["kind_supported"] and plan_ref not in existing_kind_first:
+            findings.append({
+                "classification": "plan-ref-kind-unsupported",
+                "blocking": True,
+                "plan_ref": plan_ref,
+                "detail": (
+                    f"new allocation {plan_ref} uses unsupported kind "
+                    f"{parsed['kind']}; supported kinds: "
+                    f"{', '.join(SUPPORTED_KINDS)}"
+                ),
+            })
+
+    grandfathered = {
+        collision_identity(finding)
+        for finding in validate_plan_allocations(existing_content)
+    }
+    findings.extend(
+        finding
+        for finding in validate_plan_allocations(candidate_content)
+        if collision_identity(finding) not in grandfathered
+    )
+    return findings
+
+
+def validate_plan_allocations_for_refs(
+    content: str, governed_refs: "set[str]"
+) -> List[Dict[str, Any]]:
+    """Return only collisions that involve a newly governed plan ref."""
+    return [
+        finding
+        for finding in validate_plan_allocations(content)
+        if governed_refs.intersection(finding["plan_refs"])
+    ]
+
+
 def validate_phase_projection(
     plan_content: str, phase_id: str, phase_content: str
 ) -> List[Dict[str, Any]]:
     """Validate that a phase file projects only its plan's allocations."""
     phase = parse_phase_name(phase_id)
-    findings = validate_plan_allocations(plan_content)
+    phase_refs = set(extract_plan_refs(phase_content))
+    # Ignore collisions wholly outside this phase projection while preserving
+    # strict validation for every ref the candidate phase actually projects.
+    findings = validate_plan_allocations_for_refs(plan_content, phase_refs)
     plan_refs = set(extract_plan_refs(plan_content))
     for plan_ref in extract_plan_refs(phase_content):
         parsed = parse_plan_ref(plan_ref)
@@ -514,7 +611,9 @@ def validate_task_trace(
                 "detail": f"IMPLEMENTATION_PLAN.md is missing or unreadable: {exc}",
             })
         else:
-            findings.extend(validate_plan_allocations(plan_text))
+            findings.extend(
+                validate_plan_allocations_for_refs(plan_text, {plan_ref})
+            )
             if plan_ref not in set(extract_plan_refs(plan_text)):
                 findings.append({
                     "classification": "plan-ref-unallocated",
