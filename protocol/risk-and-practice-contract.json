@@ -1109,10 +1109,17 @@
           "family": "operations",
           "pack_id": "operations-change",
           "content_areas": [
-            "rehearsal",
-            "handoff",
-            "rollback",
-            "monitoring"
+            "intended-outcome",
+            "when-to-apply",
+            "when-not-to-apply",
+            "principles-and-heuristics",
+            "working-process",
+            "decision-gates",
+            "failure-modes",
+            "evidence-and-verification",
+            "examples-and-counterexamples",
+            "stop-and-escalation",
+            "sources"
           ],
           "applicability_boundary": "The primary outcome is an explicitly declared, executed and verified operational outcome: a service action, process transition, handoff outcome, recovery, or contingency.",
           "not_applicable_when": "The envelope declares a Cartopian lifecycle-substrate activity, the primary outcome is a software behavior change, a supported finding, or a documented process without execution, operational language appears only as an incidental subject term, or the envelope excludes operations guidance."
@@ -1898,7 +1905,7 @@
     "after_acceptance": "Body authoring proceeds under BUILD-04-003 for all five required initial packs. The exemplar pair is authored and validated first so the mechanism is proven before the remaining three bodies land. Phase 04 exit still requires all five.",
     "exemplar_and_delivery_relationship": "All five packs carry validating metadata today and all five ship bodies before Phase 04 exits. The exemplar pair is the first two bodies authored, chosen because two packs are the smallest set that can exercise every selection outcome. No shape is a metadata-only fixture in the delivered contract.",
     "cost_method": "Resident metadata bytes are the declared specimen lines for the packs in the set; estimated tokens are the ceiling of each specimen's exact bytes divided by four, summed. Peak active bytes are the core line plus one declared body budget, because at most one body is ever admitted: adding a pack to a set does not raise peak active context. Authored body budget is maintenance surface, not active context.",
-    "cost_finding": "Set size does not change peak active context: peak active bytes are the core line plus the set's largest declared body budget, because at most one body is ever admitted. Under the current declared budgets, a set containing a revised 16384-byte mini-skill (software-delivery, research-inquiry, or marketing-claim) peaks at 16462 bytes and a set of only 4096-byte packs peaks at 4174 bytes. The resident-metadata spread across every two-pack candidate is 8 bytes and 2 estimated tokens, so context cost is not a discriminator among them; mechanism coverage is. The five-pack figures are the measured cost of the required delivery scope: 447 resident bytes and 57344 bytes of declared authored body budget, of which zero unmatched bytes reach active context.",
+    "cost_finding": "Set size does not change peak active context: peak active bytes are the core line plus the set's largest declared body budget, because at most one body is ever admitted. Under the current declared budgets, a set containing a revised 16384-byte mini-skill (software-delivery, research-inquiry, marketing-claim, or operations-change) peaks at 16462 bytes and a set of only 4096-byte packs peaks at 4174 bytes. The resident-metadata spread across every two-pack candidate is 8 bytes and 2 estimated tokens, so context cost is not a discriminator among them; mechanism coverage is. The five-pack figures are the measured cost of the required delivery scope: 447 resident bytes and 69632 bytes of declared authored body budget, of which zero unmatched bytes reach active context.",
     "cost_finding_at_acceptance": "Dated historical snapshot, recorded at operator acceptance on 2026-08-03, when every pack declared a 4096-byte body budget: every set with at least one pack then peaked at 4174 bytes and the five-pack authored-body total was 20480 bytes. These acceptance-time figures are retained only as acceptance evidence; the current figures are stated in cost_finding and derived in candidate_sets and fixtures.context_measurement.body_admission.",
     "measurement_vs_production_budgets": "Every figure here is a composition measurement over the declared fixtures, in bytes of fixed ASCII specimen lines and estimated tokens at four bytes per token. They are evidence that non-selection costs zero, not adopted production budgets. Production budgets and tokenizer-specific measurements are not set by this contract.",
     "decisive_reason": "research-and-operations is the only candidate set that demonstrates all five profile shapes within the one-or-two exemplar bound, and the only two-pack set that can demonstrate the lifecycle-substrate safeguards on an exemplar body while also carrying a claim-shaped exemplar. This decides which bodies are authored first, not how many are authored.",
@@ -1981,7 +1988,7 @@
         "delta_bytes_vs_recommended": 0,
         "delta_estimated_tokens_vs_recommended": 0,
         "peak_active_bytes": 16462,
-        "authored_body_budget_bytes": 20480,
+        "authored_body_budget_bytes": 32768,
         "verdict_reasons": [],
         "bounds_delivery_scope": false,
         "is_delivery_scope": false
@@ -2045,7 +2052,7 @@
         "delta_bytes_vs_recommended": 7,
         "delta_estimated_tokens_vs_recommended": 2,
         "peak_active_bytes": 16462,
-        "authored_body_budget_bytes": 20480,
+        "authored_body_budget_bytes": 32768,
         "verdict_reasons": [
           "No claim-shaped exemplar, so research, marketing, and policy are left with no exemplar carrying their contract shape.",
           "Both exemplars are change-shaped, so the set demonstrates one side of the contract twice."
@@ -2144,7 +2151,7 @@
         "delta_bytes_vs_recommended": 6,
         "delta_estimated_tokens_vs_recommended": 2,
         "peak_active_bytes": 16462,
-        "authored_body_budget_bytes": 20480,
+        "authored_body_budget_bytes": 32768,
         "verdict_reasons": [
           "Ties the recommended set on mechanism coverage and costs 6 more resident bytes, but marketing is the narrowest claim shape and represents only itself, so research and policy are left unrepresented.",
           "The specification's own acceptance example — a sourced comparative finding where software is only the subject — would have no exemplar body."
@@ -2176,8 +2183,8 @@
         "resident_metadata_estimated_tokens": 44,
         "delta_bytes_vs_recommended": 0,
         "delta_estimated_tokens_vs_recommended": 0,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 8192,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 20480,
         "verdict_reasons": [
           "Ties the recommended set on mechanism coverage at identical resident cost, but policy is an authority-bound shape that represents only itself, so research and marketing are left unrepresented.",
           "The specification's own acceptance example — a sourced comparative finding where software is only the subject — would have no exemplar body."
@@ -2239,8 +2246,8 @@
         "resident_metadata_estimated_tokens": 22,
         "delta_bytes_vs_recommended": -87,
         "delta_estimated_tokens_vs_recommended": -22,
-        "peak_active_bytes": 4174,
-        "authored_body_budget_bytes": 4096,
+        "peak_active_bytes": 16462,
+        "authored_body_budget_bytes": 16384,
         "verdict_reasons": [
           "A single candidate can never produce an equal-precedence collision or demonstrate exactly-one-of-many admission.",
           "No claim-shaped exemplar."
@@ -2306,7 +2313,7 @@
         "delta_bytes_vs_recommended": 94,
         "delta_estimated_tokens_vs_recommended": 24,
         "peak_active_bytes": 16462,
-        "authored_body_budget_bytes": 36864,
+        "authored_body_budget_bytes": 49152,
         "verdict_reasons": [
           "Adds a third resident metadata line and a third authored body for no mechanism-validation coverage the recommended pair does not already provide.",
           "Exceeds the one-or-two exemplar bound for the minimal mechanism-validation set. This is not a delivery verdict: software-delivery ships as one of the five required initial packs regardless."
@@ -2344,7 +2351,7 @@
         "delta_bytes_vs_recommended": 274,
         "delta_estimated_tokens_vs_recommended": 70,
         "peak_active_bytes": 16462,
-        "authored_body_budget_bytes": 57344,
+        "authored_body_budget_bytes": 69632,
         "verdict_reasons": [
           "This set is the Phase 04 delivery scope, not a candidate for the minimal mechanism-validation set. All five packs ship and none of them is rejected.",
           "It is outside the exemplar comparison only because a five-pack set cannot be the smallest set that exercises collision, cross-shape veto, and single-body admission. That is a statement about minimality, not about whether five packs are wanted.",
@@ -3074,7 +3081,7 @@
         "pack_id": "operations-change",
         "family": "operations",
         "profile_shape": "operations",
-        "revision": 1,
+        "revision": 2,
         "contract_version": 1,
         "applies_when": [
           {
@@ -3123,12 +3130,32 @@
         "precedence_class": "primary-outcome",
         "tie_key": "operations-change",
         "body_ref": "packs/operations-change.md",
-        "body_budget_bytes": 4096,
+        "body_budget_bytes": 16384,
         "content_areas": [
+          "intended-outcome",
+          "when-to-apply",
+          "when-not-to-apply",
+          "principles-and-heuristics",
+          "working-process",
+          "decision-gates",
+          "failure-modes",
+          "evidence-and-verification",
+          "examples-and-counterexamples",
+          "stop-and-escalation",
+          "sources"
+        ],
+        "domain_coverage": [
+          "authority-and-change-window",
+          "ownership",
+          "preconditions-and-current-state-capture",
           "rehearsal",
-          "handoff",
-          "rollback",
-          "monitoring"
+          "blast-radius",
+          "communication-and-handoff",
+          "monitoring-and-stop-conditions",
+          "rollback-and-recovery",
+          "incident-coordination",
+          "immediate-verification",
+          "closure-and-follow-up"
         ],
         "evidence_shape": "Current state, ownership, handoff, stop condition, and contingency.",
         "demonstrates_shapes": [
@@ -3473,7 +3500,7 @@
         "statement": "Five authored bodies exist as maintenance surface within their individually declared budgets. At most one enters active context, so peak active context is the core line plus the largest declared body budget no matter how many required packs ship.",
         "required_pack_count": 5,
         "largest_declared_body_budget_bytes": 16384,
-        "total_authored_body_bytes": 57344,
+        "total_authored_body_bytes": 69632,
         "peak_active_body_bytes": 16384,
         "peak_active_bytes": 16462,
         "unmatched_body_bytes_in_active_context": 0

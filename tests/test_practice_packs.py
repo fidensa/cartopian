@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -1072,6 +1073,190 @@ class MarketingClaimMiniSkillTests(unittest.TestCase):
         self.assertEqual(result["bodies_loaded"], 0)
         self.assertEqual(result["loaded_body_bytes"], 0)
         self.assertIsNone(result["body"])
+
+
+class OperationsChangeMiniSkillTests(unittest.TestCase):
+    """The operations body is an operational mini-skill, not a topic checklist.
+
+    These checks are structural and fail-closed only: they prove the declared
+    operational-section contract, the approved domain coverage, the measured
+    selected-body ceiling, source-identity alignment inside declared scopes,
+    and the lifecycle-substrate and incidental-subject vetoes. They
+    deliberately do not score prose quality; whether the safe-change and
+    incident guidance is actionable, proportionate, and source-aligned stays
+    with semantic review.
+    """
+
+    OPERATIONAL_SECTIONS = [
+        "intended-outcome",
+        "when-to-apply",
+        "when-not-to-apply",
+        "principles-and-heuristics",
+        "working-process",
+        "decision-gates",
+        "failure-modes",
+        "evidence-and-verification",
+        "examples-and-counterexamples",
+        "stop-and-escalation",
+        "sources",
+    ]
+    DOMAIN_COVERAGE = [
+        "authority-and-change-window",
+        "ownership",
+        "preconditions-and-current-state-capture",
+        "rehearsal",
+        "blast-radius",
+        "communication-and-handoff",
+        "monitoring-and-stop-conditions",
+        "rollback-and-recovery",
+        "incident-coordination",
+        "immediate-verification",
+        "closure-and-follow-up",
+    ]
+    SELECTED_BODY_CEILING = 16 * 1024
+
+    _heading_identities = staticmethod(
+        SoftwareDeliveryMiniSkillTests._heading_identities
+    )
+
+    def _selected(self, **extra: object) -> dict:
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(_envelope("executed-service-action", **extra))
+        self.assertEqual(result["outcome"], "selected")
+        self.assertEqual(result["pack_id"], "operations-change")
+        self.assertEqual(result["bodies_loaded"], 1)
+        return result
+
+    def test_metadata_declares_the_operational_section_contract(self) -> None:
+        registry = _registry()
+        candidate = next(
+            item
+            for item in registry["fixtures"]["pack_candidates"]
+            if item["pack_id"] == "operations-change"
+        )
+        scope_entry = next(
+            entry
+            for entry in registry["packs"]["delivery_scope"]["required_initial_packs"]
+            if entry["pack_id"] == "operations-change"
+        )
+        self.assertEqual(candidate["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(scope_entry["content_areas"], self.OPERATIONAL_SECTIONS)
+        self.assertEqual(candidate["domain_coverage"], self.DOMAIN_COVERAGE)
+        # The ceiling is a declared bound, not a quality target; there is no
+        # minimum byte count.
+        self.assertEqual(candidate["body_budget_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_carries_every_operational_section_in_order(self) -> None:
+        result = self._selected()
+        headings = self._heading_identities(
+            result["body"].split("\n---\n", 1)[1], "##"
+        )
+        self.assertEqual(headings, self.OPERATIONAL_SECTIONS)
+        self.assertEqual(
+            result["loaded_body_bytes"], len(result["body"].encode("utf-8"))
+        )
+        self.assertLessEqual(result["loaded_body_bytes"], self.SELECTED_BODY_CEILING)
+
+    def test_selected_body_covers_each_approved_domain_area(self) -> None:
+        subsections = self._heading_identities(self._selected()["body"], "###")
+        for area in self.DOMAIN_COVERAGE:
+            with self.subTest(area=area):
+                self.assertIn(area, subsections)
+
+    def test_body_carries_an_executable_safe_change_and_incident_process(self) -> None:
+        # The revision-1 body was four topic headings with no executable
+        # process: no numbered safe-change sequence, no gates to answer before
+        # touching the system, and no incident path. Those are the structural
+        # markers of the process this pack is required to carry.
+        body = self._selected()["body"]
+        process = body.split("## Working Process", 1)[1].split("\n## ", 1)[0]
+        steps = [
+            line for line in process.splitlines() if re.match(r"^\d+\. ", line.strip())
+        ]
+        self.assertGreaterEqual(len(steps), 8)
+        gates = body.split("## Decision Gates", 1)[1].split("\n## ", 1)[0]
+        self.assertGreaterEqual(
+            len([line for line in gates.splitlines() if line.startswith("- ")]), 6
+        )
+        failures = body.split("## Failure Modes", 1)[1].split("\n## ", 1)[0]
+        for failure in (
+            "unclear command",
+            "hidden ownership",
+            "unrehearsed rollback",
+            "destructive scope",
+            "monitoring without thresholds",
+            "silent partial failure",
+            "premature success",
+            "handoff without state",
+        ):
+            with self.subTest(failure=failure):
+                self.assertIn(failure, failures.casefold())
+
+    def test_body_source_identities_stay_inside_their_declared_scopes(self) -> None:
+        body = self._selected()["body"]
+        for pin in (
+            "Cybersecurity Framework 2.0",
+            "2024-02-26",
+            "SP 800-61 Rev. 3",
+            "2025-04-03",
+            "SP 800-34 Rev. 1",
+            "Site Reliability Engineering Workbook",
+        ):
+            with self.subTest(pin=pin):
+                self.assertIn(pin, body)
+        # NIST SP 800-34 Rev. 1 is conditional on federal information-system
+        # contingency planning: it may never be stated as a universal modern
+        # operations baseline.
+        for index, line in enumerate(body.splitlines()):
+            if "800-34" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"federal")
+            # NIST SP 800-61 Rev. 3 is conditional on cybersecurity incident
+            # response, not every operational incident.
+            if "800-61" in line:
+                with self.subTest(line=index + 1):
+                    self.assertRegex(line, r"cybersecurity|security incident")
+        # The structural exemplar informs mini-skill anatomy only: it may be
+        # named only inside the Sources section, never as domain guidance.
+        sources_at = body.index("## Sources")
+        self.assertGreater(body.index("agent-skills"), sources_at)
+
+    def test_lifecycle_substrate_activity_loads_zero_bytes(self) -> None:
+        # Cartopian moving its own work through its own lifecycle is process
+        # substrate, not an operational outcome: the veto fires even though the
+        # qualifying primary outcome matched.
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(
+            _envelope(
+                "executed-service-action",
+                lifecycle_substrate_activities=["task-directory-movement"],
+            )
+        )
+        self.assertEqual(result["outcome"], "none")
+        self.assertEqual(result["bodies_loaded"], 0)
+        self.assertEqual(result["loaded_body_bytes"], 0)
+        self.assertIsNone(result["body"])
+
+    def test_incidental_operational_vocabulary_alone_loads_zero_bytes(self) -> None:
+        # Implementation-only work that merely mentions deployment, rollback,
+        # or monitoring never declares an executed operational outcome, so it
+        # selects no operations body and contributes zero bytes.
+        from cli.practice_packs import select_practice_pack
+
+        result = select_practice_pack(
+            _envelope("software-behavior-change", incidental_terms=["operations-subject"])
+        )
+        self.assertNotEqual(result["pack_id"], "operations-change")
+        rejected = {
+            item["pack_id"]: item["reasons"] for item in result["rejected_candidates"]
+        }
+        self.assertIn(
+            "incidental_term:operations-subject:matched",
+            rejected["operations-change"],
+        )
+        self.assertNotIn("operations-change", result["body"] or "")
 
 
 if __name__ == "__main__":
