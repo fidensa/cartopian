@@ -18,6 +18,7 @@ SUBCOMMANDS: List[str] = [
     "adversarial-review-context",
     "apply-migration-entry",
     "classify-risk",
+    "select-judgment-guidance",
     "select-practice-pack",
     "discover-projects",
     "generate-config",
@@ -146,6 +147,7 @@ def _real_handlers():
         archive_plan,
         capture_request,
         classify_risk,
+        select_judgment_guidance,
         select_practice_pack,
         close_audit,
         compose_state,
@@ -205,6 +207,10 @@ def _real_handlers():
         "archive-plan": (archive_plan.configure_parser, archive_plan.handler),
         "capture-request": (capture_request.configure_parser, capture_request.handler),
         "classify-risk": (classify_risk.configure_parser, classify_risk.handler),
+        "select-judgment-guidance": (
+            select_judgment_guidance.configure_parser,
+            select_judgment_guidance.handler,
+        ),
         "select-practice-pack": (
             select_practice_pack.configure_parser,
             select_practice_pack.handler,

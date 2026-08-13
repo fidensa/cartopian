@@ -65,6 +65,13 @@ Every new task records all five observable conditions below. Use one state from 
 - ambiguity: <confirmed | stated-assumption | material-assumption | contradictory | unknown>; Fact: <input, exclusion, or success-condition observation>
 - evidence-coverage: <deterministic | direct-observation | indirect-or-qualitative | unavailable | unknown>; Fact: <decisive evidence observation>
 
+## Judgment envelope
+
+Declare only the two observable facts used by `cartopian select-judgment-guidance`. A card activates only when this task crosses its lifecycle boundary **and** names its non-enforceable failure as still open; crossing a boundary alone activates nothing, and an open failure outside its own boundary activates nothing. A failure that a deterministic guard already decides is not open — prefer the guard. The risk band and the selected pack are not inputs and are rejected if supplied. Use `none` for an empty list.
+
+- lifecycle-boundaries: <requirements-and-intent | evidence-and-review-gate | migration-install-restart | delivery-and-closeout, ... | none>
+- open-failure-conditions: <inferred-intent-not-confirmed | evidence-self-certified-or-missing | mixed-version-or-unproven-running-state | artifact-mistaken-for-outcome, ... | none>
+
 ## Practice-pack envelope
 
 Declare only observable task facts used by `cartopian select-practice-pack`; do not infer a primary outcome from prose, filenames, project history, or Cartopian's own lifecycle activity. Use `none` for an empty list. More than one primary outcome can produce a fail-closed ambiguity. An authorized profile hint may resolve only an otherwise eligible collision and cannot override an exclusion. Declared domain scopes decide only which conditional sources apply to whichever pack is selected; they never select, veto, or change a pack, and an undeclared scope yields no authority rather than a default one.

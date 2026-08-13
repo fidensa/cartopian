@@ -448,8 +448,10 @@
         "evidence": "The adoption and planning runbooks already require the interpretation and any proposed exit criteria to be confirmed before files are generated, but a file-presence guard cannot decide whether an inferred intent is faithful to the request.",
         "disposition": "keep-separate",
         "separation_reason": "This is a pre-commitment judgment boundary, not an evidence review and not a closeout test.",
+        "claim_to_name": "the intent, exclusion, success condition, or authority you inferred",
+        "resume_requirement": "the operator confirming the interpretation that was inferred",
         "guidance": "failure_signal_grammar",
-        "body_budget_bytes": 1024
+        "body_budget_bytes": 2560
       },
       {
         "id": "evidence-and-gates",
@@ -460,8 +462,10 @@
         "evidence": "The handoff runbook already rejects missing, malformed, inconsistent, blocked, or operator-dependent reports as successful evidence, and configured review policy is already separate from role labels. Deterministic checks validate structure and state, not every qualitative claim.",
         "disposition": "keep-separate",
         "separation_reason": "It is invoked only for a remaining qualitative gap, and its failure signals are the ones the other three cards reference rather than restate.",
+        "claim_to_name": "the adequacy you asserted without decisive evidence",
+        "resume_requirement": "the missing evidence, or a judgment by someone who did not produce the work",
         "guidance": "failure_signal_grammar",
-        "body_budget_bytes": 1024
+        "body_budget_bytes": 2560
       },
       {
         "id": "mixed-version-state",
@@ -472,8 +476,10 @@
         "evidence": "Protocol gating and the migration runbook already fail closed around unresolved or judgment-dependent migration actions, and installed markers, source checkouts, and running identity are known to diverge. A static version string cannot prove that migration recovered cleanly or that updated software is the process actually serving requests.",
         "disposition": "keep-separate",
         "separation_reason": "It owns mixed-version and running-state proof, which the general evidence card would state too vaguely to act on.",
+        "claim_to_name": "the migration, version, or running state you called clean",
+        "resume_requirement": "an observation of the state actually serving requests",
         "guidance": "failure_signal_grammar",
-        "body_budget_bytes": 1024
+        "body_budget_bytes": 2560
       },
       {
         "id": "delivery-closeout",
@@ -484,11 +490,69 @@
         "evidence": "The handoff runbook already separates accepted, blocked, failed, rejected, and malformed outcomes, and closeout already requires an audit, operator confirmation, an archival choice, reset validation, and unresolved-decision follow-up. Artifact presence alone still does not establish delivery, recipient acceptance, or real-world effect.",
         "disposition": "keep-separate",
         "separation_reason": "It is the final outcome boundary and must distinguish artifact state from outcome state.",
+        "claim_to_name": "the outcome you read off an artifact existing",
+        "resume_requirement": "recipient acceptance, or the observed real-world effect",
         "guidance": "failure_signal_grammar",
-        "body_budget_bytes": 1024
+        "body_budget_bytes": 2560
       }
     ],
     "activation": "A card is eligible only at its own lifecycle boundary and only when its named non-enforceable failure is possible. Deterministic guards continue to own every fact they can decide.",
+    "activation_state": {
+      "state": "active",
+      "statement": "Judgment guidance is active. The task envelope declares the two activation facts, the run-task procedure calls the selector, the assignment-prompt projection carries the result, and the CLI and MCP surfaces expose it. No surface may describe the mechanism as defined-but-inactive while these surfaces activate it: the invariant protocol, this registry's surface state, the workflow procedure, the templates, and the CLI/MCP exposure state one activation state or the contract is in defect.",
+      "forbidden_when_active": [
+        "defined but inactive",
+        "no lifecycle surface activates a card",
+        "pending judgment mechanism"
+      ],
+      "parity_surfaces": [
+        {
+          "id": "invariant-protocol",
+          "kind": "document",
+          "path": "protocol/CONVENTIONS.md",
+          "required_when_active": "Judgment guidance is active through the task's judgment envelope, the run-task procedure, the assignment-prompt projection, and the CLI/MCP surface"
+        },
+        {
+          "id": "contract-projection",
+          "kind": "document",
+          "path": "protocol/RISK_AND_PRACTICE.md",
+          "required_when_active": "The active shared surface is `cartopian select-judgment-guidance`"
+        },
+        {
+          "id": "task-envelope-template",
+          "kind": "document",
+          "path": "templates/TASK.md",
+          "required_when_active": "## Judgment envelope"
+        },
+        {
+          "id": "assignment-prompt-template",
+          "kind": "document",
+          "path": "templates/PROMPT.md",
+          "required_when_active": "## Judgment guidance"
+        },
+        {
+          "id": "workflow-procedure",
+          "kind": "document",
+          "path": "skills/run-task.md",
+          "required_when_active": "cartopian select-judgment-guidance"
+        },
+        {
+          "id": "cli-subcommand",
+          "kind": "cli-subcommand",
+          "name": "select-judgment-guidance"
+        },
+        {
+          "id": "mcp-tool",
+          "kind": "mcp-tool",
+          "name": "select_judgment_guidance"
+        }
+      ],
+      "registry_surface_paths": [
+        "protocol/judgment/",
+        "cli/judgment_guidance.py",
+        "cli/commands/select_judgment_guidance.py"
+      ]
+    },
     "envelope_facts": [
       {
         "id": "lifecycle_boundaries",
@@ -507,6 +571,29 @@
       "meaning": "A card is eligible only when the task envelope declares that the work crosses the card's lifecycle boundary and that the card's named non-enforceable failure is still open. Crossing the boundary alone activates nothing, and an open failure outside its boundary activates nothing. Neither the risk band nor the pack outcome is an input.",
       "result_order": "declared card order"
     },
+    "activation_inputs_are_closed": true,
+    "forbidden_activation_inputs": [
+      "band",
+      "risk_band",
+      "risk_result",
+      "ordered_reasons",
+      "evidence_expectation",
+      "review_expectation",
+      "operator_gate",
+      "contingency_expectation",
+      "pack_id",
+      "selected_pack",
+      "pack_outcome",
+      "practice_pack",
+      "primary_outcomes",
+      "exclusions",
+      "lifecycle_substrate_activities",
+      "artifact_kinds",
+      "incidental_terms",
+      "domain_scopes",
+      "authorized_profile_hint"
+    ],
+    "forbidden_activation_inputs_rule": "Activation reads the two declared envelope facts and nothing else. Supplying a risk-result or pack-selection field to the judgment selector is a fail-closed input error rather than an accepted extra fact, so the absence of an activation edge is enforced instead of asserted.",
     "grammar_ownership": "central",
     "failure_signal_grammar": [
       {
@@ -527,6 +614,128 @@
       }
     ],
     "grammar_rule": "The four cards share this one grammar. A pack may reference a card but must not copy its prose or introduce a parallel anti-rationalization table.",
+    "guidance_body": {
+      "statement": "The failure-signal grammar has exactly one authored body. Every card that activates references that same body, so activating four cards loads the same bytes as activating one and no card carries prose of its own.",
+      "contract_id": "failure-signal",
+      "guidance_id": "failure_signal_grammar",
+      "revision": 2,
+      "body_ref": "judgment/failure-signal.md",
+      "body_content_identity": "sha256:0924407b0d9d29bb9500fd613e431dd87b6277884e996b1391df3d3be9917630",
+      "body_budget_bytes": 2560,
+      "authored_body_count": 1,
+      "budget_equals_every_card_budget": true,
+      "sections": [
+        "unverified-claim",
+        "missing-authority-or-evidence",
+        "consequence-of-proceeding",
+        "next-decision-or-proof"
+      ],
+      "retrieval_rule": "The body is retrieved only after at least one card activates, and it is retrieved once. No card, boundary, or unrelated workflow retrieves it otherwise, and a stale, oversized, unreadable, non-UTF-8, or out-of-bounds body fails closed with zero loaded bytes and no partial content.",
+      "stop_contract": {
+        "statement": "Naming four fields is not stopping behavior. The one central body must make activation a hold, bind the four fields to the active card's named failure, identify the decision authority or observable proof that would resume the work, and permit proceeding only once that named requirement is satisfied. Each requirement below names the literal the authored body must carry, so a body that drops the stopping behavior fails closed instead of passing on headings alone.",
+        "requirements": [
+          {
+            "id": "activation-is-a-hold",
+            "requirement": "Activation stops the work at the boundary that activated the card rather than adding a reminder to the work in flight.",
+            "body_marker": "**An active card is a hold.** Stop at that boundary."
+          },
+          {
+            "id": "fields-bind-to-the-active-failure",
+            "requirement": "The four elements are reported against the active card's named failure, not against the task in general.",
+            "body_marker": "against the active card's named failure — not against the task in general"
+          },
+          {
+            "id": "resume-authority-or-proof-is-named",
+            "requirement": "The missing item resolves to a named decision authority or a named observation, and the report says which of the two applies.",
+            "body_marker": "the decision authority who can settle it, or the observation that would"
+          },
+          {
+            "id": "proceeding-requires-a-satisfied-requirement",
+            "requirement": "Work resumes only when the one named requirement is met and recorded; plausibility, urgency, a partial result, or a restatement does not satisfy it.",
+            "body_marker": "resume only when that exact requirement is met and recorded"
+          }
+        ],
+        "per_failure_binding_rule": "The body carries one row per recorded failure naming that failure's claim_to_name and resume_requirement verbatim from the card above, so each of the four active failures produces different, actionable stopping guidance rather than the same four sentences."
+      }
+    },
+    "outcomes": [
+      {
+        "id": "active",
+        "guidance_bodies_loaded": 1,
+        "error": false,
+        "meaning": "At least one card is eligible. The one central body is loaded exactly once, whatever the number of active cards."
+      },
+      {
+        "id": "none",
+        "guidance_bodies_loaded": 0,
+        "error": false,
+        "meaning": "No card is eligible. This is a valid result, not an error, and the workflow receives zero guidance bytes."
+      },
+      {
+        "id": "invalid",
+        "guidance_bodies_loaded": 0,
+        "error": true,
+        "meaning": "The envelope or the authored body failed validation. Activation fails closed and returns structured evidence without partial content."
+      }
+    ],
+    "result_fields": [
+      "contract_id",
+      "contract_version",
+      "outcome",
+      "active_cards",
+      "cards_active",
+      "ordered_activation_reasons",
+      "inactive_cards",
+      "guidance_bodies_loaded",
+      "loaded_guidance_bytes",
+      "guidance_identity",
+      "guidance_budget_bytes",
+      "context_receipt",
+      "body",
+      "error"
+    ],
+    "context_receipt": {
+      "statement": "Every outcome returns a receipt that separates the compact activation metadata from the one admitted body, so the guidance cost is measured rather than asserted and non-activation is provably zero bytes.",
+      "fields": [
+        {
+          "id": "routing_metadata_bytes",
+          "meaning": "Exact UTF-8 byte length of the result serialized as canonical compact JSON with body null and context_receipt omitted: sorted keys, no optional whitespace, non-ASCII preserved. Measured, not asserted, and recomputable by any consumer."
+        },
+        {
+          "id": "loaded_guidance_bytes",
+          "meaning": "Exact UTF-8 byte length of the one admitted central body, or 0."
+        },
+        {
+          "id": "guidance_budget_bytes",
+          "meaning": "The declared ceiling of the central body, or null when no body is admitted."
+        },
+        {
+          "id": "central_bodies_loaded",
+          "meaning": "1 when at least one card activated, otherwise 0. Never the number of active cards."
+        },
+        {
+          "id": "duplicate_guidance_bytes",
+          "meaning": "Active-context bytes contributed by any second copy of the grammar. Always 0: one body serves every card."
+        },
+        {
+          "id": "inactive_boundary_bytes",
+          "meaning": "Active-context bytes contributed to a workflow whose boundaries activated no card. Always 0."
+        }
+      ]
+    },
+    "failure_codes": [
+      "judgment-contract-unavailable",
+      "judgment-contract-invalid",
+      "judgment-envelope-invalid",
+      "judgment-envelope-forbidden-input",
+      "judgment-body-missing",
+      "judgment-body-unreadable",
+      "judgment-body-out-of-bounds",
+      "judgment-body-oversized",
+      "judgment-body-invalid-utf8",
+      "judgment-body-invalid",
+      "judgment-body-stale"
+    ],
     "admission_rule": {
       "required_records": [
         "non-enforceable-failure-record",
@@ -2596,13 +2805,13 @@
       "path": "templates/TASK.md",
       "role": "projection",
       "activation": "active",
-      "owns": "The task-envelope facts and risk observations captured at authoring time."
+      "owns": "The task-envelope facts, the judgment envelope, and the risk observations captured at authoring time."
     },
     {
       "path": "templates/PROMPT.md",
       "role": "projection",
       "activation": "active",
-      "owns": "The derived risk result carried into an assignment. Judgment references and selected pack rendering remain inactive."
+      "owns": "The derived risk result, the activated judgment guidance, and the selected pack rendering carried into an assignment."
     },
     {
       "path": "templates/REPORT.md",
@@ -2657,6 +2866,24 @@
       "role": "projection",
       "activation": "active",
       "owns": "The shared CLI/MCP task-envelope input and structured result projection for practice-pack selection."
+    },
+    {
+      "path": "protocol/judgment/",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The one authored failure-signal guidance body shared by every judgment card, bounded by the declared budget every card also declares. Retrieved only after at least one card activates, and retrieved once."
+    },
+    {
+      "path": "cli/judgment_guidance.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The runtime card activator and bounded central-guidance loader that reads this authority, and the closed two-fact envelope that makes the absence of a risk or pack activation edge a fail-closed input error."
+    },
+    {
+      "path": "cli/commands/select_judgment_guidance.py",
+      "role": "projection",
+      "activation": "active",
+      "owns": "The shared CLI/MCP judgment-envelope input and structured result projection for card activation and central-guidance loading."
     }
   ],
   "validation_obligations": [
@@ -2860,9 +3087,57 @@
     },
     {
       "id": "judgment-card-bodies-meet-their-budget",
-      "state": "pending",
-      "test_anchor": null,
-      "requirement": "Each authored card body is within its declared byte budget and enters context only at its own lifecycle boundary."
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "The one authored guidance body every card shares is within the byte budget every card declares, and it enters context only at a lifecycle boundary that activates a card."
+    },
+    {
+      "id": "one-central-grammar-body-serves-every-card",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "Exactly one guidance body is authored, every card references it, its declared budget equals every card's declared budget, its sections are exactly the central grammar elements, and activating all four cards loads that one body once rather than one body per card."
+    },
+    {
+      "id": "judgment-guidance-loads-zero-bytes-outside-its-boundaries",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "For every fixed judgment measurement case, active plus excluded guidance bytes equal the one authored body, and a crossed boundary with no open failure, an open failure outside its boundary, and an empty envelope each contribute zero guidance bytes."
+    },
+    {
+      "id": "judgment-activation-reads-only-its-two-declared-facts",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "Supplying a risk-result or pack-selection field to the judgment selector is a fail-closed input error rather than an ignored extra fact, so no implicit activation edge from risk or pack selection can exist at runtime."
+    },
+    {
+      "id": "runtime-judgment-selector-matches-the-fixtures",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "The runtime selector returns the recorded cards, outcome, and loaded-guidance byte count for every fixed task envelope and every judgment measurement case, on both the command-line and tool surfaces, and a stale, oversized, unreadable, non-UTF-8, or out-of-bounds body fails closed without partial content."
+    },
+    {
+      "id": "no-parallel-grammar-or-numeric-score-ships",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "The grammar element prompts are owned by the registry and its one authored body; no pack body, template, or skill declares a second grammar table, a numeric score standing in for judgment, or a repeated cross-model confirmation prompt."
+    },
+    {
+      "id": "one-judgment-activation-state-across-every-surface",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "The invariant protocol, this registry's judgment surface state, the workflow procedure, the task and prompt templates, and the CLI/MCP exposure all state the declared activation state. Restoring a defined-but-inactive claim to any parity document, dropping the selector call from the workflow procedure, removing either template section, marking a judgment surface pending, or withdrawing the CLI subcommand or MCP tool is a recorded disagreement rather than a silent divergence."
+    },
+    {
+      "id": "the-central-guidance-body-creates-stopping-behavior",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "The one admitted body carries every declared stop-contract requirement: activation is a hold at the activating boundary, the four elements are bound to the active card's named failure, the missing item resolves to a named decision authority or a named observation, and work resumes only when that one named requirement is met and recorded. A body that drops a requirement is a recorded disagreement, so heading structure alone cannot satisfy the contract."
+    },
+    {
+      "id": "each-active-failure-produces-its-own-stopping-guidance",
+      "state": "proven",
+      "test_anchor": "tests/test_judgment_guidance.py",
+      "requirement": "Activating each of the four recorded failures admits guidance that names that failure's own claim_to_name and resume_requirement verbatim from the registry, and the four resume requirements are distinct, so the four cards produce meaningfully different actionable stopping guidance instead of the same four sentences."
     },
     {
       "id": "measured-pack-body-loading-is-bounded",
@@ -3781,6 +4056,225 @@
             }
           ]
         }
+      }
+    },
+    "judgment_context_measurement": {
+      "method": "Each case supplies one fixed set of declared lifecycle_boundaries and open_failure_conditions to the judgment selector. Active bytes are the exact UTF-8 length of the one admitted central body, including its terminating line feed. Excluded bytes are the same body when it is not admitted. Estimated tokens are the ceiling of exact bytes divided by four, never tokenizer output or provider billing.",
+      "authored_guidance_bodies": 1,
+      "authored_guidance_bytes": 2331,
+      "guidance_budget_bytes": 2560,
+      "peak_active_guidance_bytes": 2331,
+      "peak_active_guidance_basis": "One authored body serves all four cards, so peak active guidance is that one body no matter how many cards activate. Admitting a fifth card would not raise it either.",
+      "per_card_authored_bytes": 0,
+      "cases": [
+        {
+          "id": "no-open-failure-loads-nothing",
+          "task_envelope": "routine-local-text-correction",
+          "lifecycle_boundaries": [
+            "requirements-and-intent",
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        },
+        {
+          "id": "selected-pack-without-an-open-failure-loads-nothing",
+          "task_envelope": "sourced-comparative-finding",
+          "lifecycle_boundaries": [
+            "requirements-and-intent"
+          ],
+          "open_failure_conditions": [],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        },
+        {
+          "id": "mixed-version-boundary-loads-one-body",
+          "task_envelope": "updated-service-restart-proof",
+          "lifecycle_boundaries": [
+            "migration-install-restart",
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [
+            "mixed-version-or-unproven-running-state"
+          ],
+          "expected_cards": [
+            "mixed-version-state"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "intent-boundary-loads-one-body-while-no-pack-resolves",
+          "task_envelope": "equal-primary-research-and-marketing",
+          "lifecycle_boundaries": [
+            "requirements-and-intent"
+          ],
+          "open_failure_conditions": [
+            "inferred-intent-not-confirmed"
+          ],
+          "expected_cards": [
+            "intent-confirmation"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "evidence-gate-boundary-loads-one-body",
+          "task_envelope": "critical-external-commitment-missing-authority",
+          "lifecycle_boundaries": [
+            "evidence-and-review-gate"
+          ],
+          "open_failure_conditions": [
+            "evidence-self-certified-or-missing"
+          ],
+          "expected_cards": [
+            "evidence-and-gates"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "evidence-gate-boundary-without-its-failure-loads-nothing",
+          "task_envelope": "bounded-software-behavior-change",
+          "lifecycle_boundaries": [
+            "evidence-and-review-gate"
+          ],
+          "open_failure_conditions": [],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        },
+        {
+          "id": "closeout-boundary-without-its-failure-loads-nothing",
+          "task_envelope": "campaign-launch-decision",
+          "lifecycle_boundaries": [
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        },
+        {
+          "id": "closeout-boundary-loads-one-body",
+          "task_envelope": "binding-policy-interpretation",
+          "lifecycle_boundaries": [
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [
+            "artifact-mistaken-for-outcome"
+          ],
+          "expected_cards": [
+            "delivery-closeout"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "intent-boundary-loads-one-body-without-any-pack",
+          "task_envelope": "unestablished-authority-observation",
+          "lifecycle_boundaries": [
+            "requirements-and-intent"
+          ],
+          "open_failure_conditions": [
+            "inferred-intent-not-confirmed"
+          ],
+          "expected_cards": [
+            "intent-confirmation"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "all-four-cards-load-the-same-one-body",
+          "task_envelope": null,
+          "lifecycle_boundaries": [
+            "requirements-and-intent",
+            "evidence-and-review-gate",
+            "migration-install-restart",
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [
+            "inferred-intent-not-confirmed",
+            "evidence-self-certified-or-missing",
+            "mixed-version-or-unproven-running-state",
+            "artifact-mistaken-for-outcome"
+          ],
+          "expected_cards": [
+            "intent-confirmation",
+            "evidence-and-gates",
+            "mixed-version-state",
+            "delivery-closeout"
+          ],
+          "expected_outcome": "active",
+          "active_guidance_bytes": 2331,
+          "excluded_guidance_bytes": 0
+        },
+        {
+          "id": "every-boundary-crossed-with-no-open-failure-loads-nothing",
+          "task_envelope": null,
+          "lifecycle_boundaries": [
+            "requirements-and-intent",
+            "evidence-and-review-gate",
+            "migration-install-restart",
+            "delivery-and-closeout"
+          ],
+          "open_failure_conditions": [],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        },
+        {
+          "id": "every-failure-open-outside-its-boundary-loads-nothing",
+          "task_envelope": null,
+          "lifecycle_boundaries": [],
+          "open_failure_conditions": [
+            "inferred-intent-not-confirmed",
+            "evidence-self-certified-or-missing",
+            "mixed-version-or-unproven-running-state",
+            "artifact-mistaken-for-outcome"
+          ],
+          "expected_cards": [],
+          "expected_outcome": "none",
+          "active_guidance_bytes": 0,
+          "excluded_guidance_bytes": 2331
+        }
+      ],
+      "per_card_body_comparison": {
+        "statement": "The centralization saving is the difference between one shared body and one body per active card. It is measured at the worst case, where all four cards activate.",
+        "cards_at_peak": 4,
+        "per_card_body_bytes_at_peak": 9324,
+        "central_body_bytes_at_peak": 2331,
+        "avoided_duplicate_bytes_at_peak": 6993
+      },
+      "pack_grammar_references": {
+        "statement": "A pack body may point at the grammar in one sentence. That reference is not a second owner of the grammar: it carries no element identities, no prompts as a list, and no parallel anti-rationalization table. Only one pack body is ever admitted, so the active cost of the references is at most one sentence.",
+        "reference_sites": 5,
+        "reference_bytes_each": 165,
+        "authored_reference_bytes": 825,
+        "peak_active_reference_bytes": 165,
+        "parallel_grammar_tables": 0
+      },
+      "prior_baseline": {
+        "statement": "Before this implementation the grammar existed only as registry rows and prose projection. No guidance body was authored and no surface loaded one, so an applicable boundary and an unrelated boundary both received exactly zero guidance bytes and the distinction could not be measured.",
+        "authored_guidance_bodies": 0,
+        "authored_guidance_bytes": 0,
+        "active_guidance_bytes_at_an_applicable_boundary": 0,
+        "active_guidance_bytes_at_an_unrelated_boundary": 0,
+        "runtime_activation_surfaces": 0
       }
     },
     "operations_boundary": [

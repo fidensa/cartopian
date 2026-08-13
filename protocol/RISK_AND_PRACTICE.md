@@ -159,6 +159,8 @@ Risk never writes the project's review policy values, the resolved role assigned
 
 Four cards remain. Each is eligible only at its own lifecycle boundary, and only when the named failure — one that no deterministic guard can decide — is actually possible. Deterministic guards keep every fact they can decide.
 
+**Activation state: `active`.** The registry owns this as one value, `judgment.activation_state.state`, and every surface that carries it states the same thing. The invariant layer in `protocol/CONVENTIONS.md` says the mechanism is active; each judgment surface in `authoritative_surfaces` is `active`; `templates/TASK.md` declares the two envelope facts and `templates/PROMPT.md` carries the result; `skills/run-task.md` calls the selector in Stage 1; and `cartopian select-judgment-guidance` and the `select_judgment_guidance` tool expose it. Those surfaces are listed as `parity_surfaces`, and describing the mechanism as defined-but-inactive while they activate it is a recorded disagreement, not a difference of reading.
+
 | Card | Boundary (`boundary_id`) | The failure it addresses (`failure_id`) |
 | --- | --- | --- |
 | `intent-confirmation` | `requirements-and-intent` — requirements and intent confirmation, before delivery of the interpreted contract begins. | `inferred-intent-not-confirmed` — missing intent, exclusions, success conditions, or authority are inferred and delivery starts before the operator confirms the interpretation. |
@@ -179,7 +181,43 @@ Activation reads two declared task-envelope facts and nothing else:
 
 A card is eligible when its `boundary_id` appears in `lifecycle_boundaries` **and** its `failure_id` appears in `open_failure_conditions`. Crossing a boundary alone activates nothing, and an open failure outside its own boundary activates nothing. The default outcome is no card.
 
-Neither the risk band nor the pack outcome is an input. A critical band activates no card on its own, and a selected pack activates no card on its own.
+Neither the risk band nor the pack outcome is an input. A critical band activates no card on its own, and a selected pack activates no card on its own. That is enforced, not merely stated: the selector accepts these two facts and no others, and supplying a band, a risk result, a pack identity, or a pack-matching fact is a fail-closed `judgment-envelope-forbidden-input` error rather than an extra fact it quietly ignores.
+
+### The one central guidance body
+
+The grammar has exactly one authored body, `protocol/judgment/failure-signal.md`. Every card references it, so no card carries prose of its own and the four cards cannot drift apart.
+
+| Field | Meaning |
+| --- | --- |
+| `body_ref` | Logical locator of the one bounded guidance body. Retrieved only after at least one card activates. |
+| `body_content_identity` | The sha256 identity of the authored body bytes. A body edited out from under its declaration is stale and loads nothing. |
+| `body_budget_bytes` | The declared ceiling, 2560 bytes — the same number every card declares, so there is one budget rather than four. |
+| `sections` | Exactly the four grammar element identities, in declared order. |
+
+The measured body is 2331 bytes. **Activating four cards loads that one body once, not four copies**: peak active guidance is 2331 bytes rather than the 9,324 bytes a per-card body would cost, and admitting a fifth card would not raise it either. When no card activates, the guidance contribution is a measured zero.
+
+The ceiling rose from 1024 to 2560 bytes when the body became a stopping contract rather than four field names. The added bytes are the hold rule, the per-failure binding table, and the resume requirement below; they buy the difference between an assignee who can name four fields and one who knows the boundary is closed and what would release it. Peak active cost is still one body at one boundary, and a workflow that activates no card still pays zero.
+
+| Outcome | Bodies loaded | Error | Meaning |
+| --- | ---: | --- | --- |
+| `active` | 1 | no | At least one card is eligible. The one central body is loaded exactly once. |
+| `none` | 0 | no | No card is eligible. A valid result, not an error, and the workflow receives zero guidance bytes. |
+| `invalid` | 0 | yes | The envelope or the authored body failed validation. Activation fails closed with no partial content. |
+
+A stale, oversized, unreadable, non-UTF-8, or out-of-bounds body is `invalid`. So is a body whose four `##` headings or four element prompts no longer match the registry's grammar: the body is a projection of the authority, and drift between them fails closed rather than shipping a second grammar.
+
+The active shared surface is `cartopian select-judgment-guidance` (and the equivalent `select_judgment_guidance` MCP tool). Its result carries `active_cards`, `ordered_activation_reasons`, compact `inactive_cards` reasons, `guidance_identity`, `loaded_guidance_bytes`, `guidance_budget_bytes`, and a context receipt separating the compact activation metadata from the one admitted body:
+
+| Receipt field | Meaning |
+| --- | --- |
+| `routing_metadata_bytes` | Exact UTF-8 byte length of the result serialized as canonical compact JSON with `body` null and `context_receipt` omitted. Measured, not asserted. |
+| `loaded_guidance_bytes` | Exact UTF-8 byte length of the one admitted body, or 0. |
+| `guidance_budget_bytes` | The declared ceiling, or null when no body is admitted. |
+| `central_bodies_loaded` | 1 when at least one card activated, otherwise 0. Never the number of active cards. |
+| `duplicate_guidance_bytes` | Active-context bytes from a second copy of the grammar. Always 0. |
+| `inactive_boundary_bytes` | Active-context bytes reaching a workflow that activated no card. Always 0. |
+
+A pack body may point at the grammar in one sentence; five do. That reference carries no element identities, no prompt list, and no parallel anti-rationalization table, and at most one pack body is ever admitted, so its active cost is at most one 165-byte sentence. The grammar itself stays owned in one place.
 
 All four were reviewed against the existing runbooks and kept separate. Intent confirmation is a pre-commitment boundary rather than an evidence review; mixed-version state owns running-state proof that the general evidence card would state too vaguely to act on; delivery and closeout is the final boundary where artifact state must be distinguished from outcome state.
 
@@ -193,6 +231,22 @@ The four cards share one grammar, owned centrally. A pack may reference a card, 
 | `missing-authority-or-evidence` | Name the authority or evidence that is missing. |
 | `consequence-of-proceeding` | State what happens if the work proceeds anyway. |
 | `next-decision-or-proof` | State the next decision or the proof that would settle it. |
+
+**An active card is a hold, not a reminder.** The four elements are the report an assignee owes at a closed boundary, not four topics to mention. The central body states the stopping behavior once, for every card:
+
+- Activation stops the work at the boundary that activated it. The assignee reports the four elements and waits.
+- The four elements are filled against the **active card's named failure**, not against the task in general. The body carries one row per recorded failure naming the claim to state and the condition that ends the hold, so `inferred-intent-not-confirmed` and `artifact-mistaken-for-outcome` do not produce the same sentence.
+- `missing-authority-or-evidence` resolves to one of two things and says which: the decision authority who can settle the claim, or the observation that would.
+- `next-decision-or-proof` is one satisfiable requirement. Work resumes only when that exact requirement is met and recorded; plausibility, urgency, a partial result, and a restatement of the claim do not satisfy it.
+
+| Recorded failure | The hold ends on |
+| --- | --- |
+| `inferred-intent-not-confirmed` | the operator confirming the interpretation that was inferred |
+| `evidence-self-certified-or-missing` | the missing evidence, or a judgment by someone who did not produce the work |
+| `mixed-version-or-unproven-running-state` | an observation of the state actually serving requests |
+| `artifact-mistaken-for-outcome` | recipient acceptance, or the observed real-world effect |
+
+The body's own table carries a second column, `claim_to_name`, so each failure also differs in what the assignee is told to quote; the resume condition is the column reproduced here because it is what decides whether the boundary stays closed. Both columns are owned per card in the registry and projected verbatim, so a card cannot be satisfied by a report that never says what would release the hold. The grammar still carries no confidence rating, no numeric score, and no request that another model agree.
 
 ### Admitting a fifth card
 
@@ -514,6 +568,27 @@ The eligible universe is one 78-byte core line plus one specimen line for each o
 
 In every case active bytes plus excluded bytes equal 525 exactly, and in every selected case the excluded bytes are exactly the weight of the other four required packs. When the outcome is not `selected`, the pack contribution is zero bytes — measurable non-selection, not an instruction to ignore prose that already loaded.
 
+### Judgment guidance measures the same way
+
+The eligible universe for judgment guidance is one authored body: 2331 bytes. Every case below supplies one fixed pair of declared boundary and open-failure lists, and in every case active plus excluded bytes equal 2331 exactly.
+
+| Case | Cards active | Outcome | Active guidance bytes | Excluded bytes |
+| --- | ---: | --- | ---: | ---: |
+| `no-open-failure-loads-nothing` | 0 | none | 0 | 2331 |
+| `selected-pack-without-an-open-failure-loads-nothing` | 0 | none | 0 | 2331 |
+| `mixed-version-boundary-loads-one-body` | 1 | active | 2331 | 0 |
+| `intent-boundary-loads-one-body-while-no-pack-resolves` | 1 | active | 2331 | 0 |
+| `evidence-gate-boundary-loads-one-body` | 1 | active | 2331 | 0 |
+| `evidence-gate-boundary-without-its-failure-loads-nothing` | 0 | none | 0 | 2331 |
+| `closeout-boundary-without-its-failure-loads-nothing` | 0 | none | 0 | 2331 |
+| `closeout-boundary-loads-one-body` | 1 | active | 2331 | 0 |
+| `intent-boundary-loads-one-body-without-any-pack` | 1 | active | 2331 | 0 |
+| `all-four-cards-load-the-same-one-body` | 4 | active | 2331 | 0 |
+| `every-boundary-crossed-with-no-open-failure-loads-nothing` | 0 | none | 0 | 2331 |
+| `every-failure-open-outside-its-boundary-loads-nothing` | 0 | none | 0 | 2331 |
+
+The last three rows are the ones that matter for cost. Four active cards cost the same 2331 bytes as one, so the centralization avoids 6,993 bytes at peak; crossing every boundary with nothing open costs zero; and holding every failure open outside its boundary also costs zero. Before this implementation no guidance body existed and no surface loaded one, so an applicable boundary and an unrelated boundary were both zero and the difference could not be measured at all.
+
 Bodies behave the same way. Five authored bodies within their declared budgets — 16,384 bytes each for the revised `software-delivery`, `research-inquiry`, `marketing-claim`, `operations-change`, and `policy-governance` mini-skills — are 81,920 bytes of maintenance surface, but **peak active context is the core line plus the largest declared body budget — at most 16,462 bytes — no matter how many packs ship**, because at most one body is ever admitted. Shipping the other four adds zero active bytes.
 
 ## The mechanism-validation exemplars
@@ -578,4 +653,6 @@ Every figure here is a composition measurement over the declared fixtures. They 
 
 `protocol/risk-and-practice-contract.json` is the authority for every machine value. This file is its plain-language projection. The validation suite checks that the two agree, that the fixtures resolve deterministically, that all five required packs are declared with their approved content areas and each selects positively and is vetoed negatively, that every lifecycle-substrate activity vetoes operations on its own, that the six operations boundaries hold, that exactly one pack body can enter active context while the other four contribute zero bytes, that each candidate set's coverage flags and cost figures recompute from the declared metadata and specimens without bounding delivery scope, that every operator-accepted decision recorded in `accepted_decisions` — `DEC-037`, `DEC-038`, and `DEC-039` — carries its operator evidence and is emitted as locked on both surfaces, and that no pack body exists while the runtime activation gate is unmet.
 
-The registry also records the projection state of each surface. Risk classification is active in the task, prompt, and report templates, the task and handoff runbooks, `cli/risk_contract.py`, and the shared CLI/MCP command surface. The runtime uses the registry's dominance and governance rows directly; focused fixtures prove fail-closed classification, configured-policy preservation, deterministic operator gates and contingencies, and bounded critical adversarial context. Judgment-card activation and practice-pack selection remain pending and independent; this risk implementation does not activate or implement either one.
+The registry also records the projection state of each surface. Risk classification is active in the task, prompt, and report templates, the task and handoff runbooks, `cli/risk_contract.py`, and the shared CLI/MCP command surface. The runtime uses the registry's dominance and governance rows directly; focused fixtures prove fail-closed classification, configured-policy preservation, deterministic operator gates and contingencies, and bounded critical adversarial context.
+
+Judgment-card activation and practice-pack selection are now active too, and they remain independent of risk and of each other. Judgment activation reads its own two declared envelope facts through `cli/judgment_guidance.py` and the shared `select-judgment-guidance` surface; it derives no band, selects no pack, and rejects a band or pack fact rather than reading one. Pack selection reads its own envelope facts and activates no card. Each mechanism is projected into its own task-envelope section, its own prompt section, and its own fixtures, and the validation suite resolves all three for every worked outcome.
