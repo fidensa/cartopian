@@ -174,10 +174,12 @@ def _toml(
     effort: str = "",
     auto_launch_tasks: bool = True,
     auto_launch_reviews: "bool | None" = None,
+    grants: str = "",
 ) -> str:
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
     effort_line = f'effort = "{effort}"\n' if effort else ""
+    grants_line = f'grants = ["{grants}"]\n' if grants else ""
     activities = []
     if auto_launch_tasks:
         activities.append("task_run")
@@ -204,6 +206,7 @@ def _toml(
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'
+        f"{grants_line}"
         f"{auto_launch_line}"
         f'agent = "{agent}"\n'
         f"{model_line}"
@@ -213,13 +216,21 @@ def _toml(
     )
 
 
-def _write_task_and_prompt(scaffold, nn_nnn: str = "01-004") -> Path:
+def _write_task_and_prompt(
+    scaffold,
+    nn_nnn: str = "01-004",
+    *,
+    deliverable: str | None = None,
+    prompt_addition: str = "",
+) -> Path:
+    deliverable_line = f"Deliverable: {deliverable}\n" if deliverable else ""
     task_path = scaffold.write(
         f"tasks/in-progress/TASK-{nn_nnn}.md",
         (
             f"# TASK-{nn_nnn}: Mediated dispatch\n\n"
             "Phase: PHASE-01\n"
             "Work root: tool-repo\n"
+            f"{deliverable_line}"
             "Assignee: coder\n\n"
             "## Goal\n\nLaunch via mediated dispatch.\n"
         ),
@@ -235,7 +246,7 @@ def _write_task_and_prompt(scaffold, nn_nnn: str = "01-004") -> Path:
     scaffold.write(
         f"prompts/PROMPT-{nn_nnn}.md",
         request_trace.upsert_request_sections(
-            f"# PROMPT-{nn_nnn}\n\n## Your task\n\nDo the work.\n",
+            f"# PROMPT-{nn_nnn}\n\n## Your task\n\nDo the work.\n{prompt_addition}",
             context.section,
         ),
     )
@@ -1318,6 +1329,72 @@ class TestDispatchFailClosed(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("stale-request-context", stderr)
             self.assertFalse(capture.exists())
+
+    def test_task_run_refuses_unreadable_existing_project_deliverable(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+            scaffold.write(
+                "cartopian.toml", _toml(str(stub), grants="coder-like")
+            )
+            scaffold.write(
+                "resources/current-contract.md",
+                "# Current contract\n\nThis exact content must be reviewed.\n",
+            )
+            task_path = _write_task_and_prompt(
+                scaffold,
+                deliverable="project:resources/current-contract.md",
+            )
+
+            with mock.patch.dict(
+                os.environ, {"STUB_CAPTURE": str(capture)}, clear=False
+            ):
+                stdout, stderr, rc = _dispatch(
+                    str(task_path), "coder", self._fake_home(tmp_path)
+                )
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("existing-deliverable-input-unavailable", stderr)
+            self.assertIn("curate the complete current resource", stderr)
+            self.assertFalse(capture.exists(), "wrapper was launched despite fail-closed")
+
+    def test_task_run_accepts_curated_existing_project_deliverable(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            resource_text = (
+                "# Current contract\n\nThis exact content must be reviewed.\n"
+            )
+            scaffold.write(
+                "cartopian.toml", _toml(str(stub), grants="coder-like")
+            )
+            scaffold.write("resources/current-contract.md", resource_text)
+            task_path = _write_task_and_prompt(
+                scaffold,
+                deliverable="project:resources/current-contract.md",
+                prompt_addition=f"\n## Current deliverable input\n\n{resource_text}",
+            )
+            fake_home = self._fake_home(tmp_path)
+
+            proc = mock.Mock(pid=12345)
+            with mock.patch(
+                "cli.commands.dispatch.subprocess.Popen", return_value=proc
+            ) as popen:
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, stderr)
+            self.assertTrue(popen.called)
+            record = json.loads(stdout)
+            self.assertTrue(record["existing_deliverable_input"]["ok"])
+            self.assertTrue(
+                record["existing_deliverable_input"][
+                    "prompt_contains_current_content"
+                ]
+            )
 
     def test_empty_model_fails_closed(self) -> None:
         # A set-but-empty model would diverge the record from the export

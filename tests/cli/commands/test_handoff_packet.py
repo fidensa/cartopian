@@ -131,6 +131,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                 "auto_launch",
                 "attribution",
                 "work_roots",
+                "existing_deliverable_input",
                 "expected_report_path",
                 "git_versioning",
                 "git_policy",
@@ -172,6 +173,48 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
             )
             self.assertEqual(rec["reviews"]["planning"]["mode"], "off")
             self.assertEqual(rec["reviews"]["task_closure"]["mode"], "off")
+
+    def test_existing_project_deliverable_declares_prompt_input_requirement(self) -> None:
+        contained_toml = _TOML.replace(
+            'description = "Implements tasks per spec."\n',
+            'description = "Implements tasks per spec."\n'
+            'grants = ["coder-like"]\n',
+        )
+        with project_scaffold(cartopian_toml=contained_toml) as scaffold:
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.local.toml",
+                f"[work_roots]\ntool-repo = \"{work_root}\"\n",
+            )
+            resource = scaffold.write(
+                "resources/current-contract.md",
+                "# Current contract\n\nReview this version.\n",
+            )
+            resource_bytes = resource.read_bytes()
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-003.md",
+                (
+                    "# TASK-01-003: Revise contract\n\n"
+                    "Work root: n/a\n"
+                    "Deliverable: project:resources/current-contract.md\n"
+                    "Assignee: coder\n"
+                ),
+            )
+
+            stdout, stderr, rc = _invoke(str(task_path), "coder")
+
+        self.assertEqual(rc, EXIT_OK, stderr)
+        record = json.loads(stdout)
+        requirement = record["existing_deliverable_input"]
+        self.assertTrue(requirement["required"])
+        self.assertIsNone(requirement["ok"])
+        self.assertIsNone(requirement["prompt_contains_current_content"])
+        self.assertEqual(requirement["content_bytes"], len(resource_bytes))
+        self.assertEqual(
+            requirement["content_sha256"],
+            hashlib.sha256(resource_bytes).hexdigest(),
+        )
 
 
 class TestHandoffPacketProjectGuardParity(unittest.TestCase):

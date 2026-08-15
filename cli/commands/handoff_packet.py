@@ -5,6 +5,7 @@ policy, work-root absolute paths, expected report path, git policy) into a
 single NDJSON call. Read-only; no file writes, moves, renames, or deletes.
 """
 import argparse
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -163,6 +164,84 @@ def _build_git_policy(git_block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _existing_deliverable_input(
+    deliverable: Optional[Dict[str, Any]],
+    effective_grants: List[str],
+    *,
+    prompt_text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Describe and, when possible, verify prior project-resource input.
+
+    A project-mode deliverable is governance-scoped.  When it already exists,
+    an assignee without ``read:governance`` cannot inspect it directly even
+    though updating or reviewing that content may be the assignment's entire
+    purpose.  The PM must therefore curate the current text into the prompt.
+    This record makes that dependency explicit and lets both manual and
+    automatic handoff paths fail before an unreadable assignment is launched.
+    """
+    base: Dict[str, Any] = {
+        "required": False,
+        "reason": "not-applicable",
+        "logical": deliverable.get("logical") if deliverable else None,
+        "content_sha256": None,
+        "content_bytes": None,
+        "prompt_contains_current_content": None,
+        "ok": True,
+    }
+    if not deliverable or deliverable.get("mode") != "project":
+        return base
+    if not deliverable.get("exists"):
+        return {**base, "reason": "deliverable-does-not-exist"}
+    if "read:governance" in effective_grants:
+        return {**base, "reason": "role-can-read-governance"}
+
+    record = {
+        **base,
+        "required": True,
+        "reason": "existing-project-deliverable-is-not-role-readable",
+        "ok": None,
+    }
+    absolute = deliverable.get("absolute_path")
+    if not absolute:
+        return {
+            **record,
+            "reason": "existing-project-deliverable-path-unresolved",
+            "ok": False,
+        }
+    try:
+        data = Path(absolute).read_bytes()
+        current_text = data.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {
+            **record,
+            "reason": "existing-project-deliverable-is-not-readable-utf8",
+            "ok": False,
+        }
+
+    contains = None if prompt_text is None else current_text in prompt_text
+    return {
+        **record,
+        "content_sha256": hashlib.sha256(data).hexdigest(),
+        "content_bytes": len(data),
+        "prompt_contains_current_content": contains,
+        "ok": contains,
+    }
+
+
+def _existing_deliverable_refusal(record: Dict[str, Any]) -> str:
+    logical = record.get("logical") or "the existing project deliverable"
+    if record.get("reason") == "existing-project-deliverable-is-not-readable-utf8":
+        return (
+            f"{logical} is not UTF-8 text and role cannot read governance resources — "
+            "use a role with read:governance or move binary work to a declared work root"
+        )
+    return (
+        f"prompt does not contain the current content of {logical}, but the role "
+        "cannot read governance resources — curate the complete current resource "
+        "into the prompt, rewrite the prompt, and rerun handoff preflight"
+    )
+
+
 def handler(args: argparse.Namespace) -> int:
     """Handle handoff-packet command.
 
@@ -267,6 +346,7 @@ def handler(args: argparse.Namespace) -> int:
     # does: the same resolved review context and the same binding preflight.
     # Bypassing `cartopian dispatch` therefore cannot bypass intent resolution.
     request_trace_record: Optional[Dict[str, Any]] = None
+    prompt_text: Optional[str] = None
     if task_path.parent.name in ("in-progress", "in-review"):
         nn_nnn = task_id.removeprefix("TASK-")
         review_prompt = project_root / "prompts" / f"PROMPT-{nn_nnn}.md"
@@ -328,6 +408,11 @@ def handler(args: argparse.Namespace) -> int:
         request_trace_record = context.as_record()
         request_trace_record["preflight"] = preflight
 
+    deliverable_input = _existing_deliverable_input(
+        deliverable,
+        role_record["effective_grants"],
+        prompt_text=prompt_text,
+    )
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
         "schema_identity": resolved["schema_identity"],
@@ -344,6 +429,7 @@ def handler(args: argparse.Namespace) -> int:
         "attribution": role_record["attribution"],
         "work_roots": work_roots,
         "deliverable": deliverable,
+        "existing_deliverable_input": deliverable_input,
         "source_guidance": source_guidance.active_projection(
             source_guidance_record
         ),
@@ -372,5 +458,11 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(f"{failure['rule']}: {failure['detail']}")
         if failure.get("recovery"):
             stderr_guard(f"recovery: {failure['recovery']}")
+        return EXIT_FAIL
+    if deliverable_input["required"] and deliverable_input["ok"] is False:
+        stderr_guard(
+            "existing-deliverable-input-unavailable: "
+            + _existing_deliverable_refusal(deliverable_input)
+        )
         return EXIT_FAIL
     return EXIT_OK

@@ -63,6 +63,8 @@ from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
 from cli.commands.resolve_config import (
     _CliError,
+    _load_toml,
+    _resolve_deliverable,
     resolve_project_configuration,
 )
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
@@ -468,6 +470,7 @@ def handler(args: argparse.Namespace) -> int:
 
     task_id: Optional[str]
     source_guidance_record: Optional[Dict[str, Any]] = None
+    existing_deliverable_input: Optional[Dict[str, Any]] = None
     if task_path is not None:
         from cli import numbering_contract
 
@@ -497,6 +500,37 @@ def handler(args: argparse.Namespace) -> int:
             stderr_guard(
                 f"prompt not found: {prompt_path} — prepare the handoff prompt before "
                 f"dispatching (run-handoff Stage 1)"
+            )
+            return EXIT_FAIL
+        try:
+            task_content = task_path.read_text(encoding="utf-8")
+            prompt_text = prompt_path.read_text(encoding="utf-8")
+            project_cfg = _load_toml(project_toml, "project config") or {}
+            deliverable = _resolve_deliverable(
+                project_cfg,
+                project_root,
+                handoff_packet._deliverable_value(task_content),
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            stderr_guard(f"handoff input unreadable: {exc}")
+            return EXIT_FAIL
+        except _CliError as exc:
+            stderr_guard(exc.message)
+            return exc.exit_code
+        existing_deliverable_input = handoff_packet._existing_deliverable_input(
+            deliverable,
+            role_record["effective_grants"],
+            prompt_text=prompt_text,
+        )
+        if (
+            existing_deliverable_input["required"]
+            and existing_deliverable_input["ok"] is False
+        ):
+            stderr_guard(
+                "existing-deliverable-input-unavailable: "
+                + handoff_packet._existing_deliverable_refusal(
+                    existing_deliverable_input
+                )
             )
             return EXIT_FAIL
         # Task review publishes to the independent review-report slot
@@ -766,6 +800,7 @@ def handler(args: argparse.Namespace) -> int:
             if source_guidance_record is not None
             else None
         ),
+        "existing_deliverable_input": existing_deliverable_input,
         # The wait budget this launch was cleared against. `null` when the CLI
         # ran outside an MCP host, where no tools/call ceiling applies.
         "host_wait_budget": host_budget.record() if host_budget is not None else None,

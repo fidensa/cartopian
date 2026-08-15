@@ -78,7 +78,30 @@ def _subsections(body: str) -> Dict[str, List[str]]:
 
 
 def _rows(lines: Sequence[str]) -> List[str]:
-    return [line.strip()[2:].strip() for line in lines if line.strip().startswith("- ")]
+    """Return Markdown list rows with indented continuation lines folded in.
+
+    Source records are semicolon-delimited list items, but Markdown authors and
+    agents commonly wrap a long item across physical lines.  Treat a non-empty,
+    indented line as part of the preceding bullet.  Unindented prose and blank
+    lines terminate the current row so unrelated section text is never consumed.
+    """
+    rows: List[str] = []
+    current: Optional[str] = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            if current is not None:
+                rows.append(current)
+            current = stripped[2:].strip()
+        elif current is not None and stripped and line[:1].isspace():
+            current = f"{current} {stripped}"
+        else:
+            if current is not None:
+                rows.append(current)
+                current = None
+    if current is not None:
+        rows.append(current)
+    return rows
 
 
 def _parse_labeled_row(row: str, fields: Sequence[Dict[str, str]]) -> Dict[str, str]:

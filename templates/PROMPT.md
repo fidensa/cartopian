@@ -78,6 +78,10 @@ corrections. Never hand-author this section.>
 <Review prompts only. Tool-generated list of the management and delivery
 artifacts the configured reviewer compares with the verbatim channel above.>
 
+## Existing deliverable input
+
+<Include only when `handoff-packet.existing_deliverable_input.required` is true. Paste the complete current UTF-8 resource content exactly; the assigned role cannot read the governance-scoped resource path directly. Rerun `handoff-packet` after writing and require `existing_deliverable_input.ok: true` before handoff. Omit when the record says `required: false`.>
+
 ## Deliverable
 
 <Include this section only when the task produces a durable document (research findings, a design, an evaluation, an analysis) rather than code.

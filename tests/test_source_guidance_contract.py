@@ -190,6 +190,51 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
         self.assertEqual(evidence["outcome"], "valid")
         self.assertEqual(len(evidence["evidence"]["authoritative_sources"]), 1)
 
+    def test_report_evidence_accepts_indented_markdown_continuations(self) -> None:
+        report = (
+            "## Source evidence\n\n"
+            "### Authoritative sources\n\n"
+            "- Identity: Service operating policy; Applicable context: version 3, effective\n"
+            "  2026-08-01; Status: current; Scope: restart authorization\n"
+            "- Identity: Approved runbook; Applicable context: revision 7, reviewed\n"
+            "  2026-07-28; Status: current; Scope: restart sequence and rollback\n\n"
+            "### Conflict resolution\n\n"
+            "- Status: resolved; Rule: the operating policy governs authority and the\n"
+            "  runbook governs execution; Decision: use version 3 policy with revision 7\n"
+            "  runbook\n\n"
+            "### Unverified claims\n\n"
+            "- none\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(_task_body(_source_section()), encoding="utf-8")
+            evidence = source_guidance.resolve_report_evidence(task, report)
+
+        self.assertEqual(evidence["outcome"], "valid")
+        parsed = evidence["evidence"]
+        self.assertEqual(len(parsed["authoritative_sources"]), 2)
+        self.assertEqual(
+            parsed["authoritative_sources"][0]["applicable_context"],
+            "version 3, effective 2026-08-01",
+        )
+        self.assertEqual(
+            parsed["conflict_resolution"]["decision"],
+            "use version 3 policy with revision 7 runbook",
+        )
+
+    def test_unindented_prose_is_not_folded_into_a_source_row(self) -> None:
+        rows = source_guidance._rows(
+            [
+                "- Identity: Service operating policy; Applicable context: version 3",
+                "unrelated prose; Status: current; Scope: restart authorization",
+            ]
+        )
+
+        self.assertEqual(
+            rows,
+            ["Identity: Service operating policy; Applicable context: version 3"],
+        )
+
     def test_report_evidence_rejects_a_source_outside_governing_guidance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             task = Path(tmp) / "TASK-04-002.md"
