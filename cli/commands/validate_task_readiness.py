@@ -11,6 +11,7 @@ from cli.commands.resolve_config import (
     _DELIVERABLE_SKIP,
     _load_toml,
     _relpath_in_resources,
+    _resolve_deliverable,
     _resolve_work_roots,
 )
 from cli.emit import emit_record
@@ -174,6 +175,33 @@ def _check_plan_ref_aligned(
     return {"name": name, "pass": True, "reason": None}
 
 
+def _dependency_deliverable_gap(project_root: Path, task_file: Path) -> Optional[str]:
+    """Return the dependency's missing project-mode deliverable, or ``None``.
+
+    A completed dependency that declared a project-mode deliverable must have
+    that deliverable persisted under ``resources/`` — otherwise the dependent
+    task's assignment is missing the upstream contract it builds on. Only
+    project-mode deliverables are checked here: work-root deliverables may be
+    unmapped on this machine and are surfaced by the work-root validator.
+    """
+    try:
+        content = task_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    headers, _ = _parse_headers(content)
+    deliverable = _resolve_deliverable(
+        {}, project_root, headers.get("Deliverable", "")
+    )
+    if (
+        deliverable is not None
+        and deliverable["mode"] == "project"
+        and deliverable["absolute_path"] is not None
+        and not deliverable["exists"]
+    ):
+        return deliverable["logical"]
+    return None
+
+
 def _check_blocked_by(project_root: Path, headers: Dict[str, str]) -> Dict[str, Any]:
     raw = headers.get("Blocked by", "").strip()
     if not raw or raw.lower() in {"n/a", "none"}:
@@ -181,16 +209,34 @@ def _check_blocked_by(project_root: Path, headers: Dict[str, str]) -> Dict[str, 
     items = _split_csv(raw)
     done_dir = project_root / "tasks" / "done"
     missing: List[str] = []
+    missing_deliverables: List[str] = []
     for tid in items:
-        matches = list(done_dir.glob(f"{tid}-*.md")) if done_dir.is_dir() else []
+        matches = sorted(done_dir.glob(f"{tid}-*.md")) if done_dir.is_dir() else []
         direct = done_dir / f"{tid}.md"
-        if not matches and not direct.is_file():
+        if direct.is_file():
+            matches = [direct, *matches]
+        if not matches:
             missing.append(tid)
+            continue
+        gap = _dependency_deliverable_gap(project_root, matches[0])
+        if gap is not None:
+            missing_deliverables.append(f"{tid} ({gap})")
     if missing:
         return {
             "name": "blocked-by-complete",
             "pass": False,
             "reason": f"not in tasks/done/: {', '.join(missing)}",
+        }
+    if missing_deliverables:
+        return {
+            "name": "blocked-by-complete",
+            "pass": False,
+            "reason": (
+                "completed dependency deliverable not persisted: "
+                + ", ".join(missing_deliverables)
+                + " — persist the upstream deliverable (cartopian "
+                "write-resource) before dispatching dependents"
+            ),
         }
     return {"name": "blocked-by-complete", "pass": True, "reason": None}
 

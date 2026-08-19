@@ -108,6 +108,21 @@ def list_identifiers(text: str) -> List[str]:
     return sorted(set(IDENTIFIER_RE.findall(text)))
 
 
+def scrub_field(value: str) -> str:
+    """Deidentify one inline record-field value.
+
+    Field-granular counterpart of :func:`deidentify_spec` for structured
+    records (source-guidance rows and similar label/value fields): strips
+    reference forms and bare identifier tokens, then tidies whitespace only
+    when a substitution actually changed the value — mirroring the line-level
+    behavior so a clean field passes through byte-for-byte.
+    """
+    scrubbed = scrub_identifiers(value)
+    if scrubbed == value:
+        return value
+    return _tidy(scrubbed).strip()
+
+
 def deidentify_spec(text: str) -> Tuple[str, List[str]]:
     """Return ``(deidentified_text, redactions)`` for a spec body.
 

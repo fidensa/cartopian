@@ -155,14 +155,39 @@ def _deidentified_source_identity(identity: str) -> str:
     return f"project-management-source sha256:{digest}"
 
 
-def _deidentified_authoritative_sources(record: Dict[str, Any]) -> List[Dict[str, str]]:
-    return [
+def _scrubbed_fields(item: Dict[str, str]) -> Dict[str, str]:
+    return {
+        key: deidentify.scrub_field(value) if isinstance(value, str) else value
+        for key, value in item.items()
+    }
+
+
+def assignee_projection(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The one canonical assignee-facing projection of a resolved record.
+
+    Every field of every source, conflict, and claim is deidentified at field
+    granularity (source identities via the stable alias, all other fields via
+    :func:`deidentify.scrub_field`). Prompt rendering and report-evidence
+    validation both consume this exact structure, so an identifier appearing
+    in Applicable context or Scope — not only Identity — projects identically
+    on both sides and a faithful transcription always validates.
+    """
+    projected = dict(record)
+    projected["authoritative_sources"] = [
         {
-            **source,
+            **_scrubbed_fields(source),
             "identity": _deidentified_source_identity(source.get("identity", "")),
         }
         for source in record["authoritative_sources"]
     ]
+    conflict = record.get("conflict_resolution")
+    projected["conflict_resolution"] = (
+        _scrubbed_fields(conflict) if conflict is not None else None
+    )
+    projected["unverified_claims"] = [
+        _scrubbed_fields(claim) for claim in record["unverified_claims"]
+    ]
+    return projected
 
 
 def _finalize(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -170,12 +195,9 @@ def _finalize(record: Dict[str, Any]) -> Dict[str, Any]:
     if record["outcome"] not in {"not-declared", "not-applicable"}:
         record["outcome"] = "invalid" if record["blockers"] else "valid"
     if record["outcome"] == "valid":
-        projected = {
-            **record,
-            "authoritative_sources": _deidentified_authoritative_sources(record),
-        }
-        rendered = render_guidance(projected)
-        record["deidentified_guidance"] = deidentify.deidentify_spec(rendered)[0]
+        record["deidentified_guidance"] = render_guidance(
+            assignee_projection(record)
+        )
     return record
 
 
@@ -553,9 +575,12 @@ def resolve_report_evidence(task_path: Path, report_content: str) -> Dict[str, A
         owner_path=None,
     )
     blockers = list(evidence["blockers"])
+    # Compare against the same canonical assignee projection the prompt
+    # rendered, so a source transcribed faithfully from the deidentified
+    # guidance — identifiers scrubbed from any field — always matches.
     governed = {
         (item.get("identity"), item.get("applicable_context"))
-        for item in _deidentified_authoritative_sources(guidance)
+        for item in assignee_projection(guidance)["authoritative_sources"]
     }
     for source in evidence["authoritative_sources"]:
         key = (source.get("identity"), source.get("applicable_context"))

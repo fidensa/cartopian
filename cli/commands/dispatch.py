@@ -471,6 +471,7 @@ def handler(args: argparse.Namespace) -> int:
     task_id: Optional[str]
     source_guidance_record: Optional[Dict[str, Any]] = None
     existing_deliverable_input: Optional[Dict[str, Any]] = None
+    dependency_deliverable_inputs: Optional[List[Dict[str, Any]]] = None
     if task_path is not None:
         from cli import numbering_contract
 
@@ -532,6 +533,31 @@ def handler(args: argparse.Namespace) -> int:
                     existing_deliverable_input
                 )
             )
+            return EXIT_FAIL
+        # --- Fail-closed: upstream dependency deliverables are readable ------
+        # A task that builds on a dependency's governance-scoped deliverable
+        # must not launch unless that upstream contract exists and is either
+        # role-readable or curated verbatim into the prompt.
+        dependency_deliverable_inputs = (
+            handoff_packet._dependency_deliverable_inputs(
+                project_root,
+                project_cfg,
+                task_content,
+                role_record["effective_grants"],
+                prompt_text=prompt_text,
+            )
+        )
+        failed_dependencies = [
+            item
+            for item in dependency_deliverable_inputs
+            if item["required"] and item["ok"] is False
+        ]
+        if failed_dependencies:
+            for item in failed_dependencies:
+                stderr_guard(
+                    "dependency-deliverable-input-unavailable: "
+                    + handoff_packet._dependency_deliverable_refusal(item)
+                )
             return EXIT_FAIL
         # Task review publishes to the independent review-report slot
         # (REPORT-NN-NNN-review.md). The task-completion report keeps its
@@ -801,6 +827,7 @@ def handler(args: argparse.Namespace) -> int:
             else None
         ),
         "existing_deliverable_input": existing_deliverable_input,
+        "dependency_deliverable_inputs": dependency_deliverable_inputs,
         # The wait budget this launch was cleared against. `null` when the CLI
         # ran outside an MCP host, where no tools/call ceiling applies.
         "host_wait_budget": host_budget.record() if host_budget is not None else None,

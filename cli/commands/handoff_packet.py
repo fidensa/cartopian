@@ -228,6 +228,171 @@ def _existing_deliverable_input(
     }
 
 
+def _blocked_by_ids(content: str) -> List[str]:
+    """Return the ``Blocked by:`` task ids from the top-of-file header block."""
+    for line in content.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith("Blocked by:"):
+            raw = stripped[len("Blocked by:"):].strip()
+            if not raw or raw.lower() in {"n/a", "none"}:
+                return []
+            return [item.strip() for item in raw.split(",") if item.strip()]
+    return []
+
+
+def _find_dependency_task(project_root: Path, task_id: str) -> Optional[Path]:
+    for status in ("done", "in-review", "in-progress", "open"):
+        status_dir = project_root / "tasks" / status
+        if not status_dir.is_dir():
+            continue
+        direct = status_dir / f"{task_id}.md"
+        if direct.is_file():
+            return direct.resolve()
+        matches = sorted(status_dir.glob(f"{task_id}-*.md"))
+        if matches:
+            return matches[0].resolve()
+    return None
+
+
+def _dependency_deliverable_inputs(
+    project_root: Path,
+    project_cfg: Dict[str, Any],
+    content: str,
+    effective_grants: List[str],
+    *,
+    prompt_text: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Describe and, when possible, verify each upstream deliverable input.
+
+    A task that declares ``Blocked by:`` consumes its dependencies' output.
+    When a dependency's deliverable is a governance-scoped project resource,
+    an assignee without ``read:governance`` cannot read the upstream contract
+    it is being asked to build on — the exact gap that makes a coder infer
+    (and misread) an interface. The PM must curate each such deliverable's
+    current text into the prompt, exactly as it does for the current task's
+    own existing project deliverable, and both manual and automatic handoff
+    paths fail before an unreadable assignment is launched.
+    """
+    records: List[Dict[str, Any]] = []
+    for task_id in _blocked_by_ids(content):
+        base: Dict[str, Any] = {
+            "task_id": task_id,
+            "required": False,
+            "reason": "not-applicable",
+            "logical": None,
+            "content_sha256": None,
+            "content_bytes": None,
+            "prompt_contains_current_content": None,
+            "ok": True,
+        }
+        dependency_path = _find_dependency_task(project_root, task_id)
+        if dependency_path is None:
+            records.append({**base, "reason": "dependency-task-not-found"})
+            continue
+        try:
+            dependency_content = dependency_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            records.append(
+                {
+                    **base,
+                    "required": True,
+                    "reason": "dependency-task-unreadable",
+                    "ok": False,
+                }
+            )
+            continue
+        deliverable = _resolve_deliverable(
+            project_cfg, project_root, _deliverable_value(dependency_content)
+        )
+        if not deliverable or deliverable.get("mode") != "project":
+            records.append(base)
+            continue
+        base["logical"] = deliverable.get("logical")
+        if not deliverable.get("exists"):
+            # The dependent declares it builds on this upstream contract, but
+            # the contract was never persisted — a missing assignment input,
+            # whatever the role's grants.
+            records.append(
+                {
+                    **base,
+                    "required": True,
+                    "reason": "dependency-deliverable-missing",
+                    "ok": False,
+                }
+            )
+            continue
+        if "read:governance" in effective_grants:
+            records.append({**base, "reason": "role-can-read-governance"})
+            continue
+        record = {
+            **base,
+            "required": True,
+            "reason": "dependency-deliverable-is-not-role-readable",
+            "ok": None,
+        }
+        absolute = deliverable.get("absolute_path")
+        if not absolute:
+            records.append(
+                {
+                    **record,
+                    "reason": "dependency-deliverable-path-unresolved",
+                    "ok": False,
+                }
+            )
+            continue
+        try:
+            data = Path(absolute).read_bytes()
+            current_text = data.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            records.append(
+                {
+                    **record,
+                    "reason": "dependency-deliverable-is-not-readable-utf8",
+                    "ok": False,
+                }
+            )
+            continue
+        contains = None if prompt_text is None else current_text in prompt_text
+        records.append(
+            {
+                **record,
+                "content_sha256": hashlib.sha256(data).hexdigest(),
+                "content_bytes": len(data),
+                "prompt_contains_current_content": contains,
+                "ok": contains,
+            }
+        )
+    return records
+
+
+def _dependency_deliverable_refusal(record: Dict[str, Any]) -> str:
+    logical = record.get("logical") or "its declared deliverable"
+    task_id = record.get("task_id") or "a dependency"
+    reason = record.get("reason")
+    if reason == "dependency-deliverable-missing":
+        return (
+            f"dependency {task_id} declares {logical} but it does not exist — "
+            "persist the upstream deliverable (cartopian write-resource) "
+            "before dispatching work that builds on it"
+        )
+    if reason == "dependency-task-unreadable":
+        return f"dependency task {task_id} is unreadable — restore the task file"
+    if reason == "dependency-deliverable-is-not-readable-utf8":
+        return (
+            f"{logical} from dependency {task_id} is not UTF-8 text and the "
+            "role cannot read governance resources — use a role with "
+            "read:governance or move binary work to a declared work root"
+        )
+    return (
+        f"prompt does not contain the current content of {logical} from "
+        f"dependency {task_id}, but the role cannot read governance resources "
+        "— curate the complete current resource into the prompt, rewrite the "
+        "prompt, and rerun handoff preflight"
+    )
+
+
 def _existing_deliverable_refusal(record: Dict[str, Any]) -> str:
     logical = record.get("logical") or "the existing project deliverable"
     if record.get("reason") == "existing-project-deliverable-is-not-readable-utf8":
@@ -413,6 +578,13 @@ def handler(args: argparse.Namespace) -> int:
         role_record["effective_grants"],
         prompt_text=prompt_text,
     )
+    dependency_inputs = _dependency_deliverable_inputs(
+        project_root,
+        project_cfg,
+        content,
+        role_record["effective_grants"],
+        prompt_text=prompt_text,
+    )
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
         "schema_identity": resolved["schema_identity"],
@@ -430,6 +602,7 @@ def handler(args: argparse.Namespace) -> int:
         "work_roots": work_roots,
         "deliverable": deliverable,
         "existing_deliverable_input": deliverable_input,
+        "dependency_deliverable_inputs": dependency_inputs,
         "source_guidance": source_guidance.active_projection(
             source_guidance_record
         ),
@@ -464,5 +637,17 @@ def handler(args: argparse.Namespace) -> int:
             "existing-deliverable-input-unavailable: "
             + _existing_deliverable_refusal(deliverable_input)
         )
+        return EXIT_FAIL
+    failed_dependencies = [
+        item
+        for item in dependency_inputs
+        if item["required"] and item["ok"] is False
+    ]
+    if failed_dependencies:
+        for item in failed_dependencies:
+            stderr_guard(
+                "dependency-deliverable-input-unavailable: "
+                + _dependency_deliverable_refusal(item)
+            )
         return EXIT_FAIL
     return EXIT_OK

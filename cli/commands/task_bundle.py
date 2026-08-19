@@ -110,12 +110,29 @@ def _read_task_title(task_path: Path, fallback: Optional[str]) -> Optional[str]:
     return fallback
 
 
-def _find_dependency(project_root: Path, task_id: str) -> Dict[str, Any]:
+def _dependency_deliverable(
+    project_root: Path, project_cfg: Dict[str, Any], task_path: Path
+) -> Optional[Dict[str, Any]]:
+    """Resolve one dependency task's declared ``Deliverable:``, or ``None``."""
+    try:
+        content = task_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    headers, _ = _parse_headers(content)
+    return _resolve_deliverable(
+        project_cfg, project_root, headers.get("Deliverable", "")
+    )
+
+
+def _find_dependency(
+    project_root: Path, project_cfg: Dict[str, Any], task_id: str
+) -> Dict[str, Any]:
     fallback = {
         "task_id": task_id,
         "title": None,
         "path": None,
         "status": None,
+        "deliverable": None,
     }
     for status in _STATUS_DIRS:
         status_dir = project_root / "tasks" / status
@@ -133,15 +150,28 @@ def _find_dependency(project_root: Path, task_id: str) -> Dict[str, Any]:
             "title": _read_task_title(match, task_id),
             "path": str(match),
             "status": status,
+            # The dependency's resolved deliverable, so a PM composing a
+            # handoff sees what upstream output the dependent consumes —
+            # not only the dependency's id, path, and status.
+            "deliverable": _dependency_deliverable(
+                project_root, project_cfg, match
+            ),
         }
     return fallback
 
 
-def _collect_dependencies(project_root: Path, headers: Dict[str, str]) -> List[Dict[str, Any]]:
+def _collect_dependencies(
+    project_root: Path,
+    project_cfg: Dict[str, Any],
+    headers: Dict[str, str],
+) -> List[Dict[str, Any]]:
     raw = headers.get("Blocked by", "").strip()
     if not raw or raw.lower() in {"n/a", "none"}:
         return []
-    return [_find_dependency(project_root, task_id) for task_id in _split_csv(raw)]
+    return [
+        _find_dependency(project_root, project_cfg, task_id)
+        for task_id in _split_csv(raw)
+    ]
 
 
 def _collect_work_roots(
@@ -286,7 +316,7 @@ def handler(args: argparse.Namespace) -> int:
         "task_path": str(task_path),
         "task_status": task_path.parent.name,
         "spec_path": _resolve_spec_path(project_root, headers),
-        "dependencies": _collect_dependencies(project_root, headers),
+        "dependencies": _collect_dependencies(project_root, project_cfg, headers),
         "work_roots_resolved": work_roots_resolved,
         "deliverable": deliverable,
         "source_guidance": source_guidance.active_projection(

@@ -175,6 +175,53 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
         self.assertIn("project-management-source sha256:", projected)
         self.assertEqual(evidence["outcome"], "valid")
 
+    def test_identifiers_in_context_and_scope_round_trip_as_valid_evidence(self) -> None:
+        """Regression: an identifier inside Applicable context or Scope must
+        project identically in the rendered prompt guidance and in report
+        validation, so a faithful transcription always validates."""
+        section = (
+            _source_section()
+            .replace(
+                "Applicable context: version 3, effective 2026-08-01",
+                "Applicable context: version 3 adopted per DEC-050, "
+                "effective 2026-08-01",
+            )
+            .replace(
+                "Scope: restart authorization",
+                "Scope: restart authorization (see TASK-05-008)",
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(_task_body(section), encoding="utf-8")
+            guidance = source_guidance.resolve_task_guidance(task)
+            projected = guidance["deidentified_guidance"]
+            report = projected.replace(
+                "## Source guidance", "## Source evidence", 1
+            )
+            evidence = source_guidance.resolve_report_evidence(task, report)
+
+        self.assertEqual(guidance["outcome"], "valid")
+        self.assertNotIn("DEC-050", projected)
+        self.assertNotIn("TASK-05-008", projected)
+        self.assertEqual(evidence["outcome"], "valid", evidence["blockers"])
+        self.assertNotIn(
+            "source-evidence-not-in-guidance", evidence["blocker_codes"]
+        )
+
+    def test_rendered_guidance_is_exactly_the_canonical_assignee_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(_task_body(_source_section()), encoding="utf-8")
+            guidance = source_guidance.resolve_task_guidance(task)
+
+        self.assertEqual(
+            guidance["deidentified_guidance"],
+            source_guidance.render_guidance(
+                source_guidance.assignee_projection(guidance)
+            ),
+        )
+
     def test_report_evidence_may_name_only_the_sources_actually_applied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             task = Path(tmp) / "TASK-04-002.md"

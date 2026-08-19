@@ -115,7 +115,7 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 1764,
+      "max_output_bytes": 1799,
       "request_trace_channel_delta_bytes": 7,
       "request_trace_channel_note": "Adds one bounded request-trace projection for review handoffs.",
       "split_report_delta_bytes": 104,
@@ -125,7 +125,9 @@
       "source_guidance_delta_bytes": 23,
       "source_guidance_note": "Adds a stable source_guidance key. Inactive and legacy work projects null so no empty guidance body enters bounded context; declared valid or invalid source-backed work carries the actionable record.",
       "existing_deliverable_input_delta_bytes": 176,
-      "existing_deliverable_input_note": "Adds a bounded preflight record that prevents launching a role against an existing project resource it cannot read; content is identified by byte count and SHA-256 only and is never copied into the machine projection."
+      "existing_deliverable_input_note": "Adds a bounded preflight record that prevents launching a role against an existing project resource it cannot read; content is identified by byte count and SHA-256 only and is never copied into the machine projection.",
+      "dependency_deliverable_inputs_delta_bytes": 35,
+      "dependency_deliverable_inputs_note": "Adds the per-dependency deliverable preflight list so a task that builds on an upstream governance-scoped deliverable cannot launch unless that contract exists and is role-readable or curated verbatim into the prompt; the stable key costs 35 bytes when no dependencies are declared and each dependency record is bounded like the existing-deliverable record."
     },
     {
       "surface": "containment-matrix",

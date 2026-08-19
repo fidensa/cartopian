@@ -11,13 +11,13 @@ Plan ref: <KIND-NN-NNN | omit when not applicable>
 - **Work root paths**: <comma-separated absolute paths resolved from `Work root:`, or n/a>
 - **Deliverable path**: <absolute path where the durable work product is written, or n/a; when the deliverable must land inside the governing project, this is n/a and the work product is returned inline in the report instead — see the Deliverable section below>
 - **Report path**: <absolute path to the expected handoff report: `reports/REPORT-NN-NNN.md` for task completion, `reports/REPORT-NN-NNN-review.md` for task-review completion, `reports/REPORT-PLAN-NNN.md` for planning review>
-- **Report template path**: <absolute path to templates/REPORT.md>
+- **Report skeleton**: <included inline below — the machine-generated skeleton from `cartopian report-skeleton`, carrying exactly this assignment's applicable sections with machine-owned values already filled>
 
 The assignee CLI is launched with cwd set to the **Cartopian project root**. That working directory is launch context, not lifecycle authority: product work occurs only through the declared **Work root paths**, and declared work-root access does not grant PM lifecycle authority over requirements, decisions, tasks, backlog, `STATE.md`, prompts, or reports. Unless this assignment explicitly says otherwise, the only authorized write in the governing project is the **Report path** above.
 
 `cartopian dispatch` resolves every declared work-root name through `cartopian resolve-config`, preserves declared order, fails closed on an unmapped or nonexistent path, and exports the absolute paths in `CARTOPIAN_WORK_ROOTS`. The shipped Codex wrapper widens its `workspace-write` sandbox with those paths, and the Claude and Antigravity wrappers add each path with `--add-dir`. The Devin sandbox has no per-path widening surface; when that sandbox is active, its wrapper warns that declared work roots may be unwritable. The wrappers do not replace harness capability enforcement.
 
-Keep the prompt self-contained: paste the deidentified spec and the relevant report-template variant inline rather than directing the assignee to read PM artifacts.
+Keep the prompt self-contained: paste the deidentified spec and the machine-generated report skeleton inline rather than directing the assignee to read PM artifacts. Keep it proportional: include the exact applicable skeleton (`cartopian report-skeleton`), not the full report template, and only the guidance bodies admitted for this task.
 
 For a planning or task-closure review, create this file only through:
 
@@ -119,12 +119,12 @@ For a verification-only assignment or review under the no-product-git model, add
 
 ## Completion report
 
-When you are done, write a completion report to the report path listed above. Use the report template at the report template path listed above.
-
-Use the task handoff, review handoff, or planning-review handoff variant from `templates/REPORT.md`, matching the type of work this prompt assigns.
+When you are done, write a completion report to the report path listed above. Fill in the report skeleton included in this prompt: keep every machine-generated value (identities, paths, evidence rows, section headings) exactly as given and supply only the substantive content — evidence, findings, verdicts, and status. The skeleton already carries exactly the sections this assignment requires; `templates/REPORT.md` remains the canonical field schema behind it.
 
 **Run completion-critical work in the foreground.** This handoff is a single non-interactive session, and your final result is process exit — nothing runs after you stop. Any command whose outcome the report depends on (test suite, build, validation script, fixture run, lint pass) must be run in the **foreground** and waited for to completion before you write the report. Do not background it, do not rely on a background-task or job-completion notification to resume you, and do not end the turn saying a run is "still going" and the report will follow: there is no later turn, the session is terminated, and the handoff is recorded as having exited without a report. If a run is too slow to finish inside the handoff deadline, that is a blocker to report — not work to leave running.
 
 **Writing the report is the last thing you do.** An unwritten report is a lost handoff even when the work itself succeeded. If the work cannot be finished, still write the report with `Status: blocked` and record what stopped you — a blocked report is a finished handoff; an absent one is not.
+
+**Validate before you exit, when the tool is available.** If the `cartopian` CLI is available in your session, run `cartopian validate-report <report path>` after writing the report and apply the named recovery for any `mechanical` finding before exiting. Do not alter substantive content to satisfy a check; a `substantive` or `missing-input` finding is reported, not edited away.
 
 **Redact secrets.** Do not include API keys, credentials, tokens, private connection strings, or comparable sensitive values in the report.

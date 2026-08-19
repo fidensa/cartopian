@@ -59,6 +59,7 @@ Read from the emitted record:
 - `auto_launch` — the closed automatic-launch permission list for assigned work types.
 - `work_roots` — the ordered list of `{name, absolute_path}` entries dispatch will export to the wrapper. Use these absolute paths verbatim when composing the prompt; do not re-derive them. Export is a launch fact, not a claim that every agent sandbox can widen to every path.
 - `existing_deliverable_input` — the preflight for a project-resource deliverable that already exists. When `required: true`, the role lacks `read:governance`, so curate the complete current UTF-8 resource text into the prompt as an `## Existing deliverable input` section. After writing the prompt, rerun `handoff-packet` and require `ok: true`; manual handoff and `dispatch` both fail closed if the current content is absent. `content_sha256` and `content_bytes` identify the version being checked. This does not remove or narrow a role's configured grants.
+- `dependency_deliverable_inputs` — the same preflight applied to each `Blocked by:` dependency's project-resource deliverable. A task that builds on an upstream contract must be able to read it: a record with `required: true` and `reason: dependency-deliverable-is-not-role-readable` means the role lacks `read:governance` — curate that dependency's complete current resource text into the prompt as an `## Upstream contract input` section, then rerun `handoff-packet` and require every record's `ok: true`. A `dependency-deliverable-missing` record means the upstream deliverable was never persisted; persist it with `cartopian write-resource` before any dispatch — the assignee must never be left to infer an upstream interface.
 - `expected_report_path` — the absolute report path the prompt must name and the path Stage 4 will parse. It is variant-derived by the authoritative identity model: the completion slot (`reports/REPORT-NN-NNN.md`) for a task run, the independent review slot (`reports/REPORT-NN-NNN-review.md`) for an in-review task's review handoff. `expected_report_variant` names which one applies, and `completion_report_path` always names the preserved completion report a reviewer reads directly.
 - `git_policy` — `pm_owns_product_branches`, `default_branch_pattern`, and `default_merge_strategy` for the product-repository git boundary, when `git_versioning` is true. When `git_versioning` is false this field is `null`, which also means product-repository branches are not PM-owned.
 - `request_trace` — for a task assignment or in-review task, the normalized two-channel
@@ -100,8 +101,10 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 5. Ensure the prompt carries the foreground-completion instruction from `templates/PROMPT.md` § Completion report: completion-critical commands run in the foreground and are waited for before the report is written, background-task notifications cannot resume a non-interactive handoff, and an unfinishable handoff still publishes `Status: blocked` rather than exiting silently. The Foreground Completion rules are in `cartopian://protocol/CONVENTIONS/handoffs`. This is the prompt-side half of the fix for assignees that end a turn with work "still running"; the harness-side half is the optional Claude Code Stop hook registered by `scripts/install.py --claude-hook`.
 6. When `source_guidance.outcome = valid`, paste its `deidentified_guidance` into the prompt and require `## Source evidence` in a complete report. The report names the non-empty subset of supplied source identities and applicable contexts actually used; it omits unused guidance sources and may not introduce sources outside the guidance. This is a projection of the owner, not a second source authority.
-7. When `existing_deliverable_input.required` is true, paste the complete current resource text into `## Existing deliverable input`. Do not summarize it or direct the assignee to its governance-scoped path: the exact content is the readable assignment input. Rerun `handoff-packet` after writing and require `existing_deliverable_input.ok: true`.
-8. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. **Never delete the coder completion report** — it is preserved at its compatibility path (`reports/REPORT-NN-NNN.md`) as the reviewer's direct evidence source. When a prior review attempt left a stale review report or transient companions in the independent review slot, clear only that slot with the Core CLI before re-issuing the reviewer handoff:
+7. When `existing_deliverable_input.required` is true, paste the complete current resource text into `## Existing deliverable input`. Do not summarize it or direct the assignee to its governance-scoped path: the exact content is the readable assignment input. Rerun `handoff-packet` after writing and require `existing_deliverable_input.ok: true`. Apply the same rule to each `dependency_deliverable_inputs` record with `required: true`: paste that dependency's complete current resource text into an `## Upstream contract input` section and rerun until every record's `ok` is `true`.
+8. Generate the report skeleton with `cartopian report-skeleton <task-path>` and paste its `skeleton` into the prompt as the report the assignee fills in — **instead of** the full `templates/REPORT.md`. The skeleton carries exactly the sections applicable to this task, with the machine-owned values (work-root names, review identities and paths, request-evidence tokens, and the assignee-facing source-evidence rows) already filled; the assignee supplies only substantive evidence, findings, and verdicts, never transcribed identifiers or boilerplate. For a review handoff, also paste the returned `review_file_skeleton` for the durable review file.
+9. Keep prompt volume proportional to the task. Include only what this assignment needs: the deidentified spec projection when a spec governs the work, the applicable skeleton from `report-skeleton`, the selected practice-pack body only when the selector returned `selected` for *this* task, and the judgment body only when a card activated. Never paste a full template, an unrelated guidance body, or the whole of a document the assignee only needs one section of. A **rework prompt** (after `request-changes` or a corrected mechanical failure) is a correction, not a re-assignment: include the specific findings or failed checks with their recovery text, the exact affected excerpts, and the applicable skeleton — not the full original document, specification, or practice pack again.
+10. For task review, first verify that the generated prompt record carries `captured_completion_evidence` and that its preflight is current. **Never delete the coder completion report** — it is preserved at its compatibility path (`reports/REPORT-NN-NNN.md`) as the reviewer's direct evidence source. When a prior review attempt left a stale review report or transient companions in the independent review slot, clear only that slot with the Core CLI before re-issuing the reviewer handoff:
 
    ```
    cartopian delete-report <expected-review-report-path>
@@ -231,7 +234,19 @@ The emitted record is a strict superset of the legacy `parse-report` record: it 
 
 If the report is missing, malformed, inconsistent, uses unsupported values, or fails the expected-path check, treat it as `failed-to-parse`.
 
-Treat `failed-to-parse` as blocked for the caller. Preserve the prompt and invalid report for operator inspection.
+When a written report returns `failed-to-parse`, do not stop at the verdict: run the draft validator to enumerate every defect with its recovery and failure class:
+
+```
+cartopian validate-report <report-path>
+```
+
+Then route each failed check by its `failure_class` instead of re-dispatching a full rework:
+
+- `mechanical` — a schema or transcription defect (wrong status token, missing section heading, mistranscribed identity value or evidence row). Correct it as a bounded fix: either apply the named recovery to the report directly where the substantive content is untouched and the correction is unambiguous, or issue a minimal correction prompt containing only the failed checks, their recovery text, and the applicable skeleton from `report-skeleton`. Re-validate with `validate-report` until `ok: true`. Never send the full original assignment again for a mechanical failure.
+- `missing-input` — a governing artifact the report depends on is absent or invalid (missing task, unpersisted upstream deliverable, invalid governing source guidance). This is a readiness defect, not the assignee's failure: repair the input (persist the deliverable, fix the guidance, restore the artifact), rerun readiness/preflight, and only then re-dispatch.
+- `substantive` — a recorded judgment (request drift, an unverified decisive claim). Route it through the configured review loop or to the operator; it must never be "fixed" by editing the report to pass validation.
+
+Treat `failed-to-parse` as blocked for the caller only when no route above applies or the routed correction fails. Preserve the prompt and invalid report for operator inspection.
 
 For review variants, `report-action` recomputes the prompt binding and emits
 `request_alignment`. `approve` is actionable only when that record is
@@ -256,6 +271,15 @@ For review and planning-review variants, the outcome above is derived from both 
 For `accepted`, also return the parsed report kind, status, verdict when present, readiness-for-review when present, and the report path.
 
 Do not move tasks, delete prompts, update reviews, or rewrite `STATE.md` unless the caller's skill explicitly assigns that lifecycle authority to this handoff step.
+
+### Failure routing
+
+Every non-accepted outcome has exactly one route; picking the wrong one wastes a full handoff cycle or hides a defect:
+
+- **Mechanical/schema failure** (`failed-to-parse` with `mechanical` checks from `validate-report`): tool-guided correction or a minimal validated rewrite. Not a rework assignment.
+- **Missing assignment input** (`missing-input` checks, a failed `dependency_deliverable_inputs` or `existing_deliverable_input` preflight, or any readiness blocker): fix the input, then rerun readiness and preflight *before* any dispatch. Never launch an assignee against an input it cannot read — an assignee forced to infer a missing input produces confident, wrong work.
+- **Substantive defect** (reviewer findings, request drift, an unverified decisive claim): the configured review loop — reviewer requests changes and the producer retries against the findings.
+- **Operator ambiguity** (conflicting authority, unresolvable intent, a gate the derived expectations raise above configured policy): stop and return the question to the operator.
 
 ---
 

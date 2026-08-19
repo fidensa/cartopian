@@ -135,6 +135,7 @@ class TestTaskBundleHappyPath(unittest.TestCase):
                     "title": "TASK-01-001: Prereq",
                     "path": str((scaffold.project_root / "tasks" / "done" / "TASK-01-001.md").resolve()),
                     "status": "done",
+                    "deliverable": None,
                 }
             ],
         )
@@ -344,6 +345,7 @@ class TestTaskBundleUnmetReadiness(unittest.TestCase):
                         (scaffold.project_root / "tasks" / "open" / "TASK-01-001.md").resolve()
                     ),
                     "status": "open",
+                    "deliverable": None,
                 }
             ],
         )
