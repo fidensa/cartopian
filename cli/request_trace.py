@@ -991,6 +991,8 @@ def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optiona
         raise RequestRefusal(
             "stale-request-context",
             "generated request context has no PM-derived artifact channel",
+            "regenerate the prompt through the mediated prompt writer so it "
+            "carries the PM-derived artifact channel",
         )
     artifacts: List[str] = []
     for line in lines[start:]:
@@ -1004,6 +1006,7 @@ def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optiona
             raise RequestRefusal(
                 "stale-request-context",
                 f"generated management artifact path is unsafe: {relative}",
+                "regenerate the prompt from the current intake trace",
             )
         absolute = Path(project_root) / candidate
         if (
@@ -1014,6 +1017,10 @@ def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optiona
             raise RequestRefusal(
                 "stale-request-context",
                 f"generated management artifact is missing or unsafe: {relative}",
+                "regenerate the prompt from the current artifact paths, or — "
+                "for a review prompt whose verdict is already applied and "
+                "preserved in the review file — retire the consumed prompt "
+                "with cartopian delete-prompt",
             )
         artifacts.append(candidate.as_posix())
     return artifacts

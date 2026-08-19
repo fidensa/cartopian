@@ -209,6 +209,29 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
             "source-evidence-not-in-guidance", evidence["blocker_codes"]
         )
 
+    def test_context_whose_only_marker_is_a_pm_identifier_fails_closed(self) -> None:
+        """Regression: the digits inside TASK-05-010 must not satisfy the
+        applicable-context check. Deidentification strips the identifier, so
+        the assignee projection would carry no date or version marker and a
+        faithful transcription of the rendered guidance could never validate.
+        The owner record fails closed — before any projection is dispatched —
+        with recovery, and no replacement date is invented."""
+        section = _source_section().replace(
+            "Applicable context: version 3, effective 2026-08-01",
+            "Applicable context: adopted per TASK-05-010",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            task.write_text(_task_body(section), encoding="utf-8")
+            guidance = source_guidance.resolve_task_guidance(task)
+            check = source_guidance.readiness_check(guidance)
+
+        self.assertEqual(guidance["outcome"], "invalid")
+        self.assertIn("missing-applicable-context", guidance["blocker_codes"])
+        self.assertIsNone(guidance["deidentified_guidance"])
+        self.assertFalse(check["pass"])
+        self.assertIn("project-management identifier", check["reason"])
+
     def test_rendered_guidance_is_exactly_the_canonical_assignee_projection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             task = Path(tmp) / "TASK-04-002.md"

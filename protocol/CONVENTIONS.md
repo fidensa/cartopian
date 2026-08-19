@@ -343,6 +343,18 @@ Review verdicts are:
 - `request-changes`: task moves to `in-progress/`.
 - `reject`: task moves to `open/`.
 
+A review prompt is consumed by its verdict — on all three verdicts, not only
+`approve`. After the verdict is applied (the task moved per the verdict and
+the durable findings preserved in `reviews/REVIEW-NN-NNN.md`), the PM retires
+the consumed review prompt with `cartopian delete-prompt`; a rework dispatch
+that regenerates the same prompt slot satisfies the same requirement. This is
+normative lifecycle behavior, not workflow-specific housekeeping: the prompt's
+bound artifact snapshot names the task's former `tasks/in-review/` path, so a
+retained consumed prompt correctly reports `stale-request-context` in
+`cartopian plan-audit` and at the dispatch preflight until it is retired or
+regenerated. Retirement never precedes the verdict: a `blocked`, `failed`, or
+`failed-to-parse` review outcome preserves the prompt for inspection.
+
 ## Up-front Operator Request Evidence
 
 Before a task assignment, planning review, or task-closure review, Cartopian resolves exact

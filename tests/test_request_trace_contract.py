@@ -871,6 +871,156 @@ class RequestTraceContract(unittest.TestCase):
             prompt.read_text(encoding="utf-8"),
         )
 
+    def _seed_bound_review_round(self) -> Path:
+        """Drive TASK-02-010 to in-review with a bound review prompt.
+
+        Returns the prompt path. The round is audit-clean when it returns.
+        """
+        self.capture(ORIGINAL, unit="task:TASK-02-010")
+        self.seed_task()
+        self.seed_plan_ancestry()
+        (self.root / "reports/REPORT-02-010.md").write_text(
+            "# REPORT-02-010\n\n"
+            "Status: complete\n\n"
+            "## Identity\n\n- Work root: n/a\n\n"
+            "## Completion evidence\n\nDone.\n\n"
+            "## Remaining risks\n\nNone.\n\n"
+            "## Ready to close\n\nyes\n",
+            encoding="utf-8",
+        )
+        code, _, error = self.run_cli(
+            "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
+            "--review-kind", "task-closure", "--task", str(self.task),
+            "--content", "# Review prompt\n",
+        )
+        self.assertEqual(code, 0, msg=error)
+        blockers, warnings = plan_audit._check_request_trace(
+            self.root, "v0.9.0", True
+        )
+        self.assertEqual(blockers, [])
+        self.assertEqual(warnings, [])
+        return self.root / "prompts/PROMPT-02-010.md"
+
+    def _apply_backward_verdict(
+        self, verdict: str = "request-changes", to_status: str = "in-progress"
+    ) -> Path:
+        """Record a backward review verdict and move the task per the verdict.
+
+        Returns the task's new path in the target status directory.
+        """
+        (self.root / "reviews/REVIEW-02-010.md").write_text(
+            "# REVIEW-02-010\n\n"
+            "Target: TASK-02-010\nPlan ref: BUILD-02-010\n"
+            f"Verdict: {verdict}\n"
+            "Request alignment: drifted\n"
+            "Request evidence: REQUEST-001-QUOTE-001\n\n"
+            "## Summary\n\nNeeds another pass.\n",
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = move_task.handler(argparse.Namespace(
+                task_path=str(self.task), to_status=to_status,
+                administrative=False, reason=None,
+            ))
+        self.assertEqual(code, 0, msg=stderr.getvalue())
+        return self.root / "tasks" / to_status / "TASK-02-010.md"
+
+    def _retire_prompt(self, prompt: Path) -> None:
+        """Retire a consumed review prompt through `cartopian delete-prompt`."""
+        from cli.commands import delete_prompt
+
+        registry = self.root / "projects.json"
+        registry.write_text(
+            json.dumps([{"id": "trace", "path": str(self.root), "label": "Trace"}]),
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(delete_prompt, "registry_path", return_value=registry):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = delete_prompt.handler(
+                    argparse.Namespace(prompt_path=str(prompt))
+                )
+        self.assertEqual(code, 0, msg=stderr.getvalue())
+
+    def test_request_changes_round_with_prompt_retirement_audits_clean(self) -> None:
+        """The complete sanctioned rework transition — verdict recorded, task
+        moved back, consumed review prompt retired — leaves plan-audit clean
+        before the next dispatch regenerates the prompt slot."""
+        prompt = self._seed_bound_review_round()
+        self._apply_backward_verdict()
+        self._retire_prompt(prompt)
+
+        blockers, warnings = plan_audit._check_request_trace(
+            self.root, "v0.9.0", True
+        )
+        self.assertEqual(blockers, [])
+        self.assertEqual(warnings, [])
+
+    def test_reject_round_with_prompt_retirement_audits_clean(self) -> None:
+        """`reject` consumes the review prompt the same way: verdict recorded,
+        task returned to open, prompt retired — audit is clean."""
+        prompt = self._seed_bound_review_round()
+        self._apply_backward_verdict(verdict="reject", to_status="open")
+        self._retire_prompt(prompt)
+
+        blockers, warnings = plan_audit._check_request_trace(
+            self.root, "v0.9.0", True
+        )
+        self.assertEqual(blockers, [])
+        self.assertEqual(warnings, [])
+
+    def test_rework_prompt_regeneration_also_clears_the_consumed_prompt(self) -> None:
+        """Regenerating the rework assignment prompt against the task's new
+        in-progress path replaces the consumed slot and satisfies the audit."""
+        self._seed_bound_review_round()
+        task = self._apply_backward_verdict()
+
+        code, _, error = self.run_cli(
+            "write-prompt", str(self.root), "--prompt-id", "PROMPT-02-010",
+            "--task", str(task),
+            "--content", "# Rework assignment prompt\n",
+        )
+        self.assertEqual(code, 0, msg=error)
+        blockers, warnings = plan_audit._check_request_trace(
+            self.root, "v0.9.0", True
+        )
+        self.assertEqual(blockers, [])
+        self.assertEqual(warnings, [])
+
+    def test_retained_consumed_review_prompt_blocks_with_actionable_recovery(self) -> None:
+        """A consumed review prompt the PM failed to retire still fails closed,
+        and the blocker now names both recovery routes instead of none."""
+        self._seed_bound_review_round()
+        self._apply_backward_verdict()
+
+        blockers, _ = plan_audit._check_request_trace(self.root, "v0.9.0", True)
+
+        self.assertEqual(len(blockers), 1, blockers)
+        blocker = blockers[0]
+        self.assertEqual(blocker["failure_class"], "stale-request-context")
+        self.assertIn("tasks/in-review/TASK-02-010.md", blocker["detail"])
+        self.assertTrue(blocker["recovery"])
+        self.assertIn("regenerate the prompt", blocker["recovery"])
+        self.assertIn("delete-prompt", blocker["recovery"])
+
+    def test_unrelated_stale_artifact_snapshot_still_blocks(self) -> None:
+        """A genuinely stale trace — a bound management artifact removed while
+        the review is still active — keeps failing closed; prompt retirement
+        applies only to a prompt whose verdict was actually consumed."""
+        self._seed_bound_review_round()
+        (self.root / "IMPLEMENTATION_PLAN.md").unlink()
+
+        blockers, _ = plan_audit._check_request_trace(self.root, "v0.9.0", True)
+
+        self.assertEqual(len(blockers), 1, blockers)
+        blocker = blockers[0]
+        self.assertEqual(blocker["failure_class"], "stale-request-context")
+        self.assertIn("IMPLEMENTATION_PLAN.md", blocker["detail"])
+        self.assertTrue(blocker["recovery"])
+
     def test_request_evidence_runbooks_do_not_require_native_capture(self) -> None:
         skills = Path(__file__).parents[1] / "skills"
         for filename in (

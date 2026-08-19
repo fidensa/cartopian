@@ -350,7 +350,7 @@ For the `review` variant, the emitted record carries:
 - `verdict` — `accepted | blocked | failed | failed-to-parse` for handoff state.
 - `review_verdict` — the raw reviewer token, one of `approve | request-changes | reject`.
 - `target_task_status` — the post-verdict lifecycle directory (`done` for `approve`, `in-progress` for `request-changes`, `open` for `reject`).
-- `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` after an `approve` verdict.
+- `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` once the verdict is applied. It is returned for every applied review verdict (`approve`, `request-changes`, `reject`): the review prompt is consumed by its verdict in all three cases.
 - `task_id` and `task_path` — the task resolved from the report filename and cross-checked against the report's declared `Task path`.
 - `path_mismatch` — true when any declared handoff path, including `Task path`, disagrees with the report filename's expected paths. Treat `path_mismatch = true` as `failed-to-parse`.
 - `request_alignment` — the recomputed context identity, evidence ids,
@@ -386,9 +386,18 @@ Apply the reviewer's verdict without an operator confirmation prompt — the ver
 After applying a `request-changes` or `reject` verdict, the consumed review
 round's report evidence is closed: once its findings are recorded in the
 review file, remove the review-completion report and its transient companions
-(`cartopian delete-report <review-report-path>`). The preserved completion
-report needs no manual cleanup for a rework round — the next coder dispatch
-clears and replaces that slot as a new attempt.
+(`cartopian delete-report <review-report-path>`), and retire the consumed
+review prompt (`cartopian delete-prompt <prompt-path>`, the
+`prompt_to_overwrite` path from `report-action`). Retire the prompt only
+after `report-action` has parsed the verdict and the durable findings are
+preserved in `reviews/REVIEW-NN-NNN.md` — never while a `blocked`, `failed`,
+or `failed-to-parse` outcome still needs the prompt for inspection. The
+retirement is required, not housekeeping: the prompt's bound artifact
+snapshot names the task's former `tasks/in-review/` path, so a retained
+consumed prompt reads as `stale-request-context` in `cartopian plan-audit`
+until it is retired or the rework dispatch regenerates the slot. The
+preserved completion report needs no manual cleanup for a rework round — the
+next coder dispatch clears and replaces that slot as a new attempt.
 
 On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round suffixes.
 

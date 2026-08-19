@@ -247,6 +247,19 @@ def evaluate_record(
                     f"authoritative source {index} has no identifiable date or version context",
                     "record its effective date, publication date, edition, revision, or version",
                 ))
+            else:
+                # The assignee projection scrubs PM identifiers from every
+                # field, so a context whose only date/version marker sits
+                # inside an identifier would project without one — and a
+                # faithful transcription of the rendered guidance could never
+                # validate. Fail here, before any projection is dispatched.
+                projected_context = deidentify.scrub_field(context_value)
+                if _placeholder(projected_context) or not _CONTEXT_IDENTITY_RE.search(projected_context):
+                    record["blockers"].append(_blocker(
+                        "missing-applicable-context",
+                        f"authoritative source {index}'s only date or version marker is inside a project-management identifier, which deidentification removes from the assignee projection",
+                        "record the source's real effective date, publication date, edition, revision, or version outside any project-management identifier",
+                    ))
             status = parsed.get("status", "").lower()
             if status not in spec["source_statuses"]:
                 record["blockers"].append(_blocker(

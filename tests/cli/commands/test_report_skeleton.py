@@ -121,6 +121,25 @@ class TestTaskSkeleton(unittest.TestCase):
             result = source_guidance.resolve_report_evidence(task, report)
             self.assertEqual(result["outcome"], "valid", result["blockers"])
 
+    def test_context_marker_only_inside_identifier_fails_before_skeleton(self) -> None:
+        """Regression: a context whose only date/version marker sits inside a
+        PM identifier projects without one, so the machine-generated evidence
+        row could never validate. Skeleton generation fails closed with the
+        owner-side recovery instead of emitting an unvalidatable row."""
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md",
+                _task_body().replace(
+                    "Applicable context: revision 2 per "
+                    "TASK-05-008, effective 2026-08-10",
+                    "Applicable context: per TASK-05-008",
+                ),
+            )
+            rc, _stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn("missing-applicable-context", stderr)
+            self.assertIn("project-management identifier", stderr)
+
     def test_invalid_source_guidance_fails_closed(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:
             task = scaffold.write(
