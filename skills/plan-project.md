@@ -322,7 +322,7 @@ The standard checkpoint sequence is:
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Open the prose with a role preface (`## Your role`) addressed to the reviewer, sourced from the resolved `[roles.<role>]` record's description for the role named by `reviews.planning.role` — orientation only; it grants no authority beyond the role's configured grants. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
 2. Call `skills/run-handoff.md` with:
    - Role: the exact resolved `reviews.planning.role` value
    - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN.md`

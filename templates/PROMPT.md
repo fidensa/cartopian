@@ -17,7 +17,7 @@ The assignee CLI is launched with cwd set to the **Cartopian project root**. Tha
 
 `cartopian dispatch` resolves every declared work-root name through `cartopian resolve-config`, preserves declared order, fails closed on an unmapped or nonexistent path, and exports the absolute paths in `CARTOPIAN_WORK_ROOTS`. The shipped Codex wrapper widens its `workspace-write` sandbox with those paths, and the Claude and Antigravity wrappers add each path with `--add-dir`. The Devin sandbox has no per-path widening surface; when that sandbox is active, its wrapper warns that declared work roots may be unwritable. The wrappers do not replace harness capability enforcement.
 
-Keep the prompt self-contained: paste the deidentified spec and the machine-generated report skeleton inline rather than directing the assignee to read PM artifacts. Keep it proportional: include the exact applicable skeleton (`cartopian report-skeleton`), not the full report template, and only the guidance bodies admitted for this task.
+Keep the prompt self-contained: paste the deidentified spec and the machine-generated report skeleton inline rather than directing the assignee to read PM artifacts. Keep it proportional: include the exact applicable skeleton (`cartopian report-skeleton`), not the full report template, and only the guidance bodies admitted for this task. Keep it audience-scoped: include a statement only when it changes how the assignee performs, evidences, bounds, or reports the work — downstream lifecycle facts such as which role reviews the work, how a review is launched, or what the PM does after the report lands stay out of the prompt body. The structured `## Risk result`, `## Judgment guidance`, `## Practice-pack result`, and `## Source guidance` sections are the only carriers of lifecycle-adjacent expectations, pasted exactly and never paraphrased into additional prose.
 
 For a planning or task-closure review, create this file only through:
 
@@ -39,6 +39,10 @@ Omit this section when the work has no pull-request workflow.
 
 For review prompts in projects using PM-owned product-repo git, the PM populates `Branch`, `PR URL`, and `Preview URL` when available. If no preview URL exists, write `n/a`. Coder prompts may leave `PR URL` and `Preview URL` as `n/a` or omit them entirely.
 
+## Your role
+
+<Sourced from the handoff packet's `role_description`. Address the assignee directly — "You are a <role name> (<role description>); for this assignment you <what the role does here>." Orientation only: it grants no authority beyond the role's configured grants and carries no PM identifiers.>
+
 ## Your task
 
 <Imperative, directed at the assignee.>
@@ -50,6 +54,10 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 ## Specification
 
 <When the work has a spec, paste the **deidentified** spec body here — the `deidentified_spec` field from `cartopian render-spec <spec-path>`. Do not link or hand over the raw spec file; it carries PM identifiers the assignee must not copy into product code. Omit this section when the task has no spec.>
+
+## Project standards
+
+<When the project's `STANDARDS.md` declares working standards, constraints, or quality checks that bind this assignment — style and formatting conventions, required development practices such as TDD, mandated validation tooling or checks — paste the applicable excerpt here, deidentified. Only the standards that govern this work: never the whole document, and never planning-side metadata (stack rationale, cycle constraints, open standards questions) the assignee cannot act on. Omit this section when none apply.>
 
 ## Source guidance
 
