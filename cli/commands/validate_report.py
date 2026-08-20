@@ -12,9 +12,12 @@ Each failed check carries a ``failure_class`` so the caller can route it:
   and re-validate. No new work assignment is needed.
 - ``missing-input`` — a governing artifact the validation depends on is
   absent or invalid; repair the input before re-dispatching anything.
-- ``substantive`` — a recorded judgment (drift, an unverified decisive
-  claim) that a reviewer or the operator must resolve; it is not a
+- ``substantive`` — a recorded judgment or recorded evidence state (drift,
+  an unverified decisive claim, an unresolved conflict, a stale or
+  out-of-guidance applied source, absent producer evidence) that the
+  producer, a reviewer, or the operator must resolve; it is not a
   formatting problem and must not be "fixed" by editing the report.
+  Unknown source-evidence blocker codes fail closed into this class.
 
 Read-only; no file writes. Stdlib only.
 """
@@ -37,6 +40,58 @@ from cli.main import (
 
 _TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
 
+# ---------------------------------------------------------------------------
+# Source-evidence blocker routing: explicit and fail-closed.
+#
+# The failure class decides who may act on a defect — `mechanical` authorizes
+# the PM's hash-bound in-place correction (`correct-report`), so a blocker is
+# mechanical ONLY when its repair cannot assert or erase producer evidence.
+# Every code the source-guidance authority emits is audited here by its
+# recovery semantics; an unknown code never defaults into the PM-editable
+# class (it fails closed as `substantive`, which routes to the review loop
+# or the operator).
+# ---------------------------------------------------------------------------
+_SOURCE_BLOCKER_CLASSES: Dict[str, str] = {
+    # Mechanical: restructuring the producer's own recorded claim bullets
+    # into the row grammar. The content originates in the producer's report;
+    # a decisive claim still blocks separately (`decisive-claim-unverified`,
+    # substantive), and an absent disposition is refused by `correct-report`
+    # (absent rows route to rework), so grammar repair cannot launder claims.
+    "unhandled-unverified-claim": "mechanical",
+    # Missing-input: the governing artifact, not the report, is defective —
+    # repair the task/spec guidance (or restore the artifact) and rerun
+    # readiness before touching any report.
+    "governing-source-guidance-invalid": "missing-input",
+    "source-guidance-owner-mismatch": "missing-input",
+    "source-evidence-unreadable": "missing-input",
+    # Substantive: each of these is recorded producer evidence or a recorded
+    # state that requires producer work, verification, or named authority.
+    # "Fixing" it by editing the report would erase or assert evidence:
+    # an unresolved conflict needs the named decision, a stale source needs
+    # a current source or authority, an out-of-guidance applied source means
+    # the producer applied something ungoverned (producer rework or a
+    # guidance amendment — never a PM row swap), and absent sections, rows,
+    # contexts, scopes, or conflict records are producer-owned content.
+    "decisive-claim-unverified": "substantive",
+    "unresolved-source-conflict": "substantive",
+    "stale-applicable-context": "substantive",
+    "source-evidence-not-in-guidance": "substantive",
+    "missing-source-guidance-section": "substantive",
+    "missing-authoritative-source": "substantive",
+    "missing-applicable-context": "substantive",
+    "missing-conflict-resolution": "substantive",
+    "missing-source-scope": "substantive",
+}
+
+# Fail closed: a blocker code this module has never audited must not become
+# PM-editable by omission.
+_UNKNOWN_SOURCE_BLOCKER_CLASS = "substantive"
+
+
+def source_blocker_class(code: str) -> str:
+    """The audited failure class for one source-evidence blocker code."""
+    return _SOURCE_BLOCKER_CLASSES.get(code, _UNKNOWN_SOURCE_BLOCKER_CLASS)
+
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.description = (
@@ -57,6 +112,17 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Explicit variant; replaces content inference but must agree "
             "with a grammar-matching report filename"
+        ),
+    )
+    subparser.add_argument(
+        "--expected-identity",
+        dest="expected_identity",
+        default=None,
+        help=(
+            "Bind validation to one accepted publication: the sha256:<hex> "
+            "report_content_identity a wait primitive returned. If the "
+            "report bytes on disk no longer match, the command refuses "
+            "(identity-mismatch) instead of validating different bytes"
         ),
     )
 
@@ -226,41 +292,34 @@ def _source_evidence_checks(
         return [_check("source-evidence-valid", True)]
     checks: List[Dict[str, Any]] = []
     for blocker in record["blockers"]:
-        failure_class = "mechanical"
-        if blocker["code"] in ("governing-source-guidance-invalid",):
-            failure_class = "missing-input"
-        elif blocker["code"] in ("decisive-claim-unverified",):
-            failure_class = "substantive"
         checks.append(
             _check(
                 f"source-evidence:{blocker['code']}",
                 False,
                 blocker["detail"],
                 blocker["recovery"],
-                failure_class,
+                source_blocker_class(blocker["code"]),
             )
         )
     return checks
 
 
-def _identity_alignment_check(
+def _identity_alignment_mismatches(
     project_root: Optional[Path],
     report_path: Path,
     content: str,
     variant: str,
-) -> Dict[str, Any]:
-    """Compare declared Identity ids/paths to their machine-expected values.
+) -> List[tuple]:
+    """Structured Identity mismatches: ``(key_or_None, message)`` pairs.
 
-    Task-report Identity values are optional (the coder handoff is
-    deidentified) and cross-checked only when declared; review-report values
-    are required and must match exactly. Each mismatch is named field by
-    field so a transcription defect is a bounded correction.
+    ``key`` names the defective Identity bullet (the correction surface uses
+    it to authorize exactly that bullet and nothing else); a non-key defect
+    such as a missing review file carries ``None``.
     """
-    name = "identity-values-aligned"
     if variant not in ("task", "review") or project_root is None:
-        return _check(name, True)
+        return []
     if _report_task_id(report_path, variant) is None:
-        return _check(name, True)
+        return []
     from cli.commands import report_action
 
     identity = report_action._extract_identity_map(content)
@@ -296,12 +355,12 @@ def _identity_alignment_check(
         if variant == "review"
         else ()
     )
-    mismatches: List[str] = []
+    mismatches: List[tuple] = []
     for key, expected_value in expected_values.items():
         declared = identity.get(key)
         if declared is None:
             if key in required_keys:
-                mismatches.append(f"{key} is missing")
+                mismatches.append((key, f"{key} is missing"))
             continue
         normalized = report_action._normalize_path_value(declared)
         if expected_value is None:
@@ -314,18 +373,37 @@ def _identity_alignment_check(
             declared_resolved = normalized
         if declared_resolved != expected_value:
             mismatches.append(
-                f"{key} is {declared!r}; expected {expected_value}"
+                (key, f"{key} is {declared!r}; expected {expected_value}")
             )
     if variant == "review":
         review_path = expected["expected_review_path"]
         if review_path is not None and not Path(review_path).exists():
             mismatches.append(
-                f"review file does not exist: {review_path}"
+                (None, f"review file does not exist: {review_path}")
             )
+    return mismatches
+
+
+def _identity_alignment_check(
+    project_root: Optional[Path],
+    report_path: Path,
+    content: str,
+    variant: str,
+) -> Dict[str, Any]:
+    """Compare declared Identity ids/paths to their machine-expected values.
+
+    Task-report Identity values are optional (the coder handoff is
+    deidentified) and cross-checked only when declared; review-report values
+    are required and must match exactly. Each mismatch is named field by
+    field so a transcription defect is a bounded correction.
+    """
+    mismatches = _identity_alignment_mismatches(
+        project_root, report_path, content, variant
+    )
     return _check(
-        name,
+        "identity-values-aligned",
         not mismatches,
-        "; ".join(mismatches),
+        "; ".join(message for _key, message in mismatches),
         "use the machine-generated Identity values from "
         "`cartopian report-skeleton` verbatim, and write the review file "
         "before the review report",
@@ -353,6 +431,53 @@ def _alignment_check(
     )
 
 
+def resolve_variant(
+    report_path: Path,
+    content: str,
+    explicit_variant: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve the report variant, honoring the filename contract.
+
+    Returns ``(variant, error)``: exactly one is non-None. Shared with the
+    mediated mechanical-correction surface so both resolve identically.
+    """
+    if explicit_variant:
+        contract_variant = report_identity.filename_contract_variant(
+            report_path.name
+        )
+        if contract_variant is not None and explicit_variant != contract_variant:
+            return None, (
+                f"path/variant mismatch: variant {explicit_variant} "
+                f"contradicts the filename contract for {report_path.name} "
+                f"(mandates {contract_variant})"
+            )
+        return explicit_variant, None
+    return parse_report._infer_variant(report_path, content)
+
+
+def collect_checks(
+    project_root: Optional[Path],
+    report_path: Path,
+    content: str,
+    variant: str,
+) -> List[Dict[str, Any]]:
+    """Run every acceptance check against one report body.
+
+    The single check set behind ``validate-report`` and the mediated
+    mechanical-correction surface, so a corrected report is judged by exactly
+    the contract it failed.
+    """
+    return [
+        _sections_check(variant, content),
+        _identity_keys_check(variant, content),
+        _status_check(content),
+        _review_verdict_check(variant, content),
+        _identity_alignment_check(project_root, report_path, content, variant),
+        _alignment_check(report_path, content, variant),
+        *_source_evidence_checks(project_root, report_path, content, variant),
+    ]
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.report_path
     if not Path(raw_path).is_absolute():
@@ -370,40 +495,47 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"report unreadable: {raw_path} — {exc}")
         return EXIT_FAIL
 
-    if args.variant:
-        contract_variant = report_identity.filename_contract_variant(
-            report_path.name
-        )
-        if contract_variant is not None and args.variant != contract_variant:
+    observed_identity = report_identity.content_identity(content)
+    expected_identity = getattr(args, "expected_identity", None)
+    if expected_identity is not None:
+        if not report_identity.CONTENT_IDENTITY_RE.match(expected_identity):
             stderr_usage(
-                f"path/variant mismatch: --variant {args.variant} contradicts "
-                f"the filename contract for {report_path.name} "
-                f"(mandates {contract_variant})"
+                f"invalid --expected-identity {expected_identity!r}; "
+                "expected sha256:<64 lowercase hex digits>"
             )
             return EXIT_USAGE
-        variant = args.variant
-    else:
-        variant, err = parse_report._infer_variant(report_path, content)
-        if variant is None:
-            stderr_usage(err)
-            return EXIT_USAGE
+        if expected_identity != observed_identity:
+            emit_record(
+                {
+                    "report_path": str(report_path),
+                    "ok": False,
+                    "identity_mismatch": True,
+                    "expected_content_identity": expected_identity,
+                    "report_content_identity": observed_identity,
+                }
+            )
+            stderr_guard(
+                f"report-identity-mismatch: {report_path} no longer matches "
+                f"the accepted publication (expected {expected_identity}, "
+                f"observed {observed_identity}) — re-run the canonical wait "
+                "and validate the identity it returns"
+            )
+            return EXIT_FAIL
+
+    variant, err = resolve_variant(report_path, content, args.variant)
+    if variant is None:
+        stderr_usage(err)
+        return EXIT_USAGE
 
     project_root = request_trace.find_project_root(report_path)
-    checks: List[Dict[str, Any]] = [
-        _sections_check(variant, content),
-        _identity_keys_check(variant, content),
-        _status_check(content),
-        _review_verdict_check(variant, content),
-        _identity_alignment_check(project_root, report_path, content, variant),
-        _alignment_check(report_path, content, variant),
-        *_source_evidence_checks(project_root, report_path, content, variant),
-    ]
+    checks = collect_checks(project_root, report_path, content, variant)
     ok = all(item["pass"] for item in checks)
 
     emit_record(
         {
             "report_path": str(report_path),
             "variant": variant,
+            "report_content_identity": observed_identity,
             "ok": ok,
             "checks": checks,
         }

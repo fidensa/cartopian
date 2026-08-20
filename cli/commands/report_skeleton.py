@@ -21,6 +21,7 @@ from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
     _resolve_deliverable,
+    resolve_review_policy,
 )
 from cli.commands.validate_task_readiness import _parse_headers
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
@@ -66,12 +67,36 @@ def _placeholder_or_value(raw: str, fallback: str = "n/a") -> str:
     return value if value else fallback
 
 
+# The exact non-empty unverified-claim row grammar the validator enforces.
+# Rendered as backtick-wrapped prose (never a `- ` bullet and never indented)
+# so the instructional exemplar cannot be parsed as an evidence row.
+_UNVERIFIED_CLAIM_GRAMMAR = (
+    "`- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; "
+    "Missing: <authority or evidence>; Consequence: <consequence of "
+    "proceeding>; Next: <decision or proof required>`"
+)
+
+_UNVERIFIED_CLAIM_INSTRUCTIONS = (
+    "Keep `- none` when no claim remains unverified. Otherwise replace it "
+    "with one row per remaining claim, each carrying all five fields in "
+    "exactly this form:\n"
+    + _UNVERIFIED_CLAIM_GRAMMAR
+    + "\nA `decisive` claim may not remain unverified in a complete report; "
+    "prose that is not a `- ` row is not parsed as a claim."
+)
+
+
 def _source_evidence_section(guidance: Dict[str, Any]) -> List[str]:
     projection = source_guidance.assignee_projection(guidance)
     rendered = source_guidance.render_guidance(
         projection, heading="Source evidence"
     )
     heading, _, body = rendered.partition("\n")
+    body = body.strip().replace(
+        "### Unverified claims\n",
+        "### Unverified claims\n\n" + _UNVERIFIED_CLAIM_INSTRUCTIONS + "\n",
+        1,
+    )
     return [
         heading,
         "",
@@ -81,7 +106,7 @@ def _source_evidence_section(guidance: Dict[str, Any]) -> List[str]:
         "claims; a decisive claim may not remain unverified in a complete "
         "report.",
         "",
-        body.strip(),
+        body,
         "",
     ]
 
@@ -90,6 +115,7 @@ def _task_skeleton(
     headers: Dict[str, str],
     guidance: Dict[str, Any],
     deliverable: Optional[Dict[str, Any]],
+    task_review_required: bool,
 ) -> str:
     lines: List[str] = [
         "Status: <complete | blocked | failed>",
@@ -151,11 +177,39 @@ def _task_skeleton(
             "",
             "<known risks, edge cases, or follow-up work — or none.>",
             "",
-            "## Ready to close",
-            "",
-            "<yes | no>",
         ]
     )
+    if task_review_required:
+        # This project requires independent task-closure review, so the
+        # producer's readiness value routes into that review — it never
+        # certifies the reviewer's future verdict.
+        lines.extend(
+            [
+                "## Ready for review",
+                "",
+                "<yes | no>",
+                "",
+                "`yes` means your own work is complete and enters the "
+                "required independent closure review — it does not approve "
+                "closure and does not certify the reviewer's verdict. "
+                "`no` is only for genuinely incomplete or blocked work. A "
+                "short rationale may follow the token on the same line.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "## Ready to close",
+                "",
+                "<yes | no>",
+                "",
+                "`yes` means your work is complete; with task-closure "
+                "review off it routes the accepted task toward direct "
+                "closure. `no` is only for genuinely incomplete or blocked "
+                "work. A short rationale may follow the token on the same "
+                "line.",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -338,11 +392,25 @@ def handler(args: argparse.Namespace) -> int:
     source_backed = guidance["outcome"] == "valid"
 
     if variant == "task":
-        skeleton = _task_skeleton(headers, guidance, deliverable)
+        try:
+            review_policy = resolve_review_policy(project_root)
+        except _CliError as err:
+            stderr_error(err.message)
+            return err.exit_code
+        task_review_required = (
+            review_policy["task_closure"]["mode"] == "required"
+        )
+        skeleton = _task_skeleton(
+            headers, guidance, deliverable, task_review_required
+        )
         expected_report_path = completion_report_path
         review_file_skeleton = None
         machine_fields: Dict[str, Any] = {
             "work_root": _placeholder_or_value(headers.get("Work root", "")),
+            "task_review_required": task_review_required,
+            "ready_heading": (
+                "Ready for review" if task_review_required else "Ready to close"
+            ),
         }
     else:
         identity = {

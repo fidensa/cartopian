@@ -14,7 +14,15 @@ from cli.commands.resolve_config import (
     resolve_review_policy,
 )
 from cli.emit import emit_record
-from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
+from cli.main import (
+    EXIT_ENV,
+    EXIT_FAIL,
+    EXIT_OK,
+    EXIT_USAGE,
+    stderr_error,
+    stderr_guard,
+    stderr_usage,
+)
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})\.md$")
 _TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
@@ -41,6 +49,17 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         help=(
             "Explicit variant; replaces content inference but must agree "
             "with a grammar-matching report filename"
+        ),
+    )
+    subparser.add_argument(
+        "--expected-identity",
+        dest="expected_identity",
+        default=None,
+        help=(
+            "Bind routing to one accepted publication: the sha256:<hex> "
+            "report_content_identity a wait primitive returned. If the "
+            "report bytes on disk no longer match, the command refuses "
+            "(identity-mismatch) instead of routing on different bytes"
         ),
     )
 
@@ -88,16 +107,29 @@ def _extract_identity_map(content: str) -> Dict[str, str]:
     return result
 
 
+_READY_VALUE_RE = re.compile(r"^(yes|no)\b(.*)$", re.IGNORECASE | re.DOTALL)
+# An unfilled choice ("yes | no", "yes/no", "yes or no") is not a value.
+_READY_ALTERNATION_RE = re.compile(r"^\s*(?:[|/]|or\b)", re.IGNORECASE)
+
+
 def _extract_ready_for_review(content: str) -> Optional[bool]:
+    """Parse the readiness value under ``## Ready to close`` / ``## Ready for review``.
+
+    The value is the leading ``yes``/``no`` token of the section's first line;
+    a rationale may follow after the token (``no — closure is not mine to
+    certify``). An unfilled placeholder alternation is not a value. Under
+    required task-closure review, ``yes`` declares the producer's own work
+    complete and routes the task into independent review — it is not
+    self-approval of closure; ``no`` is for genuinely incomplete or blocked
+    work.
+    """
     body = _extract_heading_body(_TASK_READY_SECTION_RE, content)
     if body is None:
         return None
-    first_line = body.splitlines()[0].strip().lower()
-    if first_line == "yes":
-        return True
-    if first_line == "no":
-        return False
-    return None
+    match = _READY_VALUE_RE.match(body.splitlines()[0].strip())
+    if match is None or _READY_ALTERNATION_RE.match(match.group(2)):
+        return None
+    return match.group(1).lower() == "yes"
 
 
 def _parse_report_state(
@@ -440,6 +472,36 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"report unreadable: {raw_path} — {exc}")
         return EXIT_FAIL
 
+    observed_identity = report_identity.content_identity(content)
+    expected_identity = getattr(args, "expected_identity", None)
+    if expected_identity is not None:
+        if not report_identity.CONTENT_IDENTITY_RE.match(expected_identity):
+            stderr_usage(
+                f"invalid --expected-identity {expected_identity!r}; "
+                "expected sha256:<64 lowercase hex digits>"
+            )
+            return EXIT_USAGE
+        if expected_identity != observed_identity:
+            # The report was mutated after the observation that produced the
+            # expected identity. Routing on these bytes would act on a
+            # publication no wait accepted — refuse and re-observe instead.
+            emit_record(
+                {
+                    "verdict": "identity-mismatch",
+                    "report_path": str(report_path),
+                    "expected_content_identity": expected_identity,
+                    "report_content_identity": observed_identity,
+                    "recommended_action": "rerun-canonical-wait",
+                }
+            )
+            stderr_guard(
+                f"report-identity-mismatch: {report_path} no longer matches "
+                f"the accepted publication (expected {expected_identity}, "
+                f"observed {observed_identity}) — re-run the canonical wait "
+                "and route the identity it returns"
+            )
+            return EXIT_FAIL
+
     project_root = _find_project_root(report_path)
     if project_root is None:
         stderr_error(f"project config not found for report: {raw_path}")
@@ -587,6 +649,7 @@ def handler(args: argparse.Namespace) -> int:
         "verdict": verdict,
         "variant": variant,
         "report_path": str(report_path),
+        "report_content_identity": observed_identity,
         "status": status_value,
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,

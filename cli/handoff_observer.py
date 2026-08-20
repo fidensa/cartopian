@@ -5,15 +5,24 @@ path appearing is not itself terminal: invalid/incomplete bytes remain
 nonterminal while the wrapper can still publish a complete report.  Once the
 wrapper has exited, malformed bytes and absence become deterministic terminal
 failures.
+
+Terminal observations bind final bytes.  While a matching automated launch is
+still ``state=running``, even a *complete* report is nonterminal: the report
+writer is alive and may still rewrite it (the supervisor's grace/reap window
+is exactly such a period).  The supervisor publishes ``state=exited`` — and,
+for retained-log launches, the atomic launch-log snapshot — only after the
+child process is gone, so the content identity reported with a terminal
+observation cannot change afterward.  Manual/report-only handoffs (no status
+file) keep report-authoritative semantics unchanged.
 """
 from __future__ import annotations
 
-import hashlib
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from cli import report_identity
 from cli.commands import report_action
 from cli.commands.resolve_config import _CliError
 
@@ -119,7 +128,7 @@ def observe_report(
         content = report_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ReportObservation(True, "partial", None, expected_variant, None)
-    identity = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+    identity = report_identity.content_identity(content)
     try:
         verdict, variant, _status, _review_verdict = (
             report_action._parse_report_state(
@@ -147,12 +156,13 @@ def _retained_snapshot_published(report_path: Path) -> bool:
     """Whether this launch's bounded log snapshot is already observable.
 
     Dispatch removes the prior slot's launch log before it publishes the
-    matching ``state=running`` retention barrier.  The outer supervisor then
-    atomically publishes the current snapshot *before* it flips
-    ``retained_log_ready``.  Observing a safe regular file at the deterministic
-    companion path is therefore sufficient publication evidence when that
-    secondary status update is lost or raced.  Only metadata is inspected;
-    wait surfaces never open the launch-log body.
+    matching ``state=running`` marker.  The outer supervisor atomically
+    publishes the current snapshot only after the child process has exited,
+    immediately before it replaces the status with ``state=exited``.
+    Observing a safe regular file at the deterministic companion path is
+    therefore proof that the report writer is gone — sufficient terminal
+    evidence when that final status replacement is lost or raced.  Only
+    metadata is inspected; wait surfaces never open the launch-log body.
     """
     launch_log = Path(str(report_path) + ".launch.log")
     try:
@@ -176,14 +186,24 @@ def observe_once(
     report = observe_report(report_path, expected_variant)
 
     if report.publication_state == "complete":
-        retention_pending = (
-            wrapper.metadata.get("guarantee_scope") == "retained-launch-log"
-            and wrapper.metadata.get("retained_log_ready") != "true"
-            and wrapper.state == "running"
+        # A live automated launch (a matching ``state=running`` status) means
+        # the report writer may still be running — including the supervisor's
+        # post-report grace window — so its bytes are not yet final. Defer
+        # until the wrapper publishes ``state=exited``. The one fail-open
+        # exception is supervisor loss after final publication: for
+        # retained-log launches the atomic launch-log snapshot is published
+        # only after the child is gone, so an observable snapshot is
+        # equivalent terminal evidence when the exit-status replacement was
+        # lost or raced.
+        publication_pending = (
+            wrapper.state == "running"
             and wrapper.variant_matches
-            and not _retained_snapshot_published(report_path)
+            and not (
+                wrapper.metadata.get("guarantee_scope") == "retained-launch-log"
+                and _retained_snapshot_published(report_path)
+            )
         )
-        if retention_pending:
+        if publication_pending:
             return HandoffObservation(False, None, report, wrapper)
         return HandoffObservation(True, report.verdict, report, wrapper)
     if report.permanently_invalid:

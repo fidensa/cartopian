@@ -16,10 +16,13 @@ Terminal status flags emitted on stdout (one NDJSON record):
 
 - ``done``: a report is present and parses successfully (report-action verdict
   ``accepted``/``blocked``/``failed``). The PM reads the report verdict to
-  decide lifecycle action. A matching automated ``state=running`` status with
-  ``retained_log_ready=false`` briefly defers this result; missing status is
-  the manual/report-only path, and ``state=exited`` fails that diagnostic
-  publication barrier open.
+  decide lifecycle action. A matching automated ``state=running`` status
+  defers this result until the wrapper exits — the writer may still rewrite a
+  complete report during the supervisor's grace window, and a terminal result
+  must name final bytes (``report_content_identity``). The post-exit retained
+  launch-log snapshot fails a lost exit-status replacement open; missing
+  status is the manual/report-only path, and ``state=exited`` is the normal
+  publication boundary.
 - ``failed-to-parse``: the wrapper has exited and the report publication is
   permanently invalid. A present but incomplete report remains nonterminal
   while the wrapper is still running.
@@ -109,9 +112,12 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "ongoing work does not govern it. `max_block` is only for observing "
         "a manually launched handoff when the host ceiling cannot be raised; "
         "automatic `dispatch` refuses before launching that mismatch. A live "
-        "automated retained-log marker "
-        "may briefly coordinate publication; manual or exited-wrapper reports "
-        "do not wait on it. See CONVENTIONS.md § Handoffs."
+        "automated launch briefly defers a complete report until its wrapper "
+        "exits, so the returned `report_content_identity` names final bytes; "
+        "manual or exited-wrapper reports do not wait on it. Pass that "
+        "identity to `report_action`/`validate_report` as "
+        "`expected_identity` so routing consumes the accepted publication. "
+        "See CONVENTIONS.md § Handoffs."
     )
     subparser.add_argument(
         "task_path",

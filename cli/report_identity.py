@@ -18,9 +18,10 @@ Standard library only (NF-001).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 TASK_COMPLETION_VARIANT = "task"
 TASK_REVIEW_VARIANT = "review"
@@ -41,6 +42,19 @@ PLANNING_REVIEW_REPORT_RE = re.compile(
 REPORT_FILENAME_RE = re.compile(
     r"^REPORT-(?:\d{2}-\d{3}(?:-review)?|PLAN-\d{3})\.md$"
 )
+
+# The one content-identity grammar every report surface shares: the wait
+# primitives emit it as ``report_content_identity``, and the parsing/routing
+# surfaces accept it back as ``--expected-identity`` so lifecycle routing can
+# only consume the exact publication the wait accepted.
+CONTENT_IDENTITY_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def content_identity(data: Union[str, bytes]) -> str:
+    """The canonical ``sha256:<hex>`` identity of one report publication."""
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
 def task_nn_nnn(task_id: str) -> Optional[str]:

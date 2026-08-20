@@ -160,10 +160,25 @@ def test_task_wait_treats_partial_report_as_nonterminal_while_writer_runs(
             "reports/REPORT-01-003.md",
             "# REPORT-01-003\n\nStatus: complete\n",
         )
-        Path(str(report_path) + ".status").write_text(
+        status_path = Path(str(report_path) + ".status")
+        status_path.write_text(
             "state=running\nlaunch_id=launch-current\nexpected_variant=task\n",
             encoding="utf-8",
         )
+
+        def publish() -> None:
+            # The writer finishes the report and its wrapper exits — the
+            # publication boundary a terminal observation binds final bytes to.
+            report_path.write_text(TASK_REPORT, encoding="utf-8")
+            status_path.write_text(
+                "state=exited\n"
+                "exit_code=0\n"
+                "reason=clean\n"
+                "launch_id=launch-current\n"
+                "expected_variant=task\n",
+                encoding="utf-8",
+            )
+
         rc = _run_with_staged_publication(
             wait_handoff,
             [
@@ -176,13 +191,43 @@ def test_task_wait_treats_partial_report_as_nonterminal_while_writer_runs(
                 "--poll-interval",
                 "1",
             ],
-            lambda: report_path.write_text(TASK_REPORT, encoding="utf-8"),
+            publish,
         )
 
     record = json.loads(capsys.readouterr().out)
     assert rc == EXIT_OK
     assert record["classification"] == "accepted"
     assert record["report_variant"] == "task"
+
+
+def test_task_wait_defers_complete_report_while_wrapper_still_runs(capsys):
+    """A live launch's complete report is not terminal until the wrapper exits.
+
+    The supervisor's grace/reap window follows report completion, and the
+    writer can still rewrite the report inside it — the REPORT-05-010 race.
+    A terminal result may only name bytes that cannot change afterward, so a
+    matching ``state=running`` status holds the wait open.
+    """
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task_path = _task(scaffold)
+        report_path = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        Path(str(report_path) + ".status").write_text(
+            "state=running\nlaunch_id=launch-current\nexpected_variant=task\n",
+            encoding="utf-8",
+        )
+        args = argparse.Namespace(
+            task_path=str(task_path),
+            role="coder",
+            max_block="1s",
+            poll_interval=0.01,
+        )
+        rc = wait_handoff.handler(args)
+
+    record = json.loads(capsys.readouterr().out)
+    assert rc == EXIT_OK
+    assert record["classification"] == "still-running"
+    assert record["publication_state"] == "complete"
+    assert record["wrapper_state"] == "running"
 
 
 def test_task_review_wait_rejects_reintroduced_coder_report(capsys):
@@ -225,11 +270,22 @@ def test_report_path_wait_observes_partial_publication_and_wrapper_exit(capsys):
             "reports/REPORT-PLAN-001-baseline.md",
             "# REPORT-PLAN-001-baseline\n\nStatus: complete\n",
         )
-        Path(str(report_path) + ".status").write_text(
+        status_path = Path(str(report_path) + ".status")
+        status_path.write_text(
             "state=running\nlaunch_id=planning-launch\n"
             "expected_variant=planning-review\n",
             encoding="utf-8",
         )
+
+        def publish() -> None:
+            report_path.write_text(PLANNING_REPORT, encoding="utf-8")
+            status_path.write_text(
+                "state=exited\nexit_code=0\nreason=clean\n"
+                "launch_id=planning-launch\n"
+                "expected_variant=planning-review\n",
+                encoding="utf-8",
+            )
+
         rc = _run_with_staged_publication(
             wait_report,
             [
@@ -242,7 +298,7 @@ def test_report_path_wait_observes_partial_publication_and_wrapper_exit(capsys):
                 "--poll-interval",
                 "1",
             ],
-            lambda: report_path.write_text(PLANNING_REPORT, encoding="utf-8"),
+            publish,
         )
 
     record = json.loads(capsys.readouterr().out)

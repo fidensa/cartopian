@@ -151,6 +151,123 @@ class TestTaskSkeleton(unittest.TestCase):
             self.assertIn("missing-source-guidance-section", stderr)
 
 
+_TOML_REVIEW_REQUIRED = (
+    _TOML
+    + "\n[roles.reviewer]\n"
+    'description = "Reviews completed work."\n'
+    "\n[reviews]\n"
+    'planning = "off"\n'
+    'task_closure = "required"\n'
+    'task_role = "reviewer"\n'
+)
+
+
+class TestReadinessSemantics(unittest.TestCase):
+    def test_review_required_project_gets_ready_for_review_heading(self) -> None:
+        """The producer declares readiness *for review*, never closure.
+
+        Under required task-closure review the skeleton uses the
+        `## Ready for review` heading and states that `yes` routes into the
+        independent review without approving closure, so a producer whose
+        work is complete knows which value to write.
+        """
+        with project_scaffold(cartopian_toml=_TOML_REVIEW_REQUIRED) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md", _task_body()
+            )
+            rc, stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            record = json.loads(stdout)
+            skeleton = record["skeleton"]
+            self.assertIn("## Ready for review", skeleton)
+            self.assertNotIn("## Ready to close", skeleton)
+            self.assertIn("does not approve closure", skeleton)
+            self.assertIn("incomplete or blocked", skeleton)
+            self.assertNotIn("certify", skeleton.split("does not")[0])
+            self.assertTrue(record["machine_fields"]["task_review_required"])
+            self.assertEqual(
+                record["machine_fields"]["ready_heading"], "Ready for review"
+            )
+
+    def test_review_off_project_keeps_ready_to_close_heading(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md", _task_body()
+            )
+            rc, stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            record = json.loads(stdout)
+            self.assertIn("## Ready to close", record["skeleton"])
+            self.assertNotIn("## Ready for review", record["skeleton"])
+            self.assertFalse(record["machine_fields"]["task_review_required"])
+
+
+class TestUnverifiedClaimGrammar(unittest.TestCase):
+    def test_skeleton_exposes_the_exact_non_empty_claim_grammar(self) -> None:
+        """The non-empty grammar is discoverable before report writing."""
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md", _task_body()
+            )
+            rc, stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            skeleton = json.loads(stdout)["skeleton"]
+            self.assertIn(
+                "`- Claim: <unverified claim>; Decisiveness: <decisive | "
+                "non-decisive>; Missing: <authority or evidence>; "
+                "Consequence: <consequence of proceeding>; Next: <decision "
+                "or proof required>`",
+                skeleton,
+            )
+            # `- none` stays the valid default row.
+            claims = skeleton[skeleton.index("### Unverified claims"):]
+            self.assertIn("- none", claims)
+
+    def test_instructional_grammar_text_is_not_parsed_as_evidence(self) -> None:
+        """The exemplar is prose, never a `- ` row a validator would consume."""
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md", _task_body()
+            )
+            rc, stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            skeleton = json.loads(stdout)["skeleton"]
+            evidence_section = skeleton[skeleton.index("## Source evidence"):]
+            evidence_section = evidence_section[
+                : evidence_section.index("## Deliverable")
+            ]
+            # Instructions left in place with `- none` still validate: the
+            # grammar exemplar is not misparsed as a malformed claim record.
+            report = "Status: complete\n\n" + evidence_section
+            result = source_guidance.resolve_report_evidence(task, report)
+            self.assertEqual(result["outcome"], "valid", result["blockers"])
+            self.assertEqual(result["evidence"]["unverified_claims"], [])
+
+    def test_grammar_conformant_non_decisive_claim_validates(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            task = scaffold.write(
+                "tasks/in-progress/TASK-05-009.md", _task_body()
+            )
+            rc, stdout, stderr = _invoke(task)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            skeleton = json.loads(stdout)["skeleton"]
+            evidence_section = skeleton[skeleton.index("## Source evidence"):]
+            evidence_section = evidence_section[
+                : evidence_section.index("## Deliverable")
+            ]
+            filled = evidence_section.replace(
+                "- none",
+                "- Claim: the revised wording states the boundary at the "
+                "right width; Decisiveness: non-decisive; Missing: "
+                "independent review; Consequence: possible misstatement; "
+                "Next: reviewer verdict on the revised artifact.",
+            )
+            report = "Status: complete\n\n" + filled
+            result = source_guidance.resolve_report_evidence(task, report)
+            self.assertEqual(result["outcome"], "valid", result["blockers"])
+            self.assertEqual(len(result["evidence"]["unverified_claims"]), 1)
+
+
 class TestReviewSkeleton(unittest.TestCase):
     def test_machine_identity_values_are_exact(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:

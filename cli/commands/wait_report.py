@@ -18,9 +18,10 @@ Outcomes:
 - Complete report (accepted, blocked, failed, changes-requested, or rejected)
   → exit 0 and emit its terminal classification. Observation succeeded; the
   caller routes the report verdict. A matching automated ``state=running``
-  status with ``retained_log_ready=false`` briefly defers this result; missing
-  status is the manual/report-only path, and ``state=exited`` fails that
-  diagnostic-publication barrier open.
+  status defers this result until the wrapper exits so the terminal
+  ``report_content_identity`` names final bytes; the post-exit retained
+  launch-log snapshot fails a lost exit-status replacement open. Missing
+  status is the manual/report-only path.
 - Incomplete report while the wrapper can still publish → remain nonterminal.
 - Wrapper exit with malformed bytes or no report → deterministic exit 1
   classification matching ``wait-handoff``.
@@ -62,9 +63,12 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "NDJSON record. Use for a report with no task file, such as a planning "
         "checkpoint review; for a task-scoped handoff use `wait_handoff`. Call "
         "this WITHOUT `max_block` and let it block; it returns when report "
-        "completion is observable. A live automated retained-log marker may "
-        "briefly coordinate publication; manual or exited-wrapper reports do "
-        "not wait on it. Its silence is expected and is not a lapse in "
+        "completion is observable. A live automated launch briefly defers a "
+        "complete report until its wrapper exits, so the returned "
+        "`report_content_identity` names final bytes; manual or "
+        "exited-wrapper reports do not wait on it. Pass that identity to "
+        "`report_action`/`validate_report` as `expected_identity`. "
+        "Its silence is expected and is not a lapse in "
         "commentary: no model turn is in progress while the call is pending, "
         "so an instruction to narrate ongoing work does not govern it. "
         "`max_block` is only for observing a manually launched handoff when "

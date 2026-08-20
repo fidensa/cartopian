@@ -226,24 +226,37 @@ class OutputSafetySupervisorTests(unittest.TestCase):
             self.assertEqual(result.exit_code, 0)
             self.assertTrue(result.report_present)
 
-    def test_report_completion_publishes_retained_log_before_reap(self) -> None:
+    def test_report_completion_publishes_nothing_until_after_reap(self) -> None:
+        """The publication boundary opens only once the child is gone.
+
+        During the grace/reap window the child can still rewrite the report,
+        so neither the retained snapshot nor any status change may appear
+        before the reap; both land — snapshot first, then ``state=exited`` —
+        after the child has been terminated.
+        """
         with tempfile.TemporaryDirectory(prefix="cartopian-retention-order-") as tmp:
             root = Path(tmp)
             report = root / "REPORT-01-001.md"
             log_path = Path(str(report) + ".launch.log")
+            status_path = Path(str(report) + ".status")
+            status_path.write_text(
+                "state=running\n"
+                "launch_id=synthetic\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
             original_terminate = output_safety._terminate_process_tree
-            publication_seen = []
+            reap_observations = []
 
-            def assert_published_then_terminate(proc):
-                self.assertTrue(
-                    log_path.is_file(),
-                    "report-completion reap began before retained-log publication",
+            def assert_unpublished_then_terminate(proc):
+                reap_observations.append(
+                    {
+                        "log_published": log_path.is_file(),
+                        "status": status_path.read_text(encoding="utf-8"),
+                    }
                 )
-                self.assertIn(b"before-report", log_path.read_bytes())
-                status = Path(str(report) + ".status").read_text(encoding="utf-8")
-                self.assertIn("guarantee_scope=retained-launch-log\n", status)
-                self.assertIn("retained_log_ready=true\n", status)
-                publication_seen.append(True)
                 return original_terminate(proc)
 
             with mock.patch.dict(
@@ -254,7 +267,7 @@ class OutputSafetySupervisorTests(unittest.TestCase):
                 },
             ), mock.patch(
                 "cli.output_safety._terminate_process_tree",
-                side_effect=assert_published_then_terminate,
+                side_effect=assert_unpublished_then_terminate,
             ):
                 result = self._supervise_script(
                     root,
@@ -268,9 +281,19 @@ class OutputSafetySupervisorTests(unittest.TestCase):
                     limits=output_safety.OutputLimits(log_bytes=512, log_lines=8),
                 )
 
-            self.assertEqual(publication_seen, [True])
+            self.assertEqual(len(reap_observations), 1)
+            self.assertFalse(
+                reap_observations[0]["log_published"],
+                "retained snapshot was published while the child could still "
+                "rewrite the report",
+            )
+            self.assertIn("state=running\n", reap_observations[0]["status"])
             self.assertEqual(result.exit_code, 0)
             self.assertTrue(result.report_present)
+            self.assertTrue(log_path.is_file())
+            final_status = status_path.read_text(encoding="utf-8")
+            self.assertIn("state=exited\n", final_status)
+            self.assertIn("retained_log_ready=true\n", final_status)
 
     @unittest.skipUnless(
         os.name == "posix",
@@ -327,30 +350,41 @@ class OutputSafetySupervisorTests(unittest.TestCase):
             self.assertIn("state=exited\n", status)
             self.assertIn("retained_log_ready=true\n", status)
 
-    def test_automated_reader_waits_for_retained_publication_boundary(self) -> None:
+    def test_automated_reader_waits_for_wrapper_exit_publication_boundary(
+        self,
+    ) -> None:
+        """A live launch defers a complete report until the wrapper exits.
+
+        While ``state=running`` the report writer may still rewrite the
+        report (the supervisor's grace/reap window), so even a legacy
+        ``retained_log_ready=true`` marker cannot open the boundary; only
+        ``state=exited`` (or the post-exit snapshot) proves final bytes.
+        """
         with tempfile.TemporaryDirectory(prefix="cartopian-retention-reader-") as tmp:
             root = Path(tmp)
             report = root / "REPORT-01-001.md"
             status = Path(str(report) + ".status")
             report.write_text(REPORT_TEXT, encoding="utf-8")
-            status.write_text(
-                "state=running\n"
-                "launch_id=synthetic\n"
-                "expected_variant=task\n"
-                "guarantee_scope=retained-launch-log\n"
-                "retained_log_ready=false\n",
-                encoding="utf-8",
-            )
+            for ready_flag in ("false", "true"):
+                status.write_text(
+                    "state=running\n"
+                    "launch_id=synthetic\n"
+                    "expected_variant=task\n"
+                    "guarantee_scope=retained-launch-log\n"
+                    f"retained_log_ready={ready_flag}\n",
+                    encoding="utf-8",
+                )
+                pending = handoff_observer.observe_once(
+                    report,
+                    expected_variant="task",
+                )
+                self.assertFalse(pending.terminal, ready_flag)
+                self.assertEqual(pending.report.publication_state, "complete")
 
-            pending = handoff_observer.observe_once(
-                report,
-                expected_variant="task",
-            )
-            self.assertFalse(pending.terminal)
-            self.assertEqual(pending.report.publication_state, "complete")
-
             status.write_text(
-                "state=running\n"
+                "state=exited\n"
+                "exit_code=0\n"
+                "reason=clean\n"
                 "launch_id=synthetic\n"
                 "expected_variant=task\n"
                 "guarantee_scope=retained-launch-log\n"

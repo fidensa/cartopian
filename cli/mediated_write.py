@@ -133,8 +133,14 @@ def mediated_write(
     content: Union[str, bytes],
     *,
     mode: int = 0o644,
+    expected_data: Optional[bytes] = None,
 ) -> Dict[str, object]:
     """Write ``content`` to the allowlisted destination, or refuse fail-closed.
+
+    ``expected_data`` binds the write to one existing publication: the
+    destination must already exist and still hold exactly those bytes at
+    replace time, or the write refuses (``unexpected-content``) — the
+    hash-bound correction discipline `correct-report` rides on.
 
     Returns a result dict on success. Raises :class:`GuardRefusal` and writes
     nothing on any refusal. See module docstring for the full rule set.
@@ -243,6 +249,11 @@ def mediated_write(
     #     inode; a non-regular file is never a valid artifact destination).
     expected_leaf = None
     expect_absent = not os.path.lexists(candidate)
+    if expected_data is not None and expect_absent:
+        raise GuardRefusal(
+            "unexpected-content",
+            f"destination bound to existing content does not exist: {candidate}",
+        )
     if not expect_absent:
         st = os.lstat(candidate)
         if not stat.S_ISREG(st.st_mode):
@@ -291,6 +302,7 @@ def mediated_write(
             safe_mode,
             expected_leaf=expected_leaf,
             expect_absent=expect_absent,
+            expected_data=expected_data,
         )
     else:
         _atomic_write_via_path(
@@ -302,6 +314,7 @@ def mediated_write(
             safe_mode,
             expected_leaf=expected_leaf,
             expect_absent=expect_absent,
+            expected_data=expected_data,
         )
 
     # Record mediated-writer provenance so an out-of-band change to this artifact

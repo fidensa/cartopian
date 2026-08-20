@@ -111,7 +111,7 @@ function Test-CartopianReportComplete {
             $text -match '(?m)^##\s+Identity\s*$' -and
             $text -match '(?m)^##\s+Remaining risks\s*$' -and
             $text -match '(?m)^##\s+(Completion evidence|Files changed|Deliverable)\s*$' -and
-            $text -match '(?ms)^##\s+(Ready to close|Ready for review)\s*$.*?^\s*(yes|no)\s*$'
+            $text -match '(?ms)^##\s+(Ready to close|Ready for review)\s*$.*?^\s*(yes|no)(\s.*)?$'
         )
     }
     if ($variant -in @('review', 'planning-review')) {

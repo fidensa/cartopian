@@ -238,6 +238,181 @@ class TestReportActionHappyPath(unittest.TestCase):
         self.assertFalse(record["path_mismatch"])
 
 
+class TestReadyRoutingSemantics(unittest.TestCase):
+    """Producer readiness routes into required review, never self-approval."""
+
+    def _route(self, *, toml: str, heading: str, value: str) -> dict:
+        import argparse
+        import contextlib
+        import io
+
+        from cli.commands import report_action
+
+        with project_scaffold(cartopian_toml=toml) as scaffold:
+            scaffold.write(
+                "tasks/in-progress/TASK-01-006.md",
+                "# task\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-01-006.md",
+                (
+                    "# REPORT-01-006\n\n"
+                    "Status: complete\n\n"
+                    "## Identity\n\n- Work root: n/a\n\n"
+                    "## Completion evidence\n\nThe outcome exists.\n\n"
+                    "## Remaining risks\n\nNone.\n\n"
+                    f"## {heading}\n\n{value}\n"
+                ),
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with (
+                contextlib.redirect_stdout(out),
+                contextlib.redirect_stderr(err),
+            ):
+                rc = report_action.handler(
+                    argparse.Namespace(
+                        report_path=str(report_path),
+                        variant=None,
+                        expected_identity=None,
+                    )
+                )
+            self.assertEqual(rc, 0, err.getvalue())
+            return json.loads(out.getvalue())
+
+    def test_producer_completion_routes_into_required_review(self) -> None:
+        for heading in ("Ready for review", "Ready to close"):
+            with self.subTest(heading=heading):
+                record = self._route(
+                    toml=_PROJECT_TOML, heading=heading, value="yes"
+                )
+                self.assertEqual(record["verdict"], "accepted")
+                self.assertEqual(record["target_task_status"], "in-review")
+                self.assertEqual(record["recommended_action"], "assign-review")
+
+    def test_producer_completion_with_review_off_routes_to_done(self) -> None:
+        for heading in ("Ready for review", "Ready to close"):
+            with self.subTest(heading=heading):
+                record = self._route(
+                    toml=_PROJECT_TOML_OFF, heading=heading, value="yes"
+                )
+                self.assertEqual(record["target_task_status"], "done")
+                self.assertEqual(record["recommended_action"], "close-task")
+
+    def test_no_keeps_incomplete_work_in_progress(self) -> None:
+        record = self._route(
+            toml=_PROJECT_TOML, heading="Ready for review", value="no"
+        )
+        self.assertEqual(record["target_task_status"], "in-progress")
+        self.assertEqual(
+            record["recommended_action"], "return-control-to-operator"
+        )
+
+    def test_rationale_after_token_still_parses(self) -> None:
+        """The REPORT-05-010 form: `no — closure is not mine to certify`."""
+        record = self._route(
+            toml=_PROJECT_TOML,
+            heading="Ready to close",
+            value=(
+                "no — the deliverable is complete but closure is not mine "
+                "to certify."
+            ),
+        )
+        self.assertEqual(record["target_task_status"], "in-progress")
+        yes_record = self._route(
+            toml=_PROJECT_TOML,
+            heading="Ready for review",
+            value="yes — work complete; entering required independent review.",
+        )
+        self.assertEqual(yes_record["target_task_status"], "in-review")
+
+    def test_word_starting_with_no_is_not_a_value(self) -> None:
+        record = self._route(
+            toml=_PROJECT_TOML, heading="Ready to close", value="nothing yet"
+        )
+        self.assertIsNone(record["target_task_status"])
+
+    def test_unfilled_placeholder_alternation_is_not_a_value(self) -> None:
+        for placeholder in ("yes | no", "yes/no", "yes or no"):
+            with self.subTest(placeholder=placeholder):
+                record = self._route(
+                    toml=_PROJECT_TOML,
+                    heading="Ready to close",
+                    value=placeholder,
+                )
+                self.assertIsNone(record["target_task_status"])
+
+
+class TestExpectedIdentityBinding(unittest.TestCase):
+    def _invoke(self, report_path, expected_identity):
+        import argparse
+        import contextlib
+        import io
+
+        from cli.commands import report_action
+
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            rc = report_action.handler(
+                argparse.Namespace(
+                    report_path=str(report_path),
+                    variant=None,
+                    expected_identity=expected_identity,
+                )
+            )
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_routing_consumes_only_the_accepted_publication(self) -> None:
+        from cli import report_identity
+
+        body = (
+            "# REPORT-01-006\n\nStatus: complete\n\n"
+            "## Identity\n\n- Work root: n/a\n\n"
+            "## Completion evidence\n\nThe outcome exists.\n\n"
+            "## Remaining risks\n\nNone.\n\n"
+            "## Ready for review\n\nyes\n"
+        )
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            scaffold.write(
+                "tasks/in-progress/TASK-01-006.md",
+                "# task\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write("reports/REPORT-01-006.md", body)
+            accepted = report_identity.content_identity(body)
+
+            rc, stdout, stderr = self._invoke(report_path, accepted)
+            self.assertEqual(rc, 0, stderr)
+            record = json.loads(stdout)
+            self.assertEqual(record["verdict"], "accepted")
+            self.assertEqual(record["report_content_identity"], accepted)
+
+            # The report mutates after the wait accepted it: routing on the
+            # new bytes is refused with a re-observe recommendation.
+            report_path.write_text(
+                body.replace("The outcome exists.", "Different bytes."),
+                encoding="utf-8",
+            )
+            rc, stdout, stderr = self._invoke(report_path, accepted)
+            self.assertEqual(rc, 1)
+            record = json.loads(stdout)
+            self.assertEqual(record["verdict"], "identity-mismatch")
+            self.assertEqual(
+                record["recommended_action"], "rerun-canonical-wait"
+            )
+            self.assertIn("report-identity-mismatch", stderr)
+
+    def test_malformed_identity_is_usage_error(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            report_path = scaffold.write(
+                "reports/REPORT-01-006.md", "# REPORT-01-006\n"
+            )
+            rc, _stdout, stderr = self._invoke(report_path, "not-an-identity")
+            self.assertEqual(rc, 2)
+            self.assertIn("expected sha256:", stderr)
+
+
 class TestReportActionReviewOff(unittest.TestCase):
     def test_accepted_task_routes_directly_to_done(self) -> None:
         with project_scaffold(cartopian_toml=_PROJECT_TOML_OFF) as scaffold:

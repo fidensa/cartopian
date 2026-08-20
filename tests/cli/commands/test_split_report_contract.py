@@ -437,10 +437,22 @@ def test_wait_handoff_review_watches_review_slot_and_preserves_completion(capsys
         completion = scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
         before = completion.read_bytes()
         review_path = scaffold.reports / "REPORT-01-003-review.md"
-        Path(str(review_path) + ".status").write_text(
+        review_status = Path(str(review_path) + ".status")
+        review_status.write_text(
             "state=running\nlaunch_id=review-launch\nexpected_variant=review\n",
             encoding="utf-8",
         )
+
+        def publish() -> None:
+            # The reviewer publishes and its wrapper exits — the publication
+            # boundary terminal observation binds final bytes to.
+            review_path.write_text(_review_report(scaffold), encoding="utf-8")
+            review_status.write_text(
+                "state=exited\nexit_code=0\nreason=clean\n"
+                "launch_id=review-launch\nexpected_variant=review\n",
+                encoding="utf-8",
+            )
+
         rc = _run_with_staged_publication(
             wait_handoff,
             [
@@ -453,9 +465,7 @@ def test_wait_handoff_review_watches_review_slot_and_preserves_completion(capsys
                 "--poll-interval",
                 "1",
             ],
-            lambda: review_path.write_text(
-                _review_report(scaffold), encoding="utf-8"
-            ),
+            publish,
         )
         preserved = completion.read_bytes()
         resolved_review = str(review_path.resolve())
@@ -554,10 +564,20 @@ def test_wait_review_partial_publication_stays_nonterminal_while_running(capsys)
             "reports/REPORT-01-003-review.md",
             "# REPORT-01-003-review\n\nStatus: complete\n",
         )
-        Path(str(review_path) + ".status").write_text(
+        review_status = Path(str(review_path) + ".status")
+        review_status.write_text(
             "state=running\nlaunch_id=review-launch\nexpected_variant=review\n",
             encoding="utf-8",
         )
+
+        def publish() -> None:
+            review_path.write_text(_review_report(scaffold), encoding="utf-8")
+            review_status.write_text(
+                "state=exited\nexit_code=0\nreason=clean\n"
+                "launch_id=review-launch\nexpected_variant=review\n",
+                encoding="utf-8",
+            )
+
         rc = _run_with_staged_publication(
             wait_handoff,
             [
@@ -570,9 +590,7 @@ def test_wait_review_partial_publication_stays_nonterminal_while_running(capsys)
                 "--poll-interval",
                 "1",
             ],
-            lambda: review_path.write_text(
-                _review_report(scaffold), encoding="utf-8"
-            ),
+            publish,
         )
 
     record = json.loads(capsys.readouterr().out)

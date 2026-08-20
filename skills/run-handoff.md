@@ -165,7 +165,7 @@ The launched wrapper sets its single `CARTOPIAN_TIMEOUT` deadline from the resol
 
 The project-root cwd and declared work-root access are filesystem launch facts. Declared work-root access does not grant PM lifecycle authority, relax the prompt's assignment scope, or transfer human-owned product-repository git actions to the assignee. Wrapper widening also does not replace harness capability enforcement.
 
-Automated dispatch places the configured wrapper under the common launch-log retention supervisor. It continuously drains combined wrapper output while retaining only the normalized byte/line-bounded diagnostic representation from `cli/output_safety.py`; bytes outside that representation are discarded without signaling, terminating, failing, or otherwise constraining the assignee. Report observation and grace deadlines advance on timed pipe-readiness waits rather than output chunks, including while stdout stays open and silent. Once the outer supervisor observes a complete report, it publishes the current bounded log before the wrapper-compatible grace/reap path, atomically marks `retained_log_ready=true` in secondary status, continues draining during grace, and publishes the final bounded representation afterward. A matching automated status with `state=running` and retained storage pending briefly delays the report verdict until the snapshot is published. The normal proof is that marker flip; the safe deterministic launch-log companion is equivalent publication metadata if the following status replacement is lost or raced, and waits inspect only its file metadata, never its body. Manual/report-only waits have no status requirement, and `state=exited` fails a pending marker open so supervisor loss cannot deadlock completion. Surface report/status metadata only and never open or summarize `<report-path>.launch.log` while waiting. The retention guarantee applies only to `guarantee_scope=retained-launch-log`; it is not an execution-output, artifact-size, report-size, model-context, or provider-private-context guarantee.
+Automated dispatch places the configured wrapper under the common launch-log retention supervisor. It continuously drains combined wrapper output while retaining only the normalized byte/line-bounded diagnostic representation from `cli/output_safety.py`; bytes outside that representation are discarded without signaling, terminating, failing, or otherwise constraining the assignee. Report observation and grace deadlines advance on timed pipe-readiness waits rather than output chunks, including while stdout stays open and silent. Once the outer supervisor observes a complete report, it grants the child a short grace to exit on its own, reaps it if it lingers, and only after the child is provably gone publishes the bounded launch-log snapshot followed by the `state=exited` status — nothing is published while the report writer could still rewrite the report, so every signal a wait can accept names final bytes. A matching automated status with `state=running` therefore briefly delays the report verdict until the wrapper exits. The normal proof is the `state=exited` status; the safe deterministic launch-log companion is equivalent publication metadata if the following status replacement is lost or raced, and waits inspect only its file metadata, never its body. Manual/report-only waits have no status requirement, so supervisor loss cannot deadlock completion. Surface report/status metadata only and never open or summarize `<report-path>.launch.log` while waiting. The retention guarantee applies only to `guarantee_scope=retained-launch-log`; it is not an execution-output, artifact-size, report-size, model-context, or provider-private-context guarantee.
 
 `dispatch` refuses to launch when the host cannot stay attached for the whole handoff. Launching is only half the job — the PM must still be waiting when the report lands (Stage 3) — and every MCP host caps a single `tools/call`, sometimes below the protocol's default 60m role timeout. When `roles.<role>.timeout` exceeds the resolved host budget, dispatch fails closed with a `[guard]` naming the mismatch and the ways out. Surface that message to the operator verbatim and return a blocked outcome; do not retry, do not lower the timeout on the operator's behalf, and do not fall back to periodic status checks. The remedies are to raise the host's ceiling, lower the role timeout, or hand this role off manually — `cartopian host-capability --role <role> --project <project-path>` reports the budget and the fit.
 
@@ -203,8 +203,8 @@ Choose the primitive by handoff kind:
 
 Interpret the emitted `status`:
 
-- `done` / `accepted`, or common `classification` values `accepted`, `blocked`, `failed`, `changes-requested`, or `rejected`: a complete well-shaped report publication is present. Proceed to Stage 4 to route its actual verdict.
-- An incomplete or temporarily malformed report while the current wrapper is still running is nonterminal. Path appearance alone is not completion; keep the same canonical wait active so publication can finish.
+- `done` / `accepted`, or common `classification` values `accepted`, `blocked`, `failed`, `changes-requested`, or `rejected`: a complete well-shaped report publication is present, and the record's `report_content_identity` names its final bytes — the launch had already exited (or its post-exit snapshot was published) when the wait accepted it, so those bytes cannot change afterward. Keep that identity: Stage 4 binds parsing and routing to it. Proceed to Stage 4 to route the actual verdict.
+- An incomplete or temporarily malformed report while the current wrapper is still running is nonterminal — and so is a *complete* report while the launch is still `state=running` (the writer may still rewrite it during the supervisor's grace window). Path appearance alone is not completion; keep the same canonical wait active so publication can finish.
 - `failed-to-parse`: the current wrapper exited and left a permanently malformed report (including content of the wrong expected variant, such as a stale coder report in a reviewer slot). Treat as blocked; preserve the prompt and report for inspection.
 - `failed`: the current wrapper exited non-zero and no report appeared. `exited-without-report`: it exited cleanly without a report (the task-scoped legacy `status` field remains `failed`, while `classification` is precise). In either case the process is gone, so no report is coming; return a blocked outcome and preserve the prompt for a retry.
 - `timeout`: the configured handoff ceiling elapsed before any terminal signal. A deadline kill is not successful completion evidence; return a blocked outcome.
@@ -218,11 +218,13 @@ Return a blocked outcome when the wait reports `failed`, `failed-to-parse`, or `
 
 ## Stage 4 - Parse The Report
 
-Use the Core CLI to parse the report at the expected absolute report path and validate it against the applicable variant in `cartopian://templates/REPORT.md`:
+Use the Core CLI to parse the report at the expected absolute report path and validate it against the applicable variant in `cartopian://templates/REPORT.md`, binding the parse to the exact publication the wait accepted:
 
 ```
-cartopian report-action <report-path>
+cartopian report-action <report-path> --expected-identity <report_content_identity from the wait record>
 ```
+
+If the bytes on disk no longer match, `report-action` refuses with `verdict: identity-mismatch` and `recommended_action: rerun-canonical-wait` instead of routing on bytes no wait accepted — re-run the canonical wait and use the identity it returns. Never route around this refusal by re-invoking without `--expected-identity`. (`validate-report` accepts the same `--expected-identity` binding.)
 
 `report-action` infers the report variant from filename and content; the supported variants are:
 
@@ -237,12 +239,22 @@ If the report is missing, malformed, inconsistent, uses unsupported values, or f
 When a written report returns `failed-to-parse`, do not stop at the verdict: run the draft validator to enumerate every defect with its recovery and failure class:
 
 ```
-cartopian validate-report <report-path>
+cartopian validate-report <report-path> --expected-identity <identity>
 ```
+
+Its record also carries `report_content_identity` — the identity of the bytes it validated, which the mechanical-correction command below requires.
 
 Then route each failed check by its `failure_class` instead of re-dispatching a full rework:
 
-- `mechanical` — a schema or transcription defect (wrong status token, missing section heading, mistranscribed identity value or evidence row). Correct it as a bounded fix: either apply the named recovery to the report directly where the substantive content is untouched and the correction is unambiguous, or issue a minimal correction prompt containing only the failed checks, their recovery text, and the applicable skeleton from `report-skeleton`. Re-validate with `validate-report` until `ok: true`. Never send the full original assignment again for a mechanical failure.
+- `mechanical` — a schema or transcription defect (wrong status token, missing section heading, mistranscribed identity value or evidence row). Correct it **in place** with the hash-bound mediated command — never with a correction handoff, a re-dispatch, or a raw edit:
+
+  ```
+  cartopian correct-report <report-path> \
+    --expected-identity <report_content_identity from validate-report> \
+    --corrected-file <path to the complete corrected body>
+  ```
+
+  (`--corrected-content` passes the body inline; a contained PM uses it directly.) The command verifies the identity still matches the bytes being corrected, and allows only exact edit operations resolved from the failed checks: replace the `Status:` line or a bound request header in place (one line, never duplicated, never relocated), replace the specific mismatched Identity bullet in place (contradictory duplicates refuse), replace the verdict token line (the rationale beneath it must stay byte-identical), replace the individual defective unverified-claim row one for one, or delete a contradictory `- none` row from a mixed claims list — the only deletion permitted. The claims grammar is the only editable evidence surface: authoritative-source and conflict-resolution rows are recorded producer evidence — an unresolved conflict, stale applicability, or out-of-guidance applied source is a `substantive` finding for the review loop, never a report edit. Section order, heading bytes, prose, row order, and every unaffected span must be preserved byte-for-byte; a missing heading is repairable only as a body-identical in-place rename — the correction never writes substantive content the producer did not publish (an absent disposition, source, conflict record, or section body is a rework, not a correction). It refuses if any `substantive` or `missing-input` finding is present, requires the corrected body to fully validate before writing, and emits an audit record with before/after identities. A refusal means the defect is not a mechanical correction — route it by its real class below. Never send the full original assignment again for a mechanical failure, and never copy report bytes into a correction prompt: the hash-bound command replaces that entire flow.
 - `missing-input` — a governing artifact the report depends on is absent or invalid (missing task, unpersisted upstream deliverable, invalid governing source guidance). This is a readiness defect, not the assignee's failure: repair the input (persist the deliverable, fix the guidance, restore the artifact), rerun readiness/preflight, and only then re-dispatch.
 - `substantive` — a recorded judgment (request drift, an unverified decisive claim). Route it through the configured review loop or to the operator; it must never be "fixed" by editing the report to pass validation.
 
@@ -276,7 +288,8 @@ Do not move tasks, delete prompts, update reviews, or rewrite `STATE.md` unless 
 
 Every non-accepted outcome has exactly one route; picking the wrong one wastes a full handoff cycle or hides a defect:
 
-- **Mechanical/schema failure** (`failed-to-parse` with `mechanical` checks from `validate-report`): tool-guided correction or a minimal validated rewrite. Not a rework assignment.
+- **Mechanical/schema failure** (`failed-to-parse` with `mechanical` checks from `validate-report`): the hash-bound in-place fix via `cartopian correct-report`. Not a rework assignment, and never a correction handoff carrying report bytes.
+- **Identity mismatch** (`report-action`/`validate-report` refuse because the bytes no longer match the accepted identity): the publication changed after observation. Re-run the canonical wait and route the identity it returns; never route on unobserved bytes.
 - **Missing assignment input** (`missing-input` checks, a failed `dependency_deliverable_inputs` or `existing_deliverable_input` preflight, or any readiness blocker): fix the input, then rerun readiness and preflight *before* any dispatch. Never launch an assignee against an input it cannot read — an assignee forced to infer a missing input produces confident, wrong work.
 - **Substantive defect** (reviewer findings, request drift, an unverified decisive claim): the configured review loop — reviewer requests changes and the producer retries against the findings.
 - **Operator ambiguity** (conflicting authority, unresolvable intent, a gate the derived expectations raise above configured policy): stop and return the question to the operator.

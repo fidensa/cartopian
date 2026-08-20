@@ -4,6 +4,14 @@ The supervisor continuously drains the configured wrapper's combined output
 so the child cannot block on a full pipe.  Only the retained diagnostic is
 bounded: output that does not fit is discarded without constraining or
 reclassifying the wrapper process, its artifacts, or its completion report.
+
+Publication ordering is the terminal-bytes guarantee: once a complete report
+is observed, the supervisor grants the child a short grace to exit (then reaps
+it), and only after the child is provably gone does it atomically publish the
+retained launch-log snapshot followed by the ``state=exited`` status. A wait
+surface therefore never sees a supervisor-published terminal signal while the
+report writer can still mutate the report — the content identity observed at
+terminal time names final bytes.
 """
 from __future__ import annotations
 
@@ -355,65 +363,6 @@ def _publish_status_fields(
         raise
 
 
-def _publish_retention_ready_status(
-    status_path: Path,
-    *,
-    launch_id: str,
-    expected_variant: str,
-    limits: OutputLimits,
-    published: Optional[Path],
-    payload: bytes,
-    retained: _BoundedLog,
-) -> None:
-    """Publish the automated-reader boundary after the retained snapshot."""
-    existing: Dict[str, str] = {}
-    if _safe_log_target(status_path):
-        try:
-            existing = {
-                key.strip(): value.strip()
-                for line in status_path.read_text(encoding="utf-8").splitlines()
-                if "=" in line
-                for key, value in (line.split("=", 1),)
-                if key.strip()
-            }
-        except FileNotFoundError:
-            pass
-        except (OSError, UnicodeDecodeError):
-            return
-    if existing.get("launch_id") not in (None, launch_id):
-        return
-
-    fields: list[tuple[str, object]] = [
-        ("state", "running"),
-        ("launch_id", launch_id),
-    ]
-    for key in ("role", "activity"):
-        if existing.get(key):
-            fields.append((key, existing[key]))
-    fields.extend(
-        (
-            ("expected_variant", expected_variant),
-            ("log_byte_limit", limits.log_bytes),
-            ("log_line_limit", limits.log_lines),
-            ("retained_log_path", str(published) if published else "unavailable"),
-            ("retained_bytes", len(payload) if published else 0),
-            ("retained_lines", count_lines(payload) if published else 0),
-            (
-                "retention_state",
-                (
-                    "truncated" if published and retained.truncated
-                    else "complete" if published
-                    else "unavailable"
-                ),
-            ),
-            ("report_present", "true"),
-            ("guarantee_scope", GUARANTEE_SCOPE),
-            ("retained_log_ready", "true"),
-        )
-    )
-    _publish_status_fields(status_path, fields)
-
-
 def _load_report_observer():
     """Import report parsing after script-path bootstrap, before child launch."""
     global _REPORT_OBSERVER
@@ -682,21 +631,13 @@ def supervise(
             # readiness, so a silent wrapper cannot stall retained publication
             # or the post-report grace deadline.
             if not report_complete and report_observer.complete(now):
-                payload = retained.representation()
-                # Publish the reader-visible retained representation before any
-                # grace, termination, or reap work. Further output is still
-                # drained and the final bounded representation replaces this
-                # snapshot atomically below.
-                published = _publish_log(log_path, payload)
-                _publish_retention_ready_status(
-                    status_path,
-                    launch_id=launch_id,
-                    expected_variant=expected_variant,
-                    limits=limits,
-                    published=published,
-                    payload=payload,
-                    retained=retained,
-                )
+                # The report is complete, but nothing is published yet: the
+                # child is still alive and may rewrite the report during the
+                # grace window below. The publication boundary — the retained
+                # snapshot and the ``state=exited`` status — opens only after
+                # the child has exited (on its own or via the reap), so every
+                # signal a wait surface can accept names final, immutable
+                # report bytes.
                 report_complete = True
                 report_grace_deadline = now + report_poll * report_grace_polls
             if (

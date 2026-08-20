@@ -146,10 +146,11 @@ The outer supervisor preloads canonical report parsing before the wrapper is
 launched and throttles report observation by elapsed time rather than output
 chunks. Its pipe-readiness wait advances on the next report poll or grace
 deadline even when stdout stays open and silent. Once a wrapper publishes a
-complete report, the supervisor atomically publishes the current bounded
-representation before any grace or reap work, keeps draining during the shared
-post-report grace, and atomically replaces the snapshot with the final bounded
-representation afterward.
+complete report, the supervisor keeps draining through the shared post-report
+grace and publishes **nothing** while the child can still rewrite the report;
+only after the child has exited (on its own or via the reap) does it atomically
+publish the bounded snapshot followed by the `state=exited` status, so every
+publication signal names final report bytes.
 
 The supervisor's guarantee is `retained-launch-log`: it bounds storage only,
 not execution output, artifacts, reports, model context, or provider-private
@@ -168,9 +169,9 @@ The PowerShell wrappers carry the same contract via `Invoke-CartopianSupervisedR
 
 ## Status file (early-crash detection)
 
-Automatic dispatch first removes any prior launch log while establishing a safe destination, then writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When a safe retained-log destination exists, it also writes `guarantee_scope=retained-launch-log` and `retained_log_ready=false`. Wrappers preserve that pending marker in their exit status. The outer supervisor publishes the bounded snapshot first, then atomically changes the marker to `retained_log_ready=true` with retained facts; while the matching status remains `running`, canonical waits expose the report's terminal verdict only after that publication boundary and never open the log body. The marker is the normal proof, while a safe single-link regular log at the deterministic companion path is equivalent publication metadata if the following status replacement is lost or raced. The supervisor later publishes the final clean/error/timeout result as a fallback. If the wrapper has already published `state=exited`, a pending retention marker fails open and cannot strand a complete authoritative report after supervisor loss. Identity and variant are preserved.
+Automatic dispatch first removes any prior launch log while establishing a safe destination, then writes a small **status file** with `state=running`, a fresh launch identity, and the expected report variant. When a safe retained-log destination exists, it also writes `guarantee_scope=retained-launch-log` and `retained_log_ready=false`. While the matching status remains `running`, canonical waits hold even a complete report nonterminal — the writer is alive and may still rewrite it during the shared post-report grace — so a terminal observation always names final bytes. After the child is gone, the outer supervisor atomically publishes the bounded snapshot first, then the final `state=exited` clean/error/timeout status with `retained_log_ready=true` and retained facts. The exited status is the normal publication proof, while a safe single-link regular log at the deterministic companion path is equivalent publication metadata if the following status replacement is lost or raced (supervisor loss after final publication) — the snapshot is only ever published post-reap, so its presence proves the writer is gone. Identity and variant are preserved.
 
-**The report file remains the authoritative completion signal.** The retained-publication boundary coordinates diagnostic visibility only for a matching live automated launch; it never changes the report verdict. With no status file (the normal manual/report-only case), a complete report is immediately terminal. With `state=exited`, a complete report is also terminal even if `retained_log_ready=false` remains. A published safe launch-log companion also releases a stale pending marker because the current snapshot necessarily preceded the fallible status update. Wrappers write status best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
+**The report file remains the authoritative completion signal.** The live-launch barrier defers visibility only while a matching automated launch is still `running`; it never changes the report verdict. With no status file (the normal manual/report-only case), a complete report is immediately terminal. With `state=exited`, a complete report is also terminal even if `retained_log_ready=false` remains. A published safe launch-log companion also releases a stale `running` marker because the supervisor publishes the snapshot only after the child is gone — its presence proves the writer cannot rewrite the report. Wrappers write status best-effort: any failure to write is swallowed and never changes the wrapper's own exit code.
 
 ### Path
 
@@ -206,7 +207,7 @@ reason=clean|error|timeout
 
 ### Outcome → fields
 
-The report file is always the authoritative signal. A valid report is immediately `done` for manual/report-only observation and after wrapper exit. During a matching automated launch that is still `running`, `retained_log_ready=false` briefly delays visibility until the bounded retained snapshot is published; either the normal ready marker or the safe published companion proves that boundary, and neither changes the report verdict.
+The report file is always the authoritative signal. A valid report is immediately `done` for manual/report-only observation and after wrapper exit. During a matching automated launch that is still `running`, the verdict is briefly deferred until the wrapper exits — the writer could still rewrite the report — with the post-reap launch-log companion as equivalent publication metadata if the final status replacement is lost; neither changes the report verdict, and the terminal record's `report_content_identity` names the final bytes.
 
 | Outcome | `state` | `exit_code` | `reason` | wait-handoff verdict (no valid report present) |
 | --- | --- | --- | --- | --- |

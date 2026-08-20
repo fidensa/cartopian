@@ -86,6 +86,42 @@ class TestSuccessPath(_ProjectFixture):
         self.assertEqual(dest.read_text(encoding="utf-8"), "new\n")
         self.assertEqual(dest.lstat().st_nlink, 1)
 
+    def test_expected_data_binds_the_overwrite_to_current_bytes(self):
+        """The hash-bound correction discipline: replace only exact bytes."""
+        rel = "REPORT-01-002.md"
+        dest = Path(self.root) / "reports" / rel
+        dest.write_text("current\n", encoding="utf-8")
+        mediated_write(
+            self.root, "report", rel, "corrected\n",
+            expected_data=b"current\n",
+        )
+        self.assertEqual(dest.read_text(encoding="utf-8"), "corrected\n")
+
+    def test_expected_data_mismatch_refuses_and_writes_nothing(self):
+        rel = "REPORT-01-002.md"
+        dest = Path(self.root) / "reports" / rel
+        dest.write_text("mutated meanwhile\n", encoding="utf-8")
+        with self.assertRaises(mw.GuardRefusal) as ctx:
+            mediated_write(
+                self.root, "report", rel, "corrected\n",
+                expected_data=b"current\n",
+            )
+        self.assertEqual(ctx.exception.rule, "unexpected-content")
+        self.assertEqual(
+            dest.read_text(encoding="utf-8"), "mutated meanwhile\n"
+        )
+
+    def test_expected_data_requires_an_existing_destination(self):
+        with self.assertRaises(mw.GuardRefusal) as ctx:
+            mediated_write(
+                self.root, "report", "REPORT-01-003.md", "corrected\n",
+                expected_data=b"current\n",
+            )
+        self.assertEqual(ctx.exception.rule, "unexpected-content")
+        self.assertFalse(
+            (Path(self.root) / "reports" / "REPORT-01-003.md").exists()
+        )
+
 
 class TestSymlinkFinalComponent(_ProjectFixture):
     def test_symlink_final_component_refused(self):

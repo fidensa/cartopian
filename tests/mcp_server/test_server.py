@@ -355,6 +355,114 @@ class TestToolSurface(unittest.TestCase):
             self.assertEqual(record["details"]["validation"]["status"], "passed")
             self.assertFalse((project / "CONVENTIONS.md").exists())
 
+    def test_correct_report_is_a_hash_bound_tool_with_cli_parity(self):
+        """The mechanical-correction path is reachable from a contained PM.
+
+        The MCP tool takes the exact current bytes' identity and the complete
+        corrected body inline (`corrected_content`), so a one-line schema
+        repair needs no correction handoff, no report retransmission, and no
+        extra read grants.
+        """
+        from cli import report_identity
+
+        response = single("tools/list")
+        tools = {t["name"]: t for t in response["result"]["tools"]}
+        schema = tools["correct_report"]["inputSchema"]
+        self.assertEqual(
+            set(schema["required"]), {"report_path", "expected_identity"}
+        )
+        self.assertIn("corrected_content", schema["properties"])
+        for wait_tool in ("report_action", "validate_report"):
+            self.assertIn(
+                "expected_identity",
+                tools[wait_tool]["inputSchema"]["properties"],
+            )
+
+        task_body = (
+            "# TASK-05-010: Correct the evidence contract\n\n"
+            "Phase: PHASE-05\nWork root: n/a\nAssignee: coder\n"
+            "Evidence gate: n/a\nDeliverable: n/a\nSource guidance: n/a\n\n"
+            "## Goal\n\nApply the bounded correction.\n"
+        )
+        # A heading typo: the only mechanical repair is the body-identical
+        # rename — a correction never supplies substantive content.
+        corrected = (
+            "Status: complete\n\n"
+            "## Identity\n\n- Work root: n/a\n\n"
+            "## Completion evidence\n\nThe outcome exists.\n\n"
+            "## Remaining risks\n\nnone.\n\n"
+            "## Ready to close\n\nyes\n"
+        )
+        malformed = corrected.replace(
+            "## Remaining risks", "## Remaining Risks"
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            project = Path(raw) / "project"
+            for sub in ("tasks/in-progress", "reports", "prompts"):
+                (project / sub).mkdir(parents=True)
+            (project / "cartopian.toml").write_text(
+                "[project]\n"
+                'id = "demo"\n'
+                'name = "Demo"\n'
+                'project_schema_version = "v0.10.0"\n',
+                encoding="utf-8",
+            )
+            (project / "tasks/in-progress/TASK-05-010.md").write_text(
+                task_body, encoding="utf-8"
+            )
+            report = project / "reports/REPORT-05-010.md"
+            report.write_text(malformed, encoding="utf-8")
+
+            stale = single(
+                "tools/call",
+                {
+                    "name": "correct_report",
+                    "arguments": {
+                        "report_path": str(report),
+                        "expected_identity": report_identity.content_identity(
+                            "other bytes"
+                        ),
+                        "corrected_content": corrected,
+                    },
+                },
+            )
+            self.assertNotIn("error", stale)
+            self.assertEqual(
+                stale["result"]["structuredContent"]["exit_code"], 1
+            )
+            self.assertEqual(
+                stale["result"]["structuredContent"]["records"][0]["rule"],
+                "stale-report-identity",
+            )
+            self.assertEqual(
+                report.read_text(encoding="utf-8"), malformed
+            )
+
+            fixed = single(
+                "tools/call",
+                {
+                    "name": "correct_report",
+                    "arguments": {
+                        "report_path": str(report),
+                        "expected_identity": report_identity.content_identity(
+                            malformed
+                        ),
+                        "corrected_content": corrected,
+                    },
+                },
+            )
+            self.assertNotIn("error", fixed)
+            self.assertEqual(
+                fixed["result"]["structuredContent"]["exit_code"], 0
+            )
+            record = fixed["result"]["structuredContent"]["records"][0]
+            self.assertTrue(record["ok"])
+            self.assertEqual(
+                record["report_content_identity"],
+                report_identity.content_identity(corrected),
+            )
+            self.assertEqual(report.read_text(encoding="utf-8"), corrected)
+
     def test_generate_config_schema_exposes_role_agent_and_launch_options(self):
         # Preferred role-local launch flags propagate into the generated MCP
         # schema; migration-source handoff names do not.

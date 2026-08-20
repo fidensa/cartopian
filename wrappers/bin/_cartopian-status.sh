@@ -125,7 +125,7 @@ cartopian_report_complete() {
         grep -Eq '^##[[:space:]]+(Completion evidence|Files changed|Deliverable)[[:space:]]*$' "$report_path" 2>/dev/null &&
         cartopian_section_has_value "$report_path" \
           '^##[[:space:]]+(Ready to close|Ready for review)[[:space:]]*$' \
-          '^[[:space:]]*(yes|no)[[:space:]]*$'
+          '^[[:space:]]*(yes|no)([[:space:]].*)?$'
       ;;
     review|planning-review)
       grep -Eq '^##[[:space:]]+Identity[[:space:]]*$' "$report_path" 2>/dev/null &&

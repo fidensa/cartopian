@@ -28,11 +28,11 @@ The `Work root:` value carries names only — the same names declared in the pro
 
 ### Unverified claims
 
+Write `- none` when no claim remains unverified. Otherwise write one row per remaining claim carrying all five labeled fields in exactly this form (a natural-language bullet does not validate):
+
+`- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; Missing: <authority or evidence>; Consequence: <consequence of proceeding>; Next: <decision or proof required>`
+
 - none
-
-Or:
-
-- Claim: <unverified claim>; Decisiveness: <decisive | non-decisive>; Missing: <authority or evidence>; Consequence: <consequence of proceeding>; Next: <decision or proof required>
 
 ## Files changed
 
@@ -85,7 +85,7 @@ When evidence gate was `n/a`:
 
 <yes | no>
 
-`Ready for review` is accepted as a legacy heading. Under required task-closure review, `yes` routes the task into review; when task review is off, it routes the accepted task toward direct closure.
+`Ready for review` is an equally valid heading, and generated skeletons use it when the project requires task-closure review. The value declares **your own work's** state, never anyone else's future verdict: under required task-closure review, `yes` means your work is complete and routes the task into the independent review — it does not approve closure, and you are not being asked to certify the reviewer's outcome. When task review is off, `yes` routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work. A short rationale may follow the token on the same line (e.g. `yes — entering required review`).
 
 ---
 

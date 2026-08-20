@@ -216,6 +216,44 @@ def test_report_complete_and_self_exit_is_clean(tmp_path, wrapper, tool):
     assert fields["reason"] == "clean", fields
 
 
+# --- readiness token may carry a rationale ----------------------------------
+
+
+@pytest.mark.parametrize("wrapper,tool", BASH_WRAPPERS)
+def test_readiness_rationale_still_counts_as_complete(tmp_path, wrapper, tool):
+    """`no — closure is not mine to certify` is a finished report.
+
+    The readiness value is a yes/no token optionally followed by a rationale
+    on the same line (the REPORT-05-010 form). The producer-side completion
+    proxy must agree with the canonical parser, or a finished handoff lingers
+    to the deadline and reads as a timeout.
+    """
+    prompt = _make_project(tmp_path)
+    report = _report_path(prompt)
+    status = _status_path(prompt)
+
+    rationale_report = COMPLETE_REPORT.replace(
+        "## Ready for review\n\nyes\n",
+        "## Ready to close\n\nno — closure is not mine to certify\n",
+    )
+    body = (
+        f"cat > '{report}' <<'REPORT_EOF'\n"
+        f"{rationale_report}"
+        "REPORT_EOF\n"
+        "sleep 25\n"
+        "exit 0\n"
+    )
+    proc = _run_wrapper(wrapper, tool, prompt, body,
+                        timeout_spec="30s", subprocess_timeout=20)
+
+    assert proc.returncode == 0, (
+        f"{wrapper}: rationale-suffixed readiness was not treated as a "
+        f"finished report (rc={proc.returncode}); stderr={proc.stderr}"
+    )
+    fields = _parse_status(status.read_text(encoding="utf-8"))
+    assert fields["reason"] == "clean", fields
+
+
 # --- hermes exit contract: `2` (failed/partial, no text) is a failure --------
 
 
