@@ -81,6 +81,10 @@ _PLAN_REF_HEADER_RE = re.compile(r"^Plan ref:\s*(.*)$")
 _PLAN_REFS_HEADER_RE = re.compile(r"^Plan refs?:\s*(.*)$")
 _PHASE_HEADER_RE = re.compile(r"^Phase:\s*(.*)$")
 _SPEC_HEADER_RE = re.compile(r"^Spec:\s*(.*)$")
+_TARGET_HEADER_RE = re.compile(r"^Target:\s*(.*)$")
+_H1_RE = re.compile(r"^#[ \t]+(.*)$")
+_CANONICAL_TARGET_RE = re.compile(r"^(TASK|SPEC)-(\d{2})-(\d{3})(?!\d)")
+_CANONICAL_REVIEW_RE = re.compile(r"^(REVIEW-\d{2}-\d{3})(?![0-9A-Za-z-])")
 _PLAN_REF_TOKEN_RE = re.compile(
     r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*-\d{2}-\d{3})(?![A-Z0-9-])"
 )
@@ -139,6 +143,100 @@ def plan_ref_header_value(content: str) -> Optional[str]:
 def phase_header_value(content: str) -> Optional[str]:
     """The task body's first ``Phase:`` header value, or ``None``."""
     return _header_value(content, _PHASE_HEADER_RE)
+
+
+def target_header_value(content: str) -> Optional[str]:
+    """The artifact body's first ``Target:`` header value, or ``None``."""
+    return _header_value(content, _TARGET_HEADER_RE)
+
+
+def canonical_target_id(value: Optional[str]) -> Optional[str]:
+    """The canonical unit a ``Target:`` value names, or ``None``.
+
+    A target is written three ways in practice — a bare ``TASK-NN-NNN``, an id
+    followed by a title, or the artifact path itself — and all three name the
+    same unit. A value carrying no canonical id at any of those shapes is
+    malformed rather than merely mismatched, and resolves to ``None``.
+    """
+    if not value:
+        return None
+    token = value.split()[0].strip("`\"'")
+    stem = token.replace("\\", "/").rsplit("/", 1)[-1]
+    if stem.endswith(".md"):
+        stem = stem[: -len(".md")]
+    match = _CANONICAL_TARGET_RE.match(stem)
+    if match is None:
+        return None
+    return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
+
+def canonical_review_id(content: str) -> Optional[str]:
+    """The canonical review id the body's own first H1 declares, or ``None``.
+
+    The first H1 is the artifact's self-declared identity. A body whose first
+    H1 is absent or is not a canonical ``REVIEW-NN-NNN`` declares no identity
+    to bind, which is a different failure from declaring the wrong one.
+    """
+    for line in content.splitlines():
+        match = _H1_RE.match(line)
+        if match is None:
+            continue
+        heading = _CANONICAL_REVIEW_RE.match(match.group(1).strip())
+        return heading.group(1) if heading else None
+    return None
+
+
+def review_identity_refusal(
+    review_id: str, task_id: str, review_content: str
+) -> Optional[Tuple[str, str]]:
+    """Bind a review body's own identity to its filename and to its task.
+
+    A filename is caller-supplied metadata; the body is the document that
+    carries the verdict and the determinations. A canonically named review
+    file whose body names another unit is exactly the case a suffix check
+    cannot see, so the body's ``# REVIEW-NN-NNN`` heading and its ``Target:``
+    are both resolved here and compared with the review path and the task
+    under review. Unconditional by design: this binding does not depend on
+    the prospective numbering contract being active, because a review that
+    attributes another unit's determinations is wrong under either contract.
+    """
+    declared = canonical_review_id(review_content)
+    if declared is None:
+        return (
+            "review-identity-missing",
+            f"{review_id} carries no canonical `# REVIEW-NN-NNN` heading, so "
+            "its body declares no identity to bind",
+        )
+    if declared != review_id:
+        return (
+            "review-identity-mismatch",
+            f"{review_id} carries the body identity {declared}",
+        )
+    task = parse_task_id(task_id)
+    if task is None:
+        return ("task-id-malformed", f"task id is malformed: {task_id}")
+    raw_target = target_header_value(review_content)
+    if raw_target is None:
+        return (
+            "review-target-missing",
+            f"{review_id} carries no `Target:` header, so its body names no "
+            f"unit under review and cannot be bound to {task_id}",
+        )
+    target = canonical_target_id(raw_target)
+    if target is None:
+        return (
+            "review-target-malformed",
+            f"{review_id} targets `{raw_target}`, which names no canonical "
+            "TASK-NN-NNN or SPEC-NN-NNN unit",
+        )
+    allowed = {task_id, f"SPEC-{task['phase']}-{task['counter']}"}
+    if target not in allowed:
+        return (
+            "review-target-mismatch",
+            f"{review_id} targets {target}, but the unit under review is "
+            f"{task_id}",
+        )
+    return None
 
 
 def _header_value(content: str, pattern: "re.Pattern") -> Optional[str]:
@@ -814,9 +912,11 @@ def guard_task_scoped_artifact(
             "artifact-plan-ref-mismatch",
             f"{artifact_id} declares {declared_ref}, but {task_id} binds {bound_ref}",
         )
-    target_match = re.search(r"^Target:\s*(\S+)\s*$", artifact_content, re.MULTILINE)
-    if target_match is not None:
-        target = Path(target_match.group(1)).stem
+    # Resolved through the same seam the intake boundary uses, so the two
+    # cannot disagree about which unit a `Target:` value names.
+    declared_target = target_header_value(artifact_content)
+    if declared_target is not None:
+        target = canonical_target_id(declared_target) or declared_target
         allowed = {task_id, f"SPEC-{expected_suffix}"}
         if target not in allowed:
             return (

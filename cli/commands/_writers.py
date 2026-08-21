@@ -21,7 +21,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -216,12 +216,18 @@ def perform_write(
     relative_target: str,
     content: Optional[Union[str, bytes]] = None,
     extra_details: Optional[dict] = None,
+    post_write: Optional[Callable[[Path, dict], None]] = None,
 ) -> int:
     """Validate, write through the primitive, and emit the NDJSON success record.
 
     ``content`` may be supplied by the caller (e.g. an index re-render); when
     ``None`` it is taken from ``--content`` / ``--content-file``. Returns the
     process exit code; refusals surface a ``[guard]`` line and write nothing.
+
+    ``post_write`` runs only after the bytes have landed, receives the project
+    root and the mutable details dict, and may add fields to the emitted
+    record. It is for observations that are only true once the write
+    succeeded; it must not raise, and it never changes the exit code.
     """
     root, err = validated_root(args.project_root)
     if err is not None:
@@ -259,5 +265,11 @@ def perform_write(
     }
     if extra_details:
         details.update(extra_details)
+    if post_write is not None:
+        try:
+            post_write(root, details)
+        except Exception:  # pragma: no cover - a post-write observation
+            # never turns a landed write into a failure.
+            pass
     emit_record({"action": action, "details": details})
     return EXIT_OK

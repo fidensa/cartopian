@@ -1,5 +1,6 @@
 """`cartopian report-action <report-path>` aggregator."""
 import argparse
+import datetime
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -26,10 +27,6 @@ from cli.main import (
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})\.md$")
 _TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
-_TASK_READY_SECTION_RE = re.compile(
-    r"^##\s+(?:Ready to close|Ready for review)\s*$(.*?)(?=^##\s|\Z)",
-    re.MULTILINE | re.DOTALL,
-)
 _IDENTITY_SECTION_RE = re.compile(
     r"^##\s+Identity\s*$(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -62,6 +59,44 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
             "(identity-mismatch) instead of routing on different bytes"
         ),
     )
+
+
+def _capture_clarification(
+    project_root: Optional[Path],
+    task_id: Optional[str],
+    report_id: str,
+    status_value: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Record that work stalled for input, at the boundary that observes it.
+
+    A parsed ``Status: blocked`` is the authoritative clarification event that
+    exists today. Routing is read-only and may run more than once over the
+    same bytes, so the capture is idempotent: a byte-identical record is not
+    appended twice. Best-effort throughout — measurement never changes how a
+    report routes.
+    """
+    if project_root is None or not task_id or status_value != "blocked":
+        return None
+    try:
+        from cli import prompt_evidence
+
+        ledger = prompt_evidence.read_ledger(project_root)
+        record = prompt_evidence.event(
+            plan=ledger.plan_id,
+            unit=task_id,
+            date=datetime.date.today().isoformat(),
+            family="CLR",
+            artifact=report_id,
+        )
+        line = prompt_evidence.serialize(record)
+        if any(
+            prompt_evidence.serialize(existing) == line
+            for existing in ledger.for_unit(task_id)
+        ):
+            return {"result": "idempotent", "family": "CLR", "unit": task_id}
+        return prompt_evidence.emit(project_root, record, ledger=ledger)
+    except Exception:  # pragma: no cover - never changes routing
+        return None
 
 
 def _find_project_root(report_path: Path) -> Optional[Path]:
@@ -107,29 +142,14 @@ def _extract_identity_map(content: str) -> Dict[str, str]:
     return result
 
 
-_READY_VALUE_RE = re.compile(r"^(yes|no)\b(.*)$", re.IGNORECASE | re.DOTALL)
-# An unfilled choice ("yes | no", "yes/no", "yes or no") is not a value.
-_READY_ALTERNATION_RE = re.compile(r"^\s*(?:[|/]|or\b)", re.IGNORECASE)
-
-
 def _extract_ready_for_review(content: str) -> Optional[bool]:
-    """Parse the readiness value under ``## Ready to close`` / ``## Ready for review``.
+    """The readiness value under ``## Ready to close`` / ``## Ready for review``.
 
-    The value is the leading ``yes``/``no`` token of the section's first line;
-    a rationale may follow after the token (``no — closure is not mine to
-    certify``). An unfilled placeholder alternation is not a value. Under
-    required task-closure review, ``yes`` declares the producer's own work
-    complete and routes the task into independent review — it is not
-    self-approval of closure; ``no`` is for genuinely incomplete or blocked
-    work.
+    Delegates to the canonical parser so routing, validation, and the
+    task-closure review bootstrap cannot hold different opinions about the
+    same publication (``parse_report.extract_ready_for_review``).
     """
-    body = _extract_heading_body(_TASK_READY_SECTION_RE, content)
-    if body is None:
-        return None
-    match = _READY_VALUE_RE.match(body.splitlines()[0].strip())
-    if match is None or _READY_ALTERNATION_RE.match(match.group(2)):
-        return None
-    return match.group(1).lower() == "yes"
+    return parse_report.extract_ready_for_review(content)
 
 
 def _parse_report_state(
@@ -675,5 +695,8 @@ def handler(args: argparse.Namespace) -> int:
             task_review_required,
         ),
     }
+    record["effectiveness_evidence"] = _capture_clarification(
+        project_root, expected_task_id, report_path.stem, status_value
+    )
     emit_record(record)
     return EXIT_OK

@@ -12,6 +12,7 @@ Blocked by: <TASK-NN-NNN, TASK-NN-NNN | none>
 Created: YYYY-MM-DD
 Evidence gate: <required | n/a>
 Source guidance: <task | spec | n/a>
+Upstream trace: <required | n/a>
 
 ## Goal
 
@@ -112,6 +113,32 @@ Missing authority, a stale/unknown applicable context, an unresolved conflict, o
 
 - [ ] Checkable, specific, boolean-verifiable things.
 - [ ] Each item should be something an independent observer can mark true or false.
+
+## Upstream trace
+
+Keep this section only when `Upstream trace: required`. It is the PM-derived record set that binds every material acceptance criterion to the upstream authority that governs it. Omit both the header and this section for legacy tasks; a task that declares `n/a` must not carry this section.
+
+**What is material.** The material set is the union of two enumerations and nothing else: the governing specification's `## Examples / acceptance` list and this task's `## Acceptance` checklist. `## Constraints` bullets, background prose, non-acceptance examples, and unrelated history are not material, even when they name an observable outcome. Ordinals `C01`, `C02`, … are assigned by position — specification items in document order, then task items in document order, with merged-away origins omitted — so two producers reading the same task and specification derive the same ordinals.
+
+**The record block.** One fenced block; every line is a record and prose outside the fence is never parsed as one. Records must appear in the contract's total sort order, and byte-identical records collapse silently.
+
+```trace
+C01|<digest12>|<requirement|standard|plan-item|decision|spec|operator-request>|<source-identity>|<applicable-context>|<occurrence>
+C02|<digest12>|none:<derived-mechanical|template-fixed|restates-parent>|-|-|1
+X|C03|<precedence|narrowing|amendment>|<why these same-class sources do not fight>
+O|C04|<merged-away task-acceptance origin's digest12>
+W|<identity>|<procedural-authorization|background-scope>|<scope statement>
+```
+
+- `digest12` is the first 12 hex characters of `sha256(normalized criterion text)` — NFC, ends stripped, internal whitespace runs collapsed to one space, no trailing newline. An edited criterion no longer matches its recorded digest, which is the point.
+- `source-identity` and `applicable-context` are copied **verbatim** from the resolved source guidance. A `spec` edge names `spec-clause sha256:<64 hex>`; an `operator-request` edge names `REQ-<evidence order> sha256:<content identity>`. Neither ever names a path.
+- A criterion carries **either** at least one typed edge **or** exactly one exemption — never both, and never two exemptions with different reasons.
+- Two or more edges naming distinct source identities of the same precedence class (`behavior`: requirement/standard; `boundary`: plan-item/decision; `contract`: spec; `intent`: operator-request) require an `X|` disposition. Cross-class pairs need none.
+- An `O|` merge may name only a task-acceptance origin, only against a criterion whose governing text is a specification-acceptance item, only once per origin, and never onto an exempt criterion. It costs 19 B against the 242 B of carrying the origin as its own criterion.
+- A `W|` waiver requires attributable operator authority for that exact identity and class. Neither the PM nor the assignee may grant one.
+- Coverage records (`S|`, `R|`), the trace identity, and both projections are **derived**, never authored here. Run `cartopian acceptance-trace <root> --task <path>` to validate the block and read the measured bodies.
+
+Structural errors — a missing record, an unparseable one, a drifted digest, an unknown type or waiver class, a self-referencing spec clause, an exemption conflict, or a routine body over its bound — fail `validate-task-readiness` and never reach a coder. The two closure determinations are the reviewer's and are recorded at closure, not here.
 
 ## References
 

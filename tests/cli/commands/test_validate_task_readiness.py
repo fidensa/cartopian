@@ -137,6 +137,7 @@ CHECK_NAMES_IN_ORDER = [
     "work-root-names-valid",
     "deliverable-valid",
     "request-trace-valid",
+    "upstream-trace-valid",
 ]
 
 

@@ -86,6 +86,59 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
 _VERDICT_SECTION_RE = re.compile(r"^##\s+Verdict\s*$", re.MULTILINE)
 _READY_SECTION_RE = re.compile(r"^##\s+Ready for review\s*$", re.MULTILINE)
 _READY_TO_CLOSE_SECTION_RE = re.compile(r"^##\s+Ready to close\s*$", re.MULTILINE)
+_READY_SECTION_BODY_RE = re.compile(
+    r"^##\s+(?:Ready to close|Ready for review)\s*$(.*?)(?=^##\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_READY_VALUE_RE = re.compile(r"^(yes|no)\b(.*)$", re.IGNORECASE | re.DOTALL)
+# An unfilled choice ("yes | no", "yes/no", "yes or no") is not a value.
+_READY_ALTERNATION_RE = re.compile(r"^\s*(?:[|/]|or\b)", re.IGNORECASE)
+
+
+def has_readiness_section(content: str) -> bool:
+    """Whether a ``## Ready for review`` / ``## Ready to close`` heading exists."""
+    return bool(
+        _READY_SECTION_RE.search(content)
+        or _READY_TO_CLOSE_SECTION_RE.search(content)
+    )
+
+
+def extract_ready_for_review(content: str) -> Optional[bool]:
+    """The canonical readiness value under the report's readiness section.
+
+    This is the single source of truth for every surface that reads the
+    value — the report-action router, validate-report's readiness check, and
+    the task-closure review bootstrap (review-context, write-prompt,
+    handoff preflight). The value is the leading ``yes``/``no`` token of the
+    section's first line; the documented skeleton permits a short same-line
+    rationale after the token (``yes — producer work and evidence are
+    complete``). An unfilled placeholder alternation is not a value. Under
+    required task-closure review, ``yes`` declares the producer's own work
+    complete and routes the task into independent review — it is not
+    self-approval of closure; ``no`` is for genuinely incomplete or blocked
+    work.
+    """
+    match = _READY_SECTION_BODY_RE.search(content)
+    if match is None:
+        return None
+    body = match.group(1).strip()
+    if not body:
+        return None
+    value = _READY_VALUE_RE.match(body.splitlines()[0].strip())
+    if value is None or _READY_ALTERNATION_RE.match(value.group(2)):
+        return None
+    return value.group(1).lower() == "yes"
+
+
+def extract_routing_status(content: str) -> Optional[str]:
+    """The report's ``Status:`` token iff it is a valid routing status.
+
+    Shared with the review bootstrap so acceptance and review binding read
+    one predicate: the first non-empty ``Status:`` header (the same line
+    ``_extract_status`` reads), gated to the closed routing vocabulary.
+    """
+    raw = _extract_status(content)
+    return raw if raw in STATUS_VERDICT else None
 
 
 def _infer_variant(report_path: Path, content: str) -> Tuple[Optional[str], Optional[str]]:

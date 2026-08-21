@@ -21,6 +21,7 @@ from cli.commands.validate_task_readiness import (
     _check_evidence_gate,
     _check_request_trace,
     _check_source_guidance,
+    _check_upstream_trace,
     _check_phase,
     _check_plan_ref,
     _check_plan_ref_aligned,
@@ -226,6 +227,9 @@ def _build_validation_checks(
         "work-root-names-valid": _check_work_root(project_root, headers, presence, warnings),
         "deliverable-valid": _check_deliverable(project_root, headers),
         "request-trace-valid": _check_request_trace(project_root, task_path, headers),
+        "upstream-trace-valid": _check_upstream_trace(
+            project_root, task_path, content
+        ),
     }
     return [checks_by_name[name] for name in CHECK_ORDER]
 

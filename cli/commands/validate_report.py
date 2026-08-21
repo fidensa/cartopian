@@ -214,6 +214,37 @@ def _review_verdict_check(variant: str, content: str) -> Dict[str, Any]:
     )
 
 
+def _readiness_value_check(variant: str, content: str) -> Dict[str, Any]:
+    """The task report's readiness section must carry a parseable value.
+
+    Task-closure review binding requires an accepted publication whose
+    readiness value is ``yes``; the value itself is read everywhere by one
+    canonical parser (``parse_report.extract_ready_for_review``). This check
+    makes the *parseability* half of that publication condition a named,
+    public validator check instead of a hidden review-only acceptance rule:
+    a readiness section whose first line carries no leading ``yes``/``no``
+    token (an unfilled placeholder alternation, prose) fails here as a
+    mechanical defect. A missing heading is already named by
+    ``required-sections-present``; a documented short same-line rationale
+    after the token remains valid; and ``no`` is a valid value — readiness
+    is the producer's declaration, and routing (not validation) decides what
+    a ``no`` means.
+    """
+    if variant != "task" or not parse_report.has_readiness_section(content):
+        return _check("readiness-value-valid", True)
+    ready = parse_report.extract_ready_for_review(content)
+    return _check(
+        "readiness-value-valid",
+        ready is not None,
+        "the readiness section (## Ready for review / ## Ready to close) "
+        "does not begin with a yes or no token; an unfilled placeholder "
+        "alternation is not a value",
+        "make the first line of the readiness section begin with yes or no "
+        "(a short same-line rationale after the token remains valid)",
+        "mechanical",
+    )
+
+
 def _report_task_id(report_path: Path, variant: str) -> Optional[str]:
     if variant == "task":
         match = report_identity.TASK_COMPLETION_REPORT_RE.match(report_path.name)
@@ -472,6 +503,7 @@ def collect_checks(
         _identity_keys_check(variant, content),
         _status_check(content),
         _review_verdict_check(variant, content),
+        _readiness_value_check(variant, content),
         _identity_alignment_check(project_root, report_path, content, variant),
         _alignment_check(report_path, content, variant),
         *_source_evidence_checks(project_root, report_path, content, variant),

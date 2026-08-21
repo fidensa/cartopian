@@ -238,6 +238,20 @@ def handler(args: argparse.Namespace) -> int:
         if temp_dir is not None and temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    # The plan window this snapshot closes is exactly `archive_name`, and the
+    # window is closed the moment that directory lands. Run the effectiveness
+    # contract's ordered close against that stated window — superseding
+    # summaries, closing projection, mediated delete — so `PAD` is observable
+    # for the plan that just ended and no evidence outlives its plan. The
+    # sequence is re-entrant, so a later `reset-plan` closes nothing twice,
+    # and it never changes this command's exit: the archive is authority, the
+    # ledger is not.
+    from cli import prompt_evidence
+
+    closeout_evidence = prompt_evidence.close_plan_sequence(
+        root, date=args.closed, plan_id=archive_name
+    )
+
     emit_record({
         "action": "archive-plan",
         "details": {
@@ -247,6 +261,7 @@ def handler(args: argparse.Namespace) -> int:
             "copied": copied,
             "closed": args.closed,
             "summary": summary,
+            "effectiveness_closeout": closeout_evidence,
         },
     })
     return EXIT_OK

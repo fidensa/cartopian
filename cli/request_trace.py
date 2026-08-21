@@ -1146,27 +1146,22 @@ def _task_review_report_path(project_root: Path, task_path: Path) -> Path:
 
 
 def _report_status(text: str) -> Optional[str]:
-    match = re.search(r"^Status:\s*(complete|blocked|failed)\s*$", text, re.MULTILINE)
-    return match.group(1) if match else None
+    # Import lazily to avoid the parse_report -> request_trace module cycle.
+    # The routing status the review bootstrap admits must be the same token
+    # the public router and validator accept, so both read one predicate.
+    from cli.commands import parse_report
+
+    return parse_report.extract_routing_status(text)
 
 
 def _report_ready(text: str) -> Optional[bool]:
-    match = re.search(
-        r"^##\s+(?:Ready to close|Ready for review)\s*$"
-        r"(.*?)(?=^##\s+|\Z)",
-        text,
-        re.MULTILINE | re.DOTALL,
-    )
-    if match is None:
-        return None
-    lines = [line.strip().lower() for line in match.group(1).splitlines() if line.strip()]
-    if not lines:
-        return None
-    if lines[0] == "yes":
-        return True
-    if lines[0] == "no":
-        return False
-    return None
+    # Same lazy import; the readiness value is read by the canonical
+    # publication parser (`parse_report.extract_ready_for_review`) so a
+    # report report-action routes into review is admissible here — a
+    # documented same-line rationale after the yes/no token included.
+    from cli.commands import parse_report
+
+    return parse_report.extract_ready_for_review(text)
 
 
 def _capture_completion_file(

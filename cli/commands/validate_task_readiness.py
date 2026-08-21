@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import request_trace, source_guidance
+from cli import request_trace, source_guidance, trace_binding
 from cli.commands.resolve_config import (
     _CliError,
     _DELIVERABLE_SKIP,
@@ -29,6 +29,7 @@ CHECK_ORDER = (
     "work-root-names-valid",
     "deliverable-valid",
     "request-trace-valid",
+    "upstream-trace-valid",
 )
 
 EVIDENCE_GATE_VALUES = ("required", "n/a")
@@ -439,6 +440,33 @@ def _check_request_trace(
     return {"name": name, "pass": True, "reason": None}
 
 
+def _check_upstream_trace(
+    project_root: Path, task_path: Path, content: str
+) -> Dict[str, Any]:
+    """Enforce the traceability contract's structural codes at readiness.
+
+    Structural errors enforce here and are never deferred, downgraded, or
+    routed to the reviewer as a D2 input: a task with a structurally invalid
+    trace does not reach a coder and does not reach closure. The two
+    determinations themselves are made at closure and are not checked here.
+
+    The check is inert for a task that does not declare `Upstream trace:
+    required` — a legacy task is read, not enforced, and never silently
+    treated as either declared state.
+    """
+    name = "upstream-trace-valid"
+    binding = trace_binding.bind(project_root, task_path, task_text=content)
+    if binding.refusal is None:
+        return {"name": name, "pass": True, "reason": None}
+    refusal = binding.refusal
+    identity = f" [{refusal.identity}]" if refusal.identity else ""
+    return {
+        "name": name,
+        "pass": False,
+        "reason": f"{refusal.code}: {refusal.detail}{identity}",
+    }
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.task_path
     if not Path(raw_path).is_absolute():
@@ -481,6 +509,9 @@ def handler(args: argparse.Namespace) -> int:
         ),
         "deliverable-valid": _check_deliverable(project_root, headers),
         "request-trace-valid": _check_request_trace(project_root, task_path, headers),
+        "upstream-trace-valid": _check_upstream_trace(
+            project_root, task_path, content
+        ),
     }
     checks = [checks_by_name[name] for name in CHECK_ORDER]
     ready = all(c["pass"] for c in checks)

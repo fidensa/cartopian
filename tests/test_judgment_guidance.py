@@ -776,9 +776,13 @@ class ActivationStateParityTests(unittest.TestCase):
             with self.subTest(surface=surface["id"]), tempfile.TemporaryDirectory() as raw:
                 root = _staged_parity_root(Path(raw))
                 path = root / surface["path"]
+                # Silencing the surface means removing every occurrence, not
+                # the first one: a document may state its required phrase in a
+                # heading and again in the prose that introduces it, and one
+                # surviving mention still leaves the surface stated.
                 path.write_text(
                     path.read_text(encoding="utf-8").replace(
-                        surface["required_when_active"], "", 1
+                        surface["required_when_active"], ""
                     ),
                     encoding="utf-8",
                 )

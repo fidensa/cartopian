@@ -364,6 +364,39 @@ For the `review` variant, the emitted record carries:
 
 If the verdict is `blocked`, `failed`, or `failed-to-parse`, or if `path_mismatch = true`, stop automation, preserve the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
 
+Then take the closure review through intake, which audits the review itself
+and records this pass's bounded effectiveness evidence:
+
+```
+cartopian review-intake <project-root> --task <task-path> --review <review-path>
+```
+
+The command first binds the review body's own identity — its
+`# REVIEW-NN-NNN` heading and its `Target:` — to the review path and to the
+task under intake, and refuses a missing, malformed, or mismatched body
+identity before the review is assessed and before any record is written: a
+canonical filename over a body that names another unit would otherwise
+attribute that unit's determinations here. It then checks, in this order,
+that the review carries its
+`## Contract quality` audit ahead of the implementation evidence, that its
+`Verdict:` and `Reviewer:` are recorded, and that both closure determinations
+are present and passing against the trace identity the assignment was issued
+under. It emits one bounded ledger record apiece for the verdict, each
+non-passing determination, each contract-quality gap, and each implementation
+finding; repeated runs over unchanged bytes are idempotent. Emission never
+blocks the lifecycle — a rejected or suppressed record marks its family
+`omitted` and the verdict still applies.
+
+Run it for every applied verdict, not only for `approve`: a `request-changes`
+or `reject` pass is exactly the evidence the rejection-reason and
+omitted-requirement families exist to record. A non-zero exit on an
+**approving** pass is a true governed blocker — an approval whose
+determinations do not clear is not executable and `cartopian move-task
+<task-path> done` will refuse it with the same reason. Stop, record the
+blocker in `STATE.md`, and return control to the operator rather than moving
+the task. The intake is inert for a task that does not declare
+`Upstream trace: required`.
+
 Apply the reviewer's verdict without an operator confirmation prompt — the verdict is the review file's recorded evidence, and the CLI guards verify it before executing any move (the `[automation]` policy gates pace, not selection). Report the applied verdict in the running summary. Decisions the protocol or plan reserves to the operator (e.g. an open-question ruling the task was created to inform) remain operator-owned: pause for those before recording them, even when the task's own lifecycle proceeds. Apply the verdict by delegating directory status transitions to the Core CLI:
 
 - `approve`, when `git.pm_owns_product_branches = false` or unset, or when no product-repo PR exists: use `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
@@ -387,6 +420,8 @@ Apply the reviewer's verdict without an operator confirmation prompt — the ver
 
 - `request-changes`: `cartopian move-task <task-path> in-progress`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: request-changes`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
 - `reject`: `cartopian move-task <task-path> open`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: reject`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
+
+Any move into `done` also derives that unit's prompt-effectiveness summary at the closure boundary and reports it under `effectiveness_summary`. It is best-effort and idempotent — a reopened and reclosed unit keeps one closure summary — and a rejected or suppressed emission never blocks the move. Nothing in the verdict, the guards, or this stage reads that record.
 
 After applying a `request-changes` or `reject` verdict, the consumed review
 round's report evidence is closed: once its findings are recorded in the

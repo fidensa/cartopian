@@ -17,6 +17,8 @@ EXIT_ENV = 3
 SUBCOMMANDS: List[str] = [
     "adversarial-review-context",
     "apply-migration-entry",
+    # bounded acceptance-to-source trace, its projections, and its bounds
+    "acceptance-trace",
     "classify-risk",
     "select-judgment-guidance",
     "select-practice-pack",
@@ -82,6 +84,10 @@ SUBCOMMANDS: List[str] = [
     "host-capability",
     # deterministic two-channel review context (original request + PM guidance)
     "review-context",
+    # contract-quality audit, closure determinations, and evidence intake
+    "review-intake",
+    # bounded prompt-effectiveness evidence: query, summary, retention
+    "prompt-evidence",
     # host intake-boundary capture; excluded from managed-agent MCP tools
     "capture-request",
 ]
@@ -147,6 +153,7 @@ def _real_handlers():
     constants from this module).
     """
     from cli.commands import (
+        acceptance_trace,
         adversarial_review_context,
         apply_migration_entry,
         archive_plan,
@@ -173,6 +180,7 @@ def _real_handlers():
         move_task,
         next_action,
         plan_audit,
+        prompt_evidence,
         report_action,
         report_skeleton,
         register_project,
@@ -181,6 +189,7 @@ def _real_handlers():
         resolve_config,
         resume_install,
         review_context,
+        review_intake,
         scaffold_project,
         task_bundle,
         unregister_project,
@@ -204,6 +213,7 @@ def _real_handlers():
     )
 
     return {
+        "acceptance-trace": (acceptance_trace.configure_parser, acceptance_trace.handler),
         "adversarial-review-context": (
             adversarial_review_context.configure_parser,
             adversarial_review_context.handler,
@@ -262,7 +272,9 @@ def _real_handlers():
             resume_install.configure_parser,
             resume_install.handler,
         ),
+        "prompt-evidence": (prompt_evidence.configure_parser, prompt_evidence.handler),
         "review-context": (review_context.configure_parser, review_context.handler),
+        "review-intake": (review_intake.configure_parser, review_intake.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),

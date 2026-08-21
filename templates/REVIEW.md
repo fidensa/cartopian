@@ -23,6 +23,28 @@ drifted. The configured reviewer makes this judgment; the operator does not.
 - `unavailable-for-legacy` is non-blocking only when the generated context says
   this genuinely historical unit predates request-evidence resolution.
 
+## Contract quality
+
+Do this audit **first**, and write it down before evaluating the implementation. Judge the governing contract — the operator request as bound into the task, the task, and the specification — as written: do not repair it silently, and do not credit it for what the implementation happens to do. Ordering is a reasoning aid, not an isolation guarantee; it reduces the chance that implementation framing colours the contract judgment, and it does not prevent it.
+
+Seven checks:
+
+1. **Request fidelity** — do the task and specification ask for what the operator actually requested, without narrowing, widening, substituting, or adding destinations, features, or conventions?
+2. **Completeness** — are problem, goal, non-goals, interface, constraints, and deliverable stated well enough to build and judge without inventing scope?
+3. **Factual and source accuracy** — are the cited sources real, current, correctly scoped, and correctly described, and do the claims match them?
+4. **Internal coherence** — do the sections agree with each other?
+5. **Upstream alignment** — does the contract carry every applicable upstream requirement, standard, plan item, and decision that governs it? Where an applicable requirement is reached by no trace record, name the requirement.
+6. **Acceptance clarity** — is each acceptance item a single, unambiguous, checkable statement with a clear pass condition?
+7. **Testability** — could someone who did not write the contract tell pass from fail using the stated evidence gate?
+
+`adequate` means all seven pass; list no gaps, or only nits — a clean contract is one line. `needs changes` means at least one check has a gap: name the check, locate the offending clause, and say what would resolve it. A `needs changes` outcome does not by itself set the verdict; you set the verdict as you do today, weighing contract and implementation together. Do not score, count, or rank the checks — a reviewer computing an aggregate has left the rubric.
+
+Contract defects are `C<n>` here; implementation defects stay `F<n>` under `## Findings`. Neither excuses the other: an implementation that faithfully matches a deficient specification is still `needs changes` at the contract level and may still be sound at the implementation level. Say both.
+
+Outcome: <adequate | needs changes>
+
+- C1. [blocker | major | minor | nit] <one of the seven check names> — what is wrong, where, and what would settle it.
+
 ## Implementation evidence
 
 Required when the reviewed outcome uses implementation/git evidence. For document, operational, planning, physical, or no-repo work, use `n/a` for inapplicable fields and make the task's completion evidence or durable deliverable the primary artifact reviewed.
@@ -51,6 +73,28 @@ Required when the reviewed outcome changes a practice-pack body. Structural and 
 - **stop-and-escalation-clarity** — <adequate | inadequate>: is it clear when to stop, what to escalate, and in what grammar?
 
 Use `n/a — no practice-pack body changed` otherwise.
+
+## Closure determinations
+
+Required when the task declares `Upstream trace: required`; use `n/a — task does not declare an upstream trace` otherwise. Copy the block from the reviewer provenance projection in your review context and fill in each verdict, so the determinations are recorded against the exact record set the assignment was issued under.
+
+Two determinations per material criterion, with **different inputs and different semantics**:
+
+- **D1 — immediate-contract compliance.** Does the delivered work satisfy the task and specification as written? Inputs: the deliverable, the task, the specification. Reason code: `acceptance-item-unmet`. A criterion covering a merged-away origin carries that origin's obligation too.
+- **D2 — upstream-intent adequacy.** Do the task and specification adequately satisfy the upstream sources *reached through the trace*, and is coverage of the enumerated sources and excerpts complete? Inputs: the serialized trace, the provenance block, and the `S|`/`R|`/`W|` coverage records. Reason codes: `upstream-intent-uncovered`, `exemption-unjustified`, `unresolved-source-conflict`.
+
+They are independent by construction — D1 evaluates work against contract, D2 evaluates contract against upstream — so neither may be inferred from the other and neither may be recorded as "same as above". D1 passing while D2 fails is the case this contract exists to catch: work that satisfies the task's wording while the task itself omitted material upstream intent. Either failing blocks closure.
+
+A `source-uncovered`, `request-uncovered`, or `waiver-rejected` finding names an identity no criterion claims, so it cannot localize to an ordinal; record it on the task-scoped line instead.
+
+A passing line carries `reason:-`. A missing, contradictory, or unattributed determination blocks approval and never defaults to pass.
+
+```
+Trace-identity: sha256:<64 hex>
+D1 C01: <pass | fail> reason:<code | ->
+D2 C01: <pass | fail> reason:<code | ->
+D2 task: <pass | fail> reason:<source-uncovered | request-uncovered | waiver-rejected | ->
+```
 
 ## Findings
 

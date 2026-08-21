@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+from cli import acceptance_trace, contract_review, trace_binding
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
@@ -79,8 +80,34 @@ def handler(args: argparse.Namespace) -> int:
         "action": "review-context",
         "project_path": str(root),
         **context.as_record(),
+        "upstream_trace": None,
+        "contract_quality": None,
         "preflight": None,
     }
+    if task is not None:
+        # The review-context seam. The reviewer projection is what makes the
+        # provenance independently attributable rather than self-certified: it
+        # is PM-computed from lifecycle artifacts the coder's role cannot read,
+        # and it names the input identity so the derivation can be recomputed.
+        binding = trace_binding.bind(root, task)
+        record["upstream_trace"] = binding.as_record()
+        if binding.trace is not None:
+            body = binding.trace.reviewer_projection()
+            record["upstream_trace"]["reviewer_projection"] = {
+                "bytes": len(body.encode("utf-8")),
+                "identity": acceptance_trace.body_identity(body),
+                "body": body,
+            }
+        record["contract_quality"] = {
+            "section": contract_review.SECTION_HEADING,
+            "placed_after": contract_review.PRECEDING_HEADING,
+            "placed_before": contract_review.FOLLOWING_HEADING,
+            "checks": [
+                {"check": code, "name": name} for code, name in contract_review.CHECKS
+            ],
+            "outcomes": list(contract_review.OUTCOMES),
+            "severities": list(contract_review.SEVERITIES),
+        }
     if prompt is not None:
         record["preflight"] = {
             **preflight_prompt_binding(context, prompt_text or ""),

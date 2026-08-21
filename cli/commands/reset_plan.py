@@ -37,6 +37,7 @@ import argparse
 import os
 import stat
 import sys
+from datetime import date
 from pathlib import Path
 from typing import List
 
@@ -265,6 +266,19 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("guard", f"{refusal.rule}: {refusal.detail}")
         return EXIT_FAIL
 
+    # Phase 1b — close the effectiveness window before the surface is cleared.
+    # The superseding summaries are derived from the retained task, review, and
+    # report artifacts Phase 2 is about to remove, so this must run after the
+    # preflight (nothing is removed if the reset refuses) and before the first
+    # unlink. Re-entrant: an operator who archived at Stage 3 already closed
+    # the window, and this reports `already_closed` rather than closing twice.
+    # Best-effort throughout — a reset never fails on derived evidence.
+    from cli import prompt_evidence
+
+    closeout_evidence = prompt_evidence.close_plan_sequence(
+        root, date=date.today().isoformat()
+    )
+
     # Phase 2 — remove the planned regular files.
     removed: List[str] = []
     for path in to_remove:
@@ -308,6 +322,7 @@ def handler(args: argparse.Namespace) -> int:
             "recreated_dirs": recreated,
             "reseeded": reseeded,
             "carry_standards": bool(args.carry_standards),
+            "effectiveness_closeout": closeout_evidence,
         },
     })
     return EXIT_OK

@@ -267,6 +267,9 @@ class _Authorization:
         self.identity_keys: Set[str] = set()
         # Whether the ## Verdict token (first non-blank) line may change.
         self.verdict_token = False
+        # Whether the readiness (## Ready for review / ## Ready to close)
+        # value line — its first non-blank line — may change.
+        self.ready_token = False
         # Per-subsection exact row operations inside ## Source evidence.
         self.source_rows: Dict[str, _RowOps] = {}
         # Missing required section names a body-identical in-place rename
@@ -392,6 +395,8 @@ def _build_authorization(
             )
         elif name == "review-verdict-valid":
             auth.verdict_token = True
+        elif name == "readiness-value-valid":
+            auth.ready_token = True
         elif name.startswith("source-evidence:"):
             source_implicated = True
         else:
@@ -648,6 +653,18 @@ def _confine(
             else:
                 violations.append(
                     "the Verdict body beyond its first (token) line"
+                )
+        elif (
+            cur_name in ("Ready for review", "Ready to close")
+            and auth.ready_token
+        ):
+            if _minus_first_nonblank(cur_body) == _minus_first_nonblank(
+                cor_body
+            ):
+                changed.append(cur_name)
+            else:
+                violations.append(
+                    f"the {cur_name} body beyond its first (value) line"
                 )
         elif cur_name == evidence_heading and auth.source_rows:
             cur_sub_pre, cur_blocks = _split_subsections(cur_body)

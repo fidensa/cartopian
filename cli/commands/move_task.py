@@ -1,5 +1,6 @@
 """`cartopian move-task <task-path> <to-status>`."""
 import argparse
+import datetime
 import os
 import re
 import sys
@@ -7,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from cli import report_identity, request_trace
+from cli import prompt_evidence, report_identity, request_trace
 from cli.commands.resolve_config import _CliError, resolve_review_policy
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
@@ -170,6 +171,34 @@ def _alignment_error(
     return None
 
 
+def _closure_error(
+    project_root: Path, review: Path, content: str, task_path: Path
+) -> Optional[str]:
+    """Refuse an approving move whose closure determinations do not clear.
+
+    `in-review -> done` is the closure boundary, so it is where the
+    traceability contract's determination-scoped failures — a missing, failed,
+    contradictory, or unattributed D1/D2 — and the review's structural
+    contract-quality audit have to bite. Recording the determinations in the
+    review file is not the same as their passing, and an approving verdict
+    over a failing determination must not be executable.
+
+    The check is inert for a task that does not declare `Upstream trace:
+    required`, so no existing unattended run gains a new stopping point.
+    """
+    if not task_path.is_file():
+        return None
+    from cli.commands import review_intake
+
+    try:
+        blocker = review_intake.approval_blocker(project_root, task_path, content)
+    except (OSError, UnicodeDecodeError) as exc:
+        return f"closure determinations are unreadable: {exc}"
+    if blocker is None:
+        return None
+    return f"closure review does not clear approval ({blocker}): {review}"
+
+
 def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[str]]:
     def _check(project_root: Path, nn_nnn: str, task_id: str) -> Optional[str]:
         review = project_root / "reviews" / f"REVIEW-{nn_nnn}.md"
@@ -194,7 +223,10 @@ def _guard_review_verdict(required: str) -> Callable[[Path, str, str], Optional[
         if verdict != required:
             return f"review verdict is '{verdict}', expected '{required}': {review}"
         if required == "approve":
-            return _alignment_error(project_root, review, content, nn_nnn)
+            alignment = _alignment_error(project_root, review, content, nn_nnn)
+            if alignment is not None:
+                return alignment
+            return _closure_error(project_root, review, content, task_path)
         return None
     return _check
 
@@ -387,6 +419,36 @@ def handler(args: argparse.Namespace) -> int:
     except OSError:
         pass
 
+    # Reopen and regression outcomes are only observable at the transition
+    # itself: the journal records the move but nothing labels it, so a review
+    # failure is otherwise indistinguishable from any other correction. The
+    # capture is best-effort and its outcome never affects this command's exit.
+    evidence = None
+    unit_summary = None
+    task_id = _TASK_ID_RE.fullmatch(task_path.stem)
+    if task_id is not None and from_status == "in-review" and to_status in ("in-progress", "open"):
+        evidence = prompt_evidence.record_transition(
+            project_root,
+            task_path.stem,
+            from_status,
+            to_status,
+            datetime.date.today().isoformat(),
+        )
+    # Unit closure is the boundary the effectiveness contract names for the
+    # `U` summary, and arriving in `done` is that boundary — by review, by the
+    # no-review path, or by an administrative fast-forward. Deriving it here
+    # rather than leaving it to an explicit query is what makes "at unit
+    # closure" true of normal and unattended runs alike. Best-effort and
+    # idempotent: a reopened unit crosses this line twice and still holds one
+    # closure summary, and a failed derivation never changes this exit code.
+    if task_id is not None and to_status == "done":
+        unit_summary = prompt_evidence.summarize_unit(
+            project_root,
+            task_path.stem,
+            datetime.date.today().isoformat(),
+            only_if_absent=True,
+        )
+
     record = {
         "action": "move-task",
         "details": {
@@ -399,5 +461,9 @@ def handler(args: argparse.Namespace) -> int:
     if administrative:
         record["details"]["administrative"] = True
         record["details"]["reason"] = administrative_reason.strip()
+    if evidence is not None:
+        record["details"]["effectiveness_evidence"] = evidence
+    if unit_summary is not None:
+        record["details"]["effectiveness_summary"] = unit_summary
     emit_record(record)
     return EXIT_OK

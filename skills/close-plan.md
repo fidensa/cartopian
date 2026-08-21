@@ -183,6 +183,8 @@ cartopian archive-plan <project-root> --closed <YYYY-MM-DD> --summary <brief-out
 
 Consume the emitted `archive_path` as the authoritative snapshot location. The command copies the fixed live-artifact set, writes `CLOSEOUT.md`, and creates or appends the one-line entry in `archive/INDEX.md`. If it exits non-zero, stop closeout; never run the reset without the requested snapshot.
 
+The command also runs the prompt-effectiveness contract's ordered plan close against the window it just closed — superseding unit summaries, then the closing projection, then the mediated delete of `.cartopian/prompt-evidence.log`. It is reported under `effectiveness_closeout` in the emitted record and never affects the exit code: the archive is authority, the evidence ledger is not. Read the `closing_projection` rows now if the operator wants the plan's post-approval-defect counts — under plan-bounded retention they are not readable after this point.
+
 ---
 
 ## Stage 4 - Reset Live Project Surface
@@ -215,6 +217,8 @@ cartopian reset-plan <project-root> [--carry-standards]
 - **Conditionally reseeds** `STANDARDS.md` from the carry-forward choice in Stage 2: pass `--carry-standards` to **keep** it as seed context; omit the flag to reseed it to a fresh project seed. The reseed write goes through the same mediated-write guards as the `write-*` commands.
 
 The command supplies only the project root — the PM never names a path to remove, create, or reseed; every target is a fixed, code-owned member of the close-surface allowlist. A symlink, foreign subdirectory, or out-of-root target aborts the whole pass with nothing removed, created, or written.
+
+Before the first removal — and only after the preflight has passed — `reset-plan` runs the same ordered evidence close as `archive-plan`, so a plan closed without an archive still closes its evidence window. The step is re-entrant: when Stage 3 already ran the archive, `effectiveness_closeout` reports `already_closed` and nothing is written or deleted twice. Like the archive, it never changes the reset's exit code.
 
 ### 4.3 Preserve live project memory
 
