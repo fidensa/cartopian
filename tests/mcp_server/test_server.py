@@ -404,7 +404,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.10.0"\n',
+                'project_schema_version = "v0.11.0"\n',
                 encoding="utf-8",
             )
             (project / "tasks/in-progress/TASK-05-010.md").write_text(
@@ -517,7 +517,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "review-parity"\n'
                 'name = "Review Parity"\n'
-                'project_schema_version = "v0.10.0"\n'
+                'project_schema_version = "v0.11.0"\n'
                 "\n[roles.quality-gate]\n"
                 'description = "Reviews assigned evidence."\n'
                 'grants = ["reviewer-like"]\n'
@@ -591,7 +591,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.10.0"\n'
+                'project_schema_version = "v0.11.0"\n'
                 "\n[roles.coder]\n"
                 'description = "Implements work."\n'
                 'auto_launch = ["task_run"]\n'
@@ -699,7 +699,7 @@ class TestToolSurface(unittest.TestCase):
                 "[project]\n"
                 'id = "demo"\n'
                 'name = "Demo"\n'
-                'project_schema_version = "v0.10.0"\n'
+                'project_schema_version = "v0.11.0"\n'
                 "unknown = true\n",
                 encoding="utf-8",
             )

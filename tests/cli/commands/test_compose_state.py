@@ -10,7 +10,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.10.0"\n'
+    'project_schema_version = "v0.11.0"\n'
 )
 
 

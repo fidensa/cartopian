@@ -80,7 +80,7 @@ my-project/
   cartopian.local.toml    absolute paths for this machine, never committed
   REQUIREMENTS.md         what you asked for
   IMPLEMENTATION_PLAN.md  the live plan, one per project
-  STANDARDS.md            tools, conventions, and constraints
+  STANDARDS.md            durable rules for how the work is performed
   STATE.md                where you left off, capped at 5KB
   phases/                 PHASE-01.md, PHASE-02.md, ...
   tasks/open|in-progress|in-review|done/

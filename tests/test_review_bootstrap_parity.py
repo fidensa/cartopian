@@ -40,7 +40,7 @@ from cli.main import build_parser
 CONFIG = """[project]
 name = "Bootstrap parity"
 id = "bootstrap-parity"
-project_schema_version = "v0.10.0"
+project_schema_version = "v0.11.0"
 
 [reviews]
 planning = "required"

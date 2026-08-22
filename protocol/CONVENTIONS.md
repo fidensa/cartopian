@@ -496,6 +496,26 @@ prompt; changing the project marker never retroactively invalidates them.
 Legacy `intent/ATTEST-*.md` attestations and `intent/records/OIR-*.md` records
 remain inert historical files and do not govern approval.
 
+## Standards
+
+`STANDARDS.md` is the project's durable execution-standards document: the settled rules that govern *how* the project's work is performed. It is highly recommended but optional. It is not a governance contract — protocol conventions are tool-owned (`cartopian://protocol/CONVENTIONS`) and are never restated or overridden by a project file — and it is domain-neutral: an engineering project's standards look nothing like a research or writing project's, so an admission test, not a topic list, decides what belongs.
+
+A statement is admitted to `STANDARDS.md` only when all three hold:
+
+1. **Execution-binding** — it governs how work is performed (practices, conventions, tooling and dependency policy, quality bars, boundaries on method), not what is built, when it is delivered, or how the project is managed.
+2. **Assignee-actionable** — whoever performs an assignment can follow it directly while doing the work.
+3. **Settled** — it is a decided rule, not a preference under discussion or a question awaiting an answer.
+
+Content that fails the test is routed to its owning artifact, never written here:
+
+- Product behavior and scope → `REQUIREMENTS.md` or the governing spec.
+- Phase deliverables, exclusions, and sequencing → the implementation plan and phase files.
+- Lifecycle and PM behavior → tool-owned protocol and skills; never restated in a project file.
+- Unresolved design or standards choices → the plan's open questions, or a decision (`DEC-NNN`) once ruled.
+- Design requirements for an artifact the project is itself producing → that artifact's governing requirement or specification.
+
+Because every admitted statement is execution-binding, assignee-actionable, and settled, the whole document is safe to project to the audience that performs work: prompt authoring selects the applicable excerpt (see § Prompts) without needing to decontaminate it. The planning checkpoint that reviews `REQUIREMENTS.md` and `STANDARDS.md` verifies this admission discipline; content that fails the test is a review finding routed to its owning artifact before the plan locks.
+
 ## Prompts
 
 Prompts are temporary, assignee-directed handoff artifacts in `prompts/`. They restate the requirements, acceptance criteria, context, output expectations, scope boundaries, done criteria, and completion report requirements.
@@ -516,7 +536,7 @@ Prompt volume is proportional to the assignment. A prompt carries the exact appl
 
 Prompt content is audience-scoped as well as proportional. A statement belongs in a prompt only when it changes how the assignee performs, evidences, bounds, or reports the work. Downstream lifecycle facts — which role reviews the work, how a review is launched, what the PM does after the report lands — are resolved by the handoff packet for the PM's own routing and stay out of the prompt body: they change nothing the assignee does and invite hedging, such as deferring completeness to a reviewer or reporting work not ready pending a review that has not been assigned. The structured `## Risk result`, `## Judgment guidance`, `## Practice-pack result`, and `## Source guidance` projections are the only carriers of lifecycle-adjacent expectations, pasted exactly and never paraphrased into additional prose.
 
-When the project's `STANDARDS.md` declares working standards, constraints, or quality checks that govern how an assignment's work is performed — style and formatting conventions, required development practices, mandated validation tooling — the PM curates the applicable excerpt into the prompt's `## Project standards` section. The excerpt is proportional: only the standards that bind this assignment, never the whole document, and never planning-side metadata (stack rationale, cycle constraints, open standards questions) the assignee cannot act on. Standards excerpts are subject to normal deidentification. A task with no applicable standards omits the section.
+When the project's `STANDARDS.md` declares standards that govern how an assignment's work is performed — style and formatting conventions, required development practices, mandated validation tooling — the PM curates the applicable excerpt into the prompt's `## Project standards` section. The excerpt is proportional: only the standards that bind this assignment, never the whole document. Every statement in `STANDARDS.md` is assignee-actionable by the admission discipline in § Standards, so selection is by applicability alone. Standards excerpts are subject to normal deidentification. A task with no applicable standards omits the section.
 
 For source-backed work, the prompt includes the resolved record's deidentified rendering and requires the corresponding source evidence at completion. Prompt authoring does not repair or reinterpret an invalid record: readiness and handoff fail first with the record's actionable blockers.
 
@@ -836,7 +856,7 @@ Plan closeout resets the live plan surface:
 
 `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md` never carry forward as live artifacts. A new planning cycle produces fresh requirements and a fresh implementation plan.
 
-`STANDARDS.md` — project metadata: the chosen tools or stack, working standards, and cycle constraints — may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
+`STANDARDS.md` — the project's durable execution standards (see § Standards) — may carry forward only when the operator explicitly chooses to keep it as seed context for the next plan. Otherwise, it resets to a seed file. Protocol conventions are tool-owned and read through `cartopian://protocol/CONVENTIONS`; projects do not carry a local `CONVENTIONS.md`.
 
 `resources/` is not part of the live plan surface: `reset-plan` never clears it, and its contents carry forward across plans by default. Closeout puts its disposition to the operator explicitly — carry forward, and/or snapshot into the plan archive (see Project Resources).
 

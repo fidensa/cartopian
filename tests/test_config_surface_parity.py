@@ -1320,7 +1320,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.10.0"\n'
+        'project_schema_version = "v0.11.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"

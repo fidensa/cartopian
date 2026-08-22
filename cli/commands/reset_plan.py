@@ -80,21 +80,20 @@ RESET_ENSURE_DIRS = (
 
 STANDARDS_SEED = (
     "# Standards: <project name>\n\n"
-    "<!-- This document is highly recommended but optional. It is project\n"
-    "     metadata: the chosen tools or stack, the working standards that\n"
-    "     apply to the project, and the constraints that bound each cycle's\n"
-    "     work. It is not a governance contract. Fill in what applies;\n"
-    "     delete what doesn't. -->\n\n"
-    "## Tools and stack\n\n"
-    "List the languages, frameworks, runtimes, or other tools the project relies on.\n\n"
+    "<!-- This document is highly recommended but optional. It holds the\n"
+    "     project's durable execution standards: settled rules that govern\n"
+    "     HOW the work is performed. Every statement must pass the\n"
+    "     admission test in CONVENTIONS § Standards — execution-binding,\n"
+    "     assignee-actionable, and settled; route anything else to its\n"
+    "     owning artifact. It is not a governance contract. -->\n\n"
+    "## Tools and dependencies\n\n"
+    "The languages, frameworks, runtimes, or other tools the work must use, and the dependency policy.\n\n"
     "## Working standards\n\n"
-    "Style, formatting, naming, or process conventions that apply to the project.\n\n"
+    "Style, formatting, naming, or process conventions that govern how the work is performed.\n\n"
     "## Constraints\n\n"
     "Boundaries that execution must not cross.\n\n"
     "## Quality checks\n\n"
-    "Acceptance evidence required by the project.\n\n"
-    "## Open standards questions\n\n"
-    "Decisions about standards that are still pending.\n"
+    "Acceptance evidence required of the work.\n"
 )
 
 

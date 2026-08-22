@@ -201,7 +201,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.10.0"\n'
+        'project_schema_version = "v0.11.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
@@ -1265,7 +1265,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.10.0"\n'
+            'project_schema_version = "v0.11.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'

@@ -302,7 +302,7 @@ class RiskSurfaceParityTests(unittest.TestCase):
                 "[project]\n"
                 'id = "risk-fixture"\n'
                 'name = "Risk fixture"\n'
-                'project_schema_version = "v0.10.0"\n',
+                'project_schema_version = "v0.11.0"\n',
                 encoding="utf-8",
             )
             artifact = root / "artifact.txt"

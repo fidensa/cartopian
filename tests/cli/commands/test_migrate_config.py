@@ -129,7 +129,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.10.0"
+                project_cfg["project"]["project_schema_version"], "v0.11.0"
             )
             for migrated_text in (
                 (home / ".cartopian" / "cartopian.toml").read_text(),
@@ -203,6 +203,7 @@ class TestConfigurationMigration(unittest.TestCase):
             "config-v0.7-to-v0.8",
             "config-v0.8-to-v0.9",
             "config-v0.9-to-v0.10",
+            "config-v0.10-to-v0.11",
         ],
             )
             config_migration.execute_configuration_migration(
@@ -220,7 +221,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.10.0"
+                migrated["project"]["project_schema_version"], "v0.11.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -631,6 +632,7 @@ timeout = "45m"
                     "config-v0.7-to-v0.8",
                     "config-v0.8-to-v0.9",
                     "config-v0.9-to-v0.10",
+                    "config-v0.10-to-v0.11",
                 ],
             )
             source = dict(plan.source_effective)
@@ -666,7 +668,7 @@ timeout = "45m"
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.10.0"
+                migrated["project"]["project_schema_version"], "v0.11.0"
             )
 
             before_rerun = path.read_bytes()
@@ -745,7 +747,7 @@ timeout = "45m"
                 self.assertNotIn("# migrated legacy:", path.read_text())
             self.assertEqual(
                 records[0]["details"]["plan"]["entries"][0]["identity"],
-                "config-v0.10-partial-repair",
+                "config-v0.11-partial-repair",
             )
 
             before_rerun = _config_bytes(home, project)
@@ -781,7 +783,7 @@ timeout = "30m"
             self.assertEqual(public_result["status"], "complete")
             self.assertEqual(
                 public_plan["entries"][0]["identity"],
-                "config-v0.10-partial-repair",
+                "config-v0.11-partial-repair",
             )
             self.assertIn(
                 "superseded-role-launch",
@@ -1194,6 +1196,69 @@ reviewer = "Reviews plans and tasks."
             )
             self.assertEqual(
                 cli_records[0]["details"]["plan"]["status"], "pending"
+            )
+
+
+class TestStandardsAdmissionGate(unittest.TestCase):
+    """v0.11.0: the marker cannot advance while STANDARDS.md carries the
+    retired ``## Open standards questions`` section."""
+
+    def _project(self, raw: Path, standards_body: str) -> tuple[Path, Path]:
+        home = raw / "home"
+        (home / ".cartopian").mkdir(parents=True)
+        project = raw / "project"
+        project.mkdir()
+        (project / "cartopian.toml").write_text(
+            "[project]\n"
+            'id = "standards-gate"\n'
+            'name = "Standards Gate"\n'
+            'project_schema_version = "v0.10.0"\n',
+            encoding="utf-8",
+        )
+        (project / "STANDARDS.md").write_text(standards_body, encoding="utf-8")
+        return home, project
+
+    def test_retired_open_questions_heading_blocks_advancement(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(
+                Path(raw),
+                "# Standards: P\n\n## Working standards\n\nRules.\n\n"
+                "## Open standards questions\n\nPending.\n",
+            )
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            self.assertEqual(
+                plan.diagnostics[0]["code"],
+                "standards-admission-migration-required",
+            )
+
+    def test_conforming_standards_advance_v010_to_v011(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(
+                Path(raw),
+                "# Standards: P\n\n## Working standards\n\nRules.\n",
+            )
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "planned")
+            self.assertEqual(
+                [entry.identity for entry in plan.entries],
+                ["config-v0.10-to-v0.11"],
+            )
+            self.assertEqual(plan.marker_update["from"], "v0.10.0")
+            self.assertEqual(plan.marker_update["to"], "v0.11.0")
+            result = config_migration.execute_configuration_migration(
+                project, plan, home_root=home
+            )
+            self.assertEqual(result["status"], "complete")
+            migrated = tomllib.loads(
+                (project / "cartopian.toml").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                migrated["project"]["project_schema_version"], "v0.11.0"
             )
 
 

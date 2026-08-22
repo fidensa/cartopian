@@ -128,7 +128,7 @@ cartopian write-requirements <project-root> --content-file <body-path>
 
 ### 1.4 Generate STANDARDS.md
 
-Compose `STANDARDS.md` from the requirements, any carried-forward standards seed, and any architectural principles or technical needs discussed — the chosen tools/stack, working standards, and any constraints deduced from this cycle's requirements. Author or update it through the mediated writer (a **PM-performed** write):
+Derive `STANDARDS.md` from the requirements conversation, any carried-forward standards seed, and the working practices the operator confirmed — only the durable execution standards that govern *how* this project's work is performed. Every statement must pass the admission test in `CONVENTIONS § Standards`: execution-binding, assignee-actionable, and settled. Route everything else to its owning artifact instead of writing it here: product behavior and scope stay in `REQUIREMENTS.md`; phase deliverables and exclusions belong to the implementation plan; unresolved standards choices are recorded as the plan's open questions (or a decision once ruled), never as standards. Author or update it through the mediated writer (a **PM-performed** write):
 
 ```
 cartopian write-standards <project-root> --content-file <body-path>
@@ -140,9 +140,10 @@ If `reviews.planning.mode` is `required`:
 
 1. Run planning-review checkpoint `001 requirements-and-standards` using the Review Flow Reference.
 2. Target artifacts: `REQUIREMENTS.md` and `STANDARDS.md`.
-3. If `approve`: proceed to Stage 2.
-4. If `request-changes`: revise the target artifacts in place and rerun the checkpoint.
-5. If `reject`, blocked, failed, or failed-to-parse: stop and return control to the operator.
+3. The checkpoint verifies standards admission discipline: every `STANDARDS.md` statement passes the `CONVENTIONS § Standards` admission test, and any content owned by another artifact — restated product behavior or scope, phase deliverables or exclusions, lifecycle or PM behavior, unresolved questions — is a `request-changes` finding routed to its owning artifact.
+4. If `approve`: proceed to Stage 2.
+5. If `request-changes`: revise the target artifacts in place and rerun the checkpoint.
+6. If `reject`, blocked, failed, or failed-to-parse: stop and return control to the operator.
 
 ---
 
@@ -151,7 +152,7 @@ If `reviews.planning.mode` is `required`:
 ### 2.1 Read inputs
 
 1. Read the locked `REQUIREMENTS.md` and verify that its compact intent is complete and operator-confirmed. If any field is unresolved or confirmation is absent, return to Stage 1.2; do not write or lock an implementation plan.
-2. Read the current-cycle `STANDARDS.md` as the project's standards and constraints.
+2. Read the current-cycle `STANDARDS.md` as the project's execution standards.
 3. Read the templates in `cartopian://templates/IMPLEMENTATION_PLAN.md` for structural guidance.
 
 ### 2.2 Generate IMPLEMENTATION_PLAN.md

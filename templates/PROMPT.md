@@ -57,7 +57,7 @@ For review prompts in projects using PM-owned product-repo git, the PM populates
 
 ## Project standards
 
-<When the project's `STANDARDS.md` declares working standards, constraints, or quality checks that bind this assignment — style and formatting conventions, required development practices such as TDD, mandated validation tooling or checks — paste the applicable excerpt here, deidentified. Only the standards that govern this work: never the whole document, and never planning-side metadata (stack rationale, cycle constraints, open standards questions) the assignee cannot act on. Omit this section when none apply.>
+<When the project's `STANDARDS.md` declares standards that bind this assignment — style and formatting conventions, required development practices such as TDD, mandated validation tooling or checks — paste the applicable excerpt here, deidentified. Only the standards that govern this work, never the whole document. Omit this section when none apply.>
 
 ## Source guidance
 

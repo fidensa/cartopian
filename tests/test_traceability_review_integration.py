@@ -96,7 +96,7 @@ FORBIDDEN_IN_CODER_CONTEXT: Tuple[str, ...] = (
 CONFIG = """[project]
 name = "Integrated"
 id = "integrated"
-project_schema_version = "v0.10.0"
+project_schema_version = "v0.11.0"
 
 [reviews]
 planning = "required"

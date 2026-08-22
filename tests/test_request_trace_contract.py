@@ -30,7 +30,7 @@ ORIGINAL = (
 CONFIG = '''[project]
 name = "Trace"
 id = "trace"
-project_schema_version = "v0.10.0"
+project_schema_version = "v0.11.0"
 
 [reviews]
 planning = "required"
@@ -833,7 +833,7 @@ class RequestTraceContract(unittest.TestCase):
 
     def test_migrated_active_review_prompt_is_regenerated_then_audit_recovers(self) -> None:
         self.root.joinpath("cartopian.toml").write_text(
-            CONFIG.replace('project_schema_version = "v0.10.0"',
+            CONFIG.replace('project_schema_version = "v0.11.0"',
                            'project_schema_version = "v0.8.0"'),
             encoding="utf-8",
         )

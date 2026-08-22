@@ -32,6 +32,78 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.11.0 — Standards admission discipline
+
+- **Protocol version:** `v0.11.0`
+- **One-line summary:** Redefines `STANDARDS.md` as durable execution standards under an admission test, retiring mixed requirements/planning/lifecycle content and the seed `## Open standards questions` section.
+
+#### What changed
+
+`STANDARDS.md` had accumulated a mixture of engineering standards, product
+requirements, planning constraints, and open design questions, which made it
+unsafe to project into assignee prompts without a per-prompt decontamination
+pass. `protocol/CONVENTIONS.md § Standards` now defines the document's
+contract: a statement is admitted only when it is **execution-binding**
+(governs how work is performed), **assignee-actionable**, and **settled**.
+Everything else is routed to its owning artifact — product behavior and scope
+to `REQUIREMENTS.md` or the governing spec, phase deliverables and exclusions
+to the plan and phase artifacts, lifecycle and PM behavior to the tool-owned
+protocol and skills, unresolved choices to the plan's open questions or a
+decision once ruled.
+
+Prompt projection no longer filters "planning-side metadata" from standards
+excerpts, because a conforming `STANDARDS.md` contains none. The seed file and
+template no longer carry an `## Open standards questions` section; an open
+question is by definition not a standard. Planning-review checkpoint `001
+requirements-and-standards` now verifies admission discipline as a review
+criterion.
+
+#### Applies when
+
+Applies when `[project].project_schema_version` is numerically less than
+`v0.11.0`.
+
+#### Agent-followable migration steps
+
+This entry has **no registered filesystem transform**; do not invoke
+`apply-migration-entry` for it. The re-sort is judgment-dependent and
+PM-performed through the ordinary mediated writers, on operator approval.
+
+1. Read the project's `STANDARDS.md`. For each statement, apply the admission
+   test in `CONVENTIONS § Standards` (execution-binding, assignee-actionable,
+   settled).
+2. Route every statement that fails the test to its owning artifact before
+   removing it: product behavior or scope into `REQUIREMENTS.md` (via
+   `cartopian write-requirements`) or the governing spec; phase deliverables
+   or exclusions into the plan or phase artifacts; unresolved choices into the
+   plan's open questions, or record a ruling with `cartopian write-decision`.
+   Lifecycle or PM behavior that restates the protocol is deleted, not
+   relocated — the protocol document already owns it. Never silently discard
+   content.
+3. Delete the `## Open standards questions` heading and its residual body
+   after its content has been routed.
+4. Author the cleaned body with `cartopian write-standards <project-root>
+   --content-file <body-path>`. A `STANDARDS.md` still at its seed stub may
+   simply be reseeded by the same command with the current seed sections.
+5. Run `cartopian migrate-config <project-root> --apply` to advance
+   `[project].project_schema_version` to `v0.11.0`. The planner refuses to
+   advance while the retired `## Open standards questions` heading remains.
+6. Refresh derived state with `cartopian write-state <project-root>` and
+   confirm with `cartopian plan-audit <project-root>`.
+
+#### Idempotence guarantee
+
+Re-applying the steps to a conforming project is a no-op: every statement
+already passes the admission test, no retired heading exists, and
+`migrate-config` reports the marker current.
+
+#### Post-migration validation hint
+
+`STANDARDS.md` contains no `## Open standards questions` heading and no
+statement that restates requirements, plan scoping, or protocol lifecycle
+behavior. `cartopian migrate-config <project-root>` reports the schema marker
+current, and `cartopian plan-audit <project-root>` is clean.
+
 ### v0.10.0 — Canonical identifier-only artifact names
 
 - **Protocol version:** `v0.10.0`

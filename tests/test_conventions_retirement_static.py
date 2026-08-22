@@ -2,10 +2,10 @@
 
 The tool-owned ``protocol/CONVENTIONS.md`` is the only conventions layer.
 No shipped surface creates, preserves, archives, or writes a project-level
-``CONVENTIONS.md``; the topmost CHANGELOG entry migrates existing projects
+``CONVENTIONS.md``; the v0.6.0 CHANGELOG entry migrates existing projects
 off the file; and every shipped description of ``STANDARDS.md`` treats it
-as project metadata (tools or stack, working standards, cycle constraints),
-not as a governance contract.
+as the project's durable execution standards (admission-tested per
+CONVENTIONS § Standards), not as a governance contract.
 """
 import re
 import unittest
@@ -96,19 +96,22 @@ class MigrationEntryTest(unittest.TestCase):
     def test_shipped_version_gate_follows_topmost_entry(self) -> None:
         from cli.protocol_gate import read_shipped_project_schema_version
 
-        self.assertEqual(read_shipped_project_schema_version(), "v0.10.0")
+        self.assertEqual(read_shipped_project_schema_version(), "v0.11.0")
 
 
-class StandardsMetadataWordingTest(unittest.TestCase):
-    """Shipped STANDARDS seeds describe metadata, not governance."""
+class StandardsAdmissionWordingTest(unittest.TestCase):
+    """Shipped STANDARDS seeds describe admission-tested execution
+    standards, never a governance contract or planning residue."""
 
-    def test_seed_texts_use_metadata_wording(self) -> None:
+    def test_seed_texts_use_execution_standards_wording(self) -> None:
         from cli.commands.reset_plan import STANDARDS_SEED
 
         template = _read(REPO_ROOT / "templates" / "STANDARDS.md")
         for label, text in (("template", template), ("reset seed", STANDARDS_SEED)):
-            self.assertIn("metadata", text, msg=label)
-            self.assertNotIn("govern execution", text, msg=label)
+            self.assertIn("execution standards", text, msg=label)
+            self.assertIn("admission test", text, msg=label)
+            self.assertIn("not a governance contract", text, msg=label)
+            self.assertNotIn("Open standards questions", text, msg=label)
 
     def test_no_project_conventions_template_ships(self) -> None:
         self.assertFalse((REPO_ROOT / "templates" / "CONVENTIONS.md").exists())

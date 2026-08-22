@@ -165,7 +165,9 @@ A stub with a summary and numbered key requirements is preferable to either a bl
 Author `STANDARDS.md` through the mediated writer `cartopian write-standards` (a **PM-performed** write) if:
 
 - The operator requests it, or
-- The requirements reveal clear technical constraints (specific stack, performance targets, integration requirements) that should be captured.
+- The sources reveal settled execution standards — a mandated stack or dependency policy, working conventions, required validation tooling — that pass the admission test in `CONVENTIONS § Standards` (execution-binding, assignee-actionable, settled).
+
+Capture only those. Product behavior and scope — including performance targets and integration requirements — stay in `REQUIREMENTS.md`, and unresolved choices become planning open questions, never standards.
 
 ```
 cartopian write-standards <project-root> --content-file <body-path>

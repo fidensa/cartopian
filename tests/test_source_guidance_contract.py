@@ -330,7 +330,7 @@ class SourceGuidanceProjectionTests(unittest.TestCase):
             "[project]\n"
             'id = "source-guidance"\n'
             'name = "Source guidance"\n'
-            'project_schema_version = "v0.10.0"\n'
+            'project_schema_version = "v0.11.0"\n'
             "\n[reviews]\nplanning = \"off\"\ntask_closure = \"off\"\n"
         )
         return project_scaffold(cartopian_toml=toml)

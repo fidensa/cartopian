@@ -1,22 +1,27 @@
 # Standards: <project name>
 
-<!-- This document is highly recommended but optional. It is project
-     metadata: the chosen tools or stack, the working standards that
-     apply to the project, and the constraints that bound each cycle's
-     work. It is not a governance contract — protocol conventions are
-     tool-owned (`protocol/CONVENTIONS.md`) and cannot be overridden
-     here. Fill in what applies; delete what doesn't. The section
-     names below are illustrative — replace them with whatever best
-     fits the project's domain (engineering, research, writing,
-     design, ops, etc.). -->
+<!-- This document is highly recommended but optional. It holds the
+     project's durable execution standards: the settled rules that
+     govern HOW the project's work is performed. Every statement must
+     pass the admission test in CONVENTIONS § Standards — it is
+     execution-binding, assignee-actionable, and settled. Route
+     anything else to its owning artifact: product behavior and scope
+     to REQUIREMENTS.md or a spec; phase deliverables and exclusions
+     to the plan; lifecycle and PM behavior to the tool-owned protocol
+     and skills; unresolved choices to the plan's open questions or a
+     decision once ruled. It is not a governance contract — protocol
+     conventions cannot be overridden here. The section names below
+     are illustrative — replace them with whatever best fits the
+     project's domain (engineering, research, writing, design, ops,
+     etc.). -->
 
-## Tools and stack
+## Tools and dependencies
 
-List the languages, frameworks, runtimes, infrastructure, or other tools the project relies on. Pin versions where stability matters.
+The languages, frameworks, runtimes, or other tools the work must use, and the policy for adding dependencies. Pin versions where stability matters. Binding choices only — rationale and still-open stack questions live elsewhere.
 
 ## Working standards
 
-Style, formatting, naming, or process conventions that apply to the project.
+Style, formatting, naming, or process conventions that govern how the work is performed — e.g. indentation and formatting rules, design principles, required development practices such as TDD.
 
 ## Constraints
 
@@ -24,16 +29,12 @@ Boundaries that execution must not cross. Examples for software work: no shared 
 
 ## Security and compliance
 
-Authentication model, secrets management, data classification, or regulatory requirements.
+Security and containment practices the work must follow: authentication model, secrets management, data classification, or regulatory requirements.
 
 ## Quality checks
 
-Acceptance evidence required by the project: test types, review checklists, fact-check passes, validation runs, or whatever proves the work is done. Coverage targets and tooling go here too.
+Acceptance evidence required of the work: test types and required test commands, review checklists, fact-check passes, validation runs, coverage targets and tooling — whatever proves the work meets the bar.
 
-## Infrastructure / delivery
+## Delivery
 
-Deployment targets, CI/CD pipeline, publishing path, or whatever the project's "delivery" surface is.
-
-## Open standards questions
-
-Decisions about standards that are still pending.
+How finished work is delivered: branch and versioning discipline, deployment targets, CI/CD pipeline, publishing path, or whatever the project's "delivery" surface is.

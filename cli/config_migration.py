@@ -56,6 +56,7 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.7.0",
     "v0.8.0",
     "v0.9.0",
+    "v0.10.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 PRESERVED_FACTS = (
@@ -257,6 +258,38 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         identity="config-v0.10-partial-repair",
         from_identities=("v0.10.0",),
         to_identity="v0.10.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+        ),
+        validation_gates=(
+            "explicit-old-new-agreement",
+            "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
+        ),
+        recovery="resolve conflicting old and preferred definitions, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.10-to-v0.11",
+        from_identities=("v0.10.0",),
+        to_identity="v0.11.0",
+        supported_forms=("preferred", "partial"),
+        transforms=("marker-last-advancement",),
+        validation_gates=(
+            "effective-semantic-equivalence",
+            "standards-admission-migration-complete",
+        ),
+        recovery=(
+            "re-sort STANDARDS.md through the CONVENTIONS admission test, "
+            "remove the retired open-questions section, then rerun"
+        ),
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.11-partial-repair",
+        from_identities=("v0.11.0",),
+        to_identity="v0.11.0",
         supported_forms=("superseded-role-launch", "partial"),
         transforms=(
             "flatten-role-launch-fields",
@@ -1980,6 +2013,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[5])
         if _version_tuple(current) >= (0, 10, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
@@ -1990,6 +2025,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[5])
         if _version_tuple(current) >= (0, 10, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
         if _version_tuple(current) >= (0, 8, 0):
@@ -1998,6 +2035,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[5])
         if _version_tuple(current) >= (0, 10, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == "v0.7.0":
         # v0.7 -> v0.8 introduces no configuration key. It advances the marker
         # after the resolver confirms effective behavior is unchanged — the
@@ -2008,18 +2047,30 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[5])
         if _version_tuple(current) >= (0, 10, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == "v0.8.0" and _version_tuple(current) >= (0, 9, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[4])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[5])
         if _version_tuple(current) >= (0, 10, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == "v0.9.0" and _version_tuple(current) >= (0, 10, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[6])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
+        if _version_tuple(current) >= (0, 11, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+    elif detected == "v0.10.0" and _version_tuple(current) >= (0, 11, 0):
+        if has_residual:
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
     elif detected == current and has_residual:
-        if current == "v0.10.0":
+        if current == "v0.11.0":
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
+        elif current == "v0.10.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
         elif current == "v0.9.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[6])
@@ -2217,6 +2268,31 @@ def plan_configuration_migration(
                     (
                         "apply the v0.10.0 filesystem migration, then rerun "
                         "migrate-config"
+                    ),
+                )
+        if _version_tuple(current_version) >= (0, 11, 0):
+            standards_path = project_root / "STANDARDS.md"
+            try:
+                standards_text = standards_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                standards_text = ""
+            if re.search(
+                r"(?m)^##\s+Open standards questions\s*$", standards_text
+            ):
+                _diagnose(
+                    "standards-admission-migration-required",
+                    "STANDARDS.md",
+                    "project",
+                    (
+                        "STANDARDS.md still carries the retired '## Open "
+                        "standards questions' section; the schema marker "
+                        "cannot advance while the v0.11.0 standards "
+                        "admission re-sort is unapplied"
+                    ),
+                    (
+                        "route its content per the v0.11.0 migration entry, "
+                        "rewrite STANDARDS.md via write-standards, then "
+                        "rerun migrate-config"
                     ),
                 )
 

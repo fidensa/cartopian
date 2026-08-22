@@ -16,7 +16,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.10.0"\n'
+    'project_schema_version = "v0.11.0"\n'
     'work_roots = ["tool-repo"]\n'
 )
 
@@ -207,7 +207,7 @@ class TestTaskBundleNoPlan(unittest.TestCase):
 class TestTaskBundleSchemaIdentityWithoutReadinessGate(unittest.TestCase):
     def test_pre_migration_project_keeps_prior_read_behavior(self) -> None:
         stale = _TOML_BASE.replace(
-            'project_schema_version = "v0.10.0"',
+            'project_schema_version = "v0.11.0"',
             'project_schema_version = "v0.5.0"',
         )
         with project_scaffold(cartopian_toml=stale) as scaffold:

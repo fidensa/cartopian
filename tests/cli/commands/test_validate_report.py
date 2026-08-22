@@ -19,7 +19,7 @@ _TOML = (
     "[project]\n"
     'id = "validate-proj"\n'
     'name = "Validate Project"\n'
-    'project_schema_version = "v0.10.0"\n'
+    'project_schema_version = "v0.11.0"\n'
 )
 
 _TASK = (
