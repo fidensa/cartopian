@@ -15,6 +15,16 @@
      project's domain (engineering, research, writing, design, ops,
      etc.). -->
 
+<!-- Applicability tags: a section may open with an `Applies to:` line
+     naming the declared task facts it binds — practice-pack envelope
+     identities (primary outcomes, artifact kinds, domain scopes) or an
+     authorized profile hint, e.g. `Applies to: software-behavior-change`
+     or `Applies to: all`. An untagged section applies to every
+     assignment. The assignment-prompt composer selects sections by tag
+     intersection with the task's declared facts — deterministic, no
+     free-form PM judgment — and the tag line itself never reaches the
+     assignee. -->
+
 ## Tools and dependencies
 
 The languages, frameworks, runtimes, or other tools the work must use, and the policy for adding dependencies. Pin versions where stability matters. Binding choices only — rationale and still-open stack questions live elsewhere.

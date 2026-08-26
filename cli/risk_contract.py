@@ -171,6 +171,32 @@ def classify_risk(observations: Iterable[Mapping[str, object]]) -> dict[str, Any
     }
 
 
+def assignee_projection(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Project a classified risk result down to what changes assignee behavior.
+
+    The full result is the trace record. The assignee needs the band, the
+    observable reasons behind it, the evidence expectation the report must
+    answer, the operator gate that bounds gated actions, and the contingency
+    expectation. The independent-review expectation is downstream lifecycle
+    routing and is deliberately excluded: it changes nothing the assignee does
+    and invites hedged, review-deferring reports.
+    """
+    return {
+        "band": result["band"],
+        "reasons": [
+            {
+                "observation": item["observation"],
+                "state": item["state"],
+                "supporting_fact": item["supporting_fact"],
+            }
+            for item in result["ordered_reasons"]
+        ],
+        "evidence_expectation": result["evidence_expectation"],
+        "operator_gate": result["operator_gate"],
+        "contingency_expectation": result["contingency_expectation"],
+    }
+
+
 def validate_risk_result(result: Mapping[str, object]) -> dict[str, Any]:
     """Validate a derived result against the current authoritative policy row."""
     registry = load_risk_contract()

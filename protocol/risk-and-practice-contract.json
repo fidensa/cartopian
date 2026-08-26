@@ -528,7 +528,7 @@
           "id": "assignment-prompt-template",
           "kind": "document",
           "path": "templates/PROMPT.md",
-          "required_when_active": "## Judgment guidance"
+          "required_when_active": "active judgment holds"
         },
         {
           "id": "workflow-procedure",

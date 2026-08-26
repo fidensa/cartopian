@@ -123,6 +123,99 @@ def scrub_field(value: str) -> str:
     return _tidy(scrubbed).strip()
 
 
+# Assignment-projection surface: the spec header fields and sections that are
+# planning, review, or provenance material rather than implementation contract.
+# `## References` is already dropped by deidentify_spec; `## Source guidance`
+# is dropped here because the composed prompt renders the resolved record once.
+_ASSIGNMENT_DROPPED_HEADER_FIELDS = (
+    "Status",
+    "Profile",
+    "Author",
+    "Reviewer",
+    "Date",
+    "Source",
+    "Source guidance",
+)
+_ASSIGNMENT_DROPPED_SECTIONS = (
+    "Review checklist",
+    "Open questions",
+    "Source guidance",
+)
+_HEADER_FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/-]*?):\s*(.*)$")
+_H2_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
+_OPEN_QUESTIONS_PLACEHOLDER_RE = re.compile(
+    r"^\s*(?:none\.?|n/?a\.?|<.*>|each question names its owner.*)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def assignment_spec_projection(text: str) -> Tuple[str, dict]:
+    """Return ``(projection, receipt)`` for a spec's assignment projection.
+
+    The projection is the deidentified implementation contract only: observable
+    goals, requirements, interfaces and data contracts, edge cases, and
+    acceptance. Author/reviewer metadata, planning status, review checklists,
+    open-question sections, source-guidance records (rendered separately by the
+    prompt composer), and PM identifiers are excluded. The receipt names what
+    was dropped and whether the spec still carries substantive open questions,
+    so composition can fail closed on an unsettled contract.
+    """
+    deidentified, redactions = deidentify_spec(text)
+
+    dropped_fields: List[str] = []
+    dropped_sections: List[str] = []
+    open_question_lines: List[str] = []
+
+    out: List[str] = []
+    in_fence = False
+    in_header = True
+    skipping: str = ""
+    for line in deidentified.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+        if not in_fence:
+            heading = _H2_HEADING_RE.match(line)
+            if heading:
+                in_header = False
+                name = heading.group(1)
+                matched = next(
+                    (
+                        section
+                        for section in _ASSIGNMENT_DROPPED_SECTIONS
+                        if section.lower() == name.lower()
+                    ),
+                    None,
+                )
+                if matched is not None:
+                    dropped_sections.append(matched)
+                    skipping = matched
+                    continue
+                skipping = ""
+            elif skipping:
+                if skipping == "Open questions" and line.strip():
+                    if not _OPEN_QUESTIONS_PLACEHOLDER_RE.fullmatch(line):
+                        open_question_lines.append(line.strip())
+                continue
+            elif in_header:
+                field = _HEADER_FIELD_RE.match(line.strip())
+                if field and field.group(1).strip() in _ASSIGNMENT_DROPPED_HEADER_FIELDS:
+                    dropped_fields.append(field.group(1).strip())
+                    continue
+        elif skipping:
+            continue
+        out.append(line)
+
+    projection = _BLANK_RUN_RE.sub("\n\n", "\n".join(out)).strip() + "\n"
+    receipt = {
+        "dropped_header_fields": dropped_fields,
+        "dropped_sections": dropped_sections,
+        "redactions": redactions,
+        "open_questions_present": "Open questions" in dropped_sections,
+        "open_question_lines": open_question_lines,
+    }
+    return projection, receipt
+
+
 def deidentify_spec(text: str) -> Tuple[str, List[str]]:
     """Return ``(deidentified_text, redactions)`` for a spec body.
 

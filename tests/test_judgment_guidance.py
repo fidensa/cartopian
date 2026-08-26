@@ -1025,23 +1025,25 @@ class JudgmentProjectionTests(unittest.TestCase):
         run_task = (REPO_ROOT / "skills" / "run-task.md").read_text(encoding="utf-8")
 
         self.assertIn("## Judgment envelope", task)
-        self.assertIn("## Judgment guidance", prompt)
+        # The assignment prompt carries judgment guidance as the composed
+        # assignee projection (active holds + compact instructions), not as a
+        # pasted machine result; the template documents that carriage.
+        self.assertIn("active judgment holds", prompt)
         self.assertIn("select-judgment-guidance", run_task)
         for fact in ("lifecycle-boundaries", "open-failure-conditions"):
             with self.subTest(fact=fact):
                 self.assertIn(fact, task)
 
         # Authoring the result in Stage 1 is not carrying it into the handoff.
-        # The runbook's prompt-content list is the only place that makes the
-        # activated guidance reach an assignee, so it names the judgment result
-        # exactly where the prompt template places it: after the risk result and
-        # before the pack result.
-        carried = [
-            run_task.index("The exact `## Risk result`"),
-            run_task.index("The exact `## Judgment guidance` result"),
-            run_task.index("The exact `## Practice-pack result`"),
-        ]
-        self.assertEqual(carried, sorted(carried))
+        # The composer is the only place that makes the activated guidance
+        # reach an assignee, so the runbook routes prompt production through
+        # it — and the composed section contract places judgment guidance in
+        # the Active guidance section.
+        self.assertIn("compose-assignment-prompt", run_task)
+        from cli import prompt_composer
+
+        contract = prompt_composer.load_contract()
+        self.assertIn("Active guidance", contract["sections"]["required"])
 
     def test_the_projection_names_the_active_judgment_surfaces(self) -> None:
         text = PROJECTION_PATH.read_text(encoding="utf-8")

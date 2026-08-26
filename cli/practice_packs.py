@@ -898,6 +898,88 @@ def _load_selected_body(
     return body, len(raw), identity
 
 
+_ASSIGNMENT_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "protocol"
+    / "assignment-prompt-contract.json"
+)
+
+
+def _capsule_areas() -> tuple[str, ...]:
+    try:
+        contract = json.loads(
+            _ASSIGNMENT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        areas = tuple(contract["pack_capsule_areas"])
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        return ()
+    return areas
+
+
+def _execution_capsule(body: str, pack_id: str) -> str:
+    """Project the selected pack body down to its execution capsule.
+
+    Keeps the title, the scope preamble (which carries the authority-precedence
+    boundary), and the capsule content areas the assignment-prompt contract
+    names — the sections that direct execution, decision gates, evidence, and
+    stop conditions. Routing sections (when-to/not-to-apply), the principles
+    catalog, failure modes, examples, and source prose stay in the full body,
+    which remains available through the trace record.
+    """
+    _, guidance = _parse_body_header(body, pack_id)
+    keep = set(_capsule_areas())
+    if not keep:
+        return guidance.strip() + "\n"
+    lines = guidance.splitlines()
+    out: list[str] = []
+    keeping = True
+    for line in lines:
+        match = _HEADING_RE.match(line)
+        if match:
+            keeping = _heading_identity(match.group(1)) in keep
+        if keeping:
+            out.append(line)
+    return "\n".join(out).strip() + "\n"
+
+
+def assignee_projection(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Project a selection result down to what changes assignee behavior.
+
+    The full result is the trace record. The assignee needs the selected
+    practice profile, its compact execution capsule, and the identity and
+    boundary of each applicable source. Rejected candidates, routing metadata,
+    context receipts, byte budgets, and content identities never cross into
+    the projection.
+    """
+    if result["outcome"] != "selected":
+        return {
+            "outcome": result["outcome"],
+            "pack_id": None,
+            "capsule": None,
+            "applicable_sources": [],
+        }
+    body = result.get("body")
+    capsule = (
+        _execution_capsule(body, result["pack_id"])
+        if isinstance(body, str)
+        else None
+    )
+    return {
+        "outcome": "selected",
+        "pack_id": result["pack_id"],
+        "capsule": capsule,
+        "applicable_sources": [
+            {
+                "title": source["title"],
+                "context": source["context"],
+                "governed_scope": source["governed_scope"],
+                "applicability_boundary": source["applicability_boundary"],
+            }
+            for source in result["applicable_sources"]
+        ],
+    }
+
+
 def select_practice_pack(
     envelope: Mapping[str, object],
     *,

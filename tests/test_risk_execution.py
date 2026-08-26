@@ -360,7 +360,10 @@ class RiskSurfaceParityTests(unittest.TestCase):
         run_handoff = (REPO_ROOT / "skills" / "run-handoff.md").read_text(encoding="utf-8")
 
         self.assertIn("## Risk observations", task)
-        self.assertIn("## Risk result", prompt)
+        # The composed assignment prompt carries the risk assignee projection
+        # (band, reasons, expectations) rather than a pasted machine result;
+        # the template documents that carriage.
+        self.assertIn("risk band with reasons and expectations", prompt)
         self.assertIn("## Risk-scaled evidence", report)
         self.assertIn("configured review policy remains authoritative", run_task)
         self.assertIn("adversarial-review-context", run_handoff)

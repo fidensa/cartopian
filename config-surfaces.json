@@ -415,6 +415,7 @@
       "id": "lifecycle-projections",
       "paths": [
         "cli/commands/adversarial_review_context.py",
+        "cli/commands/compose_assignment_prompt.py",
         "cli/commands/handoff_packet.py",
         "cli/commands/move_task.py",
         "cli/commands/next_action.py",
@@ -423,7 +424,8 @@
         "cli/commands/report_action.py",
         "cli/commands/task_bundle.py",
         "cli/commands/wait_handoff.py",
-        "cli/commands/wait_report.py"
+        "cli/commands/wait_report.py",
+        "cli/prompt_composer.py"
       ],
       "owner_contract": "cli/config_schema.py::resolve_configuration",
       "mode": "parity-validated",
@@ -442,7 +444,8 @@
         "next-action",
         "task-bundle",
         "handoff-packet",
-        "diagnostics"
+        "diagnostics",
+        "compose-assignment-prompt"
       ],
       "test_anchor": "tests/test_config_surface_parity.py::TestProjectionParity",
       "legacy_policy": "forbidden"
@@ -752,6 +755,7 @@
     {
       "id": "preferred-configuration-contract-tests",
       "paths": [
+        "tests/cli/commands/test_compose_assignment_prompt.py",
         "tests/cli/commands/test_plan_audit.py",
         "tests/cli/commands/test_task_bundle.py",
         "tests/test_protocol_gate.py",

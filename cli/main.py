@@ -22,6 +22,8 @@ SUBCOMMANDS: List[str] = [
     "classify-risk",
     "select-judgment-guidance",
     "select-practice-pack",
+    # Deterministic assignee-prompt composition + bound trace receipt
+    "compose-assignment-prompt",
     "discover-projects",
     "generate-config",
     "install-workflow",
@@ -162,6 +164,7 @@ def _real_handlers():
         select_judgment_guidance,
         select_practice_pack,
         close_audit,
+        compose_assignment_prompt,
         compose_state,
         containment_matrix,
         correct_report,
@@ -234,6 +237,10 @@ def _real_handlers():
             select_practice_pack.handler,
         ),
         "close-audit": (close_audit.configure_parser, close_audit.handler),
+        "compose-assignment-prompt": (
+            compose_assignment_prompt.configure_parser,
+            compose_assignment_prompt.handler,
+        ),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),
         "correct-report": (correct_report.configure_parser, correct_report.handler),

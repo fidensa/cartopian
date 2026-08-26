@@ -1399,6 +1399,34 @@ def _fence(text: str) -> str:
     return "`" * max(3, longest + 1)
 
 
+def _low_information_responses() -> frozenset:
+    """The closed grammar of content-free operator approvals.
+
+    Owned by ``protocol/assignment-prompt-contract.json`` so the assignment
+    composer and this renderer agree on one list. A missing or malformed
+    contract degrades to an empty set: every record then renders verbatim,
+    which is the safe direction.
+    """
+    contract_path = (
+        Path(__file__).resolve().parents[1]
+        / "protocol"
+        / "assignment-prompt-contract.json"
+    )
+    try:
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        values = contract["low_information_responses"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        return frozenset()
+    return frozenset(
+        str(value).casefold() for value in values if isinstance(value, str)
+    )
+
+
+def _is_low_information(text: str) -> bool:
+    normalized = " ".join(text.split()).strip(" .!,'\"").casefold()
+    return normalized in _low_information_responses()
+
+
 def render_sections(
     trace: Sequence[RequestEvidence],
     management: Sequence[str],
@@ -1440,7 +1468,30 @@ def render_sections(
             ]
             if record.observed_at:
                 lines.append(f"Observed at: {record.observed_at}")
-            lines += ["", fence + "text", record.text, fence]
+            # Coder assignments are execution interfaces: a content-free
+            # approval ("continue", "yes") adds no task-specific constraint,
+            # so its identity is bound above but the words are not pasted.
+            # Review channels keep every record verbatim — request-alignment
+            # verification compares against the exact operator words.
+            if review_kind == "task-assignment" and _is_low_information(record.text):
+                lines += [
+                    "",
+                    "Low-information operator approval — it adds no "
+                    "task-specific constraint. The verbatim text is retained "
+                    "under the content identity above and remains available "
+                    "to independent review.",
+                ]
+            else:
+                lines += ["", fence + "text", record.text, fence]
+        if review_kind == "task-assignment" and not any(
+            record.unit.kind == "task" for record in trace
+        ):
+            lines += [
+                "",
+                "This task derives from the approved plan; beyond the "
+                "evidence above, no task-specific operator instruction "
+                "applies.",
+            ]
     if captured_completion is not None:
         lines += [
             "",

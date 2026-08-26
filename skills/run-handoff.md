@@ -86,16 +86,18 @@ Then, sourcing every value from the `handoff-packet` record above. Preparing the
 1. Author or update the prompt at the caller-provided absolute prompt path with the Core CLI (never a raw `Write`):
 
    ```
+   # Task assignment: compose deterministically, then write the verified result:
+   cartopian compose-assignment-prompt <absolute-task-path> --role <role>
    cartopian write-prompt <project-root> --prompt-id <PROMPT-id> \
-     --task <absolute-task-path> --content-file <body-path>
+     --task <absolute-task-path> --composed-file <saved-compose-record>
 
-   # Review handoffs add the generated binding:
+   # Review handoffs author the body and add the generated binding:
    cartopian write-prompt <project-root> --prompt-id <PROMPT-id> \
      --content-file <body-path> \
      --review-kind <planning|task-closure> <target arguments>
    ```
 
-   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. Task assignment uses `--task <absolute-task-path>` and receives a generated pre-execution request comparison. Task review uses the same target with `--review-kind task-closure`. Planning review uses `--checkpoint PLAN-NNN` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections. A task-closure writer reads the preserved coder report, validates its task-completion publication shape, and binds it into the generated context by absolute path and SHA-256 content identity — alongside the independent expected review-report path (`reports/REPORT-NN-NNN-review.md`). The prompt never reproduces the report body: the reviewer reads completion evidence directly from the preserved artifact, which must remain in place and byte-identical throughout the review (preflight blocks on a missing or mutated completion report).
+   `<PROMPT-id>` is the handoff's prompt identifier (`PROMPT-NN-NNN` for task handoffs, `PROMPT-PLAN-NNN` for planning-checkpoint reviews); the command resolves the allowlisted `prompts/` destination from it, so the PM supplies the id, never a free-form path. Re-issuing it overwrites the same prompt in place on a retry. Task assignment bodies are **composed, never hand-assembled**: `compose-assignment-prompt` resolves every input (spec assignment projection, tag-selected standards, selector projections, source guidance, curated deliverable inputs, report skeleton), validates the result fail-closed, and binds it to a machine trace receipt; `write-prompt --composed-file` verifies that record and appends the generated pre-execution request comparison. Steps 6–9 below describe what the composed prompt already carries — for a task assignment, verify rather than hand-assemble; they remain PM-authored content only for review prompts. Task review uses the same target with `--review-kind task-closure`. Planning review uses `--checkpoint PLAN-NNN` plus the applicable `--phase` / `--plan-ref`. The writer, not the PM, generates the bound request-comparison sections. A task-closure writer reads the preserved coder report, validates its task-completion publication shape, and binds it into the generated context by absolute path and SHA-256 content identity — alongside the independent expected review-report path (`reports/REPORT-NN-NNN-review.md`). The prompt never reproduces the report body: the reviewer reads completion evidence directly from the preserved artifact, which must remain in place and byte-identical throughout the review (preflight blocks on a missing or mutated completion report).
 2. Ensure the prompt contains absolute paths — drawn from the record's `task_path` and `work_roots[].absolute_path` — for every file or directory the assignee is expected to read, modify, or produce.
 3. Ensure the prompt names `expected_report_path` from the record as the absolute report path the assignee must write.
 4. Ensure the prompt tells assignees not to move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.

@@ -27,6 +27,18 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         "spec_path",
         help="Absolute path to the spec file to render deidentified",
     )
+    subparser.add_argument(
+        "--projection",
+        choices=["deidentified", "assignment"],
+        default="deidentified",
+        help=(
+            "deidentified (default): identifiers stripped, full work-contract "
+            "prose. assignment: additionally drops author/reviewer metadata, "
+            "planning status, review checklists, open-question sections, and "
+            "the source-guidance record (rendered separately by the prompt "
+            "composer) — the implementation contract only"
+        ),
+    )
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -50,15 +62,20 @@ def handler(args: argparse.Namespace) -> int:
     source_record = source_guidance.validate_spec_content(
         content, owner_path=spec_path
     )
-    emit_record(
-        {
-            "action": "render-spec",
-            "spec_path": str(spec_path.resolve()),
-            "deidentified_spec": deidentified,
-            "redactions": redactions,
-            "source_guidance": source_guidance.active_projection(source_record),
-        }
-    )
+    projection = getattr(args, "projection", None) or "deidentified"
+    record = {
+        "action": "render-spec",
+        "spec_path": str(spec_path.resolve()),
+        "projection": projection,
+        "deidentified_spec": deidentified,
+        "redactions": redactions,
+        "source_guidance": source_guidance.active_projection(source_record),
+    }
+    if projection == "assignment":
+        assignment, receipt = deidentify.assignment_spec_projection(content)
+        record["assignment_spec"] = assignment
+        record["assignment_receipt"] = receipt
+    emit_record(record)
     if source_record["outcome"] == "invalid":
         for blocker in source_record["blockers"]:
             stderr_guard(

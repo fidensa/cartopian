@@ -1234,6 +1234,55 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 "standards-admission-migration-required",
             )
 
+    def test_blanket_governance_read_blocks_advancement(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(
+                Path(raw),
+                "# Standards: P\n\n## Working standards\n\n"
+                "- Follow the repository's AGENTS.md and "
+                "protocol/CONVENTIONS.md when implementing in the source "
+                "work root.\n",
+            )
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            diagnostic = plan.diagnostics[0]
+            self.assertEqual(
+                diagnostic["code"], "standards-blanket-governance-read"
+            )
+            # The refusal names the exact offending statement and an
+            # actionable recovery.
+            self.assertIn(
+                "Follow the repository's AGENTS.md and "
+                "protocol/CONVENTIONS.md",
+                diagnostic["message"],
+            )
+            self.assertIn("write-standards", diagnostic["recovery"])
+
+    def test_agents_md_only_rule_advances(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(
+                Path(raw),
+                "# Standards: P\n\n## Working standards\n\n"
+                "- Follow the repository's AGENTS.md when implementing in "
+                "the source work root.\n",
+            )
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "planned")
+            result = config_migration.execute_configuration_migration(
+                project, plan, home_root=home
+            )
+            self.assertEqual(result["status"], "complete")
+            migrated = tomllib.loads(
+                (project / "cartopian.toml").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                migrated["project"]["project_schema_version"], "v0.11.0"
+            )
+
     def test_conforming_standards_advance_v010_to_v011(self):
         with tempfile.TemporaryDirectory() as raw:
             home, project = self._project(

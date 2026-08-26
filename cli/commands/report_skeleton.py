@@ -116,7 +116,19 @@ def _task_skeleton(
     guidance: Dict[str, Any],
     deliverable: Optional[Dict[str, Any]],
     task_review_required: bool,
+    *,
+    source_evidence_lines: Optional[List[str]] = None,
+    risk_scaled_lines: Optional[List[str]] = None,
 ) -> str:
+    """Render the machine-owned task-report skeleton.
+
+    ``source_evidence_lines`` lets the assignment-prompt composer substitute a
+    reference-form source-evidence contract (the full record is rendered once
+    in the prompt's Source guidance section). ``risk_scaled_lines`` injects the
+    prefilled Risk-scaled evidence section when a classified risk result
+    accompanies the handoff; the standalone command has no risk input and
+    omits it.
+    """
     lines: List[str] = [
         "Status: <complete | blocked | failed>",
         "",
@@ -130,7 +142,11 @@ def _task_skeleton(
         "",
     ]
     if guidance["outcome"] == "valid":
-        lines.extend(_source_evidence_section(guidance))
+        lines.extend(
+            source_evidence_lines
+            if source_evidence_lines is not None
+            else _source_evidence_section(guidance)
+        )
     if deliverable is not None and deliverable["mode"] == "project":
         lines.extend(
             [
@@ -171,6 +187,8 @@ def _task_skeleton(
                 "",
             ]
         )
+    if risk_scaled_lines:
+        lines.extend(risk_scaled_lines)
     lines.extend(
         [
             "## Remaining risks",

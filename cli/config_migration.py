@@ -33,6 +33,7 @@ from cli.atomic_write import (
     _snapshot_chain,
     make_tmp_name,
 )
+from cli import governance_reads
 from cli.capabilities import is_known_grant_name
 from cli.commands._registry import MalformedRegistry, read_registry
 from cli.config_schema import (
@@ -2293,6 +2294,49 @@ def plan_configuration_migration(
                         "route its content per the v0.11.0 migration entry, "
                         "rewrite STANDARDS.md via write-standards, then "
                         "rerun migrate-config"
+                    ),
+                )
+            # Deterministic subset of the v0.11.0 admission test: a known
+            # blanket governance-read instruction is mechanically
+            # classifiable, so the marker never advances past it. The same
+            # rule (cli/governance_reads.py, owned by the assignment-prompt
+            # contract) rejects it at composition and in plan-audit. The
+            # rest of the re-sort stays judgment-dependent and PM-performed.
+            try:
+                read_rule = governance_reads.load_rule()
+                read_violations = governance_reads.instruction_violations(
+                    standards_text, read_rule
+                )
+            except governance_reads.GovernanceReadRuleError:
+                _diagnose(
+                    "migration-authority-divergence",
+                    "protocol/assignment-prompt-contract.json",
+                    "installed-content",
+                    (
+                        "the blanket governance-read rule cannot be read "
+                        "from the shipped assignment-prompt contract"
+                    ),
+                    "repair or reinstall verified Cartopian content",
+                )
+            if read_violations:
+                first = read_violations[0]
+                _diagnose(
+                    "standards-blanket-governance-read",
+                    "STANDARDS.md",
+                    "project",
+                    (
+                        "STANDARDS.md directs assignees to read a whole "
+                        "governance document — offending statement: "
+                        f"{first['statement']!r}; the schema marker cannot "
+                        "advance while this deterministic v0.11.0 "
+                        "contamination remains"
+                    ),
+                    (
+                        "delete the statement or replace it with the bounded "
+                        "applicable excerpt (contributor guidance may "
+                        "reference AGENTS.md without directing a complete "
+                        "protocol read), rewrite STANDARDS.md via "
+                        "write-standards, then rerun migrate-config"
                     ),
                 )
 

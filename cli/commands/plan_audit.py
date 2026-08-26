@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import request_trace
+from cli import governance_reads, request_trace
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -1100,6 +1100,58 @@ def _check_numbering_contract(
     return blockers, contract_state
 
 
+_SCHEMA_VERSION_RE = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
+
+
+def _check_standards_governance_reads(
+    project_path: Path, declared_schema_version: Optional[str]
+) -> List[Dict[str, Any]]:
+    """v0.11.0 admission discipline, deterministic subset.
+
+    A project already marked v0.11.0+ must not keep a known blanket
+    governance-read instruction in STANDARDS.md; the same rule
+    (cli/governance_reads.py, owned by the assignment-prompt contract) that
+    refuses marker advancement in migrate-config and fails prompt
+    composition reports the residual here as a blocker.
+    """
+    match = _SCHEMA_VERSION_RE.fullmatch((declared_schema_version or "").strip())
+    if match is None or tuple(int(part) for part in match.groups()) < (0, 11, 0):
+        return []
+    standards_path = project_path / "STANDARDS.md"
+    try:
+        standards_text = standards_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    try:
+        read_rule = governance_reads.load_rule()
+        violations = governance_reads.instruction_violations(
+            standards_text, read_rule
+        )
+    except governance_reads.GovernanceReadRuleError:
+        return [{
+            "kind": "governance-read-rule-unavailable",
+            "detail": (
+                "the blanket governance-read rule cannot be read from the "
+                "shipped assignment-prompt contract; repair or reinstall "
+                "verified Cartopian content"
+            ),
+        }]
+    return [
+        {
+            "kind": "standards-blanket-governance-read",
+            "path": str(standards_path),
+            "line": violation["line_number"],
+            "detail": (
+                "STANDARDS.md directs assignees to read a whole governance "
+                f"document — offending statement: {violation['statement']!r}; "
+                "delete it or replace it with the bounded applicable "
+                "excerpt, then rewrite STANDARDS.md via write-standards"
+            ),
+        }
+        for violation in violations
+    ]
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
@@ -1160,6 +1212,9 @@ def handler(args: argparse.Namespace) -> int:
             "shipped_version": schema_gate["shipped_version"],
             "detail": schema_gate["detail"],
         })
+    blockers.extend(
+        _check_standards_governance_reads(project_path, declared_schema_version)
+    )
     blockers.extend(_check_situation_notes(project_path))
     task_review_required = review_policy["task_closure"]["mode"] == "required"
     artifact_blockers, review_warnings = _check_artifact_chains(

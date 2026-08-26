@@ -51,6 +51,40 @@ def _run(*cli_args):
 
 
 class TestRenderSpec(unittest.TestCase):
+    def test_assignment_projection_drops_planning_material(self):
+        spec = _SPEC.replace(
+            "## References",
+            "## Review checklist\n\n- [ ] Scope checked.\n\n## Open questions\n\n## References",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            spec_path = Path(tmp) / "SPEC-01-002-widget.md"
+            spec_path.write_text(spec, encoding="utf-8")
+            proc = _run(str(spec_path), "--projection", "assignment")
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertEqual(record["projection"], "assignment")
+            assignment = record["assignment_spec"]
+            self.assertNotIn("Status: locked", assignment)
+            self.assertNotIn("Review checklist", assignment)
+            self.assertNotIn("Open questions", assignment)
+            self.assertNotIn("SPEC-01-002", assignment)
+            self.assertIn("## Interface", assignment)
+            receipt = record["assignment_receipt"]
+            self.assertIn("Review checklist", receipt["dropped_sections"])
+            self.assertEqual(receipt["open_question_lines"], [])
+            # The default rendering is still present for existing consumers.
+            self.assertIn("deidentified_spec", record)
+
+    def test_default_projection_field_is_deidentified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec_path = Path(tmp) / "SPEC-01-002-widget.md"
+            spec_path.write_text(_SPEC, encoding="utf-8")
+            proc = _run(str(spec_path))
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertEqual(record["projection"], "deidentified")
+            self.assertNotIn("assignment_spec", record)
+
     def test_happy_path_strips_identifiers(self):
         with tempfile.TemporaryDirectory() as tmp:
             spec_path = Path(tmp) / "SPEC-01-002-widget.md"

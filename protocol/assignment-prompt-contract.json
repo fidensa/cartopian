@@ -1,0 +1,140 @@
+{
+  "contract_id": "assignment-prompt",
+  "contract_version": 2,
+  "purpose": "Deterministic composition contract for assignee (coder) task-assignment prompts: the audience-scoped section set, the validation rules that fail composition closed, and the measured section budgets. The composed prompt is an execution interface; machine provenance, routing diagnostics, and lifecycle bookkeeping live in the bound trace receipt, never in the prompt body.",
+  "sections": {
+    "order": [
+      "Role and workspace",
+      "Outcome and done criteria",
+      "Implementation contract",
+      "Applicable project standards",
+      "Source guidance",
+      "Scope and authority boundaries",
+      "Verification",
+      "Active guidance",
+      "Existing deliverable input",
+      "Upstream contract input",
+      "Deliverable",
+      "Completion report"
+    ],
+    "required": [
+      "Role and workspace",
+      "Outcome and done criteria",
+      "Implementation contract",
+      "Scope and authority boundaries",
+      "Verification",
+      "Active guidance",
+      "Completion report"
+    ],
+    "conditional": [
+      "Applicable project standards",
+      "Source guidance",
+      "Existing deliverable input",
+      "Upstream contract input",
+      "Deliverable"
+    ]
+  },
+  "section_budgets": {
+    "measurement_basis": "Seeded from the measured approved reference fixtures in tests/fixtures/assignment_prompts/ (UTF-8 bytes per composed section, including the heading line), with headroom for legitimately larger real projects: prose sections carry roughly 2-6x the measured fixture size, the implementation contract allows a full software-profile specification, active guidance allows the largest execution capsule plus an active judgment hold, and curated deliverable inputs allow the 64KiB resource bound. tests/cli/commands/test_compose_assignment_prompt.py re-measures the fixtures against these budgets so the numbers cannot silently drift below the fixtures that justify them.",
+    "budgets": {
+      "Role and workspace": 4096,
+      "Outcome and done criteria": 4096,
+      "Implementation contract": 16384,
+      "Applicable project standards": 8192,
+      "Source guidance": 4096,
+      "Scope and authority boundaries": 4096,
+      "Verification": 4096,
+      "Active guidance": 12288,
+      "Existing deliverable input": 65536,
+      "Upstream contract input": 65536,
+      "Deliverable": 2048,
+      "Completion report": 8192
+    }
+  },
+  "pack_capsule_areas": [
+    "intended-outcome",
+    "working-process",
+    "decision-gates",
+    "evidence-and-verification",
+    "stop-and-escalation"
+  ],
+  "low_information_responses": [
+    "continue",
+    "yes",
+    "y",
+    "ok",
+    "okay",
+    "go",
+    "go ahead",
+    "proceed",
+    "approved",
+    "approve",
+    "do it",
+    "sounds good",
+    "yes please",
+    "sure",
+    "next",
+    "lgtm",
+    "looks good"
+  ],
+  "reviewer_only_markers": [
+    "## Review checklist",
+    "## Preserved coder completion evidence",
+    "## Captured coder completion evidence",
+    "Verdict: <approve | request-changes | reject>",
+    "<approve | request-changes | reject>",
+    "## Practice-pack semantic review",
+    "reviews/REVIEW-"
+  ],
+  "pm_lifecycle_markers": [
+    "cartopian move-task",
+    "cartopian delete-prompt",
+    "cartopian delete-report",
+    "cartopian write-state",
+    "cartopian write-prompt",
+    "cartopian dispatch",
+    "cartopian plan-audit"
+  ],
+  "blanket_governance_reads": {
+    "rule": "blanket-governance-read",
+    "markers": [
+      "protocol/CONVENTIONS.md",
+      "cartopian://protocol/CONVENTIONS"
+    ],
+    "forbidden_in": [
+      "assignee-facing instruction prose (any composed prompt section)",
+      "project standards (STANDARDS.md)",
+      "task instruction sections (goal, notes, evidence gate, acceptance)"
+    ],
+    "permitted_as": "a source identity or provenance value: a provenance row carrying one of the declared row prefixes inside a declared provenance section",
+    "provenance_sections": [
+      "Source guidance"
+    ],
+    "provenance_row_prefixes": [
+      "- Identity:"
+    ],
+    "recovery": "inline the bounded applicable excerpt instead of directing a whole-document read"
+  },
+  "validation_findings": [
+    {"code": "raw-diagnostic-json", "severity": "fail", "meaning": "A machine JSON payload (classifier/selector result, receipt, or fenced json block) appears in an assignee-facing section."},
+    {"code": "duplicate-source-guidance", "severity": "fail", "meaning": "The authoritative source-guidance record is rendered more than once."},
+    {"code": "duplicate-contract-content", "severity": "fail", "meaning": "An acceptance criterion or specification contract block is repeated verbatim."},
+    {"code": "reviewer-only-content", "severity": "fail", "meaning": "Review-audience material appears in a coder prompt."},
+    {"code": "pm-lifecycle-instruction", "severity": "fail", "meaning": "A PM-only lifecycle command or instruction appears in an assignee-facing section."},
+    {"code": "pm-identifier-present", "severity": "fail", "meaning": "An unredacted project-management identifier appears in the prompt body."},
+    {"code": "blanket-governance-read", "severity": "fail", "meaning": "Instruction content directs the assignee to read a whole governance document instead of carrying the bounded applicable excerpt; a source identity or provenance row inside Source guidance is not an instruction and is permitted."},
+    {"code": "stale-dynamic-source-claim", "severity": "fail", "meaning": "The prompt claims a source is current although the governing record does not establish currency."},
+    {"code": "missing-required-section", "severity": "fail", "meaning": "A required assignee-facing section is absent or empty."},
+    {"code": "missing-acceptance-criteria", "severity": "fail", "meaning": "The outcome section carries no checkable done criteria."},
+    {"code": "spec-open-questions-unresolved", "severity": "fail", "meaning": "The governing specification still carries open questions; the implementation contract is not settled."},
+    {"code": "section-over-budget", "severity": "fail", "meaning": "A section exceeds its measured budget without an explicit recorded reason."}
+  ],
+  "authored_body_findings": [
+    "raw-diagnostic-json",
+    "duplicate-source-guidance",
+    "reviewer-only-content",
+    "pm-lifecycle-instruction",
+    "blanket-governance-read"
+  ],
+  "source_currency_note": "An 'Applicable context' value is a historical fact about the source (the edition, date, or version the guidance was authored against). It does not by itself require or forbid currently installed behavior. 'Status: current' is a verified claim established by the governing record's validation, not an assumption; when the task requires current behavior and the record does not establish compatibility, composition fails instead of restating the stale claim."
+}

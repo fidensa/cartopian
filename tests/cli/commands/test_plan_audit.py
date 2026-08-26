@@ -864,5 +864,74 @@ class TestPlanAuditSituationNotes(unittest.TestCase):
             self.assertTrue(record["clean"])
 
 
+class TestPlanAuditStandardsGovernanceReads(unittest.TestCase):
+    """A project already marked v0.11.0 must not keep a deterministic blanket
+    governance-read instruction in STANDARDS.md; the audit reports the same
+    blocker migrate-config refuses on."""
+
+    _CONTAMINATED = (
+        "# Standards: Test\n\n## Working standards\n\n"
+        "- Follow the repository's AGENTS.md and protocol/CONVENTIONS.md "
+        "when implementing in the source work root.\n"
+    )
+    _AGENTS_ONLY = (
+        "# Standards: Test\n\n## Working standards\n\n"
+        "- Follow the repository's AGENTS.md when implementing in the "
+        "source work root.\n"
+    )
+
+    def test_contaminated_standards_on_marked_v011_project_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "STANDARDS.md", self._CONTAMINATED)
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 1, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertFalse(record["clean"])
+            blockers = [
+                b for b in record["blockers"]
+                if b["kind"] == "standards-blanket-governance-read"
+            ]
+            self.assertEqual(len(blockers), 1, msg=f"got: {record['blockers']}")
+            self.assertIn("protocol/CONVENTIONS.md", blockers[0]["detail"])
+            self.assertIn("write-standards", blockers[0]["detail"])
+            self.assertIn("whole governance document", proc.stderr)
+
+    def test_agents_md_only_rule_is_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            _write(project / "STANDARDS.md", self._AGENTS_ONLY)
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            self.assertTrue(record["clean"])
+            self.assertEqual(record["blockers"], [])
+
+    def test_pre_v011_project_defers_to_migration_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = _make_project(tmp_path)
+            (project / "cartopian.toml").write_text(
+                (_MINIMAL_TOML + _REVIEW_TOML).replace("v0.11.0", "v0.10.0"),
+                encoding="utf-8",
+            )
+            _write(project / "STANDARDS.md", self._CONTAMINATED)
+            proc = _run(str(project), home=tmp_path)
+            record = json.loads(proc.stdout.strip())
+            self.assertEqual(
+                [
+                    b for b in record["blockers"]
+                    if b["kind"] == "standards-blanket-governance-read"
+                ],
+                [],
+            )
+            self.assertIn(
+                "project-schema-version-migration",
+                [w["kind"] for w in record["warnings"]],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

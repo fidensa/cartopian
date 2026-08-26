@@ -1,10 +1,11 @@
 """Mediated prompt writer with generated intake-to-review context."""
 import argparse
 import datetime
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
-from cli import prompt_evidence, trace_binding
+from cli import prompt_composer, prompt_evidence, trace_binding
 from cli.commands import _writers
 from cli.request_trace import (
     CHECKPOINT_ID_RE, PHASE_ID_RE, PLAN_REF_RE, REVIEW_KINDS, RequestRefusal,
@@ -15,6 +16,17 @@ from cli.request_trace import (
 
 def configure_parser(parser: argparse.ArgumentParser) -> None:
     _writers.add_content_args(parser)
+    parser.add_argument(
+        "--composed-file",
+        default=None,
+        help=(
+            "Path to a saved `cartopian compose-assignment-prompt` record "
+            "(JSON or NDJSON). The writer verifies the record's content "
+            "identity and validation state and writes its assignee prompt; "
+            "mutually exclusive with --content/--content-file. Task "
+            "assignment prompts only."
+        ),
+    )
     parser.add_argument("--prompt-id", required=True)
     parser.add_argument("--review-kind", default=None, choices=list(REVIEW_KINDS), help="Generate separated original-request and PM-derived channels")
     parser.add_argument("--task", default=None)
@@ -62,6 +74,63 @@ def _append_trace_projection(
     return trace_binding.upsert_section(content, heading, section)
 
 
+def _load_composed_record(path: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Load and integrity-check a compose-assignment-prompt record.
+
+    Returns ``(record, error)``. The record's prompt bytes, trace receipt, and
+    binding identity are all recomputed — a hand-edited prompt or receipt no
+    longer matches its recorded identity and is refused.
+    """
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"cannot read --composed-file {path}: {exc}"
+    record: Optional[Dict[str, Any]] = None
+    try:
+        candidate = json.loads(raw)
+        if isinstance(candidate, dict):
+            record = candidate
+    except json.JSONDecodeError:
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("action") == "compose-assignment-prompt"
+            ):
+                record = candidate
+                break
+    if record is None or "assignee_prompt" not in record:
+        return None, "--composed-file carries no compose-assignment-prompt record"
+    if record.get("outcome") != "composed":
+        return None, (
+            "the composed record was refused by validation "
+            f"(outcome: {record.get('outcome')!r}); recompose after fixing "
+            "its findings"
+        )
+    prompt = record["assignee_prompt"]
+    receipt = record.get("trace_receipt")
+    if not isinstance(prompt, str) or not isinstance(receipt, dict):
+        return None, "the composed record is structurally incomplete"
+    prompt_identity = prompt_composer.sha256_identity(prompt.encode("utf-8"))
+    if prompt_identity != record.get("prompt_content_identity"):
+        return None, "the composed prompt no longer matches its recorded identity"
+    receipt_identity = prompt_composer.canonical_identity(receipt)
+    if receipt_identity != record.get("receipt_content_identity"):
+        return None, "the trace receipt no longer matches its recorded identity"
+    binding = prompt_composer.canonical_identity(
+        {"prompt": prompt_identity, "trace_receipt": receipt_identity}
+    )
+    if binding != record.get("content_identity"):
+        return None, "the prompt/receipt binding identity does not verify"
+    return record, None
+
+
 def _capture_prompt_size(root: Path, prompt_id: str, content) -> dict:
     """Record the prompt's exact byte count at the one boundary that can.
 
@@ -81,7 +150,30 @@ def handler(args: argparse.Namespace) -> int:
         return _writers.EXIT_USAGE
     variant = "planning" if args.prompt_id.startswith("PROMPT-PLAN-") else "task"
     root, error = _writers.validated_root(args.project_root)
-    body, body_error = _writers.resolve_content(args)
+    composed_record: Optional[Dict[str, Any]] = None
+    composed_file = getattr(args, "composed_file", None)
+    if composed_file is not None:
+        if (
+            getattr(args, "content", None) is not None
+            or getattr(args, "content_file", None) is not None
+        ):
+            _writers.stderr(
+                "usage", "--composed-file is mutually exclusive with --content/--content-file"
+            )
+            return _writers.EXIT_USAGE
+        if args.review_kind or variant != "task":
+            _writers.stderr(
+                "usage", "--composed-file applies to task assignment prompts only"
+            )
+            return _writers.EXIT_USAGE
+        composed_record, composed_error = _load_composed_record(composed_file)
+        if composed_error:
+            _writers.stderr("guard", f"composed-record-invalid: {composed_error}")
+            return _writers.EXIT_FAIL
+        assert composed_record is not None
+        body, body_error = composed_record["assignee_prompt"], None
+    else:
+        body, body_error = _writers.resolve_content(args)
     if error or body_error:
         _writers.stderr("usage", error or body_error or "invalid input")
         return _writers.EXIT_USAGE
@@ -95,6 +187,68 @@ def handler(args: argparse.Namespace) -> int:
     assert isinstance(body, str)
     content: Optional[object] = body
     details = {"prompt_id": args.prompt_id, "variant": variant}
+    if composed_record is not None:
+        supplied_task = Path(args.task) if args.task else None
+        resolved_task = (
+            str(supplied_task.resolve())
+            if supplied_task is not None and supplied_task.is_absolute()
+            else None
+        )
+        if resolved_task != composed_record.get("task_path"):
+            _writers.stderr(
+                "guard",
+                "composed-target-mismatch: --task does not name the task the "
+                "record was composed for",
+            )
+            return _writers.EXIT_FAIL
+        expected_stem = Path(
+            composed_record.get("expected_prompt_path", "")
+        ).stem
+        if expected_stem and args.prompt_id != expected_stem:
+            _writers.stderr(
+                "guard",
+                "composed-target-mismatch: --prompt-id does not match the "
+                "composed record's expected prompt identity",
+            )
+            return _writers.EXIT_FAIL
+        # Defense in depth: the identity check proves the bytes are the
+        # composed ones; this re-proves the composed ones still validate
+        # against the current contract.
+        try:
+            fresh = prompt_composer.validate_prompt(
+                body, prompt_composer.load_contract()
+            )
+        except prompt_composer.ComposeRefusal as refusal:
+            _writers.stderr("guard", f"{refusal.code}: {refusal.detail}")
+            return _writers.EXIT_FAIL
+        failed = [item for item in fresh if item["severity"] == "fail"]
+        if failed:
+            first = failed[0]
+            _writers.stderr(
+                "guard", f"{first['code']}: {first['detail']} — {first['recovery']}"
+            )
+            return _writers.EXIT_FAIL
+        details["composed"] = {
+            "content_identity": composed_record["content_identity"],
+            "prompt_content_identity": composed_record["prompt_content_identity"],
+            "receipt_content_identity": composed_record["receipt_content_identity"],
+            "section_sizes": composed_record.get("section_sizes"),
+        }
+    elif variant == "task" and not args.review_kind:
+        # A hand-assembled assignment body is held to the contamination
+        # subset of the composition contract: no raw diagnostic JSON,
+        # duplicated source guidance, reviewer-audience material, PM
+        # lifecycle instructions, or blanket governance reads.
+        try:
+            contamination = prompt_composer.validate_authored_body(body)
+        except prompt_composer.ComposeRefusal:
+            contamination = []
+        if contamination:
+            first = contamination[0]
+            _writers.stderr(
+                "guard", f"{first['code']}: {first['detail']} — {first['recovery']}"
+            )
+            return _writers.EXIT_FAIL
     if variant == "task" and not args.review_kind:
         try:
             task = Path(args.task or "")
