@@ -10,6 +10,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
+sys.path.insert(0, str(REPO_ROOT))
+
+from cli.protocol_gate import read_shipped_project_schema_version  # noqa: E402
 
 
 def _run(*cli_args, home=None, cwd=None):
@@ -31,11 +34,16 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+# Readiness now gates on schema currency, so the shared fixture declares the
+# shipped marker. `TestProjectSchemaCurrent` is the surface that exercises a
+# stale one on purpose.
+SHIPPED_SCHEMA_VERSION = read_shipped_project_schema_version()
+
 BARE_PROJECT_TOML = (
     '[project]\n'
     'id = "demo"\n'
     'name = "Demo"\n'
-    'project_schema_version = "v0.2.0"\n'
+    f'project_schema_version = "{SHIPPED_SCHEMA_VERSION}"\n'
 )
 
 
@@ -57,6 +65,28 @@ def _make_project(root: Path, *, work_roots=None, plan_refs=("BUILD-01-007",)):
     )
     for sub in ("done", "open", "in-progress", "in-review"):
         (root / "tasks" / sub).mkdir(parents=True, exist_ok=True)
+    _capture_project_request(root)
+
+
+def _capture_project_request(root: Path) -> None:
+    """Capture the project-level original request the shipped marker enforces."""
+    text = "Execute the approved project plan."
+    request = {
+        "schema": "cartopian-original-request-v1",
+        "record_id": "REQUEST-001",
+        "request_id": "REQUEST-001",
+        "kind": "original",
+        "sequence": 0,
+        "unit": {"kind": "project", "id": "project"},
+        "text": text,
+        "content_identity": "sha256:"
+        + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "captured_at": "2026-08-04T12:00:00Z",
+    }
+    _write(
+        root / "requests" / "REQUEST-001.json",
+        json.dumps(request, sort_keys=True) + "\n",
+    )
 
 
 def _task_body(
@@ -127,6 +157,7 @@ class _Sandbox:
 
 
 CHECK_NAMES_IN_ORDER = [
+    "project-schema-current",
     "phase-exists",
     "plan-ref-exists",
     "plan-ref-aligned",
@@ -173,28 +204,6 @@ class TestHappyPath(unittest.TestCase):
     def test_current_planned_task_inherits_project_request(self):
         with _Sandbox() as sb:
             sb.make()
-            config = sb.project / "cartopian.toml"
-            config.write_text(
-                config.read_text(encoding="utf-8").replace("v0.2.0", "v0.10.0"),
-                encoding="utf-8",
-            )
-            text = "Execute the approved project plan."
-            request = {
-                "schema": "cartopian-original-request-v1",
-                "record_id": "REQUEST-001",
-                "request_id": "REQUEST-001",
-                "kind": "original",
-                "sequence": 0,
-                "unit": {"kind": "project", "id": "project"},
-                "text": text,
-                "content_identity": "sha256:"
-                + hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                "captured_at": "2026-08-04T12:00:00Z",
-            }
-            _write(
-                sb.project / "requests/REQUEST-001.json",
-                json.dumps(request, sort_keys=True) + "\n",
-            )
             task = sb.write_task("TASK-01-007.md", _task_body())
 
             result = _run(str(task), home=sb.home)
@@ -530,6 +539,101 @@ class TestDeterminism(unittest.TestCase):
         self.assertEqual(first.returncode, 0, msg=first.stderr)
         self.assertEqual(second.returncode, 0, msg=second.stderr)
         self.assertEqual(first.stdout, second.stdout)
+
+
+class TestProjectSchemaCurrent(unittest.TestCase):
+    """Readiness refuses a project that has not adopted the shipped schema.
+
+    This is the seam that keeps a breaking protocol change gated. Without it a
+    stale project reads as task-ready and the work is executed and closed
+    against gates the project never adopted.
+    """
+
+    def _stale(self, sb, marker: str) -> None:
+        config = sb.project / "cartopian.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                SHIPPED_SCHEMA_VERSION, marker
+            ),
+            encoding="utf-8",
+        )
+
+    def test_stale_marker_blocks_readiness_with_named_recovery(self):
+        with _Sandbox() as sb:
+            sb.make()
+            self._stale(sb, "v0.11.0")
+            task = sb.write_task("TASK-01-007.md", _task_body())
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        record = _parse_single_record(result)
+        self.assertFalse(record["ready"])
+        check = next(
+            c for c in record["checks"] if c["name"] == "project-schema-current"
+        )
+        self.assertFalse(check["pass"])
+        self.assertIn("older-migratable", check["reason"])
+        self.assertIn("v0.11.0", check["reason"])
+        self.assertIn(SHIPPED_SCHEMA_VERSION, check["reason"])
+        self.assertIn("migrate-config", check["reason"])
+        self.assertIn("[validation]", result.stderr)
+
+    def test_unset_marker_fails_closed(self):
+        with _Sandbox() as sb:
+            sb.make()
+            config = sb.project / "cartopian.toml"
+            config.write_text(
+                '[project]\nid = "demo"\nname = "Demo"\n', encoding="utf-8"
+            )
+            task = sb.write_task("TASK-01-007.md", _task_body())
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        record = _parse_single_record(result)
+        check = next(
+            c for c in record["checks"] if c["name"] == "project-schema-current"
+        )
+        self.assertFalse(check["pass"])
+        self.assertIn("unset", check["reason"])
+
+    def test_newer_than_shipped_marker_fails_closed(self):
+        with _Sandbox() as sb:
+            sb.make()
+            self._stale(sb, "v99.0.0")
+            task = sb.write_task("TASK-01-007.md", _task_body())
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 1)
+        record = _parse_single_record(result)
+        check = next(
+            c for c in record["checks"] if c["name"] == "project-schema-current"
+        )
+        self.assertFalse(check["pass"])
+        self.assertIn("unknown-or-newer", check["reason"])
+
+    def test_check_is_detection_only_and_idempotent(self):
+        with _Sandbox() as sb:
+            sb.make()
+            self._stale(sb, "v0.11.0")
+            config = sb.project / "cartopian.toml"
+            before = config.read_bytes()
+            task = sb.write_task("TASK-01-007.md", _task_body())
+            first = _run(str(task), home=sb.home)
+            second = _run(str(task), home=sb.home)
+            after = config.read_bytes()
+        # Detection only: readiness never writes the marker it reports on.
+        self.assertEqual(before, after)
+        self.assertEqual(first.stdout, second.stdout)
+
+    def test_current_marker_passes(self):
+        with _Sandbox() as sb:
+            sb.make()
+            task = sb.write_task("TASK-01-007.md", _task_body())
+            result = _run(str(task), home=sb.home)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        check = next(
+            c for c in record["checks"] if c["name"] == "project-schema-current"
+        )
+        self.assertTrue(check["pass"])
+        self.assertIsNone(check["reason"])
 
 
 class TestCheckOrdering(unittest.TestCase):

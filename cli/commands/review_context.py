@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-from cli import acceptance_trace, contract_review, trace_binding
+from cli import acceptance_trace, contract_review, delivery_contract, trace_binding
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
@@ -82,6 +82,14 @@ def handler(args: argparse.Namespace) -> int:
         **context.as_record(),
         "upstream_trace": None,
         "contract_quality": None,
+        # Only the planning review reads the plan's delivery contract: it is the
+        # review whose subject is the plan. A task-closure review receives none
+        # of it, so the delivery record never becomes ambient review context.
+        "delivery_contract": (
+            delivery_contract.review_projection_for_plan(root)
+            if args.review_kind == "planning"
+            else None
+        ),
         "preflight": None,
     }
     if task is not None:

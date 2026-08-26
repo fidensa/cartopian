@@ -1,0 +1,632 @@
+{
+  "contract_id": "delivery-gate",
+  "contract_version": 1,
+  "status": "defined",
+  "purpose": "Single machine authority for the domain-neutral delivery gate. A plan that produces an externally delivered, launched, published, transitioned, or adopted outcome carries one delivery contract naming owner, target, acceptance evidence, success signals, contingency, immediate verification, and follow-up timing. The contract separates artifact completion from verified outcome and from remaining follow-up, and it never performs or authorizes the delivery it validates.",
+  "vocabulary_rule": "Every label, state, and code below is domain-neutral. Software, policy, research, publication, transition, and adoption records use the same rows. A domain example may illustrate a row; it never defines one.",
+  "record": {
+    "surface": "IMPLEMENTATION_PLAN.md",
+    "surface_meaning": "The delivery contract is plan-scoped, so it lives in the plan that produces the outcome and survives until closeout. It is not a separate lifecycle directory.",
+    "section_heading": "Delivery contract",
+    "row_grammar": "One Markdown list item per row: `- <Label>: <value>; <Sub-label>: <value>; ...`. The row's identity is the label of its first part. A semicolon separates parts; a colon separates a label from its value. A part whose label is not declared for that row is a fail-closed error, so a stray semicolon inside a value is reported rather than silently truncating it.",
+    "applicability_label": "Delivery",
+    "applicability": [
+      {
+        "id": "required",
+        "meaning": "This plan produces an outcome that reaches a target outside the plan. Every declared row below is required."
+      },
+      {
+        "id": "not-applicable",
+        "meaning": "This plan produces no outcome that reaches a target outside the plan. A non-placeholder justification is required, and no obligation row may be present. Missing and justified not-applicable are distinct states; an absent section is neither."
+      }
+    ],
+    "rows": [
+      {
+        "id": "owner",
+        "label": "Owner",
+        "meaning": "The named party accountable for the delivery.",
+        "value_meaning": "the accountable party's name",
+        "fields": [
+          {
+            "id": "availability",
+            "label": "Availability",
+            "required": true,
+            "vocabulary": [
+              "available",
+              "unavailable"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "target",
+        "label": "Target",
+        "meaning": "What or whom the outcome reaches. The target is the identity every later row must name.",
+        "value_meaning": "the target identity",
+        "fields": [
+          {
+            "id": "kind",
+            "label": "Kind",
+            "required": true,
+            "value_meaning": "the kind of target — recipient, audience, system, jurisdiction, population, or another domain-neutral description"
+          }
+        ]
+      },
+      {
+        "id": "acceptance-evidence",
+        "label": "Acceptance evidence",
+        "meaning": "The observation that the target accepted the outcome.",
+        "value_meaning": "the acceptance observation",
+        "fields": [
+          {
+            "id": "target",
+            "label": "Target",
+            "required": true,
+            "must_match_row": "target",
+            "mismatch_code": "delivery-evidence-target-mismatch",
+            "value_meaning": "the target identity this evidence is about"
+          },
+          {
+            "id": "observer",
+            "label": "Observer",
+            "required": true,
+            "not_row": "owner",
+            "not_row_code": "delivery-evidence-self-certified",
+            "value_meaning": "who observed the acceptance"
+          },
+          {
+            "id": "authority",
+            "label": "Authority",
+            "required": true,
+            "value_meaning": "the basis on which the observer's account counts"
+          }
+        ]
+      },
+      {
+        "id": "success-signals",
+        "label": "Success signals",
+        "meaning": "The signals that distinguish a delivered outcome from an undelivered one.",
+        "value_meaning": "the success signal",
+        "fields": [
+          {
+            "id": "target",
+            "label": "Target",
+            "required": true,
+            "must_match_row": "target",
+            "mismatch_code": "delivery-evidence-target-mismatch",
+            "value_meaning": "the target identity this signal is read from"
+          },
+          {
+            "id": "observable",
+            "label": "Observable",
+            "required": true,
+            "missing_code": "delivery-success-signal-unobservable",
+            "value_meaning": "the observable condition that decides the signal"
+          }
+        ]
+      },
+      {
+        "id": "contingency",
+        "label": "Contingency",
+        "meaning": "What happens when the delivery goes wrong: a named trigger, a responsible owner, and a rollback, correction, or alternate action.",
+        "value_meaning": "the contingency action",
+        "fields": [
+          {
+            "id": "kind",
+            "label": "Kind",
+            "required": true,
+            "vocabulary": [
+              "rollback",
+              "correction",
+              "alternate"
+            ]
+          },
+          {
+            "id": "rollback",
+            "label": "Rollback",
+            "required": true,
+            "vocabulary": [
+              "available",
+              "inapplicable"
+            ]
+          },
+          {
+            "id": "because",
+            "label": "Because",
+            "required": false,
+            "value_meaning": "why rollback is inapplicable; required only when Rollback is inapplicable"
+          },
+          {
+            "id": "trigger",
+            "label": "Trigger",
+            "required": true,
+            "value_meaning": "the observable condition that starts the contingency"
+          },
+          {
+            "id": "owner",
+            "label": "Owner",
+            "required": true,
+            "value_meaning": "the party responsible for performing the contingency"
+          }
+        ]
+      },
+      {
+        "id": "immediate-verification",
+        "label": "Immediate verification",
+        "meaning": "The observation of the target's own state taken at delivery time.",
+        "value_meaning": "the target observation",
+        "fields": [
+          {
+            "id": "target",
+            "label": "Target",
+            "required": true,
+            "must_match_row": "target",
+            "mismatch_code": "delivery-evidence-target-mismatch",
+            "value_meaning": "the target identity that was observed"
+          },
+          {
+            "id": "evidence",
+            "label": "Evidence",
+            "required": true,
+            "value_meaning": "the evidence identity a reader can re-inspect"
+          },
+          {
+            "id": "time",
+            "label": "Time",
+            "required": true,
+            "time_kind": "observed",
+            "unbounded_code": "delivery-verification-untimed",
+            "value_meaning": "when the observation was taken"
+          },
+          {
+            "id": "result",
+            "label": "Result",
+            "required": true,
+            "vocabulary": [
+              "pass",
+              "fail",
+              "not-run"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "follow-up",
+        "label": "Follow-up",
+        "meaning": "The remaining question after delivery, its owner, and when it is answered. A justified not-applicable is a distinct state from a missing follow-up.",
+        "value_meaning": "the follow-up question, or `not-applicable`",
+        "not_applicable_value": "not-applicable",
+        "fields": [
+          {
+            "id": "owner",
+            "label": "Owner",
+            "required": true,
+            "value_meaning": "the party who answers the follow-up question"
+          },
+          {
+            "id": "due",
+            "label": "Due",
+            "required": true,
+            "time_kind": "due",
+            "unbounded_code": "delivery-follow-up-unbounded",
+            "value_meaning": "the due time or the cadence at which the question is revisited"
+          },
+          {
+            "id": "status",
+            "label": "Status",
+            "required": true,
+            "vocabulary": [
+              "open",
+              "closed"
+            ]
+          },
+          {
+            "id": "justification",
+            "label": "Justification",
+            "required": false,
+            "value_meaning": "why no follow-up applies; required only when the value is not-applicable"
+          }
+        ]
+      },
+      {
+        "id": "authority",
+        "label": "Authority",
+        "meaning": "The operator authority state for the external action. This contract records the state; it never grants it.",
+        "value_meaning": "the authority state",
+        "value_vocabulary": [
+          "operator-authorized",
+          "pending-operator-authorization",
+          "declined"
+        ],
+        "fields": [
+          {
+            "id": "evidence",
+            "label": "Evidence",
+            "required": true,
+            "value_meaning": "the identity of the operator statement that established this state"
+          }
+        ]
+      },
+      {
+        "id": "artifact",
+        "label": "Artifact",
+        "meaning": "Whether the work product itself is finished. Artifact completion is not outcome verification.",
+        "value_meaning": "the artifact state",
+        "value_vocabulary": [
+          "complete",
+          "incomplete"
+        ],
+        "fields": [
+          {
+            "id": "evidence",
+            "label": "Evidence",
+            "required": true,
+            "value_meaning": "the identity of the artifact-level check that was passed"
+          }
+        ]
+      }
+    ]
+  },
+  "placeholders": {
+    "rule": "A value is a placeholder when it is empty, wrapped in angle brackets, or casefold-equal to a declared term. A placeholder never satisfies a required field.",
+    "angle_bracket_rule": "A value of the form <...> is a template placeholder.",
+    "terms": [
+      "n/a",
+      "na",
+      "none",
+      "unknown",
+      "tbd",
+      "tbc",
+      "todo",
+      "to do",
+      "xxx",
+      "...",
+      "…",
+      "?",
+      "-",
+      "--",
+      "someone",
+      "anyone",
+      "somebody",
+      "the team",
+      "team",
+      "owner",
+      "target",
+      "pending",
+      "unassigned",
+      "to be determined",
+      "to be decided",
+      "example",
+      "placeholder"
+    ]
+  },
+  "bounded_time": {
+    "rule": "A digit decides first: a value carrying a digit — a date, a timestamp, or a counted interval — is bounded, so `no later than 2026-09-13` is a bounded due date rather than the word `later`. A value carrying no digit is bounded only when it names a declared cadence, and only for a due time; an unbounded term appearing as a whole word or phrase disqualifies it, which is what catches a cadence qualified into openness such as `ongoing monthly`. An observed time never accepts a cadence: an observation happened at a moment.",
+    "cadences": [
+      "daily",
+      "weekly",
+      "biweekly",
+      "fortnightly",
+      "monthly",
+      "quarterly",
+      "semiannually",
+      "annually",
+      "yearly"
+    ],
+    "unbounded_terms": [
+      "later",
+      "eventually",
+      "soon",
+      "someday",
+      "ongoing",
+      "indefinite",
+      "indefinitely",
+      "when possible",
+      "when convenient",
+      "asap",
+      "at some point",
+      "in future",
+      "in the future"
+    ]
+  },
+  "result": {
+    "artifact_states": [
+      {
+        "id": "complete",
+        "meaning": "The promised work product exists and passed its artifact-level check."
+      },
+      {
+        "id": "incomplete",
+        "meaning": "The work product is not finished."
+      },
+      {
+        "id": "not-applicable",
+        "meaning": "The plan declared no delivery, so no artifact obligation exists."
+      },
+      {
+        "id": "unknown",
+        "meaning": "The record does not establish an artifact state."
+      }
+    ],
+    "outcome_states": [
+      {
+        "id": "verified",
+        "meaning": "The target's own state was observed and the observation passed."
+      },
+      {
+        "id": "unverified",
+        "meaning": "The target's own state was not observed, or the observation did not pass."
+      },
+      {
+        "id": "pending-authority",
+        "meaning": "The external action is not authorized yet, so no target state can honestly be claimed."
+      },
+      {
+        "id": "not-delivered",
+        "meaning": "The operator declined the external action. The obligation remains recorded; the outcome is not verified."
+      },
+      {
+        "id": "not-applicable",
+        "meaning": "The plan declared no delivery, so no outcome obligation exists."
+      },
+      {
+        "id": "unknown",
+        "meaning": "The record does not establish an outcome state."
+      }
+    ],
+    "follow_up_states": [
+      {
+        "id": "scheduled",
+        "meaning": "A follow-up question is open, owned, and bounded in time."
+      },
+      {
+        "id": "satisfied",
+        "meaning": "The follow-up question has been answered and closed."
+      },
+      {
+        "id": "required",
+        "meaning": "A follow-up obligation exists but is not owned, timed, or justified."
+      },
+      {
+        "id": "not-applicable",
+        "meaning": "No follow-up applies and the record says why."
+      },
+      {
+        "id": "unknown",
+        "meaning": "The record does not establish a follow-up state."
+      }
+    ],
+    "state_separation": "Artifact, outcome, and follow-up are three independent states. A complete artifact never implies a verified outcome, and a verified outcome never implies a discharged follow-up.",
+    "gate": [
+      {
+        "id": "pass",
+        "meaning": "No finding remains. The delivery obligations this plan declared are satisfied."
+      },
+      {
+        "id": "blocked",
+        "meaning": "At least one finding remains. Closeout cannot claim delivery success."
+      }
+    ],
+    "gate_rule": "The gate passes exactly when the ordered findings are empty. Every state that falls short of its obligation also produces a finding, so the verdict and the states can never disagree.",
+    "idempotence": "Validation is a pure read. The same record always yields the same findings, states, and contract identity.",
+    "result_fields": [
+      "contract_id",
+      "contract_version",
+      "applicability",
+      "artifact_state",
+      "outcome_state",
+      "follow_up_state",
+      "contract_identity",
+      "gate",
+      "ordered_findings",
+      "delivery_performed"
+    ]
+  },
+  "boundaries": {
+    "performs_delivery": false,
+    "performs_delivery_meaning": "This contract reads and validates a delivery record. It never performs, schedules, transmits, or authorizes an external delivery, and it holds no credential for one.",
+    "authority_source": "operator",
+    "authority_meaning": "Only the operator authorizes an external action. The contract records which authority state the operator established and refuses to convert a pending or declined state into a verified outcome.",
+    "unattended": "prepare-and-validate-only",
+    "unattended_meaning": "An unattended run may prepare and validate a delivery record. It may not cross the external-action boundary, so a record that needs authorization stays pending rather than proceeding.",
+    "containment": "The record is read from the plan surface inside a validated project root. No path outside that root is read.",
+    "max_surface_bytes": 1048576,
+    "max_surface_bytes_meaning": "The plan surface is read under a fixed byte ceiling so an oversized or non-text file fails closed instead of being loaded.",
+    "review_context_max_bytes": 8192,
+    "review_context_meaning": "Review context carries the delivery result and, within the byte bound, the delivery-contract section itself — never the rest of the plan."
+  },
+  "compatibility": {
+    "legacy_state": "undeclared",
+    "legacy_state_meaning": "A plan authored before this contract carries no delivery-contract section. Undeclared is that one legacy state; it is distinct from a justified not-applicable and it fails closed.",
+    "accepted_forms": 1,
+    "dual_form": false,
+    "dual_form_meaning": "There is exactly one accepted record form. No second schema is accepted during or after migration.",
+    "migration": "Add one `## Delivery contract` section to IMPLEMENTATION_PLAN.md — `Delivery: required` with the declared rows, or `Delivery: not-applicable` with a justification. The gate names the missing rows, so the migration is one authoring action per plan and needs no data conversion."
+  },
+  "failures": [
+    {
+      "code": "delivery-contract-undeclared",
+      "meaning": "The plan carries no delivery-contract section.",
+      "recovery": "Add one `## Delivery contract` section to IMPLEMENTATION_PLAN.md. Declare `Delivery: required` with the declared rows, or `Delivery: not-applicable` with a justification.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-contract-duplicated",
+      "meaning": "The plan carries more than one delivery-contract section, so no single record governs.",
+      "recovery": "Keep exactly one `## Delivery contract` section and remove the others.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-record-unreadable",
+      "meaning": "The plan surface could not be read as UTF-8 text.",
+      "recovery": "Restore IMPLEMENTATION_PLAN.md as readable UTF-8 text before revalidating.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-applicability-missing",
+      "meaning": "The section does not declare whether delivery is required or not applicable.",
+      "recovery": "Add `- Delivery: required` or `- Delivery: not-applicable; Justification: <why>` as the section's first row.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-value-not-declared",
+      "meaning": "A value is outside the closed vocabulary the contract declares for it.",
+      "recovery": "Replace the value with one the contract declares for that field.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-not-applicable-unjustified",
+      "meaning": "The record claims delivery is not applicable without saying why.",
+      "recovery": "Add `Justification: <why this plan reaches no target outside itself>` to the Delivery row.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-not-applicable-contradicted",
+      "meaning": "The record claims delivery is not applicable while still carrying delivery obligations.",
+      "recovery": "Either remove the obligation rows, or change the declaration to `Delivery: required` and complete them.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-row-missing",
+      "meaning": "A required delivery semantic is absent from the record.",
+      "recovery": "Add the named row to the delivery-contract section.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-row-duplicated",
+      "meaning": "A delivery semantic appears more than once, so no single value governs.",
+      "recovery": "Keep exactly one row per semantic.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-row-unknown",
+      "meaning": "The section carries a list row whose label is not a declared delivery semantic.",
+      "recovery": "Remove the row, or relabel it as one of the declared semantics. Prose belongs outside the list.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-field-missing",
+      "meaning": "A required part of a delivery row is absent.",
+      "recovery": "Add the named part to that row.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-field-placeholder",
+      "meaning": "A required value is still a placeholder, so it records nothing.",
+      "recovery": "Replace the placeholder with the specific value the row asks for.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-field-unknown",
+      "meaning": "A row carries a part the contract does not declare for it — often a semicolon inside a value.",
+      "recovery": "Remove the undeclared part, or rewrite the value without a semicolon.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-owner-unavailable",
+      "meaning": "The named delivery owner is recorded as unavailable, so no one is accountable for the delivery.",
+      "recovery": "Name an available owner, or record the operator decision that reassigns the delivery.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-evidence-target-mismatch",
+      "meaning": "Evidence, a success signal, or a verification names a different target than the record's target, so it does not support this delivery.",
+      "recovery": "Name the record's target, or — when the target genuinely changed — re-observe the new target and replace the prior evidence.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-evidence-self-certified",
+      "meaning": "The acceptance evidence was observed by the delivery owner, so the target's acceptance rests on the deliverer's own account.",
+      "recovery": "Record an observer who is not the delivery owner, or record the target's own acceptance statement.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-success-signal-unobservable",
+      "meaning": "The success signal names no observable condition, so success cannot be read off the target.",
+      "recovery": "Add `Observable: <the condition a reader could check on the target>` to the success-signal row.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-contingency-contradictory",
+      "meaning": "The contingency's kind and rollback availability disagree.",
+      "recovery": "Use `Kind: rollback` with `Rollback: available`, or a correction or alternate kind with `Rollback: inapplicable`.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-rollback-substitution-unjustified",
+      "meaning": "A correction or alternate path substitutes for rollback without saying why rollback does not apply.",
+      "recovery": "Add `Because: <why rollback cannot restore the prior state>` to the contingency row.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-verification-untimed",
+      "meaning": "The immediate verification names no time it was taken, so it cannot be placed against the delivery.",
+      "recovery": "Record the date or timestamp of the observation in the row's Time part.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-verification-not-run",
+      "meaning": "No immediate verification of the target was performed, so the outcome is unverified.",
+      "recovery": "Observe the target's own state and record the evidence, time, and result.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-verification-failed",
+      "meaning": "The immediate verification of the target did not pass.",
+      "recovery": "Resolve the failure and re-observe the target, or run the recorded contingency.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-follow-up-unbounded",
+      "meaning": "The follow-up names no bounded due time or cadence, so it can be deferred forever.",
+      "recovery": "Record a date, a counted interval, or a declared cadence — or declare `Follow-up: not-applicable` with a justification.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-authority-pending",
+      "meaning": "The external action is not authorized yet, so the outcome cannot be claimed as delivered.",
+      "recovery": "Obtain the operator's authorization, observe the target, and record the observation. If the plan should no longer carry this delivery, record that operator decision and amend the delivery contract to match it. Do not restate the outcome as verified.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-authority-declined",
+      "meaning": "The operator declined the external action, so the outcome was not delivered.",
+      "recovery": "Leave the declined state recorded. A decline does not discharge the delivery obligation and never becomes a verified outcome: either the operator authorizes the action and the target is observed, or the operator records a decision that the plan no longer carries this delivery and the contract is amended to match.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-authority-contradicted",
+      "meaning": "The record claims a passing target observation while the external action is pending or declined.",
+      "recovery": "Correct the authority state, or withdraw the verification claim — an unauthorized action leaves no target state to observe.",
+      "class": "record-form"
+    },
+    {
+      "code": "delivery-artifact-incomplete",
+      "meaning": "The work product itself is not finished.",
+      "recovery": "Finish the work product and record the artifact-level check that it passed.",
+      "class": "record-semantics"
+    },
+    {
+      "code": "delivery-artifact-contradicted",
+      "meaning": "The record claims a passing target observation while the artifact is incomplete.",
+      "recovery": "Correct the artifact state, or withdraw the verification claim — an unfinished work product reached no target.",
+      "class": "record-form"
+    }
+  ],
+  "authoritative_surfaces": [
+    "protocol/delivery-contract.json",
+    "protocol/DELIVERY.md",
+    "cli/delivery_contract.py"
+  ],
+  "validation_obligations": [
+    "One validator serves the CLI, the MCP surface, review context, close-audit, closeout, and compact state.",
+    "A technical and a nontechnical complete record pass the same validator with the same rows.",
+    "Missing, placeholder, contradictory, unavailable-owner, changed-target, and self-certified-evidence records fail closed.",
+    "A declined or pending external action yields an honest pending or not-delivered outcome, never a verified one.",
+    "The validator performs no delivery and holds no external-action capability."
+  ],
+  "failure_classes": {
+    "record-form": "The plan has not been authored into the accepted record form: the section is absent, duplicated, unreadable, incomplete, placeholder, or internally contradictory. A project whose plan carries any record-form finding has not adopted this contract, so the project schema marker does not advance past it.",
+    "record-semantics": "The record is complete and coherent, and reports a state that does not satisfy the gate — an unavailable owner, unsupported evidence, an unverified or failed target observation, an unauthorized or declined external action, or an unfinished artifact. These are honest mid-flight states. They block closeout, never adoption: recording one is how a migrated plan tells the truth about where it actually is."
+  }
+}

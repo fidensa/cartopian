@@ -63,7 +63,7 @@ After the plan-audit clears, run the closeout-readiness aggregator using the Cor
 cartopian close-audit <project-path>
 ```
 
-`cartopian close-audit` folds the per-directory checks (active tasks in `tasks/open/`, `tasks/in-progress/`, `tasks/in-review/`; completed tasks in `tasks/done/`; stale prompts; unresolved reports; phase exit criteria) into a single structured record. Consume its output as follows:
+`cartopian close-audit` folds the per-directory checks (active tasks in `tasks/open/`, `tasks/in-progress/`, `tasks/in-review/`; completed tasks in `tasks/done/`; stale prompts; unresolved reports; phase exit criteria) and the plan's delivery gate into a single structured record. Consume its output as follows:
 
 - **`blocking_reasons` (closeout-blocking):** if this list is non-empty, stop closeout. Surface each entry to the operator and resolve it before re-running close-audit. The aggregator also populates the structured fields that name the offending artifacts:
   - `open_tasks` — tasks remaining in `tasks/open/`, `tasks/in-progress/`, or `tasks/in-review/`. Each active task must reach `tasks/done/` or be removed under an explicit operator decision before rerunning closeout.
@@ -90,6 +90,17 @@ cartopian close-audit <project-path>
     A closed task may leave both task-scoped reports — the preserved completion report and, under required review, its independent review-completion report. Clear each existing artifact with its own call; a task closed without review simply has no review report to clear.
 
   - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
+
+  - `delivery gate blocks closeout: <code> — <detail>` entries come from the plan's delivery contract (`cartopian://protocol/DELIVERY`). The full result is under `delivery`: the artifact, outcome, and follow-up states, and one ordered finding per unmet obligation, each carrying its own recovery. Run `cartopian validate-delivery <project-path>` for the detail view and surface each finding's recovery to the operator.
+
+    Never resolve a delivery finding by editing the record to say the delivery happened. Artifact completion is not outcome verification: `Artifact: complete` alongside `Result: not-run` is an honest state, and it blocks. So do `Authority: pending-operator-authorization` and `Authority: declined` — an undelivered outcome stays undelivered, and the gate refuses to convert either into `verified`. There are exactly two honest ways past such a finding, and both are the operator's:
+
+    - The external action happens. The operator authorizes it, the target is observed, and the record gains that observation, its evidence identity, and its time. Rerun the gate.
+    - The plan's delivery obligation changes. The operator decides the plan no longer carries this delivery — record that as a decision (`cartopian write-decision`), amend the delivery contract through `cartopian write-plan` to match the decision, and rerun the gate.
+
+    An operator who simply declines the external action and wants the plan closed anyway is asking for the second path, not the first. Put that choice to them explicitly rather than editing the record on their behalf.
+
+    A plan authored before the delivery gate carries no `## Delivery contract` section and reports `delivery-contract-undeclared`. That is a protocol migration, not an ad-hoc repair: the requirement landed with the `v0.12.0` entry in `cartopian://protocol/CHANGELOG`, and a project still marked below `v0.12.0` should not have reached closeout at all — `cartopian validate-task-readiness` fails its `project-schema-current` check and `cartopian next-action` raises a migration blocker first. If you are seeing this finding on an unmigrated project, stop closeout and run the `migrate project` skill for the `v0.12.0` entry: declare the section through `cartopian write-plan`, then advance the marker with `cartopian migrate-config <project-path> --apply`, which refuses while the section is still undeclared. Rerun close-audit afterwards.
 
 - **`closable`:** the aggregator's verdict. When `blocking_reasons` is empty, `closable` is `true` and closeout may proceed to Stage 2.
 

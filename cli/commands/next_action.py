@@ -12,6 +12,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli import delivery_contract
 from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
@@ -562,6 +563,13 @@ def handler(args: argparse.Namespace) -> int:
         "roles": roles,
         "reviews": reviews,
         "blockers": blockers,
+        # Startup carries delivery and follow-up *status*, not a blocker: the
+        # delivery gate is a closeout gate, so an unmet obligation mid-plan is
+        # something the session must see, not something that halts it. The
+        # blocking verdict belongs to ``close-audit``.
+        "delivery": delivery_contract.compact_status(
+            delivery_contract.validate_plan(project_path)
+        ),
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }
     emit_record(record)

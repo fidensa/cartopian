@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli import delivery_contract
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -324,6 +325,7 @@ def _no_plan_record() -> Dict[str, Any]:
         "open_work": None,
         "what_to_do_next": None,
         "rendered_body": None,
+        "delivery": None,
     }
 
 
@@ -347,6 +349,13 @@ def compose_record(project_path: Path, project_name: str) -> Dict[str, Any]:
         "active_work": active_work,
         "open_work": open_work,
         "what_to_do_next": what_to_do_next,
+        # Bounded delivery and follow-up status: the three states and the gate
+        # verdict, not the record. Detail stays on demand behind
+        # ``cartopian validate-delivery``, so state never carries the plan's
+        # delivery prose into every session.
+        "delivery": delivery_contract.compact_status(
+            delivery_contract.validate_plan(project_path)
+        ),
         "rendered_body": _render_body(
             project_name,
             current_phase or "None",

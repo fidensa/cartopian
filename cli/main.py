@@ -45,6 +45,8 @@ SUBCOMMANDS: List[str] = [
     "unregister-project",
     "update-config",
     "validate-task-readiness",
+    # domain-neutral delivery gate: detail on demand for compact delivery status
+    "validate-delivery",
     # Deidentified spec rendering for coder handoffs
     "render-spec",
     "close-audit",
@@ -197,6 +199,7 @@ def _real_handlers():
         task_bundle,
         unregister_project,
         update_config,
+        validate_delivery,
         validate_report,
         validate_task_readiness as vtr,
         verify_restart_state,
@@ -286,6 +289,10 @@ def _real_handlers():
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "update-config": (update_config.configure_parser, update_config.handler),
+        "validate-delivery": (
+            validate_delivery.configure_parser,
+            validate_delivery.handler,
+        ),
         "validate-report": (validate_report.configure_parser, validate_report.handler),
         "validate-task-readiness": (vtr.configure_parser, vtr.handler),
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),

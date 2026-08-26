@@ -33,7 +33,7 @@ from cli.atomic_write import (
     _snapshot_chain,
     make_tmp_name,
 )
-from cli import governance_reads
+from cli import delivery_contract, governance_reads
 from cli.capabilities import is_known_grant_name
 from cli.commands._registry import MalformedRegistry, read_registry
 from cli.config_schema import (
@@ -58,6 +58,7 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.8.0",
     "v0.9.0",
     "v0.10.0",
+    "v0.11.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 PRESERVED_FACTS = (
@@ -291,6 +292,40 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         identity="config-v0.11-partial-repair",
         from_identities=("v0.11.0",),
         to_identity="v0.11.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+        ),
+        validation_gates=(
+            "explicit-old-new-agreement",
+            "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
+        ),
+        recovery="resolve conflicting old and preferred definitions, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.11-to-v0.12",
+        from_identities=("v0.11.0",),
+        to_identity="v0.12.0",
+        supported_forms=("preferred", "partial"),
+        transforms=("marker-last-advancement",),
+        validation_gates=(
+            "effective-semantic-equivalence",
+            "delivery-contract-declared",
+        ),
+        recovery=(
+            "declare one `## Delivery contract` section in "
+            "IMPLEMENTATION_PLAN.md per the v0.12.0 migration entry "
+            "— `Delivery: required` with the declared rows, or "
+            "`Delivery: not-applicable` with a justification — then rerun"
+        ),
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.12-partial-repair",
+        from_identities=("v0.12.0",),
+        to_identity="v0.12.0",
         supported_forms=("superseded-role-launch", "partial"),
         transforms=(
             "flatten-role-launch-fields",
@@ -2016,6 +2051,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
@@ -2028,6 +2065,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
         if _version_tuple(current) >= (0, 8, 0):
@@ -2038,6 +2077,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.7.0":
         # v0.7 -> v0.8 introduces no configuration key. It advances the marker
         # after the resolver confirms effective behavior is unchanged — the
@@ -2050,6 +2091,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.8.0" and _version_tuple(current) >= (0, 9, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[4])
@@ -2058,18 +2101,30 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.9.0" and _version_tuple(current) >= (0, 10, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[6])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[7])
         if _version_tuple(current) >= (0, 11, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == "v0.10.0" and _version_tuple(current) >= (0, 11, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
+        if _version_tuple(current) >= (0, 12, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+    elif detected == "v0.11.0" and _version_tuple(current) >= (0, 12, 0):
+        if has_residual:
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
     elif detected == current and has_residual:
-        if current == "v0.11.0":
+        if current == "v0.12.0":
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[12])
+        elif current == "v0.11.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
         elif current == "v0.10.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
@@ -2339,6 +2394,77 @@ def plan_configuration_migration(
                         "write-standards, then rerun migrate-config"
                     ),
                 )
+        if _version_tuple(current_version) >= (0, 12, 0):
+            # v0.12.0 makes `## Delivery contract` mandatory in the plan
+            # surface. The marker is what separates "this plan predates the
+            # requirement" from "this plan is current and conforming", so it
+            # must not advance while the section is undeclared — otherwise an
+            # unmigrated plan reads as canonical and task-ready right up until
+            # closeout rejects it for a section it was never asked to carry.
+            #
+            # The gate reuses the one authoritative validator and asks it only
+            # the question the transition owns: has the plan been authored
+            # into the accepted record form? That is exactly the contract's
+            # `record-form` finding class — absent, duplicated, incomplete,
+            # placeholder, or self-contradictory. The `record-semantics`
+            # class — unverified target, declined external action, unfinished
+            # artifact — stays with the closeout gate, because recording one
+            # of those is how a migrated plan tells the truth about where it
+            # actually is. A mid-flight plan migrates honestly; a copied but
+            # unfilled template does not.
+            plan_surface = project_root / delivery_contract.PLAN_SURFACE
+            if plan_surface.is_file():
+                try:
+                    delivery_result = delivery_contract.validate_plan(
+                        project_root
+                    )
+                except delivery_contract.DeliveryContractError as error:
+                    _diagnose(
+                        "migration-authority-divergence",
+                        "protocol/delivery-contract.json",
+                        "installed-content",
+                        (
+                            "the domain-neutral delivery contract cannot be "
+                            f"applied to the plan surface: {error.detail}"
+                        ),
+                        "repair or reinstall verified Cartopian content",
+                    )
+                try:
+                    unauthored = delivery_contract.record_form_findings(
+                        delivery_result
+                    )
+                except delivery_contract.DeliveryContractError as error:
+                    _diagnose(
+                        "migration-authority-divergence",
+                        "protocol/delivery-contract.json",
+                        "installed-content",
+                        (
+                            "the delivery contract does not classify its own "
+                            f"findings: {error.detail}"
+                        ),
+                        "repair or reinstall verified Cartopian content",
+                    )
+                if unauthored:
+                    first = unauthored[0]
+                    _diagnose(
+                        "delivery-contract-migration-required",
+                        delivery_contract.PLAN_SURFACE,
+                        "project",
+                        (
+                            "IMPLEMENTATION_PLAN.md carries no authored "
+                            f"delivery contract — {first['code']}: "
+                            f"{first['detail']}; the schema marker cannot "
+                            "advance while the v0.12.0 delivery contract is "
+                            "unauthored"
+                        ),
+                        (
+                            "declare the section per the v0.12.0 migration "
+                            "entry and rewrite the plan via write-plan "
+                            "(`Delivery: required` with the declared rows, or "
+                            "`Delivery: not-applicable` with a "
+                            "justification), then rerun migrate-config"
+                        ),
+                    )
 
         global_path = home / ".cartopian" / "cartopian.toml"
         local_path = project_root / "cartopian.local.toml"

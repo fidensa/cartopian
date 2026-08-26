@@ -41,7 +41,7 @@ _TOML_REVIEW_REQUIRED = (
     "[project]\n"
     'id = "compose-proj"\n'
     'name = "Compose Project"\n'
-    'project_schema_version = "v0.11.0"\n'
+    'project_schema_version = "v0.12.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles.coder]\n"

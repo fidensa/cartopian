@@ -25,6 +25,7 @@ from cli.commands.validate_task_readiness import (
     _check_phase,
     _check_plan_ref,
     _check_plan_ref_aligned,
+    _check_project_schema,
     _check_work_root,
     _parse_headers,
     _split_csv,
@@ -215,6 +216,7 @@ def _build_validation_checks(
 ) -> List[Dict[str, Any]]:
     warnings: List[str] = []
     checks_by_name = {
+        "project-schema-current": _check_project_schema(project_root),
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref_bundle(project_root, headers),
         "plan-ref-aligned": _check_plan_ref_aligned(

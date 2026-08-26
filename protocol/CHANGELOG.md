@@ -32,6 +32,101 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.12.0 — Domain-neutral delivery contract
+
+- **Protocol version:** `v0.12.0`
+- **One-line summary:** Makes a declared `## Delivery contract` section in `IMPLEMENTATION_PLAN.md` mandatory, so no plan closes while its delivery owner, target, acceptance evidence, success signals, contingency, immediate verification, or follow-up timing is missing or falsely represented as complete.
+
+#### What changed
+
+`IMPLEMENTATION_PLAN.md` gained a required `## Delivery contract` section, and
+`protocol/DELIVERY.md` plus `protocol/delivery-contract.json` now own its
+vocabulary, row grammar, closed value sets, and failure recoveries. One
+authoritative validator (`cartopian validate-delivery`) serves close-audit,
+compact state, startup, and the planning review, and it returns three
+independent states — artifact complete, outcome verified, follow-up required —
+that no consumer may collapse into one another.
+
+A plan authored before this version carries no such section. Under the new
+protocol version an absent section is **undeclared**, which blocks closeout:
+`cartopian close-audit` reports `delivery-contract-undeclared` and refuses to
+call the plan closable. Because the requirement is breaking for every existing
+plan, the schema marker gates it. A project still marked below `v0.12.0` is
+`older-migratable`, not current: `cartopian validate-task-readiness` fails its
+`project-schema-current` check and `cartopian next-action` raises a migration
+blocker, so an unmigrated plan can never be represented as current and
+task-ready while closeout rejects it for a section the plan was never asked
+to carry.
+
+The section is domain-neutral. A plan whose outcome reaches nothing outside
+itself declares that explicitly with `- Delivery: not-applicable; Justification:
+<why>`; it is never left absent. Declaring the contract does not grant any
+external-delivery capability — performing the delivery remains operator-
+authorized, and a pending or declined authority state stays honestly
+undelivered.
+
+#### Applies when
+
+Applies when `[project].project_schema_version` is numerically less than
+`v0.12.0` **and** the project root contains an `IMPLEMENTATION_PLAN.md`. A
+project with no plan surface has no delivery contract to declare; its marker
+advances without this step.
+
+#### Agent-followable migration steps
+
+This entry has **no registered filesystem transform**; do not invoke
+`apply-migration-entry` for it. Naming the plan's delivery owner, target,
+evidence, and contingency is judgment-dependent and PM-performed through the
+ordinary mediated writers, on operator approval.
+
+1. Read `cartopian://protocol/DELIVERY` (installed at
+   `~/.cartopian/protocol/DELIVERY.md`) for the row grammar and the closed
+   value sets, and read the `## Delivery contract` block in
+   `templates/IMPLEMENTATION_PLAN.md` for the authoring shape.
+2. Decide applicability with the operator. If the plan's outcome reaches
+   nothing outside the plan itself, the whole section is the single row
+   `- Delivery: not-applicable; Justification: <why this plan reaches no
+   target outside itself>`. Otherwise the section declares `- Delivery:
+   required` and every declared row.
+3. For a required contract, name the delivery owner and their availability,
+   the target and its kind, the acceptance evidence with its observer and
+   their authority, the observable success signals, a contingency with its
+   kind, trigger, and owner, the immediate verification with its evidence
+   identity, time, and result, the follow-up owner and bounded due time, the
+   operator authority state with the statement that established it, and the
+   artifact state with the check it passed. Replace every placeholder — an
+   unreplaced `<...>` records nothing and fails closed.
+4. Write the amended plan with `cartopian write-plan <project-root>
+   --content-file <body-path>`. Never hand-edit the plan surface.
+5. Run `cartopian validate-delivery <project-root>` and resolve every reported
+   finding. A recorded state that the project has not actually reached is not
+   a valid resolution: an unauthorized external action stays
+   `pending-operator-authorization`, and an unverified outcome stays
+   `Result: not-run`.
+6. Run `cartopian migrate-config <project-root> --apply` to advance
+   `[project].project_schema_version` to `v0.12.0`. The planner refuses to
+   advance while the plan carries no declared `## Delivery contract` section.
+7. Refresh derived state with `cartopian write-state <project-root>` and
+   confirm with `cartopian plan-audit <project-root>` and `cartopian
+   close-audit <project-root>`.
+
+#### Idempotence guarantee
+
+Re-applying the steps to a conforming project is a no-op: the plan already
+carries exactly one declared `## Delivery contract` section, `migrate-config`
+reports the marker current with no entries, and `validate-delivery` returns the
+same states and findings for the same plan text. The migration reads the plan
+and writes only `cartopian.toml`; it never edits, generates, or completes a
+delivery record on the operator's behalf.
+
+#### Post-migration validation hint
+
+`cartopian validate-delivery <project-root>` reports an `applicability` of
+`required` or `not-applicable` rather than `undeclared`, `cartopian
+migrate-config <project-root>` reports the schema marker current, and
+`cartopian validate-task-readiness <task-path>` passes its
+`project-schema-current` check.
+
 ### v0.11.0 — Standards admission discipline
 
 - **Protocol version:** `v0.11.0`

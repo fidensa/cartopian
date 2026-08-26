@@ -16,9 +16,15 @@ from cli.commands.resolve_config import (
 )
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
+from cli.protocol_gate import (
+    GATE_CURRENT,
+    classify_project_schema_version,
+    read_shipped_project_schema_version,
+)
 
 
 CHECK_ORDER = (
+    "project-schema-current",
     "phase-exists",
     "plan-ref-exists",
     "plan-ref-aligned",
@@ -440,6 +446,63 @@ def _check_request_trace(
     return {"name": name, "pass": True, "reason": None}
 
 
+def _check_project_schema(project_root: Path) -> Dict[str, Any]:
+    """Refuse readiness while the project's schema marker is not current.
+
+    A breaking protocol change lands as a CHANGELOG entry plus a marker bump,
+    so a project still below the shipped marker has not yet been brought onto
+    the current contract. Ordinary task execution must not start there: the
+    task would be executed and closed against a plan surface the current
+    closeout gates evaluate under rules the project never adopted.
+
+    The check is detection only — it reads `cartopian.toml` and never writes
+    it. Recovery is one named action (`cartopian migrate-config <project-root>
+    --apply`, after the entry's PM-performed steps), and it is idempotent: the
+    check passes as soon as the marker is current and never reports a
+    different verdict for the same marker.
+    """
+    name = "project-schema-current"
+    try:
+        shipped = read_shipped_project_schema_version()
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            "name": name,
+            "pass": False,
+            "reason": (
+                "shipped-marker-unavailable: the shipped project schema "
+                f"identity cannot be read — {exc}"
+            ),
+        }
+    try:
+        cfg = _load_toml(project_root / "cartopian.toml", "project config") or {}
+    except _CliError as err:
+        return {
+            "name": name,
+            "pass": False,
+            "reason": f"project-config-unreadable: {err.message}",
+        }
+    project_table = cfg.get("project")
+    declared = (
+        project_table.get("project_schema_version")
+        if isinstance(project_table, dict)
+        else None
+    )
+    gate = classify_project_schema_version(declared, shipped)
+    if gate["status"] == GATE_CURRENT:
+        return {"name": name, "pass": True, "reason": None}
+    return {
+        "name": name,
+        "pass": False,
+        "reason": (
+            f"{gate['status']}: project_schema_version is "
+            f"{gate['detected_version']}, while the shipped schema target is "
+            f"{gate['shipped_version']} — apply the protocol/CHANGELOG.md "
+            "migration entries for this project, then run `cartopian "
+            "migrate-config <project-root> --apply`"
+        ),
+    }
+
+
 def _check_upstream_trace(
     project_root: Path, task_path: Path, content: str
 ) -> Dict[str, Any]:
@@ -495,6 +558,7 @@ def handler(args: argparse.Namespace) -> int:
     warnings: List[str] = []
 
     checks_by_name = {
+        "project-schema-current": _check_project_schema(project_root),
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref(project_root, headers),
         "plan-ref-aligned": _check_plan_ref_aligned(

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from cli import report_identity
+from cli import delivery_contract, report_identity
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -213,6 +213,7 @@ def _no_plan_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         "stale_prompts": None,
         "unresolved_reports": None,
         "unmet_exit_criteria": None,
+        "delivery": None,
         "blocking_reasons": None,
     }
 
@@ -251,6 +252,11 @@ def handler(args: argparse.Namespace) -> int:
     stale_prompts = _collect_stale_prompts(project_path)
     unresolved_reports = _collect_unresolved_reports(project_path)
     unmet_exit_criteria = _collect_unmet_exit_criteria(project_path)
+    # The delivery gate is the closeout-side consumer of the one authoritative
+    # validator: closeout may not report success while a declared delivery
+    # obligation is unmet, and an unauthorized external action stays pending
+    # rather than becoming a verified outcome.
+    delivery = delivery_contract.validate_plan(project_path)
 
     blocking_reasons: List[str] = []
     for task in open_tasks:
@@ -268,6 +274,7 @@ def handler(args: argparse.Namespace) -> int:
         )
     for criterion in unmet_exit_criteria:
         blocking_reasons.append(f"phase exit criteria incomplete: {criterion}")
+    blocking_reasons.extend(delivery_contract.blocking_reasons(delivery))
 
     record = {
         "project_id": project_id,
@@ -280,6 +287,7 @@ def handler(args: argparse.Namespace) -> int:
         "stale_prompts": stale_prompts,
         "unresolved_reports": unresolved_reports,
         "unmet_exit_criteria": unmet_exit_criteria,
+        "delivery": delivery,
         "blocking_reasons": blocking_reasons,
     }
     emit_record(record)

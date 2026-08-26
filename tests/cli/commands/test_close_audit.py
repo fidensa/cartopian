@@ -16,7 +16,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.11.0"\n'
+    'project_schema_version = "v0.12.0"\n'
 )
 
 
@@ -57,6 +57,19 @@ class TestCloseAuditRequiredFields(unittest.TestCase):
                 "tasks/done/TASK-01-001.md",
                 "# TASK-01-001: finished\n",
             )
+            # A closable plan satisfies the delivery gate. This fixture plan
+            # reaches no target outside itself, which is a declaration the
+            # record has to carry — an absent section is undeclared, not
+            # not-applicable, and undeclared blocks closeout.
+            scaffold.write(
+                "IMPLEMENTATION_PLAN.md",
+                (
+                    "# Implementation Plan: Test Project\n\n"
+                    "## Delivery contract\n\n"
+                    "- Delivery: not-applicable; Justification: the plan changes "
+                    "only this fixture project and reaches no target outside it\n"
+                ),
+            )
 
             records, rc = _invoke(str(scaffold.project_root))
 
@@ -74,6 +87,7 @@ class TestCloseAuditRequiredFields(unittest.TestCase):
                 "stale_prompts",
                 "unresolved_reports",
                 "unmet_exit_criteria",
+                "delivery",
                 "blocking_reasons",
             ):
                 self.assertIn(field, rec, msg=f"missing field: {field}")
@@ -88,6 +102,7 @@ class TestCloseAuditRequiredFields(unittest.TestCase):
             self.assertEqual(rec["stale_prompts"], [])
             self.assertEqual(rec["unresolved_reports"], [])
             self.assertEqual(rec["unmet_exit_criteria"], [])
+            self.assertEqual(rec["delivery"]["gate"], "pass")
             self.assertEqual(rec["blocking_reasons"], [])
 
 
@@ -109,6 +124,7 @@ class TestCloseAuditNoPlanState(unittest.TestCase):
             self.assertIsNone(rec["stale_prompts"])
             self.assertIsNone(rec["unresolved_reports"])
             self.assertIsNone(rec["unmet_exit_criteria"])
+            self.assertIsNone(rec["delivery"])
             self.assertIsNone(rec["blocking_reasons"])
 
 

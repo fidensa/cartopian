@@ -1,9 +1,11 @@
 import json
+import re
 import shutil
 import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from typing import Optional
 from unittest import mock
 
 from cli import config_migration, config_schema
@@ -129,7 +131,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.11.0"
+                project_cfg["project"]["project_schema_version"], "v0.12.0"
             )
             for migrated_text in (
                 (home / ".cartopian" / "cartopian.toml").read_text(),
@@ -204,6 +206,7 @@ class TestConfigurationMigration(unittest.TestCase):
             "config-v0.8-to-v0.9",
             "config-v0.9-to-v0.10",
             "config-v0.10-to-v0.11",
+            "config-v0.11-to-v0.12",
         ],
             )
             config_migration.execute_configuration_migration(
@@ -221,7 +224,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.11.0"
+                migrated["project"]["project_schema_version"], "v0.12.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -633,6 +636,7 @@ timeout = "45m"
                     "config-v0.8-to-v0.9",
                     "config-v0.9-to-v0.10",
                     "config-v0.10-to-v0.11",
+                    "config-v0.11-to-v0.12",
                 ],
             )
             source = dict(plan.source_effective)
@@ -668,7 +672,7 @@ timeout = "45m"
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.11.0"
+                migrated["project"]["project_schema_version"], "v0.12.0"
             )
 
             before_rerun = path.read_bytes()
@@ -747,7 +751,7 @@ timeout = "45m"
                 self.assertNotIn("# migrated legacy:", path.read_text())
             self.assertEqual(
                 records[0]["details"]["plan"]["entries"][0]["identity"],
-                "config-v0.11-partial-repair",
+                "config-v0.12-partial-repair",
             )
 
             before_rerun = _config_bytes(home, project)
@@ -783,7 +787,7 @@ timeout = "30m"
             self.assertEqual(public_result["status"], "complete")
             self.assertEqual(
                 public_plan["entries"][0]["identity"],
-                "config-v0.11-partial-repair",
+                "config-v0.12-partial-repair",
             )
             self.assertIn(
                 "superseded-role-launch",
@@ -1280,7 +1284,7 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.11.0"
+                migrated["project"]["project_schema_version"], "v0.12.0"
             )
 
     def test_conforming_standards_advance_v010_to_v011(self):
@@ -1293,12 +1297,15 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 project, home_root=home
             )
             self.assertEqual(plan.status, "planned")
+            # The project carries no plan surface, so the v0.12.0 delivery
+            # entry has nothing to declare and the chain runs to the shipped
+            # marker in one pass.
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.10-to-v0.11"],
+                ["config-v0.10-to-v0.11", "config-v0.11-to-v0.12"],
             )
             self.assertEqual(plan.marker_update["from"], "v0.10.0")
-            self.assertEqual(plan.marker_update["to"], "v0.11.0")
+            self.assertEqual(plan.marker_update["to"], "v0.12.0")
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
             )
@@ -1307,8 +1314,213 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.11.0"
+                migrated["project"]["project_schema_version"], "v0.12.0"
             )
+
+
+class TestDeliveryContractMigrationGate(unittest.TestCase):
+    """v0.12.0: the marker cannot advance while ``IMPLEMENTATION_PLAN.md``
+    declares no delivery contract.
+
+    This is what keeps a breaking plan-format change gated. Without it a
+    pre-v0.12 project reads as canonical and task-ready right up until
+    close-audit rejects it for a section the plan was never asked to carry.
+    """
+
+    _NOT_APPLICABLE = (
+        "# Implementation Plan: Gate\n\n## Delivery contract\n\n"
+        "- Delivery: not-applicable; Justification: the plan changes only "
+        "this project's internal test harness and reaches no target outside "
+        "the repository\n\n## Phase sequence\n\n### Phase 00: Work\n"
+    )
+    _UNDECLARED = (
+        "# Implementation Plan: Gate\n\n## Phase sequence\n\n"
+        "### Phase 00: Work\n"
+    )
+
+    def _project(self, raw: Path, plan: Optional[str]) -> tuple[Path, Path]:
+        home = raw / "home"
+        (home / ".cartopian").mkdir(parents=True)
+        project = raw / "project"
+        project.mkdir()
+        (project / "cartopian.toml").write_text(
+            "[project]\n"
+            'id = "delivery-gate"\n'
+            'name = "Delivery Gate"\n'
+            'project_schema_version = "v0.11.0"\n',
+            encoding="utf-8",
+        )
+        (project / "STANDARDS.md").write_text(
+            "# Standards: P\n\n## Working standards\n\nRules.\n",
+            encoding="utf-8",
+        )
+        if plan is not None:
+            (project / "IMPLEMENTATION_PLAN.md").write_text(plan, encoding="utf-8")
+        return home, project
+
+    def test_undeclared_delivery_contract_blocks_advancement(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(Path(raw), self._UNDECLARED)
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            self.assertIsNone(plan.marker_update)
+            diagnostic = plan.diagnostics[0]
+            self.assertEqual(
+                diagnostic["code"], "delivery-contract-migration-required"
+            )
+            self.assertEqual(diagnostic["field"], "IMPLEMENTATION_PLAN.md")
+            # The refusal names the finding and one action that recovers it.
+            self.assertIn("delivery-contract-undeclared", diagnostic["message"])
+            self.assertIn("no `## Delivery contract` section", diagnostic["message"])
+            self.assertIn("write-plan", diagnostic["recovery"])
+            self.assertIn("migrate-config", diagnostic["recovery"])
+            # Fail-closed: the marker on disk is untouched by a refusal.
+            self.assertEqual(
+                tomllib.loads(
+                    (project / "cartopian.toml").read_text(encoding="utf-8")
+                )["project"]["project_schema_version"],
+                "v0.11.0",
+            )
+
+    def test_placeholder_applicability_is_undeclared_and_blocks(self):
+        """The shipped template's own placeholder must not migrate a project."""
+        template = (
+            Path(__file__).resolve().parents[3]
+            / "templates"
+            / "IMPLEMENTATION_PLAN.md"
+        ).read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(Path(raw), template)
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "refused")
+            self.assertEqual(
+                plan.diagnostics[0]["code"],
+                "delivery-contract-migration-required",
+            )
+
+    def test_declared_contract_advances_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(Path(raw), self._NOT_APPLICABLE)
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "planned")
+            self.assertEqual(
+                [entry.identity for entry in plan.entries],
+                ["config-v0.11-to-v0.12"],
+            )
+            self.assertIn(
+                "delivery-contract-declared", plan.entries[0].validation_gates
+            )
+            self.assertEqual(plan.marker_update["from"], "v0.11.0")
+            self.assertEqual(plan.marker_update["to"], "v0.12.0")
+            result = config_migration.execute_configuration_migration(
+                project, plan, home_root=home
+            )
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(
+                tomllib.loads(
+                    (project / "cartopian.toml").read_text(encoding="utf-8")
+                )["project"]["project_schema_version"],
+                "v0.12.0",
+            )
+            # Idempotent: re-planning a migrated project is a no-op that
+            # advances nothing and reports the marker already current.
+            again = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(again.status, "noop")
+            self.assertEqual(again.compatibility_state, "canonical")
+            self.assertEqual(again.entries, ())
+            self.assertEqual(
+                again.marker_update["status"], "already-current"
+            )
+
+    def test_project_without_a_plan_surface_has_nothing_to_declare(self):
+        """A project with no plan yet is not held back by the plan gate."""
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(Path(raw), None)
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "planned")
+            self.assertEqual(plan.marker_update["to"], "v0.12.0")
+
+    def test_honest_mid_flight_record_still_migrates(self):
+        """A declared record reporting an unreached state is migratable.
+
+        Recording `Result: not-run` is how a migrated plan tells the truth
+        about where it is. The marker advances; closeout still blocks.
+        """
+        fixtures = (
+            Path(__file__).resolve().parents[2] / "fixtures" / "delivery"
+        )
+        for case in (
+            "artifact-complete-outcome-unverified",
+            "declined-external-action",
+        ):
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as raw:
+                    home, project = self._project(
+                        Path(raw),
+                        (fixtures / f"{case}.md").read_text(encoding="utf-8"),
+                    )
+                    plan = config_migration.plan_configuration_migration(
+                        project, home_root=home
+                    )
+                    self.assertEqual(plan.status, "planned", msg=plan.diagnostics)
+                    self.assertEqual(plan.marker_update["to"], "v0.12.0")
+
+    def test_changelog_head_names_the_new_entry(self):
+        changelog = (
+            Path(__file__).resolve().parents[3] / "protocol" / "CHANGELOG.md"
+        ).read_text(encoding="utf-8")
+        _, _, body = changelog.partition("\n## Entries\n")
+        heads = re.findall(r"^### (v\d+\.\d+\.\d+)\b", body, re.MULTILINE)
+        self.assertEqual(heads[0], "v0.12.0")
+        entry = body.partition("### v0.11.0")[0]
+        # The entry is a self-contained migration contract per the file's
+        # own per-entry schema.
+        for field in (
+            "**Protocol version:**",
+            "#### What changed",
+            "#### Applies when",
+            "#### Agent-followable migration steps",
+            "#### Idempotence guarantee",
+            "#### Post-migration validation hint",
+        ):
+            self.assertIn(field, entry)
+        self.assertIn("write-plan", entry)
+        self.assertIn("project-schema-current", entry)
+        # Prepend-only: the prior entries survive unedited beneath it.
+        self.assertIn("### v0.11.0", body)
+        self.assertIn("### v0.10.0", body)
+
+    def test_registry_cross_validation_accepts_the_new_version_set(self):
+        """The shipped config/filesystem/changelog registries still agree.
+
+        `_validate_migration_authorities` fails closed on divergence, and
+        every planning call runs it — so a clean plan on a current project is
+        the assertion.
+        """
+        with tempfile.TemporaryDirectory() as raw:
+            home, project = self._project(Path(raw), self._NOT_APPLICABLE)
+            (project / "cartopian.toml").write_text(
+                (project / "cartopian.toml")
+                .read_text(encoding="utf-8")
+                .replace("v0.11.0", "v0.12.0"),
+                encoding="utf-8",
+            )
+            plan = config_migration.plan_configuration_migration(
+                project, home_root=home
+            )
+            self.assertEqual(plan.status, "noop", msg=plan.diagnostics)
+            self.assertEqual(plan.compatibility_state, "canonical")
+            self.assertEqual(plan.diagnostics, ())
 
 
 if __name__ == "__main__":

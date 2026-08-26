@@ -89,7 +89,9 @@
       "phase_00_status": "justified exception",
       "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
-      "max_output_bytes": 2556
+      "delivery_status_delta_bytes": 248,
+      "delivery_status_note": "next-action carries the delivery gate's bounded status: applicability plus the artifact, outcome, and follow-up states, the gate verdict, the finding count, and the first finding code. 248 bytes is the measured worst case \u2014 the longest declared value in each of the seven keys, compact JSON, added to a non-empty object. The record itself is never carried; detail stays on demand behind `cartopian validate-delivery`. The ceiling rises by exactly that measured delta, preserving the prior headroom.",
+      "max_output_bytes": 2804
     },
     {
       "surface": "task-bundle",
@@ -99,12 +101,14 @@
       },
       "phase_00_status": "justified exception",
       "task_delta_bytes": 115,
-      "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity without introducing a new migration-readiness gate.",
+      "record_versioning_benefit": "Adds record_schema_version, schema_identity, and the authored project_schema_version so consumers can version the record shape and assess project identity from the record alone.",
       "split_report_delta_bytes": 55,
       "split_report_note": "Adds expected_review_report_path so bundles carry both task-scoped report identities from the authoritative resolver.",
       "source_guidance_delta_bytes": 23,
       "source_guidance_note": "Adds a stable source_guidance key. Inactive and legacy work projects null so no empty guidance body enters bounded context; declared valid or invalid source-backed work carries the actionable record.",
-      "max_output_bytes": 712
+      "project_schema_current_delta_bytes": 295,
+      "project_schema_current_note": "task-bundle shares the readiness validator, which now carries a project-schema-current check so a project that has not adopted the shipped schema cannot be represented as task-ready. A passing check adds 60 bytes; 295 is the measured worst case \u2014 a failing check whose reason names the detected marker, the shipped target, and the one migrate-config recovery, at the longest declared marker form. The ceiling rises by that worst case, preserving the prior headroom.",
+      "max_output_bytes": 1007
     },
     {
       "surface": "handoff-packet",

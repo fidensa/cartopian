@@ -832,6 +832,20 @@ When task-closure review is required, reviews of `required` tasks record the bef
 
 Source evidence is one domain-neutral evidence shape under this same discipline. It may be a fact-check, policy effective-date check, operating-authority check, campaign claim substantiation, software version/standard check, or another source-application observation; it is not limited to research or software work.
 
+## Delivery Gate
+
+A plan that produces an outcome reaching anything outside itself — delivered, launched, published, transitioned, or adopted — carries one `## Delivery contract` section in `IMPLEMENTATION_PLAN.md` naming owner, target, acceptance evidence, success signals, contingency, immediate verification, and follow-up timing. `protocol/DELIVERY.md` explains the contract; `protocol/delivery-contract.json` is the single authority for its machine values.
+
+The gate exists for one failure: artifact creation mistaken for outcome completion. It keeps three states apart and never collapses them. **Artifact complete** means the work product exists and passed its artifact-level check. **Outcome verified** means the target's own state was observed and the observation passed. **Follow-up** is the remaining question, its owner, and when it is answered. A complete artifact never establishes a verified outcome, and a verified outcome never discharges a follow-up.
+
+A plan that reaches no target outside itself declares `Delivery: not-applicable` with a justification. Missing and justified not-applicable are distinct states: a plan carrying no delivery-contract section at all is undeclared, and undeclared fails closed.
+
+Missing, placeholder, contradictory, unavailable-owner, changed-target, and self-certified-evidence records fail closed with an ordered finding and a named recovery. `cartopian validate-delivery <project-root>` is the detail surface and exits non-zero when the gate is blocked; `close-audit` folds every finding into its closeout blockers; `compose-state` and `next-action` carry bounded status; `review-context --review-kind planning` projects the contract and its evidence to the reviewer within a declared byte bound. One validator serves all of them, so CLI and MCP never disagree.
+
+The requirement is breaking for every plan authored before it, so the project schema marker gates it. It landed as protocol version `v0.12.0`; a project still marked below that has not adopted it, and Cartopian refuses to represent such a project as current: readiness fails its `project-schema-current` check, startup raises a migration blocker, and `migrate-config` refuses to advance the marker while the section is undeclared. The migration itself is PM-performed authoring through `write-plan` on operator approval — no shipped transform writes a delivery record on the operator's behalf.
+
+The gate validates a delivery record. It never performs, schedules, transmits, or authorizes a delivery. Whether an external action happens remains the operator's decision, recorded as an authority state: an unauthorized action stays `pending-authority` and a declined one stays `not-delivered`, never `verified`. An unattended run may prepare and validate the record and may not cross that boundary.
+
 ## Plan Lifecycle
 
 A Cartopian project has one active implementation plan at a time. The live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`, `specs/`, `reviews/`, `decisions/`, `prompts/`, and `reports/` describe the current plan only.
@@ -844,6 +858,7 @@ Plan closeout requires:
 - No active or ambiguous prompts.
 - No unresolved or ambiguous reports.
 - Phase exit criteria satisfied by completed tasks, decisions, specs, or documented operator acceptance.
+- A delivery contract that passes the delivery gate (see § Delivery Gate). A declined archive does not erase the delivery obligation, and closeout never reports success while a delivery obligation is unmet.
 - Explicit operator confirmation.
 
 Plan closeout resets the live plan surface:

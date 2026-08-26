@@ -141,6 +141,10 @@ When an external source is authoritative rather than merely contextual, record i
 
 **Work topology:** Identify which repos or other work locations are involved, including no-repo work. If the project uses work roots, ensure `[project].work_roots` in `cartopian.toml` names them. Task files MUST use the `Work root:` field (names only) rather than paths; see `cartopian://templates/TASK.md`.
 
+**Delivery contract:** Record the domain-neutral delivery gate (`cartopian://protocol/DELIVERY`). An external plan rarely states these facts in the required shape, so derive what the source does say and confirm the rest with the operator before writing — the plan cannot close without it, and an absent section is undeclared rather than not-applicable.
+
+If the adopted plan produces an outcome that reaches anything outside itself, record `Delivery: required` with all nine rows. Record what is not yet true honestly rather than optimistically: an unauthorized external action is `Authority: pending-operator-authorization`, and an unobserved target is `Result: not-run`. A placeholder fails closed. If the plan reaches no target outside itself, record the single row `- Delivery: not-applicable; Justification: <why>`. Run `cartopian validate-delivery <project-root>` after writing and surface any finding with its named recovery.
+
 **Phase sequence:** Map each phase from the external plan to a `PHASE-NN` entry. Assign two-digit phase numbers starting from `01` (use `00` only for a bootstrap phase with no deliverable output); keep the description in the heading, not the filename.
 
 Within each phase, assign `KIND-NN-NNN` plan refs from one sequence shared by every supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`), starting at `001`. Map subtasks to plan refs where applicable. Use `BUILD` for delivery/execution items that produce outcomes or artifacts (not only software); use `RESEARCH` for items that produce knowledge, decisions, or designs. Use `DESIGN`, `TEST`, `RELEASE`, and `VERIFY` for those outcome types, and `CORRECTIVE` for correction work — each corrective item gets its own new ref.

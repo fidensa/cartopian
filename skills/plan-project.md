@@ -168,6 +168,11 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 - **Purpose**: what this plan accomplishes and which source documents it derives from.
 - **Architecture rules**: rules derived from requirements and project standards. These are consequences of locked inputs, not new decisions.
 - **Work topology**: which repos or other work locations are involved and what each owns. Include no-repo projects when applicable.
+- **Delivery contract**: the domain-neutral delivery gate (`cartopian://protocol/DELIVERY`, template section in `cartopian://templates/IMPLEMENTATION_PLAN.md`). Capture it from the operator here, at planning time — it names facts only the operator holds, and a plan cannot close without it.
+  - If the plan produces an outcome that reaches anything outside itself — delivered, launched, published, transitioned, or adopted — record all nine rows: `Delivery: required`, then owner, target, acceptance evidence, success signals, contingency, immediate verification, follow-up, authority, and artifact. Values that are not knowable yet are still recorded honestly: an unauthorized external action is `Authority: pending-operator-authorization`, and an unobserved target is `Result: not-run`. Do not fill a row with a placeholder — a placeholder fails closed.
+  - If the plan reaches no target outside itself, record the single row `- Delivery: not-applicable; Justification: <why>`. Omitting the section entirely is undeclared, which blocks closeout.
+  - Ask the operator for the acceptance observer explicitly. The observer may not be the delivery owner; self-certified acceptance fails closed.
+  - Run `cartopian validate-delivery <project-root>` after writing the plan and surface any finding to the operator with its named recovery.
 - **Phase sequence**: each phase with:
   - Goal
   - Plan ref table (`KIND-NN-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Within each phase, all kinds draw from one sequence starting at `001`.
