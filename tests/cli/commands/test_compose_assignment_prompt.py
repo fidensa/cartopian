@@ -1163,20 +1163,218 @@ class TestBudgetsAnchoredToFixtures(unittest.TestCase):
     """The contract's budgets stay anchored to the approved fixtures."""
 
     def test_reference_fixtures_fit_budgets(self) -> None:
+        from cli import assignment_inputs
+
         contract = prompt_composer.load_contract()
         budgets = contract["section_budgets"]["budgets"]
         known = set(contract["sections"]["order"])
-        self.assertEqual(set(budgets), known)
+        payload_sections = set(assignment_inputs.CHANNEL_SECTIONS.values())
+        # Prose budgets cover exactly the composed instruction-channel
+        # sections. The typed payload channels are byte-exact resource
+        # copies bounded by input_payloads.max_payload_bytes instead.
+        self.assertEqual(set(budgets), known - payload_sections)
         for fixture in sorted(FIXTURES_DIR.glob("*.md")):
             prompt = fixture.read_text(encoding="utf-8")
             for name, text in prompt_composer.split_sections(prompt):
-                if name == "(title)":
+                if name == "(title)" or name in payload_sections:
                     continue
                 with self.subTest(fixture=fixture.name, section=name):
                     self.assertIn(name, budgets)
                     self.assertLessEqual(
                         len(text.encode("utf-8")), budgets[name]
                     )
+
+    def test_payload_ceiling_is_declared_and_positive(self) -> None:
+        contract = prompt_composer.load_contract()
+        ceiling = contract["input_payloads"]["max_payload_bytes"]
+        self.assertIsInstance(ceiling, int)
+        self.assertGreater(ceiling, 0)
+        self.assertEqual(ceiling, prompt_composer._payload_ceiling(contract))
+
+
+# A legitimate rework input larger than the removed 64 KiB per-section
+# budget: the regression case for the defect where a complete existing
+# deliverable was refused with `section-over-budget`.
+_LARGE_REWORK_RESOURCE = (
+    "# Plan ledger and decision continuity\n\n"
+    + (
+        "A ledger row the rework assignment must carry in full so the "
+        "assignee can update the document in place.\n" * 700
+    )
+)
+
+
+def _build_with_deliverable_resource(scaffold, resource_text: str) -> Path:
+    _prepare_work_root(scaffold)
+    task_path = scaffold.write(
+        "tasks/in-progress/TASK-01-002.md", _DELIVERABLE_TASK
+    )
+    scaffold.write("specs/SPEC-01-002.md", _FULL_SPEC)
+    scaffold.write("STANDARDS.md", _STANDARDS)
+    scaffold.write("resources/loader-contract.md", resource_text)
+    _capture(scaffold, "REQUEST-001", "task:TASK-01-002", _OPERATOR_REQUEST)
+    return task_path
+
+
+class TestDeliverableInputBounds(unittest.TestCase):
+    """A rework assignment carries its complete existing deliverable.
+
+    The typed payload channel has no prose budget; its one bound is the
+    contract's declared `input_payloads.max_payload_bytes` read ceiling,
+    which fails closed before loading a genuinely unbounded resource.
+    """
+
+    def test_rework_deliverable_above_64kib_composes_and_writes(self) -> None:
+        from cli import assignment_inputs
+
+        self.assertGreater(
+            len(_LARGE_REWORK_RESOURCE.encode("utf-8")), 65536
+        )
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(
+                scaffold, _LARGE_REWORK_RESOURCE
+            )
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            self.assertEqual(
+                [f for f in record["findings"]
+                 if f["code"] == "section-over-budget"],
+                [],
+            )
+            (entry,) = assignment_inputs.extract_payload_blocks(
+                record["assignee_prompt"]
+            )
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["content"], _LARGE_REWORK_RESOURCE)
+            # The byte measurement stays visible in the trace receipt.
+            sizes = {
+                item["section"]: item["bytes"]
+                for item in record["section_sizes"]
+            }
+            self.assertGreater(sizes["Existing deliverable input"], 65536)
+            # The composed record writes through the mediated writer.
+            composed_path = scaffold.root / "composed.json"
+            composed_path.write_text(
+                json.dumps({"action": "compose-assignment-prompt", **record}),
+                encoding="utf-8",
+            )
+            args = _write_prompt_args(
+                scaffold, task_path, composed_file=str(composed_path)
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = write_prompt.handler(args)
+            self.assertEqual(code, EXIT_OK, err.getvalue())
+
+    def test_small_deliverable_composes_clean(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(
+                scaffold, "# Loader contract\n\nOne short section.\n"
+            )
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+
+    def test_resource_above_declared_ceiling_refuses_closed(self) -> None:
+        ceiling = prompt_composer._payload_ceiling(
+            prompt_composer.load_contract()
+        )
+        oversized = "x" * (ceiling + 1)
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(scaffold, oversized)
+            with self.assertRaises(prompt_composer.ComposeRefusal) as ctx:
+                prompt_composer.compose(task_path, "coder")
+            self.assertEqual(ctx.exception.code, "deliverable-input-oversized")
+            # CLI and MCP surfaces fail closed with the same diagnostic.
+            records, stderr, code = _invoke_cli(str(task_path), "coder")
+            self.assertEqual(code, EXIT_FAIL)
+            self.assertEqual(records, [])
+            self.assertIn("deliverable-input-oversized", stderr)
+            from mcp_server import server
+
+            result = server._invoke_cli(
+                "compose-assignment-prompt",
+                [str(task_path), "--role", "coder"],
+            )
+            self.assertEqual(result["exit_code"], EXIT_FAIL)
+            self.assertTrue(any(
+                "deliverable-input-oversized" in line
+                for line in result["stderr_lines"]
+            ))
+
+    def test_materialized_authored_inputs_enforce_the_same_ceiling(self) -> None:
+        ceiling = prompt_composer._payload_ceiling(
+            prompt_composer.load_contract()
+        )
+        oversized = "x" * (ceiling + 1)
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(scaffold, oversized)
+            with self.assertRaises(prompt_composer.ComposeRefusal) as ctx:
+                prompt_composer.materialize_input_sections(
+                    scaffold.project_root,
+                    task_path,
+                    "# Prompt\n\n## Your task\n\nUpdate the contract.\n",
+                )
+            self.assertEqual(ctx.exception.code, "deliverable-input-oversized")
+
+    def test_cli_and_mcp_agree_on_large_rework_compose(self) -> None:
+        from mcp_server import server
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(
+                scaffold, _LARGE_REWORK_RESOURCE
+            )
+            cli_records, _stderr, cli_code = _invoke_cli(
+                str(task_path), "coder"
+            )
+            self.assertEqual(cli_code, EXIT_OK)
+            result = server._invoke_cli(
+                "compose-assignment-prompt",
+                [str(task_path), "--role", "coder"],
+            )
+            self.assertEqual(result["exit_code"], EXIT_OK)
+            self.assertEqual(cli_records[0], result["records"][0])
+
+    def test_prose_over_budget_finding_names_executable_recovery(self) -> None:
+        # The Implementation contract budget still binds composed prose. A
+        # prose claim of an "oversize reason" is not a supported mechanism
+        # and changes nothing; the emitted recovery names only artifacts
+        # editable through supported mediated writers.
+        big_notes = (
+            "## Notes\n\n"
+            "Oversize reason: the assignee needs all of this context.\n\n"
+            + (
+                "Context the composer must carry verbatim into the "
+                "implementation contract section.\n" * 260
+            )
+            + "\n"
+        )
+        oversized_task = _DELIVERABLE_TASK.replace(
+            "## Acceptance", big_notes + "## Acceptance"
+        )
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            _prepare_work_root(scaffold)
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-01-002.md", oversized_task
+            )
+            scaffold.write("specs/SPEC-01-002.md", _FULL_SPEC)
+            scaffold.write("STANDARDS.md", _STANDARDS)
+            scaffold.write(
+                "resources/loader-contract.md",
+                "# Loader contract\n\nOne short section.\n",
+            )
+            _capture(
+                scaffold, "REQUEST-001", "task:TASK-01-002", _OPERATOR_REQUEST
+            )
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "invalid")
+            (finding,) = [
+                item for item in record["findings"]
+                if item["code"] == "section-over-budget"
+            ]
+            self.assertIn("Implementation contract", finding["detail"])
+            self.assertIn("mediated writer", finding["recovery"])
+            self.assertNotIn("oversize reason", finding["recovery"])
+            self.assertNotIn("reason", finding["detail"])
 
 
 class TestCliMcpEquivalence(unittest.TestCase):
