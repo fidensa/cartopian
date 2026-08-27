@@ -505,7 +505,9 @@ def handler(args: argparse.Namespace) -> int:
             return EXIT_FAIL
         try:
             task_content = task_path.read_text(encoding="utf-8")
-            prompt_text = prompt_path.read_text(encoding="utf-8")
+            # newline="" keeps payload bytes exact for digest verification.
+            with prompt_path.open("r", encoding="utf-8", newline="") as handle:
+                prompt_text = handle.read()
             project_cfg = _load_toml(project_toml, "project config") or {}
             deliverable = _resolve_deliverable(
                 project_cfg,
@@ -558,6 +560,21 @@ def handler(args: argparse.Namespace) -> int:
                     "dependency-deliverable-input-unavailable: "
                     + handoff_packet._dependency_deliverable_refusal(item)
                 )
+            return EXIT_FAIL
+        # --- Fail-closed: every declared payload is a real, current input ----
+        # A payload declaration the machine did not resolve — hand-authored,
+        # duplicated, malformed, or stale against the resource on disk —
+        # refuses the launch; the typed channel must never become a bypass.
+        payload_audit = handoff_packet.audit_prompt_payloads(
+            project_root,
+            project_cfg,
+            task_content,
+            deliverable,
+            prompt_text,
+        )
+        if not payload_audit["ok"]:
+            for problem in payload_audit["problems"]:
+                stderr_guard(f"input-payload-audit: {problem}")
             return EXIT_FAIL
         # Task review publishes to the independent review-report slot
         # (REPORT-NN-NNN-review.md). The task-completion report keeps its

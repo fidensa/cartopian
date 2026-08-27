@@ -26,13 +26,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from cli.markdown_fences import FenceTracker
+
 _CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
     / "protocol"
     / "assignment-prompt-contract.json"
 )
 
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$")
 
 
@@ -88,13 +89,12 @@ def _scan(
     text: str, rule: Mapping[str, Any], *, section_aware: bool
 ) -> List[Dict[str, Any]]:
     violations: List[Dict[str, Any]] = []
-    in_fence = False
+    tracker = FenceTracker()
     section = "(title)"
     for number, line in enumerate(text.splitlines(), start=1):
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        if tracker.feed(line):
             continue
-        if in_fence:
+        if tracker.in_fence:
             continue
         heading = _H2_RE.match(line)
         if heading:

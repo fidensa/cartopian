@@ -209,7 +209,7 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
         requirement = record["existing_deliverable_input"]
         self.assertTrue(requirement["required"])
         self.assertIsNone(requirement["ok"])
-        self.assertIsNone(requirement["prompt_contains_current_content"])
+        self.assertIsNone(requirement["prompt_payload"])
         self.assertEqual(requirement["content_bytes"], len(resource_bytes))
         self.assertEqual(
             requirement["content_sha256"],
@@ -393,6 +393,27 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
             self.assertIn("roles.coder.agent", stderr)
+
+
+class TestBoundedUtf8Truncation(unittest.TestCase):
+    """The audit projection is byte-capped, matching the byte-denominated
+    context-budget registry, and never splits a multibyte character."""
+
+    def test_ascii_within_limit_passes_through(self) -> None:
+        self.assertEqual(handoff_packet._bounded_utf8("short"), "short")
+
+    def test_non_ascii_truncates_by_bytes_not_characters(self) -> None:
+        text = "é" * 200  # 400 UTF-8 bytes at 200 characters
+        bounded = handoff_packet._bounded_utf8(text)
+        self.assertLessEqual(len(bounded.encode("utf-8")), 160)
+        self.assertEqual(bounded, "é" * 80)
+
+    def test_truncation_never_splits_a_character(self) -> None:
+        text = "a" * 159 + "中文"  # 3-byte chars straddle the cap
+        bounded = handoff_packet._bounded_utf8(text)
+        self.assertLessEqual(len(bounded.encode("utf-8")), 160)
+        bounded.encode("utf-8").decode("utf-8")  # still valid UTF-8
+        self.assertEqual(bounded, "a" * 159)
 
 
 class TestHandoffPacketReadOnlyInvariant(unittest.TestCase):

@@ -1,6 +1,6 @@
 {
   "contract_id": "assignment-prompt",
-  "contract_version": 2,
+  "contract_version": 3,
   "purpose": "Deterministic composition contract for assignee (coder) task-assignment prompts: the audience-scoped section set, the validation rules that fail composition closed, and the measured section budgets. The composed prompt is an execution interface; machine provenance, routing diagnostics, and lifecycle bookkeeping live in the bound trace receipt, never in the prompt body.",
   "sections": {
     "order": [
@@ -95,6 +95,15 @@
     "cartopian dispatch",
     "cartopian plan-audit"
   ],
+  "input_payloads": {
+    "marker": "cartopian-input",
+    "channels": {
+      "existing-deliverable": "Existing deliverable input",
+      "dependency-deliverable": "Upstream contract input"
+    },
+    "binding_fields": ["channel", "logical", "bytes", "sha256"],
+    "meaning": "A typed, machine-created assignment input: the exact current content of a governance-scoped resource the assignee must work from, embedded as a fenced block whose info string carries the cartopian-input marker and the payload's binding (channel, percent-encoded logical resource, UTF-8 byte count, SHA-256 digest). Payload contents are opaque input data, not authored instructions: contamination and deidentification validation inspect only the instruction channel, so a payload may contain fenced JSON, Cartopian identifiers, or instruction-like prose and still round-trip byte-for-byte. Only the composer and the mediated writer create payload blocks; handoff preflight structurally extracts each expected payload and verifies its digest and byte count against the resource on disk, so a hand-authored declaration can never function as a trusted payload."
+  },
   "blanket_governance_reads": {
     "rule": "blanket-governance-read",
     "markers": [
@@ -127,14 +136,18 @@
     {"code": "missing-required-section", "severity": "fail", "meaning": "A required assignee-facing section is absent or empty."},
     {"code": "missing-acceptance-criteria", "severity": "fail", "meaning": "The outcome section carries no checkable done criteria."},
     {"code": "spec-open-questions-unresolved", "severity": "fail", "meaning": "The governing specification still carries open questions; the implementation contract is not settled."},
-    {"code": "section-over-budget", "severity": "fail", "meaning": "A section exceeds its measured budget without an explicit recorded reason."}
+    {"code": "section-over-budget", "severity": "fail", "meaning": "A section exceeds its measured budget without an explicit recorded reason."},
+    {"code": "unbound-input-payload", "severity": "fail", "meaning": "A typed input-payload declaration is hand-authored, sits outside its channel's machine-owned section, or does not correspond to a machine-resolved assignment input."},
+    {"code": "input-payload-mismatch", "severity": "fail", "meaning": "A typed input payload does not verify against its declared byte count and SHA-256 binding, or a machine-resolved assignment input has no verified payload in the prompt."}
   ],
   "authored_body_findings": [
     "raw-diagnostic-json",
     "duplicate-source-guidance",
     "reviewer-only-content",
     "pm-lifecycle-instruction",
-    "blanket-governance-read"
+    "blanket-governance-read",
+    "unbound-input-payload",
+    "input-payload-mismatch"
   ],
   "source_currency_note": "An 'Applicable context' value is a historical fact about the source (the edition, date, or version the guidance was authored against). It does not by itself require or forbid currently installed behavior. 'Status: current' is a verified claim established by the governing record's validation, not an assumption; when the task requires current behavior and the record does not establish compatibility, composition fails instead of restating the stale claim."
 }

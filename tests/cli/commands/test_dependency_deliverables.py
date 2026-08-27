@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from cli import assignment_inputs
 from cli.commands import handoff_packet, task_bundle, validate_task_readiness
 from cli.main import EXIT_FAIL, EXIT_OK
 from tests.scaffold import project_scaffold
@@ -190,8 +191,9 @@ class TestDependencyDeliverableInputs(unittest.TestCase):
             self.assertEqual(record["reason"], "role-can-read-governance")
             self.assertIs(record["ok"], True)
 
-    def test_contained_role_requires_curated_prompt_content(self) -> None:
+    def test_contained_role_requires_bound_payload(self) -> None:
         content = "# D2 interface\n\ninterface D2 { apply(a, b): b applied to a }\n"
+        logical = "project:resources/contracts/d2-interface.md"
         with project_scaffold(cartopian_toml=_TOML) as scaffold:
             scaffold.write("tasks/done/TASK-05-008.md", _DEP_TASK)
             scaffold.write("resources/contracts/d2-interface.md", content)
@@ -204,13 +206,60 @@ class TestDependencyDeliverableInputs(unittest.TestCase):
                 scaffold, [], prompt_text="prompt without the contract"
             )
             self.assertIs(missing["ok"], False)
+            self.assertEqual(missing["prompt_payload"], "missing")
 
-            (curated,) = self._inputs(
+            # The exact content pasted outside a machine-created payload no
+            # longer satisfies preflight: the channel is typed, not textual.
+            (pasted,) = self._inputs(
                 scaffold, [], prompt_text=f"## Upstream contract\n\n{content}"
             )
-            self.assertIs(curated["ok"], True)
-            self.assertTrue(curated["prompt_contains_current_content"])
-            self.assertEqual(curated["content_bytes"], len(content.encode()))
+            self.assertIs(pasted["ok"], False)
+
+            block = assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_DEPENDENCY, logical, content
+            )
+            (bound,) = self._inputs(
+                scaffold, [],
+                prompt_text=f"## Upstream contract input\n\n{block}\n",
+            )
+            self.assertIs(bound["ok"], True)
+            self.assertEqual(bound["prompt_payload"], "bound")
+            self.assertEqual(bound["content_bytes"], len(content.encode()))
+
+            mutated_block = assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_DEPENDENCY,
+                logical,
+                content.replace("apply", "compose"),
+            )
+            (mutated,) = self._inputs(
+                scaffold, [],
+                prompt_text=f"## Upstream contract input\n\n{mutated_block}\n",
+            )
+            self.assertIs(mutated["ok"], False)
+            self.assertEqual(mutated["prompt_payload"], "mismatch")
+
+            (duplicated,) = self._inputs(
+                scaffold, [],
+                prompt_text=(
+                    f"## Upstream contract input\n\n{block}\n\n{block}\n"
+                ),
+            )
+            self.assertIs(duplicated["ok"], False)
+            self.assertEqual(duplicated["prompt_payload"], "duplicate")
+
+            wrong_block = assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_DEPENDENCY,
+                "project:resources/contracts/other.md",
+                content,
+            )
+            (wrongly_bound,) = self._inputs(
+                scaffold, [],
+                prompt_text=f"## Upstream contract input\n\n{wrong_block}\n",
+            )
+            self.assertIs(wrongly_bound["ok"], False)
+            self.assertEqual(
+                wrongly_bound["prompt_payload"], "missing"
+            )
 
     def test_non_project_deliverables_are_not_applicable(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:

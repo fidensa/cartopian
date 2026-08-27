@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import report_identity, request_trace, source_guidance
+from cli import assignment_inputs, report_identity, request_trace, source_guidance
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -175,9 +175,11 @@ def _existing_deliverable_input(
     A project-mode deliverable is governance-scoped.  When it already exists,
     an assignee without ``read:governance`` cannot inspect it directly even
     though updating or reviewing that content may be the assignment's entire
-    purpose.  The PM must therefore curate the current text into the prompt.
-    This record makes that dependency explicit and lets both manual and
-    automatic handoff paths fail before an unreadable assignment is launched.
+    purpose.  The composer or mediated writer must therefore embed the
+    current content as a machine-created typed input payload.  This record
+    makes that dependency explicit, verifies the payload's digest and byte
+    count against the resource on disk, and lets both manual and automatic
+    handoff paths fail before an unreadable assignment is launched.
     """
     base: Dict[str, Any] = {
         "required": False,
@@ -185,7 +187,7 @@ def _existing_deliverable_input(
         "logical": deliverable.get("logical") if deliverable else None,
         "content_sha256": None,
         "content_bytes": None,
-        "prompt_contains_current_content": None,
+        "prompt_payload": None,
         "ok": True,
     }
     if not deliverable or deliverable.get("mode") != "project":
@@ -210,7 +212,7 @@ def _existing_deliverable_input(
         }
     try:
         data = Path(absolute).read_bytes()
-        current_text = data.decode("utf-8")
+        data.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return {
             **record,
@@ -218,13 +220,22 @@ def _existing_deliverable_input(
             "ok": False,
         }
 
-    contains = None if prompt_text is None else current_text in prompt_text
+    payload = (
+        None
+        if prompt_text is None
+        else assignment_inputs.verify_bound_payload(
+            prompt_text,
+            assignment_inputs.CHANNEL_EXISTING,
+            deliverable.get("logical") or "",
+            data,
+        )
+    )
     return {
         **record,
         "content_sha256": hashlib.sha256(data).hexdigest(),
         "content_bytes": len(data),
-        "prompt_contains_current_content": contains,
-        "ok": contains,
+        "prompt_payload": None if payload is None else payload["state"],
+        "ok": None if payload is None else payload["state"] == "bound",
     }
 
 
@@ -270,10 +281,12 @@ def _dependency_deliverable_inputs(
     When a dependency's deliverable is a governance-scoped project resource,
     an assignee without ``read:governance`` cannot read the upstream contract
     it is being asked to build on — the exact gap that makes a coder infer
-    (and misread) an interface. The PM must curate each such deliverable's
-    current text into the prompt, exactly as it does for the current task's
-    own existing project deliverable, and both manual and automatic handoff
-    paths fail before an unreadable assignment is launched.
+    (and misread) an interface. The composer or mediated writer must embed
+    each such deliverable's current content as a machine-created typed input
+    payload, exactly as for the current task's own existing project
+    deliverable; the payload is verified here by digest and byte count, and
+    both manual and automatic handoff paths fail before an unreadable
+    assignment is launched.
     """
     records: List[Dict[str, Any]] = []
     for task_id in _blocked_by_ids(content):
@@ -284,7 +297,7 @@ def _dependency_deliverable_inputs(
             "logical": None,
             "content_sha256": None,
             "content_bytes": None,
-            "prompt_contains_current_content": None,
+            "prompt_payload": None,
             "ok": True,
         }
         dependency_path = _find_dependency_task(project_root, task_id)
@@ -344,7 +357,7 @@ def _dependency_deliverable_inputs(
             continue
         try:
             data = Path(absolute).read_bytes()
-            current_text = data.decode("utf-8")
+            data.decode("utf-8")
         except (OSError, UnicodeDecodeError):
             records.append(
                 {
@@ -354,17 +367,47 @@ def _dependency_deliverable_inputs(
                 }
             )
             continue
-        contains = None if prompt_text is None else current_text in prompt_text
+        payload = (
+            None
+            if prompt_text is None
+            else assignment_inputs.verify_bound_payload(
+                prompt_text,
+                assignment_inputs.CHANNEL_DEPENDENCY,
+                deliverable.get("logical") or "",
+                data,
+            )
+        )
         records.append(
             {
                 **record,
                 "content_sha256": hashlib.sha256(data).hexdigest(),
                 "content_bytes": len(data),
-                "prompt_contains_current_content": contains,
-                "ok": contains,
+                "prompt_payload": None if payload is None else payload["state"],
+                "ok": None if payload is None else payload["state"] == "bound",
             }
         )
     return records
+
+
+def _payload_refusal_tail(record: Dict[str, Any]) -> str:
+    state = record.get("prompt_payload")
+    if state == "duplicate":
+        problem = "the prompt binds it more than once"
+    elif state == "mismatch":
+        problem = (
+            "the prompt's bound payload does not match the current resource "
+            "content"
+        )
+    else:
+        problem = (
+            "the prompt carries no machine-created payload bound to it"
+        )
+    return (
+        f"{problem} — rewrite the prompt with cartopian write-prompt (or "
+        "compose-assignment-prompt + write-prompt --composed-file) so the "
+        "writer embeds the current resource as a typed input payload, then "
+        "rerun handoff preflight"
+    )
 
 
 def _dependency_deliverable_refusal(record: Dict[str, Any]) -> str:
@@ -386,10 +429,9 @@ def _dependency_deliverable_refusal(record: Dict[str, Any]) -> str:
             "read:governance or move binary work to a declared work root"
         )
     return (
-        f"prompt does not contain the current content of {logical} from "
-        f"dependency {task_id}, but the role cannot read governance resources "
-        "— curate the complete current resource into the prompt, rewrite the "
-        "prompt, and rerun handoff preflight"
+        f"{logical} from dependency {task_id} is required as an assignment "
+        f"input (the role cannot read governance resources) and "
+        + _payload_refusal_tail(record)
     )
 
 
@@ -401,10 +443,96 @@ def _existing_deliverable_refusal(record: Dict[str, Any]) -> str:
             "use a role with read:governance or move binary work to a declared work root"
         )
     return (
-        f"prompt does not contain the current content of {logical}, but the role "
-        "cannot read governance resources — curate the complete current resource "
-        "into the prompt, rewrite the prompt, and rerun handoff preflight"
+        f"{logical} is required as an assignment input (the role cannot read "
+        "governance resources) and " + _payload_refusal_tail(record)
     )
+
+
+def _expected_input_bindings(
+    project_root: Path,
+    project_cfg: Dict[str, Any],
+    content: str,
+    deliverable: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Machine-resolve every binding a prompt payload may legitimately claim.
+
+    Role-agnostic: a payload is acceptable whenever it matches a real
+    assignment input's current content, whether or not the role could also
+    read the resource directly. Unreadable resources yield no binding — a
+    payload claiming one then fails the audit, which is the safe direction.
+    """
+    bindings: List[Dict[str, Any]] = []
+
+    def _append(channel: str, item: Optional[Dict[str, Any]]) -> None:
+        if not item or item.get("mode") != "project" or not item.get("exists"):
+            return
+        absolute = item.get("absolute_path")
+        if not absolute:
+            return
+        try:
+            data = Path(absolute).read_bytes()
+            data.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return
+        bindings.append(
+            {
+                "channel": channel,
+                "logical": item.get("logical") or "",
+                "content_sha256": hashlib.sha256(data).hexdigest(),
+                "content_bytes": len(data),
+            }
+        )
+
+    _append(assignment_inputs.CHANNEL_EXISTING, deliverable)
+    for task_id in _blocked_by_ids(content):
+        dependency_path = _find_dependency_task(project_root, task_id)
+        if dependency_path is None:
+            continue
+        try:
+            dependency_content = dependency_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        _append(
+            assignment_inputs.CHANNEL_DEPENDENCY,
+            _resolve_deliverable(
+                project_cfg, project_root, _deliverable_value(dependency_content)
+            ),
+        )
+    return bindings
+
+
+def _bounded_utf8(text: str, limit: int = 160) -> str:
+    """Truncate to at most ``limit`` UTF-8 bytes without splitting a character.
+
+    The context-budget registry bounds the machine projection in bytes, so
+    the cap must be byte-denominated — a character cap would let non-ASCII
+    problem text exceed the declared allowance severalfold.
+    """
+    data = text.encode("utf-8")
+    if len(data) <= limit:
+        return text
+    return data[:limit].decode("utf-8", "ignore")
+
+
+def audit_prompt_payloads(
+    project_root: Path,
+    project_cfg: Dict[str, Any],
+    content: str,
+    deliverable: Optional[Dict[str, Any]],
+    prompt_text: str,
+) -> Dict[str, Any]:
+    """Audit every payload declaration in a handoff prompt.
+
+    Complements the per-input verification above: a payload the prompt
+    declares that is *not* a machine-resolved assignment input — or that is
+    malformed, duplicated, or stale against the resource on disk — fails the
+    handoff before launch. Hand-authored text therefore cannot smuggle
+    content past validation by declaring itself a trusted payload.
+    """
+    expected = _expected_input_bindings(
+        project_root, project_cfg, content, deliverable
+    )
+    return assignment_inputs.audit_payloads(prompt_text, expected)
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -585,6 +713,28 @@ def handler(args: argparse.Namespace) -> int:
         role_record["effective_grants"],
         prompt_text=prompt_text,
     )
+    payload_audit = (
+        None
+        if prompt_text is None
+        else audit_prompt_payloads(
+            project_root, project_cfg, content, deliverable, prompt_text
+        )
+    )
+    # The machine projection stays bounded: full problem details go to
+    # stderr below, never into the record.
+    payload_audit_projection = (
+        None
+        if payload_audit is None
+        else {
+            "ok": payload_audit["ok"],
+            "problem_count": len(payload_audit["problems"]),
+            "first_problem": (
+                _bounded_utf8(payload_audit["problems"][0])
+                if payload_audit["problems"]
+                else None
+            ),
+        }
+    )
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
         "schema_identity": resolved["schema_identity"],
@@ -603,6 +753,7 @@ def handler(args: argparse.Namespace) -> int:
         "deliverable": deliverable,
         "existing_deliverable_input": deliverable_input,
         "dependency_deliverable_inputs": dependency_inputs,
+        "input_payload_audit": payload_audit_projection,
         "source_guidance": source_guidance.active_projection(
             source_guidance_record
         ),
@@ -649,5 +800,9 @@ def handler(args: argparse.Namespace) -> int:
                 "dependency-deliverable-input-unavailable: "
                 + _dependency_deliverable_refusal(item)
             )
+        return EXIT_FAIL
+    if payload_audit is not None and not payload_audit["ok"]:
+        for problem in payload_audit["problems"]:
+            stderr_guard(f"input-payload-audit: {problem}")
         return EXIT_FAIL
     return EXIT_OK

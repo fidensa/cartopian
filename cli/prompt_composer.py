@@ -5,8 +5,10 @@ role packet, specification, applicable standards, the three selector results,
 source guidance, request evidence, and the report skeleton — and produces:
 
 - an audience-scoped assignee prompt (an execution interface, not an audit
-  log: no raw JSON, no routing diagnostics, no hashes, no inactive guidance,
-  no lifecycle bookkeeping),
+  log: no raw JSON, no routing diagnostics, no diagnostic hashes, no inactive
+  guidance, no lifecycle bookkeeping — the one machine binding the prompt
+  carries is the typed input-payload declaration, see
+  ``cli/assignment_inputs.py``),
 - a machine-readable trace receipt carrying the complete selector results,
   raw records, projection receipts, and per-section measurements,
 - a content identity binding the two.
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from cli import (
+    assignment_inputs,
     deidentify,
     governance_reads,
     judgment_guidance,
@@ -35,6 +38,7 @@ from cli import (
     risk_contract,
     source_guidance,
 )
+from cli.markdown_fences import FenceTracker
 
 _CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -44,7 +48,6 @@ _CONTRACT_PATH = (
 
 _TASK_TITLE_ID_RE = re.compile(r"^TASK-\d{2}-\d{3}\s*:\s*")
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$")
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _ROW_RE = re.compile(r"^-\s+(.*)$")
 _RISK_ROW_RE = re.compile(
     r"^([a-z][a-z-]*)\s*:\s*([a-z][a-z-]*)\s*;\s*Fact\s*:\s*(.+)$"
@@ -141,14 +144,13 @@ def _embed(text: str, *, strip_h1: bool = False, demote: int = 1) -> str:
     fractures the prompt's top-level section structure.
     """
     lines: List[str] = []
-    in_fence = False
+    tracker = FenceTracker()
     h1_stripped = not strip_h1
     for line in text.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        if tracker.feed(line):
             lines.append(line)
             continue
-        if in_fence:
+        if tracker.in_fence:
             lines.append(line)
             continue
         if not h1_stripped and line.startswith("# "):
@@ -169,11 +171,14 @@ def _section_body(content: str, heading: str) -> Optional[str]:
     lines = content.splitlines()
     start: Optional[int] = None
     body: List[str] = []
-    in_fence = False
+    tracker = FenceTracker()
     for line in lines:
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-        match = None if in_fence else _H2_RE.match(line)
+        is_delimiter = tracker.feed(line)
+        match = (
+            None
+            if tracker.in_fence or is_delimiter
+            else _H2_RE.match(line)
+        )
         if match and match.group(1).strip().lower() == heading.lower():
             start = 0
             body = []
@@ -333,11 +338,10 @@ def project_standards(
         current_heading = None
         current_lines = []
 
-    in_fence = False
+    tracker = FenceTracker()
     for line in standards_content.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-        if not in_fence and _H2_RE.match(line):
+        is_delimiter = tracker.feed(line)
+        if not tracker.in_fence and not is_delimiter and _H2_RE.match(line):
             flush()
             preamble_done = True
             current_heading = line
@@ -503,11 +507,14 @@ def split_sections(prompt: str) -> List[Tuple[str, str]]:
     content never opens or closes a section.
     """
     sections: List[Tuple[str, List[str]]] = [("(title)", [])]
-    in_fence = False
+    tracker = FenceTracker()
     for line in prompt.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-        match = None if in_fence else _H2_RE.match(line)
+        is_delimiter = tracker.feed(line)
+        match = (
+            None
+            if tracker.in_fence or is_delimiter
+            else _H2_RE.match(line)
+        )
         if match:
             sections.append((match.group(1).strip(), [line]))
             continue
@@ -532,12 +539,11 @@ def _outside_fences(text: str) -> str:
     prompt structure, so structural duplicate checks never look inside them.
     """
     kept: List[str] = []
-    in_fence = False
+    tracker = FenceTracker()
     for line in text.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        if tracker.feed(line):
             continue
-        if not in_fence:
+        if not tracker.in_fence:
             kept.append(line)
     return "\n".join(kept)
 
@@ -550,15 +556,14 @@ def _raw_json_present(text: str) -> bool:
     inside a neutral fence (a curated deliverable that happens to be JSON) is
     assignment input, not diagnostics, and is not flagged.
     """
-    in_fence = False
+    tracker = FenceTracker()
     for line in text.splitlines():
-        stripped = line.strip()
-        if _FENCE_RE.match(line):
-            if not in_fence and "json" in stripped.lstrip("`~").lower():
+        was_in_fence = tracker.in_fence
+        if tracker.feed(line):
+            if not was_in_fence and "json" in line.strip().lstrip("`~").lower():
                 return True
-            in_fence = not in_fence
             continue
-        if not in_fence and _JSON_LINE_RE.match(line):
+        if not tracker.in_fence and _JSON_LINE_RE.match(line):
             return True
     return False
 
@@ -600,12 +605,113 @@ def validate_authored_body(body: str) -> List[Dict[str, str]]:
     (``write-prompt --content*``) enforces the contamination subset named by
     the contract's ``authored_body_findings`` so a manually assembled body
     cannot reintroduce audit-log content, without imposing the composed
-    structure on historical projects.
+    structure on historical projects. Hand-authored text cannot declare
+    itself a trusted input payload: the typed payload sections and marker are
+    machine-owned, so their presence in an authored body is itself a finding.
     """
     contract = load_contract()
     allowed = set(contract.get("authored_body_findings", []))
-    findings = validate_prompt(body, contract, structural=False)
+    findings = validate_prompt(
+        body, contract, structural=False, payload_origin="authored"
+    )
     return [item for item in findings if item["code"] in allowed]
+
+
+def _payload_findings(
+    prompt: str,
+    payload_entries: List[Dict[str, Any]],
+    input_payloads: Optional[List[Dict[str, Any]]],
+    payload_origin: str,
+) -> List[Dict[str, str]]:
+    """Findings over the typed input-payload channel.
+
+    An authored body may not declare payloads or carry the machine-owned
+    payload sections at all. A machine body's payloads must each verify
+    against their declared binding, sit in their channel's section, and —
+    when the composer's payload manifest is supplied — correspond one-to-one
+    with the machine-resolved assignment inputs.
+    """
+    findings: List[Dict[str, str]] = []
+    if payload_origin == "authored":
+        for entry in payload_entries:
+            findings.append(_finding(
+                "unbound-input-payload",
+                "a hand-authored body declares a typed input payload (line "
+                f"{entry['line_number']}); payload sections are machine-created",
+                "remove the declaration — the mediated writer materializes "
+                "input payloads from the machine-resolved assignment inputs",
+            ))
+        for name, _text in split_sections(prompt):
+            if name in assignment_inputs.CHANNEL_SECTIONS.values():
+                findings.append(_finding(
+                    "unbound-input-payload",
+                    f"a hand-authored body carries the machine-owned section "
+                    f"{name!r}",
+                    "remove the section — the mediated writer materializes "
+                    "input payloads from the machine-resolved assignment "
+                    "inputs",
+                ))
+        return findings
+
+    verified_keys: List[Tuple[str, str, str, int]] = []
+    for entry in payload_entries:
+        if entry["error"] is not None or not entry["verified"]:
+            findings.append(_finding(
+                "input-payload-mismatch",
+                f"the input payload at line {entry['line_number']} does not "
+                "verify against its declared binding "
+                f"({entry['error'] or 'digest mismatch'})",
+                "recompose the prompt so every payload is machine-created "
+                "from the current resource content",
+            ))
+            continue
+        if entry["section"] != assignment_inputs.CHANNEL_SECTIONS[entry["channel"]]:
+            findings.append(_finding(
+                "unbound-input-payload",
+                f"the {entry['channel']} payload at line "
+                f"{entry['line_number']} appears outside its machine-owned "
+                f"section (found under {entry['section']!r})",
+                "recompose the prompt; a payload block belongs only in its "
+                "channel's declared input section",
+            ))
+            continue
+        verified_keys.append((
+            entry["channel"],
+            entry["logical"],
+            entry["declared_sha256"],
+            entry["declared_bytes"],
+        ))
+
+    if input_payloads is not None:
+        manifest_keys = [
+            (
+                item["channel"],
+                item["logical"],
+                item["content_sha256"],
+                item["content_bytes"],
+            )
+            for item in input_payloads
+        ]
+        remaining = list(manifest_keys)
+        for key in verified_keys:
+            if key in remaining:
+                remaining.remove(key)
+            else:
+                findings.append(_finding(
+                    "unbound-input-payload",
+                    f"the prompt declares a payload for {key[1]!r} that is "
+                    "not among the machine-resolved assignment inputs",
+                    "only the composer and mediated writer may create typed "
+                    "payload sections; recompose the prompt",
+                ))
+        for key in remaining:
+            findings.append(_finding(
+                "input-payload-mismatch",
+                f"the machine-resolved assignment input {key[1]!r} has no "
+                "verified payload in the prompt",
+                "recompose the prompt from the current resource content",
+            ))
+    return findings
 
 
 def validate_prompt(
@@ -615,6 +721,8 @@ def validate_prompt(
     structural: bool = True,
     budget_reasons: Optional[Dict[str, str]] = None,
     governance_markers_reported: Optional[frozenset] = None,
+    input_payloads: Optional[List[Dict[str, Any]]] = None,
+    payload_origin: str = "machine",
 ) -> List[Dict[str, str]]:
     """Validate one assignee-facing prompt body against the contract.
 
@@ -622,12 +730,34 @@ def validate_prompt(
     reported by the component-level validation in :func:`compose`; the
     section-aware defense-in-depth check here skips them so one contamination
     surfaces once, attributed to its originating component.
+
+    Contamination and deidentification checks inspect the *instruction
+    channel* only: verified machine-created input payloads (see
+    ``cli/assignment_inputs.py``) are exact assignment input data, so their
+    contents — fenced JSON, Cartopian identifiers, instruction-like prose —
+    are never validation findings. ``input_payloads`` is the composer's
+    machine-built payload manifest; when supplied, the prompt's payloads must
+    correspond to it one-to-one. ``payload_origin="authored"`` marks a
+    hand-authored body, in which any payload declaration is itself a finding
+    and no payload exemption exists.
     """
     findings: List[Dict[str, str]] = []
     sections = split_sections(prompt)
     by_name = {name: text for name, text in sections}
 
-    if _raw_json_present(prompt):
+    payload_entries = assignment_inputs.extract_payload_blocks(prompt)
+    findings.extend(_payload_findings(
+        prompt, payload_entries, input_payloads, payload_origin
+    ))
+    instruction = (
+        prompt
+        if payload_origin == "authored"
+        else assignment_inputs.strip_payload_blocks(prompt)
+    )
+    instruction_sections = split_sections(instruction)
+    instruction_by_name = {name: text for name, text in instruction_sections}
+
+    if _raw_json_present(instruction):
         findings.append(_finding(
             "raw-diagnostic-json",
             "a raw machine JSON payload appears in the assignee prompt",
@@ -635,7 +765,7 @@ def validate_prompt(
             "assignee projection",
         ))
 
-    unfenced = _outside_fences(prompt)
+    unfenced = _outside_fences(instruction)
     source_renderings = unfenced.count("### Authoritative sources")
     if source_renderings > 1:
         findings.append(_finding(
@@ -646,7 +776,7 @@ def validate_prompt(
         ))
 
     for marker in contract.get("reviewer_only_markers", []):
-        if marker in prompt:
+        if marker in instruction:
             findings.append(_finding(
                 "reviewer-only-content",
                 f"reviewer-audience material present: {marker!r}",
@@ -655,7 +785,7 @@ def validate_prompt(
             break
 
     for marker in contract.get("pm_lifecycle_markers", []):
-        if marker in prompt:
+        if marker in instruction:
             findings.append(_finding(
                 "pm-lifecycle-instruction",
                 f"PM lifecycle instruction present: {marker!r}",
@@ -665,7 +795,7 @@ def validate_prompt(
 
     identifiers = [
         token
-        for token in deidentify.list_identifiers(prompt)
+        for token in deidentify.list_identifiers(instruction)
         if not _SANCTIONED_IDENTIFIER_RE.fullmatch(token)
     ]
     if identifiers:
@@ -682,7 +812,7 @@ def validate_prompt(
     # guidance — still fails.
     read_rule = governance_reads.load_rule(contract)
     suppressed = governance_markers_reported or frozenset()
-    for item in governance_reads.markdown_violations(prompt, read_rule):
+    for item in governance_reads.markdown_violations(instruction, read_rule):
         if item["marker"] in suppressed:
             continue
         findings.append(_finding(
@@ -693,7 +823,7 @@ def validate_prompt(
             read_rule["recovery"],
         ))
 
-    guidance_section = by_name.get("Source guidance", "")
+    guidance_section = instruction_by_name.get("Source guidance", "")
     if guidance_section and _CURRENCY_CLAIM_RE.search(guidance_section):
         if "Status: current" not in guidance_section:
             findings.append(_finding(
@@ -727,7 +857,7 @@ def validate_prompt(
         ))
 
     seen_criteria: Dict[str, str] = {}
-    for name, text in sections:
+    for name, text in instruction_sections:
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped.startswith("- [ ]"):
@@ -840,8 +970,11 @@ def _governance_readable(effective_grants: List[str]) -> bool:
 
 
 def _read_resource(path: str, what: str) -> str:
+    # newline="" keeps CRLF byte-exact: the payload binding is hashed over
+    # these bytes and preflight compares against the raw resource on disk.
     try:
-        return Path(path).read_text(encoding="utf-8")
+        with Path(path).open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
     except (OSError, UnicodeDecodeError) as exc:
         raise ComposeRefusal(
             "deliverable-input-unreadable", f"{what} is not readable UTF-8: {exc}"
@@ -1079,12 +1212,16 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
             deliverable.get("logical") or "the existing project deliverable",
         )
         existing_input = {
-            "logical": deliverable.get("logical"),
+            **assignment_inputs.payload_binding(
+                assignment_inputs.CHANNEL_EXISTING,
+                deliverable.get("logical") or "",
+                text,
+            ),
             "content": text,
-            "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         }
 
     upstream_inputs: List[Dict[str, Any]] = []
+    seen_upstream: set = set()
     for dependency_id in _blocked_by_ids(content):
         dependency_path = _find_dependency_task(project_root, dependency_id)
         if dependency_path is None:
@@ -1110,6 +1247,11 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
                 f"{dependency_deliverable.get('logical')} but it was never "
                 "persisted",
             )
+        # Two dependencies may declare the same deliverable; the payload
+        # channel binds by (channel, logical), so it is rendered exactly once.
+        if dependency_deliverable.get("logical") in seen_upstream:
+            continue
+        seen_upstream.add(dependency_deliverable.get("logical"))
         if _governance_readable(grants):
             continue
         text = _read_resource(
@@ -1118,11 +1260,12 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         )
         upstream_inputs.append(
             {
-                "logical": dependency_deliverable.get("logical"),
+                **assignment_inputs.payload_binding(
+                    assignment_inputs.CHANNEL_DEPENDENCY,
+                    dependency_deliverable.get("logical") or "",
+                    text,
+                ),
                 "content": text,
-                "content_sha256": hashlib.sha256(
-                    text.encode("utf-8")
-                ).hexdigest(),
             }
         )
 
@@ -1150,8 +1293,22 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         git_versioning=git_versioning,
     )
 
+    input_payload_manifest = [
+        {
+            key: item[key]
+            for key in ("channel", "logical", "content_bytes", "content_sha256")
+        }
+        for item in (
+            ([existing_input] if existing_input is not None else [])
+            + upstream_inputs
+        )
+    ]
+
     findings.extend(validate_prompt(
-        prompt, contract, governance_markers_reported=governance_markers
+        prompt,
+        contract,
+        governance_markers_reported=governance_markers,
+        input_payloads=input_payload_manifest,
     ))
     sections = measure_sections(prompt)
     prompt_identity = _sha256(prompt.encode("utf-8"))
@@ -1187,6 +1344,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         },
         "deliverable": deliverable,
         "work_roots": work_roots,
+        "input_payloads": input_payload_manifest,
         "section_sizes": sections,
         "findings": findings,
         "prompt_content_identity": prompt_identity,
@@ -1214,6 +1372,143 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         "expected_report_path": str(expected_report_path),
         "request_sections_appended_by": "write-prompt",
     }
+
+
+def materialize_input_sections(
+    project_root: Path, task_path: Path, body: str
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """Machine-materialize the typed input sections for an authored prompt.
+
+    The hand-authored path cannot declare trusted payloads, so the mediated
+    writer creates them: it resolves the task's existing project deliverable
+    and its dependencies' project deliverables (whichever exist), and appends
+    one machine-created payload section per channel. Returns the extended
+    body and the machine payload manifest. Refuses when the authored body
+    already declares a payload or carries a machine-owned payload section —
+    that text is hand-authored by definition and must not pass as machine
+    input.
+
+    Materialization is role-agnostic: whether the assignee's role could read
+    the resource directly is a preflight concern; an embedded exact copy is
+    correct input either way.
+    """
+    from cli.commands.handoff_packet import (
+        _blocked_by_ids,
+        _deliverable_value,
+        _find_dependency_task,
+    )
+    from cli.commands.resolve_config import _CliError, _load_toml, _resolve_deliverable
+
+    if assignment_inputs.extract_payload_blocks(body):
+        raise ComposeRefusal(
+            "unbound-input-payload",
+            "the authored prompt body declares a typed input payload; "
+            "payload sections are machine-created — remove the declaration",
+        )
+    for name, _text in split_sections(body):
+        if name in assignment_inputs.CHANNEL_SECTIONS.values():
+            raise ComposeRefusal(
+                "unbound-input-payload",
+                f"the authored prompt body carries the machine-owned section "
+                f"{name!r} — remove it; the writer materializes input "
+                "payloads from the machine-resolved assignment inputs",
+            )
+
+    try:
+        content = Path(task_path).read_text(encoding="utf-8")
+        project_cfg = _load_toml(
+            Path(project_root) / "cartopian.toml", "project config"
+        ) or {}
+        deliverable = _resolve_deliverable(
+            project_cfg, Path(project_root), _deliverable_value(content)
+        )
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ComposeRefusal("task-unreadable", str(exc)) from exc
+    except _CliError as err:
+        raise ComposeRefusal("project-config-invalid", err.message) from err
+
+    manifest: List[Dict[str, Any]] = []
+    parts: List[str] = []
+    if (
+        deliverable is not None
+        and deliverable.get("mode") == "project"
+        and deliverable.get("exists")
+    ):
+        text = _read_resource(
+            deliverable.get("absolute_path") or "",
+            deliverable.get("logical") or "the existing project deliverable",
+        )
+        logical = deliverable.get("logical") or ""
+        manifest.append(assignment_inputs.payload_binding(
+            assignment_inputs.CHANNEL_EXISTING, logical, text
+        ))
+        parts += [
+            "## Existing deliverable input",
+            "",
+            "The complete current content of the document this assignment "
+            "updates follows. Work from this copy.",
+            "",
+            assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_EXISTING, logical, text
+            ),
+            "",
+        ]
+
+    upstream_parts: List[str] = []
+    seen_upstream: set = set()
+    for dependency_id in _blocked_by_ids(content):
+        dependency_path = _find_dependency_task(
+            Path(project_root), dependency_id
+        )
+        if dependency_path is None:
+            continue
+        try:
+            dependency_content = dependency_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ComposeRefusal(
+                "dependency-task-unreadable", f"{dependency_path}: {exc}"
+            ) from exc
+        dependency_deliverable = _resolve_deliverable(
+            project_cfg, Path(project_root), _deliverable_value(dependency_content)
+        )
+        if (
+            not dependency_deliverable
+            or dependency_deliverable.get("mode") != "project"
+            or not dependency_deliverable.get("exists")
+        ):
+            continue
+        # Shared deliverables render once: the payload channel binds by
+        # (channel, logical).
+        if dependency_deliverable.get("logical") in seen_upstream:
+            continue
+        seen_upstream.add(dependency_deliverable.get("logical"))
+        text = _read_resource(
+            dependency_deliverable.get("absolute_path") or "",
+            dependency_deliverable.get("logical") or "a dependency deliverable",
+        )
+        logical = dependency_deliverable.get("logical") or ""
+        manifest.append(assignment_inputs.payload_binding(
+            assignment_inputs.CHANNEL_DEPENDENCY, logical, text
+        ))
+        upstream_parts += [
+            assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_DEPENDENCY, logical, text
+            ),
+            "",
+        ]
+    if upstream_parts:
+        parts += [
+            "## Upstream contract input",
+            "",
+            "The upstream contract(s) this assignment builds on follow in "
+            "full — read them here rather than inferring the interface.",
+            "",
+            *upstream_parts,
+        ]
+
+    if not parts:
+        return body, manifest
+    return body.rstrip() + "\n\n" + "\n".join(parts).rstrip() + "\n", manifest
 
 
 def _render_prompt(
@@ -1416,7 +1711,11 @@ def _render_prompt(
             "updates follows. Its durable location is not readable by your "
             "role; work from this copy.",
             "",
-            _fenced(existing_input["content"]),
+            assignment_inputs.render_payload_block(
+                existing_input["channel"],
+                existing_input["logical"],
+                existing_input["content"],
+            ),
             "",
         ]
 
@@ -1429,7 +1728,12 @@ def _render_prompt(
             "",
         ]
         for item in upstream_inputs:
-            parts += [_fenced(item["content"]), ""]
+            parts += [
+                assignment_inputs.render_payload_block(
+                    item["channel"], item["logical"], item["content"]
+                ),
+                "",
+            ]
 
     # Deliverable ---------------------------------------------------------------
     if deliverable is not None:

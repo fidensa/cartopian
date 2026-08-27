@@ -216,7 +216,11 @@ def handler(args: argparse.Namespace) -> int:
         # against the current contract.
         try:
             fresh = prompt_composer.validate_prompt(
-                body, prompt_composer.load_contract()
+                body,
+                prompt_composer.load_contract(),
+                input_payloads=composed_record["trace_receipt"].get(
+                    "input_payloads"
+                ) or [],
             )
         except prompt_composer.ComposeRefusal as refusal:
             _writers.stderr("guard", f"{refusal.code}: {refusal.detail}")
@@ -270,6 +274,15 @@ def handler(args: argparse.Namespace) -> int:
             )
             if refusal is not None:
                 raise RequestRefusal(refusal[0], refusal[1])
+            if composed_record is None:
+                # The typed input-payload sections are machine-owned: the
+                # writer materializes them from the machine-resolved
+                # assignment inputs; hand-authored declarations were refused
+                # above.
+                body, materialized = prompt_composer.materialize_input_sections(
+                    root, task.resolve(), body
+                )
+                details["input_payloads"] = materialized
             context = context_for_task_assignment(root, task.resolve())
             content = _append_trace_projection(
                 root,
@@ -280,6 +293,9 @@ def handler(args: argparse.Namespace) -> int:
             )
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
+            return _writers.EXIT_FAIL
+        except prompt_composer.ComposeRefusal as refusal:
+            _writers.stderr("guard", f"{refusal.code}: {refusal.detail}")
             return _writers.EXIT_FAIL
         details.update({
             "request_kind": context.review_kind,
@@ -306,6 +322,13 @@ def handler(args: argparse.Namespace) -> int:
                 )
                 if refusal is not None:
                     raise RequestRefusal(refusal[0], refusal[1])
+                # Review prompts consume the same governance-scoped inputs;
+                # the writer materializes the typed payload sections for a
+                # reviewer exactly as it does for a coder.
+                body, materialized = prompt_composer.materialize_input_sections(
+                    root, task.resolve(), body
+                )
+                details["input_payloads"] = materialized
                 context = context_for_task(
                     root,
                     task.resolve(),
@@ -327,6 +350,9 @@ def handler(args: argparse.Namespace) -> int:
                 )
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
+            return _writers.EXIT_FAIL
+        except prompt_composer.ComposeRefusal as refusal:
+            _writers.stderr("guard", f"{refusal.code}: {refusal.detail}")
             return _writers.EXIT_FAIL
         details.update({
             "review_kind": context.review_kind,

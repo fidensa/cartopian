@@ -22,8 +22,8 @@ The composed structure (owned by `protocol/assignment-prompt-contract.json`):
 ## Scope and authority boundaries
 ## Verification                  evidence gate, foreground-run rule, source-evidence duty
 ## Active guidance               risk / judgment-hold / practice-profile projections, as prose
-## Existing deliverable input    complete current resource content (conditional)
-## Upstream contract input       complete dependency deliverable content (conditional)
+## Existing deliverable input    machine-created typed payload of the current resource (conditional)
+## Upstream contract input       machine-created typed payload(s) of dependency deliverables (conditional)
 ## Deliverable                   where the durable work product lands (conditional)
 ## Completion report             instructions + the fenced machine-owned report skeleton
 ```

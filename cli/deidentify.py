@@ -20,6 +20,8 @@ Stdlib only.
 import re
 from typing import List, Tuple
 
+from cli.markdown_fences import FenceTracker
+
 # Bare identifier alternation (no anchors). Kept in sync with the per-artifact
 # grammars in ``cli/commands/_writers.py``. Longest-prefix-first where prefixes
 # overlap (``PROMPT-PLAN`` before ``PROMPT`` etc.) so the alternation is
@@ -72,7 +74,6 @@ _TITLE_ID_PREFIX_RE = re.compile(r"^" + _ID + r"\s*:\s*")
 _PLAN_REFS_LINE_RE = re.compile(r"^\s*Plan\s+refs?\s*:.*$", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^##\s+")
 _REFERENCES_HEADING_RE = re.compile(r"^##\s+References\s*$", re.IGNORECASE)
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 # Cleanup applied only to lines an inline substitution actually changed, so
 # code/interface blocks (which we never touch — see fence tracking) keep their
@@ -167,13 +168,12 @@ def assignment_spec_projection(text: str) -> Tuple[str, dict]:
     open_question_lines: List[str] = []
 
     out: List[str] = []
-    in_fence = False
+    tracker = FenceTracker()
     in_header = True
     skipping: str = ""
     for line in deidentified.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-        if not in_fence:
+        is_delimiter = tracker.feed(line)
+        if not tracker.in_fence and not is_delimiter:
             heading = _H2_HEADING_RE.match(line)
             if heading:
                 in_header = False
@@ -230,16 +230,15 @@ def deidentify_spec(text: str) -> Tuple[str, List[str]]:
     redactions = list_identifiers(text)
 
     out: List[str] = []
-    in_fence = False
+    tracker = FenceTracker()
     skip_section = False
     title_done = False
 
     for line in text.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        if tracker.feed(line):
             out.append(line)
             continue
-        if in_fence:
+        if tracker.in_fence:
             # Strip identifier tokens from code too (a token in an example
             # comment/string is the verbatim text a coder would copy), but never
             # tidy whitespace inside a fence — code indentation is significant.

@@ -811,6 +811,354 @@ class TestGovernanceReadScoping(unittest.TestCase):
             self.assertEqual(cli_records[0]["outcome"], "composed")
 
 
+# Activate grant gating: the coder deliberately lacks read:governance, so
+# the composer must embed governance-scoped inputs as typed payloads.
+_TOML_CONTAINED_CODER = _TOML_REVIEW_REQUIRED.replace(
+    'agent = "cartopian-claude"\n',
+    'agent = "cartopian-claude"\ngrants = ["coder-like"]\n',
+)
+
+_CONTAMINATED_RESOURCE = (
+    "# Loader contract (REQUIREMENTS)\n\n"
+    "Derived from TASK-01-002 / SPEC-01-002; see DEC-001.\n"
+    "Read protocol/CONVENTIONS.md for the governing lifecycle.\n\n"
+    "```json\n"
+    '{"functional": ["FR-001", "FR-002"], "review": "## Review checklist"}\n'
+    "```\n\n"
+    "Trailing-whitespace line:   \n"
+)
+
+_DELIVERABLE_LOGICAL = "project:resources/loader-contract.md"
+
+_DELIVERABLE_TASK = _FULL_TASK.replace(
+    "Evidence gate: required\n",
+    f"Deliverable: {_DELIVERABLE_LOGICAL}\nEvidence gate: required\n",
+)
+
+
+def _build_full_with_deliverable(scaffold) -> Path:
+    _prepare_work_root(scaffold)
+    task_path = scaffold.write(
+        "tasks/in-progress/TASK-01-002.md", _DELIVERABLE_TASK
+    )
+    scaffold.write("specs/SPEC-01-002.md", _FULL_SPEC)
+    scaffold.write("STANDARDS.md", _STANDARDS)
+    scaffold.write("resources/loader-contract.md", _CONTAMINATED_RESOURCE)
+    _capture(scaffold, "REQUEST-001", "task:TASK-01-002", _OPERATOR_REQUEST)
+    return task_path
+
+
+class TestTypedInputPayloadFlow(unittest.TestCase):
+    """Deliverable inputs are an opaque machine channel, not instructions."""
+
+    def test_contaminated_deliverable_composes_and_round_trips(self) -> None:
+        from cli import assignment_inputs
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            prompt = record["assignee_prompt"]
+            self.assertIn("## Existing deliverable input", prompt)
+            (entry,) = assignment_inputs.extract_payload_blocks(prompt)
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["channel"], assignment_inputs.CHANNEL_EXISTING)
+            self.assertEqual(entry["logical"], _DELIVERABLE_LOGICAL)
+            # Byte-exact round trip, including fenced JSON, Cartopian
+            # identifiers, trailing whitespace, and the final newline.
+            self.assertEqual(entry["content"], _CONTAMINATED_RESOURCE)
+            # The machine binding rides in the trace receipt too.
+            (manifest_entry,) = record["trace_receipt"]["input_payloads"]
+            self.assertEqual(
+                manifest_entry["content_sha256"], entry["declared_sha256"]
+            )
+
+    def test_same_content_authored_still_fails_validation(self) -> None:
+        contract = prompt_composer.load_contract()
+        body = (
+            "# Prompt\n\n## Your task\n\nUpdate the contract below.\n\n"
+            + _CONTAMINATED_RESOURCE
+        )
+        codes = {
+            item["code"]
+            for item in prompt_composer.validate_prompt(
+                body, contract, structural=False
+            )
+        }
+        self.assertIn("raw-diagnostic-json", codes)
+        self.assertIn("pm-identifier-present", codes)
+        self.assertIn("blanket-governance-read", codes)
+
+    def test_composed_write_then_handoff_preflight_passes(self) -> None:
+        import tempfile
+
+        from cli.commands import handoff_packet
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            composed_path = scaffold.root / "composed.json"
+            composed_path.write_text(
+                json.dumps({"action": "compose-assignment-prompt", **record}),
+                encoding="utf-8",
+            )
+            args = _write_prompt_args(
+                scaffold, task_path, composed_file=str(composed_path)
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = write_prompt.handler(args)
+            self.assertEqual(code, EXIT_OK, err.getvalue())
+
+            packet_args = argparse.Namespace(
+                task_path=str(task_path), role="coder"
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with tempfile.TemporaryDirectory() as home:
+                with mock.patch(
+                    "cli.commands.handoff_packet.Path.home",
+                    return_value=Path(home),
+                ):
+                    with contextlib.redirect_stdout(out), \
+                            contextlib.redirect_stderr(err):
+                        rc = handoff_packet.handler(packet_args)
+            self.assertEqual(rc, EXIT_OK, err.getvalue())
+            packet = json.loads(out.getvalue().splitlines()[0])
+            requirement = packet["existing_deliverable_input"]
+            self.assertTrue(requirement["required"])
+            self.assertIs(requirement["ok"], True)
+            self.assertEqual(requirement["prompt_payload"], "bound")
+            self.assertTrue(packet["input_payload_audit"]["ok"])
+
+    def test_mutated_resource_after_write_fails_preflight(self) -> None:
+        import tempfile
+
+        from cli.commands import handoff_packet
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            record = prompt_composer.compose(task_path, "coder")
+            composed_path = scaffold.root / "composed.json"
+            composed_path.write_text(
+                json.dumps({"action": "compose-assignment-prompt", **record}),
+                encoding="utf-8",
+            )
+            args = _write_prompt_args(
+                scaffold, task_path, composed_file=str(composed_path)
+            )
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(write_prompt.handler(args), EXIT_OK)
+            # The resource moves on after the prompt is written: the stale
+            # payload must fail preflight, not silently launch.
+            scaffold.write(
+                "resources/loader-contract.md",
+                _CONTAMINATED_RESOURCE + "\nnew requirement\n",
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with tempfile.TemporaryDirectory() as home:
+                with mock.patch(
+                    "cli.commands.handoff_packet.Path.home",
+                    return_value=Path(home),
+                ):
+                    with contextlib.redirect_stdout(out), \
+                            contextlib.redirect_stderr(err):
+                        rc = handoff_packet.handler(
+                            argparse.Namespace(
+                                task_path=str(task_path), role="coder"
+                            )
+                        )
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn(
+                "existing-deliverable-input-unavailable", err.getvalue()
+            )
+
+    def test_authored_write_materializes_payload_sections(self) -> None:
+        from cli import assignment_inputs
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            args = _write_prompt_args(
+                scaffold,
+                task_path,
+                content=(
+                    "# Update the loader contract\n\n"
+                    "## Your task\n\nRevise the contract per the goal.\n"
+                ),
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = write_prompt.handler(args)
+            self.assertEqual(code, EXIT_OK, err.getvalue())
+            written = (scaffold.prompts / "PROMPT-01-002.md").read_text(
+                encoding="utf-8", newline=""
+            )
+            self.assertIn("## Existing deliverable input", written)
+            (entry,) = assignment_inputs.extract_payload_blocks(written)
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["content"], _CONTAMINATED_RESOURCE)
+            details = json.loads(out.getvalue().splitlines()[-1])["details"]
+            (manifest_entry,) = details["input_payloads"]
+            self.assertEqual(
+                manifest_entry["logical"], _DELIVERABLE_LOGICAL
+            )
+
+    def test_crlf_resource_composes_writes_and_passes_preflight(self) -> None:
+        import tempfile
+
+        from cli import assignment_inputs
+        from cli.commands import handoff_packet
+
+        crlf_bytes = (
+            b"# Contract\r\n\r\n"
+            b"CRLF line one\r\n"
+            b"caf\xc3\xa9 \xe2\x80\x94 accented\r\n"
+        )
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            (scaffold.project_root / "resources" / "loader-contract.md").write_bytes(
+                crlf_bytes
+            )
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            (entry,) = assignment_inputs.extract_payload_blocks(
+                record["assignee_prompt"]
+            )
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["content"].encode("utf-8"), crlf_bytes)
+
+            composed_path = scaffold.root / "composed.json"
+            composed_path.write_text(
+                json.dumps({"action": "compose-assignment-prompt", **record}),
+                encoding="utf-8",
+            )
+            args = _write_prompt_args(
+                scaffold, task_path, composed_file=str(composed_path)
+            )
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(err):
+                self.assertEqual(
+                    write_prompt.handler(args), EXIT_OK, err.getvalue()
+                )
+
+            out, err = io.StringIO(), io.StringIO()
+            with tempfile.TemporaryDirectory() as home:
+                with mock.patch(
+                    "cli.commands.handoff_packet.Path.home",
+                    return_value=Path(home),
+                ):
+                    with contextlib.redirect_stdout(out), \
+                            contextlib.redirect_stderr(err):
+                        rc = handoff_packet.handler(
+                            argparse.Namespace(
+                                task_path=str(task_path), role="coder"
+                            )
+                        )
+            self.assertEqual(rc, EXIT_OK, err.getvalue())
+            packet = json.loads(out.getvalue().splitlines()[0])
+            self.assertEqual(
+                packet["existing_deliverable_input"]["prompt_payload"], "bound"
+            )
+            self.assertTrue(packet["input_payload_audit"]["ok"])
+
+    def test_shared_dependency_deliverable_renders_one_payload(self) -> None:
+        from cli import assignment_inputs
+        from cli.commands import handoff_packet
+        from cli.commands.resolve_config import _load_toml
+
+        shared_logical = "project:resources/shared-contract.md"
+        dep_task = (
+            "# {task_id}: Upstream contract\n\n"
+            "Phase: PHASE-01\n"
+            "Plan ref: n/a\n"
+            "Work root: n/a\n"
+            "Assignee: coder\n"
+            "Spec: none\n"
+            "Blocked by: n/a\n"
+            "Created: 2026-05-18\n"
+            "Evidence gate: n/a\n"
+            f"Deliverable: {shared_logical}\n\n"
+            "## Goal\n\nDefine the shared contract.\n"
+        )
+        blocked_task = _FULL_TASK.replace(
+            "Blocked by: n/a\n", "Blocked by: TASK-01-090, TASK-01-091\n"
+        )
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full(scaffold)
+            scaffold.write("tasks/in-progress/TASK-01-002.md", blocked_task)
+            scaffold.write(
+                "tasks/done/TASK-01-090.md",
+                dep_task.format(task_id="TASK-01-090"),
+            )
+            scaffold.write(
+                "tasks/done/TASK-01-091.md",
+                dep_task.format(task_id="TASK-01-091"),
+            )
+            scaffold.write(
+                "resources/shared-contract.md", "# Shared contract\n"
+            )
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            prompt = record["assignee_prompt"]
+            payloads = assignment_inputs.extract_payload_blocks(prompt)
+            # Both dependencies declare the same deliverable: it is rendered
+            # exactly once, so what composes also launches.
+            self.assertEqual(
+                [(item["channel"], item["logical"]) for item in payloads],
+                [(assignment_inputs.CHANNEL_DEPENDENCY, shared_logical)],
+            )
+            self.assertEqual(len(record["trace_receipt"]["input_payloads"]), 1)
+            project_cfg = _load_toml(
+                scaffold.project_root / "cartopian.toml", "project config"
+            )
+            audit = handoff_packet.audit_prompt_payloads(
+                scaffold.project_root,
+                project_cfg,
+                blocked_task,
+                None,
+                prompt,
+            )
+            self.assertTrue(audit["ok"], audit)
+            records = handoff_packet._dependency_deliverable_inputs(
+                scaffold.project_root,
+                project_cfg,
+                blocked_task,
+                [],
+                prompt_text=prompt,
+            )
+            self.assertEqual(len(records), 2)
+            for item in records:
+                self.assertIs(item["ok"], True, item)
+                self.assertEqual(item["prompt_payload"], "bound")
+
+    def test_authored_payload_declaration_is_refused(self) -> None:
+        from cli import assignment_inputs
+
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            fake_block = assignment_inputs.render_payload_block(
+                assignment_inputs.CHANNEL_EXISTING,
+                _DELIVERABLE_LOGICAL,
+                "attacker-chosen content\n",
+            )
+            args = _write_prompt_args(
+                scaffold,
+                task_path,
+                content=(
+                    "# Prompt\n\n## Your task\n\nDo it.\n\n"
+                    f"## Existing deliverable input\n\n{fake_block}\n"
+                ),
+            )
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(err):
+                code = write_prompt.handler(args)
+            self.assertEqual(code, EXIT_FAIL)
+            self.assertIn("unbound-input-payload", err.getvalue())
+
+
 class TestBudgetsAnchoredToFixtures(unittest.TestCase):
     """The contract's budgets stay anchored to the approved fixtures."""
 
