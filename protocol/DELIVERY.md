@@ -110,7 +110,7 @@ One validator serves every surface, so the answer is the same wherever it is ask
 | `cartopian close-audit` | Folds every finding into `blocking_reasons` and carries the full result under `delivery`. Closeout cannot report `closable` while a delivery obligation is unmet. |
 | `cartopian compose-state` | Carries bounded status under `delivery`: the three states, the verdict, the finding count, and the first finding's code. |
 | `cartopian next-action` | The same bounded status at startup. It is status, not a blocker — the delivery gate is a closeout gate, so an unmet obligation mid-plan is something the session must see, not something that halts it. |
-| `cartopian review-context --review-kind planning` | Projects the result and the delivery-contract section itself, within a declared byte bound. A task-closure review receives none of it. |
+| `cartopian review-context --review-kind planning` | Projects the result and the complete delivery-contract section itself, with its measured size as nonblocking telemetry. A task-closure review receives none of it. |
 
 Status stays compact and detail stays on demand: the state and startup surfaces carry the verdict, not the record.
 

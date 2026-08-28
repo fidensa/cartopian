@@ -1159,37 +1159,31 @@ class TestTypedInputPayloadFlow(unittest.TestCase):
             self.assertIn("unbound-input-payload", err.getvalue())
 
 
-class TestBudgetsAnchoredToFixtures(unittest.TestCase):
-    """The contract's budgets stay anchored to the approved fixtures."""
+class TestNoSizeGatesInContract(unittest.TestCase):
+    """The contract declares no size-based rejection of legitimate content.
 
-    def test_reference_fixtures_fit_budgets(self) -> None:
-        from cli import assignment_inputs
+    Section sizes are trace-receipt telemetry (section_sizes); the former
+    measured section budgets and the input-payload byte ceiling were
+    implementation restrictions with no operator authority and are removed.
+    """
 
+    def test_contract_declares_no_size_thresholds(self) -> None:
         contract = prompt_composer.load_contract()
-        budgets = contract["section_budgets"]["budgets"]
-        known = set(contract["sections"]["order"])
-        payload_sections = set(assignment_inputs.CHANNEL_SECTIONS.values())
-        # Prose budgets cover exactly the composed instruction-channel
-        # sections. The typed payload channels are byte-exact resource
-        # copies bounded by input_payloads.max_payload_bytes instead.
-        self.assertEqual(set(budgets), known - payload_sections)
+        self.assertNotIn("section_budgets", contract)
+        self.assertNotIn("max_payload_bytes", contract["input_payloads"])
+        codes = {item["code"] for item in contract["validation_findings"]}
+        self.assertNotIn("section-over-budget", codes)
+
+    def test_reference_fixtures_still_split_into_known_sections(self) -> None:
+        known = set(contract_sections := prompt_composer.load_contract()["sections"]["order"])
+        del contract_sections
         for fixture in sorted(FIXTURES_DIR.glob("*.md")):
             prompt = fixture.read_text(encoding="utf-8")
-            for name, text in prompt_composer.split_sections(prompt):
-                if name == "(title)" or name in payload_sections:
+            for name, _text in prompt_composer.split_sections(prompt):
+                if name == "(title)":
                     continue
                 with self.subTest(fixture=fixture.name, section=name):
-                    self.assertIn(name, budgets)
-                    self.assertLessEqual(
-                        len(text.encode("utf-8")), budgets[name]
-                    )
-
-    def test_payload_ceiling_is_declared_and_positive(self) -> None:
-        contract = prompt_composer.load_contract()
-        ceiling = contract["input_payloads"]["max_payload_bytes"]
-        self.assertIsInstance(ceiling, int)
-        self.assertGreater(ceiling, 0)
-        self.assertEqual(ceiling, prompt_composer._payload_ceiling(contract))
+                    self.assertIn(name, known)
 
 
 # A legitimate rework input larger than the removed 64 KiB per-section
@@ -1219,9 +1213,9 @@ def _build_with_deliverable_resource(scaffold, resource_text: str) -> Path:
 class TestDeliverableInputBounds(unittest.TestCase):
     """A rework assignment carries its complete existing deliverable.
 
-    The typed payload channel has no prose budget; its one bound is the
-    contract's declared `input_payloads.max_payload_bytes` read ceiling,
-    which fails closed before loading a genuinely unbounded resource.
+    The typed payload channel has no byte ceiling of any kind: a governed
+    resource is embedded complete and byte-exact whatever its size, and only
+    an unreadable or non-UTF-8 resource fails closed.
     """
 
     def test_rework_deliverable_above_64kib_composes_and_writes(self) -> None:
@@ -1274,47 +1268,38 @@ class TestDeliverableInputBounds(unittest.TestCase):
             record = prompt_composer.compose(task_path, "coder")
             self.assertEqual(record["outcome"], "composed", record["findings"])
 
-    def test_resource_above_declared_ceiling_refuses_closed(self) -> None:
-        ceiling = prompt_composer._payload_ceiling(
-            prompt_composer.load_contract()
-        )
-        oversized = "x" * (ceiling + 1)
-        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
-            task_path = _build_with_deliverable_resource(scaffold, oversized)
-            with self.assertRaises(prompt_composer.ComposeRefusal) as ctx:
-                prompt_composer.compose(task_path, "coder")
-            self.assertEqual(ctx.exception.code, "deliverable-input-oversized")
-            # CLI and MCP surfaces fail closed with the same diagnostic.
-            records, stderr, code = _invoke_cli(str(task_path), "coder")
-            self.assertEqual(code, EXIT_FAIL)
-            self.assertEqual(records, [])
-            self.assertIn("deliverable-input-oversized", stderr)
-            from mcp_server import server
+    def test_resource_above_former_1mib_ceiling_composes_byte_exact(self) -> None:
+        from cli import assignment_inputs
 
-            result = server._invoke_cli(
-                "compose-assignment-prompt",
-                [str(task_path), "--role", "coder"],
+        # One byte past the removed 1 MiB (1048576) ceiling: the payload is
+        # embedded complete and byte-exact, proving the bound is gone rather
+        # than raised.
+        beyond = "# Ledger\n" + "x" * (1048576 + 1 - len("# Ledger\n"))
+        self.assertEqual(len(beyond.encode("utf-8")), 1048577)
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_with_deliverable_resource(scaffold, beyond)
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            (entry,) = assignment_inputs.extract_payload_blocks(
+                record["assignee_prompt"]
             )
-            self.assertEqual(result["exit_code"], EXIT_FAIL)
-            self.assertTrue(any(
-                "deliverable-input-oversized" in line
-                for line in result["stderr_lines"]
-            ))
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["content"], beyond)
 
-    def test_materialized_authored_inputs_enforce_the_same_ceiling(self) -> None:
-        ceiling = prompt_composer._payload_ceiling(
-            prompt_composer.load_contract()
-        )
-        oversized = "x" * (ceiling + 1)
+    def test_materialized_authored_inputs_carry_any_size(self) -> None:
+        from cli import assignment_inputs
+
+        beyond = "# Ledger\n" + "x" * (1048576 + 1 - len("# Ledger\n"))
         with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
-            task_path = _build_with_deliverable_resource(scaffold, oversized)
-            with self.assertRaises(prompt_composer.ComposeRefusal) as ctx:
-                prompt_composer.materialize_input_sections(
-                    scaffold.project_root,
-                    task_path,
-                    "# Prompt\n\n## Your task\n\nUpdate the contract.\n",
-                )
-            self.assertEqual(ctx.exception.code, "deliverable-input-oversized")
+            task_path = _build_with_deliverable_resource(scaffold, beyond)
+            extended_body, _manifest = prompt_composer.materialize_input_sections(
+                scaffold.project_root,
+                task_path,
+                "# Prompt\n\n## Your task\n\nUpdate the contract.\n",
+            )
+            (entry,) = assignment_inputs.extract_payload_blocks(extended_body)
+            self.assertTrue(entry["verified"])
+            self.assertEqual(entry["content"], beyond)
 
     def test_cli_and_mcp_agree_on_large_rework_compose(self) -> None:
         from mcp_server import server
@@ -1334,14 +1319,12 @@ class TestDeliverableInputBounds(unittest.TestCase):
             self.assertEqual(result["exit_code"], EXIT_OK)
             self.assertEqual(cli_records[0], result["records"][0])
 
-    def test_prose_over_budget_finding_names_executable_recovery(self) -> None:
-        # The Implementation contract budget still binds composed prose. A
-        # prose claim of an "oversize reason" is not a supported mechanism
-        # and changes nothing; the emitted recovery names only artifacts
-        # editable through supported mediated writers.
+    def test_large_prose_section_composes_with_size_telemetry(self) -> None:
+        # Legitimate task prose past the removed 16 KiB implementation
+        # contract budget composes cleanly; its measured size stays visible
+        # in the trace receipt as nonblocking telemetry.
         big_notes = (
             "## Notes\n\n"
-            "Oversize reason: the assignee needs all of this context.\n\n"
             + (
                 "Context the composer must carry verbatim into the "
                 "implementation contract section.\n" * 260
@@ -1366,15 +1349,12 @@ class TestDeliverableInputBounds(unittest.TestCase):
                 scaffold, "REQUEST-001", "task:TASK-01-002", _OPERATOR_REQUEST
             )
             record = prompt_composer.compose(task_path, "coder")
-            self.assertEqual(record["outcome"], "invalid")
-            (finding,) = [
-                item for item in record["findings"]
-                if item["code"] == "section-over-budget"
-            ]
-            self.assertIn("Implementation contract", finding["detail"])
-            self.assertIn("mediated writer", finding["recovery"])
-            self.assertNotIn("oversize reason", finding["recovery"])
-            self.assertNotIn("reason", finding["detail"])
+            self.assertEqual(record["outcome"], "composed", record["findings"])
+            sizes = {
+                item["section"]: item["bytes"]
+                for item in record["section_sizes"]
+            }
+            self.assertGreater(sizes["Implementation contract"], 16384)
 
 
 class TestCliMcpEquivalence(unittest.TestCase):

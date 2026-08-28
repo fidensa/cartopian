@@ -13,9 +13,11 @@ source guidance, request evidence, and the report skeleton — and produces:
   raw records, projection receipts, and per-section measurements,
 - a content identity binding the two.
 
-The section set, validation rules, and measured budgets are owned by
+The section set and validation rules are owned by
 ``protocol/assignment-prompt-contract.json``. Composition fails closed: a
 finding with severity ``fail`` refuses the prompt rather than issuing it.
+Section sizes are measured into the trace receipt as telemetry; no size
+threshold refuses composition.
 
 Stdlib only. Read-only: nothing here writes project files.
 """
@@ -87,7 +89,6 @@ def load_contract() -> Dict[str, Any]:
     try:
         contract = json.loads(_CONTRACT_PATH.read_text(encoding="utf-8"))
         contract["sections"]["required"]
-        contract["section_budgets"]["budgets"]
         governance_reads.load_rule(contract)
     except (
         OSError,
@@ -873,24 +874,10 @@ def validate_prompt(
                 break
             seen_criteria.setdefault(key, name)
 
-    # Budgets bound only composed instruction-channel sections; the typed
-    # input-payload sections carry no budget entry — their fail-closed bound
-    # is the contract's input_payloads.max_payload_bytes read ceiling.
-    budgets = contract["section_budgets"]["budgets"]
-    for name, text in sections:
-        if name == "(title)":
-            continue
-        limit = budgets.get(name)
-        size = len(text.encode("utf-8"))
-        if limit is not None and size > limit:
-            findings.append(_finding(
-                "section-over-budget",
-                f"section {name!r} is {size} bytes; its measured budget is "
-                f"{limit} bytes",
-                "trim the originating artifact (task section, applicable "
-                "standards, or specification) through its mediated writer "
-                "so the composed section fits its measured budget",
-            ))
+    # Section sizes are telemetry, not gates: the trace receipt records the
+    # measured UTF-8 bytes of every composed section (section_sizes), and no
+    # size-based finding refuses composition. Legitimate content is bound by
+    # identity and provenance, never by byte count.
     return findings
 
 
@@ -971,41 +958,13 @@ def _governance_readable(effective_grants: List[str]) -> bool:
     return "read:governance" in effective_grants
 
 
-def _payload_ceiling(contract: Dict[str, Any]) -> int:
-    """The contract's fail-closed byte ceiling for one assignment input."""
-    try:
-        ceiling = int(contract["input_payloads"]["max_payload_bytes"])
-        if ceiling <= 0:
-            raise ValueError(ceiling)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ComposeRefusal(
-            "assignment-contract-unavailable",
-            "the assignment-prompt contract declares no usable "
-            "input_payloads.max_payload_bytes ceiling",
-        ) from exc
-    return ceiling
-
-
-def _read_resource(path: str, what: str, max_bytes: int) -> str:
+def _read_resource(path: str, what: str) -> str:
     # newline="" keeps CRLF byte-exact: the payload binding is hashed over
     # these bytes and preflight compares against the raw resource on disk.
-    # The stat check runs before any byte is loaded so an unbounded file
-    # fails closed instead of ballooning the prompt.
-    try:
-        size = Path(path).stat().st_size
-    except OSError as exc:
-        raise ComposeRefusal(
-            "deliverable-input-unreadable", f"{what} is not readable UTF-8: {exc}"
-        ) from exc
-    if size > max_bytes:
-        raise ComposeRefusal(
-            "deliverable-input-oversized",
-            f"{what} is {size} bytes on disk; the assignment-prompt "
-            f"contract's input-payload ceiling is {max_bytes} bytes "
-            "(input_payloads.max_payload_bytes) — split or reduce the "
-            "resource with the mediated resource writer before assigning "
-            "work against it",
-        )
+    # A payload is embedded complete regardless of size — its size is a
+    # property of the governed resource, not of prompt authoring, and no
+    # operator-authorized contract bounds it. Only unreadable or non-UTF-8
+    # content fails closed.
     try:
         with Path(path).open("r", encoding="utf-8", newline="") as handle:
             return handle.read()
@@ -1234,7 +1193,6 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
     )
 
     grants = role_record["effective_grants"]
-    payload_ceiling = _payload_ceiling(contract)
     existing_input: Optional[Dict[str, Any]] = None
     if (
         deliverable is not None
@@ -1245,7 +1203,6 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         text = _read_resource(
             deliverable.get("absolute_path") or "",
             deliverable.get("logical") or "the existing project deliverable",
-            payload_ceiling,
         )
         existing_input = {
             **assignment_inputs.payload_binding(
@@ -1293,7 +1250,6 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         text = _read_resource(
             dependency_deliverable.get("absolute_path") or "",
             dependency_deliverable.get("logical") or "a dependency deliverable",
-            payload_ceiling,
         )
         upstream_inputs.append(
             {
@@ -1464,7 +1420,6 @@ def materialize_input_sections(
     except _CliError as err:
         raise ComposeRefusal("project-config-invalid", err.message) from err
 
-    payload_ceiling = _payload_ceiling(load_contract())
     manifest: List[Dict[str, Any]] = []
     parts: List[str] = []
     if (
@@ -1475,7 +1430,6 @@ def materialize_input_sections(
         text = _read_resource(
             deliverable.get("absolute_path") or "",
             deliverable.get("logical") or "the existing project deliverable",
-            payload_ceiling,
         )
         logical = deliverable.get("logical") or ""
         manifest.append(assignment_inputs.payload_binding(
@@ -1524,7 +1478,6 @@ def materialize_input_sections(
         text = _read_resource(
             dependency_deliverable.get("absolute_path") or "",
             dependency_deliverable.get("logical") or "a dependency deliverable",
-            payload_ceiling,
         )
         logical = dependency_deliverable.get("logical") or ""
         manifest.append(assignment_inputs.payload_binding(

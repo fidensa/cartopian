@@ -105,10 +105,10 @@ _client_info: Dict[str, Any] = {}
 _wire_writer: Any = None
 _wire_framing: Optional[str] = None
 
-# Hard caps applied before any read_text() of operator/agent-facing files.
-# Skills, protocol docs, templates, and project artifacts are all hand-authored
-# markdown; 1 MiB is several orders of magnitude above any realistic file.
-MAX_RESOURCE_BYTES = 1 * 1024 * 1024
+# Resources are served complete, whatever their size: skills, protocol docs,
+# templates, and project artifacts are governed content, and no size threshold
+# refuses them. A host's own message-size limit, where one exists, is the
+# host's constraint to surface — Cartopian does not approximate it.
 # `_first_line_summary` only needs the first non-empty line for prompt/resource
 # listings; reading a small head avoids loading large files just to format a
 # directory listing.
@@ -640,12 +640,6 @@ def _use_cartopian_messages(
 
 def _skill_messages(path: Path) -> List[Dict[str, Any]]:
     try:
-        size = path.stat().st_size
-    except OSError:
-        raise McpError(ERR_INTERNAL, f"cannot read skill: {path.name}")
-    if size > MAX_RESOURCE_BYTES:
-        raise McpError(ERR_INTERNAL, f"skill exceeds size limit: {path.name}")
-    try:
         body = path.read_text(encoding="utf-8")
     except OSError:
         raise McpError(ERR_INTERNAL, f"cannot read skill: {path.name}")
@@ -1165,10 +1159,10 @@ def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
 def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
     """Bounded read of one H2 section (or the startup slice) of a protocol doc.
 
-    Same allowlist shape and size discipline as the whole-file branch: the only
-    path ever constructed is ``protocol/<doc>.md`` under the protocol root, and
-    the file is size-capped before being loaded. Malformed names, unknown docs,
-    and unknown sections are all invalid-params (fail-closed).
+    Same allowlist shape as the whole-file branch: the only path ever
+    constructed is ``protocol/<doc>.md`` under the protocol root. Malformed
+    names, unknown docs, and unknown sections are all invalid-params
+    (fail-closed).
     """
     if not _safe_segment(doc) or not _safe_segment(slug):
         raise McpError(ERR_INVALID_PARAMS, f"invalid protocol section uri: {uri}")
@@ -1176,12 +1170,6 @@ def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
     resolved = _bounded_path(candidate, ROOT / "protocol")
     if resolved is None:
         raise McpError(ERR_INVALID_PARAMS, f"resource not found: {uri}")
-    try:
-        size = resolved.stat().st_size
-    except OSError:
-        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
-    if size > MAX_RESOURCE_BYTES:
-        raise McpError(ERR_INTERNAL, f"resource exceeds size limit: {uri}")
     try:
         text = resolved.read_text(encoding="utf-8")
     except OSError:
@@ -1248,8 +1236,6 @@ def list_resources() -> List[Dict[str, Any]]:
                 "mimeType": "text/markdown",
             })
             try:
-                if path.stat().st_size > MAX_RESOURCE_BYTES:
-                    continue
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue  # whole-file entry stays listed; sections degrade
@@ -1362,12 +1348,6 @@ def read_resource(uri: str) -> Dict[str, Any]:
     if resolved_path is None:
         raise McpError(ERR_INVALID_PARAMS, f"resource not found: {uri}")
 
-    try:
-        size = resolved_path.stat().st_size
-    except OSError:
-        raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
-    if size > MAX_RESOURCE_BYTES:
-        raise McpError(ERR_INTERNAL, f"resource exceeds size limit: {uri}")
     try:
         text = resolved_path.read_text(encoding="utf-8")
     except OSError:

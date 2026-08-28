@@ -28,7 +28,6 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
 from cli.request_trace import (
     CORRECTION_ID_RE,
-    MAX_REQUEST_BYTES,
     REQUEST_ID_RE,
     REQUESTS_DIRNAME,
     GovernedUnit,
@@ -133,9 +132,8 @@ def handler(args: argparse.Namespace) -> int:
     except (ValueError, OSError, UnicodeDecodeError) as exc:
         stderr_usage(str(exc))
         return EXIT_USAGE
-    if len(raw) > MAX_REQUEST_BYTES:
-        stderr_guard(f"request-too-large: operator message exceeds {MAX_REQUEST_BYTES} bytes")
-        return EXIT_FAIL
+    # No byte ceiling: the operator message is the authority being captured.
+    # Its integrity is bound by SHA-256 content identity, never by size.
     try:
         records = load_records(root)
     except RequestRefusal as refusal:

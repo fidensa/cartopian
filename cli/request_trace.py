@@ -51,8 +51,10 @@ ALIGNMENT_VALUES = ("aligned", "drifted", LEGACY_STATE)
 ALIGNMENT_FIELD = "Request alignment"
 ALIGNMENT_EVIDENCE_FIELD = "Request evidence"
 REQUEST_CAPTURE_FROM = (0, 9, 0)
-MAX_REQUEST_BYTES = 24 * 1024
-MAX_COMPLETION_EVIDENCE_BYTES = 256 * 1024
+# Request evidence and preserved completion evidence carry no byte ceiling:
+# operator words and accepted coder reports are bound by exact SHA-256
+# content identity, path, and publication shape, never by size. No operator
+# authority exists for a size-based refusal on either channel.
 DECISION_QUOTE_MARKER = "Operator request quote for:"
 DECISION_QUOTE_MARKER_RE = re.compile(
     r"^Operator request quote for:\s*"
@@ -253,7 +255,7 @@ def _record_from_json(path: Path, project_root: Path) -> RequestRecord:
     else:
         raise RequestRefusal("malformed-request", f"{path.name}: invalid kind")
     raw = request_text.encode("utf-8")
-    if len(raw) > MAX_REQUEST_BYTES or content_identity(raw) != identity:
+    if content_identity(raw) != identity:
         raise RequestRefusal("changed-request", f"{path.name}: text identity does not match")
     if unit.kind not in UNIT_KINDS or not unit.identifier:
         raise RequestRefusal("malformed-request", f"{path.name}: invalid governed unit")
@@ -353,7 +355,7 @@ def _host_chat_record(path: Path, project_root: Path) -> RequestEvidence:
     if not all(isinstance(value, str) and value.strip() for value in (host, conversation, message)):
         raise RequestRefusal("malformed-chat-record", f"{path.name}: invalid source provenance")
     raw = excerpt.encode("utf-8")
-    if len(raw) > MAX_REQUEST_BYTES or content_identity(raw) != identity:
+    if content_identity(raw) != identity:
         raise RequestRefusal("changed-chat-record", f"{path.name}: text identity does not match")
     return RequestEvidence(
         record_id=record_id,
@@ -587,11 +589,6 @@ def _decision_evidence(
         source_unit: GovernedUnit,
     ) -> None:
         raw = excerpt.encode("utf-8")
-        if len(raw) > MAX_REQUEST_BYTES:
-            raise RequestRefusal(
-                "request-evidence-too-large",
-                f"{decision_id} operator excerpt exceeds {MAX_REQUEST_BYTES} bytes",
-            )
         evidence.append(RequestEvidence(
             record_id=f"{decision_id}-QUOTE-{quote_index:03d}",
             kind="source-excerpt",
@@ -1186,11 +1183,6 @@ def _capture_completion_file(
         what="coder completion report",
     )
     raw = content.encode("utf-8")
-    if len(raw) > MAX_COMPLETION_EVIDENCE_BYTES:
-        raise RequestRefusal(
-            "coder-completion-evidence-too-large",
-            f"coder report exceeds {MAX_COMPLETION_EVIDENCE_BYTES} bytes",
-        )
     status = _report_status(content)
     ready = _report_ready(content)
     inferred_variant, _variant_error = parse_report._infer_variant(
@@ -1324,7 +1316,6 @@ def _parse_bound_completion(
     if (
         fields.get("Content identity") != identity
         or declared_bytes != len(raw)
-        or len(raw) > MAX_COMPLETION_EVIDENCE_BYTES
     ):
         raise RequestRefusal(
             "stale-request-context",

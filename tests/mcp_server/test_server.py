@@ -932,12 +932,12 @@ class TestProtocolSectionResources(unittest.TestCase):
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
 
-    def test_oversize_doc_rejected_for_section_read(self):
-        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
-            response = self._read("cartopian://protocol/CONVENTIONS/startup")
-        self.assertIn("error", response)
-        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
-        self.assertIn("size limit", response["error"]["message"])
+    def test_large_doc_section_read_is_served_complete(self):
+        # Resources carry no size ceiling: a large protocol doc still serves
+        # its sections rather than refusing on a byte threshold.
+        response = self._read("cartopian://protocol/CONVENTIONS/startup")
+        self.assertNotIn("error", response)
+        self.assertTrue(response["result"]["contents"][0]["text"])
 
 
 # ---------------------------------------------------------------------------
@@ -1006,21 +1006,17 @@ class TestResourceSafety(unittest.TestCase):
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
 
-    def test_oversize_resource_rejected(self):
-        # Force the size cap below any real resource so the next read trips it.
-        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
-            response = self._read("cartopian://skills/start_session")
-        self.assertIn("error", response)
-        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
-        self.assertIn("size limit", response["error"]["message"])
+    def test_large_resource_served_complete(self):
+        # Resources carry no size ceiling: reads serve the complete content
+        # whatever its size instead of refusing on a byte threshold.
+        response = self._read("cartopian://skills/start_session")
+        self.assertNotIn("error", response)
+        self.assertTrue(response["result"]["contents"][0]["text"])
 
-    def test_oversize_skill_prompt_rejected(self):
-        with patch.object(server, "MAX_RESOURCE_BYTES", 10):
-            response = single("prompts/get", {"name": "start_session"})
-        self.assertIn("error", response)
-        self.assertEqual(response["error"]["code"], server.ERR_INTERNAL)
-        # Message must not contain an absolute filesystem path.
-        self.assertNotIn(str(server.ROOT), response["error"]["message"])
+    def test_large_skill_prompt_served_complete(self):
+        response = single("prompts/get", {"name": "start_session"})
+        self.assertNotIn("error", response)
+        self.assertTrue(response["result"]["messages"])
 
     def test_resource_read_error_does_not_leak_paths(self):
         # If the resolved file disappears between resolve and read, the

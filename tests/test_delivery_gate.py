@@ -987,8 +987,9 @@ class ReviewContextTest(unittest.TestCase):
             self.assertEqual(projection["gate"], "pass")
             self.assertIn("Acceptance evidence:", projection["section"])
             self.assertIsNone(projection["section_omitted"])
-            self.assertLessEqual(
-                projection["context_bytes"], projection["max_context_bytes"]
+            self.assertEqual(
+                projection["context_bytes"],
+                len(projection["section"].encode("utf-8")),
             )
 
     def test_projection_carries_the_section_not_the_plan(self) -> None:
@@ -999,21 +1000,22 @@ class ReviewContextTest(unittest.TestCase):
         self.assertNotIn("## Phase sequence", projection["section"])
         self.assertNotIn("# Implementation Plan", projection["section"])
 
-    def test_oversized_section_is_omitted_rather_than_loaded(self) -> None:
-        max_bytes = delivery_contract.load_delivery_contract()["boundaries"][
-            "review_context_max_bytes"
-        ]
+    def test_large_section_is_carried_complete(self) -> None:
+        # Review evidence is never omitted by a byte threshold: a section far
+        # past the removed 8 KiB bound is projected complete, with its
+        # measured size as nonblocking telemetry.
         padded = fixture("complete-technical-rollback").replace(
             "## Delivery contract\n",
-            "## Delivery contract\n\n" + ("padding " * (max_bytes // 4)) + "\n",
+            "## Delivery contract\n\n" + ("padding " * (65536 // 4)) + "\n",
             1,
         )
         projection = delivery_contract.review_projection(
             delivery_contract.validate_record(padded), padded
         )
-        self.assertIsNone(projection["section"])
-        self.assertEqual(projection["section_omitted"], "exceeds-max-context-bytes")
-        self.assertEqual(projection["context_bytes"], 0)
+        self.assertIsNotNone(projection["section"])
+        self.assertIsNone(projection["section_omitted"])
+        self.assertGreater(projection["context_bytes"], 65536)
+        self.assertIn("padding", projection["section"])
 
     def test_task_closure_review_receives_no_delivery_contract(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:

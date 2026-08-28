@@ -50,7 +50,7 @@ def load_delivery_contract() -> Dict[str, Any]:
         rows = record["rows"]
         failures = registry["failures"]
         registry["result"]["result_fields"]
-        registry["boundaries"]["review_context_max_bytes"]
+        registry["boundaries"]
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise DeliveryContractError(
             "delivery-contract-unavailable",
@@ -806,14 +806,10 @@ def validate_plan(project_root: Path) -> Dict[str, Any]:
         )
         return _result("undeclared", findings, None, None)
 
-    ceiling = int(load_delivery_contract()["boundaries"]["max_surface_bytes"])
+    # No byte ceiling on the plan surface: the record is bound by containment
+    # and UTF-8 validity, not by size — a large legitimate plan validates the
+    # same as a small one.
     try:
-        if resolved_plan.stat().st_size > ceiling:
-            findings.add(
-                "delivery-record-unreadable",
-                f"`{PLAN_SURFACE}` exceeds {ceiling} bytes",
-            )
-            return _result("undeclared", findings, None, None)
         content = resolved_plan.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         findings.add(
@@ -888,23 +884,18 @@ def review_projection(result: Dict[str, Any], content: str) -> Dict[str, Any]:
     """Project the delivery contract and its evidence for review context.
 
     The reviewer receives the result and the delivery-contract section itself
-    — never the rest of the plan — and only within the declared byte bound.
+    — never the rest of the plan. The section is carried complete whatever its
+    size: review evidence is never omitted or truncated by a byte threshold,
+    and ``context_bytes`` remains the nonblocking size measurement.
     """
-    max_bytes = int(
-        load_delivery_contract()["boundaries"]["review_context_max_bytes"]
-    )
     bodies = _sections(content, section_heading())
     body = bodies[0] if len(bodies) == 1 else None
     encoded = body.encode("utf-8") if body is not None else b""
-    within_bound = body is not None and len(encoded) <= max_bytes
     return {
         **result,
-        "max_context_bytes": max_bytes,
-        "context_bytes": len(encoded) if within_bound else 0,
-        "section": body if within_bound else None,
-        "section_omitted": None
-        if within_bound
-        else ("no-single-section" if body is None else "exceeds-max-context-bytes"),
+        "context_bytes": len(encoded),
+        "section": body,
+        "section_omitted": None if body is not None else "no-single-section",
     }
 
 

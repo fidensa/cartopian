@@ -1,7 +1,7 @@
 {
   "contract_id": "assignment-prompt",
-  "contract_version": 4,
-  "purpose": "Deterministic composition contract for assignee (coder) task-assignment prompts: the audience-scoped section set, the validation rules that fail composition closed, and the measured section budgets. The composed prompt is an execution interface; machine provenance, routing diagnostics, and lifecycle bookkeeping live in the bound trace receipt, never in the prompt body.",
+  "contract_version": 5,
+  "purpose": "Deterministic composition contract for assignee (coder) task-assignment prompts: the audience-scoped section set and the validation rules that fail composition closed. The composed prompt is an execution interface; machine provenance, routing diagnostics, and lifecycle bookkeeping live in the bound trace receipt, never in the prompt body. Section sizes are measured into the trace receipt (section_sizes) as telemetry only: no size threshold rejects a prompt, a section, or a typed input payload, because no operator-authorized requirement bounds legitimate content by byte count.",
   "sections": {
     "order": [
       "Role and workspace",
@@ -34,20 +34,8 @@
       "Deliverable"
     ]
   },
-  "section_budgets": {
-    "measurement_basis": "Seeded from the measured approved reference fixtures in tests/fixtures/assignment_prompts/ (UTF-8 bytes per composed section, including the heading line), with headroom for legitimately larger real projects: prose sections carry roughly 2-6x the measured fixture size, the implementation contract allows a full software-profile specification, and active guidance allows the largest execution capsule plus an active judgment hold. Budgets bound only composed instruction-channel sections — content the composer assembles from PM-authored inputs, where oversize means an originating artifact needs trimming. The typed input-payload sections (Existing deliverable input, Upstream contract input) carry byte-exact machine copies of governed resources: their size is a property of the resource, not of prompt authoring, so they take no prose budget; their fail-closed bound is input_payloads.max_payload_bytes, and their measured bytes stay visible in the trace receipt's section_sizes. tests/cli/commands/test_compose_assignment_prompt.py re-measures the fixtures against these budgets so the numbers cannot silently drift below the fixtures that justify them.",
-    "budgets": {
-      "Role and workspace": 4096,
-      "Outcome and done criteria": 4096,
-      "Implementation contract": 16384,
-      "Applicable project standards": 8192,
-      "Source guidance": 4096,
-      "Scope and authority boundaries": 4096,
-      "Verification": 4096,
-      "Active guidance": 12288,
-      "Deliverable": 2048,
-      "Completion report": 8192
-    }
+  "section_measurements": {
+    "meaning": "Every composed section's UTF-8 byte size (including the heading line) is measured into the bound trace receipt's section_sizes as nonblocking telemetry. The former measured section budgets were an implementation restriction with no operator authority and repeatedly rejected legitimate PM-authored content; they are removed. Prompt volume discipline remains a protocol authoring rule (proportional content, no duplicated contract text, projections instead of whole documents) enforced by the content-shaped findings below, never by a byte threshold."
   },
   "pack_capsule_areas": [
     "intended-outcome",
@@ -100,8 +88,7 @@
       "dependency-deliverable": "Upstream contract input"
     },
     "binding_fields": ["channel", "logical", "bytes", "sha256"],
-    "max_payload_bytes": 1048576,
-    "max_payload_bytes_meaning": "Safety ceiling, not a prose budget: an assignment input resource is stat-checked against this bound and refused (deliverable-input-oversized) before any byte is loaded, so an unbounded or runaway file fails closed instead of ballooning the prompt. The value mirrors the delivery contract's established max_surface_bytes read ceiling (protocol/delivery-contract.json), the one governed precedent for bounding a whole-file governance read. A resource within the ceiling is embedded complete — a legitimate rework assignment always carries its full existing deliverable.",
+    "size_meaning": "A payload carries no byte ceiling: its size is a property of the governed resource, not of prompt authoring, and no operator-authorized requirement bounds it. A resource is always embedded complete and byte-exact — a legitimate rework assignment always carries its full existing deliverable. Only an unreadable or non-UTF-8 resource fails closed (deliverable-input-unreadable). The binding's byte count and SHA-256 digest are exact identity, verified at composition, mediated write, manual preflight, and dispatch.",
     "meaning": "A typed, machine-created assignment input: the exact current content of a governance-scoped resource the assignee must work from, embedded as a fenced block whose info string carries the cartopian-input marker and the payload's binding (channel, percent-encoded logical resource, UTF-8 byte count, SHA-256 digest). Payload contents are opaque input data, not authored instructions: contamination and deidentification validation inspect only the instruction channel, so a payload may contain fenced JSON, Cartopian identifiers, or instruction-like prose and still round-trip byte-for-byte. Only the composer and the mediated writer create payload blocks; handoff preflight structurally extracts each expected payload and verifies its digest and byte count against the resource on disk, so a hand-authored declaration can never function as a trusted payload."
   },
   "blanket_governance_reads": {
@@ -136,7 +123,6 @@
     {"code": "missing-required-section", "severity": "fail", "meaning": "A required assignee-facing section is absent or empty."},
     {"code": "missing-acceptance-criteria", "severity": "fail", "meaning": "The outcome section carries no checkable done criteria."},
     {"code": "spec-open-questions-unresolved", "severity": "fail", "meaning": "The governing specification still carries open questions; the implementation contract is not settled."},
-    {"code": "section-over-budget", "severity": "fail", "meaning": "A composed instruction-channel section exceeds its measured budget; the recovery is trimming the originating artifact (task section, applicable standards, or specification) through its mediated writer. Typed input-payload sections carry no prose budget — they are bounded by input_payloads.max_payload_bytes at read time instead."},
     {"code": "unbound-input-payload", "severity": "fail", "meaning": "A typed input-payload declaration is hand-authored, sits outside its channel's machine-owned section, or does not correspond to a machine-resolved assignment input."},
     {"code": "input-payload-mismatch", "severity": "fail", "meaning": "A typed input payload does not verify against its declared byte count and SHA-256 binding, or a machine-resolved assignment input has no verified payload in the prompt."}
   ],

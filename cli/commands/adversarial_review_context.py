@@ -1,4 +1,4 @@
-"""Build the fresh bounded context for a critical independent challenge."""
+"""Build the fresh context for a critical independent challenge."""
 import argparse
 import json
 from pathlib import Path
@@ -7,7 +7,6 @@ from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 from cli.risk_contract import (
-    DEFAULT_MAX_REVIEW_CONTEXT_BYTES,
     RiskContractError,
     build_adversarial_review_context,
 )
@@ -15,8 +14,10 @@ from cli.risk_contract import (
 
 def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.description = (
-        "Build fresh bounded critical-review context from only the artifact and "
-        "governing contract; the author's conclusion has no input channel."
+        "Build fresh critical-review context from only the artifact and "
+        "governing contract; the author's conclusion has no input channel. "
+        "Both payloads are read complete — pass --max-context-bytes only to "
+        "impose an explicit operator-chosen combined limit."
     )
     parser.add_argument("project_root", help="Absolute Cartopian project root")
     parser.add_argument("--artifact", required=True, help="Absolute artifact path")
@@ -31,8 +32,11 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--max-context-bytes",
         type=int,
-        default=DEFAULT_MAX_REVIEW_CONTEXT_BYTES,
-        help="Positive combined UTF-8 payload limit",
+        default=None,
+        help=(
+            "Optional operator-supplied positive combined UTF-8 payload "
+            "limit; unbounded when omitted"
+        ),
     )
 
 

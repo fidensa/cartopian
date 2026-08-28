@@ -430,10 +430,8 @@
     "unattended": "prepare-and-validate-only",
     "unattended_meaning": "An unattended run may prepare and validate a delivery record. It may not cross the external-action boundary, so a record that needs authorization stays pending rather than proceeding.",
     "containment": "The record is read from the plan surface inside a validated project root. No path outside that root is read.",
-    "max_surface_bytes": 1048576,
-    "max_surface_bytes_meaning": "The plan surface is read under a fixed byte ceiling so an oversized or non-text file fails closed instead of being loaded.",
-    "review_context_max_bytes": 8192,
-    "review_context_meaning": "Review context carries the delivery result and, within the byte bound, the delivery-contract section itself — never the rest of the plan."
+    "surface_size": "The plan surface carries no byte ceiling: the record is bound by containment and UTF-8 validity, never by size. The former max_surface_bytes read ceiling was an implementation restriction with no operator authority and is removed.",
+    "review_context_meaning": "Review context carries the delivery result and the complete delivery-contract section itself — never the rest of the plan. The section's measured size (context_bytes) is nonblocking telemetry; review evidence is never omitted or truncated by a byte threshold."
   },
   "compatibility": {
     "legacy_state": "undeclared",

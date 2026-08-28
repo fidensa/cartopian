@@ -18,7 +18,12 @@ REGISTRY_PATH = (
     / "protocol"
     / "risk-and-practice-contract.json"
 )
-DEFAULT_MAX_REVIEW_CONTEXT_BYTES = 128 * 1024
+# Adversarial review context carries no default byte ceiling: a deliverable
+# and its governing contract are review evidence and are read complete. An
+# explicit operator-supplied ``max_context_bytes`` (the --max-context-bytes
+# flag) remains an authorized bound and is enforced exactly when given.
+# MAX_SUPPORTING_FACT_BYTES bounds a supporting-fact *identity* row — a
+# pointer, not content — per protocol/risk-and-practice-contract.json.
 MAX_SUPPORTING_FACT_BYTES = 1024
 
 
@@ -254,14 +259,16 @@ def _contained_file(path: Path, allowed_roots: Sequence[Path], label: str) -> Pa
     return resolved
 
 
-def _read_context_entry(path: Path, label: str, max_bytes: int) -> dict[str, Any]:
+def _read_context_entry(
+    path: Path, label: str, max_bytes: "int | None"
+) -> dict[str, Any]:
     try:
         size = path.stat().st_size
     except OSError as exc:
         raise RiskContractError(
             "review-context-unreadable", f"cannot stat {label}"
         ) from exc
-    if size > max_bytes:
+    if max_bytes is not None and size > max_bytes:
         raise RiskContractError(
             "review-context-too-large", f"{label} exceeds {max_bytes} bytes"
         )
@@ -286,10 +293,17 @@ def build_adversarial_review_context(
     *,
     allowed_roots: Sequence[Path],
     risk_result: Mapping[str, object],
-    max_context_bytes: int = DEFAULT_MAX_REVIEW_CONTEXT_BYTES,
+    max_context_bytes: "int | None" = None,
 ) -> dict[str, Any]:
-    """Build fresh critical-review context with exactly two payload entries."""
-    if not isinstance(max_context_bytes, int) or max_context_bytes < 1:
+    """Build fresh critical-review context with exactly two payload entries.
+
+    ``max_context_bytes`` is an explicit operator-supplied bound; when it is
+    ``None`` (the default) the context is unbounded and the combined size is
+    reported as nonblocking telemetry.
+    """
+    if max_context_bytes is not None and (
+        not isinstance(max_context_bytes, int) or max_context_bytes < 1
+    ):
         raise RiskContractError(
             "review-context-limit-invalid", "max_context_bytes must be positive"
         )
@@ -334,7 +348,7 @@ def build_adversarial_review_context(
         ),
     }
     context_bytes = sum(item["bytes"] for item in context.values())
-    if context_bytes > max_context_bytes:
+    if max_context_bytes is not None and context_bytes > max_context_bytes:
         raise RiskContractError(
             "review-context-too-large",
             f"combined payload is {context_bytes} bytes; limit is {max_context_bytes}",

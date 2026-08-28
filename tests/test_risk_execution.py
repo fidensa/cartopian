@@ -195,7 +195,9 @@ class CriticalReviewContextTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(set(first["context"]), {"artifact", "governing_contract"})
         self.assertNotIn("author_conclusion", json.dumps(first))
-        self.assertLessEqual(first["context_bytes"], first["max_context_bytes"])
+        # No default ceiling: an explicit operator bound is the only limit.
+        self.assertIsNone(first["max_context_bytes"])
+        self.assertGreater(first["context_bytes"], 0)
         self.assertEqual(first["risk_band"], "critical")
 
     def test_context_rejects_noncritical_results_and_oversized_inputs(self) -> None:
