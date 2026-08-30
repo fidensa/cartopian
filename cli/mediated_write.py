@@ -83,6 +83,7 @@ DEST_KINDS: Dict[str, str] = {
     "state": "",
     "roadmap": "",
     "backlog": "",
+    "continuity": "",
 }
 
 # ---------------------------------------------------------------------------
@@ -103,6 +104,7 @@ ROOT_FILES: Dict[str, str] = {
     "state": "STATE.md",
     "roadmap": "ROADMAP.md",
     "backlog": "BACKLOG.md",
+    "continuity": "CONTINUITY.md",
 }
 
 # Recognized config files: never writable through this primitive regardless of

@@ -134,6 +134,8 @@ intent never changes the request's intent class.
 - Plan closeout summary: `archive/PLAN-NNN/CLOSEOUT.md`.
 - Archive index: `archive/INDEX.md`. One-line-per-archive summary table.
 - Decisions: `DEC-NNN.md`. `NNN` is a project-local counter within `decisions/`.
+- Continuity artifact: `CONTINUITY.md` at the project root. Optional cross-plan memory, written only by a closeout that chose a preservation outcome that keeps one (see Plan Continuity).
+- Plan-id reservation: `archive/PLAN-NNN/` holding `NOT-ARCHIVED.md` and no `CLOSEOUT.md`. It is not an archive: it occupies a plan id for a plan closed with the `ledger` outcome.
 
 Artifact names carry identity only. Human-readable descriptions belong in the
 artifact heading and index metadata, never in a filename. Descriptive
@@ -882,6 +884,12 @@ Plan closeout resets the live plan surface:
 
 `cartopian.toml` remains live across plans.
 
+Closeout asks **one** preservation question, and it replaces the archive question rather than sitting beside it:
+
+> "How should this completed plan be preserved — (1) not at all; (2) full archive only; (3) full archive plus a compact continuity index; or (4) a compact continuity ledger only, without a full archive?"
+
+The default is (1) at every closeout. The question is asked identically every time: no configuration key at any level holds a preservation outcome, an existing `CONTINUITY.md` does not change which outcomes are offered or which is the default, and no past answer is sticky. Outcomes 1 and 2 are the **disabled path**; outcomes 3 and 4 are the **enabled path**. See Plan Continuity.
+
 ## Plan Archives
 
 Cartopian is anti-archival by default. Completed plan artifacts are archived only when the operator explicitly asks during closeout.
@@ -907,6 +915,8 @@ Archival is a PM lifecycle action. When the operator requests a snapshot, the PM
 
 `archive/INDEX.md` is a one-line-per-archive summary table. It is created with the first archive and updated on each subsequent closeout that produces an archive.
 
+A `ledger` closeout (outcome 4) archives nothing but still occupies its plan id, because `archive/` is where the plan-id namespace lives: `archive-plan` and `cartopian prompt-evidence`'s window derivation both allocate from it, so a plan closed without an archive would let the next closeout mint the same number twice. It therefore creates `archive/PLAN-NNN/` holding a `NOT-ARCHIVED.md` sentinel, no `CLOSEOUT.md`, and — only after an attempt proven not to have committed — a `LEDGER-FAILED.md` marker, plus one `archive/INDEX.md` row whose summary is the fixed text `not archived - ledger preservation outcome`. The directory holds no plan content and is not an archive; the absence of `CLOSEOUT.md` is what tells the two apart. An abandoned attempt's reservation is given back by `cartopian release-reservation` before the plan is closed with any other outcome.
+
 After closeout, `STATE.md` says there is no active plan and names `skills/plan-project.md` as the next action.
 
 ## Decisions
@@ -916,6 +926,56 @@ Every non-trivial decision gets its own immutable file in `decisions/`, named `D
 `decisions/INDEX.md` is a one-line-per-decision summary table.
 
 A decision that changes a prior decision creates a new file with `Supersedes: DEC-NNN`. The superseded decision file remains unchanged.
+
+A decision body may carry three further optional headers, alongside the `Date:`, `Status:`, and `Supersedes:` the template already seeds. They exist only to feed the optional continuity artifact (see Plan Continuity), and a decision that omits them stays valid:
+
+- `Scope: <=24 characters, <=48 serialized bytes>` — one routing word or short phrase.
+- `Ruling: <=100 characters, <=200 serialized bytes>` — one sentence stating what is required or forbidden, not why.
+- `Expires: <none | REF[, REF]...>` — the rulings this decision ends **without replacing**. `Supersedes:` takes the same grammar and asserts that a replacement exists.
+
+`REF` is `DEC-NNN` (a decision in the plan window now closing) or `PLAN-NNN/DEC-NNN` (a decision recorded in a closed plan window — the only form that can reach a prior plan's ruling). At most eight references per header.
+
+The decision file body is the single authoritative source for all five. `cartopian write-decision` gains no flags for them and renders no header: it validates what it was handed and refuses with `usage` and exit 2 before a byte lands. A `Scope` or `Ruling` value must be a single line with no `|`, no control character, and within both its character and serialized-byte bound — refused, never escaped, so the Markdown cell and the machine record carry the same bytes. `decisions/INDEX.md` stays a human index and gains no column.
+
+A decision that publishes no `Scope:`/`Ruling:` pair is not a continuity row, but its removal headers are still read: a decision whose entire content is "this rule no longer applies" carries `Expires:` and nothing else, removes its targets, and creates no row. A decision carrying `Supersedes:` **must** publish a replacement pair, because that is the assertion the header makes.
+
+## Plan Continuity
+
+Continuity is the **optional** cross-plan memory a completed plan may leave behind. It exists for a project only because an operator answered the closeout preservation question with outcome 3 or 4. It is not a history store, a conversation log, an activity journal, or a second archive; it does not replace `archive/PLAN-NNN/`, and it does not make archival mandatory.
+
+The authoritative artifact is one file, `<project-root>/CONTINUITY.md`. There is exactly one per project: it is not per-plan, not per-phase, and not duplicated anywhere. A file of that name anywhere else — inside `resources/`, inside an archive, in a work root — is not continuity, and no reader resolves it. It survives `reset-plan` (whose allowlist never names it) and is never copied into an archive (`ARCHIVE_ROOT_FILES` never gains it). It is a mediated artifact: hand edits are out of band, exactly as they are for `BACKLOG.md` and `STATE.md`.
+
+`protocol/continuity-contract.json` is the machine authority for the outcome ids, the identity grammar, the field groups, every bound, the projection shape, and the refusal codes. This section is its projection; where the two disagree the JSON governs.
+
+**Five sections, in this order, and the order is load-bearing:** the header block (`Format: continuity-v1`, `Plans recorded:`, `Highest plan recorded:`, `Live decisions:`, `Cold decisions:`), `## Live decisions`, `## Cold decisions`, `## Cold index`, `## Plan ledger`. A session's startup projection stops at `## Cold index`, so startup parse cost does not grow as cold rows and closed plans accumulate.
+
+Cross-plan decision identity is `PLAN-NNN/DEC-NNN` — the plan window in which the decision was recorded, then its plan-local id. `DEC-NNN` alone is not an identity: it is allocated per plan and demonstrably reused across plans.
+
+Each `### PLAN-NNN - closed <date> - <archive+index | ledger>` ledger entry carries exactly six field groups — Outcome, Evidence, Decisions, Risks, Delivery, Follow-up — and nothing else. All six are always present; `none` and `not applicable` are written explicitly so an omission cannot be read as forgotten work. The outcome/verification distinction is the point of the ledger: a completed artifact is not a verified outcome, and the ledger is the only surviving place that says which one this plan achieved. No confidence percentage, model identity, review transcript, prompt body, agent name, or timing telemetry is ever admitted.
+
+**The mode is a property of a closeout, not of the file.** What it decides is the `Body` value of the rows *that closeout writes* and the preservation value in *that plan's* heading — nothing about rows written by any other closeout, and there is no file-level mode. An `archive+index` closeout writes locators into `archive/PLAN-NNN/decisions/`; a `ledger` closeout writes `Body: none`, and for the decisions that plan recorded **rulings survive and rationale does not**. That trade is stated to the operator at closeout, and no later closeout repairs it. Prior rows are carried through byte for byte across a mode change; the derived `Retrieval:` value reports the mixture rather than smoothing it.
+
+Gaps in the plan ledger are legitimate. `Plans recorded:` counts sections, not plan ids, and a missing id means exactly one thing: that plan closed with outcome 1 or 2, so nothing about it was preserved here.
+
+**What the disabled path does, and the scope of that claim.** A `none` or `archive` closeout performs zero continuity reads and zero continuity writes, unconditionally — in every project state, including one that already carries a `CONTINUITY.md` and including one whose artifact is damaged. `archive-plan` and `reset-plan` never open, stat, or parse the artifact, so a damaged one cannot block, delay, or alter an archive-only closeout. That is a property of the closeout. It is not a claim about what startup costs afterwards: an artifact an earlier enabled closeout created is **not** deleted by a later disabled answer, keeps governing, and keeps reaching every session, and closeout says so plainly and offers explicit, operator-performed removal. Startup and status cost zero continuity bytes only where no root `CONTINUITY.md` exists.
+
+**Reading is fail-closed.** Absence is a successful disabled state and the record simply carries no `continuity` key — never a null one. Presence with any defect — a symlink, a non-regular file, a hardlink, invalid UTF-8, an unrecognized `Format:`, or a malformed section — refuses with a named `continuity-*` rule and exit 1, and emits no record at all. A defective artifact that silently produced a record with no continuity field would tell the session that no cross-plan ruling governs the project, which is the one wrong answer this artifact exists to prevent.
+
+**Retrieval is on demand and bounded.** A session reads one `## Cold index` section, or one decision body, or one plan-ledger entry, per retrieval, and only in answer to a concrete question — never speculatively, and never during startup composition. A retrieved cold body is never promoted back into the live index.
+
+**Writing and recovery.** Two mediated commands perform every continuity write, and both compose the machine-derivable parts themselves and take only the six-group ledger body from the PM:
+
+```
+cartopian write-continuity <project-root> --mode {index|ledger} [--plan PLAN-NNN] \
+    --closed <YYYY-MM-DD> [--content <ledger-section> | --content-file <path>]
+
+cartopian prune-continuity <project-root> --pruned <YYYY-MM-DD> \
+    [--plan PLAN-NNN]... [--cold PLAN-NNN/DEC-NNN]...
+```
+
+`write-continuity` runs **before** `reset-plan` — reset destroys the `decisions/` directory the live table is composed from — and, in `index` mode, **after** `archive-plan`, bound to the archive that closeout just created. A third command, `cartopian release-reservation`, reads and writes no continuity content at all and gives back the plan id an abandoned `ledger` attempt reserved.
+
+Nothing is destroyed until the continuity write has succeeded. Growth is bounded by a declared file ceiling rather than by automatic deletion: closed ledger entries and cold rows are never pruned in the background, because under `ledger` they are the only surviving record of that plan. When the ceiling is reached, `prune-continuity` is the one supported recovery, and it refuses to tombstone the newest plan, to touch a live row, or to remove a cold row whose body was never archived.
 
 ## Backlog
 
@@ -946,6 +1006,7 @@ The general principle this settles: **every cross-artifact reference field is ve
 - Completed tasks may be larger when they need closure evidence.
 - Phase files are roll-ups of plan refs, task coverage, dependencies, and exit criteria.
 - Specs have no fixed ceiling, but prefer specificity over comprehensiveness.
+- `CONTINUITY.md` has a hard ceiling of 65,536 bytes; one plan-ledger section is capped at 1,024 bytes, a decision `Scope` at 24 characters / 48 serialized bytes, and a `Ruling` at 100 characters / 200 serialized bytes. The startup continuity projection is capped at 4 live rows and 1,536 serialized bytes, and is never emitted over the bound; rows that do not fit are reported omitted rather than dropped silently (see Plan Continuity).
 
 ## Git
 

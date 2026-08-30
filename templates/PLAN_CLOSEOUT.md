@@ -15,6 +15,17 @@ State whether this was a full completion or another operator-approved closeout a
 
 List the artifacts copied into this archive.
 
+## Preservation outcome
+
+- Outcome: `<none | archive | archive+index | ledger>`
+- Continuity: `<not written | archive/index rows written to CONTINUITY.md | ledger rows written to CONTINUITY.md>`
+
+State the outcome the operator chose at Stage 2 and what it preserved. Under
+`ledger` also state the trade explicitly: for the decisions this plan recorded,
+rulings survive and rationale does not. Where the project already carried a
+`CONTINUITY.md` and this plan was closed `none` or `archive`, say that too —
+the earlier rulings still govern and still reach every session.
+
 ## Carry-forward choices
 
 - `STANDARDS.md`: `<carried forward | reset>`

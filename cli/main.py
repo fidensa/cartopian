@@ -71,6 +71,11 @@ SUBCOMMANDS: List[str] = [
     "delete-backlog",
     "archive-plan",
     "reset-plan",
+    # optional cross-plan continuity: the two preservation-bearing closeout
+    # outcomes, its capacity recovery, and the abandoned-attempt release
+    "write-continuity",
+    "prune-continuity",
+    "release-reservation",
     # Aggregator: next action to take
     "next-action",
     # stdio wait primitives
@@ -186,9 +191,11 @@ def _real_handlers():
         next_action,
         plan_audit,
         prompt_evidence,
+        prune_continuity,
         report_action,
         report_skeleton,
         register_project,
+        release_reservation,
         render_spec,
         reset_plan,
         resolve_config,
@@ -206,6 +213,7 @@ def _real_handlers():
         wait_handoff,
         wait_report,
         write_backlog,
+        write_continuity,
         write_decision,
         write_phase,
         write_plan,
@@ -277,6 +285,18 @@ def _real_handlers():
         "register-project": (register_project.configure_parser, register_project.handler),
         "render-spec": (render_spec.configure_parser, render_spec.handler),
         "reset-plan": (reset_plan.configure_parser, reset_plan.handler),
+        "write-continuity": (
+            write_continuity.configure_parser,
+            write_continuity.handler,
+        ),
+        "prune-continuity": (
+            prune_continuity.configure_parser,
+            prune_continuity.handler,
+        ),
+        "release-reservation": (
+            release_reservation.configure_parser,
+            release_reservation.handler,
+        ),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "resume-install": (
             resume_install.configure_parser,
