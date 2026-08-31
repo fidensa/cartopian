@@ -52,6 +52,10 @@ Write your completion report to the report path named in Role and workspace, fil
 ```text
 Status: <complete | blocked | failed>
 
+## Summary
+
+<PM-facing summary, at most 10 short lines: what was done, where the evidence and work product live, and anything the PM must act on. The PM routes on this section instead of re-reading the whole report; full detail belongs in the sections below.>
+
 ## Identity
 
 - Work root: tool-repo

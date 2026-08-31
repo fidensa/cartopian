@@ -43,6 +43,7 @@ consumer to the behaviour each verdict licenses, with the genuinely absent
 record and candidate kept as the positive controls the distinction protects.
 """
 from __future__ import annotations
+from tests.mcp_result import tool_records
 
 import copy
 import json
@@ -786,8 +787,9 @@ class PublicRestartVerificationAuthorityTests(unittest.TestCase):
                 {"install_root": str(root), **arguments},
             )
         structured = response["structuredContent"]
-        self.assertTrue(structured["records"], msg=structured["stderr_lines"])
-        record = structured["records"][0]
+        records = tool_records(response)
+        self.assertTrue(records, msg=structured["stderr_lines"])
+        record = records[0]
         record["exit_code"] = structured["exit_code"]
         return record
 
@@ -911,7 +913,7 @@ class PublicRestartVerificationAuthorityTests(unittest.TestCase):
                 "verify_restart_state", {"install_root": str(root)}
             )
 
-        result = response["structuredContent"]["records"][0]
+        result = tool_records(response)[0]
         self.assertEqual(
             result["restart_state"]["reason_code"],
             "installed_content_unverified",
@@ -1010,7 +1012,7 @@ class PublicRestartVerificationAuthorityTests(unittest.TestCase):
             response = server.call_tool(
                 "verify_restart_state", {"install_root": str(root)}
             )
-        restart = response["structuredContent"]["records"][0]["restart_state"]
+        restart = tool_records(response)[0]["restart_state"]
         self.assertEqual(restart["status"], "restart_required")
         self.assertEqual(restart["reason_code"], "running_content_stale")
         self.assertFalse(restart["activation_claim_allowed"])

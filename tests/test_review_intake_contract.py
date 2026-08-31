@@ -20,6 +20,7 @@ from cli import trace_binding
 from cli.commands import acceptance_trace as acceptance_trace_command
 from cli.commands import move_task, review_intake
 from tests.scaffold import project_scaffold
+from tests.mcp_result import tool_records
 
 REQUIREMENTS = "Cartopian REQUIREMENTS.md and STANDARDS.md"
 CONTEXT = "active Product Refinement contract as of 2026-08-13"
@@ -828,7 +829,7 @@ class ContainmentParityTests(IntakeFixture):
         self.assertEqual(cli_code, 0, err)
         result = self.intake_tool(review, no_evidence=True)
         self.assertFalse(result["isError"], json.dumps(result))
-        self.assertEqual(result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(result), [cli_record])
 
     def test_cli_and_mcp_agree_on_a_mismatched_review_body(self):
         review = BodyIdentityTests.variant(
@@ -839,7 +840,7 @@ class ContainmentParityTests(IntakeFixture):
         self.assertEqual(cli_code, 1)
         self.assertEqual(result["structuredContent"]["exit_code"], cli_code)
         self.assertIsNone(cli_record)
-        self.assertEqual(result["structuredContent"]["records"], [])
+        self.assertEqual(tool_records(result), [])
         self.assertEqual(
             result["structuredContent"]["stderr_lines"],
             [line for line in cli_err.splitlines() if line],
@@ -853,6 +854,6 @@ class ContainmentParityTests(IntakeFixture):
             {"project_root": str(self.root), "task": str(self.task)},
         )
         self.assertFalse(result["isError"], json.dumps(result))
-        self.assertEqual(result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(result), [cli_record])
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

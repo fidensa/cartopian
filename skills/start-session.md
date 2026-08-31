@@ -1,101 +1,68 @@
 # Skill: Start Session
 
-Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and acting on the operator's request per its intent class and the resolved `[automation] initiation` policy.
+Open or resume a Cartopian PM session by selecting the project, reading `STATE.md`, and acting on the operator's request per its intent class and the resolved `[automation] initiation` policy. Use this skill for project-agnostic startup requests such as "start working", "continue", "what's next", or "resume" that do not name another lifecycle skill.
 
-Use this skill when the operator gives a project-agnostic startup request such as "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off", or "resume" without naming another lifecycle skill.
+**Output:** The selected project is named to the operator and `STATE.md` is summarized. An execution directive — or `initiation = "auto"` — continues the active task or starts the next sequential task with `run task`; an informational request ends with the summary and the named next protocol action. The PM stops for blockers, plan-level forks, or decisions reserved to the operator.
 
-**Output:** The selected project is named to the operator and `STATE.md` is summarized. What happens next depends on request intent (`protocol/CONVENTIONS.md § Request Intent`): an execution directive — or `initiation = "auto"` — continues the active task or starts the next sequential task with `run task`, without asking the operator to choose or approve the selection; an informational request ends with the summary and the named next protocol action. The PM stops for blockers, plan-level forks, or decisions reserved to the operator.
+**Protocol reference:** The startup slice `cartopian://protocol/CONVENTIONS/startup` is the normative startup contract — project selection, request intent, lifecycle authority, roles, task order, session state. Read it before proceeding if not already loaded; this skill is the sequence, the slice is the rules. The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract for later lifecycle actions.
 
 ---
 
-## Orientation — PM scope
-
-- **PM scope** — Cartopian assigns PMs per project, plus there may be a protocol-level PM named in the root cartopian.toml. If a protocol-level PM is named, they have authority over all projects in the protocol. If no protocol-level PM is named, the project-level PM is the default and you should assume you will act as the PM for at least one project during this session.
-
-- **Protocol reference** — Before proceeding, read the startup slice `cartopian://protocol/CONVENTIONS/startup` if not already loaded. The full `protocol/CONVENTIONS.md` (`cartopian://protocol/CONVENTIONS`) remains the authoritative contract for all lifecycle actions; read its broader sections when a later lifecycle action needs them.
-
 ## Stage 0 - Select Project
 
-Project selection is registry-only. The registry is authoritative — do not consult cwd or local config files (`cartopian.toml`, `AGENTS.md`, `CLAUDE.md`, `README.md`) to confirm, override, or filter the registry result; a path/cwd mismatch is not a reason to skip a registered project or offer alternatives.
+Project selection is registry-only (startup slice § Session Startup And Project Selection): the registry is authoritative, and cwd or local files are never consulted to confirm, override, or filter it.
 
-Use the Core CLI to enumerate and resolve the target project:
+1. Enumerate registered projects with `cartopian discover-projects` (NDJSON: `id`, `path`, `label`).
+2. If the operator named a registered `id` or absolute `path`, select it.
+3. If exactly one project is registered, name it and ask whether to open it or start a new project (`init project`); pause and select only on explicit confirmation — do not auto-enter it.
+4. If more than one is registered, list the IDs and ask; pause until a choice is made.
+5. If none is registered, stop and run `init project`. Only in this case may cwd be proposed, as a candidate scaffold location.
 
-1. Enumerate registered projects via `cartopian discover-projects`. This emits NDJSON records with `id`, `path`, and `label`.
-2. If the operator named a registered `id` or absolute `path`, select that project.
-3. If exactly one project is registered, name it to the operator and ask whether to open it or start a new project (`init project`) instead; pause until they choose, and select it only on explicit confirmation — do not auto-enter it. (A path/cwd mismatch is still not a reason to skip or filter it: the registry is authoritative; you are confirming the operator's choice, not second-guessing the registry.)
-4. If more than one project is registered and none was selected, list the registered IDs and ask the operator to choose one (or to start a new project with `init project`); pause until a choice is made.
-5. If no projects are registered, stop and run `init project` to scaffold, generate config, and register a project. Only in this case may cwd be proposed as a candidate scaffold location.
-
-Do not read or mutate project-specific lifecycle artifacts, and do not call `next-action` or any other lifecycle command, until a registered project is selected.
+Do not read project lifecycle artifacts or call any lifecycle command until a registered project is selected.
 
 ---
 
 ## Stage 1 - Resolve PM Role
 
-The PM role is read from the `pm_role_declared` field of the `cartopian next-action` record gathered in Stage 2 (the aggregator runs `cartopian resolve-config` internally on your behalf, so a standalone resolve-config call is not part of this flow). Stage 1 is a binary readiness gate, not a remediation menu — resume must not *proactively* solicit or offer config edits. Config edits are always available to the PM on the operator's explicit request via `cartopian update-config` (see `protocol/CONVENTIONS.md § PM Scope`), but the gate itself neither offers nor performs them unprompted. Apply these rules to the values returned:
+The PM role is read from the `pm_role_declared` field of the Stage 2 `cartopian next-action` record (the aggregator runs `cartopian resolve-config` internally; a standalone call is not part of this flow). The gate is binary, keyed on role-**key** presence:
 
-- The readiness gate is keyed on role-**key** presence, reported by `pm_role_declared`. If `pm_role_declared` is `true`, the `pm` key is present in the resolved `[roles]` table — the minimum is met; continue. Do not inspect or comment on the description text, and do not remark on whether it has been customized (`pm_role` may equal the default placeholder for a correctly-declared role).
-- If `pm_role_declared` is `false`, the `pm` key is genuinely absent from the resolved `[roles]` table. Stop with a misconfiguration blocker: this project's config declares no PM role. Do not silently author it. Surface the fix and let the operator decide — on their explicit go-ahead the PM repairs it in place with `cartopian update-config --set-role pm="…" --set-role-grants pm=…` (no re-init needed); otherwise it remains setup work (`init project`). Do not proactively push role-authoring choices during resume.
+- `pm_role_declared` true — the minimum is met; continue. Do not inspect or comment on the description text or whether it was customized.
+- `pm_role_declared` false — stop with a misconfiguration blocker: the config declares no PM role. Do not silently author it; on the operator's explicit go-ahead repair it in place with `cartopian update-config --set-role pm="…" --set-role-grants pm=…`. Resume must not proactively solicit or offer config edits.
 
-You **are** the PM, running interactively with the operator — the PM is never launched as a handoff. Once the readiness gate passes, classify the operator's request per `protocol/CONVENTIONS.md § Request Intent` and honor the resolved `[automation]` policy (Stage 3). Within an initiated run, take evidence-supported lifecycle actions without per-action confirmation prompts, stopping only for blockers, plan-level forks, and decisions the protocol reserves to the operator. Do not announce that you will "propose actions for confirmation."
+You **are** the PM, running interactively with the operator — the PM is never launched as a handoff. Once the gate passes, classify the operator's request per the startup slice's § Request Intent and honor the resolved `[automation]` policy: within an initiated run, take evidence-supported lifecycle actions without per-action confirmation prompts, stopping only for blockers, plan-level forks, and reserved decisions. Do not announce that you will "propose actions for confirmation."
 
 ---
 
 ## Stage 2 - Read Session State
 
-Run the orientation aggregator using the Core CLI for the selected project path:
+Run `cartopian next-action <project-path>` — one record carrying `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `automation`, `blockers`, and `state_filesystem_disagreement`. Its `blockers` field does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` and treat a non-zero exit as a blocker.
 
-```
-cartopian next-action <project-path>
-```
+Present a short summary from the record: project, current phase, active work, open/queued work, resolved `automation` policy, resolved role records, and resolved review policy. Then, before proposing any action:
 
-This emits a single NDJSON record carrying every field needed to orient the session: `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `automation`, `blockers`, and `state_filesystem_disagreement`. It internally resolves config (the same data `cartopian resolve-config` would emit), so `resolve-config` does not need to be invoked separately. Its `blockers` field covers phase and `STATE.md` open-question checks only — it does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` at session startup per `protocol/CONVENTIONS.md` and treat a non-zero exit as a blocker.
+- **`state_filesystem_disagreement`** non-null: the filesystem is authoritative. Surface the mismatch and offer the mechanical refresh through the mediated `cartopian write-state <project-root>` — never a raw edit; otherwise ask the operator how to resolve it.
+- **`blockers`**: surface each entry and stop. A project-protocol-schema migration blocker is about the governed project's schema: surface it in plain language and, on operator approval, run `migrate project` — do not tell the operator to hand-edit `cartopian.toml`. An `unresolved situation note in STATE.md` entry is PM work, not an operator escalation: act on the note — promote a durable item via `cartopian write-backlog` or `cartopian write-decision`, or drop a stale one — then refresh via `cartopian write-state <project-root>`; escalate only if the note itself requires an operator decision.
 
-Present a short summary to the operator from the returned record:
-
-- Selected project — `project_id` at `project_path`.
-- Current phase — `phase_id`.
-- Active work — `active_task` (id, title, status).
-- Open or queued work — `next_open_task` (id, title).
-- Resolved automation policy — `automation` (`initiation`, `confirmation`, `max_handoffs_per_run`).
-- Resolved role records — descriptions, effective grants, assigned work types, handoff agent/options, closed `auto_launch` permissions, and attribution.
-- Resolved review policy — `reviews.planning` and `reviews.task_closure`, including their assigned roles and source attribution.
-
-Then check the disagreement and blocker fields before proposing any action:
-
-- **`state_filesystem_disagreement`**: if non-null, the value describes a mismatch between a task status claimed in `STATE.md` and the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch to the operator and offer to refresh `STATE.md` before starting work if the correction is mechanical; otherwise ask the operator how to resolve the inconsistency. The refresh is **PM-performed** — run `cartopian write-state <project-root>` (the mediated writer composes the corrected body from the filesystem), never a raw `Edit`.
-- **`blockers`**: any non-empty `blockers` array is a PM-level blocker (e.g. `no active phase detected but tasks are present`, `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not proceed to Stage 3 while blockers exist. A project-protocol-schema migration blocker concerns the governed project's internal schema, not the Cartopian application release version. Surface the migration in plain language and, on operator approval, run `migrate project` (`skills/migrate-project.md`). Do not expose the raw marker unless needed for diagnosis, and do not tell the operator to hand-edit `cartopian.toml`.
-  - `unresolved situation note in STATE.md: …` entries are the exception to "resolve with the operator": a situation note is last session's handoff of a non-derivable fact, and consuming it is PM work. Surface the note to the operator, act on it — promote a durable item (`cartopian write-backlog`, `cartopian write-decision`) or drop a stale one — then refresh `STATE.md` via `cartopian write-state <project-root>` (which always composes with zero notes). Escalate only if the note itself requires an operator decision.
-
-Resolve blockers with the operator before taking any lifecycle action.
+Resolve blockers with the operator before any lifecycle action.
 
 ---
 
 ## Stage 3 - Take The Next Action
 
-Task selection is deterministic (`protocol/CONVENTIONS.md § Task Execution Order`): the next action is computed from the `next-action` record, not negotiated with the operator. Whether that action *executes* is a separate authority: selection does not authorize execution. Execution begins only when the session request is an execution directive or the record's resolved `automation.initiation` is `"auto"` (`protocol/CONVENTIONS.md § Request Intent`).
+Task selection is deterministic from the `next-action` record; selection does not authorize execution (startup slice: § Request Intent, § Tasks § Task Execution Order). Classify the request first, then act on its class:
 
-**Classify the request first, then act on its class:**
+- **Informational** ("what's next?", "give me status") — answer from the Stage 2 summary, name the exact next protocol action, stop. Never initiate execution from an informational request, even when `initiation = "auto"`.
+- **Scoped directive** (a named operation) — perform exactly that operation via its owning skill; report and stop under `initiation = "operator"`, while under `initiation = "auto"` the newly ready queue may initiate execution below.
+- **Execution directive** ("continue", "resume", "start working") — initiate execution below.
+- **No directive** (bare project selection) — with `initiation = "auto"` and no blockers, initiate execution below; otherwise end with the summary, naming the exact task an execution directive will start.
 
-- **Informational request** ("what's next?", "check `STATE.md`", "give me status") — answer from the Stage 2 summary, name the exact next protocol action, and stop. Never initiate execution from an informational request, even when `initiation = "auto"`.
-- **Scoped directive** (a named operation such as "generate the phase's tasks" or "write the spec") — perform exactly that operation via its owning skill. On completion, report and stop under `initiation = "operator"`; under `initiation = "auto"`, the newly ready queue may initiate execution below.
-- **Execution directive** ("continue", "resume", "start working", "run the next task") — initiate execution below.
-- **No directive** (the session opened on bare project selection) — with `initiation = "auto"` and no Stage 2 blockers, initiate execution below; otherwise end with the summary, naming the exact task an execution directive ("continue") will start.
+Once execution is initiated, proceed without asking — these are deterministic continuations of the approved plan: an `active_task` in `in-progress` or `in-review` continues with `run task`; otherwise start `next_open_task` with `run task`, offering no alternatives (the operator may override by naming a different task; the override applies to that task only).
 
-**Once execution is initiated, proceed without asking** — these are deterministic continuations of the plan the operator already approved. Name the action in the summary and continue with `run task` immediately; do not ask permission to take the obvious next step:
+Stop and consult the operator at plan-level forks and reserved decisions:
 
-- `active_task` non-null with status `in-progress` — continue it with `run task`.
-- `active_task` non-null with status `in-review` — process the review path with `run task`.
-- `active_task` null and `next_open_task` non-null — start `next_open_task` with `run task`. Do not offer alternatives or ask which task to run; the record's selection is the protocol order. (The operator may override at any time by naming a different task; an override applies to that task only.)
+- No `phase_id` and no plan — ask whether to begin planning with `plan project`.
+- `next_unstarted_phase` non-null — the open queue is empty but a later phase's tasks are not generated; ask whether to generate them now. Do not offer to close the plan in this case.
+- `plan_complete` true — ask whether to close the plan with `close plan`.
+- `STATE.md` names PM-owned authoring as the next step — ask whether to perform it now; any such authoring routes through the mediated `cartopian write-*` commands named by the owning lifecycle skill.
+- Any unresolved Stage 2 blocker, or a decision the protocol or plan reserves to the operator.
 
-Pace within and across tasks is governed by the resolved `[automation]` policy: `each-handoff` stops after each processed handoff result and resumes when the operator says to continue; `until-blocked` chains through sequential tasks until a stop condition or the run budget is spent.
-
-**Stop and consult the operator** — these are plan-level forks or reserved decisions, not linear movement:
-
-- `phase_id` is null and no plan exists for the project — ask whether to begin planning with `plan project`.
-- `next_unstarted_phase` is non-null — the open queue is empty but a later phase exists whose tasks have **not** been generated yet; the plan is **not** complete. Name that phase to the operator and ask whether to generate its tasks now (the planning skill's task-generation stage). Do **not** offer to close the plan in this case; an empty open queue with a later un-generated phase means "generate the next phase," not "plan done."
-- `plan_complete` is true (no `active_task`, no `next_open_task`, no `next_unstarted_phase`, and the plan actually had tasks) — the plan is genuinely finished; ask whether to close it with `close plan`.
-- `STATE.md` says the PM should author or revise the next task, spec, decision, or plan artifact — ask whether to perform that PM-owned authoring action now. Any such PM authoring routes through the mediated `cartopian write-*` commands (the contained PM has no raw `Write`/`Edit`); the owning lifecycle skill names the specific command.
-- Any unresolved blocker from Stage 2, or a decision the protocol or plan reserves to the operator.
-
-An explicit "stop", "pause", or "don't execute" always overrides configuration. If the operator declines or pauses work, end any run at the next safe point, stop after the state summary, and do not restart the chain — automatic initiation included — until the operator directs execution again.
+An explicit "stop", "pause", or "don't execute" always overrides configuration: end any run at the next safe point and do not restart the chain — automatic initiation included — until the operator directs execution again.

@@ -17,6 +17,13 @@ This module is the allowlist those paths pass through. A resolved artifact:
   below the real project root;
 * is a **regular file with one link**, opened ``O_NOFOLLOW`` and re-checked on
   the descriptor so the identity that was stat'd is the identity that is read;
+* is read through a **pinned parent directory descriptor** where the platform
+  supports one, so a parent component swapped for a symlink after validation
+  cannot redirect the open (``O_NOFOLLOW`` alone protects only the leaf); on
+  Windows, which has no descriptor-relative open, the opened handle's final
+  path must equal the validated path, and any other platform without
+  ``dir_fd`` support **fails closed** — there is no unverified full-path
+  fallback;
 * decodes as **UTF-8**, because an artifact that does not is not a governance
   document this protocol can parse.
 
@@ -133,6 +140,13 @@ def resolve(
     return Path(os.path.join(os.path.realpath(parent), os.path.basename(normalized)))
 
 
+#: Whether this platform can pin a directory with a descriptor and stat/open
+#: relative to it. Without it, a Windows read is verified on the opened
+#: handle instead (``_verify_final_path``), and any other platform fails
+#: closed — there is no unverified full-path fallback.
+_DIR_FD_SUPPORTED = os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+
+
 def read(
     project_root: os.PathLike | str,
     candidate: os.PathLike | str,
@@ -140,12 +154,110 @@ def read(
     subdirs: Sequence[str],
     label: str,
 ) -> Tuple[Path, str]:
-    """Resolve and read one contained artifact as UTF-8 text."""
+    """Resolve and read one contained artifact as UTF-8 text.
+
+    ``O_NOFOLLOW`` protects only the last path component, so a validated
+    parent directory swapped for a symlink after ``resolve`` would redirect a
+    full-pathname open. Where the platform supports it, the validated parent
+    is therefore pinned with a directory descriptor (itself opened
+    ``O_NOFOLLOW``, so a symlinked parent refuses) and the leaf is stat'd and
+    opened by basename relative to that descriptor — the directory the check
+    approved is provably the directory the read goes through. On Windows,
+    which supports no descriptor-relative open, the opened handle's final
+    path is verified against the validated path instead. A platform that can
+    do neither refuses: an unverified full-path open would silently retain
+    the parent-swap race.
+    """
     path = resolve(project_root, candidate, subdirs=subdirs, label=label)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    before = os.lstat(path)
+    if _DIR_FD_SUPPORTED:
+        dir_flags = (
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            dir_fd = os.open(path.parent, dir_flags)
+        except OSError as exc:
+            raise ArtifactRefusal(
+                "unreadable",
+                f"cannot pin {label} directory {path.parent}: {exc.strerror}",
+            ) from None
+        try:
+            return _read_leaf(path, path.name, dir_fd, flags, label)
+        finally:
+            os.close(dir_fd)
+    if os.name == "nt":
+        return _read_leaf(path, path, None, flags, label, verify_handle=True)
+    raise ArtifactRefusal(
+        "uncontainable",
+        f"this platform can neither pin {label}'s parent directory nor "
+        f"verify the opened handle; refusing to read {path}",
+    )
+
+
+def _verify_final_path(fd: int, path: Path, label: str) -> None:
+    """Windows: prove the opened handle references the validated path.
+
+    With no ``dir_fd`` to pin the parent, a component swapped for a symlink
+    or junction between validation and open redirects a full-pathname open.
+    ``GetFinalPathNameByHandle`` names the file the handle actually
+    references; anything but the validated canonical path — or any failure
+    to obtain it — refuses, so this branch either reads the approved file or
+    fails closed.
+    """
     try:
-        fd = os.open(path, flags)
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        handle = msvcrt.get_osfhandle(fd)
+        buf = ctypes.create_unicode_buffer(32768)
+        # 0 == FILE_NAME_NORMALIZED | VOLUME_NAME_DOS
+        length = ctypes.windll.kernel32.GetFinalPathNameByHandleW(
+            wintypes.HANDLE(handle), buf, len(buf), 0
+        )
+        if length == 0 or length >= len(buf):
+            raise OSError("GetFinalPathNameByHandleW failed")
+        final = buf.value
+        if final.startswith("\\\\?\\UNC\\"):
+            final = "\\\\" + final[8:]
+        elif final.startswith("\\\\?\\"):
+            final = final[4:]
+        matches = os.path.normcase(os.path.normpath(final)) == os.path.normcase(
+            os.path.normpath(os.fspath(path))
+        )
+    except Exception:
+        raise ArtifactRefusal(
+            "uncontainable",
+            f"cannot verify the opened handle for {label}: {path}",
+        ) from None
+    if not matches:
+        raise ArtifactRefusal(
+            "toctou",
+            f"{label} handle resolved outside the validated path: {path}",
+        )
+
+
+def _read_leaf(
+    path: Path,
+    target: os.PathLike | str,
+    dir_fd: int | None,
+    flags: int,
+    label: str,
+    *,
+    verify_handle: bool = False,
+) -> Tuple[Path, str]:
+    try:
+        before = os.stat(target, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        raise ArtifactRefusal("missing", f"{label} does not exist: {path}") from None
+    except OSError as exc:
+        raise ArtifactRefusal(
+            "unreadable", f"cannot inspect {label} {path}: {exc.strerror}"
+        ) from None
+    try:
+        fd = os.open(target, flags, dir_fd=dir_fd)
     except OSError as exc:
         raise ArtifactRefusal(
             "unreadable", f"cannot open {label} {path}: {exc.strerror}"
@@ -160,6 +272,8 @@ def read(
             raise ArtifactRefusal(
                 "toctou", f"{label} changed type between stat and open: {path}"
             )
+        if verify_handle:
+            _verify_final_path(fd, path, label)
         chunks = []
         while True:
             chunk = os.read(fd, 1024 * 1024)

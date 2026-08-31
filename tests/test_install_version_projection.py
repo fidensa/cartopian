@@ -42,6 +42,7 @@ from cli.version_identities import (  # noqa: E402
     version_identities,
 )
 from mcp_server import server  # noqa: E402
+from tests.mcp_result import tool_records
 
 FIXTURE_REF = "v9.9.9"
 
@@ -880,7 +881,7 @@ class TestConnectedProcessAttribution(unittest.TestCase):
                     "arguments": {"project_path": str(project)},
                 },
             )
-        record = response["result"]["structuredContent"]["records"][0]
+        record = tool_records(response["result"])[0]
         running = record["version_identities"]["running_server"]
         self.assertEqual(running["attribution"], "connected-process")
         self.assertEqual(running["process_id"], 424242)

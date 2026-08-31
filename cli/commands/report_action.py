@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import report_identity, source_guidance
+from cli import artifact_paths, report_identity, source_guidance
 from cli.commands import parse_report
 from cli.commands.plan_audit import _resolve_pm_owns_product_branches
 from cli.commands.resolve_config import (
@@ -31,6 +31,142 @@ _IDENTITY_SECTION_RE = re.compile(
     r"^##\s+Identity\s*$(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
 )
+_SUMMARY_SECTION_RE = re.compile(
+    r"^##\s+Summary\s*$(.*?)(?=^##\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_FINDINGS_SECTION_RE = re.compile(
+    r"^##\s+Findings\s*$(.*?)(?=^##\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_CONTRACT_QUALITY_SECTION_RE = re.compile(
+    r"^##\s+Contract quality\s*$(.*?)(?=^##\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_BLOCKING_FINDINGS_SECTION_RE = re.compile(
+    r"^##\s+Blocking findings\s*$(.*?)(?=^##\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_REVIEW_VERDICT_HEADER_RE = re.compile(r"^Verdict:\s*(\S+)\s*$", re.MULTILINE)
+_FINDING_ROW_RE = re.compile(r"^-\s+[CF]\d+\.\s")
+
+# Projection bounds. These cap what enters PM *context*, never what may be
+# stored: reports and reviews remain architecturally unbounded on disk (see
+# tests/test_size_threshold_regressions.py). The projection exists so the PM
+# can route on the verdict, summary, and findings without opening the whole
+# artifact; the unbounded body stays on disk as durable evidence.
+PM_SUMMARY_MAX_CHARS = 2000
+PROJECTED_FINDING_MAX_CHARS = 500
+PROJECTED_FINDINGS_MAX = 30
+_TRUNCATION_MARK = " …[truncated; read the artifact for the full text]"
+
+
+def _bounded_text(value: Optional[str], limit: int) -> Tuple[Optional[str], bool]:
+    if value is None:
+        return None, False
+    if len(value) <= limit:
+        return value, False
+    # The marker lives inside the advertised limit, so a truncated value is
+    # never longer than an untruncated one at the bound.
+    keep = max(0, limit - len(_TRUNCATION_MARK))
+    return value[:keep].rstrip() + _TRUNCATION_MARK, True
+
+
+def _extract_pm_summary(content: str) -> Tuple[Optional[str], bool]:
+    """The bounded `## Summary` body of a report or review, when present."""
+    body = _extract_heading_body(_SUMMARY_SECTION_RE, content)
+    return _bounded_text(body, PM_SUMMARY_MAX_CHARS)
+
+
+def _projected_findings(body: str) -> Tuple[list, int]:
+    """Bounded `F<n>.`/`C<n>.` rows of a findings section body.
+
+    Each row is one finding per the review template's grammar; a
+    continuation line indented under a row stays with its row.
+    """
+    rows: list = []
+    for line in body.splitlines():
+        stripped = line.rstrip()
+        if _FINDING_ROW_RE.match(stripped.strip()):
+            rows.append(stripped.strip())
+        elif rows and stripped.startswith((" ", "\t")) and stripped.strip():
+            rows[-1] = rows[-1] + " " + stripped.strip()
+    omitted = max(0, len(rows) - PROJECTED_FINDINGS_MAX)
+    bounded = [
+        _bounded_text(row, PROJECTED_FINDING_MAX_CHARS)[0]
+        for row in rows[:PROJECTED_FINDINGS_MAX]
+    ]
+    return bounded, omitted
+
+
+def _review_projection(
+    project_root: Path,
+    review_path: Optional[Path],
+    report_content: str,
+) -> Optional[Dict[str, Any]]:
+    """Bounded PM-facing projection of the durable review file.
+
+    ``review_path`` must be the *lexical* canonical review slot derived from
+    the report filename — never a report-declared path, which is untrusted
+    input that could point the projection at an arbitrary readable file. The
+    slot is read through the ``artifact_paths.review`` containment helper, so
+    a symlinked or hardlinked slot aliasing an outside-project file is
+    refused rather than read. On any refusal (absent slot included), fall
+    back to the completion report's `## Blocking findings` body so the PM
+    still gets a bounded findings read. Best-effort throughout — the
+    projection informs the PM, never the routing verdict.
+    """
+    verdict: Optional[str] = None
+    summary: Optional[str] = None
+    summary_truncated = False
+    findings: list = []
+    findings_omitted = 0
+    source = None
+    if review_path is not None:
+        try:
+            _, review_content = artifact_paths.review(project_root, review_path)
+        except artifact_paths.ArtifactRefusal:
+            review_content = None
+        if review_content is not None:
+            source = "review-file"
+            match = _REVIEW_VERDICT_HEADER_RE.search(review_content)
+            verdict = match.group(1) if match else None
+            summary, summary_truncated = _extract_pm_summary(review_content)
+            # Findings live in two sections of the review template: contract
+            # defects (C<n>) under `## Contract quality`, implementation
+            # defects (F<n>) under `## Findings`. Project both, in document
+            # order, so a contract-only verdict still carries its findings.
+            bodies = [
+                body
+                for body in (
+                    _extract_heading_body(
+                        _CONTRACT_QUALITY_SECTION_RE, review_content
+                    ),
+                    _extract_heading_body(_FINDINGS_SECTION_RE, review_content),
+                )
+                if body
+            ]
+            if bodies:
+                findings, findings_omitted = _projected_findings(
+                    "\n".join(bodies)
+                )
+    if source is None:
+        body = _extract_heading_body(
+            _BLOCKING_FINDINGS_SECTION_RE, report_content
+        )
+        if body is None:
+            return None
+        source = "report-blocking-findings"
+        bounded, truncated = _bounded_text(body, PM_SUMMARY_MAX_CHARS)
+        summary, summary_truncated = bounded, truncated
+    return {
+        "source": source,
+        "verdict": verdict,
+        "summary": summary,
+        "summary_truncated": summary_truncated,
+        "findings": findings,
+        "findings_omitted": findings_omitted,
+    }
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -219,28 +355,46 @@ def _report_suffix(report_path: Path, variant: str) -> Optional[str]:
     return None
 
 
+def _contained_task_path(project_root: Path, candidate: Path) -> Optional[Path]:
+    """The canonical contained path for a filename-derived task candidate.
+
+    Downstream consumers read the expected task path, so every candidate
+    passes the artifact containment allowlist first: a symlinked, hardlinked,
+    or otherwise aliased slot yields None instead of a path that escapes the
+    project boundary.
+    """
+    try:
+        return artifact_paths.resolve(
+            project_root,
+            candidate,
+            subdirs=artifact_paths.TASK_SUBDIRS,
+            label="task",
+        )
+    except artifact_paths.ArtifactRefusal:
+        return None
+
+
 def _find_expected_task_path(project_root: Path, task_id: str) -> Optional[Path]:
     for status in _TASK_STATUS_DIRS:
         status_dir = project_root / "tasks" / status
         if not status_dir.is_dir():
             continue
-        direct = status_dir / f"{task_id}.md"
-        if direct.is_file():
-            return direct.resolve()
+        direct = _contained_task_path(
+            project_root, status_dir / f"{task_id}.md"
+        )
+        if direct is not None:
+            return direct
         for candidate in sorted(status_dir.glob(f"{task_id}-*.md")):
-            if candidate.is_file():
-                return candidate.resolve()
+            contained = _contained_task_path(project_root, candidate)
+            if contained is not None:
+                return contained
     return None
 
 
-def _task_declares_work_roots(task_path: Optional[Path]) -> bool:
-    if task_path is None or not task_path.is_file():
+def _task_declares_work_roots(task_content: Optional[str]) -> bool:
+    if task_content is None:
         return False
-    try:
-        content = task_path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    match = re.search(r"^Work root:\s*(.+)$", content, re.MULTILINE)
+    match = re.search(r"^Work root:\s*(.+)$", task_content, re.MULTILINE)
     if not match:
         return False
     raw = match.group(1).strip().lower()
@@ -566,6 +720,18 @@ def handler(args: argparse.Namespace) -> int:
     expected_prompt_path = expected["expected_prompt_path"]
     expected_review_path = expected["expected_review_path"]
     expected_task_path = expected["expected_task_path"]
+    # Read the contained task exactly once; every downstream consumer parses
+    # this content instead of reopening the path, so a slot swapped after
+    # discovery cannot redirect a later read. A refusal here means no
+    # readable governed task backs this report.
+    expected_task_content: Optional[str] = None
+    if expected_task_path is not None:
+        try:
+            expected_task_path, expected_task_content = artifact_paths.task(
+                project_root, expected_task_path
+            )
+        except artifact_paths.ArtifactRefusal:
+            expected_task_path = None
     expected_review_id_obj = expected["expected_review_id"]
     expected_review_id = expected_review_id_obj.name if expected_review_id_obj is not None else None
     expected_task_id = (
@@ -578,7 +744,11 @@ def handler(args: argparse.Namespace) -> int:
         from cli import numbering_contract
 
         refusal = numbering_contract.guard_task_scoped_artifact(
-            project_root, expected_task_path, report_path.stem, content
+            project_root,
+            expected_task_path,
+            report_path.stem,
+            content,
+            task_content=expected_task_content,
         )
         if refusal is not None:
             numbering_trace = {
@@ -598,7 +768,9 @@ def handler(args: argparse.Namespace) -> int:
     if variant == "task" and status_value == "complete" and expected_task_path is not None:
         try:
             source_evidence_record = source_guidance.resolve_report_evidence(
-                expected_task_path, content
+                expected_task_path,
+                content,
+                task_content=expected_task_content,
             )
         except (OSError, UnicodeError, ValueError) as exc:
             source_evidence_record = {
@@ -635,10 +807,12 @@ def handler(args: argparse.Namespace) -> int:
             expected_review_id,
         )
 
-    task_path_for_pr = expected_task_path if expected_task_path is not None else declared_task_path
+    # The declared task path is untrusted report input: it is recorded and
+    # cross-checked, never dereferenced. Only the once-read contained task
+    # content is consulted.
     requires_pr_step = False
-    if verdict != "failed-to-parse" and task_path_for_pr is not None:
-        if _resolve_pm_owns_product_branches(project_root) and _task_declares_work_roots(task_path_for_pr):
+    if verdict != "failed-to-parse" and expected_task_path is not None:
+        if _resolve_pm_owns_product_branches(project_root) and _task_declares_work_roots(expected_task_content):
             if variant == "task":
                 requires_pr_step = verdict == "accepted" and ready_for_review is True
             else:
@@ -665,12 +839,32 @@ def handler(args: argparse.Namespace) -> int:
         declared_review_path,
         task_review_required,
     )
+    pm_summary, pm_summary_truncated = _extract_pm_summary(content)
+    review_projection = None
+    if variant in parse_report.REVIEW_VARIANTS:
+        # Project only from the lexical canonical review slot derived from
+        # the report filename — never the report-declared path, and never a
+        # pre-resolved path (resolving would follow a symlinked slot out of
+        # the project before containment can refuse it). Skip the read
+        # entirely on a path mismatch; the fallback then projects from the
+        # report content already in hand.
+        projection_review_path = (
+            project_root / "reviews" / f"{expected_review_id}.md"
+            if expected_review_id is not None and not path_mismatch
+            else None
+        )
+        review_projection = _review_projection(
+            project_root, projection_review_path, content
+        )
     record = {
         "verdict": verdict,
         "variant": variant,
         "report_path": str(report_path),
         "report_content_identity": observed_identity,
         "status": status_value,
+        "pm_summary": pm_summary,
+        "pm_summary_truncated": pm_summary_truncated,
+        "review_projection": review_projection,
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,
         "source_evidence": source_evidence_record,

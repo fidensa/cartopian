@@ -1,265 +1,113 @@
 # Skill: Run Task
 
-Run one Cartopian task from assignment through evidence-supported closure, any required review, verdict handling, and session state refresh.
-
-Use this skill when the operator wants to start, continue, review, or close a task in the current plan.
-
-For vague session-start requests that do not name a project or target task, use `skills/start-session.md` first.
+Run one Cartopian task from assignment through evidence-supported closure, any required review, verdict handling, and session state refresh. Use this skill when the operator wants to start, continue, review, or close a task in the current plan. For vague session-start requests that do not name a project or target task, use `skills/start-session.md` first.
 
 **Output:** The task is moved to the lifecycle state supported by the evidence; prompts, reports, reviews, decisions, and `STATE.md` are left consistent with that state.
 
-**Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
-
-- `cartopian://protocol/CONVENTIONS/status-through-directory` — directory-as-status semantics behind every task move.
-- `cartopian://protocol/CONVENTIONS/tasks` — linear task-execution order and the stop conditions that end confirmation-free continuation (§ Task Execution Order).
-- `cartopian://protocol/CONVENTIONS/lifecycle-authority` — who may move tasks and author protocol files.
-- `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` — `move-task` artifact guards and the plan-audit blocker contract (Stages 0, 4, 6).
-- `cartopian://protocol/CONVENTIONS/handoffs` — the handoff contract behind Stages 3-6.
-- `cartopian://protocol/CONVENTIONS/document-deliverables` — where a document-producing task's work product lives and how the prompt, report, and review reference it (Stages 2, 4, 5).
-- `cartopian://protocol/CONVENTIONS/evidence-gate-discipline` — `required` vs `n/a` evidence gates.
-- `cartopian://protocol/CONVENTIONS/source-backed-work` — source identity, applicable date/version, conflict, unverified-claim, and fail-closed handoff rules.
-- `cartopian://protocol/CONVENTIONS/risk-classification-and-scaled-governance` — observable risk facts, dominance, derived expectations, and policy separation.
-- `cartopian://protocol/CONVENTIONS/git` — git policy keys behind the PM-owned product-repo steps and session-close behavior.
-
-The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill.
+**Protocol reference:** The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; do not load it whole for this skill. Each stage below names the section-scoped slice that governs it — read a slice at the stage that needs it, never up front, so a task that stops early never pays for later-stage rules.
 
 ---
 
-## Host intake precondition
+## Operator request evidence
 
-Before review prompt generation, resolve the task's exact operator evidence
-from the three supported source kinds: structurally marked decision quotations,
-supported host chat records, and optional immutable request records. A native
-host adapter is optional when another supported source resolves. The PM must
-not transcribe or reconstruct operator words; ordinary PM prose is excluded
-from operator evidence, including task, spec, phase, plan, prompt, and report
-prose.
+Before review prompt generation, resolve the task's exact operator evidence from the three supported source kinds: structurally marked decision quotations, supported host chat records, and optional immutable request records. A native host adapter is optional when another supported source resolves. The PM must not transcribe or reconstruct operator words; ordinary PM prose is excluded from operator evidence, including task, spec, phase, plan, prompt, and report prose.
 
-Assignment and task review use the same resolution. A task generated from the
-approved plan inherits project-level evidence when the Core CLI verifies its
-complete task-to-phase-to-plan ancestry. Direct task-bound evidence takes
-precedence when present. Ad-hoc, malformed, or unanchored tasks fail closed
-only when no applicable exact source of any supported kind resolves. This
-resolution is infrastructure for the existing lifecycle: planned work requires
-no later operator restatement, confirmation, safeguard, handoff, or new review
-stage.
+Assignment and task review use the same resolution. A task generated from the approved plan inherits project-level evidence when the Core CLI verifies its complete task-to-phase-to-plan ancestry; direct task-bound evidence takes precedence when present. Ad-hoc, malformed, or unanchored tasks fail closed only when no applicable exact source of any supported kind resolves. Planned work requires no later operator restatement, confirmation, safeguard, handoff, or new review stage.
 
 ---
 
 ## Prerequisites
 
-- The project has an active `IMPLEMENTATION_PLAN.md`.
-- `STATE.md` exists and is under 5KB.
-- The target task exists in one of the task status directories.
-- Any `Blocked by` task identifiers are already in `tasks/done/`.
-- The absolute project path is known (selected from `cartopian discover-projects`) so `cartopian resolve-config <project-path>` can be run. If the task declares `Work root:` names, ensure they exist in the project's `[project].work_roots` list; the validator will block unknown names.
+- The project has an active `IMPLEMENTATION_PLAN.md`; `STATE.md` exists and is under 5KB.
+- The target task exists in a task status directory and every `Blocked by` task is in `tasks/done/`.
+- The absolute project path is known (selected from `cartopian discover-projects`) so `cartopian resolve-config <project-path>` can run. Any `Work root:` names the task declares must exist in `[project].work_roots`.
 
 ---
 
 ## Stage 0 - Open Session Context
 
-Run the orientation aggregator using the Core CLI for the selected project path:
+Governing slices: `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` (move guards, plan-audit blocker contract) and `cartopian://protocol/CONVENTIONS/lifecycle-authority`.
 
-```
-cartopian next-action <project-path>
-```
-
-This emits the orientation record, including canonical resolved `roles`, `reviews`, and `automation`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (which may be any declared role name) decides who performs it. Each role exposes distinct `assigned_work_types`, `launch`, `auto_launch`, `effective_grants`, and attribution. Never infer task review from a role literally named `reviewer` or from description prose. Finally run `cartopian plan-audit <project-path>` at session startup per `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` and treat a non-zero exit as a blocker.
-
-Surface the disagreement and blocker fields to the operator before proposing any action:
-
-- **`state_filesystem_disagreement`**: if non-null, a task status claimed in `STATE.md` does not match the directory the task file actually lives in. The filesystem is authoritative. Surface the mismatch and offer to refresh `STATE.md` before continuing.
-- **`blockers`**: any non-empty `blockers` array is a PM-level blocker (for example `no active phase detected but tasks are present`, or `unresolved open question in STATE.md: …`). Surface each entry to the operator and stop. Do not advance lifecycle state while blockers exist.
-
-Resolve blockers with the operator before proceeding to Stage 1.
+1. Run `cartopian next-action <project-path>`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (any declared role name) decides who performs it. Never infer task review from a role literally named `reviewer` or from description prose.
+2. Run `cartopian plan-audit <project-path>`; treat a non-zero exit as a blocker.
+3. Before proposing any action, surface `state_filesystem_disagreement` (the filesystem is authoritative — offer to refresh `STATE.md` via the mediated `cartopian write-state`) and every `blockers` entry. Resolve blockers with the operator before Stage 1; do not advance lifecycle state while blockers exist.
 
 ---
 
 ## Stage 1 - Confirm Task Readiness
 
-1. Assemble the task + spec + phase + dependency context with a single Core CLI call:
+Governing slices, as this task's declarations make them applicable: `cartopian://protocol/CONVENTIONS/evidence-gate-discipline`, `cartopian://protocol/CONVENTIONS/source-backed-work`, `cartopian://protocol/CONVENTIONS/risk-classification-and-scaled-governance`.
 
-   ```
-   cartopian task-bundle <task-path>
-   ```
-
-   `task-bundle` is the FR-002 aggregator. It emits one NDJSON record with the resolved task identity (`task_id`, `task_title`, `task_path`, `task_status`), the resolved `spec_path`, the ordered `dependencies` list (each carrying `task_id`, `title`, `path`, `status`), the resolved `work_roots_resolved` entries (each `{name, absolute_path, exists}`), the resolved `source_guidance` record, the `expected_prompt_path`, and the `expected_report_path` Stage 2 and Stage 4 will reference. Consume these fields directly; do not re-read the task, spec, or phase files to derive them.
-
-2. Validate readiness gates with the Core CLI:
-
-   ```
-   cartopian validate-task-readiness <task-path>
-   ```
-
-   `task-bundle` assembles content; `validate-task-readiness` enforces readiness gating — the two are complementary. Treat a non-zero exit from `validate-task-readiness` as a blocker and stop. For declared source-backed work this includes missing authority, stale/absent date or version context, unresolved source conflict, and decisive unverified claims. Surface the emitted reason and recovery; do not replace it with a score or average it against favorable observations.
-
-   A failing `project-schema-current` check is a project-level blocker, not a task defect: the project has not adopted the shipped protocol version, so nothing about the task will fix it. Do not edit the task, and do not hand-edit `cartopian.toml` to make the check pass. Stop, surface the named recovery to the operator, and run the `migrate project` skill for the applicable `cartopian://protocol/CHANGELOG` entries before returning here.
-
+1. `cartopian task-bundle <task-path>` — one record with the task identity, `spec_path`, ordered `dependencies`, `work_roots_resolved`, `source_guidance`, `expected_prompt_path`, and `expected_report_path`. Consume these fields directly; do not re-read the task, spec, or phase files to derive them.
+2. `cartopian validate-task-readiness <task-path>` — a non-zero exit is a blocker; surface the emitted reason and recovery verbatim, without scoring or averaging. A failing `project-schema-current` check is a project-level blocker: stop, surface the named recovery, and run the `migrate project` skill — do not edit the task or hand-edit `cartopian.toml`.
 3. Confirm acceptance criteria are actionable for the assignee and, when task-closure review is required, the assigned review role.
+4. Risk: read the five records under `## Risk observations` and call `cartopian classify-risk` with each observation's state and supporting fact. A missing, duplicate, unsupported, or undeclared observation is a readiness blocker; never substitute prose judgment or convert a missing fact into a favorable state. Retain the structured result as readiness evidence — the Stage 2 composer re-derives the same result deterministically.
+5. Judgment: read only the two declared lists under `## Judgment envelope` and call `cartopian select-judgment-guidance`, repeating `--lifecycle-boundary` per crossed boundary and `--open-failure-condition` per named open non-enforceable failure (no fact options for a legacy task; the valid result is `none`). Do not pass the risk result, band, or a pack outcome. `invalid` blocks prompt authoring; `active` carries exactly the one returned central body.
+6. Practice pack: read only the declared lists under `## Practice-pack envelope` and call `cartopian select-practice-pack`, repeating the matching option per declared value (`--primary-outcome`, `--artifact-kind`, `--incidental-term`, `--exclusion`, `--lifecycle-substrate-activity`, `--domain-scope`; `--authorized-profile-hint` only when the task carries one; no options for a legacy task — the valid result is `none`). `ambiguous` or `invalid` blocks; `selected` contributes exactly its returned body. Declared domain scopes decide only which conditional sources the result reports as applicable — they never select, veto, or change a pack.
 
-4. Read the five records under the task's `## Risk observations` and call `cartopian classify-risk` with the corresponding state and supporting-fact option for each observation. Do not substitute prose judgment, omit an observation, or convert a missing fact into a favorable state. A missing, duplicate, unsupported, or undeclared observation is a readiness blocker. Retain the returned structured risk result as the readiness evidence for the evidence requirement, review expectation, operator gate, and contingency expectation; the Stage 2 composer re-derives the same result deterministically from the task's declared observations, so the prompt never depends on a hand-carried copy.
-
-5. Read only the two declared lists under the task's `## Judgment envelope` and call `cartopian select-judgment-guidance`, repeating `--lifecycle-boundary` for each boundary this work actually crosses and `--open-failure-condition` for each named non-enforceable failure still open. A failure a deterministic guard has already decided is not open, and a boundary the work does not cross is not declared. For a legacy task with no judgment envelope, call the command with no fact options; the valid result is `none`. Do not pass the risk result, the band, or a pack outcome — the command rejects them, because neither activates a card. `invalid` is a blocker before prompt authoring. `none` carries zero guidance bytes. `active` carries exactly the one returned central body, whatever the number of active cards.
-
-6. Read only the declared lists under `## Practice-pack envelope` and call `cartopian select-practice-pack`, repeating the corresponding option for each declared value (`--primary-outcome`, `--artifact-kind`, `--incidental-term`, `--exclusion`, `--lifecycle-substrate-activity`, and `--domain-scope`) and adding `--authorized-profile-hint` only when the task carries one. For a legacy task with no practice-pack envelope, call the command with no fact options; the valid result is `none`. Retain the structured result without recomputing it from task prose, filenames, project history, or Cartopian runtime activity. `ambiguous` or `invalid` is a blocker before prompt authoring. `none` continues with zero pack-body bytes. `selected` contributes exactly its returned body and no other pack body. Declared domain scopes decide only which conditional sources the result reports as applicable; they never select, veto, or change a pack, and an undeclared scope yields no authority rather than a default one.
-
-The configured review policy remains authoritative. Classification never edits `reviews`, roles, grants, or launch/automation values. If the derived independent-review expectation is deeper than the configured task-closure policy, surface that explicit difference as an operator gate before closeout; do not silently enable a review or choose a reviewer. Cross-model review occurs only when configured policy or the operator's explicit scoped direction requires it.
+The configured review policy remains authoritative: classification never edits `reviews`, roles, grants, or launch/automation values. If the derived independent-review expectation is deeper than the configured task-closure policy, surface that difference as an operator gate before closeout; do not silently enable a review or choose a reviewer.
 
 ---
 
 ## Stage 2 - Prepare Assignment Prompt
 
-First, move the task to `tasks/in-progress/` using the Core CLI:
+Governing slices: `cartopian://protocol/CONVENTIONS/status-through-directory`; for a document deliverable, `cartopian://protocol/CONVENTIONS/document-deliverables` and `cartopian://protocol/CONVENTIONS/project-resources`.
 
-```
-cartopian move-task <task-path> in-progress
-```
-
-The move precedes prompt authoring so the prompt, completion report, and review all name the `tasks/in-progress/` task path — writing the prompt against the `tasks/open/` path and moving afterwards leaves a stale path in the prompt that the assignee echoes into the report, which `report-action` flags as `path_mismatch`. Use the emitted `task_path_after` as the task path for every subsequent step and stage.
-
-If the session is interrupted between this move and the prompt write, the task sits in `tasks/in-progress/` with no prompt, and `cartopian plan-audit` reports it as a `missing-prompt` blocker at the next session start. Recover by resuming this stage: author the prompt against the in-progress task path. Do not try to move the task back to `open` — the CLI disallows that transition outside a review verdict.
-
-Then assemble the prompt-input bundle with a single Core CLI call against the moved task path:
-
-```
-cartopian handoff-packet <task-path> --role <role>
-```
-
-`handoff-packet` is the FR-003 aggregator. It returns one NDJSON record with resolved role description, grants, assigned work types, `launch`, `auto_launch`, and attribution; resolved `reviews` and `automation_policy`; the ordered `work_roots` list; the resolved `source_guidance`; the `expected_report_path`; and the relevant Git policy. Source every prompt value from this record; do not re-derive paths, roles, source authority, or review policy.
-
-If the call exits non-zero (missing role block, unreadable config, task file not found), surface the error and stop — do not fall back to a manual read sequence.
-
-If the task's work product is a durable document (research, design, evaluation) rather than code and the task's `Deliverable:` field is not yet set, prompt the operator for where the document should live before authoring the prompt. The destination is **operator authority** — the PM never invents or assigns the path itself. Route by intent:
-
-- Work product intended to become **part of the product**: an existing work-root name plus an **operator-chosen** relative path (`root:relative/path`, written directly by the assignee).
-- **Supporting artifact** of the project itself (research, analysis, planning input): `project:resources/relative/path` — the protocol fixes the `resources/` home; the operator supplies or confirms the relative path. The document is returned inline and persisted by the PM. A project-mode path outside `resources/` fails `validate-task-readiness`; supporting artifacts are never placed loose in a work root.
-
-Persist the chosen value into the task via `cartopian write-task` so it enters the trace chain, then re-run `handoff-packet` so the record carries the resolved `deliverable`. See `cartopian://protocol/CONVENTIONS/project-resources` and `cartopian://protocol/CONVENTIONS/document-deliverables`.
-
-Before authoring or regenerating the assignment prompt, clear the task's stale
-completion-report slot through the Core CLI. This ordering prevents an old
-report from entering the assignment snapshot; task-assignment request contexts
-also exclude completion and review slots by contract:
-
-```text
-cartopian delete-report <report-path>
-```
-
-The expected `<report-path>` is the absolute completion-report path returned by
-`task-bundle` / `handoff-packet`. The command also clears its transient status
-and retained launch-log companions.
-
-Then compose the assignment prompt deterministically. The assignment body is **generated, never hand-assembled**:
-
-```
-cartopian compose-assignment-prompt <task-path> --role <role>
-```
-
-The composer resolves the task bundle, role packet, spec assignment projection, tag-selected standards, the three selector results (re-derived from the task's declared observations and envelopes), source guidance, request evidence, and the report skeleton, and emits one record carrying:
-
-- `assignee_prompt` — the audience-scoped coder prompt (structure owned by `protocol/assignment-prompt-contract.json`): deidentified, no raw selector JSON, no routing diagnostics, no inactive guidance, source guidance rendered exactly once, and no repeated contract content.
-- `trace_receipt` — the complete machine metadata (full selector results, raw records, projection receipts, verbatim request evidence, per-section sizes) for validation and audit.
-- `content_identity` — the binding between the two.
-- `findings` — validation results. A non-`composed` outcome is a blocker: surface each finding's detail and recovery and stop; do not edit the prompt to pass.
-
-Save the emitted record to a file, then write the prompt through the mediated writer (the contained PM has no raw `Write` tool):
-
-```
-cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --task <absolute-in-progress-task-path> --composed-file <record-path>
-```
-
-The writer verifies the record's content identity and validation state, re-validates the body against the current contract, writes the prompt to the allowlisted `prompts/` destination resolved from `--prompt-id`, and appends the generated exact-request comparison channel — never authored. A low-information inherited approval is rendered only together with the complete immediately preceding question or proposal it answers and that proposal's exact scope; a detached one fails the composition closed. Re-issuing the command overwrites the same prompt in place on a retry.
-
-Do not paste selector JSON, receipts, hashes, rejected candidates, or inactive guidance into any prompt, and do not restate the composed sections in additional prose. If the composer refuses (an unresolvable input, an unsettled spec, a validation finding), fix the named input — the task, spec, standards, config, or captured evidence — and recompose.
-
-For a **verification-only** assignment under the no-product-git model, the composed scope boundaries state the effective git operating model: Cartopian git versioning is off; product-repository branches are not PM-owned; the work root may already contain uncommitted deliverables from earlier completed tasks; that dirty steady state is expected and is not evidence that this verification task modified files. The assignee distinguishes pre-existing work-root state from changes made during its own handoff and reports only the latter as a scope violation. After `write-prompt`, rerun `handoff-packet` and require `existing_deliverable_input.ok: true` and every `dependency_deliverable_inputs` record's `ok: true`; the composer inlines those contents, and both manual and automatic handoff paths fail closed before launch when any is absent or stale.
+1. `cartopian move-task <task-path> in-progress` — the move precedes prompt authoring so the prompt, report, and review all name the in-progress path. Use the emitted `task_path_after` for every subsequent step. If interrupted between this move and the prompt write, `cartopian plan-audit` reports `missing-prompt` next session: resume by authoring the prompt against the in-progress path (the CLI disallows moving back to `open` outside a review verdict).
+2. `cartopian handoff-packet <task-path> --role <role>` — one record with the resolved role, `reviews`, `automation_policy`, `work_roots`, `source_guidance`, `expected_report_path`, and git policy. Source every prompt value from this record; on a non-zero exit surface the error and stop — no manual read fallback.
+3. If the work product is a durable document and the task's `Deliverable:` field is unset, ask the operator for the destination — it is operator authority: work product bound for the product uses an existing work-root name plus an operator-chosen `root:relative/path`; a supporting artifact uses `project:resources/relative/path`. Persist the value into the task via `cartopian write-task`, then rerun `handoff-packet`.
+4. Clear the stale completion-report slot before composing: `cartopian delete-report <report-path>` (the absolute completion-report path from the bundle/packet records).
+5. Compose deterministically — the assignment body is generated, never hand-assembled: `cartopian compose-assignment-prompt <task-path> --role <role>` emits `assignee_prompt`, `trace_receipt`, `content_identity`, and `findings`. A non-`composed` outcome is a blocker: fix the named input (task, spec, standards, config, or captured evidence) and recompose; never edit the prompt to pass.
+6. Write the verified record through the mediated writer: `cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --task <absolute-in-progress-task-path> --composed-file <record-path>`. Re-issuing overwrites the same prompt in place. Do not paste selector JSON, receipts, hashes, rejected candidates, or inactive guidance into any prompt.
+7. For a verification-only assignment under the no-product-git model, the composed scope boundaries state the effective git operating model: Cartopian git versioning is off; product-repository branches are not PM-owned; the work root may already contain prior completed tasks' deliverables — that dirty steady state is expected and is not evidence that this verification task modified files. After `write-prompt`, rerun `handoff-packet` and require `existing_deliverable_input.ok: true` and every `dependency_deliverable_inputs` record's `ok: true`.
 
 ---
 
 ## Stage 3 - Assign Or Launch Work
 
-Use `skills/run-handoff.md` for assignment mechanics.
+Governing sub-slices: `cartopian://protocol/CONVENTIONS/handoffs/preamble` (assignment contract, role launch facts, timeout authority), `cartopian://protocol/CONVENTIONS/handoffs/launch-directory`, and `cartopian://protocol/CONVENTIONS/handoffs/work-roots` (includes automation policy). Use `skills/run-handoff.md` for assignment mechanics.
 
-For manual assignment, present the prompt path and expected report path to the operator and wait for explicit assignment/start confirmation.
-
-For configured task-scoped agent handoff, require the applicable `task_run` or `task_review` entry in the resolved role's `auto_launch` list and follow the run automation policy. Planning-review handoffs require `planning_review` through `skills/run-handoff.md`.
-
-For a critical result, the `independent-challenge` expectation is not self-certifiable. Before accepting closeout, use the critical adversarial procedure in `skills/run-handoff.md`. If configured review is off, stop at the derived operator gate and ask the operator whether to authorize one scoped independent challenge or explicitly change policy; risk classification itself does neither.
-
-The task is already in `tasks/in-progress/` from Stage 2. Prompt existence is enforced fail-closed at the handoff boundary: `cartopian dispatch` refuses to launch when `prompts/PROMPT-NN-NNN.md` is missing. The prompt written in Stage 2 satisfies this check.
-
-If the operator returns later with completion evidence even though assignment was never recorded, fast-forward to the evidence-supported state instead of leaving completed work in `open/`.
+- Manual assignment: present the prompt path and expected report path to the operator and wait for explicit start confirmation.
+- Configured agent handoff: requires the applicable `task_run` or `task_review` entry in the resolved role's `auto_launch` list; planning-review handoffs require `planning_review`. `cartopian dispatch` refuses to launch when the prompt is missing — Stage 2's prompt satisfies the check.
+- For a critical result, the `independent-challenge` expectation is not self-certifiable: use the critical adversarial procedure in `skills/run-handoff.md`. If configured review is off, stop at the derived operator gate and ask whether to authorize one scoped independent challenge or change policy.
+- If the operator returns with completion evidence though assignment was never recorded, fast-forward to the evidence-supported state instead of leaving completed work in `open/`.
 
 ---
 
 ## Stage 4 - Process Completion Report
 
-Wait for the assignee to finish before parsing. Detect task-execution completion with the Core CLI wait primitive rather than a hand-rolled timing loop or a manual "tell me when it's done" prompt:
+Governing slice: `cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completion`.
 
-```
-cartopian wait-handoff <task-path> --role <role>
-```
+1. Wait with the Core CLI primitive — terminal by default; one blocking call is the whole completion mechanism:
 
-The report file is the authoritative completion signal; `wait-handoff` is terminal by default — one call blocks read-only until it observes a terminal `status` (`done`, `failed`, `failed-to-parse`, or `timeout` at the resolved role launch timeout). The blocking call is the whole completion mechanism; there is no wake or resume behind it, and `dispatch` already refused to launch if this host could not sustain a wait that long. `--max-block` bounds a single nonterminal observation slice (`still-running`) and is for one case only: a host ceiling that cannot be raised. Treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. The re-wait is read-only, does not launch a second assignee, and does not consume a `max_handoffs_per_run` unit; only the original launch does. Do not ask for operator continuation between slices. Only proceed once the status is `done`. When assignment runs through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
+   ```
+   cartopian wait-handoff <task-path> --role <role>
+   ```
 
-Then parse the assignee's completion report with the Core CLI, bound to the exact publication the wait accepted:
+   `--max-block` exists only for a host ceiling that cannot be raised; treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. A re-wait is read-only, launches no second assignee, and does not consume a `max_handoffs_per_run` unit; do not ask for operator continuation between slices. Proceed only on `done`. When assignment runs through `skills/run-handoff.md`, that skill owns this wait under the same contract.
 
-```
-cartopian report-action <report-path> --expected-identity <report_content_identity from the wait record>
-```
+2. Parse, bound to the exact publication the wait accepted:
 
-If the bytes no longer match the accepted identity, `report-action` refuses with `verdict: identity-mismatch` and `recommended_action: rerun-canonical-wait`; re-run the canonical wait and use the identity it returns rather than routing on unobserved bytes.
+   ```
+   cartopian report-action <report-path> --expected-identity <report_content_identity from the wait record>
+   ```
 
-`report-action` is the FR-004 aggregator. It infers the report variant from filename and content (here, the `task` variant) and emits a single NDJSON record carrying:
+   On `verdict: identity-mismatch`, re-run the canonical wait and use the identity it returns. Route on the emitted record: `verdict`, `status`, `target_task_status`, `requires_pr_step`, `prompt_to_overwrite`, `path_mismatch` (true — treat as `failed-to-parse`), `source_evidence` (require `outcome: valid` for a complete source-backed task), and the bounded `pm_summary` projection. Route on the projection and record fields; do not open the full report unless a projected value requires it — the unbounded body stays on disk as durable evidence.
 
-- `verdict` — `accepted | blocked | failed | failed-to-parse`.
-- `variant` — `task` for this stage.
-- `status` — the report's `Status:` header value.
-- `target_task_status` — `in-review` when task-closure review is required, `done` when it is off, or the evidence-supported nonterminal status.
-- `requires_pr_step` — true when the PM-owned product-repo git step is required before reviewer dispatch.
-- `prompt_to_overwrite` — the prompt path the PM may reuse for reviewer assignment.
-- `path_mismatch` — true when the report's declared task path does not match the resolved expected task path. Treat `path_mismatch = true` as `failed-to-parse`.
-- `source_evidence` — for a complete source-backed task, the shared evidence record. Require `outcome: valid`; missing governing sources, stale/absent context, unresolved conflict, or a decisive unverified claim makes the report `failed-to-parse`.
-
-Evidence-supported lifecycle moves are applied without an operator confirmation prompt (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order — the `[automation]` policy gates pace, not selection). Report the move in the running summary; consult the operator only at the stop conditions below.
-
-If the verdict is `failed-to-parse` and a report file exists, first run `cartopian validate-report <report-path>` and route each failed check by its `failure_class` (see `skills/run-handoff.md` § Failure routing): a `mechanical` defect gets the hash-bound in-place fix via `cartopian correct-report <report-path> --expected-identity <report_content_identity> --corrected-file <body>` — never a full rework assignment and never a correction handoff carrying report bytes; a `missing-input` defect means an assignment input must be repaired and readiness rerun before any re-dispatch; a `substantive` finding goes to the configured review loop or the operator. If the verdict is `blocked`, `failed`, or an unroutable `failed-to-parse`, stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
-
-If the verdict is `accepted` with a readiness value of `no` (under either the `Ready to close` or `Ready for review` heading; a rationale may follow the token), keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control to the operator. `no` declares the producer's own work incomplete or blocked — a producer whose work is complete but who cannot certify closure writes `yes`: under required task-closure review that routes the task into the independent review and approves nothing.
-
-If the verdict is `accepted` with a readiness value of `yes` (either heading), first persist every durable output. If the task declares a `project`-mode `Deliverable:`, persist the report's `## Deliverable content` through the mediated writer before any lifecycle move or report reuse — `cartopian write-resource <project-root> --path <resources-relative-path> --content-file <body-path>` (the `--path` value is the `deliverable.relpath` without its leading `resources/`; a contained PM passes `--content` directly). A `work-root`-mode deliverable is already written by the assignee.
-
-If the effective `[git]` configuration has `pm_owns_product_branches = false`, or the setting is unset, skip the git block below and apply the routing step after it.
-
-If `pm_owns_product_branches = true` and the task declares one or more `Work root:` names, the `report-action` record's `requires_pr_step` will be `true`. Perform the PM-owned product-repo git step before review or closure.
-
-> **Containment boundary.** The product-repo git steps below (`git`/`gh` plumbing, and the merge-evidence append to the review file in Stage 6) are raw shell operations against the product repo. They have no mediated Cartopian command in the Phase-01 set, so they are **outside the contained-PM path**: a contained PM (no shell) runs only with `pm_owns_product_branches = false` (or unset), where `requires_pr_step` is never set and this entire block is skipped. When `pm_owns_product_branches = true`, the git workflow is owned by the operator or an uncontained PM. This is a deliberate boundary, not a lifecycle-authoring action the mediated writers cover.
-
-1. Treat assignee-supplied product-repo git evidence as a boundary violation. If the report claims the assignee staged, committed, pushed, branched, opened a PR, or merged product-repo work, stop for operator inspection.
-2. Resolve the product-repo absolute path(s) from the declared work-root names via the resolved config's `work_roots` mapping; when multiple are declared, choose the root that actually owns this task's changes. If ambiguous, stop for operator inspection.
-3. Resolve the configured branch name. The protocol default branch name is `task/NN-NNN-slug`, derived from `git.default_branch_pattern = "task/{task_id}-{slug}"`.
-4. Create or update that branch in the product repo. On a first pass, create it before committing the task changes. On a rework pass with an existing open PR, reuse the same branch.
-5. Inspect the product-repo worktree and stage only the changes that belong to the task. If the worktree does not contain actionable task changes, or contains unrelated changes that cannot be separated, stop for operator inspection.
-6. Commit the staged task changes with a message that references the task ID and completion report. Capture the resulting implementation commit SHA.
-7. Push the branch with `git push -u origin <branch>`.
-8. Open a PR with `gh pr create`, or reuse the existing PR on rework. The title and body must reference the task ID and completion report.
-9. Resolve a deploy preview URL when one exists, for example from a Vercel-bot PR comment. If no preview URL exists, proceed with the PR URL only and record the missing preview URL in `STATE.md`.
-10. Capture the branch, PR URL, preview URL if present, and implementation commit SHA as handoff/closure evidence.
-
-Apply the `report-action` routing only after deliverable persistence and any required PR preparation:
-
-- `target_task_status == "in-review"`: run `cartopian move-task <task-path> in-review`; the complete task report satisfies the guard. Continue to Stage 5 and assign the exact role from `reviews.task_closure.role`.
-- `target_task_status == "done"`: when `recommended_action == "prepare-pr-and-close-task"`, merge the prepared PR with the configured strategy and capture the merge SHA; then run `cartopian move-task <task-path> done`, delete the task prompt, record that closure occurred with task review off, and skip to Stage 7. The CLI requires the complete task report for this direct closure.
-
-If `pm_owns_product_branches = true` but no `Work root:` is declared (or it is `n/a`), there is no product-repo branch or PR step; apply the same routing with PR and preview values `n/a`.
+3. Evidence-supported lifecycle moves apply without an operator confirmation prompt (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order — `[automation]` gates pace, not selection). Report each move in the running summary; consult the operator only at the stop conditions below.
+4. `failed-to-parse` with a report present: run `cartopian validate-report <report-path>` and route each failed check by `failure_class` (see `skills/run-handoff.md` § Failure routing) — `mechanical` gets the hash-bound in-place `cartopian correct-report` fix, `missing-input` means repair the input and rerun readiness before re-dispatch, `substantive` goes to the review loop or operator. For `blocked`, `failed`, or an unroutable `failed-to-parse`: stop automation, keep the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
+5. `accepted` with readiness `no` (under `Ready to close` or `Ready for review`): keep the task in `tasks/in-progress/`, record the reason in `STATE.md`, and return control. `no` declares the producer's own work incomplete or blocked; a producer whose work is complete but who cannot certify closure writes `yes`.
+6. `accepted` with readiness `yes`: persist every durable output first. A `project`-mode `Deliverable:` is persisted from the report's `## Deliverable content` through `cartopian write-resource <project-root> --path <resources-relative-path> --content-file <body-path>` before any lifecycle move or report reuse; a `work-root` deliverable is already written by the assignee.
+7. Git (`cartopian://protocol/CONVENTIONS/git`): when `pm_owns_product_branches` is false or unset, skip this step entirely. When true and the task declares `Work root:` names (`requires_pr_step: true`), perform the PM-owned product-repo git step before review or closure: treat assignee-supplied product-repo git evidence as a boundary violation (stop for inspection); resolve the owning work root and the configured branch name (default `task/{task_id}-{slug}`); create or reuse the branch; stage only this task's changes (stop for inspection if there are none or they cannot be separated); commit referencing the task ID and report and capture the SHA; push; open or reuse the PR referencing the task ID and report; resolve a deploy preview URL when one exists; capture branch, PR URL, preview URL, and commit SHA as evidence. This raw-shell block is outside the contained-PM path — a contained PM runs only with `pm_owns_product_branches = false`.
+8. Apply the routing after persistence and any PR preparation: `target_task_status == "in-review"` — `cartopian move-task <task-path> in-review`, then Stage 5 with the exact `reviews.task_closure.role`. `target_task_status == "done"` — when `recommended_action == "prepare-pr-and-close-task"`, merge the prepared PR and capture the merge SHA; then `cartopian move-task <task-path> done`, delete the task prompt via `cartopian delete-prompt`, and skip to Stage 7.
 
 ---
 
 ## Stage 5 - Assign Review
 
-Run this stage only when `reviews.task_closure.mode == "required"`. Assign the exact arbitrary role named by `reviews.task_closure.role`; do not search for a role called `reviewer`.
+Run only when `reviews.task_closure.mode == "required"`; assign the exact role named by `reviews.task_closure.role`.
 
-Authoring the review prompt is **PM-performed**. Create or update `prompts/PROMPT-NN-NNN.md` for the assigned review role through the mediated writer when the same prompt path is being reused for review, or ensure the existing prompt clearly identifies the review assignment:
+Author the review prompt through the mediated writer (PM-performed, never a raw write):
 
 ```
 cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN \
@@ -267,199 +115,41 @@ cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN \
   --task <absolute-in-review-task-path>
 ```
 
-The review prompt must include absolute paths to:
+The writer resolves the exact request trace, verifies the preserved coder completion report, and generates the context-bound sections — do not summarize or edit them, and do not modify or remove the completion report while the task is in review. Before a manual handoff, require `request_trace.preflight.ok: true` from `handoff-packet`.
 
-- The task file.
-- The spec file, when present.
-- The deliverable, when the task declares one — the absolute `deliverable.absolute_path`, named as the **primary artifact to review** (the durable work product, not a summary of it). For a `project`-mode deliverable this is the copy the PM persisted in Stage 4.
-- The generated `## Preserved coder completion evidence` section — the
-  content-hashed binding that names the preserved completion report
-  (`reports/REPORT-NN-NNN.md`) by absolute path. The reviewer reads coder
-  evidence directly from that preserved artifact; the prompt never reproduces
-  the report body, and the completion report must stay byte-identical
-  throughout the review.
-- The expected review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`), carrying findings and the `Verdict:` header.
-- The expected report path the reviewer writes its review-completion report to (the `expected_report_path` from the handoff record — the independent `reports/REPORT-NN-NNN-review.md` slot, never the preserved completion report's path).
-- The review-report skeleton: run `cartopian report-skeleton <task-path> --variant review` and paste the returned `skeleton` (the review-completion report) and `review_file_skeleton` (the durable review file) into the prompt — **instead of** the full report and review templates. Both carry the machine-owned Identity values (Review ID, prompt/task/review paths, and the bound request-evidence tokens when resolvable) already filled; the reviewer supplies the verdict, findings, and comparisons only, never transcribed identities or paths.
-- Absolute path(s) for the declared work root(s), if any.
-- Relevant implementation evidence.
-- The PR URL and preview URL when the PM-owned product-repo git workflow created them; otherwise `n/a`.
+The review prompt must include absolute paths for: the task file; the spec when present; the declared deliverable (the primary artifact to review); the generated `## Preserved coder completion evidence` binding — the reviewer reads `reports/REPORT-NN-NNN.md` directly, and the prompt never reproduces its body; the review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`, findings plus the `Verdict:` header); the expected review-report path (`reports/REPORT-NN-NNN-review.md` — never the preserved completion report's path); the declared work roots; relevant implementation evidence; and PR/preview URLs or `n/a`. Paste the skeletons returned by `cartopian report-skeleton <task-path> --variant review` (`skeleton` and `review_file_skeleton`) instead of full templates — the machine-owned identities are already filled; the reviewer supplies verdicts, findings, and comparisons only.
 
-`write-prompt --review-kind task-closure` resolves the exact request trace,
-verifies the preserved coder completion report, and replaces authored copies
-with generated context-bound sections. The resulting identity binds operator
-evidence, PM-derived artifacts, the preserved completion-report path and
-content identity, the expected review-report path, task, prompt, and review
-target. Do not summarize or edit those sections, and do not modify or remove
-the completion report while the task is in review — preflight re-verifies the
-preserved artifact and blocks on a missing or mutated one. Before a manual
-handoff, require the `request_trace.preflight` record from `handoff-packet`
-to be present and `ok: true`; manual launch does not bypass the binding check
-automatic dispatch performs.
+State explicitly that the reviewer produces two artifacts: the durable review file is the work product, and the transient review-completion report is the completion signal that `cartopian wait-handoff` and `cartopian report-action` watch — a reviewer that writes only the review file leaves the handoff blocking to its deadline. The two verdicts must agree; the report's `## Identity` copies the absolute `Task path:`; both artifacts record `Request alignment:` and `Request evidence:` from the generated channel (drift blocks approval; `unavailable-for-legacy` is non-blocking only when the generated prompt declares it).
 
-The reviewer produces **two** artifacts, exactly as the coder produces its work product plus a report. State both explicitly in the prompt:
+Also include: a `## Your role` preface from the packet's `role_description`; reminders that reviewers do not modify spec, task, phase, or prompt files, do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup (a spec defect is a review finding, never a spec edit); when the reviewed outcome changes a practice-pack body, the requirement to inspect that body and its governing/conditional sources directly and fill the review's `## Practice-pack semantic review` section with one observation and disposition per dimension (automated validation proves structure, never substance; no scores); and, for a verification-only task, the assignment prompt's git operating model — an already-dirty work root holding prior deliverables is the expected steady state, and the reviewer must not issue `request-changes` merely because `git status` shows pre-existing modifications or untracked deliverables.
 
-- The durable **review file** (`reviews/REVIEW-NN-NNN.md`) is the work product: findings, evidence, and the `Verdict:` header the `in-review → done | in-progress | open` move guard reads.
-- The transient **review-completion report** (`reports/REPORT-NN-NNN-review.md`, review-completion variant — `Status:` header and a `## Verdict` section) is the **handoff completion signal**. `cartopian wait-handoff` and `cartopian report-action` watch the *report*, never the review file. A reviewer that writes only the review file leaves the handoff with no completion signal: `wait-handoff` then blocks to the deadline (and, if the reviewer process has already exited, reports `failed` — "exited without a report") even though the review itself is complete. The review file's `Verdict:` header and the report's `## Verdict` section must agree.
-- The review-completion report's `## Identity` block must copy the absolute task-file path from the prompt into `Task path:`. `report-action` cross-checks it against the task implied by the report filename's `NN-NNN` identity; a missing, stale, or wrong task path is not valid completion evidence.
-- Both artifacts record `Request alignment:` and
-  `Request evidence:` from the generated channel. Drift blocks
-  approval. `unavailable-for-legacy` is non-blocking only when the generated
-  prompt declares that historical state.
-
-The review prompt must also include:
-
-- A role preface as the first prose section (`## Your role`): address the reviewer from the handoff record's `role_description` — who they are and what the review role does for this assignment. Orientation only; it grants no authority beyond the role's configured grants and carries no PM identifiers.
-- A reminder that reviewers do not modify spec, task, phase, or prompt files — only the PM edits Cartopian protocol files. If the spec is wrong, ambiguous, or contradicts the implementation, the reviewer records the finding in the review file (and verdict accordingly) rather than rewriting the spec to match what was built.
-- A reminder that reviewers do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
-- When the reviewed outcome changes a practice-pack body, a requirement to inspect that body directly along with each governing or conditional source that applies to it, and to fill the review's `## Practice-pack semantic review` section with one observation and disposition per dimension. Automated heading, metadata, and source validation prove structure, identity, bounds, and declared authority — never that the guidance is substantive — so citing the validation suite does not satisfy the section. Reviewers record observations and dispositions, never a score.
-- When the reviewed task is **verification-only**, carry the assignment prompt's effective git operating model into the review prompt. In the no-product-git model (`git_versioning = false`, which implies `git_policy = null`, or an effective `git_policy.pm_owns_product_branches = false`), state explicitly that an already-dirty work root containing prior completed tasks' deliverables is the expected steady state, not a review defect and not proof that the verification handoff changed files. The reviewer evaluates whether this handoff introduced changes using the coder report and task evidence; it must not issue `request-changes` merely because `git status` shows pre-existing modifications or untracked deliverables.
-
-Never delete the coder completion report before or during the review handoff —
-it is the reviewer's direct evidence source and must survive review retries
-byte-identically. When a prior review attempt left a stale review report or
-its transient companions behind, clear only the **review** slot with the Core
-CLI before re-dispatching (automatic dispatch repeats this bounded clear
-itself):
-
-```text
-cartopian delete-report <expected-review-report-path>
-```
-
-Use `skills/run-handoff.md` for review handoff mechanics.
+Never delete the coder completion report before or during the review handoff. When a prior attempt left a stale review report behind, clear only the review slot before re-dispatching: `cartopian delete-report <expected-review-report-path>`. Use `skills/run-handoff.md` for review handoff mechanics.
 
 ---
 
 ## Stage 6 - Process Review Verdict
 
-Run this stage only when `reviews.task_closure.mode == "required"`.
+Run only when `reviews.task_closure.mode == "required"`. Governing slices: `cartopian://protocol/CONVENTIONS/status-through-directory` and `cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completion`.
 
-Reviewers record their findings and verdict in:
-
-```text
-reviews/REVIEW-NN-NNN.md
-```
-
-Parse the reviewer's completion report with the Core CLI:
-
-```
-cartopian report-action <reviewer-report-path>
-```
-
-For the `review` variant, the emitted record carries:
-
-- `verdict` — `accepted | blocked | failed | failed-to-parse` for handoff state.
-- `review_verdict` — the raw reviewer token, one of `approve | request-changes | reject`.
-- `target_task_status` — the post-verdict lifecycle directory (`done` for `approve`, `in-progress` for `request-changes`, `open` for `reject`).
-- `prompt_to_overwrite` — the prompt path to clear via `cartopian delete-prompt` once the verdict is applied. It is returned for every applied review verdict (`approve`, `request-changes`, `reject`): the review prompt is consumed by its verdict in all three cases.
-- `task_id` and `task_path` — the task resolved from the report filename and cross-checked against the report's declared `Task path`.
-- `path_mismatch` — true when any declared handoff path, including `Task path`, disagrees with the report filename's expected paths. Treat `path_mismatch = true` as `failed-to-parse`.
-- `request_alignment` — the recomputed context identity, evidence ids,
-  alignment value/reason, and blocking result. An approving report with a
-  stale binding, drift, or missing evidence is `failed-to-parse`.
-
-If the verdict is `blocked`, `failed`, or `failed-to-parse`, or if `path_mismatch = true`, stop automation, preserve the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
-
-Then take the closure review through intake, which audits the review itself
-and records this pass's bounded effectiveness evidence:
-
-```
-cartopian review-intake <project-root> --task <task-path> --review <review-path>
-```
-
-The command first binds the review body's own identity — its
-`# REVIEW-NN-NNN` heading and its `Target:` — to the review path and to the
-task under intake, and refuses a missing, malformed, or mismatched body
-identity before the review is assessed and before any record is written: a
-canonical filename over a body that names another unit would otherwise
-attribute that unit's determinations here. It then checks, in this order,
-that the review carries its
-`## Contract quality` audit ahead of the implementation evidence, that its
-`Verdict:` and `Reviewer:` are recorded, and that both closure determinations
-are present and passing against the trace identity the assignment was issued
-under. It emits one bounded ledger record apiece for the verdict, each
-non-passing determination, each contract-quality gap, and each implementation
-finding; repeated runs over unchanged bytes are idempotent. Emission never
-blocks the lifecycle — a rejected or suppressed record marks its family
-`omitted` and the verdict still applies.
-
-Run it for every applied verdict, not only for `approve`: a `request-changes`
-or `reject` pass is exactly the evidence the rejection-reason and
-omitted-requirement families exist to record. A non-zero exit on an
-**approving** pass is a true governed blocker — an approval whose
-determinations do not clear is not executable and `cartopian move-task
-<task-path> done` will refuse it with the same reason. Stop, record the
-blocker in `STATE.md`, and return control to the operator rather than moving
-the task. The intake is inert for a task that does not declare
-`Upstream trace: required`.
-
-Apply the reviewer's verdict without an operator confirmation prompt — the verdict is the review file's recorded evidence, and the CLI guards verify it before executing any move (the `[automation]` policy gates pace, not selection). Report the applied verdict in the running summary. Decisions the protocol or plan reserves to the operator (e.g. an open-question ruling the task was created to inform) remain operator-owned: pause for those before recording them, even when the task's own lifecycle proceeds. Apply the verdict by delegating directory status transitions to the Core CLI:
-
-- `approve`, when `git.pm_owns_product_branches = false` or unset, or when no product-repo PR exists: use `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
-
-  ```
-  cartopian delete-prompt <prompt-path>
-  ```
-
-  The CLI verifies that `reviews/REVIEW-NN-NNN.md` exists with
-  `Verdict: approve`, recomputes the current request context, and
-  refuses drift or missing/mismatched evidence
-  alignment before executing this rename.
-
-- `approve`, when `git.pm_owns_product_branches = true` and a PR exists: merge with `gh pr merge --<strategy> --delete-branch`, using the effective `git.default_merge_strategy` (`merge`, `squash`, or `rebase`). Capture the merge commit SHA, append it to the review file's existing `Implementation evidence` block as `Merge commit SHA`, append `PR URL` if the review file does not already include it, then `cartopian move-task <task-path> done` and remove the matching prompt via the Core CLI:
-
-  ```
-  cartopian delete-prompt <prompt-path>
-  ```
-
-  Same guard as above: `reviews/REVIEW-NN-NNN.md` must exist with `Verdict: approve`.
-
-- `request-changes`: `cartopian move-task <task-path> in-progress`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: request-changes`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
-- `reject`: `cartopian move-task <task-path> open`. The CLI verifies `reviews/REVIEW-NN-NNN.md` exists with `Verdict: reject`. When PM-owned product-repo git is enabled, leave the branch and PR open for the next coder pass.
-
-Any move into `done` also derives that unit's prompt-effectiveness summary at the closure boundary and reports it under `effectiveness_summary`. It is best-effort and idempotent — a reopened and reclosed unit keeps one closure summary — and a rejected or suppressed emission never blocks the move. Nothing in the verdict, the guards, or this stage reads that record.
-
-After applying a `request-changes` or `reject` verdict, the consumed review
-round's report evidence is closed: once its findings are recorded in the
-review file, remove the review-completion report and its transient companions
-(`cartopian delete-report <review-report-path>`), and retire the consumed
-review prompt (`cartopian delete-prompt <prompt-path>`, the
-`prompt_to_overwrite` path from `report-action`). Retire the prompt only
-after `report-action` has parsed the verdict and the durable findings are
-preserved in `reviews/REVIEW-NN-NNN.md` — never while a `blocked`, `failed`,
-or `failed-to-parse` outcome still needs the prompt for inspection. The
-retirement is required, not housekeeping: the prompt's bound artifact
-snapshot names the task's former `tasks/in-review/` path, so a retained
-consumed prompt reads as `stale-request-context` in `cartopian plan-audit`
-until it is retired or the rework dispatch regenerates the slot. The
-preserved completion report needs no manual cleanup for a rework round — the
-next coder dispatch clears and replaces that slot as a new attempt.
-
-On re-review, overwrite `reviews/REVIEW-NN-NNN.md`. Do not create round suffixes.
-
-Failed reviews do not create replacement tasks. Continue with the original task.
+1. `cartopian report-action <reviewer-report-path>` — the `review` record carries `verdict`, `review_verdict` (`approve | request-changes | reject`), `target_task_status`, `prompt_to_overwrite` (returned for every applied verdict — the review prompt is consumed by its verdict in all three cases), `task_id`/`task_path`, `path_mismatch` (true — treat as `failed-to-parse`), `request_alignment` (a blocking result makes an approving report `failed-to-parse`), and the bounded `review_projection` of the durable review file (verdict, summary, findings rows). Route on the projection; open the full review file only when a projected finding requires the surrounding detail.
+2. On `blocked`, `failed`, `failed-to-parse`, or `path_mismatch`: stop automation, preserve the prompt and report for inspection, record the blocker in `STATE.md`, and return control to the operator.
+3. `cartopian review-intake <project-root> --task <task-path> --review <review-path>` — run for every applied verdict, not only `approve`. A non-zero exit on an approving pass is a governed blocker (`cartopian move-task <task-path> done` will refuse with the same reason): stop, record the blocker in `STATE.md`, and return control. The intake is inert for a task without `Upstream trace: required`.
+4. Apply the verdict without an operator confirmation prompt — the CLI guards verify the review file before executing any move. Decisions the protocol or plan reserves to the operator remain operator-owned; pause for those even when the task's own lifecycle proceeds.
+   - `approve`, no PM-owned PR: `cartopian move-task <task-path> done`, then `cartopian delete-prompt <prompt-path>`.
+   - `approve`, `pm_owns_product_branches = true` with a PR: `gh pr merge --<strategy> --delete-branch` per `git.default_merge_strategy`; capture the merge SHA and append it (plus `PR URL` if absent) to the review file's `Implementation evidence` block; then move `done` and delete the prompt as above.
+   - `request-changes`: `cartopian move-task <task-path> in-progress`. `reject`: `cartopian move-task <task-path> open`. Either way, leave any PM-owned branch and PR open for the next pass.
+5. After applying `request-changes` or `reject`: remove the consumed review report (`cartopian delete-report <review-report-path>`) and retire the consumed review prompt (`cartopian delete-prompt <prompt-path>`, the `prompt_to_overwrite` path). The retirement is required — a retained consumed prompt reads as `stale-request-context` in `cartopian plan-audit` — but only after `report-action` has parsed the verdict and the findings are preserved in the review file, never while a `blocked`/`failed`/`failed-to-parse` outcome still needs the prompt for inspection. The preserved completion report needs no cleanup for a rework round; the next coder dispatch replaces that slot.
+6. On re-review, overwrite `reviews/REVIEW-NN-NNN.md`; no round suffixes. Failed reviews do not create replacement tasks — continue with the original task.
 
 ---
 
 ## Stage 7 - Update Durable Records
 
-1. Record any non-trivial decisions. Authoring a decision is **PM-performed**; write `decisions/DEC-NNN.md` through the mediated writer rather than a raw `Write`:
-
-   ```
-   cartopian write-decision <project-root> --dec-id DEC-NNN --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>
-   ```
-
-   The same command renders the `decisions/INDEX.md` row from the `--title` / `--date` / `--status` / `--supersedes` arguments, so a separate raw edit of `INDEX.md` is not needed (and the contained PM cannot perform one).
+1. Record any non-trivial decisions by writing `decisions/DEC-NNN.md` through `cartopian write-decision <project-root> --dec-id DEC-NNN --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>` (it also renders the `decisions/INDEX.md` row).
 2. Ensure task, review, and report evidence agree.
-3. Remove superseded prompts with the Core CLI (`cartopian delete-prompt <prompt-path>`), never a raw `rm`.
-4. Leave reports in place until the PM has captured any needed evidence in task, review, decision, or backlog files. Both task-scoped reports — the preserved completion report (`REPORT-NN-NNN.md`) and, under required review, the review-completion report (`REPORT-NN-NNN-review.md`) — are removed only after their evidence has been consumed and the task's closure is supported; each is cleared with its own `cartopian delete-report` call, which is idempotent over already-absent companions and over an already-absent optional review report (review-off closures and reruns of an interrupted cleanup succeed as no-ops). `STATE.md` is not an evidence home — its body is composed from the filesystem.
-6. Remove the transient wrapper status file for any report whose handoff is finished, even when the report `.md` is intentionally retained as evidence:
-
-   ```text
-   cartopian delete-report <report-path> --status-only
-   ```
-
-   The `<report-path>.status` file is early-crash enrichment for the wait step only and must not outlive the handoff; `--status-only` clears it while leaving the report `.md` in place. Reports may linger after `done`; the companion `.status` file must not. This applies to each task-scoped report slot separately (completion and review). See `wrappers/README.md` and `cartopian://protocol/CONVENTIONS/handoffs`.
+3. Remove superseded prompts with `cartopian delete-prompt <prompt-path>`, never a raw `rm`.
+4. Leave reports in place until their evidence is captured in task, review, decision, or backlog records; then clear each consumed slot with its own `cartopian delete-report` call (idempotent over absent companions). `STATE.md` is not an evidence home.
+5. Clear the transient wrapper status of any report intentionally retained as evidence: `cartopian delete-report <report-path> --status-only` — the `.status` file is wait-step enrichment only and must not outlive the handoff (`cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completion`, `wrappers/README.md`).
 
 Do not treat reports as durable substitutes for task, review, or decision records.
 
@@ -467,22 +157,10 @@ Do not treat reports as durable substitutes for task, review, or decision record
 
 ## Stage 8 - Close Session
 
-Refresh `STATE.md` via the Core CLI:
+Refresh `STATE.md` through `cartopian write-state <project-root>` — the writer composes the canonical body from the filesystem in-process; do not run `compose-state` first or pass `--content`.
 
-```
-cartopian write-state <project-root>
-```
+If — and only if — this session surfaced a fact that is about this project's current state, not derivable from the filesystem/config/protocol, and changes what the next session does, deliver it as a situation note: `cartopian write-state <project-root> --note "…"`. Notes are bounded (max 5, one line of ≤ 200 chars each) with a one-delivery TTL. Protocol-compliance feedback is never a note — it routes to `BACKLOG.md` via `cartopian write-backlog` (`cartopian://protocol/CONVENTIONS/session-state`).
 
-`write-state` composes the canonical body (Current phase / Active work / Open work / What to do next) from the filesystem in-process — do not run `compose-state` first or pass `--content`; the writer refuses a PM-authored body while plan artifacts exist. The body never round-trips through PM context.
+If git versioning is enabled, perform the configured session-close git behavior for project PM data (`cartopian://protocol/CONVENTIONS/git`); git for the protocol repository itself remains human-owned.
 
-If — and only if — this session surfaced a fact that is (1) about this project's current state, (2) not derivable from the filesystem, config, or protocol, and (3) changes what the next session does, deliver it as a situation note:
-
-```
-cartopian write-state <project-root> --note "coder deploy failed mid-handoff; operator is restarting the development machine"
-```
-
-Notes are bounded (max 5, one line of ≤ 200 chars each) and have a one-delivery TTL: every `write-state` starts from zero notes, a byte-identical re-pass is refused, and `plan-audit` blocks the next session until each note is acted on, promoted (`write-backlog`, `write-decision`), or dropped. Protocol-compliance feedback is never a note — it routes to `BACKLOG.md` as process debt (`cartopian://protocol/CONVENTIONS/session-state`).
-
-If git versioning is enabled for the project, the PM performs the configured session-close git behavior for project PM data. Git staging, commits, and pushes for the protocol repository itself remain human-owned.
-
-Then continue linearly (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start that task from Stage 1 without asking. Otherwise finish with a concise operator-facing summary that names the task's new status and the exact next protocol action — when the budget is spent, say so and name the next sequential task the operator's "continue" will start.
+Then continue linearly (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start it from Stage 1 without asking. Otherwise finish with a concise summary naming the task's new status and the exact next protocol action — when the budget is spent, say so and name the task the operator's "continue" will start.

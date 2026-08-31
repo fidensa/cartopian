@@ -334,6 +334,8 @@ The protocol defaults both loops to `off`. A project can therefore override glob
 
 Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review file per task, overwritten on re-review. There is no round suffix and no closure sign-off section.
 
+A review file carries a two-line `## Summary` and one self-contained `F<n>.` row per finding (`templates/REVIEW.md`). Those rows are what `cartopian report-action` projects to the PM as the bounded `review_projection`, so the PM applies a verdict without re-reading the whole review; the unbounded review body stays on disk as the durable evidence, and the PM opens it only when a projected finding requires the surrounding detail.
+
 Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
 Planning-checkpoint reviews are temporary artifacts deleted when the checkpoint is approved or superseded.
@@ -598,6 +600,8 @@ Reports are protocol-defined handoff result artifacts in `reports/`. They are ev
 Report files follow the canonical field schema and variants in `templates/REPORT.md`.
 
 The neutral task-report core is `## Identity`, `## Completion evidence`, `## Remaining risks`, and `## Ready to close`. Specialized software and document sections (`## Files changed`, `## Deliverable`, `## Test evidence`, `## Commit / PR`) are optional evidence shapes. For compatibility, an exact `## Files changed` or `## Deliverable` heading may stand in for `## Completion evidence`, and `## Ready for review` may stand in for `## Ready to close` (the two headings parse identically).
+
+Reports carry a capped PM-facing `## Summary` section — at most 10 short lines naming what was done, where the evidence and work product live, and anything the PM must act on. Generated skeletons include it; legacy reports without it remain valid. Storage and projection are separate concerns: the report body is architecturally unbounded on disk as durable evidence, while `cartopian report-action` returns the bounded `pm_summary` projection (and, for review variants, the bounded `review_projection` of the durable review file's verdict, summary, and findings rows) so routing never requires the PM to load the whole artifact into context. The PM routes on the projection and opens the full report or review only when a projected finding requires it.
 
 The readiness value is the producer's declaration about **its own work**, never a certification of anyone else's future verdict. Its first line is a `yes`/`no` token, optionally followed by a short rationale on the same line. Under required task-closure review, `yes` means "my work is complete — route it into the required independent review"; it does not approve closure, and the producer is never asked to self-certify a review it cannot perform. With task review off, `yes` routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work and returns the task to `in-progress`. Skeletons generated for review-required projects use the `## Ready for review` heading so the question the producer answers is the one being asked.
 

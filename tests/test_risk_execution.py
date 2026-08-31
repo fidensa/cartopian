@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from tests.mcp_result import tool_records
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -288,7 +289,7 @@ class RiskSurfaceParityTests(unittest.TestCase):
         mcp_result = server.call_tool("classify_risk", arguments)
 
         self.assertFalse(mcp_result["isError"])
-        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
 
     def test_cli_and_mcp_return_the_same_bounded_adversarial_context(self) -> None:
         from cli.risk_contract import classify_risk
@@ -349,7 +350,7 @@ class RiskSurfaceParityTests(unittest.TestCase):
                 )
 
         self.assertFalse(mcp_result["isError"])
-        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
         self.assertEqual(
             set(cli_record["context"]), {"artifact", "governing_contract"}
         )

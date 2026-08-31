@@ -972,3 +972,468 @@ class TestReportActionReadOnly(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertEqual(before, after)
+
+
+class TestBoundedProjections(unittest.TestCase):
+    """`pm_summary` and `review_projection` bound what enters PM context.
+
+    The artifacts themselves stay unbounded on disk; the projection is the
+    capped convenience read the PM routes on instead of opening them whole.
+    """
+
+    def test_task_report_summary_is_projected_and_bounded(self) -> None:
+        long_summary = "detail " * 600  # > PM_SUMMARY_MAX_CHARS
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-03-001.md",
+                "# TASK-03-001: demo\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-001.md",
+                "# REPORT-03-001\n\n"
+                "Status: complete\n\n"
+                f"## Summary\n\n{long_summary}\n\n"
+                "## Identity\n\n"
+                f"- Task path: {task_path}\n"
+                "- Work root: n/a\n\n"
+                "## Files changed\n\n- cli/x.py - exercised\n\n"
+                "## Remaining risks\n\nNone.\n\n"
+                "## Ready for review\n\nyes\n",
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        from cli.commands.report_action import (
+            PM_SUMMARY_MAX_CHARS,
+            _TRUNCATION_MARK,
+        )
+
+        self.assertTrue(record["pm_summary_truncated"])
+        self.assertTrue(record["pm_summary"].endswith(_TRUNCATION_MARK))
+        # The truncation marker lives inside the advertised limit.
+        self.assertLessEqual(len(record["pm_summary"]), PM_SUMMARY_MAX_CHARS)
+        self.assertIsNone(record["review_projection"])
+
+    def test_report_without_summary_projects_null(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-progress/TASK-03-002.md",
+                "# TASK-03-002: demo\n\nWork root: n/a\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-002.md",
+                _task_report(
+                    task_id="TASK-03-002",
+                    prompt_path=scaffold.prompts / "PROMPT-03-002.md",
+                    task_path=task_path,
+                    work_root="n/a",
+                    status="complete",
+                    ready_for_review="yes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertIsNone(record["pm_summary"])
+        self.assertFalse(record["pm_summary_truncated"])
+
+    def test_review_variant_projects_review_file_findings(self) -> None:
+        from cli.commands.report_action import PROJECTED_FINDINGS_MAX
+
+        finding_rows = "\n".join(
+            f"- F{n}. [minor] — finding number {n}."
+            for n in range(1, PROJECTED_FINDINGS_MAX + 3)
+        )
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-003.md",
+                "# TASK-03-003: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-003")
+            review_path = scaffold.write(
+                "reviews/REVIEW-03-003.md",
+                "# REVIEW-03-003\n\n"
+                "Target: TASK-03-003\n"
+                "Reviewer: test\n"
+                "Verdict: request-changes\n\n"
+                "## Summary\n\n"
+                "Reviewed the demo change. Two hedges remain.\n\n"
+                f"## Findings\n\n{finding_rows}\n\n"
+                "## Reviewer notes\n\nLong supporting prose lives here.\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-003-review.md",
+                _review_report(
+                    report_stem="REPORT-03-003-review",
+                    review_id="REVIEW-03-003",
+                    prompt_path=scaffold.prompts / "PROMPT-03-003.md",
+                    task_path=task_path,
+                    review_path=review_path,
+                    status="complete",
+                    verdict="request-changes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "review-file")
+        self.assertEqual(projection["verdict"], "request-changes")
+        self.assertEqual(
+            projection["summary"],
+            "Reviewed the demo change. Two hedges remain.",
+        )
+        self.assertEqual(len(projection["findings"]), PROJECTED_FINDINGS_MAX)
+        self.assertEqual(
+            projection["findings"][0], "- F1. [minor] — finding number 1."
+        )
+        self.assertEqual(projection["findings_omitted"], 2)
+
+    def test_review_projection_includes_contract_quality_findings(self) -> None:
+        # C<n> rows live under `## Contract quality`; a contract-only
+        # request-changes verdict must still project its findings.
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-005.md",
+                "# TASK-03-005: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-005")
+            review_path = scaffold.write(
+                "reviews/REVIEW-03-005.md",
+                "# REVIEW-03-005\n\n"
+                "Target: TASK-03-005\n"
+                "Reviewer: test\n"
+                "Verdict: request-changes\n\n"
+                "## Summary\n\n"
+                "Contract-only defects; the implementation is sound.\n\n"
+                "## Contract quality\n\n"
+                "Outcome: needs changes\n\n"
+                "- C1. [major] Acceptance clarity — item 2 has no pass "
+                "condition.\n\n"
+                "## Findings\n\n"
+                "none.\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-005-review.md",
+                _review_report(
+                    report_stem="REPORT-03-005-review",
+                    review_id="REVIEW-03-005",
+                    prompt_path=scaffold.prompts / "PROMPT-03-005.md",
+                    task_path=task_path,
+                    review_path=review_path,
+                    status="complete",
+                    verdict="request-changes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "review-file")
+        self.assertEqual(
+            projection["findings"],
+            [
+                "- C1. [major] Acceptance clarity — item 2 has no pass "
+                "condition."
+            ],
+        )
+        self.assertEqual(projection["findings_omitted"], 0)
+
+    def test_projected_finding_rows_stay_within_the_advertised_limit(self) -> None:
+        from cli.commands.report_action import (
+            PROJECTED_FINDING_MAX_CHARS,
+            _TRUNCATION_MARK,
+        )
+
+        long_row = "- F1. [major] — " + "detail " * 120  # > limit
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-006.md",
+                "# TASK-03-006: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-006")
+            review_path = scaffold.write(
+                "reviews/REVIEW-03-006.md",
+                "# REVIEW-03-006\n\n"
+                "Target: TASK-03-006\n"
+                "Reviewer: test\n"
+                "Verdict: request-changes\n\n"
+                f"## Findings\n\n{long_row}\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-006-review.md",
+                _review_report(
+                    report_stem="REPORT-03-006-review",
+                    review_id="REVIEW-03-006",
+                    prompt_path=scaffold.prompts / "PROMPT-03-006.md",
+                    task_path=task_path,
+                    review_path=review_path,
+                    status="complete",
+                    verdict="request-changes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        row = record["review_projection"]["findings"][0]
+        self.assertTrue(row.endswith(_TRUNCATION_MARK))
+        self.assertLessEqual(len(row), PROJECTED_FINDING_MAX_CHARS)
+
+    def test_projection_never_reads_a_report_declared_path(self) -> None:
+        """A malformed report cannot steer the projection at an arbitrary file.
+
+        The declared `Review file path` is untrusted input; on a path
+        mismatch the projection must not dereference any review file and
+        falls back to the report's own `## Blocking findings` body.
+        """
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-007.md",
+                "# TASK-03-007: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-007")
+            # A readable Markdown file outside the reviews directory with
+            # projection-matching headings.
+            outside = scaffold.root / "outside-secret.md"
+            outside.write_text(
+                "# NOT-A-REVIEW\n\n"
+                "Verdict: approve\n\n"
+                "## Summary\n\nSECRET-CONTENT\n\n"
+                "## Findings\n\n- F1. [minor] SECRET-FINDING.\n",
+                encoding="utf-8",
+            )
+            # The expected review file also exists; it must not be read
+            # either once the declared path mismatches.
+            scaffold.write(
+                "reviews/REVIEW-03-007.md",
+                "# REVIEW-03-007\n\nTarget: TASK-03-007\n"
+                "Reviewer: test\nVerdict: approve\n\n"
+                "## Summary\n\nEXPECTED-REVIEW-SUMMARY\n",
+            )
+            report_path = scaffold.write(
+                "reports/REPORT-03-007-review.md",
+                _review_report(
+                    report_stem="REPORT-03-007-review",
+                    review_id="REVIEW-03-007",
+                    prompt_path=scaffold.prompts / "PROMPT-03-007.md",
+                    task_path=task_path,
+                    review_path=outside,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertTrue(record["path_mismatch"])
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "report-blocking-findings")
+        serialized = json.dumps(record)
+        self.assertNotIn("SECRET-CONTENT", serialized)
+        self.assertNotIn("SECRET-FINDING", serialized)
+        self.assertNotIn("EXPECTED-REVIEW-SUMMARY", serialized)
+
+    def test_symlinked_review_slot_is_never_projected(self) -> None:
+        """A symlink planted at the canonical review slot cannot escape.
+
+        With the slot symlinked outside the project, the declared and
+        expected paths resolve to the same outside target — so path_mismatch
+        stays false and only read-time containment stands between the
+        projection and the outside file.
+        """
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-008.md",
+                "# TASK-03-008: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-008")
+            outside = scaffold.root / "outside-secret.md"
+            outside.write_text(
+                "# NOT-A-REVIEW\n\n"
+                "Verdict: approve\n\n"
+                "## Summary\n\nSECRET-CONTENT\n\n"
+                "## Findings\n\n- F1. [minor] SECRET-FINDING.\n",
+                encoding="utf-8",
+            )
+            slot = scaffold.project_root / "reviews" / "REVIEW-03-008.md"
+            slot.symlink_to(outside)
+            report_path = scaffold.write(
+                "reports/REPORT-03-008-review.md",
+                _review_report(
+                    report_stem="REPORT-03-008-review",
+                    review_id="REVIEW-03-008",
+                    prompt_path=scaffold.prompts / "PROMPT-03-008.md",
+                    task_path=task_path,
+                    review_path=slot,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertFalse(record["path_mismatch"])
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "report-blocking-findings")
+        serialized = json.dumps(record)
+        self.assertNotIn("SECRET-CONTENT", serialized)
+        self.assertNotIn("SECRET-FINDING", serialized)
+
+    def test_hardlinked_review_slot_is_never_projected(self) -> None:
+        # A hardlink at the canonical slot aliases an outside-project inode
+        # without being a symlink; the multi-link refusal must catch it.
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-009.md",
+                "# TASK-03-009: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-009")
+            outside = scaffold.root / "outside-secret.md"
+            outside.write_text(
+                "# NOT-A-REVIEW\n\n"
+                "Verdict: approve\n\n"
+                "## Summary\n\nSECRET-CONTENT\n",
+                encoding="utf-8",
+            )
+            slot = scaffold.project_root / "reviews" / "REVIEW-03-009.md"
+            os.link(outside, slot)
+            report_path = scaffold.write(
+                "reports/REPORT-03-009-review.md",
+                _review_report(
+                    report_stem="REPORT-03-009-review",
+                    review_id="REVIEW-03-009",
+                    prompt_path=scaffold.prompts / "PROMPT-03-009.md",
+                    task_path=task_path,
+                    review_path=slot,
+                    status="complete",
+                    verdict="approve",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "report-blocking-findings")
+        self.assertNotIn("SECRET-CONTENT", json.dumps(record))
+
+class TestContainedTaskPaths(unittest.TestCase):
+    """Filename-derived task paths are contained; declared paths are never read."""
+
+    def test_declared_task_path_is_never_dereferenced(self) -> None:
+        """No fallback to the report-declared Task path.
+
+        The declared file is invalid UTF-8: any attempt to read it would
+        crash routing, so a clean exit with `requires_pr_step: false` proves
+        the declared path was recorded but never opened.
+        """
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            outside = scaffold.root / "outside-task.md"
+            outside.write_bytes(b"\xff\xfe\x00Work root: product\n")
+            # No TASK-03-010 exists on disk in any status directory.
+            report_path = scaffold.write(
+                "reports/REPORT-03-010.md",
+                _task_report(
+                    task_id="TASK-03-010",
+                    prompt_path=scaffold.prompts / "PROMPT-03-010.md",
+                    task_path=outside,
+                    work_root="product",
+                    status="complete",
+                    ready_for_review="yes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertTrue(record["path_mismatch"])
+        self.assertIsNone(record["task_path"])
+        self.assertFalse(record["requires_pr_step"])
+
+    def test_symlinked_task_slot_is_not_resolved(self) -> None:
+        # A symlink planted at a task slot must not become the expected task
+        # path any consumer subsequently reads.
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            outside = scaffold.root / "outside-task.md"
+            outside.write_text(
+                "# TASK-03-011: demo\n\nWork root: product\n",
+                encoding="utf-8",
+            )
+            slot = scaffold.project_root / "tasks" / "in-progress" / "TASK-03-011.md"
+            slot.parent.mkdir(parents=True, exist_ok=True)
+            slot.symlink_to(outside)
+            report_path = scaffold.write(
+                "reports/REPORT-03-011.md",
+                _task_report(
+                    task_id="TASK-03-011",
+                    prompt_path=scaffold.prompts / "PROMPT-03-011.md",
+                    task_path=slot,
+                    work_root="product",
+                    status="complete",
+                    ready_for_review="yes",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        record = _parse_single_record(result)
+        self.assertIsNone(record["task_path"])
+        self.assertTrue(record["path_mismatch"])
+        self.assertFalse(record["requires_pr_step"])
+
+
+class TestReviewFallback(unittest.TestCase):
+    def test_review_variant_falls_back_to_report_blocking_findings(self) -> None:
+        with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+            home = scaffold.root / "home"
+            home.mkdir()
+            task_path = scaffold.write(
+                "tasks/in-review/TASK-03-004.md",
+                "# TASK-03-004: demo\n\nWork root: n/a\n",
+            )
+            _bound_task_prompt(scaffold, task_path, "03-004")
+            review_path = scaffold.project_root / "reviews" / "REVIEW-03-004.md"
+            report_path = scaffold.write(
+                "reports/REPORT-03-004-review.md",
+                _review_report(
+                    report_stem="REPORT-03-004-review",
+                    review_id="REVIEW-03-004",
+                    prompt_path=scaffold.prompts / "PROMPT-03-004.md",
+                    task_path=task_path,
+                    review_path=review_path,
+                    status="blocked",
+                ),
+            )
+            result = _run(str(report_path), home=home)
+
+        record = _parse_single_record(result)
+        projection = record["review_projection"]
+        self.assertEqual(projection["source"], "report-blocking-findings")
+        self.assertEqual(projection["summary"], "none.")

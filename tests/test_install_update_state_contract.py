@@ -37,6 +37,7 @@ from cli.install_state import (
 )
 from cli.main import build_parser
 from mcp_server import server
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "install_state"
@@ -783,7 +784,7 @@ class FixtureAndProjectionTests(unittest.TestCase):
         server._TOOL_CACHE = None
         mcp_result = server.call_tool("install_state_contract", {})
         self.assertEqual(mcp_result["structuredContent"]["exit_code"], 0)
-        mcp_record = mcp_result["structuredContent"]["records"][0]
+        mcp_record = tool_records(mcp_result)[0]
         self.assertEqual(cli_record, mcp_record)
         self.assertEqual(cli_record, contract_projection())
 

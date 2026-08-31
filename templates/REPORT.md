@@ -4,6 +4,10 @@ This template is the canonical field schema for Cartopian handoff reports. Use e
 
 Status: <complete | blocked | failed>
 
+## Summary
+
+<PM-facing summary, at most 10 short lines: what was done, where the evidence and work product live, and anything the PM must act on. The PM routes on this section (projected by `cartopian report-action`) instead of re-reading the whole report; full detail belongs in the sections below and in the durable artifacts.>
+
 ## Identity
 
 - Work root: <name | name, name | n/a>

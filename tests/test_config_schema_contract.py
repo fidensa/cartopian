@@ -16,6 +16,7 @@ from cli.config_schema import (
     validate_authored_config,
 )
 from cli.version_identities import version_identities
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINT = REPO_ROOT / "bin" / "cartopian"
@@ -459,7 +460,7 @@ class TestCliMcpParity(unittest.TestCase):
                 else:
                     os.environ["HOME"] = old_home
         self.assertFalse(mcp["isError"], msg=mcp)
-        self.assertEqual(mcp["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp), [cli_record])
         self.assertNotIn("protocol_version", cli_record)
         self.assertNotIn("handoffs", cli_record)
         self.assertEqual(

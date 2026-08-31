@@ -59,21 +59,11 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     # The model-facing counterpart to the docstring above; see `wait_handoff`
     # for why the two audiences get different prose.
     subparser.description = (
-        "Block until a report lands at a known path, then return one terminal "
-        "NDJSON record. Use for a report with no task file, such as a planning "
-        "checkpoint review; for a task-scoped handoff use `wait_handoff`. Call "
-        "this WITHOUT `max_block` and let it block; it returns when report "
-        "completion is observable. A live automated launch briefly defers a "
-        "complete report until its wrapper exits, so the returned "
-        "`report_content_identity` names final bytes; manual or "
-        "exited-wrapper reports do not wait on it. Pass that identity to "
-        "`report_action`/`validate_report` as `expected_identity`. "
-        "Its silence is expected and is not a lapse in "
-        "commentary: no model turn is in progress while the call is pending, "
-        "so an instruction to narrate ongoing work does not govern it. "
-        "`max_block` is only for observing a manually launched handoff when "
-        "the host ceiling cannot be raised; automatic `dispatch` refuses "
-        "before launching that mismatch. See CONVENTIONS.md § Handoffs."
+        "Block (call WITHOUT `max_block`) until a report with no task file "
+        "lands at a known path — e.g. a planning-checkpoint review — then "
+        "return one terminal NDJSON record whose `report_content_identity` "
+        "you pass to `report_action` as `expected_identity`. Full contract: "
+        "`cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completion`."
     )
     subparser.add_argument(
         "report_path",

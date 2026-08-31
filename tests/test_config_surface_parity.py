@@ -1221,12 +1221,33 @@ class TestCliMcpContractParity(unittest.TestCase):
             for name, sub in subparsers.items()
             if name not in OPERATOR_ONLY_SUBCOMMANDS
         }
+        # Setup/admin subcommands stay agent-facing but are served by the
+        # single `admin` dispatcher rather than individual listings; their
+        # schemas are still argparse-derived and are checked below through
+        # the registry the dispatcher resolves operations from.
+        admin = set(server.ADMIN_SUBCOMMANDS)
+        self.assertTrue(admin <= set(agent_facing))
         self.assertEqual(
             set(listed),
-            {name.replace("-", "_") for name in agent_facing},
+            {
+                name.replace("-", "_")
+                for name in agent_facing
+                if name not in admin
+            }
+            | {server.ADMIN_TOOL_NAME},
         )
+        self.assertEqual(
+            listed[server.ADMIN_TOOL_NAME]["inputSchema"]["properties"][
+                "operation"
+            ]["enum"],
+            [name.replace("-", "_") for name in server.ADMIN_SUBCOMMANDS],
+        )
+        registry = server._tool_registry()
         for cli_name, sub in agent_facing.items():
-            schema = listed[cli_name.replace("-", "_")]["inputSchema"]
+            if cli_name in admin:
+                schema = registry[cli_name.replace("-", "_")]["schema"]
+            else:
+                schema = listed[cli_name.replace("-", "_")]["inputSchema"]
             actions = [
                 action
                 for action in sub._actions  # noqa: SLF001

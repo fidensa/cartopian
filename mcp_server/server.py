@@ -648,7 +648,11 @@ def _skill_messages(path: Path) -> List[Dict[str, Any]]:
         f"authoritative runbook for this workflow — read every step before "
         f"acting. When the skill calls for `cartopian <subcommand>`, use the "
         f"corresponding MCP tool (`<subcommand>` with hyphens replaced by "
-        f"underscores) rather than shelling out.\n\n---\n\n"
+        f"underscores) rather than shelling out. The setup/admin subcommands "
+        f"({', '.join(ADMIN_SUBCOMMANDS)}) are served by the single `admin` "
+        f"tool: call it with `operation` (underscored subcommand name) and "
+        f"`arguments`; pass `describe: true` first to get the operation's "
+        f"input schema.\n\n---\n\n"
     )
     return [{"role": "user", "content": {"type": "text", "text": header + body}}]
 
@@ -755,6 +759,50 @@ def _command_input_schema(sub: argparse.ArgumentParser) -> Tuple[Dict[str, Any],
 
 _TOOL_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
+# Setup/admin subcommands are dispatched through the single `admin` tool
+# instead of being listed as individual tools. A PM task loop never touches
+# them, yet every host that loads MCP schemas eagerly (most of them) paid for
+# their schemas — `generate-config` alone is ~2.5KB — on every session. They
+# remain full CLI subcommands and remain callable by name for compatibility;
+# only the *listing* moves behind the dispatcher.
+ADMIN_SUBCOMMANDS = (
+    "generate-config",
+    "install-workflow",
+    "resume-install",
+    "migrate-config",
+    "scaffold-project",
+    "register-project",
+    "unregister-project",
+)
+
+ADMIN_TOOL_NAME = "admin"
+
+_ADMIN_TOOL_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "operation": {
+            "type": "string",
+            "enum": [name.replace("-", "_") for name in ADMIN_SUBCOMMANDS],
+            "description": "The setup/admin subcommand to run.",
+        },
+        "arguments": {
+            "type": "object",
+            "description": (
+                "Arguments for the operation, keyed by argument name. "
+                "Call with describe=true first to get the operation's "
+                "input schema."
+            ),
+        },
+        "describe": {
+            "type": "boolean",
+            "description": (
+                "Return the operation's input schema instead of running it."
+            ),
+        },
+    },
+    "required": ["operation"],
+}
+
 
 def _operator_only_subcommands() -> frozenset:
     """Host/operator-boundary subcommands, never exposed as agent tools.
@@ -800,8 +848,14 @@ def _tool_registry() -> Dict[str, Dict[str, Any]]:
 
 
 def list_tools() -> List[Dict[str, Any]]:
+    admin_names = frozenset(ADMIN_SUBCOMMANDS)
     items: List[Dict[str, Any]] = []
     for tool_name, entry in sorted(_tool_registry().items()):
+        # Setup/admin subcommands are reachable only through the `admin`
+        # dispatcher below; listing their full schemas here charged every
+        # session for tools a PM task loop never calls.
+        if entry["subcommand"] in admin_names:
+            continue
         # The registry's description is the command module's own prose (see
         # `cli.main._command_description`). It is the only semantic guidance a
         # model gets before choosing a tool, so it is carried through verbatim
@@ -815,6 +869,17 @@ def list_tools() -> List[Dict[str, Any]]:
             ),
             "inputSchema": entry["schema"],
         })
+    items.append({
+        "name": ADMIN_TOOL_NAME,
+        "description": (
+            "Dispatcher for Cartopian setup/admin operations: "
+            + ", ".join(name.replace("-", "_") for name in ADMIN_SUBCOMMANDS)
+            + ". Each operation runs the matching `cartopian <subcommand>`. "
+            "Call with describe=true to get an operation's input schema "
+            "before running it."
+        ),
+        "inputSchema": _ADMIN_TOOL_SCHEMA,
+    })
     return items
 
 
@@ -1012,6 +1077,32 @@ def call_tool(
     meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     registry = _tool_registry()
+    if name == ADMIN_TOOL_NAME:
+        args = arguments or {}
+        operation = args.get("operation")
+        if not isinstance(operation, str) or operation not in {
+            sub.replace("-", "_") for sub in ADMIN_SUBCOMMANDS
+        }:
+            raise McpError(
+                ERR_INVALID_PARAMS,
+                f"unknown admin operation: {operation!r}; expected one of "
+                + ", ".join(sub.replace("-", "_") for sub in ADMIN_SUBCOMMANDS),
+            )
+        entry = registry[operation]
+        if args.get("describe"):
+            schema_text = json.dumps(entry["schema"], ensure_ascii=False)
+            return {
+                "content": [{"type": "text", "text": schema_text}],
+                "isError": False,
+                "structuredContent": {"exit_code": 0, "stderr_lines": []},
+            }
+        inner = args.get("arguments")
+        if inner is not None and not isinstance(inner, dict):
+            raise McpError(
+                ERR_INVALID_PARAMS, "admin arguments must be an object"
+            )
+        name = operation
+        arguments = inner or {}
     if name not in registry:
         raise McpError(ERR_INVALID_PARAMS, f"unknown tool: {name}")
     entry = registry[name]
@@ -1029,7 +1120,12 @@ def call_tool(
     finally:
         emit.set_progress_sink(prior_sink)
 
-    # MCP tool result: structuredContent + text fallback.
+    # MCP tool result. The records are emitted exactly once, as NDJSON in
+    # `content[0].text` — text content is the MCP-baseline result type every
+    # host supports. `structuredContent` carries only small call metadata
+    # (no Cartopian tool declares an `outputSchema`, so nothing depends on a
+    # structured copy of the records); duplicating the full record set there
+    # doubled the size of every tool result on every host.
     text_lines: List[str] = []
     if result["records"]:
         for record in result["records"]:
@@ -1048,7 +1144,6 @@ def call_tool(
         "isError": is_error,
         "structuredContent": {
             "exit_code": result["exit_code"],
-            "records": result["records"],
             "stderr_lines": result["stderr_lines"],
         },
     }
@@ -1061,17 +1156,29 @@ def call_tool(
 # --- Section-scoped protocol resources (additive; whole-file URIs unchanged) -
 #
 # `cartopian://protocol/<doc>/<section-slug>` reads one H2 section of an
-# allowlisted protocol doc, and `cartopian://protocol/CONVENTIONS/startup`
-# reads a curated startup slice, so the PM can load only the slice of
-# CONVENTIONS.md a given moment needs instead of the whole file. The full
-# `cartopian://protocol/<doc>` resources remain available and authoritative.
+# allowlisted protocol doc, `cartopian://protocol/<doc>/<section-slug>/<sub-slug>`
+# reads one H3 subsection of that section (the reserved `preamble` sub-slug
+# reads the prose between the H2 heading and its first H3), and
+# `cartopian://protocol/CONVENTIONS/startup` reads a curated startup slice, so
+# the PM can load only the slice of CONVENTIONS.md a given moment needs instead
+# of the whole file. The full `cartopian://protocol/<doc>` resources remain
+# available and authoritative.
 
 # H2 heading line in a protocol markdown doc (H3+ stays inside its parent H2).
 _H2_RE = re.compile(r"^## (.+?)\s*$")
 
+# H3 heading line inside an H2 section body (H4+ stays inside its parent H3).
+_H3_RE = re.compile(r"^### (.+?)\s*$")
+
 # Reserved slug for the curated startup slice of CONVENTIONS.md. No H2 in the
 # doc slugifies to a bare "startup", so the reservation cannot shadow a section.
 STARTUP_SLUG = "startup"
+
+# Reserved sub-slug serving an H2 section's preamble: the prose between the
+# `## ` heading and its first `### ` subsection, which would otherwise be
+# unreadable for a caller that loads only sub-slices of a large section. A
+# real `### <heading>` that slugifies to "preamble" wins over the reservation.
+PREAMBLE_SLUG = "preamble"
 
 # H2 headings concatenated (in document order) into
 # `cartopian://protocol/CONVENTIONS/startup` — the sections a PM needs through
@@ -1143,6 +1250,54 @@ def _split_h2_sections(text: str) -> Dict[str, Tuple[str, str]]:
     return sections
 
 
+def _split_h3_sections(section_body: str) -> Dict[str, Tuple[str, str]]:
+    """Split one H2 section body into H3 subsections: {slug: (heading, body)}.
+
+    Same shape as `_split_h2_sections`, one level down: each body runs from its
+    ``### Heading`` line up to (excluding) the next H3, so H4+ stays inside its
+    parent subsection. Prose before the first H3 belongs to the parent section
+    and is not addressable as a subsection.
+    """
+    sections: Dict[str, Tuple[str, str]] = {}
+    current_slug: Optional[str] = None
+    current_heading = ""
+    current_lines: List[str] = []
+
+    def flush() -> None:
+        if current_slug is not None:
+            sections[current_slug] = (
+                current_heading,
+                "\n".join(current_lines).rstrip() + "\n",
+            )
+
+    for line in section_body.splitlines():
+        match = _H3_RE.match(line)
+        if match:
+            flush()
+            current_heading = match.group(1)
+            current_slug = _section_slug(current_heading)
+            current_lines = [line]
+        elif current_slug is not None:
+            current_lines.append(line)
+    flush()
+    return sections
+
+
+def _h3_preamble(section_body: str) -> Optional[str]:
+    """The H2 body from its heading up to (excluding) the first H3.
+
+    None when the section has no H3 subsections — the whole-section slice
+    already is the preamble there, so the reserved sub-slug stays unserved.
+    """
+    lines = section_body.splitlines()
+    for index, line in enumerate(lines):
+        if _H3_RE.match(line):
+            if index == 0:
+                return None  # no prose precedes the first H3
+            return "\n".join(lines[:index]).rstrip() + "\n"
+    return None
+
+
 def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
     """Assemble the curated startup slice; fail closed on heading drift."""
     parts = [STARTUP_PREAMBLE]
@@ -1156,8 +1311,10 @@ def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
     return "\n".join(parts)
 
 
-def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
-    """Bounded read of one H2 section (or the startup slice) of a protocol doc.
+def _read_protocol_section(
+    doc: str, slug: str, uri: str, subslug: Optional[str] = None
+) -> Dict[str, Any]:
+    """Bounded read of one H2 section, one H3 subsection, or the startup slice.
 
     Same allowlist shape as the whole-file branch: the only path ever
     constructed is ``protocol/<doc>.md`` under the protocol root. Malformed
@@ -1165,6 +1322,8 @@ def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
     (fail-closed).
     """
     if not _safe_segment(doc) or not _safe_segment(slug):
+        raise McpError(ERR_INVALID_PARAMS, f"invalid protocol section uri: {uri}")
+    if subslug is not None and not _safe_segment(subslug):
         raise McpError(ERR_INVALID_PARAMS, f"invalid protocol section uri: {uri}")
     candidate = ROOT / "protocol" / f"{doc}.md"
     resolved = _bounded_path(candidate, ROOT / "protocol")
@@ -1176,12 +1335,29 @@ def _read_protocol_section(doc: str, slug: str, uri: str) -> Dict[str, Any]:
         raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
     sections = _split_h2_sections(text)
     if doc == "CONVENTIONS" and slug == STARTUP_SLUG:
+        if subslug is not None:
+            # The curated slice has no addressable subsections.
+            raise McpError(ERR_INVALID_PARAMS, f"unknown protocol section: {uri}")
         body = _startup_slice_text(sections, uri)
     else:
         entry = sections.get(slug)
         if entry is None:
             raise McpError(ERR_INVALID_PARAMS, f"unknown protocol section: {uri}")
         body = entry[1]
+        if subslug is not None:
+            sub_entry = _split_h3_sections(body).get(subslug)
+            if sub_entry is not None:
+                body = sub_entry[1]
+            else:
+                preamble = (
+                    _h3_preamble(body) if subslug == PREAMBLE_SLUG else None
+                )
+                if preamble is None:
+                    raise McpError(
+                        ERR_INVALID_PARAMS,
+                        f"unknown protocol subsection: {uri}",
+                    )
+                body = preamble
     return {
         "contents": [{
             "uri": uri,
@@ -1249,11 +1425,30 @@ def list_resources() -> List[Dict[str, Any]]:
                     ),
                     "mimeType": "text/markdown",
                 })
-            for slug, (heading, _body) in _split_h2_sections(text).items():
+            for slug, (heading, body) in _split_h2_sections(text).items():
+                # H3 sub-slices are named compactly on the parent entry
+                # instead of one listing entry each: hosts that enumerate
+                # resources eagerly would otherwise pay more fixed context
+                # for the discovery rows than the slicing saves.
+                description = (
+                    f"Single section `## {heading}` of {path.stem}.md."
+                )
+                sub_slugs = list(_split_h3_sections(body))
+                if sub_slugs:
+                    if (
+                        PREAMBLE_SLUG not in sub_slugs
+                        and _h3_preamble(body) is not None
+                    ):
+                        sub_slugs.insert(0, PREAMBLE_SLUG)
+                    description += (
+                        f" Bounded sub-slices at .../{slug}/<sub-slug>: "
+                        + ", ".join(sub_slugs)
+                        + "."
+                    )
                 resources.append({
                     "uri": f"{URI_SCHEME}://protocol/{path.stem}/{slug}",
                     "name": f"protocol: {path.stem} § {heading}",
-                    "description": f"Single section `## {heading}` of {path.stem}.md.",
+                    "description": description,
                     "mimeType": "text/markdown",
                 })
 
@@ -1302,10 +1497,21 @@ def read_resource(uri: str) -> Dict[str, Any]:
                 break
     elif namespace == "protocol":
         if len(tail) == 2:
-            # Additive section-scoped surface: `protocol/<doc>/<section-slug>`
+            # Additive section-scoped surface: `protocol/<doc>/<section-slug>`,
+            # `protocol/<doc>/<section-slug>/<sub-slug>` (one H3 subsection),
             # plus the curated `CONVENTIONS/startup` slice. Whole-file reads
-            # below are unchanged.
-            return _read_protocol_section(tail[0], tail[1], uri)
+            # below are unchanged. `rest.split("/", 2)` leaves any deeper path
+            # inside tail[1]; split it here so each segment is validated.
+            slug_parts = tail[1].split("/")
+            if len(slug_parts) == 1:
+                return _read_protocol_section(tail[0], slug_parts[0], uri)
+            if len(slug_parts) == 2:
+                return _read_protocol_section(
+                    tail[0], slug_parts[0], uri, subslug=slug_parts[1]
+                )
+            raise McpError(
+                ERR_INVALID_PARAMS, f"invalid protocol section uri: {uri}"
+            )
         if not _safe_segment(tail[0]):
             raise McpError(ERR_INVALID_PARAMS, f"invalid protocol name: {uri}")
         candidate = ROOT / "protocol" / f"{tail[0]}.md"

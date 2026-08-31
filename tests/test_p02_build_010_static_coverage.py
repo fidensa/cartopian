@@ -485,7 +485,10 @@ class SectionUriStaticCoverageTest(unittest.TestCase):
 
     # A concrete section reference: URI followed by a literal slug (the
     # `<section-slug>` placeholder in prose intentionally does not match).
-    _SECTION_REF_RE = re.compile(r"cartopian://protocol/CONVENTIONS/([a-z0-9-]+)")
+    # An optional second segment is an H3 sub-slice of the H2 section.
+    _SECTION_REF_RE = re.compile(
+        r"cartopian://protocol/CONVENTIONS/([a-z0-9-]+)(?:/([a-z0-9-]+))?"
+    )
     # A whole-doc mention: the bare URI not followed by a section path, or the
     # raw file-path spelling.
     _WHOLE_DOC_RE = re.compile(
@@ -497,11 +500,31 @@ class SectionUriStaticCoverageTest(unittest.TestCase):
 
     @staticmethod
     def _conventions_slugs() -> set:
-        """H2 section slugs of CONVENTIONS.md, slugified as the server does."""
+        """Section slugs of CONVENTIONS.md, slugified as the server does.
+
+        Returns H2 slugs plus ``(h2-slug, h3-slug)`` pairs for the H3
+        sub-slices the server serves under each H2 section.
+        """
         text = (PROTOCOL_DIR / "CONVENTIONS.md").read_text(encoding="utf-8")
+
+        def slugify(heading: str) -> str:
+            return re.sub(r"[^a-z0-9]+", "-", heading.lower()).strip("-")
+
         slugs = set()
-        for match in re.finditer(r"^## (.+?)\s*$", text, re.MULTILINE):
-            slugs.add(re.sub(r"[^a-z0-9]+", "-", match.group(1).lower()).strip("-"))
+        current_h2 = None
+        for line in text.splitlines():
+            h2 = re.match(r"^## (.+?)\s*$", line)
+            if h2:
+                current_h2 = slugify(h2.group(1))
+                slugs.add(current_h2)
+                continue
+            h3 = re.match(r"^### (.+?)\s*$", line)
+            if h3 and current_h2 is not None:
+                slugs.add((current_h2, slugify(h3.group(1))))
+                # The server reserves the `preamble` sub-slug for the prose
+                # between an H2 heading and its first H3, so a section with
+                # H3 subsections also serves `<h2-slug>/preamble`.
+                slugs.add((current_h2, "preamble"))
         return slugs
 
     def test_lifecycle_skills_reference_required_section_uris(self) -> None:
@@ -545,16 +568,18 @@ class SectionUriStaticCoverageTest(unittest.TestCase):
 
     def test_referenced_section_slugs_resolve(self) -> None:
         # Every concrete section slug cited by any skill must be a real H2
-        # section of CONVENTIONS.md (or the reserved `startup` slice), so a
+        # section of CONVENTIONS.md (or the reserved `startup` slice), and
+        # every cited H3 sub-slice must be a real H3 of that H2, so a
         # protocol heading rename cannot silently orphan a skill reference.
         valid = self._conventions_slugs() | {"startup"}
         for path in sorted(SKILLS_DIR.glob("*.md")):
             text = path.read_text(encoding="utf-8")
             unknown = sorted(
                 {
-                    slug
-                    for slug in self._SECTION_REF_RE.findall(text)
-                    if slug not in valid
+                    slug if not sub else f"{slug}/{sub}"
+                    for slug, sub in self._SECTION_REF_RE.findall(text)
+                    if (slug not in valid)
+                    or (sub and (slug, sub) not in valid)
                 }
             )
             self.assertEqual(
@@ -562,7 +587,7 @@ class SectionUriStaticCoverageTest(unittest.TestCase):
                 [],
                 msg=(
                     f"{path.name} references CONVENTIONS section slugs that do "
-                    f"not resolve to an H2 heading: {unknown}"
+                    f"not resolve to a served section: {unknown}"
                 ),
             )
 

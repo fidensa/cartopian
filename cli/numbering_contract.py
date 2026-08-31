@@ -844,18 +844,25 @@ def guard_existing_task_trace(
     task_path: Path,
     *,
     state: Optional[Dict[str, Any]] = None,
+    content: Optional[str] = None,
 ) -> Optional[Tuple[str, str]]:
-    """Re-verify a governed task before a downstream artifact or movement."""
+    """Re-verify a governed task before a downstream artifact or movement.
+
+    ``content`` lets a caller that already holds the task's bytes — read once
+    through the artifact containment helper — supply them, so the guard does
+    not reopen the path and race a post-validation swap.
+    """
     match = _TASK_FILENAME_RE.fullmatch(task_path.name)
     if match is None or match.group(1) not in governed_task_ids(project_root):
         return None
     state = activation_state() if state is None else state
     if not state["active"]:
         return None
-    try:
-        content = task_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        return ("task-unreadable", f"cannot read {task_path}: {exc}")
+    if content is None:
+        try:
+            content = task_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return ("task-unreadable", f"cannot read {task_path}: {exc}")
     findings = validate_task_trace(project_root, match.group(1), content)
     if findings:
         return (findings[0]["classification"], findings[0]["detail"])
@@ -869,8 +876,14 @@ def guard_task_scoped_artifact(
     artifact_content: str = "",
     *,
     state: Optional[Dict[str, Any]] = None,
+    task_content: Optional[str] = None,
 ) -> Optional[Tuple[str, str]]:
-    """Bind a downstream artifact id and any identity headers to its task."""
+    """Bind a downstream artifact id and any identity headers to its task.
+
+    ``task_content`` lets a caller that already holds the task's bytes — read
+    once through the artifact containment helper — supply them, so the guard
+    does not reopen the path and race a post-validation swap.
+    """
     task_match = _TASK_FILENAME_RE.fullmatch(task_path.name)
     if task_match is None or task_match.group(1) not in governed_task_ids(project_root):
         return None
@@ -878,7 +891,7 @@ def guard_task_scoped_artifact(
     if not state["active"]:
         return None
     trace_refusal = guard_existing_task_trace(
-        project_root, task_path, state=state
+        project_root, task_path, state=state, content=task_content
     )
     if trace_refusal is not None:
         return trace_refusal
@@ -904,7 +917,11 @@ def guard_task_scoped_artifact(
             f"{artifact_id} carries suffix {observed_suffix}, but {task_id} "
             f"requires {expected_suffix}",
         )
-    task_text = task_path.read_text(encoding="utf-8")
+    task_text = (
+        task_content
+        if task_content is not None
+        else task_path.read_text(encoding="utf-8")
+    )
     bound_ref = plan_ref_header_value(task_text) or ""
     declared_ref = plan_ref_header_value(artifact_content)
     if declared_ref is not None and declared_ref.strip().lower() != "n/a" and declared_ref != bound_ref:

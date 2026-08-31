@@ -31,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from cli import emit, host_capability, request_trace  # noqa: E402
 from mcp_server import server  # noqa: E402
+from tests.mcp_result import tool_records
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +272,55 @@ class TestToolSurface(unittest.TestCase):
         for sub in SUBCOMMANDS:
             if sub in OPERATOR_ONLY_SUBCOMMANDS:
                 continue
+            if sub in server.ADMIN_SUBCOMMANDS:
+                # Setup/admin subcommands are served by the single `admin`
+                # dispatcher rather than a per-subcommand listing.
+                self.assertNotIn(sub.replace("-", "_"), tool_names)
+                continue
             self.assertIn(sub.replace("-", "_"), tool_names)
+        self.assertIn(server.ADMIN_TOOL_NAME, tool_names)
+
+    def test_admin_dispatcher_covers_and_runs_admin_subcommands(self):
+        response = single("tools/list")
+        tools = {t["name"]: t for t in response["result"]["tools"]}
+        schema = tools[server.ADMIN_TOOL_NAME]["inputSchema"]
+        self.assertEqual(
+            schema["properties"]["operation"]["enum"],
+            [sub.replace("-", "_") for sub in server.ADMIN_SUBCOMMANDS],
+        )
+        # Hidden tool names remain directly callable for compatibility.
+        direct = single(
+            "tools/call", {"name": "discover_projects", "arguments": {}}
+        )
+        self.assertNotIn("error", direct)
+        # The dispatcher reaches the same registry entry the direct name does.
+        with tempfile.TemporaryDirectory() as tmp:
+            via_admin = single(
+                "tools/call",
+                {
+                    "name": server.ADMIN_TOOL_NAME,
+                    "arguments": {
+                        "operation": "generate_config",
+                        "arguments": {
+                            "project_path": tmp,
+                            "name": "Demo",
+                            "proj_id": "demo",
+                        },
+                    },
+                },
+            )
+        self.assertNotIn("error", via_admin)
+        self.assertEqual(
+            via_admin["result"]["structuredContent"]["exit_code"], 0
+        )
+        unknown = single(
+            "tools/call",
+            {
+                "name": server.ADMIN_TOOL_NAME,
+                "arguments": {"operation": "move_task", "arguments": {}},
+            },
+        )
+        self.assertEqual(unknown["error"]["code"], server.ERR_INVALID_PARAMS)
 
     def test_operator_only_subcommands_are_absent_from_the_tool_surface(self):
         """Host intake capture is not deferred into a managed handoff."""
@@ -350,7 +399,7 @@ class TestToolSurface(unittest.TestCase):
                 )
             self.assertNotIn("error", called)
             self.assertEqual(called["result"]["structuredContent"]["exit_code"], 0)
-            record = called["result"]["structuredContent"]["records"][0]
+            record = tool_records(called["result"])[0]
             self.assertEqual(record["details"]["operations"][0]["target"], "CONVENTIONS.md")
             self.assertEqual(record["details"]["validation"]["status"], "passed")
             self.assertFalse((project / "CONVENTIONS.md").exists())
@@ -431,7 +480,7 @@ class TestToolSurface(unittest.TestCase):
                 stale["result"]["structuredContent"]["exit_code"], 1
             )
             self.assertEqual(
-                stale["result"]["structuredContent"]["records"][0]["rule"],
+                tool_records(stale["result"])[0]["rule"],
                 "stale-report-identity",
             )
             self.assertEqual(
@@ -455,7 +504,7 @@ class TestToolSurface(unittest.TestCase):
             self.assertEqual(
                 fixed["result"]["structuredContent"]["exit_code"], 0
             )
-            record = fixed["result"]["structuredContent"]["records"][0]
+            record = tool_records(fixed["result"])[0]
             self.assertTrue(record["ok"])
             self.assertEqual(
                 record["report_content_identity"],
@@ -465,10 +514,16 @@ class TestToolSurface(unittest.TestCase):
 
     def test_generate_config_schema_exposes_role_agent_and_launch_options(self):
         # Preferred role-local launch flags propagate into the generated MCP
-        # schema; migration-source handoff names do not.
-        response = single("tools/list")
-        tools = {t["name"]: t for t in response["result"]["tools"]}
-        schema = tools["generate_config"]["inputSchema"]
+        # schema; migration-source handoff names do not. Admin schemas are
+        # served on demand through the dispatcher's describe path.
+        response = single(
+            "tools/call",
+            {
+                "name": server.ADMIN_TOOL_NAME,
+                "arguments": {"operation": "generate_config", "describe": True},
+            },
+        )
+        schema = json.loads(response["result"]["content"][0]["text"])
         self.assertIn("role_agent", schema["properties"])
         self.assertIn("role_launch_effort", schema["properties"])
         self.assertIn("role_launch_model", schema["properties"])
@@ -477,9 +532,14 @@ class TestToolSurface(unittest.TestCase):
         self.assertNotIn("role_launch_effort", schema.get("required", []))
 
     def test_register_project_label_is_optional(self):
-        response = single("tools/list")
-        tools = {t["name"]: t for t in response["result"]["tools"]}
-        schema = tools["register_project"]["inputSchema"]
+        response = single(
+            "tools/call",
+            {
+                "name": server.ADMIN_TOOL_NAME,
+                "arguments": {"operation": "register_project", "describe": True},
+            },
+        )
+        schema = json.loads(response["result"]["content"][0]["text"])
         self.assertIn("label", schema["properties"])
         self.assertNotIn("label", schema.get("required", []))
 
@@ -504,7 +564,7 @@ class TestToolSurface(unittest.TestCase):
         self.assertNotIn("error", response)
         sc = response["result"]["structuredContent"]
         self.assertEqual(sc["exit_code"], 0)
-        self.assertIsInstance(sc["records"], list)
+        self.assertIsInstance(tool_records(response["result"]), list)
 
     def test_cli_and_mcp_resolve_the_same_reviewer_like_role_record(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -552,7 +612,7 @@ class TestToolSurface(unittest.TestCase):
                 )
             mcp_result = response["result"]["structuredContent"]
             self.assertEqual(mcp_result["exit_code"], 0)
-            mcp_record = mcp_result["records"][0]
+            mcp_record = tool_records(response["result"])[0]
 
         self.assertEqual(
             mcp_record["roles"]["quality-gate"],
@@ -671,7 +731,7 @@ class TestToolSurface(unittest.TestCase):
             }
 
         records = {
-            name: response["result"]["structuredContent"]["records"][0]
+            name: tool_records(response["result"])[0]
             for name, response in calls.items()
         }
         for name in ("resolve", "next", "packet"):
@@ -719,7 +779,7 @@ class TestToolSurface(unittest.TestCase):
         result = response["result"]
         self.assertTrue(result["isError"])
         self.assertEqual(result["structuredContent"]["exit_code"], 1)
-        self.assertEqual(result["structuredContent"]["records"], [])
+        self.assertEqual(tool_records(result), [])
         stderr_lines = result["structuredContent"]["stderr_lines"]
         self.assertEqual(len(stderr_lines), 1)
         self.assertTrue(stderr_lines[0].startswith("[config]"))
@@ -897,6 +957,71 @@ class TestProtocolSectionResources(unittest.TestCase):
         self.assertIn("### Trace Chain", text)
         # The next H2 section is excluded.
         self.assertNotIn("## Status Through Directory", text)
+
+    def test_subsection_read_returns_only_that_h3(self):
+        response = self._read(
+            "cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completion"
+        )
+        self.assertNotIn("error", response)
+        text = response["result"]["contents"][0]["text"]
+        self.assertTrue(
+            text.startswith("### Waiting For Completion"),
+            msg=f"got: {text[:80]!r}",
+        )
+        self.assertNotIn("### Launch Directory", text)
+        self.assertNotIn("## Reviews", text)
+
+    def test_preamble_sub_slug_reads_prose_before_first_h3(self):
+        response = self._read(
+            "cartopian://protocol/CONVENTIONS/handoffs/preamble"
+        )
+        self.assertNotIn("error", response)
+        text = response["result"]["contents"][0]["text"]
+        self.assertTrue(text.startswith("## Handoffs"), msg=f"got: {text[:80]!r}")
+        # No H3 subsection body leaks into the preamble slice.
+        self.assertNotIn("### ", text)
+
+    def test_preamble_refused_for_section_without_h3(self):
+        # A section with no H3 subsections has no separate preamble — its
+        # whole-section slice already is the preamble.
+        response = self._read(
+            "cartopian://protocol/CONVENTIONS/core-principle/preamble"
+        )
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_listing_names_sub_slices_without_enumerating_h3_entries(self):
+        # Sub-slices stay discoverable from the parent H2 entry's description
+        # instead of one listing entry per H3, so hosts that enumerate
+        # resources eagerly do not pay a fixed-context cost per subsection.
+        response = single("resources/list")
+        resources = response["result"]["resources"]
+        protocol_uris = [
+            r["uri"]
+            for r in resources
+            if r["uri"].startswith("cartopian://protocol/")
+        ]
+        deep = [
+            uri
+            for uri in protocol_uris
+            # scheme://protocol/<doc>/<slug> carries 4 slashes; a listed
+            # <slug>/<sub-slug> entry would carry 5.
+            if uri.count("/") > 4
+        ]
+        self.assertEqual(deep, [])
+        handoffs = next(
+            r
+            for r in resources
+            if r["uri"] == "cartopian://protocol/CONVENTIONS/handoffs"
+        )
+        for sub_slug in (
+            "preamble",
+            "foreground-completion",
+            "launch-directory",
+            "work-roots",
+            "waiting-for-completion",
+        ):
+            self.assertIn(sub_slug, handoffs["description"])
 
     def test_whole_file_read_is_unchanged_by_section_surface(self):
         response = self._read("cartopian://protocol/CONVENTIONS")
@@ -1314,7 +1439,7 @@ class TestHostIdentityAndProgress(unittest.TestCase):
         server._client_info = {"name": "claude-code", "version": "1.0"}
 
         without_progress = server.call_tool("host_capability", {})
-        raw_budget = without_progress["structuredContent"]["records"][0][
+        raw_budget = tool_records(without_progress)[0][
             "host_wait_budget"
         ]
         self.assertFalse(raw_budget["progress_channel_available"])
@@ -1326,7 +1451,7 @@ class TestHostIdentityAndProgress(unittest.TestCase):
             {},
             {"progressToken": "host-budget-check"},
         )
-        progress_budget = with_progress["structuredContent"]["records"][0][
+        progress_budget = tool_records(with_progress)[0][
             "host_wait_budget"
         ]
         self.assertTrue(progress_budget["progress_channel_available"])

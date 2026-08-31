@@ -9,8 +9,8 @@ runbook preserves the contract's peer identities and never treats a repair
 offer as authorization, installed files as running-process activation, or a
 project migration offer as migration completion. Coordinated mutation and
 persisted resume mechanics remain separate workflows. Persisted progress is
-diagnosed — never mutated — with `cartopian resume-install` (MCP:
-`resume_install`).
+diagnosed — never mutated — with `cartopian resume-install` (over MCP, the
+`admin` tool with `operation: resume_install`).
 
 **Output:** Either confirmation that Cartopian is current, or a refreshed install at the latest release with operator-owned files (`cartopian.toml`, `projects.json`) preserved.
 

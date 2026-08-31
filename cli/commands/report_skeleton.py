@@ -132,6 +132,13 @@ def _task_skeleton(
     lines: List[str] = [
         "Status: <complete | blocked | failed>",
         "",
+        "## Summary",
+        "",
+        "<PM-facing summary, at most 10 short lines: what was done, where "
+        "the evidence and work product live, and anything the PM must act "
+        "on. The PM routes on this section instead of re-reading the whole "
+        "report; full detail belongs in the sections below.>",
+        "",
         "## Identity",
         "",
         f"- Work root: {_placeholder_or_value(headers.get('Work root', ''))}",
@@ -268,6 +275,13 @@ def _review_skeleton(
         "Status: <complete | blocked | failed>",
         "Request alignment: <aligned | drifted>",
         f"Request evidence: {evidence_value}",
+        "",
+        "## Summary",
+        "",
+        "<PM-facing summary, at most 10 short lines: the verdict, what it "
+        "rests on, and anything the PM must act on. The PM routes on this "
+        "section plus the bounded review projection instead of re-reading "
+        "the artifacts in full.>",
         "",
         "## Identity",
         "",

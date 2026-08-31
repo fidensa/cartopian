@@ -24,6 +24,7 @@ from cli.install_workflow import (
     verify_workflow,
 )
 from mcp_server import server
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = json.loads(
@@ -879,7 +880,7 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
             },
         )
         self.assertEqual(response["structuredContent"]["exit_code"], 0)
-        mcp_record = response["structuredContent"]["records"][0]
+        mcp_record = tool_records(response)[0]
         self.assertEqual(cli_record, mcp_record)
         self.assertEqual(
             [item["surface"] for item in cli_record["affected_surface_plan"]],

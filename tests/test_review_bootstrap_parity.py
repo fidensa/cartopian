@@ -36,6 +36,7 @@ from unittest import mock
 
 from cli.commands import capture_request, handoff_packet
 from cli.main import build_parser
+from tests.mcp_result import tool_records
 
 CONFIG = """[project]
 name = "Bootstrap parity"
@@ -521,7 +522,7 @@ class McpParityTests(BootstrapFixture):
             "validate_report", {"report_path": str(self.report)}
         )
         self.assertFalse(result["isError"], json.dumps(result))
-        self.assertEqual(result["structuredContent"]["records"], cli_records)
+        self.assertEqual(tool_records(result), cli_records)
 
         self.move_to_review()
         result = self.call(
@@ -533,7 +534,7 @@ class McpParityTests(BootstrapFixture):
             },
         )
         self.assertFalse(result["isError"], json.dumps(result))
-        captured = result["structuredContent"]["records"][0][
+        captured = tool_records(result)[0][
             "captured_completion_evidence"
         ]
         self.assertEqual(

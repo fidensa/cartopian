@@ -22,6 +22,7 @@ import tomllib
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from tests.mcp_result import tool_records
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -209,7 +210,7 @@ class FivePackSurfaceParityTests(unittest.TestCase):
         result = server.call_tool("select_practice_pack", arguments)
         structured = result["structuredContent"]
         self.assertEqual(result["isError"], structured["exit_code"] != 0)
-        records = structured["records"]
+        records = tool_records(result)
         self.assertEqual(len(records), 1)
         return structured["exit_code"], records[0]
 

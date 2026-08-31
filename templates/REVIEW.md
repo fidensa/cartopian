@@ -110,6 +110,8 @@ Findings:
 - F1. [blocker | major | minor | nit] — Description with file path and line range or section reference.
 - F2. …
 
+Keep each finding to one self-contained row of a few lines: `cartopian report-action` projects these rows — the `C<n>` rows under `## Contract quality` and the `F<n>` rows here, bounded — to the PM in place of a full review read, so a finding that only makes sense alongside surrounding prose is a finding the PM cannot route. Supporting detail belongs in `## Reviewer notes`.
+
 ## Suggested actions
 
 - For `request-changes`: what to address before resubmission.

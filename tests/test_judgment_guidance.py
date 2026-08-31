@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from tests.mcp_result import tool_records
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -989,7 +990,7 @@ class JudgmentSurfaceParityTests(unittest.TestCase):
         )
 
         self.assertFalse(mcp_result["isError"])
-        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
         self.assertEqual(cli_record["outcome"], "active")
         self.assertEqual(cli_record["cards_active"], 1)
 

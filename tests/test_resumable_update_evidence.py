@@ -49,6 +49,7 @@ from cli.resume_state import (
     render_portable_evidence,
 )
 from mcp_server import server
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = json.loads(
@@ -1354,7 +1355,7 @@ class CliAndMcpParityTests(ResumableProgressTestCase):
             response["structuredContent"]["exit_code"], cli_code
         )
         self.assertEqual(
-            response["structuredContent"]["records"][0], cli_record
+            tool_records(response)[0], cli_record
         )
         for field in (
             "progress_contract",

@@ -14,6 +14,7 @@ from cli.commands import task_bundle
 from cli.commands import render_spec, report_action
 from mcp_server import server
 from tests.scaffold import project_scaffold
+from tests.mcp_result import tool_records
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -174,6 +175,29 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
         self.assertNotIn("decisions/.md", projected)
         self.assertIn("project-management-source sha256:", projected)
         self.assertEqual(evidence["outcome"], "valid")
+
+    def test_supplied_task_content_is_used_without_reopening_the_path(self) -> None:
+        """`task_content` short-circuits the disk read entirely.
+
+        Callers that read the task once through the artifact containment
+        helper pass its bytes here; the task file is deleted before the call
+        to prove evidence resolution never reopens the path (a reopen would
+        race a post-validation slot swap).
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "TASK-04-002.md"
+            body = _task_body(_source_section())
+            task.write_text(body, encoding="utf-8")
+            guidance = source_guidance.resolve_task_guidance(task)
+            report = guidance["deidentified_guidance"].replace(
+                "## Source guidance", "## Source evidence", 1
+            )
+            task.unlink()
+            evidence = source_guidance.resolve_report_evidence(
+                task, report, task_content=body
+            )
+
+        self.assertEqual(evidence["outcome"], "valid", evidence["blockers"])
 
     def test_identifiers_in_context_and_scope_round_trip_as_valid_evidence(self) -> None:
         """Regression: an identifier inside Applicable context or Scope must
@@ -377,7 +401,7 @@ class SourceGuidanceProjectionTests(unittest.TestCase):
                 "tools/call",
                 {"name": "task_bundle", "arguments": {"task_path": str(task)}},
             )
-            mcp_record = mcp_result["structuredContent"]["records"][0]
+            mcp_record = tool_records(mcp_result)[0]
         self.assertEqual(cli_record["source_guidance"], mcp_record["source_guidance"])
         self.assertEqual(cli_record["ready"], mcp_record["ready"])
 

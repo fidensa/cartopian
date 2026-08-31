@@ -84,20 +84,10 @@ _REWORK_HINT = (
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.description = (
         "Apply one hash-bound mechanical correction to a handoff report in "
-        "place, without a correction handoff. Requires the exact "
-        "`report_content_identity` of the current bytes (from a wait or "
-        "`validate_report`). Every failed mechanical check resolves to an "
-        "exact edit operation — replace the defective header line, Identity "
-        "bullet, verdict token, or unverified-claim row, or delete a "
-        "contradictory `- none` claim row (source and conflict rows are "
-        "producer evidence and are never editable) — and everything else, "
-        "including section order, "
-        "heading bytes, prose, and unaffected rows, must stay byte-"
-        "identical; a missing heading is repairable only as a body-identical "
-        "in-place rename. Refuses substantive or missing-input findings, "
-        "stale identities, absent substantive content, and any correction "
-        "that does not fully validate. Emits one audit record with "
-        "before/after identities."
+        "place (never a correction handoff); requires the exact "
+        "`report_content_identity` of the current bytes and allows only the "
+        "exact edits the failed mechanical checks name. Full contract: "
+        "`cartopian://protocol/CONVENTIONS/reports`."
     )
     subparser.add_argument(
         "report_path",

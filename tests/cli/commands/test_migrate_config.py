@@ -11,6 +11,7 @@ from unittest import mock
 from cli import config_migration, config_schema
 from cli.commands import migrate_config
 from mcp_server import server
+from tests.mcp_result import tool_records
 
 
 FIXTURES = (
@@ -1140,7 +1141,7 @@ reviewer = "Reviews plans and tasks."
                     {"project_path": str(project)},
                 )
             self.assertFalse(mcp_result["isError"])
-            mcp_record = mcp_result["structuredContent"]["records"][0]
+            mcp_record = tool_records(mcp_result)[0]
             self.assertEqual(mcp_record, cli_records[0])
             self.assertEqual(mcp_record["action"], "migrate-config")
 
@@ -1166,7 +1167,7 @@ reviewer = "Reviews plans and tasks."
                 )
             self.assertFalse(mcp_result["isError"])
             self.assertEqual(
-                mcp_result["structuredContent"]["records"][0],
+                tool_records(mcp_result)[0],
                 cli_records[0],
             )
             self.assertEqual(
@@ -1195,7 +1196,7 @@ reviewer = "Reviews plans and tasks."
                 )
             self.assertTrue(mcp_result["isError"])
             self.assertEqual(
-                mcp_result["structuredContent"]["records"][0],
+                tool_records(mcp_result)[0],
                 cli_records[0],
             )
             self.assertEqual(

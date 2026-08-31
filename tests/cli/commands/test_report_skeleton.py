@@ -290,6 +290,10 @@ class TestReviewSkeleton(unittest.TestCase):
                 str((scaffold.reviews / "REVIEW-05-009.md").resolve()),
             )
             self.assertIn("- Review ID: REVIEW-05-009", record["skeleton"])
+            # Every generated report skeleton carries the PM-facing summary
+            # section the PM routes on.
+            self.assertIn("## Summary", record["skeleton"])
+            self.assertIn("## Summary", record["review_file_skeleton"])
             self.assertIn(
                 "Target: TASK-05-009", record["review_file_skeleton"]
             )

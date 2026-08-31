@@ -30,6 +30,7 @@ from cli.commands.validate_task_readiness import (
 )
 from mcp_server import server as mcp_server
 from tests.scaffold import project_scaffold
+from tests.mcp_result import tool_records
 
 _DIGEST_A = "sha256:" + "a" * 64
 _DIGEST_B = "sha256:" + "b" * 64
@@ -373,6 +374,46 @@ class TestMediatedAuthoring(unittest.TestCase):
             self.assertEqual(
                 nc.governed_task_ids(project), frozenset({"TASK-01-002"})
             )
+
+    def test_supplied_task_content_is_used_without_reopening_the_path(self):
+        """`task_content`/`content` short-circuit the guards' disk reads.
+
+        Callers that read the task once through the artifact containment
+        helper pass its bytes in; the task path does not exist on disk here,
+        so any reopen would surface as `task-unreadable` (or an uncaught
+        filesystem error) instead of a clean pass.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            project = _make_project(Path(tmp))
+            missing = project / "tasks" / "open" / "TASK-01-004.md"
+            body = _task_body("BUILD-01-004")
+            with (
+                mock.patch.object(
+                    nc, "activation_state", return_value=_active_state()
+                ),
+                mock.patch.object(
+                    nc,
+                    "governed_task_ids",
+                    return_value=frozenset({"TASK-01-004"}),
+                ),
+                mock.patch.object(nc, "validate_task_trace", return_value=[]),
+            ):
+                self.assertIsNone(
+                    nc.guard_existing_task_trace(project, missing, content=body)
+                )
+                self.assertIsNone(
+                    nc.guard_task_scoped_artifact(
+                        project,
+                        missing,
+                        "REPORT-01-004",
+                        "",
+                        task_content=body,
+                    )
+                )
+                # Without supplied content the same call reads the disk and
+                # reports the missing file.
+                refusal = nc.guard_existing_task_trace(project, missing)
+                self.assertEqual(refusal[0], "task-unreadable")
 
     def test_active_creation_refuses_an_independent_plan_ref_counter(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1168,7 +1209,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         self.assertEqual(structured["exit_code"], 0)
         # One resolver, one verdict: the MCP dispatch path emits the same
         # structured record the public CLI path emits.
-        self.assertEqual(structured["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
 
     def test_old_grammar_blocks_identically_on_both_surfaces(
         self,
@@ -1217,14 +1258,14 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         self.assertIn("does not match KIND-NN-NNN", aligned_checks[0]["reason"])
         # MCP dispatch path: identical structured records and exit codes.
         self.assertEqual(
-            mcp_bundle["structuredContent"]["records"], [bundle_record]
+            tool_records(mcp_bundle), [bundle_record]
         )
         self.assertTrue(mcp_readiness["isError"])
         self.assertEqual(
             mcp_readiness["structuredContent"]["exit_code"], 1
         )
         self.assertEqual(
-            mcp_readiness["structuredContent"]["records"], [readiness_record]
+            tool_records(mcp_readiness), [readiness_record]
         )
 
     def test_broken_phase_anchor_blocks_through_both_surfaces(self):
@@ -1250,7 +1291,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         self.assertEqual(len(anchor_blockers), 1)
         self.assertTrue(anchor_blockers[0].startswith("plan-ref-aligned:"))
         self.assertEqual(
-            mcp_bundle["structuredContent"]["records"], [bundle_record]
+            tool_records(mcp_bundle), [bundle_record]
         )
 
 

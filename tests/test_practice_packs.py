@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from tests.mcp_result import tool_records
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -428,7 +429,7 @@ class PracticePackSurfaceParityTests(unittest.TestCase):
             "select_practice_pack", {"primary_outcome": ["supported-finding"]}
         )
         self.assertFalse(mcp_result["isError"])
-        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
         self.assertEqual(cli_record["pack_id"], "research-inquiry")
         self.assertGreater(cli_record["loaded_body_bytes"], 0)
 
@@ -1811,7 +1812,7 @@ class IntegratedProjectionParityTests(unittest.TestCase):
             },
         )
         self.assertFalse(mcp_result["isError"])
-        self.assertEqual(mcp_result["structuredContent"]["records"], [cli_record])
+        self.assertEqual(tool_records(mcp_result), [cli_record])
         self.assertEqual(cli_record["pack_id"], "software-delivery")
         self.assertTrue(cli_record["body_identity"].startswith("sha256:"))
         self.assertEqual(cli_record["body_budget_bytes"], 16384)
@@ -1836,7 +1837,7 @@ class IntegratedProjectionParityTests(unittest.TestCase):
             {"primary_outcome": ["supported-finding", "audience-facing-claim"]},
         )
         self.assertEqual(
-            mcp_result["structuredContent"]["records"][0]["error"], cli_record["error"]
+            tool_records(mcp_result)[0]["error"], cli_record["error"]
         )
         self.assertEqual(cli_record["outcome"], "ambiguous")
         _assert_no_body_leaked(self, {k: v for k, v in cli_record.items() if k != "action"})

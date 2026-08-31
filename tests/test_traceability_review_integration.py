@@ -54,6 +54,7 @@ from cli.commands import capture_request as capture_request_command
 from cli.main import build_parser
 from mcp_server import server as mcp
 from tests.scaffold import project_scaffold
+from tests.mcp_result import tool_records
 
 # --------------------------------------------------------------------------
 # Fixture vocabulary. Source identities and applicable contexts are the exact
@@ -523,7 +524,7 @@ The integrated fixture landed.
         structured = result["structuredContent"]
         return (
             structured["exit_code"],
-            structured["records"],
+            tool_records(result),
             structured["stderr_lines"],
         )
 

@@ -31,6 +31,7 @@ from cli.version_identities import (
     running_server,
 )
 from mcp_server import server
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = json.loads(
@@ -622,7 +623,7 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
             },
         )
         self.assertEqual(response["structuredContent"]["exit_code"], 0)
-        first = response["structuredContent"]["records"][0]
+        first = tool_records(response)[0]
         self.assertEqual(
             first["restart_state"]["status"], "restart_required"
         )
@@ -643,7 +644,7 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
             {"install_root": str(self.install_root)},
         )
         self.assertEqual(response["structuredContent"]["exit_code"], 0)
-        second = response["structuredContent"]["records"][0]
+        second = tool_records(response)[0]
         self.assertEqual(second["restart_state"]["status"], "current")
         self.assertTrue(
             second["restart_state"]["activation_claim_allowed"]

@@ -554,9 +554,19 @@ def render_guidance(record: Dict[str, Any], *, heading: str = "Source guidance")
     return "\n".join(lines) + "\n"
 
 
-def resolve_report_evidence(task_path: Path, report_content: str) -> Dict[str, Any]:
-    """Validate completion evidence against a source-backed task contract."""
-    guidance = resolve_task_guidance(task_path)
+def resolve_report_evidence(
+    task_path: Path,
+    report_content: str,
+    *,
+    task_content: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate completion evidence against a source-backed task contract.
+
+    ``task_content`` lets a caller that already holds the task's bytes — read
+    once through the artifact containment helper — supply them, so guidance
+    resolution does not reopen the path and race a post-validation swap.
+    """
+    guidance = resolve_task_guidance(task_path, content=task_content)
     if guidance["outcome"] in {"not-declared", "not-applicable"}:
         return {
             "required": False,

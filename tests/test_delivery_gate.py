@@ -19,6 +19,7 @@ from cli import delivery_contract
 from cli.commands import close_audit, compose_state, next_action
 from cli.main import SUBCOMMANDS, build_parser
 from tests.scaffold import project_scaffold
+from tests.mcp_result import tool_records
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "delivery"
@@ -1071,7 +1072,7 @@ class CliMcpParityTest(unittest.TestCase):
             result = server.call_tool("validate_delivery", {"project_root": path})
             structured = result["structuredContent"]
             self.assertEqual(structured["exit_code"], cli_code)
-            self.assertEqual(structured["records"], cli_records)
+            self.assertEqual(tool_records(result), cli_records)
             self.assertTrue(result["isError"])
 
     def test_close_audit_and_the_gate_agree_on_the_verdict(self) -> None:
