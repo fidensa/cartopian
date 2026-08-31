@@ -3,8 +3,6 @@
 Structured writer that records a decision **and** updates its index in one
 invocation:
 
-- validates the optional continuity headers **present in the authored body**
-  (``Scope:``, ``Ruling:``, ``Supersedes:``, ``Expires:``) fail-closed, then
 - writes ``decisions/DEC-NNN.md`` (the body, via ``--content`` /
   ``--content-file``), then
 - updates ``decisions/INDEX.md`` — appending the matching table row, or
@@ -14,19 +12,11 @@ Both writes go through the mediated-write primitive (``decision``
 dest_kind). The INDEX update is a read-modify-write of the full file rendered
 back through the primitive — no raw edit, no second bypass surface. The DEC
 file is written first; if it refuses, the index is left untouched.
-
-The decision file **body** is the single authoritative source for ``Scope``,
-``Ruling``, ``Status``, ``Supersedes``, and ``Expires``. This command gains no
-flags for them and never renders or rewrites a header: it validates what it was
-handed and refuses with ``usage`` and exit 2 before a byte lands. It reads no
-continuity artifact, so authoring a decision never depends on continuity state.
-``decisions/INDEX.md`` stays a human index and gains no column.
 """
 import argparse
 from pathlib import Path
 from typing import List
 
-from cli import continuity
 from cli.commands import _writers
 from cli.mediated_write import GuardRefusal, mediated_write
 
@@ -118,21 +108,6 @@ def handler(args: argparse.Namespace) -> int:
     content, cerr = _writers.resolve_content(args)
     if cerr is not None:
         _writers.stderr("usage", cerr)
-        return _writers.EXIT_USAGE
-
-    # Fail-closed validation of the optional continuity headers the authored
-    # body carries. A value that reaches `CONTINUITY.md` must be byte-identical
-    # in the Markdown cell and in the JSON projection, so the grammar refuses
-    # rather than escapes — and refusing here puts the diagnostic where a human
-    # can fix it.
-    try:
-        authored = content.decode("utf-8") if isinstance(content, bytes) else str(content)
-    except UnicodeDecodeError:
-        _writers.stderr("usage", "decision body must be valid UTF-8")
-        return _writers.EXIT_USAGE
-    violation = continuity.validate_decision_headers(authored, Path(root) / "decisions")
-    if violation is not None:
-        _writers.stderr("usage", violation)
         return _writers.EXIT_USAGE
 
     dec_filename = f"{dec_id}.md"

@@ -27,12 +27,19 @@ from cli import report_identity
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
 from cli.request_trace import (
+    ASSENT_RECOVERY,
     CORRECTION_ID_RE,
     REQUEST_ID_RE,
     REQUESTS_DIRNAME,
+    Antecedent,
+    AntecedentSource,
     GovernedUnit,
     RequestRefusal,
+    antecedent_identity,
+    check_antecedent_completeness,
+    check_message_adjacency,
     content_identity,
+    is_low_information,
     load_records,
 )
 
@@ -51,6 +58,77 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         "--content-file",
         required=True,
         help="Host-boundary file containing only the raw operator message",
+    )
+    parser.add_argument(
+        "--antecedent-file",
+        default=None,
+        help=(
+            "Host-boundary file containing the complete immediately preceding "
+            "question or proposal this message answers. Required when the "
+            "message is a low-information response such as \"yes\"."
+        ),
+    )
+    parser.add_argument(
+        "--antecedent-scope",
+        default=None,
+        help=(
+            "The exact scope the antecedent proposal covers, quoted verbatim "
+            "from that proposal. Required with --antecedent-file."
+        ),
+    )
+    parser.add_argument(
+        "--antecedent-host",
+        default=None,
+        help="Host that supplied the antecedent message. Required with --antecedent-file.",
+    )
+    parser.add_argument(
+        "--antecedent-conversation",
+        default=None,
+        help="Host conversation the antecedent message belongs to. Required with --antecedent-file.",
+    )
+    parser.add_argument(
+        "--antecedent-message",
+        default=None,
+        help="Host message id of the antecedent proposal. Required with --antecedent-file.",
+    )
+    parser.add_argument(
+        "--antecedent-order",
+        default=None,
+        type=int,
+        help="Position of the antecedent message in that conversation. Required with --antecedent-file.",
+    )
+    parser.add_argument(
+        "--response-host",
+        default=None,
+        help=(
+            "Host that supplied the captured response; must equal "
+            "--antecedent-host. Required with --antecedent-file."
+        ),
+    )
+    parser.add_argument(
+        "--response-conversation",
+        default=None,
+        help=(
+            "Host conversation the captured response belongs to; must equal "
+            "--antecedent-conversation. Required with --antecedent-file."
+        ),
+    )
+    parser.add_argument(
+        "--response-message",
+        default=None,
+        help=(
+            "Host message id of the captured response; must differ from "
+            "--antecedent-message. Required with --antecedent-file."
+        ),
+    )
+    parser.add_argument(
+        "--response-order",
+        default=None,
+        type=int,
+        help=(
+            "Position of the captured response in that conversation; must be "
+            "exactly one after --antecedent-order. Required with --antecedent-file."
+        ),
     )
     parser.add_argument("--correction-of", default=None, help="Original REQUEST-NNN for an explicit follow-up correction")
     parser.add_argument("--captured-at", default=None, help="UTC ISO-8601 timestamp; defaults to the intake time")
@@ -134,6 +212,112 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     # No byte ceiling: the operator message is the authority being captured.
     # Its integrity is bound by SHA-256 content identity, never by size.
+    #
+    # A low-information response ("yes", "continue", "proceed") states no
+    # intent of its own, so it is captured only bound to the complete
+    # immediately preceding question or proposal and that proposal's exact
+    # scope. Refusing here keeps a detached assent out of the record store
+    # entirely; the trace resolver refuses the same shape again for records
+    # and channels this command did not write.
+    antecedent = None
+    antecedent_file = getattr(args, "antecedent_file", None)
+    supplied = {
+        "--antecedent-file": antecedent_file,
+        "--antecedent-scope": getattr(args, "antecedent_scope", None),
+        "--antecedent-host": getattr(args, "antecedent_host", None),
+        "--antecedent-conversation": getattr(args, "antecedent_conversation", None),
+        "--antecedent-message": getattr(args, "antecedent_message", None),
+        "--antecedent-order": getattr(args, "antecedent_order", None),
+        "--response-host": getattr(args, "response_host", None),
+        "--response-conversation": getattr(args, "response_conversation", None),
+        "--response-message": getattr(args, "response_message", None),
+        "--response-order": getattr(args, "response_order", None),
+    }
+    if any(value is not None for value in supplied.values()):
+        # Provenance is not an optional extra, and one side of it is not
+        # enough: unless both messages are placed, nothing in the record shows
+        # that the retained proposal was the message immediately before this
+        # one rather than a faithful quotation from somewhere else.
+        missing = [flag for flag, value in supplied.items() if value is None]
+        if missing:
+            stderr_usage(
+                "the antecedent flags are given together; missing: "
+                + ", ".join(sorted(missing))
+            )
+            return EXIT_USAGE
+        try:
+            antecedent_raw = Path(antecedent_file).read_bytes()
+            antecedent_text = antecedent_raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            stderr_usage(str(exc))
+            return EXIT_USAGE
+        if not supplied["--antecedent-scope"].strip():
+            stderr_usage("--antecedent-scope must be non-empty")
+            return EXIT_USAGE
+        for flag in (
+            "--antecedent-host",
+            "--antecedent-conversation",
+            "--antecedent-message",
+            "--response-host",
+            "--response-conversation",
+            "--response-message",
+        ):
+            if not supplied[flag].strip():
+                stderr_usage(f"{flag} must be non-empty")
+                return EXIT_USAGE
+        source = AntecedentSource(
+            supplied["--antecedent-host"],
+            supplied["--antecedent-conversation"],
+            supplied["--antecedent-message"],
+        )
+        response = AntecedentSource(
+            supplied["--response-host"],
+            supplied["--response-conversation"],
+            supplied["--response-message"],
+        )
+        order = supplied["--antecedent-order"]
+        response_order = supplied["--response-order"]
+        binding = Antecedent(
+            antecedent_text,
+            supplied["--antecedent-scope"],
+            source,
+            order,
+            response,
+            response_order,
+            antecedent_identity(
+                text=antecedent_text,
+                scope=supplied["--antecedent-scope"],
+                source=source,
+                order=order,
+                response=response,
+                response_order=response_order,
+            ),
+        )
+        try:
+            if order < 0 or response_order < 0:
+                raise RequestRefusal(
+                    "non-adjacent-antecedent",
+                    "--antecedent-order and --response-order are message "
+                    "positions and cannot be negative",
+                    ASSENT_RECOVERY,
+                )
+            check_message_adjacency(
+                source, order, response, response_order, what="the captured response"
+            )
+            check_antecedent_completeness("--antecedent-file", binding)
+        except RequestRefusal as refusal:
+            stderr_guard(
+                f"{refusal.rule}: {refusal.detail}. recovery: {refusal.recovery}"
+            )
+            return EXIT_FAIL
+        antecedent = binding.as_record()
+    if antecedent is None and is_low_information(text):
+        stderr_guard(
+            "detached-assent: the captured message is a low-information "
+            "response and is not standalone evidence of intent. recovery: "
+            f"{ASSENT_RECOVERY}"
+        )
+        return EXIT_FAIL
     try:
         records = load_records(root)
     except RequestRefusal as refusal:
@@ -196,6 +380,8 @@ def handler(args: argparse.Namespace) -> int:
         "text": text,
         "unit": unit.as_record(),
     }
+    if antecedent is not None:
+        record["antecedent"] = antecedent
     data = (json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     try:
         path = _write_new(root.resolve(), record_id + ".json", data)

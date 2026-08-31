@@ -247,6 +247,24 @@ _OPERATOR_REQUEST = (
     "Build the config loader; stdlib only, and keep the error messages actionable."
 )
 
+# The complete immediately preceding proposal a bare "continue" answers, and
+# the exact scope that assent is bounded to.
+_OPERATOR_ANTECEDENT = (
+    "The loader will read the workspace file first and the project file "
+    "second, and refuse an unknown key by name. Should I go ahead on that "
+    "basis?"
+)
+# The exact scope is quoted from the proposal, not summarized: a scope in
+# words the operator was never shown is a detail the assent cannot authorize.
+_OPERATOR_ANTECEDENT_SCOPE = (
+    "read the workspace file first and the project file second, and refuse an "
+    "unknown key by name"
+)
+_OPERATOR_ANTECEDENT_SOURCE = ("claude-code", "conversation-3", "message-11")
+# The response is the next message of the same conversation: the binding
+# retains both sides, and both must place the pair.
+_OPERATOR_RESPONSE_SOURCE = ("claude-code", "conversation-3", "message-12")
+
 # The permitted provenance form: a whole-governance-document marker used as a
 # source identity inside Source guidance, byte-preserved through composition.
 _PROTOCOL_IDENTITY_ROW = (
@@ -278,14 +296,42 @@ _CONTAMINATED_STANDARDS = _AGENTS_ONLY_STANDARDS.replace(
 )
 
 
-def _capture(scaffold, request_id, unit, text, correction_of=None):
+def _capture(
+    scaffold,
+    request_id,
+    unit,
+    text,
+    correction_of=None,
+    antecedent=None,
+    antecedent_scope=None,
+):
     source = scaffold.root / f"capture-{request_id}-{'c' if correction_of else 'o'}.txt"
     source.write_text(text, encoding="utf-8")
+    antecedent_path = None
+    if antecedent is not None:
+        antecedent_path = (
+            scaffold.root / f"antecedent-{request_id}-{'c' if correction_of else 'o'}.txt"
+        )
+        antecedent_path.write_text(antecedent, encoding="utf-8")
+    host, conversation, message = _OPERATOR_ANTECEDENT_SOURCE
+    response_host, response_conversation, response_message = _OPERATOR_RESPONSE_SOURCE
     args = argparse.Namespace(
         project_root=str(scaffold.project_root),
         request_id=request_id,
         unit=unit,
         content_file=str(source),
+        antecedent_file=None if antecedent_path is None else str(antecedent_path),
+        antecedent_scope=antecedent_scope,
+        antecedent_host=None if antecedent_path is None else host,
+        antecedent_conversation=None if antecedent_path is None else conversation,
+        antecedent_message=None if antecedent_path is None else message,
+        antecedent_order=None if antecedent_path is None else 11,
+        response_host=None if antecedent_path is None else response_host,
+        response_conversation=(
+            None if antecedent_path is None else response_conversation
+        ),
+        response_message=None if antecedent_path is None else response_message,
+        response_order=None if antecedent_path is None else 12,
         correction_of=correction_of,
         captured_at="2026-07-27T12:00:00Z",
     )
@@ -319,9 +365,13 @@ def _build_full(scaffold) -> Path:
     scaffold.write("specs/SPEC-01-002.md", _FULL_SPEC)
     scaffold.write("STANDARDS.md", _STANDARDS)
     _capture(scaffold, "REQUEST-001", "task:TASK-01-002", _OPERATOR_REQUEST)
+    # A low-information assent is capturable only bound to the complete
+    # proposal it answers and that proposal's exact scope.
     _capture(
         scaffold, "REQUEST-001", "task:TASK-01-002", "continue",
         correction_of="REQUEST-001",
+        antecedent=_OPERATOR_ANTECEDENT,
+        antecedent_scope=_OPERATOR_ANTECEDENT_SCOPE,
     )
     return task_path
 
@@ -575,10 +625,15 @@ class TestComposedWriteFlow(unittest.TestCase):
             # Direct operator constraints are preserved in the coder channel…
             self.assertIn("## Original operator request (verbatim)", written)
             self.assertIn(_OPERATOR_REQUEST, written)
-            # …while low-information inherited approvals are excluded from
-            # the pasted channel but stay identity-bound.
-            self.assertNotIn("\ncontinue\n", written)
-            self.assertIn("Low-information operator approval", written)
+            # …and a low-information inherited approval is rendered only with
+            # the complete proposal it answers and that proposal's exact
+            # scope, which bound what it authorizes.
+            self.assertIn("\ncontinue\n", written)
+            self.assertIn(_OPERATOR_ANTECEDENT, written)
+            self.assertIn(
+                f"Antecedent scope: {_OPERATOR_ANTECEDENT_SCOPE}", written
+            )
+            self.assertIn("low-information assent", written)
             details = json.loads(out.getvalue().splitlines()[-1])["details"]
             self.assertEqual(
                 details["composed"]["content_identity"],

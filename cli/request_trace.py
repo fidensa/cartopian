@@ -155,6 +155,256 @@ class GovernedUnit:
 
 
 @dataclass(frozen=True)
+class AntecedentSource:
+    """Where one retained message came from, in the host's own terms.
+
+    The same three fields a host chat turn already carries, so a proposal and
+    the response that answers it are provenanced in one vocabulary and can be
+    compared directly.
+    """
+
+    host: str
+    conversation_id: str
+    message_id: str
+
+    def as_record(self) -> Dict[str, str]:
+        return {
+            "host": self.host,
+            "conversation_id": self.conversation_id,
+            "message_id": self.message_id,
+        }
+
+    @property
+    def identity(self) -> str:
+        return f"{self.host}:{self.conversation_id}:{self.message_id}"
+
+
+@dataclass(frozen=True)
+class Antecedent:
+    """The complete question or proposal a low-information assent answers.
+
+    A bare "yes" carries no intent of its own. It becomes operator evidence
+    only bound to the complete immediately preceding question or proposal and
+    that proposal's exact scope, and it authorizes nothing the proposal did not
+    contain. This value is that binding: the proposal text, its exact scope,
+    the provenance and ordinal position of *both* messages — which is what
+    establishes that the proposal was the immediately preceding one — and the
+    one content identity that covers all of them.
+
+    Both sides are retained because one side proves nothing. A proposal that
+    names only its own host, conversation, and position, with nothing recorded
+    about where the response came from, cannot be shown to have preceded *this*
+    response rather than some other conversation's.
+    """
+
+    text: str
+    scope: str
+    source: AntecedentSource
+    order: int
+    response: AntecedentSource
+    response_order: int
+    identity: str
+
+    def as_record(self, *, include_text: bool = True) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "scope": self.scope,
+            "source": self.source.as_record(),
+            "order": self.order,
+            "response": self.response.as_record(),
+            "response_order": self.response_order,
+            "content_identity": self.identity,
+        }
+        if include_text:
+            result["text"] = self.text
+        return result
+
+
+def antecedent_identity(
+    *,
+    text: str,
+    scope: str,
+    source: AntecedentSource,
+    order: int,
+    response: AntecedentSource,
+    response_order: int,
+) -> str:
+    """One identity over the whole binding, not over the proposal text alone.
+
+    Hashing only the text leaves the exact scope, the provenance of either
+    message, and the ordering free to be rewritten after capture, which is the
+    difference between a binding and a label: the stored scope is what a reader
+    is told the assent covers, and the stored provenance is what a reader is
+    told the two messages were. The identity therefore covers every field
+    resolution relies on, so editing any one of them afterwards is a
+    ``changed-antecedent`` refusal.
+    """
+    payload = json.dumps(
+        {
+            "order": order,
+            "response": response.as_record(),
+            "response_order": response_order,
+            "scope": scope,
+            "source": source.as_record(),
+            "text": text,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return content_identity(payload.encode("utf-8"))
+
+
+def _antecedent_source(raw: Any, *, what: str, subject: str) -> AntecedentSource:
+    """The provenance without which neither message can be placed.
+
+    Applied to both sides of the binding: without it for the proposal there is
+    no message to have preceded anything, and without it for the response there
+    is nothing for the proposal to have preceded.
+    """
+    if not isinstance(raw, dict):
+        raise RequestRefusal(
+            "missing-antecedent-provenance",
+            f"{what}: antecedent carries no {subject} provenance",
+            ASSENT_RECOVERY,
+        )
+    host = raw.get("host")
+    conversation_id = raw.get("conversation_id")
+    message_id = raw.get("message_id")
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (host, conversation_id, message_id)
+    ):
+        raise RequestRefusal(
+            "missing-antecedent-provenance",
+            f"{what}: antecedent {subject} provenance is incomplete",
+            ASSENT_RECOVERY,
+        )
+    return AntecedentSource(host, conversation_id, message_id)
+
+
+def _antecedent_position(raw: Any, *, what: str, field: str) -> int:
+    # bool is an int in Python; a flag is not a position.
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        raise RequestRefusal(
+            "missing-antecedent-provenance",
+            f"{what}: antecedent {field} is not a non-negative message position",
+            ASSENT_RECOVERY,
+        )
+    return raw
+
+
+def check_message_adjacency(
+    source: AntecedentSource,
+    order: int,
+    response: AntecedentSource,
+    response_order: int,
+    *,
+    what: str,
+) -> None:
+    """Both sides must describe two adjacent messages in one conversation.
+
+    "Immediately preceding" is a claim about a pair, so it is decided from both
+    sides together: the same host and the same conversation, two distinct
+    message identities, and positions exactly one apart. Each failure leaves
+    the proposal unable to bound the assent — a proposal from elsewhere, a
+    message offered as its own antecedent, or a proposal several turns back is
+    not what the operator was answering — and an assent that cannot be bounded
+    is not evidence. Shared by host intake and trace resolution so a record the
+    capture gate never saw meets the same rule.
+    """
+    if (source.host, source.conversation_id) != (
+        response.host,
+        response.conversation_id,
+    ):
+        raise RequestRefusal(
+            "non-adjacent-antecedent",
+            f"{what}: the retained proposal comes from {source.identity} and "
+            f"the response from {response.identity}; a proposal in another "
+            "host or conversation did not immediately precede this response",
+            ASSENT_RECOVERY,
+        )
+    if source.message_id == response.message_id:
+        raise RequestRefusal(
+            "non-adjacent-antecedent",
+            f"{what}: the retained proposal and the response are the same "
+            f"message ({source.identity}); a message does not precede itself",
+            ASSENT_RECOVERY,
+        )
+    if response_order != order + 1:
+        raise RequestRefusal(
+            "non-adjacent-antecedent",
+            f"{what}: the retained proposal at message {order} is not the "
+            f"message immediately before the response at message {response_order}",
+            ASSENT_RECOVERY,
+        )
+
+
+def _parse_antecedent(
+    raw: Any,
+    *,
+    what: str,
+    channel_source: Optional[AntecedentSource] = None,
+) -> Optional["Antecedent"]:
+    """Structural validation of a stored antecedent. ``None`` when absent.
+
+    Absence is not decided here — a record that carries no antecedent is
+    parsed as ``None`` and refused later, and only if it is actually a
+    low-information assent. What is refused here is an antecedent that is
+    present and unusable: malformed fields, provenance that cannot say which
+    two messages the proposal and the response were, a pair that does not place
+    the proposal immediately before the response, or a binding whose identity
+    no longer covers what is stored. Each of those is exactly the ambiguous
+    case that must fail closed.
+
+    ``channel_source`` is the channel's own record of where the response came
+    from, where it keeps one — a host chat turn does. The retained response
+    provenance must then agree with it exactly, so a binding cannot claim a
+    response the channel itself says it is not.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RequestRefusal("malformed-antecedent", f"{what}: antecedent is not an object")
+    text = raw.get("text")
+    scope = raw.get("scope")
+    identity = raw.get("content_identity")
+    if not all(isinstance(value, str) for value in (text, scope, identity)):
+        raise RequestRefusal("malformed-antecedent", f"{what}: antecedent is missing typed fields")
+    source = _antecedent_source(raw.get("source"), what=what, subject="source")
+    response = _antecedent_source(raw.get("response"), what=what, subject="response")
+    order = _antecedent_position(raw.get("order"), what=what, field="order")
+    response_order = _antecedent_position(
+        raw.get("response_order"), what=what, field="response_order"
+    )
+    check_message_adjacency(source, order, response, response_order, what=what)
+    if channel_source is not None and response != channel_source:
+        raise RequestRefusal(
+            "non-adjacent-antecedent",
+            f"{what}: the binding says the response was {response.identity}, "
+            f"but the record was captured as {channel_source.identity}",
+            ASSENT_RECOVERY,
+        )
+    if (
+        antecedent_identity(
+            text=text,
+            scope=scope,
+            source=source,
+            order=order,
+            response=response,
+            response_order=response_order,
+        )
+        != identity
+    ):
+        raise RequestRefusal(
+            "changed-antecedent",
+            f"{what}: antecedent identity does not match its text, exact "
+            "scope, and the provenance of both messages",
+            ASSENT_RECOVERY,
+        )
+    return Antecedent(text, scope, source, order, response, response_order, identity)
+
+
+@dataclass(frozen=True)
 class RequestRecord:
     record_id: str
     request_id: str
@@ -165,6 +415,7 @@ class RequestRecord:
     text: str
     sequence: int
     path: str
+    antecedent: Optional[Antecedent] = None
 
     def as_record(self, *, include_text: bool = True) -> Dict[str, Any]:
         result: Dict[str, Any] = {
@@ -177,6 +428,8 @@ class RequestRecord:
             "sequence": self.sequence,
             "path": self.path,
         }
+        if self.antecedent is not None:
+            result["antecedent"] = self.antecedent.as_record(include_text=include_text)
         if include_text:
             result["text"] = self.text
         return result
@@ -198,6 +451,7 @@ class RequestEvidence:
     source_path: str
     source_content_identity: str
     observed_at: str = ""
+    antecedent: Optional[Antecedent] = None
 
     def as_record(self, *, include_text: bool = True) -> Dict[str, Any]:
         result: Dict[str, Any] = {
@@ -216,6 +470,8 @@ class RequestEvidence:
         }
         if self.observed_at:
             result["observed_at"] = self.observed_at
+        if self.antecedent is not None:
+            result["antecedent"] = self.antecedent.as_record(include_text=include_text)
         if include_text:
             result["text"] = self.text
         return result
@@ -259,9 +515,10 @@ def _record_from_json(path: Path, project_root: Path) -> RequestRecord:
         raise RequestRefusal("changed-request", f"{path.name}: text identity does not match")
     if unit.kind not in UNIT_KINDS or not unit.identifier:
         raise RequestRefusal("malformed-request", f"{path.name}: invalid governed unit")
+    antecedent = _parse_antecedent(data.get("antecedent"), what=path.name)
     relpath = path.relative_to(project_root).as_posix()
     return RequestRecord(record_id, request_id, kind, unit, captured_at, identity,
-                         request_text, sequence, relpath)
+                         request_text, sequence, relpath, antecedent)
 
 
 def load_records(project_root: Path) -> List[RequestRecord]:
@@ -309,6 +566,7 @@ def _record_evidence(project_root: Path, record: RequestRecord) -> RequestEviden
         source_path=record.path,
         source_content_identity=content_identity(source_text.encode("utf-8")),
         observed_at=record.captured_at,
+        antecedent=record.antecedent,
     )
 
 
@@ -357,6 +615,11 @@ def _host_chat_record(path: Path, project_root: Path) -> RequestEvidence:
     raw = excerpt.encode("utf-8")
     if content_identity(raw) != identity:
         raise RequestRefusal("changed-chat-record", f"{path.name}: text identity does not match")
+    antecedent = _parse_antecedent(
+        data.get("antecedent"),
+        what=path.name,
+        channel_source=AntecedentSource(host, conversation, message),
+    )
     return RequestEvidence(
         record_id=record_id,
         kind=kind,
@@ -370,6 +633,7 @@ def _host_chat_record(path: Path, project_root: Path) -> RequestEvidence:
         source_path=path.relative_to(project_root).as_posix(),
         source_content_identity=content_identity(source_text.encode("utf-8")),
         observed_at=observed_at,
+        antecedent=antecedent,
     )
 
 
@@ -792,6 +1056,9 @@ def _resolve_trace(
             continue
         identities.add(evidence.identity)
         unique.append(evidence)
+    # The last gate before selected excerpts become authority for a governed
+    # unit: a detached low-information assent never gets there.
+    _enforce_antecedent_binding(unique)
     return [replace(evidence, sequence=index) for index, evidence in enumerate(unique, start=1)]
 
 
@@ -1394,9 +1661,12 @@ def _low_information_responses() -> frozenset:
     """The closed grammar of content-free operator approvals.
 
     Owned by ``protocol/assignment-prompt-contract.json`` so the assignment
-    composer and this renderer agree on one list. A missing or malformed
-    contract degrades to an empty set: every record then renders verbatim,
-    which is the safe direction.
+    composer, this renderer, and the host intake boundary agree on one list.
+    The grammar decides which records must carry an antecedent to count as
+    evidence at all, so an unreadable contract cannot degrade to "nothing is
+    low-information" — that would silently readmit the detached assent this
+    guard exists to refuse. It fails closed by name instead; the remedy is an
+    intact installation, not a looser rule.
     """
     contract_path = (
         Path(__file__).resolve().parents[1]
@@ -1406,16 +1676,123 @@ def _low_information_responses() -> frozenset:
     try:
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         values = contract["low_information_responses"]
-    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
-        return frozenset()
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RequestRefusal(
+            "unreadable-assent-grammar",
+            f"assignment-prompt-contract.json does not supply the "
+            f"low-information response grammar: {exc}",
+            "reinstall or repair the shipped protocol contract",
+        )
+    if not isinstance(values, list) or not values:
+        raise RequestRefusal(
+            "unreadable-assent-grammar",
+            "assignment-prompt-contract.json supplies an empty low-information "
+            "response grammar",
+            "reinstall or repair the shipped protocol contract",
+        )
     return frozenset(
         str(value).casefold() for value in values if isinstance(value, str)
     )
 
 
-def _is_low_information(text: str) -> bool:
+def is_low_information(text: str) -> bool:
+    """One closed grammar, shared by the host intake boundary, the trace
+    resolver's assent gate, and the renderer."""
     normalized = " ".join(text.split()).strip(" .!,'\"").casefold()
     return normalized in _low_information_responses()
+
+
+ASSENT_RECOVERY = (
+    "capture a new, self-contained operator instruction stating the intent in "
+    "full; a low-information response is authority only when it is retained "
+    "and evaluated together with the complete immediately preceding question "
+    "or proposal and that proposal's exact scope"
+)
+
+SCOPE_RECOVERY = (
+    "restate the exact scope as a verbatim span of the retained proposal, or "
+    "capture a new, self-contained operator instruction stating the intent in "
+    "full"
+)
+
+
+def _collapsed(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def scope_exceeds_antecedent(scope: str, antecedent_text: str) -> bool:
+    """True when the declared exact scope is not stated by the proposal itself.
+
+    The exact scope is a quotation, not a summary: it must appear verbatim in
+    the retained proposal, modulo whitespace and case. That is the one
+    decidable form of "authorizes nothing the proposal does not contain". A
+    scope written in words the proposal never used asserts something the
+    operator was never asked, and no reading of the two strings can settle
+    whether it stays inside the proposal, so it fails closed instead.
+    """
+    return _collapsed(scope) not in _collapsed(antecedent_text)
+
+
+def check_antecedent_completeness(record_id: str, antecedent: Antecedent) -> None:
+    """The semantic half of the binding, shared by intake and resolution.
+
+    Structure and integrity are settled at parse time; what is decided here is
+    whether the retained pair can bound an assent at all — a proposal that
+    states nothing, a scope that states nothing, and a scope that states more
+    than the proposal does.
+    """
+    if not antecedent.text.strip() or is_low_information(antecedent.text):
+        raise RequestRefusal(
+            "ambiguous-antecedent",
+            f"{record_id} retains no complete question or proposal "
+            "to evaluate its assent against",
+            ASSENT_RECOVERY,
+        )
+    if not antecedent.scope.strip():
+        raise RequestRefusal(
+            "ambiguous-antecedent",
+            f"{record_id} retains an antecedent proposal with no "
+            "exact scope, so what the assent covers cannot be decided",
+            ASSENT_RECOVERY,
+        )
+    if scope_exceeds_antecedent(antecedent.scope, antecedent.text):
+        raise RequestRefusal(
+            "scope-exceeds-antecedent",
+            f"{record_id} declares an exact scope the retained proposal does "
+            "not state, so the assent would be read as authorizing a detail "
+            "absent from what the operator was asked",
+            SCOPE_RECOVERY,
+        )
+
+
+def _enforce_antecedent_binding(trace: Sequence[RequestEvidence]) -> None:
+    """Fail closed on any low-information assent that cannot carry authority.
+
+    A response such as "yes", "continue", or "proceed" states no intent of its
+    own. It is admitted as operator evidence only bound to the complete
+    immediately preceding question or proposal and that proposal's exact
+    scope; detached, missing, or ambiguous antecedent context is refused here
+    rather than promoted into standalone intent, and the refusal names the one
+    remedy — a new, self-contained operator instruction.
+
+    This runs over the resolved trace, so it covers every channel that can
+    become authority: stored request records, host chat turns, and decision
+    quotes alike. A quoted excerpt has no antecedent to bind, so a decision
+    that quotes a bare assent is detached by construction.
+    """
+    for record in trace:
+        if not is_low_information(record.text):
+            continue
+        antecedent = record.antecedent
+        if antecedent is None:
+            raise RequestRefusal(
+                "detached-assent",
+                f"{record.record_id} is a low-information operator response "
+                "with no retained antecedent; it is not standalone evidence "
+                "of intent",
+                ASSENT_RECOVERY,
+            )
+        check_antecedent_completeness(record.record_id, antecedent)
 
 
 def render_sections(
@@ -1459,18 +1836,41 @@ def render_sections(
             ]
             if record.observed_at:
                 lines.append(f"Observed at: {record.observed_at}")
-            # Coder assignments are execution interfaces: a content-free
-            # approval ("continue", "yes") adds no task-specific constraint,
-            # so its identity is bound above but the words are not pasted.
-            # Review channels keep every record verbatim — request-alignment
-            # verification compares against the exact operator words.
-            if review_kind == "task-assignment" and _is_low_information(record.text):
+            # A low-information assent is never rendered alone, in any
+            # channel: the words "yes" carry no scope, so the complete
+            # proposal they answer travels with them and bounds them. Every
+            # other record renders verbatim.
+            if is_low_information(record.text) and record.antecedent is not None:
+                antecedent = record.antecedent
+                antecedent_fence = _fence(antecedent.text)
                 lines += [
                     "",
-                    "Low-information operator approval — it adds no "
-                    "task-specific constraint. The verbatim text is retained "
-                    "under the content identity above and remains available "
-                    "to independent review.",
+                    f"Antecedent scope: {antecedent.scope}",
+                    f"Antecedent provenance: {antecedent.source.identity} "
+                    f"(message {antecedent.order}, answered at message "
+                    f"{antecedent.response_order})",
+                    f"Response provenance: {antecedent.response.identity} "
+                    f"(message {antecedent.response_order})",
+                    f"Antecedent content identity: {antecedent.identity}",
+                    "",
+                    "Complete immediately preceding question or proposal:",
+                    "",
+                    antecedent_fence + "text",
+                    antecedent.text,
+                    antecedent_fence,
+                    "",
+                    "Operator response:",
+                    "",
+                    fence + "text",
+                    record.text,
+                    fence,
+                    "",
+                    "This response is a low-information assent. It is evidence "
+                    "only together with the proposal quoted directly above and "
+                    "that proposal's exact scope, and it authorizes nothing "
+                    "the proposal does not contain. Anything absent from that "
+                    "proposal requires a new, self-contained operator "
+                    "instruction.",
                 ]
             else:
                 lines += ["", fence + "text", record.text, fence]

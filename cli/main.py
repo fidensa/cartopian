@@ -71,11 +71,10 @@ SUBCOMMANDS: List[str] = [
     "delete-backlog",
     "archive-plan",
     "reset-plan",
-    # optional cross-plan continuity: the two preservation-bearing closeout
-    # outcomes, its capacity recovery, and the abandoned-attempt release
+    # The plain project-root summary artifact: written at plan close, read
+    # only when the operator explicitly asks for it
     "write-continuity",
-    "prune-continuity",
-    "release-reservation",
+    "read-continuity",
     # Aggregator: next action to take
     "next-action",
     # stdio wait primitives
@@ -191,11 +190,10 @@ def _real_handlers():
         next_action,
         plan_audit,
         prompt_evidence,
-        prune_continuity,
+        read_continuity,
         report_action,
         report_skeleton,
         register_project,
-        release_reservation,
         render_spec,
         reset_plan,
         resolve_config,
@@ -280,23 +278,15 @@ def _real_handlers():
         "move-task": (move_task.configure_parser, move_task.handler),
         "next-action": (next_action.configure_parser, next_action.handler),
         "plan-audit": (plan_audit.configure_parser, plan_audit.handler),
+        "read-continuity": (
+            read_continuity.configure_parser,
+            read_continuity.handler,
+        ),
         "report-action": (report_action.configure_parser, report_action.handler),
         "report-skeleton": (report_skeleton.configure_parser, report_skeleton.handler),
         "register-project": (register_project.configure_parser, register_project.handler),
         "render-spec": (render_spec.configure_parser, render_spec.handler),
         "reset-plan": (reset_plan.configure_parser, reset_plan.handler),
-        "write-continuity": (
-            write_continuity.configure_parser,
-            write_continuity.handler,
-        ),
-        "prune-continuity": (
-            prune_continuity.configure_parser,
-            prune_continuity.handler,
-        ),
-        "release-reservation": (
-            release_reservation.configure_parser,
-            release_reservation.handler,
-        ),
         "resolve-config": (resolve_config.configure_parser, resolve_config.handler),
         "resume-install": (
             resume_install.configure_parser,
@@ -318,6 +308,10 @@ def _real_handlers():
         "wait-handoff": (wait_handoff.configure_parser, wait_handoff.handler),
         "wait-report": (wait_report.configure_parser, wait_report.handler),
         "write-backlog": (write_backlog.configure_parser, write_backlog.handler),
+        "write-continuity": (
+            write_continuity.configure_parser,
+            write_continuity.handler,
+        ),
         "write-decision": (write_decision.configure_parser, write_decision.handler),
         "write-phase": (write_phase.configure_parser, write_phase.handler),
         "write-plan": (write_plan.configure_parser, write_plan.handler),

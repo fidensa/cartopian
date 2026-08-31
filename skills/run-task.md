@@ -168,7 +168,7 @@ Save the emitted record to a file, then write the prompt through the mediated wr
 cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN --task <absolute-in-progress-task-path> --composed-file <record-path>
 ```
 
-The writer verifies the record's content identity and validation state, re-validates the body against the current contract, writes the prompt to the allowlisted `prompts/` destination resolved from `--prompt-id`, and appends the generated exact-request comparison channel — never authored, and audience-scoped: low-information inherited approvals are bound by identity but not pasted, and their verbatim text stays in the trace receipt for independent review. Re-issuing the command overwrites the same prompt in place on a retry.
+The writer verifies the record's content identity and validation state, re-validates the body against the current contract, writes the prompt to the allowlisted `prompts/` destination resolved from `--prompt-id`, and appends the generated exact-request comparison channel — never authored. A low-information inherited approval is rendered only together with the complete immediately preceding question or proposal it answers and that proposal's exact scope; a detached one fails the composition closed. Re-issuing the command overwrites the same prompt in place on a retry.
 
 Do not paste selector JSON, receipts, hashes, rejected candidates, or inactive guidance into any prompt, and do not restate the composed sections in additional prose. If the composer refuses (an unresolvable input, an unsettled spec, a validation finding), fix the named input — the task, spec, standards, config, or captured evidence — and recompose.
 

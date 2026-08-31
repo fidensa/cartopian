@@ -39,7 +39,7 @@ Composition guarantees, enforced fail-closed by validation:
 - Historical source context ("authored against version X") is represented as historical fact; currency claims must be established by the governing record or composition fails.
 - A verification-only assignment under the no-product-git model carries the effective git operating model in its scope boundaries: git versioning is off, product-repository branches are not PM-owned, and pre-existing uncommitted deliverables from earlier completed tasks are the expected steady state — not evidence that the verification handoff modified files.
 
-The generated `## Original operator request (verbatim)` and `## PM-derived guidance and delivered outcome` sections are appended by `write-prompt`, never authored. In the coder channel, a low-information inherited approval ("continue", "yes") is bound by its content identity but not pasted verbatim; the exact text stays in the trace receipt and remains available to independent review. Planned work with no task-specific operator instruction states that derivation explicitly.
+The generated `## Original operator request (verbatim)` and `## PM-derived guidance and delivered outcome` sections are appended by `write-prompt`, never authored. A low-information inherited approval ("continue", "yes") is never rendered alone: it appears together with the complete immediately preceding question or proposal it answers and that proposal's exact scope, and it authorizes nothing absent from that proposal. Planned work with no task-specific operator instruction states that derivation explicitly.
 
 ## Review prompts (authored)
 
