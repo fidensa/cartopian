@@ -10,6 +10,7 @@ from unittest import mock
 
 from cli import config_migration, config_schema
 from cli.commands import migrate_config
+from cli.protocol_gate import read_shipped_project_schema_version
 from mcp_server import server
 from tests.mcp_result import tool_records
 
@@ -132,7 +133,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.12.0"
+                project_cfg["project"]["project_schema_version"], "v0.13.0"
             )
             for migrated_text in (
                 (home / ".cartopian" / "cartopian.toml").read_text(),
@@ -208,6 +209,7 @@ class TestConfigurationMigration(unittest.TestCase):
             "config-v0.9-to-v0.10",
             "config-v0.10-to-v0.11",
             "config-v0.11-to-v0.12",
+            "config-v0.12-to-v0.13",
         ],
             )
             config_migration.execute_configuration_migration(
@@ -225,7 +227,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.12.0"
+                migrated["project"]["project_schema_version"], "v0.13.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -638,6 +640,7 @@ timeout = "45m"
                     "config-v0.9-to-v0.10",
                     "config-v0.10-to-v0.11",
                     "config-v0.11-to-v0.12",
+                    "config-v0.12-to-v0.13",
                 ],
             )
             source = dict(plan.source_effective)
@@ -673,7 +676,7 @@ timeout = "45m"
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.12.0"
+                migrated["project"]["project_schema_version"], "v0.13.0"
             )
 
             before_rerun = path.read_bytes()
@@ -752,7 +755,7 @@ timeout = "45m"
                 self.assertNotIn("# migrated legacy:", path.read_text())
             self.assertEqual(
                 records[0]["details"]["plan"]["entries"][0]["identity"],
-                "config-v0.12-partial-repair",
+                "config-v0.13-partial-repair",
             )
 
             before_rerun = _config_bytes(home, project)
@@ -788,7 +791,7 @@ timeout = "30m"
             self.assertEqual(public_result["status"], "complete")
             self.assertEqual(
                 public_plan["entries"][0]["identity"],
-                "config-v0.12-partial-repair",
+                "config-v0.13-partial-repair",
             )
             self.assertIn(
                 "superseded-role-launch",
@@ -1285,7 +1288,7 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.12.0"
+                migrated["project"]["project_schema_version"], "v0.13.0"
             )
 
     def test_conforming_standards_advance_v010_to_v011(self):
@@ -1303,10 +1306,14 @@ class TestStandardsAdmissionGate(unittest.TestCase):
             # marker in one pass.
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.10-to-v0.11", "config-v0.11-to-v0.12"],
+                [
+                    "config-v0.10-to-v0.11",
+                    "config-v0.11-to-v0.12",
+                    "config-v0.12-to-v0.13",
+                ],
             )
             self.assertEqual(plan.marker_update["from"], "v0.10.0")
-            self.assertEqual(plan.marker_update["to"], "v0.12.0")
+            self.assertEqual(plan.marker_update["to"], "v0.13.0")
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
             )
@@ -1315,7 +1322,7 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.12.0"
+                migrated["project"]["project_schema_version"], "v0.13.0"
             )
 
 
@@ -1412,13 +1419,13 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
             self.assertEqual(plan.status, "planned")
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.11-to-v0.12"],
+                ["config-v0.11-to-v0.12", "config-v0.12-to-v0.13"],
             )
             self.assertIn(
                 "delivery-contract-declared", plan.entries[0].validation_gates
             )
             self.assertEqual(plan.marker_update["from"], "v0.11.0")
-            self.assertEqual(plan.marker_update["to"], "v0.12.0")
+            self.assertEqual(plan.marker_update["to"], "v0.13.0")
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
             )
@@ -1427,7 +1434,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                 tomllib.loads(
                     (project / "cartopian.toml").read_text(encoding="utf-8")
                 )["project"]["project_schema_version"],
-                "v0.12.0",
+                "v0.13.0",
             )
             # Idempotent: re-planning a migrated project is a no-op that
             # advances nothing and reports the marker already current.
@@ -1449,7 +1456,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                 project, home_root=home
             )
             self.assertEqual(plan.status, "planned")
-            self.assertEqual(plan.marker_update["to"], "v0.12.0")
+            self.assertEqual(plan.marker_update["to"], "v0.13.0")
 
     def test_honest_mid_flight_record_still_migrates(self):
         """A declared record reporting an unreached state is migratable.
@@ -1474,7 +1481,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                         project, home_root=home
                     )
                     self.assertEqual(plan.status, "planned", msg=plan.diagnostics)
-                    self.assertEqual(plan.marker_update["to"], "v0.12.0")
+                    self.assertEqual(plan.marker_update["to"], "v0.13.0")
 
     def test_changelog_head_names_the_new_entry(self):
         changelog = (
@@ -1482,8 +1489,8 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
         ).read_text(encoding="utf-8")
         _, _, body = changelog.partition("\n## Entries\n")
         heads = re.findall(r"^### (v\d+\.\d+\.\d+)\b", body, re.MULTILINE)
-        self.assertEqual(heads[0], "v0.12.0")
-        entry = body.partition("### v0.11.0")[0]
+        self.assertEqual(heads[0], read_shipped_project_schema_version())
+        entry = body.partition(f"### {heads[1]}")[0]
         # The entry is a self-contained migration contract per the file's
         # own per-entry schema.
         for field in (
@@ -1495,9 +1502,8 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
             "#### Post-migration validation hint",
         ):
             self.assertIn(field, entry)
-        self.assertIn("write-plan", entry)
-        self.assertIn("project-schema-current", entry)
         # Prepend-only: the prior entries survive unedited beneath it.
+        self.assertIn("### v0.12.0", body)
         self.assertIn("### v0.11.0", body)
         self.assertIn("### v0.10.0", body)
 
@@ -1513,7 +1519,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
             (project / "cartopian.toml").write_text(
                 (project / "cartopian.toml")
                 .read_text(encoding="utf-8")
-                .replace("v0.11.0", "v0.12.0"),
+                .replace("v0.11.0", "v0.13.0"),
                 encoding="utf-8",
             )
             plan = config_migration.plan_configuration_migration(

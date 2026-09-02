@@ -178,10 +178,10 @@ SCHEMA: Dict[str, Tuple[Tuple[str, ...], str, Callable[[str], str]]] = {
         "initiation",
         _schema_enum("automation.initiation"),
     ),
-    "automation.confirmation": (
+    "automation.run_boundary": (
         ("automation",),
-        "confirmation",
-        _schema_enum("automation.confirmation"),
+        "run_boundary",
+        _schema_enum("automation.run_boundary"),
     ),
     "automation.max_handoffs_per_run": (("automation",), "max_handoffs_per_run", _v_posint),
     "defaults.git_versioning": (("defaults",), "git_versioning", _v_bool),

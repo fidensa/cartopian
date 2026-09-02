@@ -38,6 +38,7 @@ class TestClosedSchema(unittest.TestCase):
                 "authored_config_paths": (
                     "project.protocol_version",
                     "protocol_version",
+                    "automation.confirmation",
                     "roles.*.launch",
                     "roles.*.launch.target",
                     "roles.*.launch.model",
@@ -244,7 +245,7 @@ class TestClosedSchema(unittest.TestCase):
 class TestCanonicalResolution(unittest.TestCase):
     def test_precedence_attribution_and_role_projection(self):
         global_cfg = {
-            "automation": {"confirmation": "until-blocked"},
+            "automation": {"run_boundary": "task-complete"},
             "roles": {
                 "coder": {
                     "description": "Global coder.",
@@ -292,8 +293,8 @@ class TestCanonicalResolution(unittest.TestCase):
             record["automation"]["attribution"],
             {
                 "initiation": "protocol-default",
-                "confirmation": "global",
-                "max_handoffs_per_run": "protocol-default",
+                "run_boundary": "global",
+                "max_handoffs_per_run": None,
             },
         )
         coder = record["roles"]["coder"]

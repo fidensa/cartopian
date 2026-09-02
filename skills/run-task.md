@@ -163,4 +163,10 @@ If — and only if — this session surfaced a fact that is about this project's
 
 If git versioning is enabled, perform the configured session-close git behavior for project PM data (`cartopian://protocol/CONVENTIONS/git`); git for the protocol repository itself remains human-owned.
 
-Then continue linearly (`cartopian://protocol/CONVENTIONS/tasks` § Task Execution Order): if the task reached `done`, a next sequential task is ready, and the resolved `[automation]` policy permits (`until-blocked` with run budget remaining), start it from Stage 1 without asking. Otherwise finish with a concise summary naming the task's new status and the exact next protocol action — when the budget is spent, say so and name the task the operator's "continue" will start.
+Then apply the resolved `run_boundary` (`cartopian://protocol/CONVENTIONS/handoffs` § Optional automation policy):
+
+- `run_boundary = "task-complete"`: this run was bound to this task. Reaching `done` ends it successfully — return control without selecting, moving, prompting, or dispatching another task, and name the task's new status and the exact next protocol action. Before `done`, keep continuing whichever configured and authorized activity this same task needs next, whatever kind of work it is; do not ask the operator to re-authorize between activities.
+- `run_boundary = "handoff-budget"`: if the task reached `done`, a next sequential task is ready, and run budget remains, start it from Stage 1 without asking. When the budget is spent, say so and name the task the operator's "continue" will start.
+- `run_boundary = "handoff-complete"`: finish here with a concise summary naming the task's new status and the exact next protocol action.
+
+Under every boundary, a blocker, failed or absent report, missing evidence, operator-reserved decision, or explicit stop ends the run instead.

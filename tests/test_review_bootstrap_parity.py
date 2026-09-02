@@ -41,7 +41,7 @@ from tests.mcp_result import tool_records
 CONFIG = """[project]
 name = "Bootstrap parity"
 id = "bootstrap-parity"
-project_schema_version = "v0.12.0"
+project_schema_version = "v0.13.0"
 
 [reviews]
 planning = "required"

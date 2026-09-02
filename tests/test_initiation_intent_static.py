@@ -90,9 +90,10 @@ class ConventionsIntentClassificationTest(unittest.TestCase):
         # Defaults sentence names the fail-safe resolution rule.
         self.assertIn('Defaults are `initiation = "operator"`', self.text)
 
-    def test_confirmation_does_not_authorize_initiation(self) -> None:
+    def test_run_boundary_does_not_authorize_initiation(self) -> None:
         self.assertIn(
-            "`until-blocked` describes how far an initiated run chains, not whether one starts",
+            "`run_boundary` describes how far an initiated run continues, "
+            "not whether one starts",
             self.text,
         )
 
@@ -152,7 +153,7 @@ class ConfigSurfaceTest(unittest.TestCase):
         self.assertIn('# initiation = "operator"', text)
         # The full unattended recipe is shown as explicit stacked opt-ins.
         self.assertIn('# initiation = "auto"', text)
-        self.assertIn('# confirmation = "until-blocked"', text)
+        self.assertIn('# run_boundary = "handoff-budget"', text)
         self.assertIn("never initiates a run", text)
 
     def test_changelog_preserves_initiation_migration_below_current_entry(self) -> None:
@@ -160,7 +161,7 @@ class ConfigSurfaceTest(unittest.TestCase):
         _, _, body = text.partition("\n## Entries\n")
         m = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
         self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "v0.12.0")
+        self.assertEqual(m.group(1), "v0.13.0")
         self.assertIn("### v0.4.0", body)
         self.assertIn("never choose silently", body)
         self.assertIn('initiation = "auto"', body)

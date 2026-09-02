@@ -201,7 +201,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.12.0"\n'
+        'project_schema_version = "v0.13.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
@@ -397,7 +397,7 @@ class TestDispatchPositive(unittest.TestCase):
                 _toml(str(stub), timeout="30s")
                 + "\n[automation]\n"
                   'initiation = "auto"\n'
-                  'confirmation = "until-blocked"\n'
+                  'run_boundary = "handoff-budget"\n'
                   "max_handoffs_per_run = 1\n",
             )
             task_path = scaffold.write(
@@ -1265,7 +1265,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.12.0"\n'
+            'project_schema_version = "v0.13.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'

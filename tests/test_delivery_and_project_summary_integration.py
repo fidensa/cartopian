@@ -64,7 +64,7 @@ _TOML = (
     "[project]\n"
     'id = "integration-proj"\n'
     'name = "Integration Project"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
 )
 
 # A technical and a nontechnical closeout summary. Both are plain prose: no

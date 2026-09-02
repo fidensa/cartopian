@@ -30,7 +30,7 @@ _TOML = (
     "[project]\n"
     'id = "delivery-proj"\n'
     'name = "Delivery Project"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
 )
 
 # The seven domain-neutral delivery semantics FR-018 requires, plus the two
@@ -740,7 +740,7 @@ class SchemaMigrationGateTest(unittest.TestCase):
     while closeout rejects it for a section the plan was never asked to carry.
     """
 
-    STALE = _TOML.replace("v0.12.0", "v0.11.0")
+    STALE = _TOML.replace("v0.13.0", "v0.11.0")
 
     def _plan_project(self, scaffold, plan_text: str) -> Path:
         scaffold.write("IMPLEMENTATION_PLAN.md", plan_text)
@@ -775,7 +775,7 @@ class SchemaMigrationGateTest(unittest.TestCase):
             plan = self._migration(root, home)
             self.assertEqual(plan.status, "refused")
             self.assertEqual(plan.detected_schema_version, "v0.11.0")
-            self.assertEqual(plan.current_schema_version, "v0.12.0")
+            self.assertEqual(plan.current_schema_version, "v0.13.0")
             self.assertIsNone(plan.marker_update)
             self.assertEqual(
                 plan.diagnostics[0]["code"],
@@ -804,7 +804,7 @@ class SchemaMigrationGateTest(unittest.TestCase):
             self.assertEqual(plan.status, "planned", msg=plan.diagnostics)
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.11-to-v0.12"],
+                ["config-v0.11-to-v0.12", "config-v0.12-to-v0.13"],
             )
             result = config_migration.execute_configuration_migration(
                 root, plan, home_root=home

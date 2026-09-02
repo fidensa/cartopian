@@ -48,10 +48,13 @@ Present the automation choice as two presets, then refine:
 1. **Initiation preset** — "How should sessions start work?"
    - **"Wait for me to start work"** (recommended default) — the PM computes and names the next task but begins execution only on an explicit directive ("continue", "run the next task"). Maps to `initiation = "operator"`; since it is the protocol default, the key may be omitted.
    - **"Automatically start ready work"** — the PM may begin execution without a directive: at session startup and when a scoped operation (e.g. task generation) leaves the queue ready. Maps to `initiation = "auto"`. Informational requests ("what's next?") stay read-only either way, and an explicit "stop"/"pause" always wins.
-2. **Confirmation mode** — `each-handoff` (stop after each result) or `until-blocked` (continue until a blocker, limit, or failed report)? (default: `each-handoff`)
-3. **Max handoffs per run** — How many handoffs may the PM launch in one session? (default: `1`)
+2. **Run boundary** — "What ends one run?" One of three closed answers (default: `handoff-complete`):
+   - `handoff-complete` — the run ends after one handoff reaches a terminal result.
+   - `handoff-budget` — the run chains sequential handoffs until a stop condition or the budget. Requires answer 3.
+   - `task-complete` — the run finishes one task: it continues every configured and authorized activity that task needs to reach `done`, whatever kind of work those activities are, then returns control before touching another task. Takes no budget.
+3. **Max handoffs per run** — ask this **only** when the answer to 2 was `handoff-budget`: how many handoffs may the PM launch in one run? A budget is invalid under either other boundary.
 
-For fully unattended operation the operator must choose each layer explicitly: `initiation = "auto"`, `confirmation = "until-blocked"`, a `max_handoffs_per_run` batch size, and the applicable work types in each role's `auto_launch` list (Step 3). No single answer switches them all on.
+For fully unattended operation the operator must choose each layer explicitly: `initiation = "auto"`, a `run_boundary` that continues past one handoff (`handoff-budget` with a batch size, or `task-complete`), and the applicable work types in each role's `auto_launch` list (Step 3). No single answer switches them all on.
 
 ### Step 5 — Generate workspace config
 
@@ -84,8 +87,8 @@ task_closure = "<required|off>"
 
 [automation]
 # initiation = "<operator|auto>"  # omit for the "operator" default
-confirmation = "<each-handoff|until-blocked>"
-max_handoffs_per_run = <number>
+run_boundary = "<handoff-complete|handoff-budget|task-complete>"
+# max_handoffs_per_run = <number>  # include only with run_boundary = "handoff-budget"
 ```
 
 Write both review modes explicitly so the global choice is visible; include role-assignment keys only for required loops. Use commented-out lines for optional settings the user did not enable. To remove a role from a project, omit its role table. Reminder: projects may override role fields, review policy/assignment, handoff agent/options, and automatic-launch permissions independently.

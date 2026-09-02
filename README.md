@@ -174,13 +174,12 @@ Three separate settings control how much runs without you:
 ```toml
 [automation]
 initiation = "auto"              # a run may begin without you saying "continue"
-confirmation = "until-blocked"   # keep going until something needs a human
-max_handoffs_per_run = 2         # never more than this in one run
+run_boundary = "task-complete"   # one run finishes one task, then hands back
 ```
 
-`initiation` decides **whether a run begins**. `confirmation` controls the **pace** inside a run. `max_handoffs_per_run` is the **ceiling**. Task selection is never gated: Cartopian always takes the first open task in plan order whose dependencies are met, so "what comes next?" is a computation rather than a discussion. A ready queue is not permission to run.
+`initiation` decides **whether a run begins**. `run_boundary` decides **what ends it**, and it has exactly three answers: `handoff-complete` stops after one handoff, `handoff-budget` chains handoffs up to a `max_handoffs_per_run` ceiling you set, and `task-complete` keeps going until the bound task is `done` — through whatever assignments, reviews, evidence, or rework that task actually needs — and then stops before touching another task. You never have to predict how many steps a task will take. Task selection is never gated: Cartopian always takes the first open task in plan order whose dependencies are met, so "what comes next?" is a computation rather than a discussion. A ready queue is not permission to run.
 
-The defaults keep you involved. `initiation = "operator"` means the PM names the next task and waits. `confirmation = "each-handoff"` means one handoff at a time. Asking "what's next?" is always read-only, and "stop" always wins over configuration.
+The defaults keep you involved. `initiation = "operator"` means the PM names the next task and waits. `run_boundary = "handoff-complete"` means one handoff at a time. Asking "what's next?" is always read-only, and "stop" always wins over configuration.
 
 ## Risk and practice
 
@@ -203,7 +202,7 @@ Cartopian reads a global file, a project file, and an optional machine-local fil
 | `[project]` | Project | Required `name`, `id`, and `project_schema_version`, plus optional `work_roots` names |
 | `[defaults]` | Global or project | The `git_versioning` switch |
 | `[git]` | Global or project | Branch ownership, branch naming, and merge strategy |
-| `[automation]` | Global or project | Run initiation, pace, and the per-run handoff ceiling |
+| `[automation]` | Global or project | Run initiation, the run boundary, and the per-run handoff ceiling |
 | `[roles.<name>]` | Global or project | One flat table per role: description, grants, agent, launch options, and launch permissions |
 | `[reviews]` | Global or project | The two independent review policies and the role assigned to each |
 | `[work_roots]` | Machine-local only | Absolute paths for the names `[project].work_roots` declares |
@@ -227,7 +226,7 @@ work_roots = ["product"]
 
 [automation]
 initiation = "auto"
-confirmation = "until-blocked"
+run_boundary = "handoff-budget"
 max_handoffs_per_run = 2
 
 [reviews]

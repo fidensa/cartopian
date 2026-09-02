@@ -61,7 +61,7 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
         with _Sandbox() as sb:
             _write(
                 sb.home / ".cartopian" / "cartopian.toml",
-                '[automation]\nconfirmation = "until-blocked"\n'
+                '[automation]\nrun_boundary = "handoff-budget"\n'
                 'max_handoffs_per_run = 3\n\n'
                 '[roles.coder]\ndescription = "Global coder."\n'
                 'grants = ["coder-like"]\n',
@@ -93,11 +93,11 @@ class TestHappyPathPreferredResolution(unittest.TestCase):
             record["automation"],
             {
                 "initiation": "operator",
-                "confirmation": "until-blocked",
+                "run_boundary": "handoff-budget",
                 "max_handoffs_per_run": 3,
                 "attribution": {
                     "initiation": "protocol-default",
-                    "confirmation": "global",
+                    "run_boundary": "global",
                     "max_handoffs_per_run": "global",
                 },
             },

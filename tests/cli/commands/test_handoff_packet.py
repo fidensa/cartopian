@@ -21,7 +21,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles.coder]\n"
@@ -161,14 +161,14 @@ class TestHandoffPacketHappyPath(unittest.TestCase):
                     key: rec["automation_policy"][key]
                     for key in (
                         "initiation",
-                        "confirmation",
+                        "run_boundary",
                         "max_handoffs_per_run",
                     )
                 },
                 {
                     "initiation": "operator",
-                    "confirmation": "each-handoff",
-                    "max_handoffs_per_run": 1,
+                    "run_boundary": "handoff-complete",
+                    "max_handoffs_per_run": None,
                 },
             )
             self.assertEqual(rec["reviews"]["planning"]["mode"], "off")
@@ -249,7 +249,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'project_schema_version = "v0.12.0"\n'
+        'project_schema_version = "v0.13.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
@@ -295,14 +295,14 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
                     key: rec["automation_policy"][key]
                     for key in (
                         "initiation",
-                        "confirmation",
+                        "run_boundary",
                         "max_handoffs_per_run",
                     )
                 },
                 {
                     "initiation": "operator",
-                    "confirmation": "each-handoff",
-                    "max_handoffs_per_run": 1,
+                    "run_boundary": "handoff-complete",
+                    "max_handoffs_per_run": None,
                 },
             )
             self.assertEqual(rec["task_id"], "TASK-09-007")
@@ -373,7 +373,7 @@ class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
         "[project]\n"
         'id = "no-handoff-proj"\n'
         'name = "No Handoffs"\n'
-        'project_schema_version = "v0.12.0"\n'
+        'project_schema_version = "v0.13.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks per spec."\n'

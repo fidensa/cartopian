@@ -20,7 +20,7 @@ _MINIMAL_TOML = (
     '[project]\n'
     'id = "test"\n'
     'name = "Test"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
 )
 
 _REVIEW_TOML = (
@@ -914,7 +914,7 @@ class TestPlanAuditStandardsGovernanceReads(unittest.TestCase):
             tmp_path = Path(tmp)
             project = _make_project(tmp_path)
             (project / "cartopian.toml").write_text(
-                (_MINIMAL_TOML + _REVIEW_TOML).replace("v0.12.0", "v0.10.0"),
+                (_MINIMAL_TOML + _REVIEW_TOML).replace("v0.13.0", "v0.10.0"),
                 encoding="utf-8",
             )
             _write(project / "STANDARDS.md", self._CONTAMINATED)

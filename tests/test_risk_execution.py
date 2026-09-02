@@ -160,7 +160,7 @@ class RiskClassifierTests(unittest.TestCase):
         configured = {
             "reviews": {"task_closure": "off", "task_role": "quality"},
             "roles": {"quality": {"grants": ["read"], "auto_launch": []}},
-            "automation": {"initiation": "operator", "confirmation": "each-handoff"},
+            "automation": {"initiation": "operator", "run_boundary": "handoff-complete"},
         }
         before = copy.deepcopy(configured)
 
@@ -305,7 +305,7 @@ class RiskSurfaceParityTests(unittest.TestCase):
                 "[project]\n"
                 'id = "risk-fixture"\n'
                 'name = "Risk fixture"\n'
-                'project_schema_version = "v0.12.0"\n',
+                'project_schema_version = "v0.13.0"\n',
                 encoding="utf-8",
             )
             artifact = root / "artifact.txt"

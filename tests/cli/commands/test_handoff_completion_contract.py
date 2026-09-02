@@ -93,7 +93,7 @@ def _config() -> str:
     return """[project]
 id = "handoff-contract"
 name = "handoff-contract"
-project_schema_version = "v0.12.0"
+project_schema_version = "v0.13.0"
 
 [roles.coder]
 description = "Implements tasks."

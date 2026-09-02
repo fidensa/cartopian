@@ -168,13 +168,15 @@ Every review also compares the work against your own words. Cartopian resolves e
 
 ## Automation
 
-Starting a run, pacing it, allowing a launch, picking the next task, and requiring review are five separate decisions. These three settings own the first two.
+Starting a run, deciding how far it goes, allowing a launch, picking the next task, and requiring review are five separate decisions. These three settings own the first two.
 
 | Field | Accepted values | What it does |
 | --- | --- | --- |
 | `automation.initiation` | `operator`, `auto` | Decides whether a run may begin before you say so. Defaults to operator. |
-| `automation.confirmation` | `each-handoff`, `until-blocked` | Decides how far a started run may continue. Defaults to each-handoff. |
-| `automation.max_handoffs_per_run` | Any whole number above zero | Caps how many handoffs one run may use. Defaults to 1. |
+| `automation.run_boundary` | `handoff-complete`, `handoff-budget`, `task-complete` | Decides what ends one started run. Defaults to handoff-complete. |
+| `automation.max_handoffs_per_run` | Any whole number above zero | Caps how many handoffs one run may launch. Required with handoff-budget, invalid with the other two, so it has no default. |
+
+`handoff-complete` ends the run once one handoff reaches a terminal result. `handoff-budget` chains sequential handoffs until a stop condition or the budget. `task-complete` finishes one task: the run binds to that task when it starts and continues every activity you have already configured and authorized for it — assignment, review, evidence, rework, delivery, or anything else your workflow uses — then hands control back the moment the task reaches `done`, before touching another task. None of the three decides whether a run begins, and none widens any other permission.
 
 Task order is computed, not configured. Cartopian always picks the first open task in plan order whose dependencies are met. A ready task queue does not authorize a run on its own.
 
@@ -229,7 +231,7 @@ A mapping with no matching declaration, a declaration with no mapping, and a rel
 | `--role-auto-launch ROLE=ACTIVITY[,ACTIVITY...]` | That role's automatic-launch permissions. |
 | `--review-planning`, `--review-planning-role` | The planning review policy and its role. |
 | `--review-task-closure`, `--review-task-role` | The task-closure review policy and its role. |
-| `--automation-initiation`, `--automation-confirmation`, `--automation-max-handoffs` | The three automation settings. |
+| `--automation-initiation`, `--automation-run-boundary`, `--automation-max-handoffs` | The three automation settings. `--automation-max-handoffs` requires `--automation-run-boundary handoff-budget`. |
 | `--work-root NAME` | One declared work-root name. Repeatable. |
 | `--git-versioning`, `--git-key KEY=VALUE` | The Git switch and any `[git]` entry. |
 

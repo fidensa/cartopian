@@ -124,7 +124,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 "--role-auto-launch", "coder=task_run",
                 "--role-launch-timeout", "coder=30m",
                 "--automation-initiation", "auto",
-                "--automation-confirmation", "until-blocked",
+                "--automation-run-boundary", "handoff-budget",
                 "--automation-max-handoffs", "5",
                 "--work-root", "build",
                 "--work-root", "docs",
@@ -162,7 +162,7 @@ class TestGenerateConfigHappyPath(unittest.TestCase):
                 data["automation"],
                 {
                     "initiation": "auto",
-                    "confirmation": "until-blocked",
+                    "run_boundary": "handoff-budget",
                     "max_handoffs_per_run": 5,
                 },
             )
@@ -516,18 +516,68 @@ class TestGenerateConfigUsage(unittest.TestCase):
             self.assertEqual(proc.returncode, 2)
             self.assertTrue(proc.stderr.startswith("[usage]"), msg=proc.stderr)
 
-    def test_bad_automation_confirmation_enum(self):
+    def test_bad_automation_run_boundary_enum(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
             proj.mkdir()
             proc = _run(
                 str(proj), "--name", "X", "--id", "x",
-                "--automation-confirmation", "sometimes",
+                "--automation-run-boundary", "sometimes",
                 home=tmp_path,
             )
             self.assertEqual(proc.returncode, 2)
             self.assertTrue(proc.stderr.startswith("[usage]"), msg=proc.stderr)
+
+    def test_max_handoffs_requires_the_budget_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj), "--name", "X", "--id", "x",
+                "--automation-max-handoffs", "3",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("--automation-run-boundary handoff-budget", proc.stderr)
+            self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_max_handoffs_rejected_beside_a_non_budget_boundary(self):
+        for boundary in ("handoff-complete", "task-complete"):
+            with self.subTest(boundary=boundary):
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp_path = Path(tmp)
+                    proj = tmp_path / "proj"
+                    proj.mkdir()
+                    proc = _run(
+                        str(proj), "--name", "X", "--id", "x",
+                        "--automation-run-boundary", boundary,
+                        "--automation-max-handoffs", "3",
+                        home=tmp_path,
+                    )
+                    self.assertEqual(proc.returncode, 2)
+                    self.assertIn(
+                        "automation.max_handoffs_per_run", proc.stderr
+                    )
+                    self.assertFalse((proj / "cartopian.toml").exists())
+
+    def test_task_complete_boundary_is_written_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj), "--name", "X", "--id", "x",
+                "--automation-run-boundary", "task-complete",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            with (proj / "cartopian.toml").open("rb") as fh:
+                data = tomllib.load(fh)
+            self.assertEqual(
+                data["automation"], {"run_boundary": "task-complete"}
+            )
 
     def test_bad_automation_initiation_enum(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -567,6 +617,7 @@ class TestGenerateConfigUsage(unittest.TestCase):
             proj.mkdir()
             proc = _run(
                 str(proj), "--name", "X", "--id", "x",
+                "--automation-run-boundary", "handoff-budget",
                 "--automation-max-handoffs", "0",
                 home=tmp_path,
             )
@@ -639,7 +690,7 @@ class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
             )
             self._assert_rejected(proc, proj, "--automation-initiation")
 
-    def test_repeated_automation_confirmation_rejected(self):
+    def test_repeated_automation_run_boundary_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             proj = tmp_path / "proj"
@@ -647,11 +698,11 @@ class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
-                "--automation-confirmation", "each-handoff",
-                "--automation-confirmation", "until-blocked",
+                "--automation-run-boundary", "handoff-complete",
+                "--automation-run-boundary", "task-complete",
                 home=tmp_path,
             )
-            self._assert_rejected(proc, proj, "--automation-confirmation")
+            self._assert_rejected(proc, proj, "--automation-run-boundary")
 
     def test_repeated_automation_max_handoffs_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -661,6 +712,7 @@ class TestGenerateConfigRepeatedSingleValuedFlags(unittest.TestCase):
             proc = _run(
                 str(proj),
                 "--name", "X", "--id", "x",
+                "--automation-run-boundary", "handoff-budget",
                 "--automation-max-handoffs", "1",
                 "--automation-max-handoffs", "2",
                 home=tmp_path,

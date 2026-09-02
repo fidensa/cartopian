@@ -1121,7 +1121,7 @@ _TOML_PROJECT = (
     "[project]\n"
     'id = "numbering-fixture"\n'
     'name = "Numbering Fixture"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
     "work_roots = []\n"
 )
 

@@ -50,8 +50,8 @@
 # | `reviews.task_closure` | `required`, `off` |
 # | `reviews.task_role` | role reference |
 # | `automation.initiation` | `operator`, `auto` |
-# | `automation.confirmation` | `each-handoff`, `until-blocked` |
-# | `automation.max_handoffs_per_run` | positive integer |
+# | `automation.run_boundary` | `handoff-complete`, `handoff-budget`, `task-complete` |
+# | `automation.max_handoffs_per_run` | positive integer, only with `handoff-budget` |
 # | `defaults.git_versioning` | boolean |
 # | `git.pm_owns_product_branches` | boolean |
 # | `git.default_branch_pattern` | non-empty string |
@@ -96,24 +96,32 @@
 #   startup and when a scoped operation (e.g. task generation) leaves the
 #   queue ready. Informational requests ("what's next?") never start work
 #   under either value, and an explicit "stop"/"pause" always wins.
-# confirmation: when the PM pauses to confirm with the operator before
-#   dispatching the next handoff within an initiated run. Protocol
-#   default: "each-handoff".
-# max_handoffs_per_run: hard ceiling on consecutive automated handoffs in
-#   a single session. Protocol default: 1.
+# run_boundary: what ends one initiated run. "handoff-complete" (protocol
+#   default) — the run ends after one handoff reaches a terminal result.
+#   "handoff-budget" — the run chains sequential handoffs until a stop
+#   condition or the budget below. "task-complete" — the run binds one task
+#   and continues every configured and authorized activity that task needs
+#   to reach "done", then returns control before touching another task.
+#   It never authorizes initiation, and it widens no other authority.
+# max_handoffs_per_run: the launch budget for one run. Required with
+#   run_boundary = "handoff-budget"; invalid with either other boundary, so
+#   it has no protocol default.
 
 # [automation]
 # initiation = "operator"
-# confirmation = "each-handoff"
-# max_handoffs_per_run = 1
+# run_boundary = "handoff-complete"
 
-# Full unattended recipe — every layer is a separate explicit opt-in
+# Full unattended recipes — every layer is a separate explicit opt-in
 # (none is a protocol default):
 #
 # [automation]
-# initiation = "auto"              # runs may begin without a directive
-# confirmation = "until-blocked"   # runs chain through sequential tasks
-# max_handoffs_per_run = 5         # bounded batch size per run
+# initiation = "auto"                # runs may begin without a directive
+# run_boundary = "handoff-budget"    # runs chain through sequential tasks
+# max_handoffs_per_run = 5           # bounded batch size per run
+#
+# [automation]
+# initiation = "auto"                # runs may begin without a directive
+# run_boundary = "task-complete"     # one run finishes one task, then stops
 #
 # plus the applicable closed `auto_launch` activities on each role the PM
 # should launch.
@@ -186,7 +194,7 @@
 #   auto_launch — closed unique list containing any applicable assigned work
 #                 types: `task_run`, `task_review`, `planning_review`.
 #                 Automatic launch never initiates a run; run initiation,
-#                 confirmation pace, review assignment, and task selection
+#                 run boundary, review assignment, and task selection
 #                 remain separately owned.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
 #

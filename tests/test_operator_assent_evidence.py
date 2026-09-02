@@ -44,7 +44,7 @@ from cli.commands import capture_request
 CONFIG = '''[project]
 name = "Assent"
 id = "assent"
-project_schema_version = "v0.12.0"
+project_schema_version = "v0.13.0"
 
 [reviews]
 planning = "required"

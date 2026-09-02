@@ -96,7 +96,7 @@ class MigrationEntryTest(unittest.TestCase):
     def test_shipped_version_gate_follows_topmost_entry(self) -> None:
         from cli.protocol_gate import read_shipped_project_schema_version
 
-        self.assertEqual(read_shipped_project_schema_version(), "v0.12.0")
+        self.assertEqual(read_shipped_project_schema_version(), "v0.13.0")
 
 
 class StandardsAdmissionWordingTest(unittest.TestCase):

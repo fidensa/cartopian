@@ -14,7 +14,7 @@ _TOML_BASE = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.12.0"\n'
+    'project_schema_version = "v0.13.0"\n'
 )
 
 
@@ -97,19 +97,19 @@ class TestNextActionAutomation(unittest.TestCase):
                         key: records[0]["automation"][key]
                         for key in (
                             "initiation",
-                            "confirmation",
+                            "run_boundary",
                             "max_handoffs_per_run",
                         )
                     },
                     {
                         "initiation": "operator",
-                        "confirmation": "each-handoff",
-                        "max_handoffs_per_run": 1,
+                        "run_boundary": "handoff-complete",
+                        "max_handoffs_per_run": None,
                     },
                 )
 
     def test_automation_reflects_merged_config(self) -> None:
-        global_toml = '[automation]\nconfirmation = "until-blocked"\n'
+        global_toml = '[automation]\nrun_boundary = "handoff-budget"\n'
         project_toml = _TOML_BASE + '\n[automation]\ninitiation = "auto"\nmax_handoffs_per_run = 3\n'
         with _isolated_home(global_toml=global_toml):
             with project_scaffold(cartopian_toml=project_toml) as scaffold:
@@ -120,13 +120,13 @@ class TestNextActionAutomation(unittest.TestCase):
                         key: records[0]["automation"][key]
                         for key in (
                             "initiation",
-                            "confirmation",
+                            "run_boundary",
                             "max_handoffs_per_run",
                         )
                     },
                     {
                         "initiation": "auto",
-                        "confirmation": "until-blocked",
+                        "run_boundary": "handoff-budget",
                         "max_handoffs_per_run": 3,
                     },
                 )

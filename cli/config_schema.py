@@ -32,6 +32,7 @@ MACHINE_RECORD_SCHEMA_VERSION = 1
 LEGACY_AUTHORED_CONFIG_PATHS: Tuple[str, ...] = (
     "project.protocol_version",
     "protocol_version",
+    "automation.confirmation",
     "roles.*.launch",
     "roles.*.launch.target",
     "roles.*.launch.model",
@@ -58,11 +59,24 @@ ROLE_DEFAULTS: "OrderedDict[str, str]" = OrderedDict(
         ),
     )
 )
+# The closed unit that ends one initiated run. `handoff-complete` ends it after
+# one handoff reaches a terminal publication outcome; `handoff-budget` chains
+# sequential handoffs until the required positive budget is spent;
+# `task-complete` binds the run to one task and continues every configured and
+# authorized activity that task needs to reach `done`.
+RUN_BOUNDARY_VALUES: Tuple[str, ...] = (
+    "handoff-complete",
+    "handoff-budget",
+    "task-complete",
+)
+RUN_BOUNDARY_DEFAULT = "handoff-complete"
+# The one boundary a numeric handoff budget belongs to. The budget is required
+# there and invalid everywhere else, so it carries no protocol default.
+BUDGETED_RUN_BOUNDARY = "handoff-budget"
 AUTOMATION_DEFAULTS: "OrderedDict[str, Any]" = OrderedDict(
     (
         ("initiation", "operator"),
-        ("confirmation", "each-handoff"),
-        ("max_handoffs_per_run", 1),
+        ("run_boundary", RUN_BOUNDARY_DEFAULT),
     )
 )
 REVIEW_DEFAULTS: "OrderedDict[str, str]" = OrderedDict(
@@ -317,12 +331,12 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
-                "automation.confirmation",
+                "automation.run_boundary",
                 {
                     "scopes": ("global", "project"),
                     "type": "enum",
-                    "values": ("each-handoff", "until-blocked"),
-                    "default": "each-handoff",
+                    "values": RUN_BOUNDARY_VALUES,
+                    "default": RUN_BOUNDARY_DEFAULT,
                     "merge": "field-override",
                 },
             ),
@@ -331,7 +345,9 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 {
                     "scopes": ("global", "project"),
                     "type": "positive-integer",
-                    "default": 1,
+                    "required_when": (
+                        f'automation.run_boundary = "{BUDGETED_RUN_BOUNDARY}"'
+                    ),
                     "merge": "field-override",
                 },
             ),
@@ -407,7 +423,7 @@ _REVIEW_KEYS = frozenset(
     ("planning", "planning_role", "task_closure", "task_role")
 )
 _AUTOMATION_KEYS = frozenset(
-    ("initiation", "confirmation", "max_handoffs_per_run")
+    ("initiation", "run_boundary", "max_handoffs_per_run")
 )
 _DEFAULT_KEYS = frozenset(("git_versioning",))
 _GIT_KEYS = frozenset(
@@ -484,6 +500,7 @@ def _unknown_keys(
                 )
             if (
                 field == "project.protocol_version"
+                or field == "automation.confirmation"
                 or field == "handoffs"
                 or field.startswith("handoffs.")
                 or _LEGACY_ROLE_LAUNCH_FIELD_RE.fullmatch(field) is not None
@@ -621,15 +638,15 @@ def _validate_automation(raw: Any, scope: str) -> None:
             scope,
             "must be one of operator, auto",
         )
-    if "confirmation" in automation and automation["confirmation"] not in (
-        "each-handoff",
-        "until-blocked",
+    if (
+        "run_boundary" in automation
+        and automation["run_boundary"] not in RUN_BOUNDARY_VALUES
     ):
         _fail(
             "unknown-value",
-            "automation.confirmation",
+            "automation.run_boundary",
             scope,
-            "must be one of each-handoff, until-blocked",
+            f"must be one of {', '.join(RUN_BOUNDARY_VALUES)}",
         )
     if "max_handoffs_per_run" in automation:
         value = automation["max_handoffs_per_run"]
@@ -639,6 +656,21 @@ def _validate_automation(raw: Any, scope: str) -> None:
                 "automation.max_handoffs_per_run",
                 scope,
                 "must be a positive integer",
+            )
+        # A budget authored beside a non-budget boundary in the same file is
+        # unambiguously contradictory, so it is rejected where it is written.
+        # The cross-scope case is decided against the merged boundary in
+        # :func:`resolve_configuration`, the way every other conditional field
+        # (a required review and its role) is decided.
+        boundary = automation.get("run_boundary")
+        if boundary in RUN_BOUNDARY_VALUES and boundary != BUDGETED_RUN_BOUNDARY:
+            _fail(
+                "invalid-combination",
+                "automation.max_handoffs_per_run",
+                scope,
+                f"a handoff budget is valid only with automation.run_boundary "
+                f'= "{BUDGETED_RUN_BOUNDARY}", not {boundary!r}',
+                "remove-budget-or-select-handoff-budget",
             )
 
 
@@ -984,11 +1016,42 @@ def resolve_configuration(
     g_auto = global_cfg.get("automation", {})
     p_auto = project_cfg.get("automation", {})
     automation: Dict[str, Any] = OrderedDict()
-    automation_sources: Dict[str, str] = OrderedDict()
+    automation_sources: Dict[str, Any] = OrderedDict()
     for key, default in AUTOMATION_DEFAULTS.items():
         value, source = _field_value(g_auto, p_auto, key, default)
         automation[key] = value
         automation_sources[key] = source
+    # The handoff budget belongs to exactly one boundary. It is required there
+    # and invalid elsewhere, so the merged boundary — not any single authored
+    # scope — decides whether an authored budget is legal at all.
+    budget, budget_source = _field_value(
+        g_auto, p_auto, "max_handoffs_per_run", None
+    )
+    if automation["run_boundary"] == BUDGETED_RUN_BOUNDARY:
+        if budget is None:
+            _fail(
+                "missing-required",
+                "automation.max_handoffs_per_run",
+                "resolved",
+                f'automation.run_boundary = "{BUDGETED_RUN_BOUNDARY}" requires '
+                "a positive max_handoffs_per_run",
+                "add-budget-or-change-run-boundary",
+            )
+        automation["max_handoffs_per_run"] = budget
+        automation_sources["max_handoffs_per_run"] = budget_source
+    else:
+        if budget is not None:
+            _fail(
+                "invalid-combination",
+                "automation.max_handoffs_per_run",
+                "resolved",
+                f"a handoff budget is valid only with automation.run_boundary "
+                f'= "{BUDGETED_RUN_BOUNDARY}", not '
+                f"{automation['run_boundary']!r}",
+                "remove-budget-or-select-handoff-budget",
+            )
+        automation["max_handoffs_per_run"] = None
+        automation_sources["max_handoffs_per_run"] = None
     automation["attribution"] = automation_sources
 
     g_defaults = global_cfg.get("defaults", {})

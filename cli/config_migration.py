@@ -6,6 +6,14 @@ project's machine-local file.  It converts supported authored vocabulary to
 the authoritative schema in :mod:`cli.config_schema`, validates semantic
 equivalence with the normal resolver, and emits a closed sequence of writes.
 
+The operator-global file is shared by every registered project, so retiring
+vocabulary from it is a registry-level decision.  Where the preferred contract
+cannot state one shared value that preserves every registered project's
+effective behavior, the plan first materializes the affected project's own
+preserved value in that project's committed file — the one other location the
+plan may write, always allowlisted from the registry and never carrying that
+project's schema marker, which its own migration still owns.
+
 Execution accepts only a plan produced by this module.  Every individual file
 write is atomic and content-pinned.  Multi-file progress is recorded beneath
 the governed project, and the project schema marker is always the last write.
@@ -22,7 +30,7 @@ import tomllib
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from cli.atomic_write import (
     DIR_FD_SUPPORTED,
@@ -37,6 +45,8 @@ from cli import delivery_contract, governance_reads
 from cli.capabilities import is_known_grant_name
 from cli.commands._registry import MalformedRegistry, read_registry
 from cli.config_schema import (
+    BUDGETED_RUN_BOUNDARY,
+    RUN_BOUNDARY_DEFAULT,
     ConfigDiagnostic,
     resolve_configuration,
 )
@@ -59,8 +69,22 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.9.0",
     "v0.10.0",
     "v0.11.0",
+    "v0.12.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
+_PEER_SCOPE_PREFIX = "registered-project:"
+# The retired v0.12 pace vocabulary and the boundary each value means, plus
+# the two protocol defaults that applied when a scope authored neither. The
+# defaults are part of the source semantics: an unauthored field was not an
+# absent one.
+LEGACY_CONFIRMATION_BOUNDARIES: "OrderedDict[str, str]" = OrderedDict(
+    (
+        ("each-handoff", "handoff-complete"),
+        ("until-blocked", BUDGETED_RUN_BOUNDARY),
+    )
+)
+LEGACY_CONFIRMATION_DEFAULT = "each-handoff"
+LEGACY_BUDGET_DEFAULT = 1
 PRESERVED_FACTS = (
     "role-descriptions",
     "review-modes-and-roles",
@@ -326,6 +350,46 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         identity="config-v0.12-partial-repair",
         from_identities=("v0.12.0",),
         to_identity="v0.12.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+        ),
+        validation_gates=(
+            "explicit-old-new-agreement",
+            "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
+        ),
+        recovery="resolve conflicting old and preferred definitions, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.12-to-v0.13",
+        from_identities=("v0.12.0",),
+        to_identity="v0.13.0",
+        supported_forms=("preferred", "partial"),
+        transforms=(
+            "confirmation-to-run-boundary",
+            "drop-inert-handoff-budget",
+            "materialize-shared-global-pace-pair",
+            "marker-last-advancement",
+        ),
+        validation_gates=(
+            "closed-run-boundary-vocabulary",
+            "conditional-handoff-budget",
+            "registry-wide-effective-pair-preservation",
+            "effective-semantic-equivalence",
+        ),
+        recovery=(
+            "author the run boundary the effective confirmation value mapped "
+            "to — `handoff-complete`, or `handoff-budget` with the positive "
+            "`max_handoffs_per_run` the project relied on — then rerun"
+        ),
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.13-partial-repair",
+        from_identities=("v0.13.0",),
+        to_identity="v0.13.0",
         supported_forms=("superseded-role-launch", "partial"),
         transforms=(
             "flatten-role-launch-fields",
@@ -647,6 +711,284 @@ def _conflict(
     )
 
 
+def _scope_automation(config: Mapping[str, Any], scope: str) -> Dict[str, Any]:
+    """The scope's authored ``[automation]`` table, or an empty detached one."""
+    automation = config.get("automation")
+    if automation is None:
+        return {}
+    if not isinstance(automation, dict):
+        _diagnose(
+            "malformed-source-value",
+            "automation",
+            scope,
+            "automation must be a table",
+            "repair the automation table",
+        )
+    return automation
+
+
+def _reorder_automation(config: Dict[str, Any]) -> None:
+    """Keep the authored key order the operator sees after a mapping edit."""
+    automation = config.get("automation")
+    if not isinstance(automation, dict):
+        return
+    config["automation"] = OrderedDict(
+        (key, automation[key])
+        for key in ("initiation", "run_boundary", "max_handoffs_per_run")
+        if key in automation
+    )
+
+
+def _positive_budget(value: Any) -> bool:
+    """v0.12's budget domain: a genuine positive integer, never a bool."""
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int)
+        and value > 0
+    )
+
+
+def _source_legacy_boundary(
+    global_automation: Mapping[str, Any],
+    project_automation: Mapping[str, Any],
+) -> Optional[str]:
+    """The boundary one project's effective legacy pace already means.
+
+    Returns ``None`` for any input the deterministic mapping refuses — mixed
+    vocabulary or a pace outside the shipped inventory. The caller uses this
+    only to decide whether the shared global scope may keep a budget, and the
+    mapper itself still owns every diagnostic.
+    """
+    for automation in (global_automation, project_automation):
+        if "run_boundary" in automation:
+            return None
+    pace = project_automation.get(
+        "confirmation",
+        global_automation.get("confirmation", LEGACY_CONFIRMATION_DEFAULT),
+    )
+    return LEGACY_CONFIRMATION_BOUNDARIES.get(pace)
+
+
+def _map_legacy_run_boundary(
+    scopes: Sequence[Tuple[str, Dict[str, Any]]],
+    *,
+    diagnostic_scope: Optional[str] = None,
+    global_budget_shareable: bool = True,
+) -> Dict[str, Tuple[bool, List[Dict[str, str]]]]:
+    """Map the retired ``confirmation`` pace pair onto ``run_boundary``.
+
+    v0.12 resolved ``confirmation`` and ``max_handoffs_per_run`` as two
+    independent ``field-override`` settings, each falling back to its own
+    protocol default. A project could therefore state the pace in one scope
+    and the budget in another — or state neither — and still have exactly one
+    effective behavior. Reading one authored scope at a time refuses those
+    configurations even though nothing about them is ambiguous, so the mapping
+    reads the *effective* legacy pair and then rewrites every authored source
+    to agree with it:
+
+    - ``each-handoff``, authored or defaulted, becomes ``handoff-complete``.
+      Every budget was inert under it, so it is dropped rather than carried
+      into a boundary that rejects it.
+    - ``until-blocked`` becomes ``handoff-budget`` carrying the effective
+      positive budget. The scope that ends up owning the budget is the one
+      whose boundary wins the merged record.
+    - Mixed retired and preferred vocabulary, a pace outside the shipped
+      inventory, and a non-positive effective budget stay refusals. They state
+      two intents or no intent, and neither is guessable.
+
+    The global scope is shared by every registered project, so its budget is
+    not a function of the one project being migrated. ``global_budget_shareable``
+    states whether *every* project registered against this global still
+    resolves to the budgeted boundary. When it does, the shared scope carries
+    the budget v0.12 gave it — authored, or the protocol default it fell back
+    to — so a project that inherits ``handoff-budget`` is never left without
+    one. When it does not, the shared budget is retired and each project that
+    still needs one materializes it in its own scope.
+
+    ``scopes`` is ordered lowest precedence first. Both the target normalizer
+    and the compatibility source model call this, so the effective-equivalence
+    gate compares two independently built records.
+    """
+    configs: "OrderedDict[str, Dict[str, Any]]" = OrderedDict(scopes)
+    automations: "OrderedDict[str, Dict[str, Any]]" = OrderedDict(
+        (label, _scope_automation(config, diagnostic_scope or label))
+        for label, config in configs.items()
+    )
+
+    def _authored(key: str) -> Optional[str]:
+        """The highest-precedence scope authoring ``key``, if any."""
+        for label in reversed(automations):
+            if key in automations[label]:
+                return label
+        return None
+
+    confirmation_scope = _authored("confirmation")
+    boundary_scope = _authored("run_boundary")
+    budget_scope = _authored("max_handoffs_per_run")
+
+    unchanged = {label: (False, []) for label in automations}
+    if confirmation_scope is None:
+        # Already the preferred vocabulary, or nothing retired to interpret.
+        # A lone budget still needs the default pace applied to it below.
+        if boundary_scope is not None or budget_scope is None:
+            return unchanged
+    elif boundary_scope is not None:
+        _conflict(
+            "automation.run_boundary",
+            diagnostic_scope or boundary_scope,
+            "automation.confirmation",
+            "automation.run_boundary",
+        )
+
+    for label, automation in automations.items():
+        pace = automation.get("confirmation")
+        if pace is not None and pace not in LEGACY_CONFIRMATION_BOUNDARIES:
+            _diagnose(
+                "unknown-source-value",
+                "automation.confirmation",
+                diagnostic_scope or label,
+                "confirmation value is outside the supported migration "
+                "inventory",
+                "restore each-handoff or until-blocked, then rerun",
+            )
+
+    effective_pace = (
+        automations[confirmation_scope]["confirmation"]
+        if confirmation_scope is not None
+        else LEGACY_CONFIRMATION_DEFAULT
+    )
+    effective_boundary = LEGACY_CONFIRMATION_BOUNDARIES[effective_pace]
+    effective_budget = (
+        automations[budget_scope]["max_handoffs_per_run"]
+        if budget_scope is not None
+        else LEGACY_BUDGET_DEFAULT
+    )
+    if effective_boundary == BUDGETED_RUN_BOUNDARY and not _positive_budget(
+        effective_budget
+    ):
+        _diagnose(
+            "ambiguous-source-value",
+            "automation.max_handoffs_per_run"
+            if budget_scope is not None
+            else "automation.confirmation",
+            diagnostic_scope or (budget_scope or confirmation_scope),
+            "until-blocked maps to a numeric run budget, and the effective "
+            "max_handoffs_per_run is not a positive integer",
+            "author the positive max_handoffs_per_run this project relied "
+            "on, then rerun",
+        )
+
+    changed = {label: False for label in automations}
+    facts: Dict[str, List[Dict[str, str]]] = {
+        label: [] for label in automations
+    }
+
+    def _record(label: str, field_name: str, form: str) -> None:
+        changed[label] = True
+        facts[label].append(
+            {"scope": label, "field": field_name, "form": form}
+        )
+
+    def _attach(label: str) -> None:
+        """Keep a scope's automation table reachable from its config."""
+        config = configs[label]
+        if config.get("automation") is not automations[label]:
+            config["automation"] = automations[label]
+
+    for label, automation in automations.items():
+        if "confirmation" not in automation:
+            continue
+        automation["run_boundary"] = LEGACY_CONFIRMATION_BOUNDARIES[
+            automation.pop("confirmation")
+        ]
+        _record(label, "automation.confirmation", "legacy-confirmation-pace")
+
+    global_automation = automations.get("global", {})
+    project_automation = automations.get("project", {})
+
+    # The shared scope decides its own budget. It keeps one only while its own
+    # mapped boundary is the budgeted one and every registered project still
+    # resolves to that boundary; the value is the budget v0.12 resolved for
+    # the global scope itself, which is its authored budget or the protocol
+    # default it fell back to.
+    if (
+        global_automation.get("run_boundary") == BUDGETED_RUN_BOUNDARY
+        and global_budget_shareable
+    ):
+        if "max_handoffs_per_run" not in global_automation:
+            global_automation["max_handoffs_per_run"] = LEGACY_BUDGET_DEFAULT
+            _attach("global")
+            _record(
+                "global",
+                "automation.max_handoffs_per_run",
+                "carried-legacy-handoff-budget",
+            )
+    elif "max_handoffs_per_run" in global_automation:
+        global_automation.pop("max_handoffs_per_run")
+        _record(
+            "global",
+            "automation.max_handoffs_per_run",
+            "inert-legacy-handoff-budget",
+        )
+
+    own_boundary = project_automation.get("run_boundary")
+    if "max_handoffs_per_run" in project_automation and not (
+        effective_boundary == BUDGETED_RUN_BOUNDARY
+        and own_boundary in (None, BUDGETED_RUN_BOUNDARY)
+    ):
+        project_automation.pop("max_handoffs_per_run")
+        _record(
+            "project",
+            "automation.max_handoffs_per_run",
+            "inert-legacy-handoff-budget",
+        )
+
+    # What the two rewritten scopes now merge to must still be the effective
+    # legacy pair. The boundary is a closed consequence of the authored paces;
+    # the budget is the one field the shared scope may no longer be able to
+    # carry, so the project scope materializes it.
+    merged_boundary = (
+        project_automation.get("run_boundary")
+        or global_automation.get("run_boundary")
+        or RUN_BOUNDARY_DEFAULT
+    )
+    if merged_boundary != effective_boundary:
+        _diagnose(
+            "ambiguous-source-value",
+            "automation.run_boundary",
+            diagnostic_scope or "resolved",
+            "the mapped scopes do not merge to the effective legacy boundary",
+            "state one unambiguous legacy pace, then rerun",
+        )
+    if merged_boundary == BUDGETED_RUN_BOUNDARY:
+        merged_budget = project_automation.get(
+            "max_handoffs_per_run",
+            global_automation.get("max_handoffs_per_run"),
+        )
+        if merged_budget != effective_budget:
+            if "project" not in automations:
+                _diagnose(
+                    "ambiguous-source-value",
+                    "automation.max_handoffs_per_run",
+                    diagnostic_scope or "resolved",
+                    "the effective handoff budget has no scope that can own it",
+                    "author the positive max_handoffs_per_run this project "
+                    "relied on, then rerun",
+                )
+            project_automation["max_handoffs_per_run"] = effective_budget
+            _attach("project")
+            _record(
+                "project",
+                "automation.max_handoffs_per_run",
+                "carried-legacy-handoff-budget",
+            )
+
+    for label, config in configs.items():
+        if changed[label]:
+            _reorder_automation(config)
+    return {label: (changed[label], facts[label]) for label in automations}
+
+
 def _normalize_roles_and_handoffs(
     config: Dict[str, Any], scope: str
 ) -> Tuple[Dict[str, Any], bool, List[Dict[str, str]], List[Tuple[str, Dict[str, Any]]]]:
@@ -853,6 +1195,9 @@ def _normalize_roles_and_handoffs(
     elif "roles" in target:
         target.pop("roles")
         changed = True
+
+    # The retired pace pair resolved across scopes, so it is mapped once over
+    # both canonical records rather than one file at a time.
     return target, changed, facts, permission_sources
 
 
@@ -1448,6 +1793,8 @@ def _resolve_compatibility_configuration(
     project_raw: Mapping[str, Any],
     local_raw: Mapping[str, Any],
     detected_marker: Optional[str],
+    *,
+    global_budget_shareable: bool = True,
 ) -> Dict[str, Any]:
     """Resolve true source semantics through the versioned compatibility model."""
     global_cfg, global_permissions = _compatibility_normalize_scope(
@@ -1455,6 +1802,11 @@ def _resolve_compatibility_configuration(
     )
     project_cfg, project_permissions = _compatibility_normalize_scope(
         project_raw
+    )
+    _map_legacy_run_boundary(
+        (("global", global_cfg), ("project", project_cfg)),
+        diagnostic_scope="source",
+        global_budget_shareable=global_budget_shareable,
     )
     project_table = project_cfg["project"]
     project_table.pop("protocol_version", None)
@@ -1715,6 +2067,22 @@ class _TomlEditor:
             f"{_toml_value(value)}{suffix}{line_ending}"
         )
 
+    def remove_key(self, table: str, key: str) -> None:
+        """Retire one key line, taking the comments attached above it."""
+        index = self._key_index(table, key)
+        if index is None:
+            return
+        bounds = self._bounds(table)
+        assert bounds is not None
+        _header, start, _end = bounds
+        removal_start = index
+        while (
+            removal_start > start
+            and self.lines[removal_start - 1].lstrip().startswith("#")
+        ):
+            removal_start -= 1
+        del self.lines[removal_start : index + 1]
+
     def remove_table(self, table: str) -> None:
         bounds = self._bounds(table)
         if bounds is None:
@@ -1758,6 +2126,41 @@ class _TomlEditor:
 
     def bytes(self) -> bytes:
         return "".join(self.lines).encode("utf-8")
+
+
+def _apply_automation_edits(
+    editor: "_TomlEditor",
+    raw_automation: Mapping[str, Any],
+    target_automation: Mapping[str, Any],
+) -> None:
+    """Move one scope's `[automation]` pace pair onto the preferred contract.
+
+    `confirmation` becomes `run_boundary` in place, so the operator's own
+    leading and inline comments stay attached to the setting they describe.
+    """
+    if "confirmation" in raw_automation and "run_boundary" in target_automation:
+        editor.set_key(
+            "automation",
+            "run_boundary",
+            target_automation["run_boundary"],
+            rename_from="confirmation",
+        )
+    if (
+        "max_handoffs_per_run" in raw_automation
+        and "max_handoffs_per_run" not in target_automation
+    ):
+        editor.remove_key("automation", "max_handoffs_per_run")
+    # A budget the other scope authored can land here when this scope is the
+    # one whose boundary wins the merge and therefore owns it.
+    if (
+        "max_handoffs_per_run" in target_automation
+        and "max_handoffs_per_run" not in raw_automation
+    ):
+        editor.add_key(
+            "automation",
+            "max_handoffs_per_run",
+            target_automation["max_handoffs_per_run"],
+        )
 
 
 def _render_preserving(
@@ -1840,6 +2243,13 @@ def _render_preserving(
         if key not in raw_reviews:
             editor.add_key("reviews", key, value)
 
+    raw_automation = raw.get("automation", {})
+    if not isinstance(raw_automation, dict):
+        raw_automation = {}
+    _apply_automation_edits(
+        editor, raw_automation, target.get("automation", {})
+    )
+
     editor.remove_legacy_tables()
     editor.remove_legacy_tombstones()
 
@@ -1858,6 +2268,146 @@ def _render_preserving(
         _diagnose(
             "comment-preserving-transform-unavailable",
             "<root>",
+            scope,
+            "bounded migration edits cannot represent this supported source layout",
+            "simplify the legacy layout without removing operator comments",
+        )
+    return result
+
+
+@dataclass(frozen=True)
+class _RegisteredPeer:
+    """Another registered project that resolves against the same global scope."""
+
+    project_id: str
+    root: Path
+    path: Path
+    before: bytes
+    raw: Dict[str, Any]
+    automation: Dict[str, Any]
+
+
+def _registered_automation_peers(
+    project_root: Path, home: Path
+) -> Tuple["_RegisteredPeer", ...]:
+    """Every other registered project sharing this operator-global scope.
+
+    Unresolvable, unregistered and unreadable entries are deliberately left
+    out here: the existing registered-project impact gate already owns their
+    diagnostics, and it runs before any write is planned.
+    """
+    try:
+        entries = read_registry(home / ".cartopian" / "projects.json")
+    except MalformedRegistry:
+        return ()
+    current_real = os.path.realpath(os.fspath(project_root))
+    peers: List[_RegisteredPeer] = []
+    seen: set[str] = set()
+    for entry in entries:
+        project_id = str(entry["id"])
+        root = Path(str(entry["path"]))
+        try:
+            registered_real = os.path.realpath(
+                os.fspath(root.resolve(strict=True))
+            )
+        except OSError:
+            continue
+        if registered_real == current_real or registered_real in seen:
+            # Two ids naming one root are one file, and one file takes one
+            # content-pinned write.
+            continue
+        seen.add(registered_real)
+        path = root / "cartopian.toml"
+        try:
+            before, raw = _read_scope(path, "project", required=True)
+        except MigrationDiagnostic:
+            continue
+        automation = raw.get("automation")
+        peers.append(
+            _RegisteredPeer(
+                project_id,
+                root,
+                path,
+                before,
+                raw,
+                automation if isinstance(automation, dict) else {},
+            )
+        )
+    return tuple(sorted(peers, key=lambda peer: peer.project_id))
+
+
+def _peer_automation_target(
+    peer: "_RegisteredPeer",
+    global_source_automation: Mapping[str, Any],
+    global_target_automation: Mapping[str, Any],
+    budget_shareable: bool,
+) -> Optional[Dict[str, Any]]:
+    """The ``[automation]`` table a peer must author to keep its own pair.
+
+    The peer is mapped through the same effective-pair reader as the project
+    being migrated, against the same shared-global decision. That is what
+    makes the sequence order-independent: whichever project is migrated first
+    computes one global target, and every other project's preserved pair is
+    materialized against that same target rather than against a global the
+    next migration would have chosen differently.
+    """
+    probe_global: Dict[str, Any] = {
+        "automation": copy.deepcopy(dict(global_source_automation))
+    }
+    probe_project: Dict[str, Any] = {}
+    if isinstance(peer.raw.get("automation"), dict):
+        probe_project["automation"] = copy.deepcopy(peer.raw["automation"])
+    _map_legacy_run_boundary(
+        (("global", probe_global), ("project", probe_project)),
+        diagnostic_scope=f"{_PEER_SCOPE_PREFIX}{peer.project_id}",
+        global_budget_shareable=budget_shareable,
+    )
+    if probe_global.get("automation", {}) != dict(global_target_automation):
+        _diagnose(
+            "shared-global-boundary-divergence",
+            "automation",
+            f"{_PEER_SCOPE_PREFIX}{peer.project_id}",
+            (
+                f"registered project {peer.project_id!r} does not agree on the "
+                "prospective shared automation scope"
+            ),
+            (
+                "resolve the differing authored automation vocabulary in the "
+                "named project, then rerun"
+            ),
+        )
+    return probe_project.get("automation")
+
+
+def _render_automation_materialization(
+    before: bytes,
+    raw: Mapping[str, Any],
+    target: Mapping[str, Any],
+    scope: str,
+) -> bytes:
+    """Rewrite only the ``[automation]`` pair of an otherwise untouched file.
+
+    A peer's own migration still owns its roles, handoffs and schema marker.
+    This write exists solely to keep the peer's effective boundary and budget
+    byte-equivalent across the shared-global rewrite, so it edits nothing else.
+    """
+    editor = _TomlEditor(before)
+    raw_automation = raw.get("automation")
+    target_automation = target.get("automation")
+    _apply_automation_edits(
+        editor,
+        raw_automation if isinstance(raw_automation, dict) else {},
+        target_automation if isinstance(target_automation, dict) else {},
+    )
+    result = editor.bytes()
+    try:
+        parsed = tomllib.loads(result.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        parsed = None
+    if parsed != target:
+        _diagnose(
+            "comment-preserving-transform-unavailable",
+            "automation",
             scope,
             "bounded migration edits cannot represent this supported source layout",
             "simplify the legacy layout without removing operator comments",
@@ -1923,9 +2473,19 @@ def _global_write_impacts(
     home: Path,
     global_after: bytes,
     registered_projects: Sequence[Mapping[str, Any]],
+    *,
+    materializations: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    budget_shareable: bool = True,
 ) -> Tuple[Dict[str, Any], ...]:
-    """Compare every other project's source record with post-global-write state."""
+    """Compare every other project's source record with post-global-write state.
+
+    ``materializations`` carries the project-scope automation record this plan
+    will write into a named peer before the shared global scope is rewritten,
+    so the comparison is against the state the migration actually produces
+    rather than against a peer this plan is about to leave behind.
+    """
     prospective_global = tomllib.loads(global_after.decode("utf-8"))
+    preserved = materializations or {}
     current_real = os.path.realpath(os.fspath(project_root))
     impacts: List[Dict[str, Any]] = []
     for entry in registered_projects:
@@ -1950,6 +2510,7 @@ def _global_write_impacts(
             registered_path,
             home_root=home,
             _validate_global_inventory=False,
+            _global_budget_shareable=budget_shareable,
         )
         if other_plan.status in ("refused", "pending"):
             diagnostic = (
@@ -1985,9 +2546,10 @@ def _global_write_impacts(
         try:
             prospective_effective = _resolve_compatibility_configuration(
                 prospective_global,
-                other_project_raw,
+                preserved.get(project_id, other_project_raw),
                 other_local_raw,
                 other_plan.detected_schema_version,
+                global_budget_shareable=budget_shareable,
             )
         except ConfigDiagnostic as exc:
             _raise_registered_project_diagnostic(
@@ -2053,6 +2615,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
@@ -2067,6 +2631,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
         if _version_tuple(current) >= (0, 8, 0):
@@ -2079,6 +2645,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.7.0":
         # v0.7 -> v0.8 introduces no configuration key. It advances the marker
         # after the resolver confirms effective behavior is unchanged — the
@@ -2093,6 +2661,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.8.0" and _version_tuple(current) >= (0, 9, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[4])
@@ -2103,6 +2673,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.9.0" and _version_tuple(current) >= (0, 10, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[6])
@@ -2111,18 +2683,30 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.10.0" and _version_tuple(current) >= (0, 11, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[9])
         if _version_tuple(current) >= (0, 12, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == "v0.11.0" and _version_tuple(current) >= (0, 12, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
+        if _version_tuple(current) >= (0, 13, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+    elif detected == "v0.12.0" and _version_tuple(current) >= (0, 13, 0):
+        if has_residual:
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[12])
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
     elif detected == current and has_residual:
-        if current == "v0.12.0":
+        if current == "v0.13.0":
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[14])
+        elif current == "v0.12.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[12])
         elif current == "v0.11.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
@@ -2252,6 +2836,7 @@ def plan_configuration_migration(
     *,
     home_root: Optional[Path] = None,
     _validate_global_inventory: bool = True,
+    _global_budget_shareable: Optional[bool] = None,
 ) -> ConfigurationMigrationPlan:
     """Read and validate all three scopes, returning a deterministic plan."""
     project_root = Path(project_root)
@@ -2478,12 +3063,60 @@ def plan_configuration_migration(
         _check_root_keys(project_raw, "project")
         _check_root_keys(local_raw, "machine-local")
 
+        # The operator-global scope is shared by every registered project, so
+        # the decision to retire or keep its pace pair is a registry-level one.
+        # Reading the whole inventory first is what makes the sequence
+        # executable in either order instead of deadlocking on whichever
+        # project happens to be migrated first.
+        global_source_automation = _scope_automation(global_raw, "global")
+        peers: Tuple[_RegisteredPeer, ...] = ()
+        if _global_budget_shareable is not None:
+            budget_shareable = _global_budget_shareable
+        else:
+            if (
+                _validate_global_inventory
+                and "run_boundary" not in global_source_automation
+                and (
+                    "confirmation" in global_source_automation
+                    or "max_handoffs_per_run" in global_source_automation
+                )
+            ):
+                peers = _registered_automation_peers(project_root, home)
+            boundaries = [
+                _source_legacy_boundary(
+                    global_source_automation, peer.automation
+                )
+                for peer in peers
+            ]
+            boundaries.append(
+                _source_legacy_boundary(
+                    global_source_automation,
+                    _scope_automation(project_raw, "project"),
+                )
+            )
+            budget_shareable = all(
+                boundary == BUDGETED_RUN_BOUNDARY for boundary in boundaries
+            )
+
         global_canonical, global_changed, global_facts, global_permissions = (
             _normalize_roles_and_handoffs(global_raw, "global")
         )
         project_canonical, project_changed, project_facts, project_permissions = (
             _normalize_roles_and_handoffs(marker_checked_project, "project")
         )
+        boundary_mapping = _map_legacy_run_boundary(
+            (("global", global_canonical), ("project", project_canonical)),
+            global_budget_shareable=budget_shareable,
+        )
+        for scope_label, (scope_changed, scope_facts) in (
+            boundary_mapping.items()
+        ):
+            if scope_label == "global":
+                global_changed = global_changed or scope_changed
+                global_facts.extend(scope_facts)
+            else:
+                project_changed = project_changed or scope_changed
+                project_facts.extend(scope_facts)
         if _LEGACY_TOMBSTONE_RE.search(global_before):
             global_changed = True
             global_facts.append(
@@ -2565,7 +3198,11 @@ def plan_configuration_migration(
         target_project["project"]["project_schema_version"] = current_version
         try:
             source_effective = _resolve_compatibility_configuration(
-                global_raw, project_raw, local_raw, detected
+                global_raw,
+                project_raw,
+                local_raw,
+                detected,
+                global_budget_shareable=budget_shareable,
             )
             target_effective = resolve_configuration(
                 global_canonical, target_project, local_canonical
@@ -2591,12 +3228,71 @@ def plan_configuration_migration(
         has_residual = any(state.changed for state in states)
         entries = _entry_chain(detected, current_version, has_residual)
         steps: List[MigrationStep] = []
+        peer_steps: List[MigrationStep] = []
+        peer_facts: List[Dict[str, str]] = []
         global_step: Optional[MigrationStep] = None
         global_after: Optional[bytes] = None
         if global_state.changed:
             global_after = _render_preserving(
                 global_before, global_raw, global_canonical, "global"
             )
+            # Before the shared scope is rewritten, every peer that inherited
+            # its retired pace pair gets that pair materialized in its own
+            # project scope. Nothing else in the peer changes: its roles, its
+            # handoffs and its schema marker stay owned by its own migration.
+            materializations: Dict[str, Dict[str, Any]] = {}
+            global_target_automation = _scope_automation(
+                global_canonical, "global"
+            )
+            for peer in peers:
+                target_automation = _peer_automation_target(
+                    peer,
+                    global_source_automation,
+                    global_target_automation,
+                    budget_shareable,
+                )
+                authored = peer.raw.get("automation")
+                if target_automation == authored or (
+                    target_automation is None and authored is None
+                ):
+                    continue
+                peer_target = copy.deepcopy(peer.raw)
+                if target_automation is None:
+                    peer_target.pop("automation", None)
+                else:
+                    peer_target["automation"] = target_automation
+                peer_after = _render_automation_materialization(
+                    peer.before,
+                    peer.raw,
+                    peer_target,
+                    f"{_PEER_SCOPE_PREFIX}{peer.project_id}",
+                )
+                materializations[peer.project_id] = peer_target
+                peer_facts.append(
+                    {
+                        "scope": f"{_PEER_SCOPE_PREFIX}{peer.project_id}",
+                        "field": "automation",
+                        "form": "inherited-shared-global-pace-pair",
+                    }
+                )
+                peer_steps.append(
+                    MigrationStep(
+                        f"materialize-{peer.project_id}",
+                        "materialize-registered-project",
+                        f"{_PEER_SCOPE_PREFIX}{peer.project_id}",
+                        "cartopian.toml",
+                        peer.path,
+                        peer.root,
+                        peer.before,
+                        peer_after,
+                        (
+                            "parse-target",
+                            "validate-project-scope",
+                            "resolve-equivalence",
+                            "retain-source-marker",
+                        ),
+                    )
+                )
             if _validate_global_inventory:
                 registry_file = home / ".cartopian" / "projects.json"
                 try:
@@ -2614,6 +3310,8 @@ def plan_configuration_migration(
                     home,
                     global_after,
                     registered_projects,
+                    materializations=materializations,
+                    budget_shareable=budget_shareable,
                 )
                 if impacts:
                     summary = ", ".join(
@@ -2688,6 +3386,7 @@ def plan_configuration_migration(
         # effective permissions. The governed-project marker still advances
         # only after both configuration writes.
         if global_step is not None:
+            steps.extend(peer_steps)
             steps.append(global_step)
         if source_marker != current_version:
             marker_before = interim_bytes if structural_change else project_before
@@ -2757,8 +3456,12 @@ def plan_configuration_migration(
             current_schema_version=current_version,
             detected_schema_version=detected,
             entries=entries,
-            source_facts=_source_facts(states),
-            target_facts=_target_facts(states),
+            source_facts=_source_facts(states) + tuple(peer_facts),
+            target_facts=_target_facts(states)
+            + tuple(
+                dict(fact, form="materialized-effective-pair")
+                for fact in peer_facts
+            ),
             steps=tuple(steps),
             validation_gates=tuple(gates),
             marker_update=marker_record,
@@ -2769,6 +3472,15 @@ def plan_configuration_migration(
                     + (
                         ["legacy-review-attribution"]
                         if attribution_changes
+                        else []
+                    )
+                    # Every materialized peer keeps its resolved boundary and
+                    # budget values; what moves is the scope that owns them,
+                    # because the shared global scope can no longer state a
+                    # pair that every registered project agrees with.
+                    + (
+                        ["shared-global-automation-attribution"]
+                        if peer_steps
                         else []
                     )
                 ),
@@ -2794,14 +3506,21 @@ def plan_configuration_migration(
             compatibility_state=compatibility,
         )
 
-def _atomic_write(
+def _validate_write_target(
     path: Path,
     base: Path,
-    before: Optional[bytes],
-    after: bytes,
     *,
     allow_create: bool = False,
-) -> None:
+) -> Tuple[str, bool, Optional[Tuple[int, int]], int]:
+    """Decide every target-safety fact a write needs, without mutating state.
+
+    Containment, parent safety, symlink status, regular-file type, and link
+    count are all readable from the target as it stands, so they are the facts
+    the whole-plan preflight and the last-moment writer share. Returning the
+    canonical parent, existence, leaf identity, and safe mode lets the writer
+    reuse the same decision rather than restate it. Raises the rule the
+    violated guard owns; the caller decides how to surface it.
+    """
     canonical_base = os.path.realpath(os.fspath(base))
     canonical_parent = os.path.realpath(os.fspath(path.parent))
     if (
@@ -2828,12 +3547,29 @@ def _atomic_write(
             )
         expected_leaf = (st.st_dev, st.st_ino)
         safe_mode = (st.st_mode & 0o777) & ~0o111
-        if before is not None and path.read_bytes() != before:
-            raise GuardRefusal(
-                "unexpected-content", "migration target changed after planning"
-            )
     elif not allow_create:
         raise GuardRefusal("missing-target", "migration target disappeared")
+    return canonical_parent, exists, expected_leaf, safe_mode
+
+
+def _atomic_write(
+    path: Path,
+    base: Path,
+    before: Optional[bytes],
+    after: bytes,
+    *,
+    allow_create: bool = False,
+) -> None:
+    canonical_base = os.path.realpath(os.fspath(base))
+    # Revalidated here even when the preflight already decided it: between the
+    # two the target may have been swapped, so this is the TOCTOU check.
+    canonical_parent, exists, expected_leaf, safe_mode = _validate_write_target(
+        path, base, allow_create=allow_create
+    )
+    if exists and before is not None and path.read_bytes() != before:
+        raise GuardRefusal(
+            "unexpected-content", "migration target changed after planning"
+        )
     snapshot = _snapshot_chain(canonical_parent, canonical_base)
     tmp_name = make_tmp_name(path.name)
     kwargs = {
@@ -2988,6 +3724,23 @@ def execute_configuration_migration(
         "global": home / ".cartopian" / "cartopian.toml",
         "project": project_root / "cartopian.toml",
     }
+    if any(
+        step.scope.startswith(_PEER_SCOPE_PREFIX) for step in plan.steps
+    ):
+        # A shared-global rewrite may materialize a peer's preserved pair. The
+        # registry — not the plan — decides which paths that authorizes, so
+        # the allowlist is rebuilt from it at execution time.
+        try:
+            registry = read_registry(home / ".cartopian" / "projects.json")
+        except MalformedRegistry as exc:
+            raise MigrationRefused(
+                "global-impact-unvalidated",
+                "registered-project inventory is malformed",
+            ) from exc
+        for entry in registry:
+            expected_paths[f"{_PEER_SCOPE_PREFIX}{entry['id']}"] = (
+                Path(str(entry["path"])) / "cartopian.toml"
+            )
     if plan.status in ("refused", "pending"):
         diagnostic = plan.diagnostics[0] if plan.diagnostics else {}
         raise MigrationRefused(
@@ -3074,24 +3827,65 @@ def execute_configuration_migration(
                         )
                     }
                 )
+    # Every target is checked against the owned allowlist before the first
+    # write, so a plan that names one non-owned path applies none of its steps.
     for step in plan.steps:
         if step.scope not in expected_paths or step.path != expected_paths[step.scope]:
             raise MigrationRefused(
                 "outside-allowlist", "plan contains a non-owned configuration path"
             )
-        try:
-            current = step.path.read_bytes()
-        except OSError as exc:
-            raise MigrationRefused(
-                "unreadable-target", "configuration target cannot be read"
-            ) from exc
+    # Preflight every planned target's safety and content pin before the first
+    # write. Deciding either at each step's own write would let an earlier step
+    # apply and a later one refuse, leaving the migration half-applied under
+    # the old marker; the whole plan is therefore decided first and refused as
+    # a unit. Steps run in order and two of them may share the project file,
+    # so each target is pinned against what its own predecessors leave behind
+    # rather than against the bytes on disk now.
+    #
+    # Type safety comes first because `read_bytes` cannot see it: it follows a
+    # symlink and reads straight through a hardlink, so a target replaced after
+    # planning by a byte-identical unsafe one satisfies the content pin and
+    # would be refused only by the writer's own guards, one write too late.
+    # The writer's rules and messages are reused verbatim, raised on the
+    # migration's refusal channel so one operator-facing contract describes
+    # both moments.
+    projected: Dict[Path, bytes] = {}
+    validated: Set[Tuple[Path, Path]] = set()
+    planned_statuses: List[str] = []
+    for step in plan.steps:
+        if (step.path, step.base) not in validated:
+            try:
+                # An absent target is left to the read below, which owns the
+                # `unreadable-target` rule for both absence and unreadability.
+                _validate_write_target(step.path, step.base, allow_create=True)
+            except GuardRefusal as refusal:
+                raise MigrationRefused(refusal.rule, refusal.detail) from refusal
+            validated.add((step.path, step.base))
+        if step.path not in projected:
+            try:
+                projected[step.path] = step.path.read_bytes()
+            except OSError as exc:
+                raise MigrationRefused(
+                    "unreadable-target", "configuration target cannot be read"
+                ) from exc
+        current = projected[step.path]
         if current == step.after:
-            operation_status = "recognized-complete"
+            planned_statuses.append("recognized-complete")
         elif current != step.before:
             raise MigrationRefused(
                 "stale-plan", "configuration bytes changed after planning"
             )
         else:
+            planned_statuses.append("applied")
+        projected[step.path] = step.after
+
+    # Failures that cannot be decided from pre-execution state — marker
+    # validation against the interim scopes, and the atomic writer's own
+    # last-moment content pin — stay here, behind marker-last ordering and
+    # the resumable checkpoint. The writer also repeats every safety check
+    # the preflight just made, because a target can be swapped in between.
+    for step, operation_status in zip(plan.steps, planned_statuses):
+        if operation_status == "applied":
             if step.kind == "update-marker":
                 pre_marker = plan_configuration_migration(
                     project_root, home_root=home
@@ -3107,7 +3901,6 @@ def execute_configuration_migration(
                         "current scopes no longer validate for marker advancement",
                     )
             _atomic_write(step.path, step.base, step.before, step.after)
-            operation_status = "applied"
         operation = {
             "id": step.step_id,
             "kind": step.kind,

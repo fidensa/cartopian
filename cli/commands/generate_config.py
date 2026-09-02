@@ -21,6 +21,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.config_schema import (
     AUTO_LAUNCH_ACTIVITIES,
+    BUDGETED_RUN_BOUNDARY,
     CONFIG_SCHEMA,
     ConfigDiagnostic,
     resolve_configuration,
@@ -50,7 +51,7 @@ class _SingleValuedAction(argparse.Action):
     """Store action that rejects a repeated occurrence with `[usage]` exit 2.
 
     The flags `--name`, `--id`, `--automation-initiation`,
-    `--automation-confirmation`, `--automation-max-handoffs`, and
+    `--automation-run-boundary`, `--automation-max-handoffs`, and
     `--git-versioning` are single-valued.
     Choices validation runs before ``__call__`` so enum flags still reject
     bad values first; a second occurrence of any single-valued flag fails
@@ -94,13 +95,15 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            action=_SingleValuedAction,
                            choices=_closed_values("automation.initiation"),
                            help="[automation] initiation")
-    subparser.add_argument("--automation-confirmation", default=None,
+    subparser.add_argument("--automation-run-boundary", default=None,
                            action=_SingleValuedAction,
-                           choices=_closed_values("automation.confirmation"),
-                           help="[automation] confirmation")
+                           choices=_closed_values("automation.run_boundary"),
+                           help="[automation] run_boundary")
     subparser.add_argument("--automation-max-handoffs", default=None,
                            action=_SingleValuedAction,
-                           metavar="N", help="[automation] max_handoffs_per_run (positive int)")
+                           metavar="N",
+                           help="[automation] max_handoffs_per_run (positive int; "
+                                "valid only with --automation-run-boundary handoff-budget)")
     subparser.add_argument("--work-root", action="append", default=[], metavar="NAME",
                            help="Repeatable work-root name")
     subparser.add_argument("--review-planning", default=None,
@@ -377,8 +380,8 @@ def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict
     automation: Dict[str, Any] = {}
     if args.automation_initiation is not None:
         automation["initiation"] = args.automation_initiation
-    if args.automation_confirmation is not None:
-        automation["confirmation"] = args.automation_confirmation
+    if args.automation_run_boundary is not None:
+        automation["run_boundary"] = args.automation_run_boundary
     if args.automation_max_handoffs is not None:
         try:
             n = int(args.automation_max_handoffs)
@@ -390,6 +393,15 @@ def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict
         if n <= 0:
             raise _Usage(
                 f"--automation-max-handoffs must be a positive integer; got: {n}"
+            )
+        # A budget belongs to exactly one boundary. Written without naming that
+        # boundary the generated file resolves to the handoff-complete default,
+        # which accepts no budget — refuse here rather than emit a file that
+        # cannot resolve.
+        if args.automation_run_boundary is None:
+            raise _Usage(
+                "--automation-max-handoffs requires "
+                f"--automation-run-boundary {BUDGETED_RUN_BOUNDARY}"
             )
         automation["max_handoffs_per_run"] = n
 

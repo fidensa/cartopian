@@ -32,6 +32,123 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.13.0 — Domain-neutral task-completion run boundary
+
+- **Protocol version:** `v0.13.0`
+- **One-line summary:** Replaces the ambiguous `[automation] confirmation` pace setting with a closed `run_boundary` contract — `handoff-complete`, `handoff-budget`, `task-complete` — so an operator can approve one run that finishes one task's desired goal without predicting how many assignments or lifecycle activities it will take, in any Cartopian-governed workflow domain.
+
+#### What changed
+
+`[automation] confirmation` is retired. `[automation] run_boundary` replaces it
+and states the unit that ends one initiated run:
+
+- `handoff-complete` — the run ends after one handoff reaches a terminal
+  publication outcome and that result is processed. This is the protocol
+  default and is the exact behavior the retired `each-handoff` value had.
+- `handoff-budget` — the run continues through sequential handoffs until the
+  configured positive `max_handoffs_per_run` budget is exhausted or an earlier
+  stop condition is reached. This is the exact behavior the retired
+  `until-blocked` value had.
+- `task-complete` — the run binds one task at initiation and continues every
+  configured and authorized assignment or lifecycle activity that same task
+  needs to reach `done`, then returns control before acting on another task.
+
+`max_handoffs_per_run` is now conditional rather than universal: it is a
+required positive integer under `run_boundary = "handoff-budget"` and invalid
+under either other boundary. It therefore has no protocol default, and the
+resolved record reports it as `null` outside `handoff-budget`.
+
+`task-complete` is domain-neutral by construction. It names no activity list,
+no artifact kind, and no role names, so a research, marketing, operations,
+policy, or software workflow all continue exactly the activities they have
+already configured and authorized for the bound task. It widens no authority:
+initiation policy, deterministic task ordering, role and capability grants,
+review policy, lifecycle authority, filesystem containment, and Git ownership
+are unchanged, and every existing fail-closed condition still ends the run.
+
+#### Applies when
+
+Applies when `[project].project_schema_version` is numerically less than
+`v0.13.0`. The transform is configuration-only and applies to whichever of the
+operator-global and project files author the retired vocabulary; a project that
+authors neither advances its marker with no configuration edit.
+
+#### Agent-followable migration steps
+
+This entry has **no registered filesystem transform**; do not invoke
+`apply-migration-entry` for it. `cartopian migrate-config` owns the whole
+change, and the mapping is deterministic — no operator interpretation is
+required for a config that authored a supported legacy form.
+
+1. Run `cartopian migrate-config <project-root>` to plan. The planner reports
+   the `config-v0.12-to-v0.13` entry and the exact per-scope edits.
+2. Review the mapping it will apply. `confirmation` and `max_handoffs_per_run`
+   resolved independently across the global and project scopes, each with its
+   own default, so the planner maps the *effective* pair — the pace and budget
+   the project actually ran under, wherever they were authored, including the
+   `each-handoff` and `1` defaults for a field no scope authored:
+   - An effective `each-handoff` becomes `run_boundary = "handoff-complete"`.
+     Every `max_handoffs_per_run` was inert under that pace setting and is
+     removed rather than carried into a boundary that rejects it.
+   - An effective `until-blocked` becomes `run_boundary = "handoff-budget"`
+     carrying the effective positive budget. Each scope that authored
+     `confirmation` keeps the boundary its own value mapped to; a budget whose
+     scope now maps to a non-budget boundary moves to the scope whose boundary
+     wins the merge, so the merged record still means what it meant before.
+   - The operator-global scope is shared by every registered project, so its
+     half of the mapping is decided across the whole registry rather than from
+     the one project being migrated. The shared scope keeps a
+     `max_handoffs_per_run` only while every registered project still resolves
+     to `handoff-budget`; when it does, it carries the budget v0.12 resolved
+     for it, authored or defaulted, so no project inherits a budgeted boundary
+     with no budget. Any registered project whose preserved pair the shared
+     scope can no longer state has that pair materialized in its own
+     `cartopian.toml` first, before the shared source it depended on is
+     retired. Those peer writes change nothing else — not roles, not handoffs,
+     and not the peer's own schema marker, which its own migration still owns.
+     Every project therefore keeps the same resolved boundary and budget, only
+     the scope that owns them can move, and the projects can be migrated in
+     any order.
+3. Resolve any refusal rather than working around it. The planner refuses,
+   without editing anything, when the source cannot be mapped without invention:
+   an effective `until-blocked` whose effective `max_handoffs_per_run` is not a
+   positive integer, a `confirmation` value outside the two shipped ones in any
+   scope, or a configuration that authors both `confirmation` and
+   `run_boundary`. The same rule covers every other registered project, which
+   is named in the diagnostic when it is the one that cannot be mapped. Author
+   the boundary and budget the project actually relied on through
+   `cartopian update-config`, then rerun.
+4. Run `cartopian migrate-config <project-root> --apply`. Operator comments,
+   including the inline comment on the retired key line, stay attached to the
+   renamed setting. The project schema marker is written last.
+5. Decide whether this project wants the new boundary. `task-complete` is opt-in
+   and is set with
+   `cartopian update-config <project-root> --set automation.run_boundary=task-complete`
+   — first `--unset automation.max_handoffs_per_run` if the project carries one,
+   because a budget is invalid outside `handoff-budget`.
+6. Run `cartopian resolve-config <project-root>` and confirm the reported
+   `automation` record, then refresh derived state with
+   `cartopian write-state <project-root>`.
+
+#### Idempotence guarantee
+
+Re-applying the steps to a conforming project is a no-op: no scope authors
+`confirmation` any more, `migrate-config` reports the marker current with no
+planned steps, and `resolve-config` returns the same `automation` record for
+the same files. A project whose pair was materialized during another project's
+migration reports the same resolved boundary and budget; what its attribution
+reports is the scope that now owns them. The migration reads and writes only
+`cartopian.toml` files; no governed-project data is touched, and the rollback
+is to author a supported boundary — `handoff-complete` or `handoff-budget` —
+which reproduces the prior behavior exactly.
+
+#### Post-migration validation hint
+
+`grep -n "confirmation" <project-root>/cartopian.toml ~/.cartopian/cartopian.toml`
+returns nothing, `cartopian migrate-config <project-root>` reports status
+`noop`, and `cartopian resolve-config <project-root>` exits zero with an
+`automation.run_boundary` value from the closed domain.
+
 ### v0.12.0 — Domain-neutral delivery contract
 
 - **Protocol version:** `v0.12.0`

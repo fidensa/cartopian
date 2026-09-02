@@ -16,7 +16,7 @@ The caller supplies: a Cartopian project directory; the role being assigned; the
 
 ## Stage 0 - Resolve Effective Configuration
 
-Run `cartopian resolve-config <project-path>` and read: the resolved `[roles.<role>]` records (description, effective grants, assigned work types, `launch`, `auto_launch`, attribution) and the `[automation]` policy (default `confirmation = "each-handoff"`, `max_handoffs_per_run = 1`).
+Run `cartopian resolve-config <project-path>` and read: the resolved `[roles.<role>]` records (description, effective grants, assigned work types, `launch`, `auto_launch`, attribution) and the `[automation]` policy (default `run_boundary = "handoff-complete"`; `max_handoffs_per_run` is reported only under `run_boundary = "handoff-budget"` and is `null` otherwise).
 
 - Role not declared in `[roles]`: stop and return a blocked outcome ("role not declared in `[roles]`; declare it or assign a different role").
 - Role declared but `launch.agent` unset: return a manual-dispatch outcome — the operator handles execution against the prompt and report paths.
@@ -153,4 +153,6 @@ Every non-accepted outcome has exactly one route:
 
 ## Stage 6 - Automation Policy Boundary
 
-`confirmation = "each-handoff"`: return control to the operator only after the handoff reaches a terminal result and the caller processes it — a nonterminal wait observation does not reach this boundary. `confirmation = "until-blocked"`: the initiated run stays active through every nonterminal observation; after a fully processed terminal result the caller continues only until a blocker, failed report, review rejection, missing evidence, operator-required decision, phase boundary, or the `max_handoffs_per_run` limit. The policy permits sequential continuation only, never concurrent child handoffs.
+The resolved `run_boundary` decides when the initiated run ends; it never decides whether one starts and never widens what the caller may do.
+
+`run_boundary = "handoff-complete"`: return control to the operator only after the handoff reaches a terminal result and the caller processes it — a nonterminal wait observation does not reach this boundary. `run_boundary = "handoff-budget"`: the initiated run stays active through every nonterminal observation; after a fully processed terminal result the caller continues only until a blocker, failed report, review rejection, missing evidence, operator-required decision, phase boundary, or the `max_handoffs_per_run` limit. `run_boundary = "task-complete"`: the run stays active for the one task bound at initiation and the caller continues only activities that apply to that same bound task — it consumes and honors no handoff budget, and it returns control when that task reaches `done`, before anything belonging to another task. Every boundary permits sequential continuation only, never concurrent child handoffs, and every existing fail-closed stop condition still ends the run under all three.

@@ -337,7 +337,8 @@
     "tests/fixtures/config_surfaces/stale-preferred-example.md",
     "tests/mcp_server/test_server.py",
     "tests/test_config_schema_contract.py",
-    "tests/test_config_surface_parity.py"
+    "tests/test_config_surface_parity.py",
+    "tests/test_run_boundary_contract.py"
   ],
   "surfaces": [
     {

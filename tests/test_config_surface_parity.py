@@ -1107,8 +1107,8 @@ class TestSurfaceRegistry(unittest.TestCase):
             ),
             (
                 "protocol/CONVENTIONS.md",
-                'confirmation = "each-handoff"',
-                'confirmation = "sometimes"',
+                'run_boundary = "handoff-complete"',
+                'run_boundary = "sometimes"',
             ),
             (
                 "protocol/CONVENTIONS.md",
@@ -1152,7 +1152,7 @@ class TestCliMcpContractParity(unittest.TestCase):
             "reviews.task_closure": "review_task_closure",
             "reviews.task_role": "review_task_role",
             "automation.initiation": "automation_initiation",
-            "automation.confirmation": "automation_confirmation",
+            "automation.run_boundary": "automation_run_boundary",
             "automation.max_handoffs_per_run": "automation_max_handoffs",
             "defaults.git_versioning": "git_versioning",
             "git.pm_owns_product_branches": "git_key",
@@ -1197,8 +1197,8 @@ class TestCliMcpContractParity(unittest.TestCase):
             fields["automation.initiation"]["values"],
         )
         self.assertEqual(
-            tuple(actions["automation_confirmation"].choices),
-            fields["automation.confirmation"]["values"],
+            tuple(actions["automation_run_boundary"].choices),
+            fields["automation.run_boundary"]["values"],
         )
         self.assertEqual(
             tuple(actions["review_planning"].choices),
@@ -1293,7 +1293,7 @@ class TestCliMcpContractParity(unittest.TestCase):
         self.assertEqual(set(update_config.SCHEMA), scalar_fields)
         for field in (
             "automation.initiation",
-            "automation.confirmation",
+            "automation.run_boundary",
             "reviews.planning",
             "reviews.task_closure",
             "git.default_merge_strategy",
@@ -1341,7 +1341,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.12.0"\n'
+        'project_schema_version = "v0.13.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"
@@ -1359,8 +1359,7 @@ class TestProjectionParity(unittest.TestCase):
         "\n"
         "[automation]\n"
         'initiation = "operator"\n'
-        'confirmation = "each-handoff"\n'
-        "max_handoffs_per_run = 1\n"
+        'run_boundary = "handoff-complete"\n'
     )
 
     def test_bounded_projections_preserve_canonical_facts_and_budgets(self) -> None:

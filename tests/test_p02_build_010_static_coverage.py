@@ -415,8 +415,10 @@ class WaitPrimitiveStaticCoverageTest(unittest.TestCase):
             "Only launches consume",
         ):
             self.assertIn(needle, section)
-        self.assertRegex(section, r"each-handoff.*terminal result.*processed")
-        self.assertRegex(section, r"until-blocked.*remains active")
+        self.assertRegex(
+            section, r"handoff-complete.*terminal result.*processed"
+        )
+        self.assertRegex(section, r"handoff-budget.*remains active")
         self._assert_no_adhoc_polling("CONVENTIONS.md § Handoffs", section)
         self._assert_no_nonterminal_operator_yield(
             "CONVENTIONS.md § Handoffs", section
