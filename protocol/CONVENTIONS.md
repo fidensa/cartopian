@@ -80,35 +80,59 @@ compact record of six operator-owned facts:
 - **binding constraint** — the most important non-negotiable boundary; and
 - **explicit exclusions** — outcomes, users, or surfaces that are out of scope.
 
-The PM consumes the operator's current input and already approved artifacts.
-It reuses facts found there and never asks the operator to repeat a supplied
-fact. Each field has one resolution state: `present`, `missing`, or
-`conflicting`. Equivalent phrasing does not create a conflict, and an existing
-confirmed fact is not discarded merely because later input phrases it
-differently. Multiple beneficiaries are `present` when their priority is
-explicit. An unobservable success signal is unresolved. An exclusion that
-contradicts requested scope is `conflicting`.
+The record is the PM's private completeness checklist, not the shape of the
+conversation. The PM never presents the six fields as a form, never tells the
+operator what a plan requires, and never enumerates the fields while gaps
+remain. The operator sees the record exactly once: as the compact summary
+offered for confirmation after every field is present.
 
-For every unresolved field, the PM states one bounded, labeled working
-assumption and asks only the focused question needed to resolve that missing
-or conflicting fact. This is a conversation, not a blank form. A working
-assumption remains provisional: it does not become operator intent until the
-operator confirms or corrects it. Requirements and implementation planning
-must not lock until all six fields are present and operator confirmation has
-been obtained. The confirmation may cover the complete compact record in one
-exchange; it does not require repeated cross-model confirmation. This
-pre-existing planning-normalization check is PM-derived guidance: it neither
-creates nor substitutes for independently resolved request evidence used by review.
+Each field has one resolution state: `present`, `missing`, or `conflicting`.
+A fact is `present` only when the operator stated it in this or a prior
+exchange or an approved artifact records it. The PM reuses such facts and
+never asks the operator to repeat one. Equivalent phrasing does not create a
+conflict, and an existing confirmed fact is not discarded merely because later
+input phrases it differently. Multiple beneficiaries are `present` when their
+priority is explicit. An unobservable success signal is unresolved. An
+exclusion that contradicts requested scope is `conflicting`.
+
+The PM never supplies an operator-owned fact itself. It does not derive a
+value from the project name, directory or file names, domain conventions, or
+its own expectations of what such a project usually wants, and it does not
+fill a `missing` or `conflicting` field with a working assumption, default,
+placeholder, or provisional reading offered for the operator to accept. A
+gap is closed only by an operator answer. When operator words are ambiguous,
+the PM quotes them and asks what was meant rather than choosing a reading.
+When two supplied facts conflict, the PM shows both and asks which governs.
+
+Gaps are resolved through an interview, one question per turn. Each question
+targets the single unresolved item whose answer most changes the plan, is
+grounded in what the operator has already said, and may carry concrete
+examples or options so it is easy to answer; examples are never recorded as
+the answer. A question may be preceded by one brief insight — a gap, risk,
+contradiction, or alternative the operator has not raised — when that insight
+changes what the operator should decide. Between questions the PM does not
+restate confirmed facts, summarize the conversation, or list what remains.
+When a supplied fact is vague, the next question sharpens it. When the
+operator ends the interview early, unresolved detail becomes recorded open
+questions, but the six facts still gate the lock.
+
+Requirements and implementation planning must not lock until all six fields
+are `present` and the operator has confirmed the complete record. That
+confirmation is one exchange over the whole record; the operator may correct
+any field, and the corrected record is the confirmed one. It does not
+require repeated cross-model confirmation. This pre-existing
+planning-normalization check is PM-derived guidance: it neither creates nor
+substitutes for independently resolved request evidence used by review.
 
 The contract has no numerical confidence field. The PM never requests a
 confidence percentage, model agreement score, or repeated cross-model
 confirmation. Uncertainty is represented only by the resolution states and
-the provisional working assumption.
+the open question that resolves them.
 
-The compact record stores only the six normalized facts, their resolution
-states, and any provisional assumptions. It carries no secrets, unnecessary
-conversation transcript, or unrelated future-phase detail; normal containment
-and deidentification rules continue to apply.
+The compact record stores only the six normalized facts and their resolution
+states. It carries no PM assumptions, secrets, unnecessary conversation
+transcript, or unrelated future-phase detail; normal containment and
+deidentification rules continue to apply.
 
 Request Intent remains the separate side-effect authority. An informational
 request stays read-only, a scoped directive authorizes only its named

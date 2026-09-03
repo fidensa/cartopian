@@ -10,8 +10,7 @@
       {
         "field": "success_signal",
         "prompt": "What observable evidence will show the project succeeded?",
-        "state": "missing",
-        "working_assumption": "Success means operators answer no questions for facts already supplied."
+        "state": "missing"
       }
     ],
     "record": {
@@ -91,8 +90,5 @@
     "requested_scope": [
       "intent-dialogue"
     ]
-  },
-  "working_assumptions": {
-    "success_signal": "Success means operators answer no questions for facts already supplied."
   }
 }

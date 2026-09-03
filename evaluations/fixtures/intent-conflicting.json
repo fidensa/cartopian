@@ -10,8 +10,7 @@
       {
         "field": "outcome",
         "prompt": "Which observable project outcome should govern?",
-        "state": "conflicting",
-        "working_assumption": "The narrower dialogue-only outcome governs until the operator resolves the conflict."
+        "state": "conflicting"
       }
     ],
     "record": {
@@ -102,8 +101,5 @@
     "requested_scope": [
       "intent-dialogue"
     ]
-  },
-  "working_assumptions": {
-    "outcome": "The narrower dialogue-only outcome governs until the operator resolves the conflict."
   }
 }

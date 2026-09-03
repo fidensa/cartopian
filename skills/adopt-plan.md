@@ -100,11 +100,14 @@ evidence. Direct unit-bound evidence takes precedence; planned tasks may inherit
 project evidence only through verified plan ancestry, while unrelated or ad-hoc
 units never do. Mediated writers fail closed only when no applicable exact
 source of any supported kind resolves for the governed unit; resolution adds no
-later operator re-entry, confirmation, safeguard, or new stage. Then normalize
-the operator's input, approved requirements or external requirements source,
-and external plan through the Planning Intent Contract. Follow its reuse,
-resolution-state, focused-question, working-assumption, and exclusion-conflict
-rules. Then summarize the complete compact record together with the phase
+later operator re-entry, confirmation, safeguard, or new stage. Then resolve
+the six compact-intent facts from the operator's input, approved requirements
+or external requirements source, and the external plan under the Planning
+Intent Contract. Reuse every fact the sources supply; ask for every fact they
+do not, one question per turn. Never fill a gap with an assumption or a
+reading offered for the operator to accept, and surface an exclusion that
+contradicts the plan's scope as a question, not a choice. Once all six facts
+are present, summarize the complete compact record together with the phase
 interpretation and obtain operator confirmation. The normalized record is PM-derived guidance and
 never substitutes for resolved request evidence.
 
@@ -114,9 +117,8 @@ For example:
 > <N> phases, starting with '<Phase 1 name>'. Does this match your intent, or
 > should I adjust anything before I generate the files?"
 
-Proceed only after operator confirmation. A working assumption is
-provisional, and the implementation plan must not lock while any compact
-intent field is unresolved or unconfirmed. Explicit corrections retain their
+Proceed only after operator confirmation. The implementation plan must not
+lock while any compact intent field is unresolved or unconfirmed. Explicit corrections retain their
 source provenance and deterministic order before artifacts are revised.
 
 ---

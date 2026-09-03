@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-name-only",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-name-only.json"
+  },
+  "rationale": "Proves a project that has supplied nothing beyond its name yields six open questions and no recorded values, so the PM cannot assume its way to a lock."
+}

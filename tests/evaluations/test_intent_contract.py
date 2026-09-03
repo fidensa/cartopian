@@ -37,6 +37,7 @@ class IntentContractEvaluationTests(unittest.TestCase):
             "intent-partial.json",
             "intent-conflicting.json",
             "intent-excluded-scope.json",
+            "intent-name-only.json",
             "intent-premature-execution.json",
         )
 
@@ -76,9 +77,13 @@ class IntentContractEvaluationTests(unittest.TestCase):
                 self.assertEqual(evaluator.validate(case, ROOT), ())
                 self.assertEqual(evaluator.evaluate(case, ROOT).outcome, "pass")
 
-    def test_confidence_scoring_and_cross_model_confirmation_fail_closed(self) -> None:
+    def test_confidence_scoring_cross_model_and_assumptions_fail_closed(self) -> None:
         evaluator = IntentContractEvaluator()
-        for prohibited in ("confidence_percent", "cross_model_confirmation"):
+        for prohibited in (
+            "confidence_percent",
+            "cross_model_confirmation",
+            "working_assumptions",
+        ):
             with self.subTest(prohibited=prohibited):
                 fixture = self._fixture("intent-complete.json")
                 assert isinstance(fixture, dict)

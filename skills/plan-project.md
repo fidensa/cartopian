@@ -24,7 +24,7 @@ revisions. Do not ask the operator to restate the request later.
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
 - `cartopian://protocol/CONVENTIONS/roles` — role declaration and reviewer resolution (Stage 0).
-- `cartopian://protocol/CONVENTIONS/planning-intent-contract` — compact intent normalization, focused clarification, confirmation, and planning-lock gate (Stages 1-2).
+- `cartopian://protocol/CONVENTIONS/planning-intent-contract` — the six-fact completeness record, the no-assumption interview rules, single confirmation, and planning-lock gate (Stages 1-2).
 - `cartopian://protocol/CONVENTIONS/reviews` — review artifact rules behind the checkpoints.
 - `cartopian://protocol/CONVENTIONS/specs` — spec profile selection and the software-spec authoring boundary (Stage 4).
 - `cartopian://protocol/CONVENTIONS/plan-lifecycle` — the plan, phase, task, and spec generation contract (Stages 2-4).
@@ -84,31 +84,64 @@ If a previous closeout carried forward `STANDARDS.md`, treat it as seed context 
 
 Check if a `REQUIREMENTS.md` exists in the project directory.
 
-- If it exists and is populated (including a reference stub from `adopt-requirements`), treat it as an approved input to compact-intent normalization. Reuse its facts; do not ask the operator to repeat them. Ask whether it remains in force only when its approval or applicability to this planning cycle is genuinely unclear.
+- If it exists and is populated (including a reference stub from `adopt-requirements`), treat it as an approved input to the interview. Reuse its facts; do not ask the operator to repeat them. Ask whether it remains in force only when its approval or applicability to this planning cycle is genuinely unclear.
 - Whether requirements exist or not, continue through Stage 1.2. Existing requirements do not bypass the intent confirmation and planning-lock gate. They also do not replace the captured initiating request.
 
-### 1.2 Resolve compact intent and engage the operator
+### 1.2 Interview the operator
 
-Read `cartopian://protocol/CONVENTIONS/planning-intent-contract`. Normalize
-the operator's input, populated `REQUIREMENTS.md`, approved supporting
-artifacts, and applicable carried-forward standards into the six-field
-Planning Intent Contract.
+Read `cartopian://protocol/CONVENTIONS/planning-intent-contract` (the
+Planning Intent Contract) and apply it exactly. This stage is an interview,
+and it is where Cartopian earns its place: the operator should leave it with a
+better-specified project than they would have written alone. The PM's job is
+to ask the right next question and to notice what the operator has not yet
+considered — not to produce answers.
 
-Apply that contract exactly: reuse present facts, distinguish missing from
-conflicting fields, state one provisional working assumption per unresolved
-field, and ask only its focused resolution question. Obtain operator
-confirmation of the complete record before either planning lock. This is the
-pre-existing check on the PM's normalization, not request-trace evidence and
+**Start from what the operator has actually said.** Take stock silently: the
+operator's request, a populated `REQUIREMENTS.md`, approved supporting
+artifacts, and carried-forward standards. Anything found there is `present`
+and is never asked again; everything else is `missing`. The project name,
+directory, and file names are not facts about intent. If the operator has
+given only a name or a one-line request, open with a single question: what
+they want to build and what problem it solves. Do not begin by listing
+what a plan requires.
+
+**Never fill a gap yourself.** A missing fact is a question, not an
+assumption; the contract's no-assumption rules apply to every field and to
+every requirements detail gathered here. Examples inside a question ("is this
+driven by a deadline, an incident, an audit?") make it easy to answer; they are
+never recorded without the operator's reply.
+
+**One question per turn.** Choose the unresolved item whose answer most
+changes the plan, ask it in one or two sentences, and stop. Precede it with
+one brief insight — a gap, risk, contradiction, cheaper alternative, or
+consequence the operator has not raised — only when that insight changes the
+decision. Cover the six compact-intent facts first (they shape everything
+after), then only the additional detail this project needs: functional
+requirements, non-functional requirements, product model, architecture
+principles, and explicitly deferred decisions. Order by consequence, not by
+list. Do not restate confirmed facts, summarize, or narrate the checklist
+between questions.
+
+**Challenge vague statements.** If the operator says "it should be fast," ask
+"how fast? What's the latency target?" If a success signal cannot be observed,
+ask what would be observed. Push for specificity, because vague requirements
+produce vague plans.
+
+**Know when to stop.** Stop asking when the remaining unknowns can be recorded
+as numbered open questions without making the plan vague, or when the
+operator says they have given enough. The six compact-intent facts still gate
+the lock.
+
+**Confirm the record once.** When all six facts are `present`, present the
+compact record in one short exchange and ask the operator to confirm or
+correct it. This is the only time the six facts appear together, and it is the
+pre-existing check on the PM's normalization — not request-trace evidence and
 not a new review stage.
 
-After the compact record is confirmed, draw out only the additional detail
-needed for this project's functional requirements, non-functional
-requirements, product model, architecture principles, and explicitly deferred
-decisions. Do not repeat compact-intent questions already answered.
-
-**Adapt the remaining dialogue to fit the project.** Not every project needs every section. A documentation project doesn't need architecture principles. A CLI tool might not need non-functional requirements beyond "it runs fast." Use judgment.
-
-**Challenge vague statements.** If the operator says "it should be fast," ask "how fast? What's the latency target?" Push for specificity, because vague requirements produce vague plans.
+**Adapt the interview to fit the project.** Not every project needs every
+section. A documentation project doesn't need architecture principles. A CLI
+tool might not need non-functional requirements beyond "it runs fast." Use
+judgment.
 
 **Supporting documents live in `resources/`.** When the operator supplies or asks for supporting material for planning — research documents, user stories, reference papers, datasets — its durable home is the project's `resources/` directory (`cartopian://protocol/CONVENTIONS/project-resources`), never a work root. Operator-supplied files are placed there by the operator; documents produced through a research task are declared as `project:resources/<path>` deliverables and persisted with `cartopian write-resource`.
 

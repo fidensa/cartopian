@@ -6,11 +6,12 @@
 
 ## Confirmed intent
 
-Record the compact intent already established through conversation and
-approved artifacts. Populate every item before requirements lock; do not
-present this section to the operator as a blank form. This remains PM-derived
-planning guidance; the independent review request channel comes only from the
-host intake record.
+Record the compact intent established through the planning interview and
+approved artifacts. Every value is something the operator stated or confirmed;
+never a PM assumption, default, or inference from the project name. Populate
+every item before requirements lock; do not present this section to the
+operator as a blank form. This remains PM-derived planning guidance; the
+independent review request channel comes only from the host intake record.
 
 - **Outcome:** …
 - **Beneficiary:** …

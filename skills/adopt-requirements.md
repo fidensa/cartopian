@@ -96,15 +96,21 @@ A reference stub is a valid output — it preserves traceability without duplica
 
 ## Step 2 — Clarify and Fill Gaps
 
-Normalize the operator's input and approved external artifacts through the
-Planning Intent Contract. Reuse supplied facts and follow its focused
-missing-versus-conflicting dialogue without deviation. Do not lock
-requirements until its six-field record is complete and confirmed.
+Resolve the six compact-intent facts from the operator's input and the
+approved external artifacts under the Planning Intent Contract. Facts the
+sources supply are `present` and are never asked again. Facts the sources do
+not supply are `missing`: ask for each one, one question per turn, grounded in
+what the source already says. Never fill a gap with an assumption, a default,
+or a reading of the source offered for the operator to accept, and never
+derive a fact from the project or story name. If the source and the operator
+disagree, show both and ask which governs. Present the compact record once
+for confirmation when all six facts are present. Do not lock requirements
+until that record is complete and confirmed.
 
 After confirmation, ask targeted questions only for significant functional,
 non-functional, or deferred-decision gaps that the supplied sources do not
-already answer. Do not interrogate the operator if the input is reasonably
-complete.
+already answer, still one question per turn. Do not interrogate the operator
+if the input is reasonably complete.
 
 If working from a JIRA story, subtasks often map directly to functional requirements — extract them as numbered items.
 

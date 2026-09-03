@@ -10,8 +10,7 @@
       {
         "field": "exclusions",
         "prompt": "Which exclusion should govern, and how should it relate to the requested scope?",
-        "state": "conflicting",
-        "working_assumption": "The explicit CLI-entry exclusion holds until the operator resolves the scope conflict."
+        "state": "conflicting"
       }
     ],
     "record": {
@@ -97,8 +96,5 @@
     "requested_scope": [
       "cli-entry"
     ]
-  },
-  "working_assumptions": {
-    "exclusions": "The explicit CLI-entry exclusion holds until the operator resolves the scope conflict."
   }
 }

@@ -88,6 +88,5 @@
     "operation": "status",
     "requested_phases": [],
     "requested_scope": []
-  },
-  "working_assumptions": {}
+  }
 }

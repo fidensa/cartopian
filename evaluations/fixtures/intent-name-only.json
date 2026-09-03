@@ -1,0 +1,87 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": false,
+    "can_lock_requirements": false,
+    "confirmed": false,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [
+      {
+        "field": "outcome",
+        "prompt": "What observable change should this project produce?",
+        "state": "missing"
+      },
+      {
+        "field": "beneficiary",
+        "prompt": "Who is the primary beneficiary?",
+        "state": "missing"
+      },
+      {
+        "field": "why_now",
+        "prompt": "Why does this need to happen now?",
+        "state": "missing"
+      },
+      {
+        "field": "success_signal",
+        "prompt": "What observable evidence will show the project succeeded?",
+        "state": "missing"
+      },
+      {
+        "field": "binding_constraint",
+        "prompt": "What single non-negotiable boundary must the plan respect?",
+        "state": "missing"
+      },
+      {
+        "field": "exclusions",
+        "prompt": "What is explicitly out of scope?",
+        "state": "missing"
+      }
+    ],
+    "record": {
+      "beneficiary": {
+        "state": "missing",
+        "value": null
+      },
+      "binding_constraint": {
+        "state": "missing",
+        "value": null
+      },
+      "exclusions": {
+        "state": "missing",
+        "value": null
+      },
+      "outcome": {
+        "state": "missing",
+        "value": null
+      },
+      "success_signal": {
+        "state": "missing",
+        "value": null
+      },
+      "why_now": {
+        "state": "missing",
+        "value": null
+      }
+    },
+    "request_class": "scoped",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [],
+    "binding_constraint": [],
+    "exclusions": [],
+    "outcome": [],
+    "success_signal": [],
+    "why_now": []
+  },
+  "operator_confirmation": false,
+  "request": {
+    "active_phase": null,
+    "class": "scoped",
+    "initiation": "operator",
+    "operation": "plan",
+    "requested_phases": [],
+    "requested_scope": []
+  }
+}

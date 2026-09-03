@@ -1,4 +1,10 @@
-"""Model-free regression probe for the compact planning-intent contract."""
+"""Model-free regression probe for the compact planning-intent contract.
+
+The probe checks the contract's derivation logic only: which fields resolve,
+which become questions, and when the record may lock. A field the sources do
+not supply is always a question and never a value; fixtures cannot carry
+working assumptions, because the PM is not permitted to make any.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +43,6 @@ SOURCE_TYPES = frozenset({"operator", "approved-artifact"})
 _FIXTURE_FIELDS = frozenset(
     {
         "intent",
-        "working_assumptions",
         "operator_confirmation",
         "request",
         "expected",
@@ -69,9 +74,7 @@ _EXPECTED_FIELDS = frozenset(
     }
 )
 _RECORD_FIELDS = frozenset({"state", "value"})
-_QUESTION_FIELDS = frozenset(
-    {"field", "state", "working_assumption", "prompt"}
-)
+_QUESTION_FIELDS = frozenset({"field", "state", "prompt"})
 _MISSING_QUESTIONS = {
     "outcome": "What observable change should this project produce?",
     "beneficiary": "Who is the primary beneficiary?",
@@ -113,7 +116,6 @@ class RequestSpec:
 @dataclass(frozen=True)
 class IntentFixture:
     intent: dict[str, tuple[IntentSource, ...]]
-    working_assumptions: dict[str, str]
     operator_confirmation: bool
     request: RequestSpec
     expected: dict[str, JsonValue]
@@ -449,44 +451,6 @@ def _parse_fixture(
         assert sources is not None
         intent[field] = sources
 
-    assumptions_raw = raw["working_assumptions"]
-    if not isinstance(assumptions_raw, dict):
-        return None, _diagnostic(
-            "fixture_invalid_type",
-            "Working assumptions must be an object.",
-        )
-    errors = _unknown_field(
-        assumptions_raw,
-        frozenset(INTENT_FIELDS),
-        "Working assumptions",
-    )
-    if errors:
-        return None, errors
-    for field, value in assumptions_raw.items():
-        if not isinstance(value, str) or not value.strip():
-            return None, _diagnostic(
-                "fixture_invalid_type",
-                f"Working assumption {field!r} must be a non-empty string.",
-            )
-
-    unresolved = {
-        field
-        for field in INTENT_FIELDS
-        if _resolution(field, intent[field], request)[0] != "present"
-    }
-    missing_assumptions = sorted(unresolved - set(assumptions_raw))
-    if missing_assumptions:
-        return None, _diagnostic(
-            "missing_working_assumption",
-            f"Unresolved field {missing_assumptions[0]!r} requires a working assumption.",
-        )
-    extra_assumptions = sorted(set(assumptions_raw) - unresolved)
-    if extra_assumptions:
-        return None, _diagnostic(
-            "unresolved_assumption_mismatch",
-            f"Resolved field {extra_assumptions[0]!r} must not carry a working assumption.",
-        )
-
     if type(raw["operator_confirmation"]) is not bool:
         return None, _diagnostic(
             "fixture_invalid_type",
@@ -498,7 +462,6 @@ def _parse_fixture(
     return (
         IntentFixture(
             intent=intent,
-            working_assumptions=dict(assumptions_raw),
             operator_confirmation=raw["operator_confirmation"],
             request=request,
             expected=dict(raw["expected"]),
@@ -525,7 +488,6 @@ def _evaluate_fixture(fixture: IntentFixture) -> dict[str, JsonValue]:
             {
                 "field": field,
                 "state": state,
-                "working_assumption": fixture.working_assumptions[field],
                 "prompt": (
                     _MISSING_QUESTIONS[field]
                     if state == "missing"
