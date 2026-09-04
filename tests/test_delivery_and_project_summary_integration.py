@@ -741,7 +741,7 @@ class SummaryCliMcpParityTest(unittest.TestCase):
             mcp_absent = self.server.call_tool("read_continuity", {"project_root": root})
             self.assertEqual(tool_records(mcp_absent), cli_absent[1])
             self.assertEqual(
-                mcp_absent["structuredContent"]["exit_code"], cli_absent[0]
+                mcp_absent["_meta"]["exit_code"], cli_absent[0]
             )
             self.assertFalse(mcp_absent["isError"])
 
@@ -762,7 +762,7 @@ class SummaryCliMcpParityTest(unittest.TestCase):
                 "write_continuity",
                 {"project_root": root, "content": _NONTECHNICAL_SUMMARY},
             )
-            self.assertEqual(result["structuredContent"]["exit_code"], 0)
+            self.assertEqual(result["_meta"]["exit_code"], 0)
             record = tool_records(result)[0]
             self.assertEqual(record["action"], "write-continuity")
             self.assertFalse(record["details"]["replaced"])

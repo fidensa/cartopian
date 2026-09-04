@@ -1132,7 +1132,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
 
     Both surfaces resolve through `cli.numbering_contract` — the activation
     seam patched here — and must emit consistent structured verdicts, so the
-    CLI record and the MCP `structuredContent` record are compared directly.
+    CLI record and the MCP record are compared directly.
     """
 
     def _governed_scaffold(self):
@@ -1205,7 +1205,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         self.assertTrue(cli_record["ready"], cli_record["validator_blockers"])
         self.assertEqual(cli_record["validator_blockers"], [])
         self.assertFalse(mcp_result["isError"])
-        structured = mcp_result["structuredContent"]
+        structured = mcp_result["_meta"]
         self.assertEqual(structured["exit_code"], 0)
         # One resolver, one verdict: the MCP dispatch path emits the same
         # structured record the public CLI path emits.
@@ -1262,7 +1262,7 @@ class TestTaskBundleAndMcpDispatch(unittest.TestCase):
         )
         self.assertTrue(mcp_readiness["isError"])
         self.assertEqual(
-            mcp_readiness["structuredContent"]["exit_code"], 1
+            mcp_readiness["_meta"]["exit_code"], 1
         )
         self.assertEqual(
             tool_records(mcp_readiness), [readiness_record]

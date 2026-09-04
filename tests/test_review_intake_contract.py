@@ -838,11 +838,11 @@ class ContainmentParityTests(IntakeFixture):
         cli_code, cli_record, cli_err = self.run_intake(review)
         result = self.intake_tool(review)
         self.assertEqual(cli_code, 1)
-        self.assertEqual(result["structuredContent"]["exit_code"], cli_code)
+        self.assertEqual(result["_meta"]["exit_code"], cli_code)
         self.assertIsNone(cli_record)
         self.assertEqual(tool_records(result), [])
         self.assertEqual(
-            result["structuredContent"]["stderr_lines"],
+            result["_meta"]["stderr_lines"],
             [line for line in cli_err.splitlines() if line],
         )
 

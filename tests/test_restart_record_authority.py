@@ -786,7 +786,7 @@ class PublicRestartVerificationAuthorityTests(unittest.TestCase):
                 "verify_restart_state",
                 {"install_root": str(root), **arguments},
             )
-        structured = response["structuredContent"]
+        structured = response["_meta"]
         records = tool_records(response)
         self.assertTrue(records, msg=structured["stderr_lines"])
         record = records[0]

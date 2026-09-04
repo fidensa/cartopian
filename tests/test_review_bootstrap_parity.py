@@ -560,9 +560,9 @@ class McpParityTests(BootstrapFixture):
         )
         self.assertEqual(cli_code, 1)
         self.assertTrue(result["isError"])
-        self.assertEqual(result["structuredContent"]["exit_code"], cli_code)
+        self.assertEqual(result["_meta"]["exit_code"], cli_code)
         self.assertEqual(
-            result["structuredContent"]["stderr_lines"],
+            result["_meta"]["stderr_lines"],
             [line for line in cli_err.splitlines() if line],
         )
 

@@ -783,7 +783,7 @@ class FixtureAndProjectionTests(unittest.TestCase):
 
         server._TOOL_CACHE = None
         mcp_result = server.call_tool("install_state_contract", {})
-        self.assertEqual(mcp_result["structuredContent"]["exit_code"], 0)
+        self.assertEqual(mcp_result["_meta"]["exit_code"], 0)
         mcp_record = tool_records(mcp_result)[0]
         self.assertEqual(cli_record, mcp_record)
         self.assertEqual(cli_record, contract_projection())

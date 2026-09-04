@@ -1070,7 +1070,7 @@ class CliMcpParityTest(unittest.TestCase):
             path = planned_project(scaffold, "incomplete-nontechnical")
             cli_code, cli_records, _ = run_cli("validate-delivery", path)
             result = server.call_tool("validate_delivery", {"project_root": path})
-            structured = result["structuredContent"]
+            structured = result["_meta"]
             self.assertEqual(structured["exit_code"], cli_code)
             self.assertEqual(tool_records(result), cli_records)
             self.assertTrue(result["isError"])

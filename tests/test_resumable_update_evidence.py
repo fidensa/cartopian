@@ -1352,7 +1352,7 @@ class CliAndMcpParityTests(ResumableProgressTestCase):
             },
         )
         self.assertEqual(
-            response["structuredContent"]["exit_code"], cli_code
+            response["_meta"]["exit_code"], cli_code
         )
         self.assertEqual(
             tool_records(response)[0], cli_record

@@ -1094,7 +1094,7 @@ def call_tool(
             return {
                 "content": [{"type": "text", "text": schema_text}],
                 "isError": False,
-                "structuredContent": {"exit_code": 0, "stderr_lines": []},
+                "_meta": {"exit_code": 0, "stderr_lines": []},
             }
         inner = args.get("arguments")
         if inner is not None and not isinstance(inner, dict):
@@ -1122,10 +1122,15 @@ def call_tool(
 
     # MCP tool result. The records are emitted exactly once, as NDJSON in
     # `content[0].text` — text content is the MCP-baseline result type every
-    # host supports. `structuredContent` carries only small call metadata
-    # (no Cartopian tool declares an `outputSchema`, so nothing depends on a
-    # structured copy of the records); duplicating the full record set there
-    # doubled the size of every tool result on every host.
+    # host supports, and the only result channel `2024-11-05` defines.
+    #
+    # No `structuredContent`: under the structured-output convention that key
+    # is the tool's result rendered against its `outputSchema`, so a host that
+    # honors it treats `structuredContent` as *the* result and ignores
+    # `content`. No Cartopian tool declares an `outputSchema`, so publishing
+    # call metadata there made record-bearing calls arrive at such hosts as an
+    # empty `{"exit_code": 0, "stderr_lines": []}` with every record dropped.
+    # The metadata rides in `_meta` instead, which no host mistakes for output.
     text_lines: List[str] = []
     if result["records"]:
         for record in result["records"]:
@@ -1142,7 +1147,7 @@ def call_tool(
     return {
         "content": [{"type": "text", "text": "\n".join(text_lines)}],
         "isError": is_error,
-        "structuredContent": {
+        "_meta": {
             "exit_code": result["exit_code"],
             "stderr_lines": result["stderr_lines"],
         },

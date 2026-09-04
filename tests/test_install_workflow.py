@@ -879,7 +879,7 @@ class CoordinatedInstallWorkflowTests(unittest.TestCase):
                 },
             },
         )
-        self.assertEqual(response["structuredContent"]["exit_code"], 0)
+        self.assertEqual(response["_meta"]["exit_code"], 0)
         mcp_record = tool_records(response)[0]
         self.assertEqual(cli_record, mcp_record)
         self.assertEqual(

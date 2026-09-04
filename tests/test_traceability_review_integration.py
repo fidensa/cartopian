@@ -521,7 +521,7 @@ The integrated fixture landed.
     def run_mcp(self, tool: str, **kwargs: Any) -> Tuple[int, List[Dict[str, Any]], List[str]]:
         """Invoke the MCP tool of the same name through the real registry."""
         result = mcp.call_tool(tool, kwargs)
-        structured = result["structuredContent"]
+        structured = result["_meta"]
         return (
             structured["exit_code"],
             tool_records(result),

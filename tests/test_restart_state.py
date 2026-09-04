@@ -622,7 +622,7 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
                 "mcp_affecting_change": True,
             },
         )
-        self.assertEqual(response["structuredContent"]["exit_code"], 0)
+        self.assertEqual(response["_meta"]["exit_code"], 0)
         first = tool_records(response)[0]
         self.assertEqual(
             first["restart_state"]["status"], "restart_required"
@@ -643,7 +643,7 @@ class WorkflowRestartIntegrationTests(unittest.TestCase):
             "verify_restart_state",
             {"install_root": str(self.install_root)},
         )
-        self.assertEqual(response["structuredContent"]["exit_code"], 0)
+        self.assertEqual(response["_meta"]["exit_code"], 0)
         second = tool_records(response)[0]
         self.assertEqual(second["restart_state"]["status"], "current")
         self.assertTrue(

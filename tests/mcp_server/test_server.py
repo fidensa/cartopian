@@ -311,7 +311,7 @@ class TestToolSurface(unittest.TestCase):
             )
         self.assertNotIn("error", via_admin)
         self.assertEqual(
-            via_admin["result"]["structuredContent"]["exit_code"], 0
+            via_admin["result"]["_meta"]["exit_code"], 0
         )
         unknown = single(
             "tools/call",
@@ -398,7 +398,7 @@ class TestToolSurface(unittest.TestCase):
                     },
                 )
             self.assertNotIn("error", called)
-            self.assertEqual(called["result"]["structuredContent"]["exit_code"], 0)
+            self.assertEqual(called["result"]["_meta"]["exit_code"], 0)
             record = tool_records(called["result"])[0]
             self.assertEqual(record["details"]["operations"][0]["target"], "CONVENTIONS.md")
             self.assertEqual(record["details"]["validation"]["status"], "passed")
@@ -477,7 +477,7 @@ class TestToolSurface(unittest.TestCase):
             )
             self.assertNotIn("error", stale)
             self.assertEqual(
-                stale["result"]["structuredContent"]["exit_code"], 1
+                stale["result"]["_meta"]["exit_code"], 1
             )
             self.assertEqual(
                 tool_records(stale["result"])[0]["rule"],
@@ -502,7 +502,7 @@ class TestToolSurface(unittest.TestCase):
             )
             self.assertNotIn("error", fixed)
             self.assertEqual(
-                fixed["result"]["structuredContent"]["exit_code"], 0
+                fixed["result"]["_meta"]["exit_code"], 0
             )
             record = tool_records(fixed["result"])[0]
             self.assertTrue(record["ok"])
@@ -562,9 +562,30 @@ class TestToolSurface(unittest.TestCase):
         # contents, but the call must succeed (exit 0) and return a list.
         response = single("tools/call", {"name": "discover_projects", "arguments": {}})
         self.assertNotIn("error", response)
-        sc = response["result"]["structuredContent"]
+        sc = response["result"]["_meta"]
         self.assertEqual(sc["exit_code"], 0)
         self.assertIsInstance(tool_records(response["result"]), list)
+
+    def test_tool_results_carry_no_structured_content(self):
+        # `structuredContent` is the tool's result rendered against its
+        # `outputSchema`. No Cartopian tool declares one, so a host that reads
+        # that key first would take call metadata for the whole result and
+        # silently drop every record. Records live in `content` only; the
+        # metadata lives in `_meta`.
+        for name, arguments in (
+            ("discover_projects", {}),
+            ("admin", {"operation": "generate_config", "describe": True}),
+        ):
+            with self.subTest(tool=name):
+                result = single(
+                    "tools/call", {"name": name, "arguments": arguments}
+                )["result"]
+                self.assertNotIn("structuredContent", result)
+                self.assertIn("_meta", result)
+                self.assertEqual(
+                    sorted(result["_meta"]), ["exit_code", "stderr_lines"]
+                )
+                self.assertTrue(result["content"][0]["text"])
 
     def test_cli_and_mcp_resolve_the_same_reviewer_like_role_record(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -610,7 +631,7 @@ class TestToolSurface(unittest.TestCase):
                         "arguments": {"project_path": str(project)},
                     },
                 )
-            mcp_result = response["result"]["structuredContent"]
+            mcp_result = response["result"]["_meta"]
             self.assertEqual(mcp_result["exit_code"], 0)
             mcp_record = tool_records(response["result"])[0]
 
@@ -778,9 +799,9 @@ class TestToolSurface(unittest.TestCase):
         self.assertNotIn("error", response)
         result = response["result"]
         self.assertTrue(result["isError"])
-        self.assertEqual(result["structuredContent"]["exit_code"], 1)
+        self.assertEqual(result["_meta"]["exit_code"], 1)
         self.assertEqual(tool_records(result), [])
-        stderr_lines = result["structuredContent"]["stderr_lines"]
+        stderr_lines = result["_meta"]["stderr_lines"]
         self.assertEqual(len(stderr_lines), 1)
         self.assertTrue(stderr_lines[0].startswith("[config]"))
         self.assertIn("unknown-key", stderr_lines[0])
@@ -798,7 +819,7 @@ class TestToolSurface(unittest.TestCase):
         self.assertNotIn("error", response)
         result = response["result"]
         self.assertTrue(result["isError"])
-        joined = "\n".join(result["structuredContent"]["stderr_lines"])
+        joined = "\n".join(result["_meta"]["stderr_lines"])
         self.assertTrue(joined.startswith("[usage]"), msg=f"stderr was: {joined!r}")
         self.assertIn("invalid to_status", joined)
 

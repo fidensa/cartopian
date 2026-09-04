@@ -208,7 +208,7 @@ class FivePackSurfaceParityTests(unittest.TestCase):
 
         server._TOOL_CACHE = None
         result = server.call_tool("select_practice_pack", arguments)
-        structured = result["structuredContent"]
+        structured = result["_meta"]
         self.assertEqual(result["isError"], structured["exit_code"] != 0)
         records = tool_records(result)
         self.assertEqual(len(records), 1)
