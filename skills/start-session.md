@@ -35,11 +35,18 @@ You **are** the PM, running interactively with the operator — the PM is never 
 
 ## Stage 2 - Read Session State
 
-Run `cartopian next-action <project-path>` — one record carrying `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `automation`, `blockers`, and `state_filesystem_disagreement`. Its `blockers` field does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` and treat a non-zero exit as a blocker.
+Classify the operator's request first (startup slice § Request Intent), because it decides whether startup may write. Then run `cartopian next-action <project-path>` — one record carrying `project_id`, `project_path`, `phase_id`, `active_task`, `next_open_task`, `next_unstarted_phase`, `plan_complete`, `pm_role`, `pm_role_declared`, `automation`, `blockers`, `planning`, `startup`, `state_reconciled`, and `state_filesystem_disagreement`. Add `--reconcile` only for an execution or scoped directive: it refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed (Situation notes are preserved), so the state you relay already agrees with the directories. An informational request ("what's next?", "give me status") runs `next-action` without `--reconcile` — a question acquires no side effects — and reports any `state_filesystem_disagreement` as the mechanical refresh the operator can authorize. The verdict itself is computed from the filesystem in both cases. The record's `blockers` field does not perform the artifact-chain audit, so also run `cartopian plan-audit <project-path>` and treat a non-zero exit as a blocker.
 
-Present a short summary from the record: project, current phase, active work, open/queued work, resolved `automation` policy, resolved role records, and resolved review policy. Then, before proposing any action:
+The `startup` record is the one authoritative startup result. Relay it as-is — do not re-derive the situation from artifacts, and do not present alternatives it does not name:
 
-- **`state_filesystem_disagreement`** non-null: the filesystem is authoritative. Surface the mismatch and offer the mechanical refresh through the mediated `cartopian write-state <project-root>` — never a raw edit; otherwise ask the operator how to resolve it.
+- **`planning-incomplete`** — `action` is the exact remaining planning step (a checkpoint awaiting its report or verdict, or the phase whose tasks and specs are not generated). Tell the operator precisely that, and route to `plan project` at the named stage on a scoped or execution directive.
+- **`ready`** — `task` and `action` name the exact next task and its dispatch action (automatic dispatch to a role, or a manual handoff). For an open task this has already been proven by the readiness checks and a read-only dispatch rehearsal.
+- **`blocked`** — `detail` is the concrete failure, `owner` the responsible party, `action` the recovery. Surface exactly that and stop.
+- **`plan-complete`** — ask whether to close the plan with `close plan`.
+
+Present a short summary from the record: project, current phase, active work, open/queued work, resolved `automation` policy, resolved role records, and resolved review policy — then the verdict line. Before proposing any action:
+
+- **`state_filesystem_disagreement`** non-null (an informational request, the no-plan project, or a refused reconcile): the filesystem is authoritative. Surface the mismatch and offer the mechanical refresh through the mediated `cartopian write-state <project-root>` (or `next-action --reconcile` once the operator directs work) — never a raw edit; otherwise ask the operator how to resolve it.
 - **`blockers`**: surface each entry and stop. A project-protocol-schema migration blocker is about the governed project's schema: surface it in plain language and, on operator approval, run `migrate project` — do not tell the operator to hand-edit `cartopian.toml`. An `unresolved situation note in STATE.md` entry is PM work, not an operator escalation: act on the note — promote a durable item via `cartopian write-backlog` or `cartopian write-decision`, or drop a stale one — then refresh via `cartopian write-state <project-root>`; escalate only if the note itself requires an operator decision.
 
 Resolve blockers with the operator before any lifecycle action.
@@ -59,8 +66,7 @@ Once execution is initiated, proceed without asking — these are deterministic 
 
 Stop and consult the operator at plan-level forks and reserved decisions:
 
-- No `phase_id` and no plan — ask whether to begin planning with `plan project`.
-- `next_unstarted_phase` non-null — the open queue is empty but a later phase's tasks are not generated; ask whether to generate them now. Do not offer to close the plan in this case.
+- `startup.verdict` is `planning-incomplete` — state its `action` verbatim (no plan yet: begin planning with `plan project`; a checkpoint in flight: wait for or apply its verdict; a phase whose tasks are not generated: generate them now) and ask whether to proceed. Do not offer to close the plan in this case.
 - `plan_complete` true — ask whether to close the plan with `close plan`.
 - `STATE.md` names PM-owned authoring as the next step — ask whether to perform it now; any such authoring routes through the mediated `cartopian write-*` commands named by the owning lifecycle skill.
 - Any unresolved Stage 2 blocker, or a decision the protocol or plan reserves to the operator.

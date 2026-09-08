@@ -2,6 +2,13 @@
 
 Derive, validate, and project one task's acceptance-to-source trace.
 
+Two authoring aids keep the mechanical syntax out of the PM's hands:
+``--enumerate`` lists the material criteria (ordinal, digest, text), the
+authoritative source identities, and each operator excerpt's alias and
+preview; ``--compose-from <mapping.json>`` renders a structured mapping into
+the sorted, escaped, digest-bearing record block and validates it exactly as
+an authored block is validated. Both are read-only.
+
 The command is the single surface both the CLI and the MCP tool registry
 expose for the traceability contract, so the two carry identical identities,
 ordering, fields, exit semantics, and byte receipts. It never writes: the
@@ -14,6 +21,7 @@ offending identity on stderr), and a task that does not declare the contract
 reports its declaration and exits ``EXIT_OK`` without inventing a trace.
 """
 import argparse
+import json
 from pathlib import Path
 
 from cli import acceptance_trace as mechanism
@@ -51,6 +59,27 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         "--anchor",
         action="store_true",
         help="Report the reference-shape conformance anchor and exit.",
+    )
+    parser.add_argument(
+        "--enumerate",
+        action="store_true",
+        dest="enumerate_inputs",
+        help=(
+            "List the material criteria with ordinals and digests, the "
+            "authoritative source identities, and the operator excerpts "
+            "(alias, identity, preview) the record block must map. Read-only."
+        ),
+    )
+    parser.add_argument(
+        "--compose-from",
+        default=None,
+        metavar="MAPPING_JSON",
+        help=(
+            "Absolute path to a JSON mapping (edges, exemptions, dispositions, "
+            "merges, applicability, waivers). Renders the validated fenced "
+            "record block for the task's `## Upstream trace` section without "
+            "writing it."
+        ),
     )
 
 
@@ -114,6 +143,12 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(f"{refusal.rule}: {refusal.detail}")
         return EXIT_FAIL
 
+    if getattr(args, "enumerate_inputs", False):
+        return _enumerate(root, task, task_text)
+    compose_from = getattr(args, "compose_from", None)
+    if compose_from is not None:
+        return _compose(root, task, task_text, compose_from)
+
     binding = trace_binding.bind(root, task, task_text=task_text)
     record = {
         "action": "acceptance-trace",
@@ -134,4 +169,85 @@ def handler(args: argparse.Namespace) -> int:
         identity = f" [{binding.refusal.identity}]" if binding.refusal.identity else ""
         stderr_guard(f"{binding.refusal.code}: {binding.refusal.detail}{identity}")
         return EXIT_FAIL
+    return EXIT_OK
+
+
+def _enumerate(root: Path, task: Path, task_text: str) -> int:
+    try:
+        inputs = trace_binding.enumerate_inputs(root, task, task_text=task_text)
+    except mechanism.TraceRefusal as refusal:
+        stderr_guard(f"{refusal.code}: {refusal.detail}")
+        return EXIT_FAIL
+    except Exception as exc:  # request/source resolution refusals
+        stderr_guard(f"trace-incomplete: {exc}")
+        return EXIT_FAIL
+    emit_record(
+        {
+            "action": "acceptance-trace",
+            "mode": "enumerate",
+            "project_path": str(root),
+            "task_path": str(task),
+            **inputs,
+        }
+    )
+    return EXIT_OK
+
+
+def _compose(root: Path, task: Path, task_text: str, mapping_path: str) -> int:
+    path = Path(mapping_path)
+    if not path.is_absolute():
+        stderr_usage("--compose-from must be an absolute path")
+        return EXIT_USAGE
+    try:
+        mapping = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        stderr_error(f"mapping unreadable: {exc}")
+        return EXIT_FAIL
+    if not isinstance(mapping, dict):
+        stderr_usage("mapping must be a JSON object")
+        return EXIT_USAGE
+    try:
+        inputs = trace_binding.enumerate_inputs(root, task, task_text=task_text)
+        spec_path = trace_binding.governing_spec_path(root, task, task_text)
+        spec_items = (
+            mechanism.spec_acceptance_items(spec_path.read_text(encoding="utf-8"))
+            if spec_path is not None
+            else []
+        )
+        task_items = mechanism.task_acceptance_items(task_text)
+        excerpts = [e["identity"] for e in inputs["excerpts"]]
+        lines = mechanism.compose_records(
+            spec_acceptance=spec_items,
+            task_acceptance=task_items,
+            mapping=mapping,
+            excerpts=excerpts,
+        )
+        block = "```trace\n" + "".join(line + "\n" for line in lines) + "```\n"
+        # Validate exactly as an authored block: the composed text is bound to
+        # the same material list, sources, and excerpts readiness will use.
+        trace = mechanism.build(
+            spec_acceptance=spec_items,
+            task_acceptance=task_items,
+            record_set=mechanism.parse_record_set(lines),
+            sources=inputs["sources"],
+            excerpts=excerpts,
+        )
+    except mechanism.TraceRefusal as refusal:
+        identity = f" [{refusal.identity}]" if refusal.identity else ""
+        stderr_guard(f"{refusal.code}: {refusal.detail}{identity}")
+        return EXIT_FAIL
+    except Exception as exc:  # request/source resolution refusals
+        stderr_guard(f"trace-incomplete: {exc}")
+        return EXIT_FAIL
+    emit_record(
+        {
+            "action": "acceptance-trace",
+            "mode": "compose",
+            "project_path": str(root),
+            "task_path": str(task),
+            "section_heading": mechanism.TRACE_SECTION_HEADING,
+            "block": block,
+            "trace": trace.as_record(),
+        }
+    )
     return EXIT_OK

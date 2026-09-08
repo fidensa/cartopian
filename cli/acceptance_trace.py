@@ -19,7 +19,20 @@ contract. It owns four things and nothing else:
 3. **Role-specific projections.** The coder projection carries the complete
    immediate contract (every material criterion) and no governance identity.
    The reviewer projection carries the full typed record set, coverage
-   results, waivers, dispositions, origins, and the determination block.
+   results, waivers, applicability records, dispositions, origins, and the
+   determination block.
+
+   Coverage is *scoped*, not blanket. Every task inherits the project's
+   authoritative sources and operator excerpts, but an inventory task is not
+   governed by a pricing statement. A PM-authored ``A|`` applicability record
+   classifies one inherited identity for this task as a ``governing-constraint``
+   (it constrains the work but no acceptance criterion derives from it) or as
+   ``outside-scope`` (mechanically unrelated to this task). Either class is a
+   routine PM decision the reviewer confirms at D2; neither needs operator
+   authority. A ``W|`` waiver remains the record for an actual departure from
+   intent and still requires attributable operator authority. Plan-level
+   coverage is preserved by ``plan-audit``: an excerpt that every task scopes
+   out is reported there, so scoping never silently drops operator intent.
 
 4. **Bounds and fail-closed enforcement.** Structural errors fail at
    readiness; the D1/D2 determinations fail at closure. The code set is
@@ -68,6 +81,16 @@ EXEMPTION_REASONS: Tuple[str, ...] = (
 WAIVER_CLASSES: Tuple[str, ...] = (
     "procedural-authorization",
     "background-scope",
+)
+
+#: PM-authored applicability classes for one inherited source or excerpt.
+#: ``governing-constraint``: the identity constrains how this task's work is
+#: performed but no acceptance criterion is derived from it. ``outside-scope``:
+#: the identity is mechanically unrelated to this task's outcome. An identity
+#: a criterion actually traces to needs no record — it is ``applicable``.
+APPLICABILITY_CLASSES: Tuple[str, ...] = (
+    "governing-constraint",
+    "outside-scope",
 )
 
 DISPOSITION_KINDS: Tuple[str, ...] = ("precedence", "narrowing", "amendment")
@@ -142,6 +165,8 @@ CAP_WAIVER_CLASS = 24
 CAP_DISPOSITION_KIND = 10
 CAP_WAIVER_RECORD = 183
 CAP_DISPOSITION_RECORD = 114
+CAP_APPLICABILITY_CLASS = 20
+CAP_APPLICABILITY_RECORD = 183
 
 #: Ordinals are ``C<nn>`` and a task carries at most 99 material criteria.
 MAX_CRITERIA = 99
@@ -342,6 +367,21 @@ class Waiver:
         return self.identity.encode("utf-8")
 
 
+@dataclass(frozen=True)
+class Applicability:
+    """An ``A|`` PM-authored applicability record for one inherited identity."""
+
+    identity: str
+    applicability_class: str
+    scope: str
+
+    def line(self) -> str:
+        return f"A|{self.identity}|{self.applicability_class}|{self.scope}"
+
+    def sort_key(self) -> bytes:
+        return self.identity.encode("utf-8")
+
+
 @dataclass
 class RecordSet:
     """The PM-authored record set, before it is bound to a material list."""
@@ -350,6 +390,7 @@ class RecordSet:
     dispositions: List[Disposition] = field(default_factory=list)
     origins: List[Origin] = field(default_factory=list)
     waivers: List[Waiver] = field(default_factory=list)
+    applicability: List[Applicability] = field(default_factory=list)
     declared_identity: Optional[str] = None
 
 
@@ -612,6 +653,41 @@ def _parse_waiver(line: str) -> Waiver:
     )
 
 
+def _parse_applicability(line: str) -> Applicability:
+    if len(line.encode("utf-8")) + 1 > CAP_APPLICABILITY_RECORD:
+        raise TraceRefusal(
+            "trace-unparseable",
+            f"A| record exceeds its {CAP_APPLICABILITY_RECORD} B cap: {line}",
+            identity=line,
+        )
+    fields = line.split("|", 3)
+    if len(fields) != 4 or any(part == "" for part in fields[1:]):
+        raise TraceRefusal(
+            "trace-unparseable",
+            "A| record must be A|<identity>|<class>|<scope>: " + line,
+            identity=line,
+        )
+    _, identity, applicability_class, scope = fields
+    _check_width(
+        applicability_class,
+        CAP_APPLICABILITY_CLASS,
+        field_name="applicability class",
+        line=line,
+    )
+    if applicability_class not in APPLICABILITY_CLASSES:
+        raise TraceRefusal(
+            "trace-unparseable",
+            "applicability class outside the closed set "
+            f"{APPLICABILITY_CLASSES}: {applicability_class!r}",
+            identity=line,
+        )
+    return Applicability(
+        identity=_decode_field(identity),
+        applicability_class=applicability_class,
+        scope=_decode_field(scope),
+    )
+
+
 def parse_record_set(lines: Sequence[str]) -> RecordSet:
     """Parse authored record lines into a :class:`RecordSet`.
 
@@ -641,6 +717,8 @@ def parse_record_set(lines: Sequence[str]) -> RecordSet:
             out.origins.append(_parse_origin(line))
         elif line.startswith("W|"):
             out.waivers.append(_parse_waiver(line))
+        elif line.startswith("A|"):
+            out.applicability.append(_parse_applicability(line))
         else:
             out.records.append(_parse_typed_record(line))
     return out
@@ -676,14 +754,21 @@ def b_coder(n: int) -> int:
     return 23 + 24 * n
 
 
-def b_routine(n: int, e: int, s: int, r: int, w: int, x: int, o: int) -> int:
+def b_routine(
+    n: int, e: int, s: int, r: int, w: int, x: int, o: int, a: int = 0
+) -> int:
     """The routine-context ceiling, anchored at the accepted 2,581 B shape.
 
     Every term is signed: a shape below the reference in a variable is allowed
     correspondingly less, which is why a one-criterion task carrying full
-    inherited provenance can fail ``bound-exceeded`` (§ 10.1 rung 3).
+    inherited provenance can fail ``bound-exceeded`` and must split or merge. An
+    applicability record (``a``) replaces the ``S|``/``R|`` line it scopes and
+    is paid for at the waiver rate; it never adds an operator round-trip.
     """
-    return 260 + 96 * n + 146 * e + 112 * s + 94 * r + 183 * w + 114 * x + 19 * o
+    return (
+        260 + 96 * n + 146 * e + 112 * s + 94 * r + 183 * w + 114 * x + 19 * o
+        + 183 * a
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -738,13 +823,22 @@ class Trace:
     sources: List[str]
     excerpts: List[str]
     coverage: Coverage
+    applicability: List[Applicability] = field(default_factory=list)
 
     # -- serialization ----------------------------------------------------
     def trace_body(self) -> str:
-        """The hashed body: trace records, then ``X|``, then ``O|`` (§ 4.2)."""
+        """The hashed body: trace records, then ``X|``, ``O|``, and ``A|`` (§ 4.2).
+
+        Applicability records change what the reviewer is asked to confirm,
+        so they are inside the identity: adding or editing one after a review
+        was recorded makes that review's ``Trace-identity`` stale rather than
+        letting an exemption reuse an earlier verdict. A trace without ``A|``
+        records serializes exactly as before, so existing identities hold.
+        """
         lines = [rec.line() for rec in self.records]
         lines += [d.line() for d in self.dispositions]
         lines += [o.line() for o in self.origins]
+        lines += [a.line() for a in self.applicability]
         return "".join(line + "\n" for line in lines)
 
     def trace_identity(self) -> str:
@@ -803,6 +897,11 @@ class Trace:
         lines += cov.request_records
         lines.append(f"Waivers: {len(self.waivers)}")
         lines += [wv.line() for wv in self.waivers]
+        # Applicability lines are emitted only when present, so a task with no
+        # scoped identity pays nothing and the reference anchor is unchanged.
+        if self.applicability:
+            lines.append(f"Applicability: {len(self.applicability)}")
+            lines += [ap.line() for ap in self.applicability]
         lines.append(
             "Conflicts: none"
             if not self.dispositions
@@ -837,9 +936,11 @@ class Trace:
         shape = self.shape()
         coder = measure(self.coder_projection())
         reviewer = measure(self.reviewer_projection())
-        allowed = b_routine(**shape)
+        applicability = len(self.applicability)
+        allowed = b_routine(**shape, a=applicability)
         return {
             **shape,
+            "a": applicability,
             "coder_bytes": coder,
             "reviewer_bytes": reviewer,
             "routine_bytes": coder + reviewer,
@@ -936,6 +1037,14 @@ class Trace:
             "request_coverage": "complete" if cov.request_complete else "incomplete",
             "uncovered_sources": list(cov.uncovered_sources),
             "uncovered_requests": list(cov.uncovered_requests),
+            "applicability": [
+                {
+                    "identity": ap.identity,
+                    "class": ap.applicability_class,
+                    "scope": ap.scope,
+                }
+                for ap in self.applicability
+            ],
             "bounds": self.bounds(),
             "closure_findings": [f.as_dict() for f in self.closure_findings()],
         }
@@ -1030,11 +1139,35 @@ def build(
     dispositions = _dedupe(record_set.dispositions, lambda d: d.line())
     origins = _dedupe(record_set.origins, lambda o: o.line())
     waivers = _dedupe(record_set.waivers, lambda w: w.line())
+    applicability = _dedupe(record_set.applicability, lambda a: a.line())
 
     _require_sorted(records, Record.sort_key, label="trace")
     _require_sorted(dispositions, Disposition.sort_key, label="X|")
     _require_sorted(origins, Origin.sort_key, label="O|")
     _require_sorted(waivers, Waiver.sort_key, label="W|")
+    _require_sorted(applicability, Applicability.sort_key, label="A|")
+
+    # An identity carries at most one applicability decision, and never both
+    # an applicability record and a waiver: the first says the identity does
+    # not govern a criterion here, the second says the operator released it.
+    seen_scoped: Dict[str, Applicability] = {}
+    for record in applicability:
+        if record.identity in seen_scoped:
+            raise TraceRefusal(
+                "trace-unparseable",
+                "an identity appears in more than one A| record: " + record.identity,
+                identity=record.line(),
+            )
+        seen_scoped[record.identity] = record
+    waived_identities = {wv.identity for wv in waivers}
+    for record in applicability:
+        if record.identity in waived_identities:
+            raise TraceRefusal(
+                "trace-unparseable",
+                "an identity carries both an A| applicability record and a W| "
+                "waiver: " + record.identity,
+                identity=record.line(),
+            )
 
     if not records:
         raise TraceRefusal(
@@ -1205,7 +1338,9 @@ def build(
                 identity=disp.line(),
             )
 
-    waived = {wv.identity for wv in waivers}
+    # A waived or scoped identity is carried by its own W| / A| record, so
+    # neither is re-emitted as an S| / R| coverage line.
+    waived = {wv.identity for wv in waivers} | set(seen_scoped)
     coverage = _coverage(
         records, sources, excerpts, waived, criterion_complete=True
     )
@@ -1218,6 +1353,7 @@ def build(
         sources=list(sources),
         excerpts=list(excerpts),
         coverage=coverage,
+        applicability=applicability,
     )
 
     declared = record_set.declared_identity
@@ -1241,10 +1377,217 @@ def build(
             raise TraceRefusal(
                 "bound-exceeded",
                 f"routine context measured {measured['routine_bytes']} B against "
-                f"B_routine {measured['b_routine']} B — walk the § 10.1 ladder; "
-                "never truncate",
+                f"B_routine {measured['b_routine']} B — recover by shortening "
+                "applicable-context and scope fields, merging a restated task "
+                "origin into its spec criterion (O|), or splitting the task so "
+                "each part carries fewer criteria; never truncate a record",
             )
     return trace
+
+
+# ---------------------------------------------------------------------------
+# Mechanical record composition from a structured mapping.
+# ---------------------------------------------------------------------------
+def _material_after_merges(
+    spec_items: Sequence[str],
+    task_items: Sequence[str],
+    merged_away: Iterable[str],
+) -> List[Criterion]:
+    """The ordinal-bearing material list :func:`build` would derive."""
+    merged = set(merged_away)
+    material: List[Criterion] = []
+    seen = set()
+    for origin_list, items in (("spec", spec_items), ("task", task_items)):
+        for text in items:
+            digest = digest12(text)
+            if origin_list == "task" and digest in merged:
+                continue
+            if digest in seen:
+                continue
+            seen.add(digest)
+            material.append(
+                Criterion(ordinal="", digest=digest, text=text, origin_list=origin_list)
+            )
+    return [
+        Criterion(
+            ordinal=_ordinal(index),
+            digest=crit.digest,
+            text=crit.text,
+            origin_list=crit.origin_list,
+        )
+        for index, crit in enumerate(material, start=1)
+    ]
+
+
+def _encode_field(value: str) -> str:
+    return value.replace("|", "%7C")
+
+
+def compose_records(
+    *,
+    spec_acceptance: Sequence[str],
+    task_acceptance: Sequence[str],
+    mapping: Dict[str, object],
+    excerpts: Sequence[str] = (),
+) -> List[str]:
+    """Render the sorted record lines for a structured mapping.
+
+    The mapping is the PM's decision, stated without mechanical syntax:
+
+    - ``edges``: ``{criterion, type, source, context, occurrence?}`` — a typed
+      edge. ``criterion`` is an ordinal (``C03``) or the criterion's exact
+      text. ``source`` for an ``operator-request`` edge may be the bare alias
+      ``REQ-003``, resolved against ``excerpts``; a ``spec`` edge may give
+      ``clause`` (the clause text) instead of ``source``.
+    - ``exemptions``: ``{criterion, reason}``.
+    - ``dispositions``: ``{criterion, kind, rule}`` — an ``X|`` record.
+    - ``merges``: ``{criterion, origin}`` — an ``O|`` record; ``origin`` is the
+      merged-away task acceptance item's exact text (or its digest12).
+    - ``applicability``: ``{identity, class, scope}`` — an ``A|`` record.
+    - ``waivers``: ``{identity, class, scope}`` — a ``W|`` record.
+
+    Digests, ordinals, escapes, and the total sort order are derived here, so
+    the PM never hand-computes them. The result is *not* validated: pass it
+    through :func:`parse_record_set` and :func:`build` exactly as an authored
+    block would be.
+    """
+    spec_items = [normalize(t) for t in spec_acceptance]
+    task_items = [normalize(t) for t in task_acceptance]
+    aliases: Dict[str, str] = {}
+    for identity in excerpts:
+        alias = identity.split(" ", 1)[0]
+        aliases.setdefault(alias, identity)
+
+    def _list(key: str) -> List[Dict[str, object]]:
+        value = mapping.get(key, [])
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(isinstance(v, dict) for v in value):
+            raise TraceRefusal(
+                "trace-unparseable", f"mapping key {key!r} must be a list of objects"
+            )
+        return value
+
+    def _text(entry: Dict[str, object], key: str) -> str:
+        value = entry.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise TraceRefusal(
+                "trace-unparseable", f"mapping entry needs a non-empty {key!r}: {entry}"
+            )
+        return value.strip()
+
+    def _identity(value: str) -> str:
+        return aliases.get(value, value)
+
+    merged_digests: List[str] = []
+    merge_entries = _list("merges")
+    for entry in merge_entries:
+        origin = _text(entry, "origin")
+        digest = origin if DIGEST12_RE.match(origin) else digest12(normalize(origin))
+        merged_digests.append(digest)
+    criteria = _material_after_merges(spec_items, task_items, merged_digests)
+    by_ordinal = {c.ordinal: c for c in criteria}
+    by_digest = {c.digest: c for c in criteria}
+
+    def _criterion(entry: Dict[str, object]) -> Criterion:
+        ref = _text(entry, "criterion")
+        if ORDINAL_RE.match(ref) and ref in by_ordinal:
+            return by_ordinal[ref]
+        crit = by_digest.get(digest12(normalize(ref)))
+        if crit is None:
+            raise TraceRefusal(
+                "trace-unparseable",
+                f"mapping names no material criterion: {ref!r}",
+                identity=ref,
+            )
+        return crit
+
+    records: List[Record] = []
+    for entry in _list("edges"):
+        crit = _criterion(entry)
+        kind = _text(entry, "type")
+        if kind == "spec" and "clause" in entry:
+            source = "spec-clause " + full_identity(normalize(_text(entry, "clause")))
+        else:
+            source = _identity(_text(entry, "source"))
+        occurrence = str(entry.get("occurrence", 1)).strip()
+        records.append(
+            Record(
+                ordinal=crit.ordinal,
+                digest=crit.digest,
+                type=kind,
+                source_identity=source,
+                applicable_context=_text(entry, "context"),
+                occurrence=occurrence,
+            )
+        )
+    for entry in _list("exemptions"):
+        crit = _criterion(entry)
+        records.append(
+            Record(
+                ordinal=crit.ordinal,
+                digest=crit.digest,
+                type="none:" + _text(entry, "reason"),
+                source_identity="-",
+                applicable_context="-",
+                occurrence="1",
+            )
+        )
+    dispositions = [
+        Disposition(
+            ordinal=_criterion(entry).ordinal,
+            kind=_text(entry, "kind"),
+            rule=_text(entry, "rule"),
+        )
+        for entry in _list("dispositions")
+    ]
+    origins = [
+        Origin(ordinal=_criterion(entry).ordinal, digest=digest)
+        for entry, digest in zip(merge_entries, merged_digests)
+    ]
+    waivers = [
+        Waiver(
+            identity=_identity(_text(entry, "identity")),
+            waiver_class=_text(entry, "class"),
+            scope=_text(entry, "scope"),
+        )
+        for entry in _list("waivers")
+    ]
+    applicability = [
+        Applicability(
+            identity=_identity(_text(entry, "identity")),
+            applicability_class=_text(entry, "class"),
+            scope=_text(entry, "scope"),
+        )
+        for entry in _list("applicability")
+    ]
+
+    def _escaped(line_parts: Sequence[str]) -> str:
+        return "|".join(_encode_field(part) for part in line_parts)
+
+    lines: List[str] = []
+    for rec in sorted(records, key=Record.sort_key):
+        lines.append(
+            _escaped(
+                (
+                    rec.ordinal,
+                    rec.digest,
+                    rec.type,
+                    rec.source_identity,
+                    rec.applicable_context,
+                    rec.occurrence,
+                )
+            )
+        )
+    for disp in sorted(dispositions, key=Disposition.sort_key):
+        lines.append(_escaped(("X", disp.ordinal, disp.kind, disp.rule)))
+    for origin in sorted(origins, key=Origin.sort_key):
+        lines.append(origin.line())
+    for wv in sorted(waivers, key=Waiver.sort_key):
+        lines.append(_escaped(("W", wv.identity, wv.waiver_class, wv.scope)))
+    for ap in sorted(applicability, key=Applicability.sort_key):
+        lines.append(_escaped(("A", ap.identity, ap.applicability_class, ap.scope)))
+    return lines
 
 
 # ---------------------------------------------------------------------------

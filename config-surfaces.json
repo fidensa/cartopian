@@ -91,7 +91,9 @@
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "delivery_status_delta_bytes": 248,
       "delivery_status_note": "next-action carries the delivery gate's bounded status: applicability plus the artifact, outcome, and follow-up states, the gate verdict, the finding count, and the first finding code. 248 bytes is the measured worst case \u2014 the longest declared value in each of the seven keys, compact JSON, added to a non-empty object. The record itself is never carried; detail stays on demand behind `cartopian validate-delivery`. The ceiling rises by exactly that measured delta, preserving the prior headroom.",
-      "max_output_bytes": 2804
+      "startup_verdict_delta_bytes": 1290,
+      "startup_verdict_note": "next-action carries the one authoritative startup result: a `planning` record (stage, bounded next step, checkpoint in flight, and a compact checkpoint-status map) and a `startup` verdict (planning-incomplete | ready | blocked | plan-complete) with bounded detail and action text, owner, and the rehearsed task, role, and launch mode; plus the tri-state `state_reconciled`. Every free-text field is clipped at 240 characters, so 1290 bytes is the bounded worst case: planning at its longest next step with eight recorded checkpoints, a blocked verdict at both text caps with task and role, and the reconcile flag. Rehearsal detail (composed prompt, findings) never rides the record; it stays on demand behind `cartopian validate-task-readiness --rehearse-dispatch`. The ceiling rises by that bounded delta, preserving the prior headroom.",
+      "max_output_bytes": 4094
     },
     {
       "surface": "task-bundle",
@@ -432,6 +434,8 @@
         "cli/commands/task_bundle.py",
         "cli/commands/wait_handoff.py",
         "cli/commands/wait_report.py",
+        "cli/dispatch_rehearsal.py",
+        "cli/planning_status.py",
         "cli/prompt_composer.py"
       ],
       "owner_contract": "cli/config_schema.py::resolve_configuration",

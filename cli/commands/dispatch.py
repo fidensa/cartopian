@@ -54,6 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cli import (
     host_capability,
+    launch_preflight,
     output_safety,
     report_identity,
     request_trace,
@@ -417,56 +418,26 @@ def handler(args: argparse.Namespace) -> int:
         return EXIT_FAIL
     role_record = resolved["roles"][role]
     launch = role_record["launch"]
-    agent = launch.get("agent")
-    if not agent:
-        stderr_guard(
-            f"roles.{role}.agent is not configured — "
-            f"dispatch this role manually"
-        )
+    # --- Fail-closed role prerequisites (shared with the dispatch rehearsal) --
+    # Agent configured; set-but-empty model/effort (they would be reported in
+    # the record yet never exported); the output contract; and the host wait
+    # budget — launching is only half a handoff, and a host tools/call ceiling
+    # shorter than the role timeout would orphan the assignee mid-run. The
+    # rehearsal applies the identical checks, so readiness never claims a
+    # launch this preflight would refuse.
+    for finding in launch_preflight.role_checks(role, role_record, context="dispatch"):
+        stderr_guard(finding["message"])
         return EXIT_FAIL
-
+    agent = launch.get("agent")
     timeout = launch.get("timeout") or DEFAULT_TIMEOUT
     model = launch.get("model")
-    # Fail closed on a set-but-falsy model ("" / 0 / false): it would be
-    # reported in the record below yet never exported, silently launching the
-    # tool's default model while the record claims otherwise.
-    if model is not None and not model:
-        stderr_guard(
-            f"roles.{role}.model is set but empty — set a model "
-            f"identifier or remove the key"
-        )
-        return EXIT_FAIL
     effort = launch.get("effort")
-    # Same fail-closed guard as model: a set-but-falsy effort would be
-    # reported in the record below yet never exported.
-    if effort is not None and not effort:
-        stderr_guard(
-            f"roles.{role}.effort is set but empty — set an effort "
-            f"level or remove the key"
-        )
-        return EXIT_FAIL
-    try:
-        output_limits = output_safety.limits_from_environment(dict(os.environ))
-    except output_safety.OutputSafetyError as exc:
-        stderr_guard(f"invalid automated-handoff output contract: {exc}")
-        return EXIT_FAIL
-
-    # --- Fail-closed: the host must be able to wait out this handoff ---------
-    # Launching is only half a handoff; the PM has to stay attached until the
-    # report lands (run-handoff Stage 3). Every MCP host caps a single
-    # tools/call, and on some hosts that cap is shorter than the protocol's
-    # default 60m role timeout — so the wait dies mid-handoff and the assignee
-    # keeps running unobserved. Refuse here, before the launch, rather than
-    # discover it partway through the wait: an unlaunched handoff is
-    # recoverable, an orphaned one is not.
-    host_ok, host_budget, host_refusal = host_capability.check_wait_budget(
+    output_limits = output_safety.limits_from_environment(dict(os.environ))
+    _host_ok, host_budget, _host_refusal = host_capability.check_wait_budget(
         role,
         host_capability.parse_duration(str(timeout)) or DEFAULT_TIMEOUT_SECONDS,
         context="dispatch",
     )
-    if not host_ok:
-        stderr_guard(host_refusal)
-        return EXIT_FAIL
 
     task_id: Optional[str]
     source_guidance_record: Optional[Dict[str, Any]] = None
@@ -650,13 +621,14 @@ def handler(args: argparse.Namespace) -> int:
     # work-root writes are doomed to fail mid-run — refuse up front instead.
     resolved_roots = resolved["work_roots"]
     work_root_paths = list(resolved_roots.values())
-    missing_roots = [p for p in work_root_paths if not Path(p).is_dir()]
-    if missing_roots:
-        stderr_guard(
-            "work root path(s) do not exist on this machine: "
-            + ", ".join(missing_roots)
-            + " — fix the [work_roots] mapping in cartopian.local.toml"
-        )
+    # Shared with the rehearsal: mapped work roots exist and the agent resolves
+    # on PATH (`shutil.which` honors PATHEXT, so the `.cmd` shim is found on
+    # native Windows and the extensionless wrapper on POSIX).
+    for finding in launch_preflight.environment_checks(role, role_record, resolved_roots):
+        if finding["prefix"] == "error":
+            stderr_error(finding["message"])
+        else:
+            stderr_guard(finding["message"])
         return EXIT_FAIL
 
     # --- Launch (per-invocation; non-blocking) -------------------------------
@@ -727,12 +699,8 @@ def handler(args: argparse.Namespace) -> int:
     # on Windows and the extensionless wrapper script on POSIX. An absolute
     # role handoff agent resolves through `shutil.which` unchanged.
     resolved_agent = shutil.which(str(agent))
-    if resolved_agent is None:
-        stderr_error(
-            f"handoff agent not found on PATH: {agent} — install the wrapper "
-            f"(on native Windows the `.cmd` shim in wrappers/ps1 must be on PATH), "
-            f"or set roles.{role}.agent to an absolute path"
-        )
+    if resolved_agent is None:  # pragma: no cover - environment_checks refused above
+        stderr_error(f"handoff agent not found on PATH: {agent}")
         return EXIT_FAIL
     try:
         slot_clear = _clear_handoff_slot(expected_report_path)

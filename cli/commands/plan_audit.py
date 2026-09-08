@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import governance_reads, request_trace
+from cli import governance_reads, request_trace, trace_binding
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -948,6 +948,37 @@ def _check_request_trace(
     return blockers, warnings
 
 
+def _check_scoped_request_coverage(project_path: Path) -> List[Dict[str, Any]]:
+    """Plan-level request coverage under scoped applicability.
+
+    A task may classify an inherited operator excerpt as ``outside-scope``
+    with an ``A|`` record instead of claiming it. That is a routine PM
+    decision for the task — but the plan as a whole still owes coverage of
+    every excerpt. This warning names an excerpt that every task scopes out
+    and no task claims or waives, unless a decision records an authorized
+    ``Out-of-plan request:`` disposition for it. It is a warning here because
+    a later phase's tasks may be the ones that claim it; ``close-audit`` blocks
+    closeout on the same computation.
+    """
+    warnings: List[Dict[str, Any]] = []
+    for item in trace_binding.unclaimed_scoped_excerpts(project_path):
+        if item["disposition"]:
+            continue
+        tasks = item["tasks"]
+        warnings.append({
+            "kind": "request-outside-every-task",
+            "identity": item["identity"],
+            "tasks": tasks,
+            "detail": (
+                f"operator excerpt {item['identity']} is scoped outside-scope by "
+                f"{', '.join(tasks)} and claimed by no task; plan-level coverage is "
+                "not yet established — a later phase's task must claim it, or a "
+                f"decision must record `Out-of-plan request: {item['content_identity']}`"
+            ),
+        })
+    return warnings
+
+
 def _check_situation_notes(project_path: Path) -> List[Dict[str, Any]]:
     """Block while STATE.md carries undelivered-mail Situation notes.
 
@@ -1265,6 +1296,7 @@ def handler(args: argparse.Namespace) -> int:
     warnings.extend(deliverable_warnings)
     warnings.extend(backlog_warnings)
     warnings.extend(intent_warnings)
+    warnings.extend(_check_scoped_request_coverage(project_path))
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI
     # command — no harness interception — so it is the portable floor: it

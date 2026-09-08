@@ -85,7 +85,7 @@ Two determinations per material criterion, with **different inputs and different
 
 They are independent by construction — D1 evaluates work against contract, D2 evaluates contract against upstream — so neither may be inferred from the other and neither may be recorded as "same as above". D1 passing while D2 fails is the case this contract exists to catch: work that satisfies the task's wording while the task itself omitted material upstream intent. Either failing blocks closure.
 
-A `source-uncovered`, `request-uncovered`, or `waiver-rejected` finding names an identity no criterion claims, so it cannot localize to an ordinal; record it on the task-scoped line instead.
+A `source-uncovered`, `request-uncovered`, or `waiver-rejected` finding names an identity no criterion claims, so it cannot localize to an ordinal; record it on the task-scoped line instead. The provenance block's `A|` records are the PM's applicability map for inherited identities this task does not trace to (`governing-constraint` or `outside-scope`); confirm each one. When an identity the PM scoped out does govern this task's outcome, fail the task line with `request-uncovered` (excerpt) or `source-uncovered` (source) and name the identity — do not require an operator waiver for it.
 
 A passing line carries `reason:-`. A missing, contradictory, or unattributed determination blocks approval and never defaults to pass.
 

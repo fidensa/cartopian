@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from cli import delivery_contract, report_identity
+from cli import delivery_contract, report_identity, trace_binding
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -275,6 +275,19 @@ def handler(args: argparse.Namespace) -> int:
     for criterion in unmet_exit_criteria:
         blocking_reasons.append(f"phase exit criteria incomplete: {criterion}")
     blocking_reasons.extend(delivery_contract.blocking_reasons(delivery))
+    # Scoped applicability lets a task leave an inherited operator excerpt
+    # unclaimed; the plan may not. An excerpt every task scoped out, no task
+    # claimed or waived, and no decision dispositioned blocks closeout.
+    unclaimed_requests = trace_binding.unclaimed_scoped_excerpts(project_path)
+    for item in unclaimed_requests:
+        if item["disposition"]:
+            continue
+        blocking_reasons.append(
+            f"unclaimed operator request blocks closeout: {item['identity']} is "
+            f"scoped outside-scope by {', '.join(item['tasks'])} and claimed by no "
+            "task — claim it in a task or record `Out-of-plan request: "
+            f"{item['content_identity']}` in a decision"
+        )
 
     record = {
         "project_id": project_id,
@@ -288,6 +301,7 @@ def handler(args: argparse.Namespace) -> int:
         "unresolved_reports": unresolved_reports,
         "unmet_exit_criteria": unmet_exit_criteria,
         "delivery": delivery,
+        "unclaimed_requests": unclaimed_requests,
         "blocking_reasons": blocking_reasons,
     }
     emit_record(record)

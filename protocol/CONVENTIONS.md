@@ -56,6 +56,15 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 3. Tell the operator the current phase, active work, and next protocol action from `STATE.md`.
 4. Act on the operator's request per its intent class (see [Request Intent](#request-intent)). Execution begins only when that classification — or the resolved `[automation] initiation` policy — authorizes it.
 
+**One authoritative startup result.** `cartopian next-action <project-root>` is the single startup read. Its `startup` record carries exactly one verdict, and the PM relays that verdict rather than re-deriving it from artifacts:
+
+- `planning-incomplete` — the current phase is not fully planned; `action` names the exact remaining step (the checkpoint awaiting a verdict or report, or the phase whose tasks and specs must be generated). "Planning approved" and "task 1 can be dispatched" are different states, and this verdict is what separates them.
+- `ready` — `task` names the exact next task (or the active task to continue) and `action` names the dispatch action. A ready verdict for an open task is proven, not assumed: the readiness checks passed and the assignment path was rehearsed read-only (role resolution, prompt composition, launch prerequisites — `cartopian validate-task-readiness --rehearse-dispatch`).
+- `blocked` — `detail` names the concrete failure, `owner` names the responsible party (`pm`, `operator`, `assignee`, or `host`), and `action` names the recovery.
+- `plan-complete` — nothing remains but closeout.
+
+`--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it is used only when the request's intent class authorizes a write (an execution or scoped directive); an informational request runs `next-action` without it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. A legacy tasks checkpoint that declares no `Plan ref:` covers only the earliest task-bearing phase; tasks generated later for another phase need a checkpoint whose `Plan ref:` covers them.
+
 ## Request Intent
 
 Operator requests fall into three classes. Classifying intent is the PM's first interpretive duty, and a request never changes class because automation is configured aggressively.
@@ -362,7 +371,7 @@ A review file carries a two-line `## Summary` and one self-contained `F<n>.` row
 
 Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
-Planning-checkpoint reviews are temporary artifacts deleted when the checkpoint is approved or superseded.
+An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-PLAN-NNN.md`) and report (`reports/REPORT-PLAN-NNN.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
 
 Review verdicts are:
 
@@ -553,6 +562,31 @@ Request alignment: aligned | drifted | unavailable-for-legacy
 Request evidence: <ordered evidence identities> | none
 ```
 
+Coverage of inherited evidence is **scoped, not blanket**. A planned task
+inherits every applicable operator excerpt and authoritative source, but a
+task is governed only by the ones that bear on its outcome: an inventory task
+is not governed by a pricing statement. For a task that declares `Upstream
+trace: required`, the PM records an applicability map in the task's trace
+block (`templates/TASK.md` § Upstream trace): an identity a criterion traces
+to is *applicable*; an identity that constrains how the work is done without
+yielding a criterion is an `A|` `governing-constraint`; an identity
+mechanically unrelated to the task is an `A|` `outside-scope`. Both `A|`
+classes are routine PM decisions that the configured reviewer confirms at
+closure (D2); neither requires operator authority. A `W|` waiver remains the
+record for an actual departure from operator intent and still requires
+attributable operator authority. Coverage is preserved at the plan level:
+`cartopian plan-audit` warns on an excerpt that every task scopes out and no
+task claims or waives, and `cartopian close-audit` blocks closeout on it,
+unless a current, locked decision (not `open`, not named by a later decision's
+`Supersedes:`) records the authorized plan-level disposition `Out-of-plan
+request: sha256:<content identity>`. Scoping therefore never silently drops
+operator intent. `A|` records are part of the hashed trace identity, so an
+applicability decision added or changed after a review was recorded makes
+that review's `Trace-identity` stale. `cartopian acceptance-trace
+--enumerate` / `--compose-from` derive the mechanical record syntax from a
+structured mapping so the PM never hand-computes digests, ordinals, or sort
+order.
+
 Contradiction, narrowing, widening, omission, or substitution is `drifted` and
 blocks approval even when every PM artifact agrees with the implementation.
 `unavailable-for-legacy` is non-blocking only when the prompt itself proves the
@@ -676,9 +710,9 @@ A document-deliverable task is one whose work product is a durable document — 
 `Deliverable:` is name-only and deidentified — it carries no task, plan, spec, or requirement identifier, the same discipline as `Work root:`. It takes one of two forms, routed by intent:
 
 - `root:<relative/path>` (work-root deliverable) — for a work product intended to become **part of the product**. The assignee writes it into the named work root directly, exactly as it writes code. The path is **operator-chosen**: the PM captures it from the operator at task authoring or at assignment and never invents or assigns it itself.
-- `project:resources/<relative/path>` (project-resource deliverable) — for a **supporting artifact** of the project itself. The document lands under the project's `resources/` directory; a project-mode path outside `resources/` is invalid (`validate-task-readiness` blocks the task). The assignee is not granted write access to the project, so it returns the document inline in its completion report and the PM persists it via `cartopian write-resource`.
+- `project:resources/<relative/path>` (project-resource deliverable) — for a **supporting artifact** of the project itself. The document lands under the project's `resources/` directory; a project-mode path outside `resources/` is invalid (`validate-task-readiness` blocks the task). The assignee is not granted write access to the project, so it returns the document inline in its completion report and the PM persists it via `cartopian write-resource`. Its path has a **protocol default**: `project:resources/<kind>/<title-slug>.md`, where `<kind>` is the lower-cased plan-item kind and `<title-slug>` is derived from the task title with every identifier removed. `cartopian write-task` stamps that default whenever a `DESIGN` or `RESEARCH` task omits the field or writes `Deliverable: default`, appending the first free ordinal suffix (`-2`, `-3`, …) when another task already declares the path or the resource already exists on disk, so a default never overwrites earlier evidence; an explicit path is always the override. The default is a routine PM decision and is never an operator question.
 
-The field is set at task authoring, or captured at assignment when the PM prompts the operator for the location; the deliverable's destination is operator authority — the protocol fixes the `resources/` home for supporting artifacts, and the operator supplies or confirms the relative path in either form. `n/a` (or an absent line) means the task has no durable document deliverable. `handoff-packet` and `task-bundle` resolve the field to an absolute `deliverable` record (mode, root, relpath, absolute path, existence) so the PM sources the path without re-reading the task.
+The destination is asked of the operator only when the choice changes publication, ownership, access, or product structure — that is, for a `root:` deliverable. A supporting artifact takes the protocol default unless the operator has already named a path. `n/a` (or an absent line) means the task has no durable document deliverable; for document work it is a readiness defect, not a substitute for the default. `handoff-packet` and `task-bundle` resolve the field to an absolute `deliverable` record (mode, root, relpath, absolute path, existence) so the PM sources the path without re-reading the task.
 
 ### Work-root deliverables
 
@@ -932,6 +966,8 @@ The gate validates a delivery record. It never performs, schedules, transmits, o
 ## Plan Lifecycle
 
 A Cartopian project has one active implementation plan at a time. The live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`, `specs/`, `reviews/`, `decisions/`, `prompts/`, and `reports/` describe the current plan only.
+
+**Readiness is the exit condition of planning.** Task-and-spec generation for a phase is not finished when its checkpoint is approved; it is finished when the first ready task of that phase passes `cartopian validate-task-readiness --rehearse-dispatch` after the final approval. Later tasks may retain explicitly declared dependencies, but the first task carries no unresolved planning input — dependencies, deliverable destination, sources, acceptance trace, prompt composition, role configuration, and launch prerequisites are all settled before planning reports complete, and `cartopian next-action` then reports `ready` with that task's dispatch action.
 
 When a plan completes, close it before starting a new plan. The canonical closeout workflow is `skills/close-plan.md`.
 

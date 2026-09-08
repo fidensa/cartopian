@@ -66,6 +66,60 @@ def _schema_errors(content: Union[str, bytes]) -> List[str]:
     return errors
 
 
+def _declared_deliverables(project_root: Path, exclude_task_id: str) -> List[str]:
+    """Every other task's ``Deliverable:`` value, so defaults never collide."""
+    values: List[str] = []
+    for status in STATUSES:
+        status_dir = project_root / "tasks" / status
+        if not status_dir.is_dir():
+            continue
+        for entry in sorted(status_dir.iterdir()):
+            if not entry.is_file() or entry.suffix != ".md":
+                continue
+            if entry.stem == exclude_task_id or entry.stem.startswith(f"{exclude_task_id}-"):
+                continue
+            try:
+                text = entry.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for line in text.splitlines():
+                if line.startswith("## "):
+                    break
+                stripped = line.strip()
+                if stripped.startswith("Deliverable:"):
+                    values.append(stripped[len("Deliverable:") :].strip())
+                    break
+    return values
+
+
+def _stamp_default_deliverable(content, project_root: Path, task_id: str):
+    """Apply the protocol's default deliverable to document work; see
+    :mod:`cli.deliverable_defaults`. Returns ``(content, stamped, error)``.
+
+    Collision handling is deterministic: a path another task already declares,
+    or a resource already on disk (carried forward from an earlier plan), is
+    skipped for the next ordinal suffix, so a default never overwrites
+    earlier evidence.
+    """
+    from cli import deliverable_defaults
+
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content, None, "task body must be valid UTF-8 text"
+    else:
+        text = content
+    stamped_text, stamped = deliverable_defaults.stamp_default(
+        text,
+        taken=_declared_deliverables(project_root, task_id),
+        exists=lambda relpath: (project_root / relpath).exists(),
+    )
+    if stamped is None:
+        return content, None, None
+    return stamped_text, stamped, None
+
+
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     _writers.add_content_args(subparser)
     subparser.add_argument(
@@ -123,6 +177,18 @@ def handler(args: argparse.Namespace) -> int:
     if serr is not None:
         _writers.stderr(*serr)
         return _writers.EXIT_USAGE if serr[0] == "usage" else _writers.EXIT_FAIL
+
+    # Deterministic deliverable default: document work (DESIGN / RESEARCH)
+    # whose body omits `Deliverable:` or asks for `default` gets the protocol
+    # path `project:resources/<kind>/<title-slug>.md` stamped here, so the
+    # destination of a supporting artifact is a routine PM decision and never
+    # an operator question. An explicit path is always the override.
+    content, stamped_deliverable, derr = _stamp_default_deliverable(
+        content, root, task_id
+    )
+    if derr is not None:
+        _writers.stderr("usage", derr)
+        return _writers.EXIT_USAGE
 
     # Fail-closed schema gate: refuse a body that could never pass readiness,
     # before any on-disk rename so a refusal leaves the tree unchanged.
@@ -185,6 +251,8 @@ def handler(args: argparse.Namespace) -> int:
     extra_details = {"task_id": task_id, "status": status}
     if source_id is not None:
         extra_details["source"] = source_id
+    if stamped_deliverable is not None:
+        extra_details["deliverable_default"] = stamped_deliverable
     if creating and numbering_state["active"]:
         # Persist the prospective-boundary marker before the artifact. If the
         # append cannot be proven, fail closed and create no ungoverned task.

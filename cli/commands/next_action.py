@@ -4,6 +4,21 @@ Emits a single NDJSON record with all orientation data a PM needs to start or
 resume a session: active task, next open task, phase, PM role, resolved
 canonical roles, ``[automation]``, and ``[reviews]`` policy, blockers, and any
 STATE.md vs. filesystem disagreement.
+
+It also carries the one authoritative startup result. ``planning`` names the
+exact remaining planning step when the current phase is not fully planned;
+``startup`` collapses everything the session needs into one verdict:
+
+- ``planning-incomplete`` — the exact remaining checkpoint or generation step;
+- ``ready`` — the exact next task and its dispatch action, proven by a
+  read-only rehearsal of the assignment path (readiness checks, prompt
+  composition, launch prerequisites);
+- ``blocked`` — the concrete failure, the responsible party, and the recovery;
+- ``plan-complete`` — nothing remains but closeout.
+
+``--reconcile`` refreshes a stale ``STATE.md`` body from the filesystem
+through the mediated writer (Situation notes are preserved), so startup never
+has to relay a state file that disagrees with the directories.
 """
 import argparse
 import copy
@@ -12,7 +27,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract
+from cli import delivery_contract, dispatch_rehearsal, planning_status
 from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
@@ -45,6 +60,15 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "project_path",
         help="Absolute path to the Cartopian project directory",
+    )
+    subparser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help=(
+            "Refresh a stale STATE.md body from the filesystem through the "
+            "mediated writer before reporting (Situation notes are kept). "
+            "The filesystem is authoritative either way."
+        ),
     )
 
 
@@ -300,7 +324,16 @@ def _detect_blockers(
     (3) undelivered Situation notes in STATE.md (one-delivery TTL — the
     session must act on, promote, or drop each before lifecycle movement).
     """
-    blockers: List[str] = []
+    return [record["detail"] for record in _detect_blocker_records(project_path, phase_id, tasks_dir)]
+
+
+def _detect_blocker_records(
+    project_path: Path,
+    phase_id: Optional[str],
+    tasks_dir: Path,
+) -> List[Dict[str, str]]:
+    """Structured blockers: ``detail``, responsible ``owner``, and ``recovery``."""
+    blockers: List[Dict[str, str]] = []
 
     if phase_id is None:
         has_tasks = False
@@ -314,7 +347,16 @@ def _detect_blockers(
             if has_tasks:
                 break
         if has_tasks:
-            blockers.append("no active phase detected but tasks are present")
+            blockers.append(
+                {
+                    "detail": "no active phase detected but tasks are present",
+                    "owner": "pm",
+                    "recovery": (
+                        "give each task a Phase: header naming an existing "
+                        "phases/PHASE-NN.md file"
+                    ),
+                }
+            )
 
     state_path = project_path / "STATE.md"
     if state_path.is_file():
@@ -323,7 +365,13 @@ def _detect_blockers(
         except OSError:
             state_text = ""
         for oq in _find_open_questions_in_state(state_text):
-            blockers.append(f"unresolved open question in STATE.md: {oq}")
+            blockers.append(
+                {
+                    "detail": f"unresolved open question in STATE.md: {oq}",
+                    "owner": "operator",
+                    "recovery": "answer the question, then refresh STATE.md via write-state",
+                }
+            )
 
     # Lazy import mirrors plan_audit._check_situation_notes — one parser for
     # the Situation section, owned by the writer that renders it.
@@ -331,9 +379,18 @@ def _detect_blockers(
 
     for note in existing_notes(project_path):
         blockers.append(
-            f"unresolved situation note in STATE.md: {note} — act on it, "
-            "promote it (write-backlog / write-decision) if durable, then "
-            "refresh STATE.md via write-state"
+            {
+                "detail": (
+                    f"unresolved situation note in STATE.md: {note} — act on it, "
+                    "promote it (write-backlog / write-decision) if durable, then "
+                    "refresh STATE.md via write-state"
+                ),
+                "owner": "pm",
+                "recovery": (
+                    "act on the note, promote it (write-backlog / write-decision) "
+                    "or drop it, then refresh STATE.md via write-state"
+                ),
+            }
         )
 
     return blockers
@@ -446,6 +503,169 @@ def _next_unstarted_phase(phase_stems: List[str], has_task: Dict[str, bool]) -> 
     return None
 
 
+def _startup_verdict(
+    project_path: Path,
+    *,
+    blocker_records: List[Dict[str, str]],
+    active_task: Optional[Dict[str, str]],
+    next_open_task: Optional[Dict[str, str]],
+    planning: Dict[str, Any],
+    plan_complete: bool,
+    resolved: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Collapse the session's state into one verdict with one named action.
+
+    Precedence: a blocker wins (nothing moves while one exists); an active
+    task is continued; incomplete planning names its exact remaining step;
+    a ready queue is proven by rehearsal before it is called ready; a plan
+    with nothing left is closeout. ``owner`` names who acts.
+    """
+    bounded = planning_status.bounded
+
+    def verdict(kind: str, detail: str, owner: str, action: str, **extra: Any) -> Dict[str, Any]:
+        record: Dict[str, Any] = {
+            "verdict": kind,
+            "detail": bounded(detail),
+            "owner": owner,
+            "action": bounded(action),
+        }
+        record.update(extra)
+        return record
+
+    if blocker_records:
+        first = blocker_records[0]
+        return verdict(
+            "blocked", first["detail"], first["owner"],
+            first["recovery"] + "; then rerun next-action",
+        )
+    if active_task is not None:
+        return verdict(
+            "ready",
+            f"{active_task['id']} is {active_task['status']}",
+            "pm",
+            f"Continue {active_task['id']} with run task.",
+            task=active_task["id"],
+        )
+    if not planning["complete"]:
+        return verdict(
+            "planning-incomplete",
+            f"planning stage: {planning['stage']}",
+            "pm",
+            planning["next"],
+            checkpoint=planning["checkpoint"],
+        )
+    if next_open_task is not None:
+        from cli.commands.validate_task_readiness import evaluate as evaluate_readiness
+
+        task_path = Path(next_open_task["path"])
+        task_id = next_open_task["id"]
+        try:
+            content = task_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return verdict(
+                "blocked", f"{task_id} is unreadable: {exc}", "pm",
+                "restore the task file, then rerun next-action", task=task_id,
+            )
+        readiness, _warnings = evaluate_readiness(project_path, task_path, content)
+        failed = [c for c in readiness["checks"] if not c["pass"]]
+        if failed:
+            check = failed[0]
+            return verdict(
+                "blocked",
+                f"{task_id} readiness: {check['name']}: {check['reason']}",
+                "pm",
+                f"repair the task contract so {check['name']} passes "
+                "(validate-task-readiness), then rerun next-action",
+                task=task_id,
+            )
+        rehearsal = dispatch_rehearsal.rehearse(task_path, resolved=resolved)
+        if not rehearsal["ok"]:
+            launch = rehearsal.get("launch") or {}
+            launch_failed = bool(launch) and not launch.get("ok", True)
+            return verdict(
+                "blocked",
+                f"{task_id} dispatch rehearsal: {rehearsal['blockers'][0]}",
+                "operator" if launch_failed else "pm",
+                (
+                    "resolve the launch prerequisite named above, then rerun next-action"
+                    if launch_failed
+                    else "repair the named assignment input, then rerun "
+                    "validate-task-readiness --rehearse-dispatch"
+                ),
+                task=task_id,
+                role=rehearsal["role"],
+            )
+        launch = rehearsal["launch"]
+        return verdict(
+            "ready",
+            f"{task_id} ready (rehearsed as {rehearsal['role']!r})",
+            "pm",
+            dispatch_rehearsal.dispatch_action(task_id, rehearsal),
+            task=task_id,
+            role=rehearsal["role"],
+            launch_mode=launch["mode"],
+        )
+    if plan_complete:
+        return verdict(
+            "plan-complete",
+            "no active, open, or ungenerated work remains",
+            "operator",
+            "Close the plan with close plan (operator confirmation required).",
+        )
+    return verdict(
+        "blocked",
+        "no task is active or ready and planning reports complete",
+        "pm",
+        "run plan-audit and reconcile the task directories",
+    )
+
+
+def _reconcile_state(project_path: Path) -> bool:
+    """Rewrite a stale composed STATE.md body through the mediated writer.
+
+    Returns True when a write happened. The no-plan project is PM-authored and
+    is never touched. Situation notes are carried verbatim: they are undelivered
+    mail for this session, and reconciling the body must not consume them.
+    """
+    from cli.commands.compose_state import (
+        _has_plan_artifacts,
+        _load_project_config,
+        compose_record,
+    )
+    from cli.commands.write_state import SITUATION_HEADING, existing_notes
+    from cli.mediated_write import GuardRefusal, mediated_write
+
+    if not _has_plan_artifacts(project_path):
+        return False
+    try:
+        project_cfg = _load_project_config(project_path)
+        project_name = _require_startup_project_keys(
+            project_cfg, project_path / "cartopian.toml"
+        )[1]
+    except _CliError:
+        return False
+    rendered = compose_record(project_path, project_name)["rendered_body"]
+    if rendered is None:
+        return False
+    notes = existing_notes(project_path)
+    content = rendered
+    if notes:
+        content += "\n\n" + SITUATION_HEADING + "\n\n" + "\n".join(f"- {n}" for n in notes)
+    content += "\n"
+    state_path = project_path / "STATE.md"
+    try:
+        current = state_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        current = ""
+    if current == content:
+        return False
+    try:
+        mediated_write(project_path, "state", "STATE.md", content)
+    except GuardRefusal:
+        return False
+    return True
+
+
 def handler(args: argparse.Namespace) -> int:
     """Handle next-action command.
 
@@ -535,16 +755,51 @@ def handler(args: argparse.Namespace) -> int:
         and any(has_task.values())
     )
 
-    blockers = _detect_blockers(project_path, phase_id, tasks_dir)
+    blocker_records = _detect_blocker_records(project_path, phase_id, tasks_dir)
     if schema_gate["status"] == GATE_MIGRATE:
-        blockers.insert(0, schema_gate["detail"])
+        blocker_records.insert(
+            0,
+            {
+                "detail": schema_gate["detail"],
+                "owner": "operator",
+                "recovery": "approve the project migration, then run migrate project",
+            },
+        )
     # Open tasks that are all dependency-blocked are a deadlock, not progress:
     # next_open_task skips not-ready tasks, so without this the queue would
     # look empty while work still exists.
     if next_open_task is None and has_open_tasks and active_task is None:
-        blockers.append(
-            "open tasks exist but none are ready to start (unmet Blocked by: dependencies)"
+        blocker_records.append(
+            {
+                "detail": (
+                    "open tasks exist but none are ready to start (unmet Blocked by: "
+                    "dependencies)"
+                ),
+                "owner": "pm",
+                "recovery": (
+                    "complete or correct the Blocked by: dependencies so one open "
+                    "task becomes ready"
+                ),
+            }
         )
+    blockers = [record["detail"] for record in blocker_records]
+
+    planning = planning_status.derive(
+        project_path,
+        planning_review_required=reviews["planning"]["mode"] == "required",
+    )
+    state_reconciled: Optional[bool] = None
+    if getattr(args, "reconcile", False):
+        state_reconciled = _reconcile_state(project_path)
+    startup = _startup_verdict(
+        project_path,
+        blocker_records=blocker_records,
+        active_task=active_task,
+        next_open_task=next_open_task,
+        planning=planning,
+        plan_complete=plan_complete,
+        resolved=resolved,
+    )
 
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
@@ -563,6 +818,9 @@ def handler(args: argparse.Namespace) -> int:
         "roles": roles,
         "reviews": reviews,
         "blockers": blockers,
+        "planning": planning,
+        "startup": startup,
+        "state_reconciled": state_reconciled,
         # Startup carries delivery and follow-up *status*, not a blocker: the
         # delivery gate is a closeout gate, so an unmet obligation mid-plan is
         # something the session must see, not something that halts it. The

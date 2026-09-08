@@ -1,11 +1,19 @@
-"""`cartopian validate-task-readiness <task-path>`."""
+"""`cartopian validate-task-readiness <task-path> [--rehearse-dispatch]`.
+
+The structural checks decide ``ready``. ``--rehearse-dispatch`` additionally
+walks the assignment-preparation path read-only (role resolution, prompt
+composition, launch prerequisites) and reports it as a separate ``rehearsal``
+record, so "structurally sound" and "dispatchable now" stay two visible
+facts. Planning uses the rehearsal as its exit condition for task 1; startup
+uses it to report one authoritative verdict.
+"""
 import argparse
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import request_trace, source_guidance, trace_binding
+from cli import deliverable_defaults, request_trace, source_guidance, trace_binding
 from cli.commands.resolve_config import (
     _CliError,
     _DELIVERABLE_SKIP,
@@ -46,6 +54,25 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "task_path",
         help="Absolute path to the task file",
+    )
+    subparser.add_argument(
+        "--rehearse-dispatch",
+        action="store_true",
+        dest="rehearse_dispatch",
+        help=(
+            "Also rehearse the assignment path read-only: resolve the assignee "
+            "role, compose the assignment prompt, and check launch prerequisites. "
+            "Adds a `rehearsal` record; a failed rehearsal exits non-zero."
+        ),
+    )
+    subparser.add_argument(
+        "--role",
+        default=None,
+        help=(
+            "Assignee role for --rehearse-dispatch. Defaults to the task's "
+            "Assignee: header, then the sole task_run role, then the sole "
+            "declared non-PM role."
+        ),
     )
 
 
@@ -364,7 +391,7 @@ def _check_work_root(
 
 
 def _check_deliverable(
-    project_root: Path, headers: Dict[str, str]
+    project_root: Path, headers: Dict[str, str], title: str = ""
 ) -> Dict[str, Any]:
     """Validate the ``Deliverable:`` field's placement rules.
 
@@ -379,14 +406,17 @@ def _check_deliverable(
         plan_ref = headers.get("Plan ref", "").strip()
         kind = plan_ref.partition("-")[0]
         if kind in DOCUMENT_WORK_KINDS:
+            default = deliverable_defaults.default_project_deliverable(kind, title)
             return {
                 "name": "deliverable-valid",
                 "pass": False,
                 "reason": (
                     f"{kind} work must declare a durable Deliverable; use "
-                    "project:resources/<path> for project-support artifacts, "
-                    "or an operator-chosen work-root path only when the "
-                    "artifact is explicitly part of the product"
+                    "project:resources/<path> for project-support artifacts "
+                    f"(protocol default: `Deliverable: {default}`, stamped by "
+                    "write-task when the header is absent or `default`), or an "
+                    "operator-chosen work-root path only when the artifact is "
+                    "explicitly part of the product"
                 ),
             }
         return {"name": "deliverable-valid", "pass": True, "reason": None}
@@ -530,6 +560,68 @@ def _check_upstream_trace(
     }
 
 
+def evaluate(
+    project_root: Path, task_path: Path, content: str
+) -> Tuple[Dict[str, Any], List[str]]:
+    """Run the structural checks; return ``(record, warnings)`` without emitting.
+
+    Shared by the CLI handler and by ``next-action``'s startup verdict, so the
+    two can never disagree about whether the next task is ready.
+    """
+    headers, presence = _parse_headers(content)
+    warnings: List[str] = []
+    checks = _run_checks(
+        project_root, task_path, content, headers, presence, warnings,
+        title=_first_heading(content),
+    )
+    record = {
+        "task_path": str(task_path),
+        "ready": all(c["pass"] for c in checks),
+        "checks": checks,
+    }
+    return record, warnings
+
+
+def _first_heading(content: str) -> str:
+    for line in content.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
+
+
+def _run_checks(
+    project_root: Path,
+    task_path: Path,
+    content: str,
+    headers: Dict[str, str],
+    presence: Dict[str, bool],
+    warnings: List[str],
+    *,
+    title: str = "",
+) -> List[Dict[str, Any]]:
+    checks_by_name = {
+        "project-schema-current": _check_project_schema(project_root),
+        "phase-exists": _check_phase(project_root, headers),
+        "plan-ref-exists": _check_plan_ref(project_root, headers),
+        "plan-ref-aligned": _check_plan_ref_aligned(
+            project_root, task_path, headers
+        ),
+        "blocked-by-complete": _check_blocked_by(project_root, headers),
+        "evidence-gate-valid": _check_evidence_gate(headers, presence),
+        "source-guidance-valid": _check_source_guidance(task_path, content),
+        "acceptance-present": _check_acceptance(content),
+        "work-root-names-valid": _check_work_root(
+            project_root, headers, presence, warnings
+        ),
+        "deliverable-valid": _check_deliverable(project_root, headers, title),
+        "request-trace-valid": _check_request_trace(project_root, task_path, headers),
+        "upstream-trace-valid": _check_upstream_trace(
+            project_root, task_path, content
+        ),
+    }
+    return [checks_by_name[name] for name in CHECK_ORDER]
+
+
 def handler(args: argparse.Namespace) -> int:
     raw_path = args.task_path
     if not Path(raw_path).is_absolute():
@@ -554,37 +646,18 @@ def handler(args: argparse.Namespace) -> int:
         _stderr("error", f"project root not found for task: {raw_path}")
         return EXIT_FAIL
 
-    headers, presence = _parse_headers(content)
-    warnings: List[str] = []
+    record, warnings = evaluate(project_root, task_path, content)
+    checks = record["checks"]
+    ready = record["ready"]
 
-    checks_by_name = {
-        "project-schema-current": _check_project_schema(project_root),
-        "phase-exists": _check_phase(project_root, headers),
-        "plan-ref-exists": _check_plan_ref(project_root, headers),
-        "plan-ref-aligned": _check_plan_ref_aligned(
-            project_root, task_path, headers
-        ),
-        "blocked-by-complete": _check_blocked_by(project_root, headers),
-        "evidence-gate-valid": _check_evidence_gate(headers, presence),
-        "source-guidance-valid": _check_source_guidance(task_path, content),
-        "acceptance-present": _check_acceptance(content),
-        "work-root-names-valid": _check_work_root(
-            project_root, headers, presence, warnings
-        ),
-        "deliverable-valid": _check_deliverable(project_root, headers),
-        "request-trace-valid": _check_request_trace(project_root, task_path, headers),
-        "upstream-trace-valid": _check_upstream_trace(
-            project_root, task_path, content
-        ),
-    }
-    checks = [checks_by_name[name] for name in CHECK_ORDER]
-    ready = all(c["pass"] for c in checks)
+    rehearsal: Optional[Dict[str, Any]] = None
+    if getattr(args, "rehearse_dispatch", False):
+        from cli import dispatch_rehearsal
 
-    record = {
-        "task_path": str(task_path),
-        "ready": ready,
-        "checks": checks,
-    }
+        rehearsal = dispatch_rehearsal.rehearse(
+            task_path, role=getattr(args, "role", None)
+        )
+        record["rehearsal"] = rehearsal
     emit_record(record)
 
     for msg in warnings:
@@ -600,5 +673,9 @@ def handler(args: argparse.Namespace) -> int:
                 else "validation"
             )
             _stderr(prefix, f"{check['name']}: {check['reason']}")
+        return EXIT_FAIL
+    if rehearsal is not None and not rehearsal["ok"]:
+        for blocker in rehearsal["blockers"]:
+            _stderr("rehearsal", blocker)
         return EXIT_FAIL
     return EXIT_OK

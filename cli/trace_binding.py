@@ -139,6 +139,185 @@ def excerpt_identities(project_root: Path, task_path: Path) -> List[str]:
     return out
 
 
+def enumerate_inputs(
+    project_root: Path, task_path: Path, *, task_text: Optional[str] = None
+) -> Dict[str, Any]:
+    """The mechanical inputs a PM maps before any record exists.
+
+    Readiness needs a valid block; authoring needs the ordinals, digests, and
+    identities that block must name. This projection lists them once — the
+    material criteria in contract order (before any merge), the deidentified
+    source identities, and each operator excerpt's alias, identity, and a
+    bounded text preview — so the PM maps criteria to authority without
+    hashing anything by hand. Read-only and on demand: it is never part of a
+    routine assignment or review body.
+    """
+    project_root = Path(project_root)
+    task_path = Path(task_path)
+    text = task_text if task_text is not None else task_path.read_text(encoding="utf-8")
+    spec_path = governing_spec_path(project_root, task_path, text)
+    spec_items: List[str] = []
+    if spec_path is not None:
+        spec_items = acceptance_trace.spec_acceptance_items(
+            spec_path.read_text(encoding="utf-8")
+        )
+    task_items = acceptance_trace.task_acceptance_items(text)
+    criteria = acceptance_trace._material_after_merges(  # noqa: SLF001
+        [acceptance_trace.normalize(t) for t in spec_items],
+        [acceptance_trace.normalize(t) for t in task_items],
+        (),
+    )
+    context = request_trace.context_for_task_assignment(project_root, task_path)
+    excerpts = []
+    for record in context.evidence:
+        preview = acceptance_trace.normalize(record.text)
+        if len(preview) > 160:
+            preview = preview[:157] + "..."
+        excerpts.append(
+            {
+                "alias": f"REQ-{record.sequence:03d}",
+                "identity": f"REQ-{record.sequence:03d} {record.identity}",
+                "unit": record.unit.as_record(),
+                "preview": preview,
+            }
+        )
+    return {
+        "declaration": declaration(text),
+        "spec_path": str(spec_path) if spec_path else None,
+        "criteria": [
+            {
+                "ordinal": c.ordinal,
+                "digest12": c.digest,
+                "origin_list": c.origin_list,
+                "text": c.text,
+            }
+            for c in criteria
+        ],
+        "sources": source_identities(task_path, text),
+        "excerpts": excerpts,
+    }
+
+
+#: Structural marker a decision uses to record an authorized plan-level
+#: disposition for an operator excerpt no task claims.
+OUT_OF_PLAN_MARKER = "Out-of-plan request:"
+
+
+def _decision_header(text: str, name: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith(f"{name}:"):
+            return stripped[len(name) + 1 :].strip()
+    return ""
+
+
+def out_of_plan_dispositions(project_root: Path) -> Dict[str, str]:
+    """``{content identity: decision relpath}`` for recorded out-of-plan requests.
+
+    A decision line ``Out-of-plan request: sha256:<64 hex>`` records that the
+    plan deliberately leaves an operator excerpt unclaimed. Decisions are the
+    project's ruling record, so this is the one place a plan-level disposition
+    can be authorized; task-level ``A|`` scoping never substitutes for it.
+
+    Only a **current, locked** decision authorizes. An ``open`` decision is a
+    proposal, not a ruling, and a decision named in any other decision's
+    ``Supersedes:`` line has been retired by a later ruling — whichever way
+    that ruling went, the retired text no longer authorizes anything.
+    """
+    decisions = Path(project_root) / "decisions"
+    out: Dict[str, str] = {}
+    if not decisions.is_dir():
+        return out
+    texts: Dict[str, str] = {}
+    for path in sorted(decisions.glob("DEC-*.md")):
+        try:
+            texts[path.stem] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    superseded: set = set()
+    for text in texts.values():
+        for token in re.findall(r"DEC-\d{3}", _decision_header(text, "Supersedes")):
+            superseded.add(token)
+    for stem in sorted(texts):
+        text = texts[stem]
+        if stem in superseded:
+            continue
+        if _decision_header(text, "Status").lower() != "locked":
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(OUT_OF_PLAN_MARKER):
+                continue
+            identity = stripped[len(OUT_OF_PLAN_MARKER) :].strip().split(" ", 1)[0]
+            if re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
+                out.setdefault(identity, f"decisions/{stem}.md")
+    return out
+
+
+def unclaimed_scoped_excerpts(project_root: Path) -> List[Dict[str, Any]]:
+    """Operator excerpts every task scopes out and no task claims or waives.
+
+    Read across every task that declares ``Upstream trace: required``. An
+    excerpt is *claimed* by an ``operator-request`` edge, *released* by a
+    ``W|`` waiver (operator authority), and *scoped* by an ``A|`` record.
+    Only scoped-and-never-claimed excerpts are returned, each with the
+    decision that dispositions it at the plan level when one exists.
+    ``plan-audit`` warns on them; ``close-audit`` blocks on the undispositioned.
+    """
+    from cli.commands.validate_task_readiness import _parse_headers  # noqa: F401
+
+    project_root = Path(project_root)
+    claimed: set = set()
+    scoped: Dict[str, List[str]] = {}
+    seen: Dict[str, str] = {}
+    for status in ("open", "in-progress", "in-review", "done"):
+        status_dir = project_root / "tasks" / status
+        if not status_dir.is_dir():
+            continue
+        for task_file in sorted(status_dir.iterdir()):
+            match = re.fullmatch(r"(TASK-\d{2}-\d{3})\.md", task_file.name)
+            if not task_file.is_file() or not match:
+                continue
+            try:
+                text = task_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if declaration(text) != REQUIRED:
+                continue
+            binding = bind(project_root, task_file, task_text=text)
+            if binding.trace is None:
+                continue
+            trace = binding.trace
+            for excerpt in trace.excerpts:
+                seen.setdefault(excerpt.split(" ", 1)[-1], excerpt)
+            for record in trace.records:
+                if record.type == "operator-request":
+                    claimed.add(record.source_identity.split(" ", 1)[-1])
+            for waiver in trace.waivers:
+                claimed.add(waiver.identity.split(" ", 1)[-1])
+            for record in trace.applicability:
+                if record.applicability_class == "outside-scope":
+                    scoped.setdefault(record.identity.split(" ", 1)[-1], []).append(
+                        match.group(1)
+                    )
+    dispositions = out_of_plan_dispositions(project_root)
+    out: List[Dict[str, Any]] = []
+    for digest in sorted(scoped):
+        if digest in claimed:
+            continue
+        out.append(
+            {
+                "identity": seen.get(digest, digest),
+                "content_identity": digest,
+                "tasks": sorted(set(scoped[digest])),
+                "disposition": dispositions.get(digest),
+            }
+        )
+    return out
+
+
 @dataclass
 class Binding:
     """A task resolved against the trace contract."""

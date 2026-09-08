@@ -7,7 +7,7 @@ Use this skill when you are starting from scratch and want a guided requirements
 - **`adopt-requirements`** — generate `REQUIREMENTS.md` from an existing JIRA story, Confluence document, or any external requirements source, without running the full planning pipeline. Feed its output into this skill starting at Stage 2, or into `adopt-plan`.
 - **`adopt-plan`** — migrate an existing implementation plan (JIRA epic, Confluence doc, slide deck, or any structured plan) into Cartopian format, without a requirements-gathering conversation. Requirements may be referenced externally, summarized as a stub, or adopted inline.
 
-**Output:** A fully planned project with `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an up-to-date `STATE.md`.
+**Output:** A fully planned project with `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phase files, task files, spec files, and an up-to-date `STATE.md` — and, as the exit condition, the first ready task proven dispatchable by `cartopian validate-task-readiness --rehearse-dispatch`. "Planning approved" means "task 1 can be dispatched without more planning questions."
 
 ## Intake precondition
 
@@ -143,7 +143,7 @@ section. A documentation project doesn't need architecture principles. A CLI
 tool might not need non-functional requirements beyond "it runs fast." Use
 judgment.
 
-**Supporting documents live in `resources/`.** When the operator supplies or asks for supporting material for planning — research documents, user stories, reference papers, datasets — its durable home is the project's `resources/` directory (`cartopian://protocol/CONVENTIONS/project-resources`), never a work root. Operator-supplied files are placed there by the operator; documents produced through a research task are declared as `project:resources/<path>` deliverables and persisted with `cartopian write-resource`.
+**Supporting documents live in `resources/`.** When the operator supplies or asks for supporting material for planning — research documents, user stories, reference papers, datasets — its durable home is the project's `resources/` directory (`cartopian://protocol/CONVENTIONS/project-resources`), never a work root. Operator-supplied files are placed there by the operator; documents produced through a research task are declared as `project:resources/<path>` deliverables and persisted with `cartopian write-resource`. Their filename is a routine PM decision: the protocol default `project:resources/<kind>/<title-slug>.md` is stamped by `write-task`, and the operator is asked about a destination only for a `root:` deliverable that changes product structure. Do not stop planning to ask where a supporting document goes.
 
 ### 1.3 Produce REQUIREMENTS.md
 
@@ -281,7 +281,11 @@ The plan ref has already allocated the task identity: author `KIND-NN-NNN` as `T
 
 New tasks land in `tasks/open/` (the lifecycle entry point); `move-task` advances them from there. Populate the body from the plan ref, phase file, resolved roles, repo subpath, dependencies, evidence gate, and checkable acceptance criteria.
 
-Classify source authority explicitly for every new task. Use `Source guidance: task` when the task owns the record, `Source guidance: spec` when its named spec owns the one record, and `Source guidance: n/a` only when authoritative sources are not material to the outcome. For source-backed work, name stable sources, their applicable dates/versions and scopes, the conflict rule or decision authority, and every explicitly unverified claim. Do not create duplicate task and spec records.
+Classify source authority explicitly for every new task. Use `Source guidance: task` when the task owns the record, `Source guidance: spec` when its named spec owns the one record, and `Source guidance: n/a` only when authoritative sources are not material to the outcome. For source-backed work, name stable sources, their applicable dates/versions and scopes, the conflict rule or decision authority, and every explicitly unverified claim. Name every source family the outcome depends on (for an inventory or evaluation of external products, that includes the vendor's own documentation, not only internal references); a missing family is the most common request-changes finding and is cheaper to add here than after review. Do not create duplicate task and spec records.
+
+Document work (`DESIGN`, `RESEARCH`) declares its deliverable destination or takes the protocol default: omit `Deliverable:` (or write `Deliverable: default`) and `write-task` stamps `project:resources/<kind>/<title-slug>.md`. Ask the operator only for a `root:` deliverable that becomes part of the product.
+
+For a task that declares `Upstream trace: required`, derive the record block mechanically rather than by hand: `cartopian acceptance-trace <project-root> --task <task-path> --enumerate` lists the material criteria with their ordinals and digests, the source identities, and each inherited operator excerpt with its `REQ-nnn` alias and a preview; write a structured mapping (criterion → source edges, exemptions, merges, and an `A|` applicability decision — `governing-constraint` or `outside-scope` — for every inherited identity no criterion traces to), then `--compose-from <mapping.json>` renders the validated block to paste into `## Upstream trace`. Scoping an unrelated excerpt out of a task is a PM decision; only an actual departure from operator intent needs a `W|` waiver and operator authority.
 
 ### 4.3 Generate spec files
 
@@ -306,19 +310,36 @@ For `general`, keep the template's general profile and remove the software profi
 
 Every authored spec also chooses `Source guidance: required | n/a`. A required spec record uses the same domain-neutral shape as a task-owned record and is the owner only for tasks that declare `Source guidance: spec`. Missing decisive authority, stale context, unresolved conflicts, or decisive unverified claims block spec writing and planning review.
 
-### 4.4 Review checkpoint
+### 4.4 Validate authoring locally
+
+Before any reviewer sees the generated tasks, catch mechanical defects here — reviewer time is for whether the mappings and contracts are correct, not for syntax:
+
+1. Run `cartopian validate-task-readiness <task-path>` on every generated task. Every check must pass except `blocked-by-complete` for a task with declared dependencies on tasks not yet done. Missing source records, trace field-width or ordering defects, invalid source contexts, and deliverable placement are all named here with their recovery.
+2. Run `cartopian validate-task-readiness <task-path> --rehearse-dispatch` on the first ready task (the `next_open_task` that `cartopian next-action` names). The `rehearsal` record must be `ok`: the assignee role resolves, the assignment prompt composes with no findings, and the launch prerequisites for the resolved mode hold. Fix the named input and rerun; never carry a failing rehearsal into the checkpoint.
+
+### 4.5 Review checkpoint
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `004 tasks-and-specs` using the Review Flow Reference.
+1. Run planning-review checkpoint `004 tasks-and-specs` using the Review Flow Reference. The prompt's `--plan-ref` names the plan refs the checkpoint covers (a canonical same-kind range such as `BUILD-01-001 through BUILD-01-004`, or the single ref); task assignment inherits the checkpoint's evidence through that coverage.
 2. Target artifacts: generated files in `tasks/open/` and `specs/`. In the checkpoint prompt, require the reviewer to verify every spec's profile classification. For each software-profile spec, require all eight SRS/TDS areas and treat source code, executable code, pseudocode, step-by-step algorithms, function/class bodies, complete configuration/build files, or copy/paste-ready implementation as a blocking finding requiring changes.
 3. If `approve`: proceed to Stage 5.
-4. If `request-changes`: revise tasks and specs in place and rerun the checkpoint.
+4. If `request-changes`: revise tasks and specs in place, rerun 4.4, and rerun the checkpoint.
 5. If `reject`, blocked, failed, or failed-to-parse: stop and return control to the operator.
 
 ---
 
-## Stage 5 — State Initialization
+## Stage 5 — Readiness Exit And State Initialization
+
+### 5.0 Prove task 1 is dispatchable
+
+Planning is complete only when the first ready task passes the rehearsal **after** the final checkpoint approval — approval can change the inherited evidence a task binds to, so rerun it now:
+
+```
+cartopian validate-task-readiness <first-ready-task-path> --rehearse-dispatch
+```
+
+A failing check or rehearsal is remaining planning work: fix the named input (task, spec, standards, role configuration, or work-root mapping) and rerun. While it fails, do not report planning complete, do not run `cartopian write-state`, and do not end the session. Later tasks may retain explicitly declared dependencies; task 1 has no unresolved planning input.
 
 ### 5.1 Update STATE.md
 
@@ -328,7 +349,7 @@ Updating `STATE.md` is **PM-performed** through the mediated writer (never a raw
 cartopian write-state <project-root>
 ```
 
-The composed body reflects the first active phase, no active work (nothing assigned yet), all generated tasks as open work, and the first ready task as what to do next. Do not create a prompt during planning unless assignment is happening immediately; prompts belong in `prompts/` and are temporary handoff artifacts.
+The composed body reflects the first active phase, no active work (nothing assigned yet), all generated tasks as open work, and the first ready task as what to do next. Confirm with `cartopian next-action <project-root>` that `startup.verdict` is `ready` and names task 1's dispatch action; a `planning-incomplete` verdict here means a step above was skipped. Do not create a prompt during planning unless assignment is happening immediately; prompts belong in `prompts/` and are temporary handoff artifacts.
 
 ### 5.2 Final summary
 
@@ -381,7 +402,7 @@ cartopian wait-report <project>/reports/REPORT-PLAN-NNN.md --role <role>
 
 `skills/run-handoff.md` owns stale report deletion, manual versus CLI handoff behavior, timeout enforcement, completion waiting via `cartopian wait-handoff` / `cartopian wait-report`, report parsing, and sequential automation boundaries.
 
-Planning-checkpoint prompts and reviews are temporary artifacts. When a planning stage is approved or superseded, clear its prompt and report artifacts using the Core CLI and keep the review as the durable record:
+Planning-checkpoint prompts and reports are temporary artifacts; the approved review is retained as the durable checkpoint record (task assignment inherits its evidence, and startup reads it to know the checkpoint is complete — `cartopian://protocol/CONVENTIONS/reviews`). When a planning stage is approved or superseded, clear its prompt and report artifacts using the Core CLI and keep the review:
 
 - Remove the checkpoint prompt:
 

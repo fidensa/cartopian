@@ -17,6 +17,17 @@ Operator request quote for: task:TASK-NN-NNN
 > <unmodified operator quotation>
 ```
 
+A decision may also record that the plan deliberately leaves an operator
+excerpt unclaimed by every task. That is the one authorized plan-level
+disposition `plan-audit` and `close-audit` accept, and it is structural: one
+line naming the excerpt's content identity, exactly as the task trace names it.
+It authorizes only while the decision is `Status: locked` and no later decision
+names it under `Supersedes:`; an open or superseded decision authorizes nothing.
+
+```markdown
+Out-of-plan request: sha256:<64 hex>
+```
+
 ## Context
 
 Why this decision was needed.

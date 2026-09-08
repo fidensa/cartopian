@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract
+from cli import delivery_contract, planning_status
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -193,6 +193,16 @@ def _current_phase(project_path: Path) -> Optional[str]:
                 candidate_ids.append(phase_id)
 
     if not candidate_ids:
+        # No task carries this plan forward yet: the current phase is the one
+        # whose tasks are still to be generated, named as such so the state
+        # never reads as "no phase" while phases exist.
+        unstarted = planning_status.next_unstarted_phase(project_path)
+        if unstarted is not None and unstarted in phase_by_id:
+            info = phase_by_id[unstarted]
+            return (
+                f"{info['phase_id']}: {info['title']} (`{info['path']}`) "
+                "[tasks not generated]"
+            )
         return None
 
     current_id = sorted(candidate_ids, key=lambda phase_id: order.get(phase_id, len(order)))[0]
@@ -260,7 +270,12 @@ def _open_work(project_path: Path) -> Optional[str]:
 
 
 def _what_to_do_next(project_path: Path) -> Optional[str]:
-    """Return a deterministic next-step sentence derived from task placement."""
+    """Return a deterministic next-step sentence derived from task placement.
+
+    Planning state is consulted before the open queue: an empty queue with a
+    phase whose tasks were never generated, or a checkpoint still in flight,
+    is remaining planning work — never closeout readiness.
+    """
     for status in _ACTIVE_STATUSES:
         for task_path in _iter_task_paths(project_path, status):
             task = _read_task_record(task_path)
@@ -268,6 +283,13 @@ def _what_to_do_next(project_path: Path) -> Optional[str]:
                 continue
             rel_path = task_path.relative_to(project_path).as_posix()
             return f"Continue {task['task_id']} (`{rel_path}`)."
+
+    planning = planning_status.derive(
+        project_path,
+        planning_review_required=planning_status.planning_review_required(project_path),
+    )
+    if not planning["complete"]:
+        return planning["next"]
 
     order = _phase_order(project_path)
     candidates: List[tuple[int, str, str, str]] = []
