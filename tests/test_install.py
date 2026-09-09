@@ -547,6 +547,181 @@ class UnregisterTests(_InstallTestBase):
         self.assertIn("standalone cleanup", result.stderr)
 
 
+class IntakeHookTests(_InstallTestBase):
+    """User-level request-evidence hook install and rollback (plan section 4.14)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.fake_home = Path(self.tmp.name) / "home"
+        (self.fake_home / ".claude").mkdir(parents=True)
+        (self.fake_home / ".codex").mkdir(parents=True)
+        (self.fake_home / ".hermes").mkdir(parents=True)
+        (self.fake_home / ".config" / "opencode").mkdir(parents=True)
+        (self.fake_home / ".gemini" / "config").mkdir(parents=True)
+        self.agy_hooks = self.fake_home / ".gemini" / "config" / "hooks.json"
+        self.claude_settings = self.fake_home / ".claude" / "settings.json"
+        self.codex_hooks = self.fake_home / ".codex" / "hooks.json"
+        self.hermes_plugin = self.fake_home / ".hermes" / "plugins" / "cartopian-intake"
+        self.opencode_plugin = self.fake_home / ".config" / "opencode" / "plugins" / "cartopian-intake.js"
+
+    def _run(self, *extra: str) -> "subprocess.CompletedProcess[str]":
+        env = dict(os.environ, HOME=str(self.fake_home))
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--source", str(REPO_ROOT),
+             "--prefix", str(self.install_root), *extra],
+            env=env, capture_output=True, text=True,
+        )
+
+    def _hooks(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+
+    def test_install_writes_both_hosts_and_preserves_foreign_hooks(self) -> None:
+        self.claude_settings.write_text(json.dumps({
+            "model": "keep-me",
+            "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/foreign/one.sh"}]}]},
+        }))
+        result = self._run("--intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cartopian request-evidence capture is active", result.stdout)
+        adapter = str(self.install_root.resolve() / "cli" / "intake_adapter.py")
+        self.assertTrue(Path(adapter).is_file())
+
+        claude = json.loads(self.claude_settings.read_text())
+        self.assertEqual(claude["model"], "keep-me")
+        for event in ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"):
+            commands = [h["command"] for e in claude["hooks"][event] for h in e["hooks"]]
+            self.assertTrue(any(adapter in c and "--host claude" in c for c in commands), event)
+        ups = [h["command"] for e in claude["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
+        self.assertIn("/foreign/one.sh", ups)
+        self.assertNotIn("Interrupt", claude["hooks"])
+
+        codex = self._hooks(self.codex_hooks)
+        for event in ("SessionStart", "UserPromptSubmit", "Stop", "Interrupt", "SessionEnd"):
+            commands = [h["command"] for e in codex[event] for h in e["hooks"]]
+            self.assertTrue(any(adapter in c and "--host codex" in c for c in commands), event)
+
+    def test_reinstall_is_idempotent(self) -> None:
+        first = self._run("--intake-hooks")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = (self.claude_settings.read_text(), self.codex_hooks.read_text())
+        second = self._run("--intake-hooks")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("already current", second.stdout)
+        self.assertEqual(before, (self.claude_settings.read_text(), self.codex_hooks.read_text()))
+        claude = self._hooks(self.claude_settings)
+        self.assertEqual(len(claude["Stop"]), 1)
+
+    def test_rollback_removes_only_cartopian_entries(self) -> None:
+        self.claude_settings.write_text(json.dumps({
+            "model": "keep-me",
+            "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/foreign/stop.sh"}]}]},
+        }))
+        self.assertEqual(self._run("--intake-hooks").returncode, 0)
+        result = self._run("--remove-intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("removed Cartopian entries", result.stdout)
+        claude = json.loads(self.claude_settings.read_text())
+        self.assertEqual(claude["model"], "keep-me")
+        self.assertEqual(list(claude["hooks"]), ["Stop"])
+        self.assertEqual(claude["hooks"]["Stop"][0]["hooks"][0]["command"], "/foreign/stop.sh")
+        codex = json.loads(self.codex_hooks.read_text())
+        self.assertNotIn("hooks", codex)
+        again = self._run("--remove-intake-hooks")
+        self.assertEqual(again.returncode, 0)
+        self.assertIn("no Cartopian intake hooks found", again.stdout)
+
+    def test_missing_host_is_skipped_not_created(self) -> None:
+        shutil.rmtree(self.fake_home / ".codex")
+        result = self._run("--intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex not detected", result.stdout)
+        self.assertFalse(self.codex_hooks.exists())
+        self.assertTrue(self.claude_settings.exists())
+
+    def test_rollback_is_standalone(self) -> None:
+        result = self._run("--remove-intake-hooks", "--intake-hooks")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("standalone rollback", result.stderr)
+
+    def test_install_writes_hermes_and_opencode_shims(self) -> None:
+        result = self._run("--intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        adapter = str(self.install_root.resolve() / "cli" / "intake_adapter.py")
+
+        init = self.hermes_plugin / "__init__.py"
+        manifest = self.hermes_plugin / "plugin.yaml"
+        self.assertTrue(init.is_file() and manifest.is_file())
+        body = init.read_text()
+        self.assertIn(f'CARTOPIAN_ADAPTER = "{adapter}"', body)
+        self.assertNotIn("__CARTOPIAN_", body)
+        compile(body, str(init), "exec")
+        self.assertIn("name: cartopian-intake", manifest.read_text())
+
+        js = self.opencode_plugin.read_text()
+        self.assertIn(f'CARTOPIAN_ADAPTER = "{adapter}"', js)
+        self.assertNotIn("__CARTOPIAN_", js)
+        self.assertIn("export const CartopianIntake", js)
+        self.assertIn("hermes plugins enable cartopian-intake", result.stdout)
+
+        second = self._run("--intake-hooks")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("hermes already current", second.stdout)
+        self.assertIn("opencode already current", second.stdout)
+
+    def test_rollback_removes_shims_only(self) -> None:
+        (self.fake_home / ".config" / "opencode" / "plugins").mkdir(parents=True)
+        foreign_plugin = self.fake_home / ".config" / "opencode" / "plugins" / "other.js"
+        foreign_plugin.write_text("export const Other = async () => ({})\n")
+        self.assertEqual(self._run("--intake-hooks").returncode, 0)
+        result = self._run("--remove-intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.hermes_plugin.exists())
+        self.assertFalse(self.opencode_plugin.exists())
+        self.assertTrue(foreign_plugin.is_file())
+
+    def test_antigravity_named_hook_is_written_and_removed_alone(self) -> None:
+        self.agy_hooks.write_text(json.dumps({"lint": {"PostToolUse": [{"matcher": "*", "hooks": [{"command": "/foreign/lint.sh"}]}]}}))
+        result = self._run("--intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        adapter = str(self.install_root.resolve() / "cli" / "intake_adapter.py")
+        hooks = json.loads(self.agy_hooks.read_text())
+        self.assertIn("lint", hooks)
+        ours = hooks["cartopian-intake"]
+        self.assertEqual(sorted(ours), ["PreInvocation", "SessionStart", "Stop"])
+        for event, handlers in ours.items():
+            self.assertEqual(len(handlers), 1)
+            self.assertIn(f"{adapter} --host antigravity --event {event}", handlers[0]["command"])
+            self.assertEqual(handlers[0]["timeout"], 15)
+        second = self._run("--intake-hooks")
+        self.assertIn("antigravity already current", second.stdout)
+        result = self._run("--remove-intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hooks = json.loads(self.agy_hooks.read_text())
+        self.assertEqual(list(hooks), ["lint"])
+
+    def test_missing_shim_hosts_are_skipped(self) -> None:
+        shutil.rmtree(self.fake_home / ".config" / "opencode")
+        result = self._run("--intake-hooks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("opencode not detected", result.stdout)
+        self.assertFalse(self.opencode_plugin.exists())
+        # The full install registers Hermes as a client (creating ~/.hermes),
+        # so the Hermes skip is checked on the hook installer directly.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cartopian_install_script", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        bare_home = Path(self.tmp.name) / "bare-home"
+        bare_home.mkdir()
+        actions: list = []
+        touched = module.install_intake_hooks(
+            self.install_root.resolve(), actions, home=bare_home, hosts=("hermes",)
+        )
+        self.assertEqual(touched, [])
+        self.assertTrue(any("hermes not detected" in a for a in actions), actions)
+        self.assertFalse((bare_home / ".hermes").exists())
+
+
 class InstallRootPlatformTests(unittest.TestCase):
     """Per-platform install-path expansion per ENGINEERING.md."""
 

@@ -507,8 +507,9 @@ class AssentEvidenceContract(unittest.TestCase):
         self.assertEqual(records[0].antecedent.scope, SCOPE)
         self.assertEqual(records[0].antecedent.order, 41)
 
-    def test_decision_quoting_a_bare_assent_is_detached(self) -> None:
-        """A quoted excerpt carries no antecedent, so it cannot be bound."""
+    def test_decision_quoting_a_bare_assent_is_not_evidence(self) -> None:
+        """A quoted excerpt carries no receipt at all, so it never reaches
+        the assent gate: the unit simply has no captured evidence."""
         (self.root / "decisions/DEC-001.md").write_text(
             "# DEC-001: Retry\n\nDate: 2026-07-27\nStatus: locked\n"
             "Supersedes: none\n\n## Context\n\n"
@@ -519,7 +520,7 @@ class AssentEvidenceContract(unittest.TestCase):
             self.task.read_text(encoding="utf-8") + "\nSee DEC-001.\n",
             encoding="utf-8",
         )
-        self.assertRefuses("detached-assent")
+        self.assertRefuses("unit-request-not-captured")
 
     # -- rendering -------------------------------------------------------
 

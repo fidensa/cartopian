@@ -49,6 +49,8 @@ For project-agnostic startup requests of any intent class (see [Request Intent](
 3. If more than one project is registered and none was selected, ask the operator which project to use. Do not read or mutate project-specific lifecycle artifacts until the project is selected.
 4. If no projects are registered, start with `skills/init-project.md`, which scaffolds a new project at an operator-supplied path and registers it via `cartopian register-project`.
 
+Selection ends by binding the session's host-captured request evidence to the project: `cartopian select-project <project-root> --handle <handle>` (MCP `select_project`), where the handle is the opaque `cartopian-session:` routing reference the host intake adapter injected on the session's first prompt. The command resolves the handle against adapter state and takes host and session identity from that record; no argument supplies them. It promotes the session's preselection buffer to the project's captured set, records the binding in the session and in `requests/bindings.json` (written only by this command), closes the previous project's range on a switch, and refuses an unknown or stale handle with `session-unbound` naming the one missing item. A session with no routing line has no capture; the PM reports that and never substitutes records of its own.
+
 After project selection, the PM reads the selected project's `cartopian.toml` and the global `~/.cartopian/cartopian.toml` along the FR-011 resolution chain and resolves the effective PM role. If the agent is the PM for the selected project, session startup duty is:
 
 1. Read `STATE.md` before taking lifecycle action.
@@ -129,9 +131,13 @@ Requirements and implementation planning must not lock until all six fields
 are `present` and the operator has confirmed the complete record. That
 confirmation is one exchange over the whole record; the operator may correct
 any field, and the corrected record is the confirmed one. It does not
-require repeated cross-model confirmation. This pre-existing
-planning-normalization check is PM-derived guidance: it neither creates nor
-substitutes for independently resolved request evidence used by review.
+require repeated cross-model confirmation. That single exchange is also the
+project's request evidence: the host intake adapter captures the summary and
+the reply in the operator's session, and the requirements/plan writer binds
+the pair at lock (§ Up-front Operator Request Evidence). No further
+confirmation is asked for evidence purposes. The six-fact record itself stays
+PM-derived guidance; what review receives is the captured exchange, never the
+PM's record of it.
 
 The contract has no numerical confidence field. The PM never requests a
 confidence percentage, model agreement score, or repeated cross-model
@@ -393,40 +399,104 @@ regenerated. Retirement never precedes the verdict: a `blocked`, `failed`, or
 
 ## Up-front Operator Request Evidence
 
-Before a task assignment, planning review, or task-closure review, Cartopian resolves exact
-operator excerpts from three provenance-bearing sources: explicitly attributed
-verbatim quotations in applicable decisions, supported host-provided chat
-records, and optional immutable request-store records. A native host callback
-is one possible intake adapter, not a completion gate when adequate exact
-evidence already exists. Resolution is infrastructure behavior, not a later
+Before a task assignment, planning review, or task-closure review, Cartopian
+resolves the operator's exact words for the governed unit from one source of
+confirmed evidence: operator turns captured by the host intake adapter in the
+operator's own interactive session and bound to the project through
+`select_project` (§ Session Startup And Project Selection). The adapter is the
+host's own prompt and stop hooks (Claude Code, Codex, and Antigravity
+hooks; a Hermes plugin; an opencode plugin); it records each
+operator prompt under a receipt ordinal and pairs it with the assistant
+message it answered. Antigravity's hooks carry no text, so there the adapter
+reads the transcript the hook payload names, at the hook moment. Nothing
+the PM writes is evidence. Resolution is infrastructure behavior, not a later
 confirmation, restatement, review step, scope choice, or requiredness choice.
 
-New decision evidence uses one exact structural marker immediately before its
-Markdown block quote:
+Applicable evidence for a unit is selected, never searched for:
 
-```text
-Operator request quote for: project:project
+1. **The confirmation exchange.** The compact intent summary the PM presents
+   under § Planning Intent Contract is the proposal; the operator's confirming
+   or correcting reply is the assent. When requirements and the plan lock, the
+   writer resolves that pair from adapter state in code and binds it into the
+   project's binding record as the `project:project` original. Nothing is
+   asked again: a resumed session, a new task, or a new agent inherits it.
+2. **Referenced turns.** A decision names captured turns with the structural
+   marker `Operator request evidence for: <unit>: <capture-id>[, ...]`, where
+   the unit is exactly one of `project:project`, `planning:PLAN-NNN`, or
+   `task:TASK-NN-NNN`; requirements and task files may name capture identities
+   under `## Operator intent`, `## Original request evidence`, or `## Request
+   evidence`. Text and provenance always come from the capture. An optional
+   block quote directly under the marker must equal the captured text whole,
+   modulo whitespace, or the reference is `unconfirmed`. A reference inherits
+   the capture's unit, pairing state, and revocation; a turn referenced under
+   two units is `cross-unit` for both. A malformed marker fails closed.
+3. **Corrections.** Referenced turns later than the confirmation, in receipt
+   order. Where a reply differs from the proposal it answered, the reply
+   governs; both are kept whole.
 
-> <unmodified operator quotation>
-```
+A capture identity is `<handle>/turn-<ordinal>`; its paired proposal is
+`<handle>/proposal-<ordinal>`. `cartopian lookup-evidence <project-root>
+--unit <unit>` (MCP `lookup_evidence`) lists the applicable identities for a
+unit one line each, or exactly one missing item with its operator-facing
+remedy; it never returns captured text. The PM takes identities from the
+lookup (`--recent` for turns not yet selected), never from memory.
 
-The value is exactly one governed unit: `project:project`,
-`planning:PLAN-NNN`, or `task:TASK-NN-NNN`. The unit-bearing marker makes
-a decision self-selecting and lets a fresh project establish exact evidence
-before requirements exist. Malformed or ambiguous markers fail closed.
-Ordinary block quotes, loosely adjacent PM attribution, and ordinary plan,
-phase, spec, task, prompt, report, or decision prose remain PM-derived. Bounded
-backward compatibility recognizes the exact existing DEC-007, DEC-008, and
-DEC-009 attribution wording only when an applicable artifact explicitly
-selects those decisions through `## Operator intent`, `## Original request
-evidence`, or `## Request evidence`; it is not a general prose heuristic.
+Everything else is unconfirmed and satisfies no gate: block quotes under the
+retired `Operator request quote for:` marker, the historical DEC-007..DEC-009
+attribution wording, any JSON under `requests/chat/` (no supported intake
+writes it), a reference to a turn that no receipted binding of the project
+contains, a partial quotation, a bare assent whose proposal was not captured,
+and a revoked identity. Unconfirmed items stay readable and are reported by
+the lookup tool and `plan-audit`; ordinary decision, plan, phase, spec, task,
+prompt, and report prose remains PM-derived. A conversation range never
+establishes applicability; it only supplies candidates, and unreferenced
+candidates are omitted and counted.
 
-Decisions are evidence containers, not PM derivatives that require earlier
-request evidence. Writing one does not make later optional direct host capture
-late. Decision-first and capture-first intake orderings are both valid. Later
-requirements, plans, phases, tasks, specs, and prompts still fail closed when
-neither an applicable exact decision/chat source nor an optional request record
-resolves. There is no raw decision-deletion recovery path.
+Pairing is decided by the adapter when the prompt arrives and then frozen. A
+reply is paired with the latest non-empty assistant message of a turn that
+was not interrupted, provided no other submission intervened; otherwise it is
+`unpaired`. A late or repeated stop never rewrites a pair; when its text
+differs from the paired proposal the pair is `inconsistent`, which blocks every
+gate (`inconsistent-pair`) until the operator states the scope afresh in their
+own session. An unpaired low-information reply ("yes", "proceed", the closed
+grammar in `protocol/assignment-prompt-contract.json`) authorizes nothing
+(`unpaired-assent`); an unpaired content-bearing statement is evidence on its
+own. Events evicted from a session's bounded preselection buffer before
+`select_project` are gone: a reference to one is `evicted`, the packet and the
+lookup report the eviction, and the remedy is to ask the operator to restate
+it. The PM never reconstructs evicted text as captured evidence.
+
+Assurance is procedural traceability. Under an intact, correctly configured
+installation, every selected excerpt is established to have arrived through
+the configured adapter from the operator's own session, with its pairing and
+order fixed at capture. It does not prove human authorship against an agent
+using unrestricted same-user access: the intake root, `requests/bindings.json`,
+`requests/revocations.json`, and the validator are same-user writable, and
+modifying any of them defeats the traceability. That is the stated property of
+the design, not a warning attached to an otherwise ordinary approval.
+
+The PM must not manufacture evidence. It must not create, copy, edit, move, or
+delete anything under `requests/` or the intake directory, invoke operator-only
+intake, modify trust material (the inbox, receipts, bindings, revocations, or
+the validator), or use shell, escalation, or any other tool to bypass an
+evidence protection. The prohibition is narrow: ordinary mediated or escalated
+writes elsewhere are not affected. Every not-captured refusal says the same
+thing: stop, report the missing evidence to the operator, and name the
+supported intake for this host (the intake hooks installed by
+`scripts/install.py --intake-hooks`, trusted in `/hooks` on Codex, enabled
+with `hermes plugins enable cartopian-intake` on Hermes, and bound with
+`select_project`). Capture and disclosure are separate: the inbox never
+enters the project, and only applicable evidence reaches a reviewer prompt. On
+hosts without enforcement hooks this guidance is the only enforcement, and it
+applies there exactly as written.
+
+A host with no hook or plugin surface at all (the local Devin CLI today;
+Devin Cloud is not a supported PM host) has no capture: a PM session there receives no routing line, `select_project`
+refuses `session-unbound`, and every evidence gate refuses until the operator
+records the request through the operator-only `capture-request` path or runs
+the PM on a host with intake. Cartopian reads a host's transcript only at
+that host's own hook boundary, from the path the hook supplies; it never
+polls a transcript or session database in place of a hook.
 
 For task assignment, `write-prompt --task <absolute-task-path>` generates the
 exact-request channel before the coder sees the prompt. The assignment context
@@ -439,23 +509,40 @@ authority; permission to propose an option does not authorize implementing it.
 Task-closure review applies the same authority rule to the delivered outcome,
 so a PM-authored liberty is request drift even when the task and coder agree.
 
-Supported host chat records are UTF-8 JSON files below `requests/chat/` with
-schema `cartopian-host-chat-v1`. They identify the operator role, governed unit,
-original-or-correction kind, contiguous order, exact text hash, host,
-conversation, and message identities. Records for unrelated units are not
-selected. Optional `cartopian capture-request` records keep their existing
-original/correction ordering and immutable exact-text identity.
+`cartopian capture-request` remains as an operator-only manual intake path:
+the operator runs it in their own terminal to record a message the host hooks
+could not capture. It is absent from the managed-agent MCP registry and refuses
+whenever `CARTOPIAN_ROLE` (a dispatched role) or `CARTOPIAN_MCP_TOOL_CALL` (an
+in-process managed tool call) is set. It is never the PM's remedy for a
+missing-evidence refusal. Its records keep their existing original/correction
+ordering and immutable exact-text identity. The local CLI does not
+cryptographically authenticate a human or prove the authorship of bytes
+supplied by an otherwise unmarked process; content identity proves exact
+preservation *after intake*, not human authorship by itself. A PM-transcribed
+or paraphrased file is never valid proof of verbatim operator origin.
 
-The enforceable CLI boundary is deliberately precise. `capture-request` is
-absent from the managed-agent MCP registry and refuses whenever
-`CARTOPIAN_ROLE` (a dispatched role) or `CARTOPIAN_MCP_TOOL_CALL` (an in-process
-managed tool call) is set. The local CLI does not cryptographically authenticate
-a human or prove the authorship of bytes supplied by an otherwise unmarked
-process. Content identity proves exact preservation *after host intake*, not
-human authorship by itself. Accordingly, a PM-transcribed or paraphrased file
-is never valid proof of verbatim operator origin; a host integration that uses
-direct intake must pass its raw operator-message payload rather than a
-model-produced copy.
+Revocation is operator-only as well. `cartopian revoke-evidence <project-root>
+--evidence <id> [...]` (absent from the MCP registry; refuses under
+`CARTOPIAN_ROLE` or `CARTOPIAN_MCP_TOOL_CALL`) first records a durable entry in
+`requests/revocations.json` naming the evidence identities and every
+review-context identity that bound them, never filenames; then moves the
+affected project-side records byte-for-byte to `requests/quarantine/`. The
+two steps are idempotent and retry-safe after a crash between them. From the
+first step on, the shared resolver refuses every review bound to a revoked
+identity (`revoked-evidence`) regardless of prompt deletion or regeneration,
+and a revoked original no longer counts toward the single-original rule.
+Nothing is re-certified: a fresh operator scope statement captured through
+the adapter binds as the unit's original at the next lock with
+`supersedes: <revoked id>`. Quarantined files are auditable, never resolved.
+
+`cartopian plan-audit` audits the request store itself and inventories every
+JSON record under `requests/`, quarantine included, each with a status.
+Blocking findings: a binding with no adapter receipt, a binding that names
+another project, an unconfirmed record bound by an active review, a revoked
+identity or context still in use, a capture identity referenced under two
+units, an inconsistent pair, and a referenced unpaired assent. Readable
+legacy quotations and hand-written chat files that nothing binds are
+warnings. Timestamp patterns are never findings.
 
 A low-information response — "yes", "continue", "proceed", and the rest of the
 closed grammar in `protocol/assignment-prompt-contract.json` — states no intent
@@ -498,31 +585,55 @@ proposal, or a new, self-contained operator instruction. Every channel renders
 such a record as the proposal, its scope, the provenance of both messages, and
 then the assent — never the assent alone.
 
-Multiple exact excerpts may express the initiating ask and later explicit
-corrections. Each selected excerpt retains its source kind, stable source
-identity and path, full-source SHA-256 identity, exact-text SHA-256 identity,
-governed unit, and deterministic evidence order. Duplicate content is emitted
-once. Assistant messages, unattributed quotations, and unrelated conversation
-history are never promoted into the trace.
+Every selected excerpt retains its capture identity, source path and
+full-event SHA-256 identity, exact-text SHA-256 identity, governed unit, kind
+(`instruction`, `confirmation`, or `correction`; `original` and `correction`
+for `capture-request` records), and deterministic order: binding order, then
+receipt ordinal. Deduplication is by presentation, not content: two turns are
+one presentation only when their words, the proposal they answered, and their
+position relative to the latest correction all match, so identical words
+repeated after an intervening correction are kept. Assistant messages are
+context, never evidence; unattributed quotations and unrelated conversation
+are never promoted into the trace.
 
-Planning and task-closure reviews carry two generated channels:
-
-1. `## Original operator request (verbatim)` contains the resolved exact
-   excerpts and ordered explicit corrections.
-2. `## PM-derived guidance and delivered outcome` names the requirements, plan,
-   task, spec, prompt, report, and other delivery evidence prepared later.
+Planning, task-assignment, and task-closure prompts carry two generated
+channels. `## Original operator request (verbatim)` is the **intent packet**:
+the applicable original operator instructions verbatim and in order; then the
+confirmation exchange (the proposal the operator answered, then the operator's
+confirming or correcting words); then subsequent corrections in order,
+constraints and exclusions intact. Each captured turn is preceded by the
+assistant message it answered, labeled as context and not evidence, and a
+content-free assent is followed by the statement that it authorizes exactly
+that message and nothing absent from it. The packet ends with a trailer:
+`Request evidence:` (the ordered identities), `Request-context identity:`,
+and one line `Omitted candidates: N across M sessions`, with an eviction
+notice when any candidate was evicted. It contains no transcripts, ledgers,
+inbox contents, or per-excerpt metadata blocks; original words appear first,
+summary second. `## PM-derived guidance and delivered outcome` names the
+requirements, plan, task, spec, prompt, report, and other delivery evidence
+prepared later; PM interpretation lives only there.
 
 `cartopian review-context` is the common read-only projection used by prompt
 generation, dispatch, manual handoff, report parsing, lifecycle guards, and
 audit. The context identity covers the review target, ordered evidence and
-source identities, legacy state, and PM artifact paths. The PM/delivery channel
-contains only artifacts that exist when the prompt snapshot is generated,
-including canonical specs and applicable phase and prior-review artifacts.
-Later lifecycle outputs do not retroactively alter that snapshot; regenerating
-a review prompt takes a new snapshot. Any selected-source mutation or prompt
-omission makes the binding stale. Exact content carries no byte ceiling
-and is never truncated: an excerpt is bound by SHA-256 content identity,
-never by size.
+source identities, legacy state, and PM artifact paths. The omitted-candidates
+and eviction lines are telemetry outside that identity and outside the
+preflight comparison, so unrelated conversation after a prompt is written
+never makes it stale. The PM/delivery channel contains only artifacts that
+exist when the prompt snapshot is generated, including canonical specs and
+applicable phase and prior-review artifacts. Later lifecycle outputs do not
+retroactively alter that snapshot; regenerating a review prompt takes a new
+snapshot. Any selected-source mutation or prompt omission makes the binding
+stale. Exact content carries no byte ceiling and is never truncated: an
+excerpt is bound by SHA-256 content identity, never by size.
+
+`cartopian lookup-evidence ... --recent` adds the last five captured
+operator turns as identity rows: capture identity, session handle, receipt
+ordinal, pairing state, the kind each was selected as (or none), and a fixed
+120-character preview, never the whole text. It is how the PM finds the
+identity of a correction the operator stated after lock so a decision can
+reference it. Code establishes where selected evidence came from; the
+reviewer judges whether the packet represents intent.
 
 Task-assignment snapshots exclude completion-report and task-review slots.
 Those are outputs of the handoff being prepared, so a stale retry artifact may
@@ -548,8 +659,8 @@ addition to govern that task without mixing it with inherited evidence.
 
 An ad-hoc task (`Plan ref: n/a`), a task with malformed or mismatched ancestry,
 or a task whose plan anchors are missing never inherits project intent. When no
-applicable task-bound decision quote, host chat turn, or optional task record
-resolves for such a task, `unit-request-not-captured` fails closed. Semantic
+applicable task-bound capture reference or optional task record resolves
+for such a task, `unit-request-not-captured` fails closed. Semantic
 scope widening is still detected by comparing the exact request channel with
 the plan, task, spec, prompt, and delivered outcome; inheritance does not turn
 PM-authored scope into operator intent.

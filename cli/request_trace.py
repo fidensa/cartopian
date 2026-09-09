@@ -1,10 +1,16 @@
 """Deterministic request evidence for assignment, planning, and closure.
 
-Exact operator excerpts may come from immutable request records, supported
-host chat records, or explicitly unit-bound decision quotations.  Every
-excerpt retains its source, governed unit, deterministic order, and SHA-256
-content identity.  Ordinary PM-authored prose is never promoted into this
-channel; it remains in the separate management/delivery projection.
+Confirmed operator excerpts come from two channels: operator turns captured
+by the host intake adapter and selected through the shared resolver
+(``cli/evidence_resolver.py`` -- the confirmation exchange bound at
+requirements/plan lock, plus turns referenced by capture identity from
+decisions, requirements, or a task), and the operator-only
+``capture-request`` record store.  Every excerpt retains its source,
+governed unit, deterministic order, and SHA-256 content identity.  Decision
+block quotes, hand-written ``requests/chat/`` JSON, and ordinary PM-authored
+prose are never promoted into this channel; the first two are reported as
+unconfirmed, and PM prose stays in the separate management/delivery
+projection.
 """
 from __future__ import annotations
 
@@ -436,6 +442,66 @@ class RequestRecord:
 
 
 @dataclass(frozen=True)
+class CapturedContext:
+    """The paired assistant proposal a captured operator turn answered.
+
+    Context, not evidence: it travels with the operator's words so a reader
+    sees what "yes, except no cloud storage" was said in reply to. The
+    resolver takes it from the adapter's pair record; nothing else supplies
+    it.
+    """
+
+    capture_id: str
+    identity: str
+    text: str
+    turn_id: Optional[str] = None
+
+    def as_record(self, *, include_text: bool = True) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "capture_id": self.capture_id,
+            "content_identity": self.identity,
+            "turn_id": self.turn_id,
+        }
+        if include_text:
+            result["text"] = self.text
+        return result
+
+
+@dataclass(frozen=True)
+class ResolutionSummary:
+    """What the resolver saw beyond the selected evidence.
+
+    Telemetry for the packet's omitted line, the lookup tool, and the
+    lookup tool: how many captured turns were candidates, across how
+    many sessions, what was evicted before selection, which bindings had no
+    receipt, and which references stayed unconfirmed. None of it is bound
+    into the review-context identity: unrelated chatter after a prompt is
+    written changes the omitted count and nothing else.
+    """
+
+    candidates_total: int = 0
+    sessions: int = 0
+    evictions: Tuple[Dict[str, Any], ...] = ()
+    unreceipted_bindings: Tuple[str, ...] = ()
+    unconfirmed: Tuple[Dict[str, Any], ...] = ()
+
+    def omitted(self, trace: Sequence["RequestEvidence"]) -> int:
+        selected = sum(1 for item in trace if item.source_kind == "adapter-capture")
+        return max(self.candidates_total - selected, 0)
+
+    def as_record(self, trace: Sequence["RequestEvidence"]) -> Dict[str, Any]:
+        """Counts only: the records themselves are for the lookup tool."""
+        return {
+            "candidates": self.candidates_total,
+            "omitted": self.omitted(trace),
+            "sessions": self.sessions,
+            "evictions": len(self.evictions),
+            "unreceipted_bindings": len(self.unreceipted_bindings),
+            "unconfirmed": len(self.unconfirmed),
+        }
+
+
+@dataclass(frozen=True)
 class RequestEvidence:
     """One exact excerpt selected for a governed review unit."""
 
@@ -452,6 +518,7 @@ class RequestEvidence:
     source_content_identity: str
     observed_at: str = ""
     antecedent: Optional[Antecedent] = None
+    context: Optional[CapturedContext] = None
 
     def as_record(self, *, include_text: bool = True) -> Dict[str, Any]:
         result: Dict[str, Any] = {
@@ -472,6 +539,8 @@ class RequestEvidence:
             result["observed_at"] = self.observed_at
         if self.antecedent is not None:
             result["antecedent"] = self.antecedent.as_record(include_text=include_text)
+        if self.context is not None:
+            result["context"] = self.context.as_record(include_text=include_text)
         if include_text:
             result["text"] = self.text
         return result
@@ -527,7 +596,12 @@ def load_records(project_root: Path) -> List[RequestRecord]:
         return []
     if base.is_symlink() or not base.is_dir():
         raise RequestRefusal("unsafe-request-store", "requests/ is not a real directory")
-    records = [_record_from_json(path, Path(project_root)) for path in sorted(base.glob("*.json"))]
+    # Only request records live at this grain; ``bindings.json``,
+    # ``revocations.json`` and the quarantine are the resolver's, not records.
+    records = [
+        _record_from_json(path, Path(project_root))
+        for path in sorted(base.glob("REQUEST-*.json"))
+    ]
     ids = [record.record_id for record in records]
     if len(ids) != len(set(ids)):
         raise RequestRefusal("ambiguous-request", "duplicate request record identity")
@@ -693,34 +767,6 @@ def _section(text: str, heading: str) -> str:
     return "".join(lines[start:end])
 
 
-def _explicit_decision_refs(text: str) -> List[str]:
-    """Return only decision refs explicitly classified as operator evidence."""
-    evidence_text = "\n".join(
-        _section(text, heading)
-        for heading in (
-            "## Operator intent",
-            "## Original request evidence",
-            "## Request evidence",
-        )
-    )
-    marker_lines = "\n".join(
-        line
-        for line in text.splitlines()
-        if re.match(r"^(?:Exact )?Operator (?:quote|excerpt) source:\s*", line, re.IGNORECASE)
-    )
-    return sorted(set(re.findall(r"\bDEC-\d{3}\b", evidence_text + "\n" + marker_lines)))
-
-
-def _decision_path(project_root: Path, decision_id: str) -> Path:
-    matches = sorted((Path(project_root) / "decisions").glob(f"{decision_id}-*.md"))
-    exact = Path(project_root) / "decisions" / f"{decision_id}.md"
-    if exact.is_file():
-        matches.insert(0, exact)
-    unique = list(dict.fromkeys(matches))
-    if len(unique) != 1:
-        detail = "does not resolve" if not unique else "is ambiguous"
-        raise RequestRefusal("unresolved-request-source", f"{decision_id} {detail}")
-    return unique[0]
 
 
 def _quote_after_marker(
@@ -823,100 +869,6 @@ def _legacy_decision_quotes(decision_id: str, text: str) -> List[str]:
     return results
 
 
-def _unit_applies(
-    source: GovernedUnit,
-    target: GovernedUnit,
-    *,
-    allow_project_origin: bool,
-) -> bool:
-    return source == target or (
-        allow_project_origin and source == GovernedUnit("project", "project")
-    )
-
-
-def _decision_evidence(
-    project_root: Path,
-    unit: GovernedUnit,
-    source_texts: Sequence[str],
-    *,
-    allow_project_origin: bool = False,
-) -> List[RequestEvidence]:
-    evidence: List[RequestEvidence] = []
-    decisions_dir = Path(project_root) / "decisions"
-
-    def append(
-        decision_id: str,
-        path: Path,
-        decision_text: str,
-        quote_index: int,
-        excerpt: str,
-        source_unit: GovernedUnit,
-    ) -> None:
-        raw = excerpt.encode("utf-8")
-        evidence.append(RequestEvidence(
-            record_id=f"{decision_id}-QUOTE-{quote_index:03d}",
-            kind="source-excerpt",
-            unit=source_unit,
-            identity=content_identity(raw),
-            text=excerpt,
-            sequence=quote_index,
-            source_sequence=quote_index,
-            source_kind="decision",
-            source_identity=decision_id,
-            source_path=path.relative_to(project_root).as_posix(),
-            source_content_identity=content_identity(decision_text.encode("utf-8")),
-            observed_at=_header(decision_text, "Date") or "",
-        ))
-
-    # New evidence is self-selecting: the structural marker names its governed
-    # unit, so a greenfield decision can establish evidence before requirements
-    # or a plan exists to reference that decision.
-    grouped: Dict[str, List[Path]] = {}
-    if decisions_dir.is_dir():
-        for path in sorted(decisions_dir.glob("DEC-*.md")):
-            match = re.fullmatch(r"(DEC-\d{3})\.md", path.name)
-            if match:
-                grouped.setdefault(match.group(1), []).append(path)
-    structurally_marked: set[str] = set()
-    for decision_id, paths in sorted(grouped.items()):
-        parsed: List[Tuple[Path, str, List[Tuple[GovernedUnit, str]]]] = []
-        for path in paths:
-            decision_text = read_contained_text(
-                project_root, path, what="decision request source"
-            )
-            quotes = _structural_decision_quotes(decision_id, decision_text)
-            if quotes:
-                parsed.append((path, decision_text, quotes))
-        if not parsed:
-            continue
-        if len(paths) != 1:
-            raise RequestRefusal(
-                "unresolved-request-source", f"{decision_id} is ambiguous"
-            )
-        path, decision_text, quotes = parsed[0]
-        structurally_marked.add(decision_id)
-        for quote_index, (source_unit, excerpt) in enumerate(quotes, start=1):
-            if _unit_applies(
-                source_unit, unit, allow_project_origin=allow_project_origin
-            ):
-                append(
-                    decision_id, path, decision_text, quote_index, excerpt, source_unit
-                )
-
-    # The three historical attribution sentences remain readable only when an
-    # applicable artifact explicitly selects the decision. No general prose
-    # heuristic is retained for other decisions.
-    for decision_id in sorted({ref for text in source_texts for ref in _explicit_decision_refs(text)}):
-        if decision_id in structurally_marked:
-            continue
-        path = _decision_path(project_root, decision_id)
-        decision_text = read_contained_text(project_root, path, what="decision request source")
-        for quote_index, excerpt in enumerate(
-            _legacy_decision_quotes(decision_id, decision_text), start=1
-        ):
-            append(decision_id, path, decision_text, quote_index, excerpt, unit)
-    return evidence
-
 
 def _target_unit(review_kind: str, task_path: Optional[Path], checkpoint_id: Optional[str]) -> GovernedUnit:
     if review_kind in ("task-assignment", "task-closure"):
@@ -936,7 +888,12 @@ def _select_record_trace(
     unit: GovernedUnit,
     *,
     allow_project_origin: bool = False,
+    revoked: frozenset = frozenset(),
 ) -> List[RequestRecord]:
+    # The single-original rule counts only non-revoked originals: a revoked
+    # request is quarantined history, and the fresh statement that supersedes
+    # it is the unit's original.
+    records = [r for r in records if r.record_id not in revoked]
     originals = [r for r in records if r.kind == "original" and r.unit == unit]
     if not originals and allow_project_origin:
         originals = [
@@ -960,27 +917,6 @@ def _select_record_trace(
         raise RequestRefusal("correction-gap", f"corrections for {original.request_id} are not contiguous")
     return [original, *corrections]
 
-
-def _select_chat_trace(
-    records: Sequence[RequestEvidence],
-    unit: GovernedUnit,
-    *,
-    allow_project_origin: bool = False,
-) -> List[RequestEvidence]:
-    selected_unit = unit
-    originals = [record for record in records if record.kind == "original" and record.unit == unit]
-    if not originals and allow_project_origin:
-        selected_unit = GovernedUnit("project", "project")
-        originals = [
-            record for record in records
-            if record.kind == "original" and record.unit == selected_unit
-        ]
-    if not originals:
-        return []
-    return sorted(
-        (record for record in records if record.unit == selected_unit),
-        key=lambda record: (record.sequence, record.record_id),
-    )
 
 
 def _source_texts(
@@ -1017,49 +953,70 @@ def _resolve_trace(
     *,
     allow_project_origin: bool = False,
 ) -> List[RequestEvidence]:
-    records = load_records(project_root)
-    chat_records = load_host_chat_records(project_root)
+    """The shared resolver's view for one governed unit.
 
-    def collect(*, include_project_origin: bool) -> List[RequestEvidence]:
+    Confirmed evidence comes from two channels only: operator turns captured
+    by the host intake adapter and selected by the confirmation exchange or
+    by capture-identity reference (``cli/evidence_resolver.py``), and the
+    operator-only ``capture-request`` record store. Decision block quotes and
+    ``requests/chat/`` JSON are unconfirmed and never enter the trace.
+    """
+    return _resolve_trace_with_summary(
+        project_root, target, source_texts, allow_project_origin=allow_project_origin
+    )[0]
+
+
+def _resolve_trace_with_summary(
+    project_root: Path,
+    target: GovernedUnit,
+    source_texts: Sequence[str],
+    *,
+    allow_project_origin: bool = False,
+) -> Tuple[List[RequestEvidence], ResolutionSummary]:
+    """:func:`_resolve_trace` plus the resolver's summary of the final pass."""
+    from cli import evidence_resolver
+
+    records = load_records(project_root)
+    revoked = frozenset(evidence_resolver.revoked_evidence_ids(project_root))
+
+    def collect(*, include_project_origin: bool) -> Tuple[List[RequestEvidence], ResolutionSummary]:
+        resolution = evidence_resolver.resolve(
+            project_root,
+            target,
+            source_texts,
+            allow_project_origin=include_project_origin,
+        )
         stored = [
             _record_evidence(project_root, record)
             for record in _select_record_trace(
                 records,
                 target,
                 allow_project_origin=include_project_origin,
+                revoked=revoked,
             )
         ]
-        chat = _select_chat_trace(
-            chat_records,
-            target,
-            allow_project_origin=include_project_origin,
+        summary = ResolutionSummary(
+            candidates_total=resolution.candidates_total,
+            sessions=resolution.sessions,
+            evictions=tuple(e.as_record() for e in resolution.evictions),
+            unreceipted_bindings=tuple(resolution.unreceipted_bindings),
+            unconfirmed=tuple(u.as_record() for u in resolution.unconfirmed),
         )
-        decisions = _decision_evidence(
-            project_root,
-            target,
-            source_texts,
-            allow_project_origin=include_project_origin,
-        )
-        return [*stored, *chat, *decisions]
+        return [*resolution.evidence, *stored], summary
 
-    exact = collect(include_project_origin=False)
+    exact, summary = collect(include_project_origin=False)
     # For a task, exact unit-bound evidence wins and project evidence is only
     # an ancestry fallback. Planning checkpoints retain their established
     # project-plus-checkpoint trace because both describe the planning unit.
     ordered = exact
     if allow_project_origin and (not exact or target.kind != "task"):
-        ordered = collect(include_project_origin=True)
-    identities: set[str] = set()
-    unique: List[RequestEvidence] = []
-    for evidence in ordered:
-        if evidence.identity in identities:
-            continue
-        identities.add(evidence.identity)
-        unique.append(evidence)
+        ordered, summary = collect(include_project_origin=True)
+    unique = evidence_resolver.dedupe_by_presentation(ordered)
     # The last gate before selected excerpts become authority for a governed
     # unit: a detached low-information assent never gets there.
     _enforce_antecedent_binding(unique)
-    return [replace(evidence, sequence=index) for index, evidence in enumerate(unique, start=1)]
+    trace = [replace(evidence, sequence=index) for index, evidence in enumerate(unique, start=1)]
+    return trace, summary
 
 
 def _phase_from_text(text: str) -> Optional[str]:
@@ -1179,6 +1136,10 @@ def _approved_planning_trace(
     reviews_dir = Path(project_root) / "reviews"
     if not reviews_dir.is_dir():
         return []
+    from cli import evidence_resolver
+
+    revoked_evidence = evidence_resolver.revoked_evidence_ids(project_root)
+    revoked_contexts = evidence_resolver.revoked_context_identities(project_root)
 
     inherited: List[RequestEvidence] = []
     for path in sorted(reviews_dir.glob("REVIEW-PLAN-*.md")):
@@ -1206,6 +1167,18 @@ def _approved_planning_trace(
                 f"{path.name} approves {plan_ref} but records no exact request evidence",
                 "regenerate the planning review from current exact request evidence",
             )
+        # A review bound to revoked evidence, or whose context identity was
+        # named by a revocation, is refused regardless of whether its prompt
+        # still exists or was regenerated since.
+        revoked_ids = revoked_evidence.intersection(evidence_ids)
+        review_context = _review_header(review_text, "Request-context identity") or ""
+        if revoked_ids or review_context in revoked_contexts:
+            raise RequestRefusal(
+                "revoked-evidence",
+                f"{path.name} approves {plan_ref} on revoked request evidence: "
+                + (", ".join(sorted(revoked_ids)) or review_context),
+                "rerun the planning review after a fresh operator statement supersedes the revoked evidence",
+            )
         checkpoint = match.group(1)
         available = _resolve_trace(
             project_root,
@@ -1226,13 +1199,7 @@ def _approved_planning_trace(
         checkpoint_bound = [item for item in reviewed if item.unit == checkpoint_unit]
         inherited.extend(checkpoint_bound or reviewed)
 
-    identities: set[str] = set()
-    unique: List[RequestEvidence] = []
-    for evidence in inherited:
-        if evidence.identity in identities:
-            continue
-        identities.add(evidence.identity)
-        unique.append(evidence)
+    unique = evidence_resolver.dedupe_by_presentation(inherited)
     return [
         replace(evidence, sequence=index)
         for index, evidence in enumerate(unique, start=1)
@@ -1702,11 +1669,22 @@ def is_low_information(text: str) -> bool:
     return normalized in _low_information_responses()
 
 
+NOT_CAPTURED_RECOVERY = (
+    "Stop. Report the missing evidence to the operator and name the supported "
+    "intake for this host: the operator's own words reach Cartopian only "
+    "through the host intake hooks in the operator's interactive session, "
+    "bound to the project with `select_project`. Never create, copy, or edit "
+    "records under `requests/` or the intake directory by any means, "
+    "including shell."
+)
+
 ASSENT_RECOVERY = (
-    "capture a new, self-contained operator instruction stating the intent in "
-    "full; a low-information response is authority only when it is retained "
-    "and evaluated together with the complete immediately preceding question "
-    "or proposal and that proposal's exact scope"
+    "stop and report to the operator: ask for a new, self-contained operator "
+    "instruction stating the intent in full, given in their own session; a "
+    "low-information response is authority only when it is retained and "
+    "evaluated together with the complete immediately preceding question or "
+    "proposal and that proposal's exact scope. Never write the instruction "
+    "into requests/ or the intake directory yourself"
 )
 
 SCOPE_RECOVERY = (
@@ -1783,6 +1761,11 @@ def _enforce_antecedent_binding(trace: Sequence[RequestEvidence]) -> None:
     for record in trace:
         if not is_low_information(record.text):
             continue
+        if record.context is not None:
+            # A captured turn carries the proposal the adapter paired it
+            # with; the resolver has already refused an unpaired or
+            # inconsistent pair before it reaches the trace.
+            continue
         antecedent = record.antecedent
         if antecedent is None:
             raise RequestRefusal(
@@ -1795,6 +1778,126 @@ def _enforce_antecedent_binding(trace: Sequence[RequestEvidence]) -> None:
         check_antecedent_completeness(record.record_id, antecedent)
 
 
+OMITTED_LINE_PREFIX = "Omitted candidates:"
+EVICTED_LINE_PREFIX = "Evicted before selection:"
+CAPTURED_SOURCE_KIND = "adapter-capture"
+ASSENT_BOUND_SENTENCE = (
+    "This reply is a content-free assent: it authorizes exactly the "
+    "assistant message above and nothing absent from it."
+)
+
+
+def _captured_words(record: RequestEvidence, *, context_label: str, words_label: str) -> List[str]:
+    """One captured operator turn: its paired assistant message, then its words.
+
+    Words only. Identities travel in the trailer and in the machine record;
+    a reviewer reads what was said, in order, without per-excerpt metadata.
+    """
+    fence = _fence(record.text)
+    lines: List[str] = []
+    if record.context is not None:
+        context_fence = _fence(record.context.text)
+        lines += [
+            "",
+            context_label,
+            "",
+            context_fence + "text",
+            record.context.text,
+            context_fence,
+            "",
+            words_label,
+        ]
+    lines += ["", fence + "text", record.text, fence]
+    if record.context is not None and is_low_information(record.text):
+        lines += ["", ASSENT_BOUND_SENTENCE]
+    return lines
+
+
+def _render_intent_packet(trace: Sequence[RequestEvidence]) -> List[str]:
+    """The intent packet: adapter-captured operator words in presentation order.
+
+    1. applicable original operator instructions, verbatim, in order;
+    2. the confirmation exchange: the proposal, then the operator's
+       confirming or correcting words;
+    3. subsequent corrections in order, constraints and exclusions intact.
+
+    Unreferenced candidates are omitted and only counted (see the trailer).
+    """
+    captured = [r for r in trace if r.source_kind == CAPTURED_SOURCE_KIND]
+    if not captured:
+        return []
+    instructions = [r for r in captured if r.kind == "instruction"]
+    confirmations = [r for r in captured if r.kind == "confirmation"]
+    corrections = [r for r in captured if r.kind not in ("instruction", "confirmation")]
+    context_label = "Context (the assistant message this answered; not evidence):"
+    lines: List[str] = []
+    if instructions:
+        lines += ["", "### Operator instructions"]
+        for record in instructions:
+            lines += _captured_words(record, context_label=context_label, words_label="Operator words:")
+    if confirmations:
+        lines += ["", "### Confirmation exchange"]
+        for record in confirmations:
+            lines += _captured_words(
+                record,
+                context_label="Proposal the operator answered (assistant message; context, not evidence):",
+                words_label="Operator reply:",
+            )
+    if corrections:
+        lines += ["", "### Operator corrections"]
+        for record in corrections:
+            lines += _captured_words(record, context_label=context_label, words_label="Operator words:")
+    return lines
+
+
+def _render_trailer(
+    trace: Sequence[RequestEvidence],
+    identity: str,
+    summary: Optional[ResolutionSummary],
+    *,
+    legacy: bool,
+) -> List[str]:
+    lines: List[str] = [""]
+    if not legacy:
+        lines.append(f"{ALIGNMENT_EVIDENCE_FIELD}: {', '.join(r.record_id for r in trace)}")
+    lines.append(f"Request-context identity: {identity}")
+    if summary is not None and (summary.sessions or summary.evictions):
+        sessions = summary.sessions
+        noun = "session" if sessions == 1 else "sessions"
+        lines.append(f"{OMITTED_LINE_PREFIX} {summary.omitted(trace)} across {sessions} {noun}.")
+        for eviction in summary.evictions:
+            lines.append(
+                f"{EVICTED_LINE_PREFIX} {eviction.get('count', 0)} events "
+                f"({eviction.get('bytes', 0)} bytes) from session {eviction.get('handle')} "
+                "were discarded before the project was selected; anything "
+                "material in them must be restated by the operator in their own session."
+            )
+    return lines
+
+
+def bound_section_text(section: str) -> str:
+    """The part of a generated request section the prompt binding covers.
+
+    The trailer's omitted-candidates and eviction lines are telemetry: the
+    count grows with every unrelated prompt the operator submits after the
+    review prompt was written, and that is not a change of evidence. They
+    are excluded from the stale-binding comparison; everything else,
+    including every evidence identity, is compared exactly.
+    """
+    lines = section.splitlines()
+    anchor = max(
+        (i for i, line in enumerate(lines) if line.startswith("Request-context identity:")),
+        default=None,
+    )
+    if anchor is None:
+        return section
+    kept = lines[: anchor + 1] + [
+        line for line in lines[anchor + 1 :]
+        if not line.startswith((OMITTED_LINE_PREFIX, EVICTED_LINE_PREFIX))
+    ]
+    return "\n".join(kept).rstrip() + "\n"
+
+
 def render_sections(
     trace: Sequence[RequestEvidence],
     management: Sequence[str],
@@ -1804,22 +1907,31 @@ def render_sections(
     review_kind: str,
     legacy: bool,
     captured_completion: Optional[CapturedCompletionEvidence] = None,
+    summary: Optional[ResolutionSummary] = None,
 ) -> str:
     lines = [
         REQUEST_SECTION_HEADING,
         "",
-        f"Request-context identity: {identity}",
         f"Review target: {target.kind}:{target.identifier}",
     ]
     if legacy:
         lines += [f"Request state: {LEGACY_STATE}", "", "This unit predates request-evidence resolution. This state is explicit and non-blocking only for historical work."]
     else:
-        lines += ["Request state: resolved", f"Request evidence: {', '.join(r.record_id for r in trace)}"]
+        lines += ["Request state: resolved"]
+        lines += _render_intent_packet(trace)
         for record in trace:
+            if record.source_kind == CAPTURED_SOURCE_KIND:
+                continue
             if record.kind == "original":
                 label = "Initiating request"
-            elif record.kind == "correction":
+            elif record.kind == "correction" and record.source_kind == "request-record":
                 label = f"Explicit correction {record.source_sequence}"
+            elif record.kind == "correction":
+                label = "Operator correction"
+            elif record.kind == "confirmation":
+                label = "Operator confirmation"
+            elif record.kind == "instruction":
+                label = "Operator instruction"
             else:
                 label = f"Exact operator excerpt {record.sequence}"
             fence = _fence(record.text)
@@ -1872,6 +1984,23 @@ def render_sections(
                     "proposal requires a new, self-contained operator "
                     "instruction.",
                 ]
+            elif record.context is not None:
+                context_fence = _fence(record.context.text)
+                lines += [
+                    "",
+                    f"Context (paired assistant proposal, not evidence): {record.context.capture_id}",
+                    f"Context content identity: {record.context.identity}",
+                    "",
+                    context_fence + "text",
+                    record.context.text,
+                    context_fence,
+                    "",
+                    "Operator words:",
+                    "",
+                    fence + "text",
+                    record.text,
+                    fence,
+                ]
             else:
                 lines += ["", fence + "text", record.text, fence]
         if review_kind == "task-assignment" and not any(
@@ -1883,6 +2012,7 @@ def render_sections(
                 "evidence above, no task-specific operator instruction "
                 "applies.",
             ]
+    lines += _render_trailer(trace, identity, summary, legacy=legacy)
     if captured_completion is not None:
         lines += [
             "",
@@ -1937,6 +2067,7 @@ class ReviewContext:
     section: str
     legacy: bool
     captured_completion: Optional[CapturedCompletionEvidence] = None
+    summary: Optional[ResolutionSummary] = None
 
     @property
     def evidence_ids(self) -> List[str]:
@@ -1947,8 +2078,17 @@ class ReviewContext:
         return self.trace
 
     @property
+    def omitted(self) -> int:
+        return self.summary.omitted(self.trace) if self.summary is not None else 0
+
+    @property
     def measures(self) -> Dict[str, int]:
-        return {"request_bytes": sum(len(record.text.encode("utf-8")) for record in self.trace)}
+        return {
+            "request_bytes": sum(len(record.text.encode("utf-8")) for record in self.trace),
+            "section_bytes": len(self.section.encode("utf-8")),
+            "candidates": self.summary.candidates_total if self.summary is not None else 0,
+            "omitted": self.omitted,
+        }
 
     def as_record(self) -> Dict[str, Any]:
         return {
@@ -1965,7 +2105,10 @@ class ReviewContext:
             "review_kind": self.review_kind,
             "target": self.target.as_record(),
             "context_identity": self.context_identity,
-            "measures": {"request_bytes": sum(len(r.text.encode('utf-8')) for r in self.trace)},
+            "measures": self.measures,
+            "candidates": (
+                self.summary.as_record(self.trace) if self.summary is not None else None
+            ),
         }
 
 
@@ -1981,6 +2124,8 @@ def _context(
     allow_historical_legacy: bool = False,
     require_completion_evidence: bool = False,
 ) -> ReviewContext:
+    from cli import evidence_resolver
+
     del plan_ref
     target = _target_unit(review_kind, task_path, checkpoint_id)
     # Planning checkpoints consume project intent directly. Planned tasks may
@@ -2000,7 +2145,7 @@ def _context(
         checkpoint_text=checkpoint_text,
     )
     if planned_task and task_path is not None:
-        trace = _resolve_trace(
+        trace, summary = _resolve_trace_with_summary(
             project_root,
             target,
             source_texts,
@@ -2009,14 +2154,14 @@ def _context(
         if not trace:
             trace = _approved_planning_trace(project_root, task_path)
         if not trace:
-            trace = _resolve_trace(
+            trace, summary = _resolve_trace_with_summary(
                 project_root,
                 target,
                 source_texts,
                 allow_project_origin=True,
             )
     else:
-        trace = _resolve_trace(
+        trace, summary = _resolve_trace_with_summary(
             project_root,
             target,
             source_texts,
@@ -2024,13 +2169,16 @@ def _context(
         )
     if (
         not trace
-        and request_capture_enforced(project_schema_version(project_root))
+        and (
+            request_capture_enforced(project_schema_version(project_root))
+            or evidence_resolver.has_capture_history(project_root)
+        )
         and not allow_historical_legacy
     ):
         raise RequestRefusal(
             "unit-request-not-captured",
             f"no exact operator request evidence resolves for {target.kind}:{target.identifier}",
-            "provide an applicable exact decision quotation, supported host chat record, or host intake record",
+            NOT_CAPTURED_RECOVERY,
         )
     legacy = not trace
     captured_completion = (
@@ -2089,6 +2237,7 @@ def _context(
         review_kind=review_kind,
         legacy=legacy,
         captured_completion=captured_completion,
+        summary=summary,
     )
     return ReviewContext(
         review_kind,
@@ -2099,6 +2248,7 @@ def _context(
         section,
         legacy,
         captured_completion,
+        summary=summary,
     )
 
 
@@ -2152,6 +2302,58 @@ def context_for_checkpoint(project_root: Path, checkpoint_id: str, *, phase_id: 
     )
 
 
+def _single_task_path(project_root: Path, task_id: str) -> Path:
+    candidates = sorted(
+        path
+        for path in (Path(project_root) / "tasks").glob(f"*/{task_id}*.md")
+        if path.is_file() and not path.is_symlink()
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    raise RequestRefusal(
+        "task-not-found" if not candidates else "ambiguous-task",
+        f"{task_id} matches {len(candidates)} task files under tasks/",
+        "name a task that exists exactly once under tasks/<status>/",
+    )
+
+
+def lookup_unit(
+    project_root: Path, unit: GovernedUnit
+) -> Tuple[List[RequestEvidence], Optional[ResolutionSummary], Optional[str]]:
+    """The lookup tool's view of one governed unit.
+
+    Resolves through the same seam every consumer uses, so the identities it
+    lists are exactly the ones a review prompt for that unit would bind.
+    Returns ``(trace, summary, context_identity)``; the identity is ``None``
+    for the bare project unit, which no review prompt targets directly.
+    """
+    project_root = Path(project_root)
+    if unit.kind == "task":
+        context = context_for_task_assignment(project_root, _single_task_path(project_root, unit.identifier))
+        return context.trace, context.summary, context.context_identity
+    if unit.kind == "planning":
+        context = context_for_checkpoint(project_root, unit.identifier)
+        return context.trace, context.summary, context.context_identity
+    from cli import evidence_resolver
+
+    trace, summary = _resolve_trace_with_summary(
+        project_root,
+        GovernedUnit("project", "project"),
+        _source_texts(project_root, "planning", None),
+        allow_project_origin=False,
+    )
+    if not trace and (
+        request_capture_enforced(project_schema_version(project_root))
+        or evidence_resolver.has_capture_history(project_root)
+    ):
+        raise RequestRefusal(
+            "unit-request-not-captured",
+            "no exact operator request evidence resolves for project:project",
+            NOT_CAPTURED_RECOVERY,
+        )
+    return trace, summary, None
+
+
 def _section_bounds(lines: Sequence[str]) -> Optional[Tuple[int, int]]:
     starts = [i for i, line in enumerate(lines) if line.rstrip("\r\n") == REQUEST_SECTION_HEADING]
     if len(starts) != 1:
@@ -2190,7 +2392,7 @@ def upsert_request_sections(prompt_text: str, section: str) -> str:
 
 def preflight_prompt_binding(context: ReviewContext, prompt_text: str) -> Dict[str, Any]:
     actual = extract_request_sections(prompt_text)
-    ok = actual == context.section
+    ok = actual is not None and bound_section_text(actual) == bound_section_text(context.section)
     return {
         "ok": ok,
         "rule": None if ok else "stale-request-context",
@@ -2234,10 +2436,29 @@ def alignment_enforced(project_schema_version: Optional[str]) -> bool:
     return request_capture_enforced(project_schema_version)
 
 
-def require_request_before_derivative(project_root: Path, dest_kind: str, relative_target: str = "") -> None:
-    if dest_kind not in {"requirements", "plan", "phase", "task", "spec", "prompt"}:
+def require_request_before_derivative(
+    project_root: Path,
+    dest_kind: str,
+    relative_target: str = "",
+    *,
+    satisfied: bool = False,
+) -> None:
+    """Refuse PM-derived authoring before operator evidence resolves.
+
+    ``satisfied`` is set by the requirements/plan writers once they hold the
+    confirmation exchange they are about to bind (the exchange *is* the
+    evidence, and it is persisted only after the write lands).
+    """
+    if satisfied or dest_kind not in {"requirements", "plan", "phase", "task", "spec", "prompt"}:
         return
-    if not request_capture_enforced(project_schema_version(project_root)):
+    from cli import evidence_resolver
+
+    # The schema-version threshold gates readability of historical projects
+    # only. Once a project has ever been bound to a capture session, lowering
+    # the version cannot reopen the legacy path.
+    if not request_capture_enforced(project_schema_version(project_root)) and not (
+        evidence_resolver.has_capture_history(project_root)
+    ):
         return
     task_path: Optional[Path] = None
     checkpoint_id: Optional[str] = None
@@ -2296,5 +2517,5 @@ def require_request_before_derivative(project_root: Path, dest_kind: str, relati
         raise RequestRefusal(
             "request-not-captured",
             "new PM-derived work cannot be authored before exact operator request evidence resolves",
-            "provide an applicable exact decision quotation, supported host chat record, or host intake record",
+            NOT_CAPTURED_RECOVERY,
         )

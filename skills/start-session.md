@@ -18,6 +18,8 @@ Project selection is registry-only (startup slice § Session Startup And Project
 4. If more than one is registered, list the IDs and ask; pause until a choice is made.
 5. If none is registered, stop and run `init project`. Only in this case may cwd be proposed, as a candidate scaffold location.
 
+6. Close Stage 0 with `cartopian select-project <project-path> --handle <handle>`, the handle being the `cartopian-session: cs-...` line the host intake hook injected on this session's first prompt; session identity comes from capture state, never from you. No line means capture is inactive: tell the operator (hooks: `scripts/install.py --intake-hooks`; Codex also needs `/hooks` trust, Hermes `hermes plugins enable cartopian-intake`) and continue; approval gates will refuse until adapter evidence exists. Relay a `session-unbound` refusal verbatim. Never write records under `requests/` or the intake directory yourself, by any means.
+
 Do not read project lifecycle artifacts or call any lifecycle command until a registered project is selected.
 
 ---

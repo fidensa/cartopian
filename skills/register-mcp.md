@@ -535,6 +535,30 @@ cartopian host-capability --role <role> --project <project-path>
 
 ---
 
+## Stage 4b — Offer the request-evidence intake hooks
+
+Cartopian confirms operator request evidence only from records its host intake adapter captured at the host's own hook boundary; a PM cannot author them. The adapter runs from user-level hooks in the operator's interactive session, so it is installed here, with consent, not by any wrapper or dispatch.
+
+Tell the operator exactly what the hooks record and where before asking: for every new interactive session on Claude Code, Codex (CLI and desktop), Antigravity, Hermes, and opencode, the operator's prompt text, the assistant's final message per turn, session and turn identifiers, and the working directory, stored under `<install_root>/intake/sessions/<host>/<session_id>/`. Transcripts are never read. A session that never selects a Cartopian project keeps at most 200 events / 2 MiB and is discarded when it ends; sessions dispatched by Cartopian (`CARTOPIAN_ROLE` set) are never recorded. The store is ordinary same-user-writable state; it gives procedural traceability, not proof against a same-user process.
+
+On explicit consent, run:
+
+```
+python3 <install_root>/scripts/install.py --intake-hooks
+```
+
+It writes hook entries to `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.gemini/config/hooks.json` (Antigravity, whose hooks name a transcript the adapter reads at that moment for the prompt and reply text), a plugin to `~/.hermes/plugins/cartopian-intake/`, and a plugin to `~/.config/opencode/plugins/cartopian-intake.js`; it preserves every unrelated hook and plugin and is idempotent. Hosts whose config directory is absent are skipped, never created. Hooks load at session start: the operator must open a fresh session on each host before capture is active, and the first prompt of that session receives a one-line `cartopian-session: <handle>` note that the PM passes to `select_project`.
+
+Two hosts need one more operator step. Codex runs no hook until the operator has reviewed and trusted its exact definition: run `codex`, open `/hooks`, and trust the five Cartopian entries (trust is recorded against the hook's hash, so repeat it after any re-install that changes the adapter path or interpreter; non-interactive `codex exec` also skips untrusted hooks). Hermes loads a user plugin only once enabled: run `hermes plugins enable cartopian-intake` once. Claude Code, Antigravity, and opencode need nothing further, though the first opencode launch after the plugin file changes can take noticeably longer while opencode processes it. Devin has no hook or plugin surface; see the protocol note on hosts without capture.
+
+Rollback removes only Cartopian's entries and shims:
+
+```
+python3 <install_root>/scripts/install.py --remove-intake-hooks
+```
+
+---
+
 ## Stage 5 — Summarize
 
 Report, per agent the operator selected:

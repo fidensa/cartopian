@@ -1,6 +1,7 @@
 """`cartopian plan-audit <project-path>` — lifecycle and provenance audit."""
 import argparse
 import copy
+import os
 import re
 import subprocess
 import sys
@@ -27,7 +28,7 @@ from cli.protocol_gate import (
     classify_project_schema_version,
     read_shipped_project_schema_version,
 )
-from cli.provenance import audit_provenance, scan_pm_identifiers
+from cli.provenance import audit_provenance, request_store_inventory, scan_pm_identifiers
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
 _STATUS_DIRS = ("in-progress", "in-review")
@@ -948,6 +949,187 @@ def _check_request_trace(
     return blockers, warnings
 
 
+_REQUEST_EVIDENCE_LINE_RE = re.compile(r"^Request evidence:\s*(.+?)\s*$", re.MULTILINE)
+_REQUEST_CONTEXT_LINE_RE = re.compile(r"^Request-context identity:\s*(\S+)\s*$", re.MULTILINE)
+# Unconfirmed-reference reasons that mean the PM wrote a reference that does
+# not confirm (blocking), as opposed to a readable legacy record nobody bound.
+_BLOCKING_UNCONFIRMED_REASONS = frozenset({
+    "not-captured", "evicted", "revoked", "cross-unit", "partial-quotation", "unpaired-assent",
+})
+
+
+def _check_request_store(
+    project_path: Path, project_id: Optional[str]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Audit the request store itself (plan section 4.15).
+
+    Blocking: a binding with no adapter receipt, a binding for another
+    project, an unconfirmed record bound by an active review, a revoked
+    identity still in use, a unit/project mismatch (``cross-unit``), an
+    inconsistent pair, and a referenced unpaired assent. Warnings: readable
+    legacy quotations and hand-written chat files nothing binds. Timestamp
+    patterns are never findings.
+    """
+    from cli import evidence_resolver
+
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    if not (project_path / request_trace.REQUESTS_DIRNAME).is_dir():
+        return blockers, warnings
+
+    def refusal_blocker(refusal: request_trace.RequestRefusal, where: str) -> None:
+        finding = {
+            "kind": "request-store-integrity",
+            "failure_class": refusal.rule,
+            "recovery": refusal.recovery,
+            "detail": f"{where}: request evidence cannot resolve ({refusal.rule}): {refusal.detail}",
+        }
+        if finding not in blockers:
+            blockers.append(finding)
+
+    unconfirmed: Dict[str, Tuple[str, str, str]] = {}
+    source_texts: List[str] = []
+    requirements = project_path / "REQUIREMENTS.md"
+    if requirements.is_file():
+        try:
+            source_texts.append(requirements.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            pass
+    resolution = None
+    try:
+        resolution = evidence_resolver.resolve(
+            project_path, evidence_resolver.PROJECT_UNIT, source_texts
+        )
+    except request_trace.RequestRefusal as refusal:
+        refusal_blocker(refusal, "project:project")
+    if resolution is not None:
+        for binding_id in resolution.unreceipted_bindings:
+            blockers.append({
+                "kind": "request-binding-unreceipted",
+                "binding_id": binding_id,
+                "failure_class": "missing-receipt",
+                "recovery": request_trace.NOT_CAPTURED_RECOVERY,
+                "detail": (
+                    f"binding {binding_id} in requests/bindings.json has no matching "
+                    "adapter receipt in the intake root; it yields no evidence"
+                ),
+            })
+        for item in resolution.unconfirmed:
+            unconfirmed[item.reference] = (item.source, item.reason, item.detail)
+
+    for status_dir in _ALL_TASK_DIRS:
+        tasks_dir = project_path / "tasks" / status_dir
+        if not tasks_dir.is_dir():
+            continue
+        for task_file in sorted(tasks_dir.iterdir()):
+            match = _TASK_ID_RE.match(task_file.stem) if task_file.is_file() else None
+            if match is None or task_file.suffix != ".md":
+                continue
+            try:
+                text = task_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            unit = request_trace.GovernedUnit("task", f"TASK-{match.group(1)}")
+            if not evidence_resolver.text_references(text, unit, "task"):
+                continue
+            try:
+                task_resolution = evidence_resolver.resolve(project_path, unit, [text])
+            except request_trace.RequestRefusal as refusal:
+                refusal_blocker(refusal, f"{unit.kind}:{unit.identifier}")
+                continue
+            rel = task_file.relative_to(project_path).as_posix()
+            for item in task_resolution.unconfirmed:
+                if item.source == "artifact":
+                    unconfirmed[item.reference] = (rel, item.reason, item.detail)
+
+    for reference, (source, reason, detail) in sorted(unconfirmed.items()):
+        finding = {
+            "reference": reference,
+            "source": source,
+            "failure_class": reason,
+            "detail": f"{source} references {reference}, which is unconfirmed ({reason}): {detail}",
+        }
+        if reason in _BLOCKING_UNCONFIRMED_REASONS:
+            blockers.append({
+                "kind": "unconfirmed-evidence-reference",
+                "recovery": request_trace.NOT_CAPTURED_RECOVERY,
+                **finding,
+            })
+        else:
+            warnings.append({"kind": "unconfirmed-evidence-record", **finding})
+
+    for binding in evidence_resolver.read_bindings(project_path):
+        bound_path = binding.get("project_path")
+        bound_id = binding.get("project_id")
+        same_path = isinstance(bound_path, str) and os.path.realpath(bound_path) == os.path.realpath(str(project_path))
+        same_id = project_id is None or bound_id == project_id
+        if not (same_path and same_id):
+            blockers.append({
+                "kind": "request-binding-project-mismatch",
+                "binding_id": binding.get("binding_id"),
+                "failure_class": "unit-project-mismatch",
+                "recovery": (
+                    "the binding names another project; only `select-project` writes "
+                    "bindings and it never writes a foreign one. Remove nothing by hand: "
+                    "report it to the operator"
+                ),
+                "detail": (
+                    f"binding {binding.get('binding_id')} names project "
+                    f"{bound_id!r} at {bound_path!r}, not this project"
+                ),
+            })
+
+    revoked = evidence_resolver.revoked_evidence_ids(project_path)
+    revoked_contexts = evidence_resolver.revoked_context_identities(project_path)
+    reviews_dir = project_path / "reviews"
+    if reviews_dir.is_dir():
+        for review in sorted(reviews_dir.glob("*.md")):
+            if not review.is_file() or review.is_symlink():
+                continue
+            try:
+                review_text = review.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = review.relative_to(project_path).as_posix()
+            named: List[str] = []
+            for line in _REQUEST_EVIDENCE_LINE_RE.finditer(review_text):
+                named.extend(item.strip() for item in line.group(1).split(",") if item.strip())
+            contexts = [m.group(1) for m in _REQUEST_CONTEXT_LINE_RE.finditer(review_text)]
+            for identity in named:
+                if identity == "none":
+                    continue
+                if identity in revoked:
+                    blockers.append({
+                        "kind": "revoked-evidence-in-use",
+                        "review_path": str(review),
+                        "reference": identity,
+                        "failure_class": "revoked-evidence",
+                        "recovery": "the review is not authoritative; rerun it after a fresh operator scope statement supersedes the revoked evidence",
+                        "detail": f"{rel} binds revoked evidence {identity}",
+                    })
+                elif identity in unconfirmed or request_trace.CHAT_RECORD_ID_RE.fullmatch(identity):
+                    reason = unconfirmed.get(identity, ("", "no-adapter-receipt", ""))[1]
+                    blockers.append({
+                        "kind": "unconfirmed-evidence-bound",
+                        "review_path": str(review),
+                        "reference": identity,
+                        "failure_class": reason,
+                        "recovery": "the review is not authoritative; rerun it once evidence arrives through the host intake adapter",
+                        "detail": f"{rel} binds {identity}, which is unconfirmed ({reason})",
+                    })
+            for context in contexts:
+                if context in revoked_contexts:
+                    blockers.append({
+                        "kind": "revoked-evidence-in-use",
+                        "review_path": str(review),
+                        "reference": context,
+                        "failure_class": "revoked-context",
+                        "recovery": "the review is not authoritative; rerun it after a fresh operator scope statement supersedes the revoked evidence",
+                        "detail": f"{rel} was bound to revoked request context {context}",
+                    })
+    return blockers, warnings
+
+
 def _check_scoped_request_coverage(project_path: Path) -> List[Dict[str, Any]]:
     """Plan-level request coverage under scoped applicability.
 
@@ -1258,6 +1440,10 @@ def handler(args: argparse.Namespace) -> int:
     blockers.extend(deliverable_blockers)
     backlog_blockers, backlog_warnings = _check_backlog_invariants(project_path)
     blockers.extend(backlog_blockers)
+    store_blockers, store_warnings = _check_request_store(
+        project_path, (project_cfg.get("project") or {}).get("id")
+    )
+    blockers.extend(store_blockers)
     intent_blockers, intent_warnings = _check_request_trace(
         project_path, declared_schema_version, task_review_required
     )
@@ -1295,6 +1481,7 @@ def handler(args: argparse.Namespace) -> int:
     warnings.extend(review_warnings)
     warnings.extend(deliverable_warnings)
     warnings.extend(backlog_warnings)
+    warnings.extend(store_warnings)
     warnings.extend(intent_warnings)
     warnings.extend(_check_scoped_request_coverage(project_path))
 
@@ -1305,6 +1492,12 @@ def handler(args: argparse.Namespace) -> int:
     # entries are governed artifacts whose provenance cannot be established
     # (an honest notice that does not fail).
     provenance = audit_provenance(project_path)
+    # The request store is JSON, outside the Markdown governed set: inventory
+    # it explicitly (quarantine included, each file with a status) whenever
+    # the project has one.
+    request_store = request_store_inventory(project_path)
+    if request_store is not None:
+        provenance["request_store"] = {"counts": request_store["counts"]}
     prov_guards: List[Dict[str, Any]] = provenance["guard"]
     prov_advisories: List[Dict[str, Any]] = provenance["advisory"]
 

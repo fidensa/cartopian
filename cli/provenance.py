@@ -459,6 +459,65 @@ def governed_files(project_root: Union[str, os.PathLike]) -> List[Path]:
     return sorted(found)
 
 
+REQUEST_STORE_DIRNAME = "requests"
+REQUEST_QUARANTINE_DIRNAME = "quarantine"
+REQUEST_CHAT_DIRNAME = "chat"
+
+
+def request_store_inventory(project_root: Union[str, os.PathLike]) -> Optional[Dict[str, object]]:
+    """Enumerate every JSON record under ``requests/`` with a status.
+
+    The governed-artifact set above is Markdown only; the request store is
+    JSON and is inventoried here explicitly so quarantined, unconfirmed, and
+    trust-material files are visible to the audit. Statuses:
+
+    - ``record``: ``requests/REQUEST-*.json`` (operator-only intake records);
+    - ``unconfirmed-chat``: ``requests/chat/*.json`` (no supported intake
+      writes these; the resolver never confirms them);
+    - ``quarantined``: anything under ``requests/quarantine/`` (auditable,
+      never resolved);
+    - ``bindings`` / ``revocations``: the two trust-material files written
+      only by ``select-project`` and ``revoke-evidence``;
+    - ``unclassified``: any other JSON under ``requests/``.
+
+    Returns ``None`` when the project has no ``requests/`` directory.
+    """
+    root = Path(os.path.realpath(os.fspath(project_root)))
+    base = root / REQUEST_STORE_DIRNAME
+    if not base.is_dir():
+        return None
+    entries: List[Dict[str, object]] = []
+    counts: Dict[str, int] = {}
+    for path in sorted(base.rglob("*.json")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        rel = path.relative_to(base).as_posix()
+        parts = rel.split("/")
+        if parts[0] == REQUEST_QUARANTINE_DIRNAME:
+            status = "quarantined"
+        elif parts[0] == REQUEST_CHAT_DIRNAME:
+            status = "unconfirmed-chat"
+        elif len(parts) == 1 and path.name == "bindings.json":
+            status = "bindings"
+        elif len(parts) == 1 and path.name == "revocations.json":
+            status = "revocations"
+        elif len(parts) == 1 and re.fullmatch(r"REQUEST-\d{3}(?:-CORRECTION-\d{3})?\.json", path.name):
+            status = "record"
+        else:
+            status = "unclassified"
+        try:
+            digest = hash_bytes(path.read_bytes())
+        except OSError:
+            digest = None
+        entries.append({
+            "relpath": f"{REQUEST_STORE_DIRNAME}/{rel}",
+            "status": status,
+            "hash": digest,
+        })
+        counts[status] = counts.get(status, 0) + 1
+    return {"entries": entries, "counts": counts}
+
+
 def audit_provenance(project_root: Union[str, os.PathLike]) -> Dict[str, object]:
     """Detect raw edits to governed artifacts. See module docstring for rules.
 

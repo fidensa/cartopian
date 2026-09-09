@@ -164,7 +164,7 @@ agent = "cartopian-agy"
 timeout = "30m"
 ```
 
-Every review also compares the work against your own words. Cartopian resolves exact operator quotations from decisions, supported host chat records, and optional request records, then puts them in the review prompt separately from anything the PM wrote. `cartopian review-context` is the read-only view that prompt generation, dispatch, and manual handoff all use. There is no setting for this, and no role can weaken it. Work that predates the capture rules stays explicitly non-blocking.
+Every review also compares the work against your own words. Cartopian captures your prompts through the host intake hooks in your own session, binds the exchange in which you confirmed the planning summary, and puts those words in the review prompt as an intent packet, separately from anything the PM wrote. The PM can reference a later statement of yours only by its capture identity; it cannot write, copy, or quote evidence into the project. `cartopian review-context` is the read-only view that prompt generation, dispatch, and manual handoff all use. There is no setting for this, and no role can weaken it. Work that predates the capture rules stays explicitly non-blocking.
 
 ## Automation
 

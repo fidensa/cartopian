@@ -36,6 +36,8 @@ Then take exactly one action and proceed to Step 2:
 - **Multiple registered** — list them by `id` and ask which to use; do not pre-filter by cwd.
 - **None registered** — stop and run the `init_project` skill first. Only in this case may cwd be considered, as a candidate location to propose.
 
+Once a project is selected, close Stage 0 with `select_project`, passing the project path and the handle from the `cartopian-session: cs-...` line the host intake hook placed in your context on your first prompt; the server takes session identity from its own capture state. No such line means capture is inactive: tell the operator (hooks: `scripts/install.py --intake-hooks`; Codex also needs `/hooks` trust, Hermes `hermes plugins enable cartopian-intake`) and continue; evidence gates will refuse until adapter evidence exists. Relay a `session-unbound` refusal verbatim. Never create, copy, or edit records under `requests/` or the intake directory by any means, including shell.
+
 ## Step 2 — Load the startup contract and runbook
 
 Once a project is selected, and before any mutating action, read:

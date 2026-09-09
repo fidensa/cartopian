@@ -25,6 +25,10 @@ SUBCOMMANDS: List[str] = [
     # Deterministic assignee-prompt composition + bound trace receipt
     "compose-assignment-prompt",
     "discover-projects",
+    # bind this session's host-captured request evidence to the selected project
+    "select-project",
+    # applicable evidence identities for one governed unit, or the one missing item
+    "lookup-evidence",
     "generate-config",
     "install-workflow",
     "install-state-contract",
@@ -98,6 +102,8 @@ SUBCOMMANDS: List[str] = [
     "prompt-evidence",
     # host intake-boundary capture; excluded from managed-agent MCP tools
     "capture-request",
+    # operator-only revocation and quarantine of request evidence
+    "revoke-evidence",
 ]
 
 # ---------------------------------------------------------------------------
@@ -115,6 +121,7 @@ SUBCOMMANDS: List[str] = [
 # ---------------------------------------------------------------------------
 OPERATOR_ONLY_SUBCOMMANDS: List[str] = [
     "capture-request",
+    "revoke-evidence",
 ]
 
 
@@ -185,6 +192,7 @@ def _real_handlers():
         install_workflow,
         install_state_contract,
         list_tasks,
+        lookup_evidence,
         migrate_config,
         move_task,
         next_action,
@@ -200,7 +208,9 @@ def _real_handlers():
         resume_install,
         review_context,
         review_intake,
+        revoke_evidence,
         scaffold_project,
+        select_project,
         task_bundle,
         unregister_project,
         update_config,
@@ -274,6 +284,7 @@ def _real_handlers():
             verify_restart_state.handler,
         ),
         "list-tasks": (list_tasks.configure_parser, list_tasks.handler),
+        "lookup-evidence": (lookup_evidence.configure_parser, lookup_evidence.handler),
         "migrate-config": (migrate_config.configure_parser, migrate_config.handler),
         "move-task": (move_task.configure_parser, move_task.handler),
         "next-action": (next_action.configure_parser, next_action.handler),
@@ -295,7 +306,9 @@ def _real_handlers():
         "prompt-evidence": (prompt_evidence.configure_parser, prompt_evidence.handler),
         "review-context": (review_context.configure_parser, review_context.handler),
         "review-intake": (review_intake.configure_parser, review_intake.handler),
+        "revoke-evidence": (revoke_evidence.configure_parser, revoke_evidence.handler),
         "scaffold-project": (scaffold_project.configure_parser, scaffold_project.handler),
+        "select-project": (select_project.configure_parser, select_project.handler),
         "task-bundle": (task_bundle.configure_parser, task_bundle.handler),
         "unregister-project": (unregister_project.configure_parser, unregister_project.handler),
         "update-config": (update_config.configure_parser, update_config.handler),

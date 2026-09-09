@@ -11,7 +11,8 @@ approved artifacts. Every value is something the operator stated or confirmed;
 never a PM assumption, default, or inference from the project name. Populate
 every item before requirements lock; do not present this section to the
 operator as a blank form. This remains PM-derived planning guidance; the
-independent review request channel comes only from the host intake record.
+independent review request channel is the confirmation exchange the host
+intake adapter captured, bound at lock, never this section.
 
 - **Outcome:** …
 - **Beneficiary:** …

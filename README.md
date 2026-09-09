@@ -153,7 +153,7 @@ Cartopian has two independent review policies. A project can require planning re
 
 A review that only compares the work against PM-written instructions cannot catch the PM drifting from what you actually asked for. Cartopian closes that gap.
 
-Before a task assignment or any review, Cartopian gathers the exact wording of your request from decisions that quote you, supported chat records your client provides, and optional saved request records. It puts those quotations into the prompt under their own heading, kept separate from everything the PM wrote later. The reviewer compares the two.
+Before a task assignment or any review, Cartopian gathers the exact wording of your request from the prompts its host intake hooks captured in your own session: the planning summary you confirmed or corrected, and any later statement a decision references by capture identity. It puts those words into the prompt under their own heading as an intent packet, kept separate from everything the PM wrote later, with a count of the conversation it left out. The reviewer compares the two.
 
 Every excerpt keeps its source, its position in the sequence, and a fingerprint of its exact text, so nothing can be quietly reworded. Explicit corrections you make later stay in order. Unrelated conversation and the assistant's own words are never promoted into the trace.
 

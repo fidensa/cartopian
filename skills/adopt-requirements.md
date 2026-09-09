@@ -68,19 +68,12 @@ Ask the operator to provide the external requirements in any form:
 - Describe the requirements conversationally
 - Any combination of the above
 
-Before deriving requirements, resolve the governed unit's exact operator
-evidence from the three supported source kinds: structurally marked decision
-quotations, supported host chat records, and optional immutable request records.
-A native host adapter is optional when another supported source resolves. The PM
-must not call `capture-request`, copy a message into a file, or treat a
-paraphrase as request evidence; ordinary PM prose is excluded from operator
-evidence. Explicit corrections retain their provenance and deterministic order.
-Direct unit-bound evidence takes precedence; planned tasks may inherit project
-evidence only through verified plan ancestry, while unrelated or ad-hoc units
-never do.
-Mediated writers fail closed only when no applicable exact source of any
-supported kind resolves for the governed unit; resolution adds no later
-operator re-entry, confirmation, safeguard, or new stage.
+Operator evidence is the operator's own turns, captured by the host intake
+hooks and bound by `select_project`; the intent summary and the operator's
+reply bind at lock, and a later correction is cited only by identity from
+`cartopian lookup-evidence --recent`. The pasted external source and all PM
+prose are never operator evidence, and `capture-request` is operator-only.
+Never create, copy, or edit anything under `requests/` or the intake directory, never invoke operator-only intake, and never use shell or escalation to bypass an evidence gate; relay any evidence refusal to the operator verbatim and stop. Rules: `cartopian://protocol/CONVENTIONS/up-front-operator-request-evidence`.
 
 Accept whatever format the operator provides. The goal is to extract the information, not enforce a format on the input.
 

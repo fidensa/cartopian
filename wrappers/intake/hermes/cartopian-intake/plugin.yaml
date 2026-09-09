@@ -1,0 +1,5 @@
+name: cartopian-intake
+version: 1.0.0
+description: "Cartopian request-evidence intake: records the operator's prompts and the assistant's final reply per turn to the Cartopian intake store so a Cartopian-governed project can bind them as request evidence. Installed by scripts/install.py --intake-hooks; enable with `hermes plugins enable cartopian-intake`."
+author: Cartopian
+kind: standalone

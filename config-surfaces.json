@@ -151,9 +151,11 @@
       "phase_00_status": "not measured in Phase 00",
       "task_delta_bytes": 115,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so warning and blocker records stay truthful while consumers can version the record shape.",
-      "max_output_bytes": 960,
+      "max_output_bytes": 1000,
       "numbering_contract_delta_bytes": 387,
-      "numbering_contract_note": "Adds the numbering_contract activation-boundary state (contract identity, release receipt, installed-content verification, and running-process proof where affected) so operators can read why the prospective kind-first plan-ref rule is or is not active."
+      "numbering_contract_note": "Adds the numbering_contract activation-boundary state (contract identity, release receipt, installed-content verification, and running-process proof where affected) so operators can read why the prospective kind-first plan-ref rule is or is not active.",
+      "request_store_delta_bytes": 40,
+      "request_store_note": "Adds provenance.request_store.counts (present only when the project has a requests/ directory): how many JSON records sit under requests/ by status (record, unconfirmed-chat, quarantined, bindings, revocations), so hand-written and quarantined files are visible to the audit without listing them."
     },
     {
       "surface": "review-context",
@@ -491,11 +493,13 @@
         "cli/commands/capture_request.py",
         "cli/commands/dispatch.py",
         "cli/commands/handoff_packet.py",
+        "cli/commands/lookup_evidence.py",
         "cli/commands/move_task.py",
         "cli/commands/parse_report.py",
         "cli/commands/plan_audit.py",
         "cli/commands/report_action.py",
         "cli/commands/review_context.py",
+        "cli/commands/revoke_evidence.py",
         "cli/commands/validate_task_readiness.py",
         "cli/commands/write_prompt.py",
         "cli/request_trace.py",

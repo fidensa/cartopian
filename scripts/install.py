@@ -574,6 +574,293 @@ def cleanup_claude_hook_registrations(project_dir: Path, actions: List[str]) -> 
     actions.append(f"removed legacy Cartopian Claude hooks from {settings_path}")
 
 
+# --- Host intake hooks (operator-consented, user-level) --------------------
+# The request-evidence adapter (``cli/intake_adapter.py``) must run inside the
+# operator's *interactive* PM session, which no wrapper launches, so its hooks
+# live at user level: ``~/.claude/settings.json`` for Claude Code and
+# ``~/.codex/hooks.json`` for Codex CLI/desktop.  Installation is explicit
+# (``--intake-hooks``), idempotent, preserves every unrelated hook, and is
+# reversible with ``--remove-intake-hooks``, which removes only entries whose
+# command names the adapter script.
+
+INTAKE_ADAPTER_SCRIPT = "intake_adapter.py"
+INTAKE_HOOK_TIMEOUT_SECONDS = 15
+INTAKE_HOOK_EVENTS = {
+    "claude": ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"),
+    "codex": ("SessionStart", "UserPromptSubmit", "Stop", "Interrupt", "SessionEnd"),
+}
+# Hosts configured by a JSON hooks block (Claude-shaped ``{"hooks": {...}}``).
+INTAKE_JSON_HOOK_HOSTS = ("claude", "codex")
+# Hosts configured by installing a shim file from ``wrappers/intake/``:
+# host -> (template path relative to the install root, marker text).
+INTAKE_SHIM_HOSTS = {
+    "hermes": Path("wrappers") / "intake" / "hermes" / "cartopian-intake",
+    "opencode": Path("wrappers") / "intake" / "opencode" / "cartopian-intake.js",
+}
+INTAKE_SHIM_MARKER = "Cartopian request-evidence intake"
+# Antigravity: one named hook in ``~/.gemini/config/hooks.json`` whose event
+# lists are flat handler lists; the event name travels as ``--event``.
+INTAKE_NAMED_HOOK_HOSTS = ("antigravity",)
+INTAKE_NAMED_HOOK_KEY = "cartopian-intake"
+INTAKE_HOOK_EVENTS["antigravity"] = ("SessionStart", "PreInvocation", "Stop")
+INTAKE_HOSTS = ("claude", "codex", "hermes", "opencode", "antigravity")
+
+
+def intake_host_detect_dir(host: str, home: Optional[Path] = None) -> Path:
+    """The directory whose presence means the host is installed for this user."""
+    base = (home or Path.home()).expanduser()
+    return {
+        "claude": base / ".claude",
+        "codex": base / ".codex",
+        "hermes": base / ".hermes",
+        "opencode": base / ".config" / "opencode",
+        "antigravity": base / ".gemini" / "config",
+    }[host]
+
+
+def intake_host_config_path(host: str, home: Optional[Path] = None) -> Path:
+    base = (home or Path.home()).expanduser()
+    if host == "claude":
+        return base / ".claude" / "settings.json"
+    if host == "codex":
+        return base / ".codex" / "hooks.json"
+    if host == "hermes":
+        return base / ".hermes" / "plugins" / "cartopian-intake"
+    if host == "opencode":
+        return base / ".config" / "opencode" / "plugins" / "cartopian-intake.js"
+    if host == "antigravity":
+        return base / ".gemini" / "config" / "hooks.json"
+    raise ValueError(f"unknown intake host: {host}")
+
+
+def intake_hook_command(
+    install_root: Path, host: str, *, interpreter: Optional[Path] = None
+) -> str:
+    """Shell-safe command for the installed adapter with this interpreter."""
+    import shlex
+    import subprocess
+
+    argv = [
+        str(interpreter or Path(sys.executable)),
+        str(install_root / "cli" / INTAKE_ADAPTER_SCRIPT),
+        "--host",
+        host,
+    ]
+    if os.name == "nt":
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+def intake_disclosure(install_root: Path) -> str:
+    return (
+        "Cartopian request-evidence capture is active for new interactive\n"
+        "sessions on the hosts listed above. Each session records, under\n"
+        f"  {install_root / 'intake'}/sessions/<host>/<session_id>/\n"
+        "the operator's prompt text (UserPromptSubmit), the assistant's final\n"
+        "message per turn (Stop), session/turn identifiers, the working\n"
+        "directory, and session start/end/interrupt markers. Nothing else is\n"
+        "read; transcripts are never opened. A session that never selects a\n"
+        "Cartopian project keeps at most 200 events / 2 MiB and is discarded\n"
+        "when it ends. Dispatched Cartopian sessions (CARTOPIAN_ROLE set) are\n"
+        "never recorded. The store is ordinary same-user-writable state.\n"
+        "Hooks load at session start: open a fresh session on each host.\n"
+        "Codex skips these hooks until you trust them: run `codex`, open\n"
+        "`/hooks`, and trust the Cartopian entries (trust is keyed to the\n"
+        "exact hook definition, so repeat this after any re-install that\n"
+        "changes the command or interpreter path).\n"
+        "Hermes loads the plugin only once enabled: run\n"
+        "`hermes plugins enable cartopian-intake` once.\n"
+        "Claude Code, Antigravity, and opencode need no further step.\n"
+        "Remove with: python3 scripts/install.py --remove-intake-hooks"
+    )
+
+
+# Codex clamps SessionEnd and Interrupt hook timeouts to 3 s and warns on
+# every session start when a larger value is configured.
+INTAKE_HOOK_TIMEOUT_OVERRIDES = {
+    "codex": {"SessionEnd": 3, "Interrupt": 3},
+}
+
+
+def _intake_entries_for(host: str, command: str) -> dict:
+    overrides = INTAKE_HOOK_TIMEOUT_OVERRIDES.get(host, {})
+    entries = {}
+    for event in INTAKE_HOOK_EVENTS[host]:
+        handler = {
+            "type": "command",
+            "command": command,
+            "timeout": overrides.get(event, INTAKE_HOOK_TIMEOUT_SECONDS),
+        }
+        entries[event] = {"hooks": [handler]}
+    return entries
+
+
+def _named_hook_entries(command: str) -> dict:
+    """Antigravity's named-hook block: flat handler lists per event."""
+    return {
+        event: [{"type": "command", "command": f"{command} --event {event}", "timeout": INTAKE_HOOK_TIMEOUT_SECONDS}]
+        for event in INTAKE_HOOK_EVENTS["antigravity"]
+    }
+
+
+def _render_shim(template: Path, install_root: Path, interpreter: Optional[Path]) -> str:
+    text = template.read_text(encoding="utf-8")
+    adapter = install_root / "cli" / INTAKE_ADAPTER_SCRIPT
+    return (
+        text.replace("__CARTOPIAN_PYTHON__", str(interpreter or Path(sys.executable)))
+        .replace("__CARTOPIAN_ADAPTER__", str(adapter))
+    )
+
+
+def _install_intake_shim(
+    host: str, install_root: Path, target: Path, actions: List[str], interpreter: Optional[Path]
+) -> None:
+    source = install_root / INTAKE_SHIM_HOSTS[host]
+    if source.is_dir():
+        files = sorted(p for p in source.rglob("*") if p.is_file())
+        pairs = [(p, target / p.relative_to(source)) for p in files]
+    else:
+        pairs = [(source, target)]
+    changed = False
+    for src, dest in pairs:
+        rendered = _render_shim(src, install_root, interpreter)
+        if dest.is_file() and dest.read_text(encoding="utf-8") == rendered:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(rendered, encoding="utf-8")
+        changed = True
+    actions.append(
+        f"intake hooks: {host} {'written to' if changed else 'already current in'} {target}"
+    )
+
+
+def _remove_intake_shim(target: Path) -> bool:
+    if target.is_dir():
+        marker_files = [p for p in target.rglob("*") if p.is_file()]
+        if not any(INTAKE_SHIM_MARKER in p.read_text(encoding="utf-8", errors="replace") for p in marker_files):
+            return False
+        shutil.rmtree(target)
+        return True
+    if target.is_file():
+        if INTAKE_SHIM_MARKER not in target.read_text(encoding="utf-8", errors="replace"):
+            return False
+        target.unlink()
+        return True
+    return False
+
+
+def install_intake_hooks(
+    install_root: Path,
+    actions: List[str],
+    *,
+    home: Optional[Path] = None,
+    interpreter: Optional[Path] = None,
+    hosts: Tuple[str, ...] = INTAKE_HOSTS,
+) -> List[str]:
+    """Write Cartopian's intake hooks for each detected host; return the hosts touched."""
+    adapter = install_root / "cli" / INTAKE_ADAPTER_SCRIPT
+    if not adapter.is_file():
+        raise SystemExit(
+            f"[error] {adapter} is not installed; run the installer without "
+            "--remove-intake-hooks first so the adapter exists at the install root."
+        )
+    touched: List[str] = []
+    for host in hosts:
+        settings_path = intake_host_config_path(host, home)
+        detect_dir = intake_host_detect_dir(host, home)
+        if not detect_dir.is_dir():
+            actions.append(
+                f"intake hooks: {host} not detected ({detect_dir} absent); skipped"
+            )
+            continue
+        if host in INTAKE_SHIM_HOSTS:
+            _install_intake_shim(host, install_root, settings_path, actions, interpreter)
+            touched.append(host)
+            continue
+        if host in INTAKE_NAMED_HOOK_HOSTS:
+            settings = _load_claude_settings(settings_path)
+            command = intake_hook_command(install_root, host, interpreter=interpreter)
+            entries = _named_hook_entries(command)
+            if settings.get(INTAKE_NAMED_HOOK_KEY) == entries:
+                actions.append(f"intake hooks: {host} already current in {settings_path}")
+            else:
+                settings[INTAKE_NAMED_HOOK_KEY] = entries
+                _save_claude_settings(settings_path, settings)
+                actions.append(f"intake hooks: {host} written to {settings_path}")
+            touched.append(host)
+            continue
+        settings = _load_claude_settings(settings_path)
+        hooks = settings.get("hooks")
+        if not isinstance(hooks, dict):
+            hooks = {}
+        command = intake_hook_command(install_root, host, interpreter=interpreter)
+        before = json.dumps(settings, sort_keys=True)
+        for event, entry in _intake_entries_for(host, command).items():
+            entries = hooks.get(event)
+            kept = _without_hook_handler(entries, INTAKE_ADAPTER_SCRIPT) if isinstance(entries, list) else []
+            kept.append(entry)
+            hooks[event] = kept
+        settings["hooks"] = hooks
+        if json.dumps(settings, sort_keys=True) == before:
+            actions.append(f"intake hooks: {host} already current in {settings_path}")
+        else:
+            _save_claude_settings(settings_path, settings)
+            actions.append(f"intake hooks: {host} written to {settings_path}")
+        touched.append(host)
+    return touched
+
+
+def remove_intake_hooks(
+    actions: List[str],
+    *,
+    home: Optional[Path] = None,
+    hosts: Tuple[str, ...] = INTAKE_HOSTS,
+) -> None:
+    """Remove only Cartopian's intake hook entries; every other hook survives."""
+    for host in hosts:
+        settings_path = intake_host_config_path(host, home)
+        if host in INTAKE_SHIM_HOSTS:
+            if _remove_intake_shim(settings_path):
+                actions.append(f"intake hooks: removed Cartopian shim {settings_path}")
+            continue
+        if not settings_path.is_file():
+            continue
+        if host in INTAKE_NAMED_HOOK_HOSTS:
+            settings = _load_claude_settings(settings_path)
+            if INTAKE_NAMED_HOOK_KEY not in settings:
+                continue
+            settings.pop(INTAKE_NAMED_HOOK_KEY)
+            if settings:
+                _save_claude_settings(settings_path, settings)
+            else:
+                settings_path.unlink()
+            actions.append(f"intake hooks: removed Cartopian entries from {settings_path}")
+            continue
+        settings = _load_claude_settings(settings_path)
+        hooks = settings.get("hooks")
+        if not isinstance(hooks, dict):
+            continue
+        changed = False
+        for event in list(hooks):
+            entries = hooks.get(event)
+            if not isinstance(entries, list):
+                continue
+            kept = _without_hook_handler(entries, INTAKE_ADAPTER_SCRIPT)
+            if kept == entries:
+                continue
+            changed = True
+            if kept:
+                hooks[event] = kept
+            else:
+                hooks.pop(event)
+        if not changed:
+            continue
+        if not hooks:
+            settings.pop("hooks", None)
+        _save_claude_settings(settings_path, settings)
+        actions.append(f"intake hooks: removed Cartopian entries from {settings_path}")
+
+
 def _check_optional_coreutils() -> Optional[str]:
     """Return a recommendation string if macOS is missing coreutils.
 
@@ -719,6 +1006,26 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--intake-hooks",
+        action="store_true",
+        help=(
+            "after install/update, write Cartopian's request-evidence intake "
+            "hooks at user level for each detected host (~/.claude/settings.json "
+            "for Claude Code, ~/.codex/hooks.json for Codex). Idempotent; "
+            "unrelated hooks are preserved. Prints a disclosure of what is "
+            "captured and where."
+        ),
+    )
+    p.add_argument(
+        "--remove-intake-hooks",
+        action="store_true",
+        help=(
+            "standalone rollback: remove only Cartopian's intake hook entries "
+            "from the user-level host configurations. Does not run "
+            "install/update and never touches other hooks or settings."
+        ),
+    )
+    p.add_argument(
         "--claude-hook",
         type=Path,
         default=None,
@@ -754,6 +1061,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 bool(args.repair),
                 bool(args.inspected),
                 args.claude_hook is not None,
+                args.intake_hooks,
             )
         )
         if conflicting:
@@ -781,6 +1089,34 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "(no-op when it was already absent)"
             )
         return EXIT_OK
+    if args.remove_intake_hooks:
+        conflicting = any(
+            (
+                args.from_github,
+                args.ref is not None,
+                args.patch_path,
+                args.plan_only,
+                bool(args.client),
+                bool(args.repair),
+                bool(args.inspected),
+                args.intake_hooks,
+                args.claude_hook is not None,
+            )
+        )
+        if conflicting:
+            parser.error(
+                "--remove-intake-hooks is a standalone rollback operation and "
+                "cannot be combined with install, update, repair, or planning "
+                "options"
+            )
+        rollback_actions: List[str] = []
+        remove_intake_hooks(rollback_actions)
+        if not args.quiet:
+            for line in rollback_actions:
+                print(line)
+            if not rollback_actions:
+                print("no Cartopian intake hooks found in user-level host configuration")
+        return EXIT_OK
     if args.claude_hook is not None:
         # This historical spelling is now a bounded cleanup command, not an
         # install modifier. Handle it before source/install-root validation so
@@ -798,6 +1134,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 bool(args.client),
                 bool(args.repair),
                 bool(args.inspected),
+                args.intake_hooks,
             )
         )
         if conflicting:
@@ -915,6 +1252,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             write_version_marker(install_root, ref, actions)
         if args.patch_path:
             patch_user_path(install_root, actions)
+        intake_hosts: List[str] = []
+        if args.intake_hooks:
+            intake_hosts = install_intake_hooks(install_root, actions)
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -923,6 +1263,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         for line in actions:
             print(line)
     print(f"cartopian installed at {install_root}.")
+    if args.intake_hooks and intake_hosts:
+        print(intake_disclosure(install_root))
     if workflow_result["outcome"]["status"] == "complete-qualified":
         print(
             "cartopian install/update result is qualified; see "

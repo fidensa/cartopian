@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from cli import migrations, request_trace
+from cli import evidence_resolver, migrations, request_trace
 from cli.commands import capture_request, move_task, plan_audit
 from cli.main import OPERATOR_ONLY_SUBCOMMANDS, SUBCOMMANDS, build_parser
 from mcp_server import server
@@ -68,12 +68,13 @@ class RequestTraceContract(unittest.TestCase):
         *,
         correction: bool = False,
         unit: str = "project",
+        request_id: str = "REQUEST-001",
     ) -> None:
         source = self.root / ("correction.txt" if correction else "request.txt")
         source.write_text(text, encoding="utf-8")
         args = argparse.Namespace(
-            project_root=str(self.root), request_id="REQUEST-001", unit=unit,
-            content_file=str(source), correction_of="REQUEST-001" if correction else None,
+            project_root=str(self.root), request_id=request_id, unit=unit,
+            content_file=str(source), correction_of=request_id if correction else None,
             captured_at="2026-07-27T12:00:00Z",
         )
         fixture_env = {
@@ -212,14 +213,12 @@ class RequestTraceContract(unittest.TestCase):
         self.assertIn("Review target: task:TASK-02-010", context.section)
         self.assertIn("Governed unit: task:TASK-02-010", context.section)
 
-    def test_applicable_decision_quotes_resolve_without_native_capture(self) -> None:
+    def test_decision_quotes_are_unconfirmed_and_do_not_satisfy_the_gate(self) -> None:
+        """A block quote in a decision carries no receipt (plan section 4.9)."""
         initiating = "Build the exact requested review behavior."
         correction = "Correction: keep alignment inside the existing review."
         self.write_decision("DEC-001", initiating)
         self.write_decision("DEC-002", correction)
-        self.write_decision(
-            "DEC-003", "Unrelated quoted history.", unit="project:project"
-        )
         self.task.write_text(
             "# TASK-02-010: Trace\n\n"
             "Phase: PHASE-02\nPlan ref: BUILD-02-010\n\n"
@@ -227,86 +226,62 @@ class RequestTraceContract(unittest.TestCase):
             encoding="utf-8",
         )
 
-        context = request_trace.context_for_task(self.root, self.task)
+        with self.assertRaises(request_trace.RequestRefusal) as caught:
+            request_trace.context_for_task(self.root, self.task)
 
-        self.assertEqual([item.text for item in context.trace], [initiating, correction])
-        self.assertEqual(
-            context.evidence_ids,
-            ["DEC-001-QUOTE-001", "DEC-002-QUOTE-001"],
+        self.assertEqual(caught.exception.rule, "unit-request-not-captured")
+        self.assertIn("Never create, copy, or edit records", caught.exception.recovery)
+        resolution = evidence_resolver.resolve(
+            self.root, request_trace.GovernedUnit("task", "TASK-02-010")
         )
-        self.assertEqual([item.sequence for item in context.trace], [1, 2])
+        self.assertEqual(resolution.evidence, [])
         self.assertEqual(
-            [item.source_identity for item in context.trace],
-            ["DEC-001", "DEC-002"],
+            {(u.reference, u.reason) for u in resolution.unconfirmed},
+            {("DEC-001-QUOTE-001", "legacy-quotation"), ("DEC-002-QUOTE-001", "legacy-quotation")},
         )
-        self.assertTrue(all(item.source_content_identity.startswith("sha256:") for item in context.trace))
-        self.assertNotIn("Unrelated quoted history", context.section)
-        self.assertIn("Source path: decisions/DEC-001.md", context.section)
 
-    def test_structural_decision_quote_preserves_matching_boundary_marks(self) -> None:
+    def test_legacy_quote_parser_stays_exact_for_unconfirmed_reporting(self) -> None:
         quote = '"Keep these literal boundary marks"'
         self.write_decision("DEC-013", quote)
-        self.seed_task()
+        text = (self.root / "decisions/DEC-013.md").read_text(encoding="utf-8")
+        parsed = request_trace._structural_decision_quotes("DEC-013", text)  # noqa: SLF001
+        self.assertEqual([excerpt for _unit, excerpt in parsed], [quote])
 
-        context = request_trace.context_for_task(self.root, self.task)
-
-        self.assertEqual(context.trace[0].text, quote)
-
-    def test_structural_decision_quote_preserves_bare_blank_paragraph(self) -> None:
-        path = self.root / "decisions/DEC-014.md"
-        path.write_text(
+        text = (
             "# DEC-014: Request source\n\n"
             "Date: 2026-07-27\nStatus: locked\nSupersedes: none\n\n"
             "## Context\n\n"
             "Operator request quote for: task:TASK-02-010\n\n"
             "> Keep the first paragraph exactly.\n\n"
-            "> Keep the later paragraph too.\n",
-            encoding="utf-8",
+            "> Keep the later paragraph too.\n"
         )
-        self.seed_task()
-
-        context = request_trace.context_for_task(self.root, self.task)
-
+        parsed = request_trace._structural_decision_quotes("DEC-014", text)  # noqa: SLF001
         self.assertEqual(
-            context.trace[0].text,
-            "Keep the first paragraph exactly.\n\nKeep the later paragraph too.",
+            [excerpt for _unit, excerpt in parsed],
+            ["Keep the first paragraph exactly.\n\nKeep the later paragraph too."],
         )
 
-    def test_host_chat_records_supply_original_and_explicit_correction(self) -> None:
+    def test_host_chat_records_are_unconfirmed(self) -> None:
+        """Nothing in the repository writes ``requests/chat/``; a record there
+        is a PM-authored file with no adapter receipt."""
         self.write_chat_record("CHAT-ASK-001", ORIGINAL, kind="original", sequence=0)
         correction = "Correction: do not add another review stage."
         self.write_chat_record("CHAT-CORRECTION-001", correction, kind="correction", sequence=1)
         self.seed_task()
 
-        context = request_trace.context_for_task(self.root, self.task)
+        with self.assertRaises(request_trace.RequestRefusal) as caught:
+            request_trace.context_for_task(self.root, self.task)
 
-        self.assertEqual([item.text for item in context.trace], [ORIGINAL, correction])
-        self.assertEqual([item.source_kind for item in context.trace], ["host-chat", "host-chat"])
-        self.assertEqual([item.sequence for item in context.trace], [1, 2])
-        self.assertIn("test-host:conversation-1:message-0", context.section)
-
-    def test_changed_decision_source_invalidates_bound_context(self) -> None:
-        self.write_decision("DEC-005", "Preserve this exact request.")
-        self.task.write_text(
-            "# TASK-02-010: Trace\n\nPhase: PHASE-02\n\n"
-            "## Operator intent\n\nExact operator quote source: DEC-005\n",
-            encoding="utf-8",
+        self.assertEqual(caught.exception.rule, "unit-request-not-captured")
+        resolution = evidence_resolver.resolve(
+            self.root, request_trace.GovernedUnit("task", "TASK-02-010")
         )
-        context = request_trace.context_for_task(self.root, self.task)
-        prompt_text = request_trace.upsert_request_sections("# Review prompt\n", context.section)
-        self.write_decision("DEC-005", "Changed request text.")
-
-        current = request_trace.context_for_task(
-            self.root,
-            self.task,
-            prompt_text=prompt_text,
+        self.assertEqual(
+            {(u.reference, u.reason) for u in resolution.unconfirmed},
+            {("CHAT-ASK-001", "no-adapter-receipt"), ("CHAT-CORRECTION-001", "no-adapter-receipt")},
         )
-        preflight = request_trace.preflight_prompt_binding(current, prompt_text)
 
-        self.assertFalse(preflight["ok"])
-        self.assertEqual(preflight["rule"], "stale-request-context")
-
-    def test_ordinary_plan_quote_is_not_promoted_but_explicit_source_ref_is(self) -> None:
+    def test_neither_plan_quote_nor_explicit_source_ref_is_promoted(self) -> None:
         quote = "Keep the plan review focused."
         self.write_decision("DEC-004", quote, marked=False)
         (self.root / "IMPLEMENTATION_PLAN.md").write_text(
@@ -324,9 +299,9 @@ class RequestTraceContract(unittest.TestCase):
             "Exact operator quote source: DEC-004\n",
             encoding="utf-8",
         )
-        context = request_trace.context_for_checkpoint(self.root, "PLAN-001")
-        self.assertEqual(context.evidence_ids, ["DEC-004-QUOTE-001"])
-        self.assertEqual(context.trace[0].text, quote)
+        with self.assertRaises(request_trace.RequestRefusal) as caught:
+            request_trace.context_for_checkpoint(self.root, "PLAN-001")
+        self.assertEqual(caught.exception.rule, "unit-request-not-captured")
 
     def test_ordinary_and_loosely_attributed_decision_quotes_are_not_evidence(self) -> None:
         self.write_decision("DEC-010", "This is only PM context.", marked=False)
@@ -340,7 +315,7 @@ class RequestTraceContract(unittest.TestCase):
 
         self.assertEqual(caught.exception.rule, "unit-request-not-captured")
 
-    def test_three_legacy_attribution_sentences_remain_bounded_compatible(self) -> None:
+    def test_three_legacy_attribution_sentences_are_readable_but_unconfirmed(self) -> None:
         decisions = self.root / "decisions"
         decisions.mkdir(exist_ok=True)
         legacy = {
@@ -374,16 +349,18 @@ class RequestTraceContract(unittest.TestCase):
             encoding="utf-8",
         )
 
-        context = request_trace.context_for_task(self.root, self.task)
+        with self.assertRaises(request_trace.RequestRefusal) as caught:
+            request_trace.context_for_task(self.root, self.task)
 
-        self.assertEqual(
-            [item.text for item in context.trace],
-            [
-                "Preserve the original request.",
-                "Keep alignment in the existing review.",
-                "Decisions and chat are valid sources.",
-            ],
+        self.assertEqual(caught.exception.rule, "unit-request-not-captured")
+        resolution = evidence_resolver.resolve(
+            self.root, request_trace.GovernedUnit("task", "TASK-02-010")
         )
+        self.assertEqual(
+            sorted(u.reference for u in resolution.unconfirmed),
+            ["DEC-021-LEGACY-001", "DEC-022-LEGACY-001", "DEC-023-LEGACY-001"],
+        )
+        self.assertTrue(all(u.reason == "legacy-quotation" for u in resolution.unconfirmed))
 
     def test_malformed_decision_quote_marker_fails_closed(self) -> None:
         self.write_decision("DEC-011", "Malformed.")
@@ -420,7 +397,9 @@ class RequestTraceContract(unittest.TestCase):
 
         self.assertEqual(caught.exception.rule, "ambiguous-decision-quote-marker")
 
-    def test_decision_first_authoring_resolves_and_allows_requirements(self) -> None:
+    def test_decision_first_authoring_does_not_unlock_requirements(self) -> None:
+        """A decision is still writable first, but its quotation is not the
+        evidence a requirements lock needs."""
         body = (
             "# DEC-001: Preserve request\n\n"
             "Date: 2026-07-27\nStatus: locked\nSupersedes: none\n\n"
@@ -438,9 +417,10 @@ class RequestTraceContract(unittest.TestCase):
             "write-requirements", str(self.root), "--content", "# Requirements\n"
         )
 
-        self.assertEqual(code, 0, msg=error)
-        context = request_trace.context_for_checkpoint(self.root, "PLAN-001")
-        self.assertEqual(context.trace[0].text, "Build from this exact request.")
+        self.assertEqual(code, 1)
+        self.assertIn("request-not-captured", error)
+        self.assertIn("Never create, copy, or edit records", error)
+        self.assertFalse((self.root / "REQUIREMENTS.md").exists())
 
     def test_optional_capture_remains_reachable_after_decision(self) -> None:
         code, _, error = self.run_cli(
@@ -564,28 +544,24 @@ class RequestTraceContract(unittest.TestCase):
         self.assertEqual(closure.evidence_ids, ["REQUEST-001"])
 
     def test_planned_task_prefers_approved_checkpoint_evidence(self) -> None:
-        self.write_decision(
-            "DEC-001",
-            "Unrelated historical project direction.",
-            unit="project:project",
-        )
-        self.write_decision(
-            "DEC-002",
+        self.capture("Unrelated historical project direction.")
+        self.capture(
             "Implement the reviewed plan item after this checkpoint approves.",
             unit="planning:PLAN-016",
+            request_id="REQUEST-002",
         )
         self.seed_task()
         self.seed_plan_ancestry()
         self.approve_planning_checkpoint(
             "PLAN-016",
             plan_ref="BUILD-02-009 through BUILD-02-011 (reviewed batch)",
-            evidence=["DEC-001-QUOTE-001", "DEC-002-QUOTE-001"],
+            evidence=["REQUEST-002"],
             emphasized=True,
         )
 
         context = request_trace.context_for_task_assignment(self.root, self.task)
 
-        self.assertEqual(context.evidence_ids, ["DEC-002-QUOTE-001"])
+        self.assertEqual(context.evidence_ids, ["REQUEST-002"])
         self.assertEqual(
             [item.text for item in context.trace],
             ["Implement the reviewed plan item after this checkpoint approves."],
@@ -701,7 +677,7 @@ class RequestTraceContract(unittest.TestCase):
     def test_task_bound_evidence_precedes_inherited_project_evidence(self) -> None:
         self.capture(ORIGINAL)
         task_specific = "Add this explicitly authorized task-scoped behavior."
-        self.write_decision("DEC-030", task_specific)
+        self.capture(task_specific, unit="task:TASK-02-010", request_id="REQUEST-002")
         self.seed_task()
         self.seed_plan_ancestry()
 
@@ -1021,7 +997,10 @@ class RequestTraceContract(unittest.TestCase):
         self.assertIn("IMPLEMENTATION_PLAN.md", blocker["detail"])
         self.assertTrue(blocker["recovery"])
 
-    def test_request_evidence_runbooks_do_not_require_native_capture(self) -> None:
+    def test_request_evidence_runbooks_name_the_adapter_and_forbid_manufacture(self) -> None:
+        """Every planning and task runbook sends the PM to the host intake
+        adapter for evidence and forbids writing evidence itself; none still
+        describes decision quotations or chat records as sources."""
         skills = Path(__file__).parents[1] / "skills"
         for filename in (
             "run-task.md",
@@ -1033,24 +1012,16 @@ class RequestTraceContract(unittest.TestCase):
                 normalized = " ".join(
                     (skills / filename).read_text(encoding="utf-8").split()
                 )
-                for source in (
+                self.assertIn("host intake hooks", normalized)
+                self.assertIn("`select_project`", normalized)
+                self.assertIn("lookup-evidence", normalized)
+                self.assertIn("`requests/`", normalized)
+                self.assertRegex(normalized, r"[Nn]ever (create|copy|manufacture)")
+                for forbidden in (
                     "structurally marked decision quotations",
                     "supported host chat records",
                     "optional immutable request records",
-                ):
-                    self.assertIn(source, normalized)
-                self.assertIn(
-                    "A native host adapter is optional when another supported "
-                    "source resolves",
-                    normalized,
-                )
-                self.assertIn("ordinary PM prose is excluded", normalized)
-                self.assertIn(
-                    "fail closed only when no applicable exact source of any "
-                    "supported kind resolves",
-                    normalized,
-                )
-                for forbidden in (
+                    "native host adapter is optional",
                     "capture bridge",
                     "required task-unit record",
                     "the host records its raw UTF-8 payload",

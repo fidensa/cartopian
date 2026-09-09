@@ -10,10 +10,21 @@ from cli.commands import _writers
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     _writers.add_content_args(subparser)
+    _writers.add_handle_arg(subparser)
 
 
 def handler(args: argparse.Namespace) -> int:
     from cli import numbering_contract
+
+    lock_root, lock_err = _writers.validated_root(args.project_root)
+    if lock_err is not None:
+        _writers.stderr("usage", lock_err)
+        return _writers.EXIT_USAGE
+    # Plan lock reuses the confirmation bound at requirements lock, or binds
+    # it now when requirements were never written through this path.
+    lock, lock_code = _writers.lock_confirmation(lock_root, getattr(args, "handle", None))
+    if lock_code is not None:
+        return lock_code
 
     if numbering_contract.activation_state()["active"]:
         _root, error = _writers.validated_root(args.project_root)
@@ -52,4 +63,8 @@ def handler(args: argparse.Namespace) -> int:
         action="write-plan",
         dest_kind="plan",
         relative_target="IMPLEMENTATION_PLAN.md",
+        request_gate_satisfied=lock is not None,
+        post_write=lambda project_root, details: _writers.bind_lock_confirmation(
+            project_root, lock, details
+        ),
     )

@@ -78,9 +78,12 @@ provider credential, or model invocation.
 Planning, task, and review workflows understand CLI handoff automation. The `init-workspace` and `init-project` skills configure handoff agents, independent planning/task review policy, and automation policy. The `run-handoff` skill defines the reusable mechanics for prompt handoff, stale report handling, report parsing, timeout behavior, and automation policy. The `plan-project` and `run-task` skills use those mechanics for planning checkpoints and task execution. The `close-plan` skill audits `reports/` and ensures no unresolved handoff state remains before plan closeout.
 
 Planning and task-review runbooks also consume `cartopian review-context` and
-the generated verbatim-request and PM-derived channels. The initiating message
-was already captured by the host before PM authoring; no later operator step
-exists.
+the generated intent packet (`## Original operator request (verbatim)`) and
+PM-derived channel. The operator's words reach Cartopian only through the host
+intake hooks in the operator's own session, bound by `select_project`; the
+planning confirmation exchange is the evidence and no later operator step
+exists. `cartopian lookup-evidence` lists applicable capture identities
+(`--recent` for the operator's latest turns).
 
 Review and automation are separate and optional. `[reviews]` decides whether a checkpoint exists and which role owns it. Each role's flat `agent` and option fields provide neutral launch facts, while its closed `auto_launch` list independently permits automatic launch for assigned work types. Manual handoff remains valid for every role and every skill. See `protocol/CONVENTIONS.md` for the contracts and `skills/run-handoff.md` for the executable workflow.
 

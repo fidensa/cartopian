@@ -10,9 +10,7 @@ Run one Cartopian task from assignment through evidence-supported closure, any r
 
 ## Operator request evidence
 
-Before review prompt generation, resolve the task's exact operator evidence from the three supported source kinds: structurally marked decision quotations, supported host chat records, and optional immutable request records. A native host adapter is optional when another supported source resolves. The PM must not transcribe or reconstruct operator words; ordinary PM prose is excluded from operator evidence, including task, spec, phase, plan, prompt, and report prose.
-
-Assignment and task review use the same resolution. A task generated from the approved plan inherits project-level evidence when the Core CLI verifies its complete task-to-phase-to-plan ancestry; direct task-bound evidence takes precedence when present. Ad-hoc, malformed, or unanchored tasks fail closed only when no applicable exact source of any supported kind resolves. Planned work requires no later operator restatement, confirmation, safeguard, handoff, or new review stage.
+Operator evidence is the operator's own turns, captured by the host intake hooks and bound by `select_project`; the writers resolve it, and a planned task inherits the project evidence through its verified task-to-phase-to-plan ancestry with no later operator restatement. A task-specific operator statement reaches the task only by capture identity from `cartopian lookup-evidence <project-root> --unit task:TASK-NN-NNN --recent`, referenced from a decision or the task's `## Request evidence` section; PM prose is never operator evidence. Never create, copy, or edit anything under `requests/` or the intake directory, never invoke operator-only intake, and never use shell or escalation to bypass an evidence gate; relay any evidence refusal to the operator verbatim and stop. Rules: `cartopian://protocol/CONVENTIONS/up-front-operator-request-evidence`.
 
 ---
 
@@ -115,7 +113,7 @@ cartopian write-prompt <project-root> --prompt-id PROMPT-NN-NNN \
   --task <absolute-in-review-task-path>
 ```
 
-The writer resolves the exact request trace, verifies the preserved coder completion report, and generates the context-bound sections — do not summarize or edit them, and do not modify or remove the completion report while the task is in review. Before a manual handoff, require `request_trace.preflight.ok: true` from `handoff-packet`.
+The writer resolves the exact request trace, verifies the preserved coder completion report, and generates the context-bound sections — the intent packet under `## Original operator request (verbatim)` and the `## PM-derived guidance and delivered outcome` channel. Do not summarize or edit them, and do not modify or remove the completion report while the task is in review. Before a manual handoff, require `request_trace.preflight.ok: true` from `handoff-packet`.
 
 The review prompt must include absolute paths for: the task file; the spec when present; the declared deliverable (the primary artifact to review); the generated `## Preserved coder completion evidence` binding — the reviewer reads `reports/REPORT-NN-NNN.md` directly, and the prompt never reproduces its body; the review file the reviewer writes (`reviews/REVIEW-NN-NNN.md`, findings plus the `Verdict:` header); the expected review-report path (`reports/REPORT-NN-NNN-review.md` — never the preserved completion report's path); the declared work roots; relevant implementation evidence; and PR/preview URLs or `n/a`. Paste the skeletons returned by `cartopian report-skeleton <task-path> --variant review` (`skeleton` and `review_file_skeleton`) instead of full templates — the machine-owned identities are already filled; the reviewer supplies verdicts, findings, and comparisons only.
 

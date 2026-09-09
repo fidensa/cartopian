@@ -107,6 +107,57 @@ def resolve_content(args: argparse.Namespace) -> Tuple[Optional[Union[str, bytes
     return None, "missing artifact body: pass --content or --content-file"
 
 
+def add_handle_arg(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "--handle",
+        default=None,
+        help=(
+            "The cartopian-session handle of the capture session in which the "
+            "operator confirmed the intent summary. Needed only when more than "
+            "one session is bound to the project."
+        ),
+    )
+
+
+def lock_confirmation(
+    root, handle: Optional[str]
+) -> "Tuple[Optional[object], Optional[int]]":
+    """Resolve the confirmation exchange a requirements/plan lock binds.
+
+    Returns ``(lock_evidence, exit_code)``. ``lock_evidence`` is ``None`` when
+    the project has no receipted capture binding, in which case the legacy
+    record gate in :func:`perform_write` applies unchanged. A refusal has
+    already been printed when ``exit_code`` is set.
+    """
+    from cli.evidence_resolver import prepare_confirmation
+    from cli.request_trace import RequestRefusal
+
+    try:
+        return prepare_confirmation(root, handle), None
+    except RequestRefusal as refusal:
+        stderr("guard", f"{refusal.rule}: {refusal.detail}")
+        if refusal.recovery:
+            stderr("guard", f"recovery: {refusal.recovery}")
+        return None, EXIT_FAIL
+
+
+def bind_lock_confirmation(root, lock_evidence, details: dict) -> None:
+    """Persist the pending confirmation after the artifact write landed."""
+    from cli.evidence_resolver import bind_confirmation
+    from cli.request_trace import RequestRefusal
+
+    if lock_evidence is None:
+        return
+    if lock_evidence.existing is not None:
+        details["confirmation"] = lock_evidence.existing.as_record()
+        return
+    try:
+        details["confirmation"] = bind_confirmation(root, lock_evidence.pending)
+    except RequestRefusal as refusal:
+        stderr("guard", f"{refusal.rule}: {refusal.detail}")
+        details["confirmation"] = None
+
+
 _STAMP_PLAN_RE = re.compile(r"^Plan refs?:")
 
 
@@ -217,6 +268,7 @@ def perform_write(
     content: Optional[Union[str, bytes]] = None,
     extra_details: Optional[dict] = None,
     post_write: Optional[Callable[[Path, dict], None]] = None,
+    request_gate_satisfied: bool = False,
 ) -> int:
     """Validate, write through the primitive, and emit the NDJSON success record.
 
@@ -228,6 +280,10 @@ def perform_write(
     root and the mutable details dict, and may add fields to the emitted
     record. It is for observations that are only true once the write
     succeeded; it must not raise, and it never changes the exit code.
+
+    ``request_gate_satisfied`` is passed by the requirements/plan writers
+    when they already hold the confirmation exchange this lock binds; the
+    up-front request gate is then not re-derived from the project files.
     """
     root, err = validated_root(args.project_root)
     if err is not None:
@@ -244,7 +300,9 @@ def perform_write(
     # Historical projects remain readable until their next real intake.
     from cli.request_trace import RequestRefusal, require_request_before_derivative
     try:
-        require_request_before_derivative(root, dest_kind, relative_target)
+        require_request_before_derivative(
+            root, dest_kind, relative_target, satisfied=request_gate_satisfied
+        )
     except RequestRefusal as refusal:
         stderr("guard", f"{refusal.rule}: {refusal.detail}")
         if refusal.recovery:

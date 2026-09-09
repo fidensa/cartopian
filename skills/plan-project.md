@@ -11,15 +11,14 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 ## Intake precondition
 
-Before deriving planning artifacts, resolve the governed unit's exact operator
-evidence from the three supported source kinds: structurally marked decision
-quotations, supported host chat records, and optional immutable request records.
-A native host adapter is optional when another supported source resolves. The PM
-never copies, paraphrases, or reconstructs operator words; ordinary PM prose is
-excluded from operator evidence. Mediated writers fail closed only when no
-applicable exact source of any supported kind resolves for the governed unit.
-Explicit corrections retain their provenance and deterministic order before PM
-revisions. Do not ask the operator to restate the request later.
+Operator evidence is the operator's own turns, captured by the host intake
+hooks and bound by `select_project` at the end of Stage 0. The Stage 1 intent
+summary and the operator's reply bind automatically at lock, so never ask the
+operator to confirm or restate anything for evidence purposes. To cite a later
+operator statement in a decision, take its identity from `cartopian
+lookup-evidence <project-root> --unit <unit> --recent` and write `Operator
+request evidence for: <unit>: <capture-id>`; never quote instead. PM prose is
+never operator evidence. Never create, copy, or edit anything under `requests/` or the intake directory, never invoke operator-only intake, and never use shell or escalation to bypass an evidence gate; relay any evidence refusal to the operator verbatim and stop. Rules: `cartopian://protocol/CONVENTIONS/up-front-operator-request-evidence`.
 
 **Protocol reference:** This skill does not require the whole protocol document. When a stage needs protocol rules beyond what is written here, read only the relevant section via the section-scoped resource surface:
 
