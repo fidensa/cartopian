@@ -454,7 +454,20 @@ def _release_claim_text(release: Dict[str, Any]) -> str:
     return f"`unknown` ({release['state']}) — {reason}"
 
 
-def _install_context_lines() -> List[str]:
+def _install_context_lines(*, snapshot: bool = False) -> List[str]:
+    """Render the authoritative install-context block.
+
+    ``snapshot=True`` renders for the ``initialize`` response's
+    ``instructions`` field.  That text is delivered exactly once, at connect,
+    and hosts may hold it in the system prompt for the life of the session, so
+    it can never be refreshed.  Most lines here describe the installed tree or
+    this process and stay true for as long as the process lives.  ``Activation:
+    active`` does not: it is a claim that disk and process *agree*, and an
+    install landing after connect falsifies it while the cached text keeps
+    asserting it.  That is the exact claim the restart-state contract exists to
+    withhold, so the snapshot rendering never makes it — it reports what was
+    observed at connect and points at the live resource instead.
+    """
     identities = _identity_records()
     release = identities["release_version"]
     content = identities["installed_content"]
@@ -466,8 +479,15 @@ def _install_context_lines() -> List[str]:
     )
     restart = _restart_projection()
     lines = [
-        "**Cartopian install context** (authoritative — do not re-derive by "
-        "scanning the filesystem):",
+        (
+            "**Cartopian install context** (connect-time snapshot; "
+            "authoritative for install root and version — do not re-derive by "
+            "scanning the filesystem. Restart state below is NOT refreshed; "
+            "re-read `cartopian://skills/use_cartopian` for live state):"
+            if snapshot
+            else "**Cartopian install context** (authoritative — do not "
+            "re-derive by scanning the filesystem):"
+        ),
         f"- Install root: `{ROOT}`",
         f"- Release version: {_release_claim_text(release)}",
         f"- Installed content: revision `{content['revision'] or 'unknown'}`, "
@@ -491,7 +511,19 @@ def _install_context_lines() -> List[str]:
         lines.append(
             f"- Expected post-restart proof: {instruction['expected_proof']}"
         )
-    if restart["activation_claim_allowed"]:
+    if snapshot:
+        # A cached block cannot carry a durable activation claim: whatever was
+        # true at connect may be false by the time it is read.  Report the
+        # observation, withhold the claim, and name the live source.
+        lines.append(
+            f"- Activation: `not claimed here`; restart status was "
+            f"`{restart['status']}` when this block was rendered at connect "
+            "and is not refreshed afterwards. Never cite this line as proof "
+            "that installed behavior is active. Re-read "
+            "`cartopian://skills/use_cartopian` (or call `verify_restart_state`) "
+            "for live restart state before acting on it."
+        )
+    elif restart["activation_claim_allowed"]:
         lines.append(
             "- Activation: `active`, proven by a fresh process with matching "
             "verified loaded MCP content"
@@ -598,7 +630,7 @@ def _server_instructions() -> str:
     return (
         "Cartopian — a filesystem-first project-governance protocol, served over "
         "MCP.\n\n"
-        + "\n".join(_install_context_lines())
+        + "\n".join(_install_context_lines(snapshot=True))
         + "\n\n"
         f"{startup['outcome']}\n\n"
         f"{startup['mcp_host_action']} It is the authoritative startup "

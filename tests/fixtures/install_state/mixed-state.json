@@ -100,6 +100,15 @@
       "required": true
     },
     {
+      "kind": "intake-hooks",
+      "locator": "consented-hosts:intake-hooks",
+      "desired_identity": "v1",
+      "observed_identity": "v1",
+      "state": "current",
+      "affected": false,
+      "required": false
+    },
+    {
       "kind": "verification-content",
       "locator": "installed:verification-content",
       "desired_identity": "v1",

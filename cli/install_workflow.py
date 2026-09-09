@@ -13,9 +13,11 @@ import contextlib
 import copy
 import functools
 import hashlib
+import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -777,6 +779,7 @@ _OPTIONAL_SURFACES = (
     "bridges",
     "client-registrations",
     "client-configuration",
+    "intake-hooks",
 )
 _SHARED_REGISTRATION_SURFACES = (
     "client-registrations",
@@ -810,6 +813,9 @@ _SURFACE_RETRY_PROFILES: Dict[str, Tuple[str, str]] = {
     "bridges": ("idempotent", "observable"),
     "client-registrations": ("inspect-before-retry", "partially-observable"),
     "client-configuration": ("inspect-before-retry", "partially-observable"),
+    # Intake hooks merge into operator-owned host configuration whose
+    # non-Cartopian siblings cannot be re-derived, exactly like registration.
+    "intake-hooks": ("inspect-before-retry", "partially-observable"),
     "verification-content": ("idempotent", "observable"),
     _MIGRATION_SURFACE: ("refuse-replay", "unobservable"),
 }
@@ -1374,6 +1380,430 @@ def _bridge_observations(
     return observations
 
 
+# --- Host intake hooks (operator-consented, user-level) ---------------------
+# Cartopian's request-evidence hooks live in the operator's *host* config:
+# ``~/.claude/settings.json``, ``~/.codex/hooks.json``, Antigravity's named
+# hook block, and the Hermes/opencode plugin shims.  They are written only on
+# explicit ``--intake-hooks`` consent -- but that consent decides *whether to
+# capture*, not whether the hooks are ever maintained again.  Everything baked
+# into a hook entry at install time is release- or machine-dependent: the event
+# set, the handler timeout, the adapter path, and the absolute interpreter
+# path.  A release that adds an event, or a Python that moves, leaves the
+# operator with hooks that no longer match the adapter they invoke.
+#
+# Silent capture failure is worse than most drift here, because the evidence
+# gates refuse without adapter evidence: the operator meets a refusal at
+# dispatch with no visible cause.  Codex compounds it -- its hook trust is
+# keyed to the exact definition, so a changed definition disables capture until
+# it is trusted again.  So this surface is inventoried on every run.
+#
+# Consent is preserved by *scope*, not by skipping the check.  A host carrying
+# no Cartopian intake entries is out of scope entirely and reports
+# ``not-applicable``; it is never reported as ``missing``.  Repair can only
+# refresh hooks the operator already asked for -- it can never install capture
+# on a host that lacks it.  Installing afresh stays exclusively behind
+# ``--intake-hooks``.
+_INTAKE_SURFACE = "intake-hooks"
+_INTAKE_TOKEN_PATTERN = re.compile(
+    r"(__CARTOPIAN_PYTHON__|__CARTOPIAN_ADAPTER__)"
+)
+
+
+def _intake_module(source_root: Path) -> Optional[Any]:
+    """Load the intake-hook contract from the source tree's installer.
+
+    The contract is defined once, in ``scripts/install.py``, because the
+    standalone ``--remove-intake-hooks`` rollback has to work from that single
+    file before any source root is resolved.  Drift detection therefore reads
+    that same definition instead of restating it: a second copy of the event
+    sets and destinations would itself become a source of the drift this
+    surface exists to catch.
+    """
+    installer = source_root / "scripts" / "install.py"
+    if not installer.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        "cartopian_intake_contract", installer
+    )
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        # A source tree whose installer will not import fails on the required
+        # surfaces first; degrading to "no intake contract observable" here
+        # keeps this optional surface from masking that real error.
+        return None
+    if not hasattr(module, "INTAKE_HOSTS"):
+        return None
+    return module
+
+
+def _intake_split(command: str) -> List[str]:
+    """Split a recorded hook command back into argv."""
+    try:
+        if os.name == "nt":
+            return [part.strip('"') for part in shlex.split(command, posix=False)]
+        return shlex.split(command)
+    except ValueError:
+        return []
+
+
+def _intake_command_parts(
+    module: Any, command: Any
+) -> Optional[Tuple[str, str, Tuple[str, ...]]]:
+    """Split one command into (interpreter, adapter, remaining argv).
+
+    The trailing argv is what a release controls; the two leading paths are
+    what the installing machine controls.  Separating them is what lets a real
+    contract change read as drift without every machine difference doing so.
+    """
+    argv = _intake_split(str(command))
+    if len(argv) < 2:
+        return None
+    # The adapter is located by name rather than by position: a release that
+    # adds an interpreter flag ahead of it would otherwise stop parsing here
+    # and the entry would vanish from the inventory as "not ours" -- silently
+    # dropping the exact drift this surface exists to report.
+    adapter_index = next(
+        (
+            index
+            for index, item in enumerate(argv)
+            if index and Path(item).name == module.INTAKE_ADAPTER_SCRIPT
+        ),
+        None,
+    )
+    if adapter_index is None:
+        return None
+    rest = tuple(
+        "<adapter>" if index == adapter_index else item
+        for index, item in enumerate(argv)
+        if index
+    )
+    return argv[0], argv[adapter_index], rest
+
+
+def _intake_owned_handlers(module: Any, entries: Any) -> List[Mapping[str, Any]]:
+    """Cartopian's own handlers inside one event's entry list.
+
+    Accepts both shapes the installer writes: the Claude-style nested
+    ``{"hooks": [handler]}`` entry and Antigravity's flat handler list.
+    """
+    owned: List[Mapping[str, Any]] = []
+    if not isinstance(entries, list):
+        return owned
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        nested = entry.get("hooks")
+        candidates = nested if isinstance(nested, list) else [entry]
+        for handler in candidates:
+            if not isinstance(handler, Mapping):
+                continue
+            if module.INTAKE_ADAPTER_SCRIPT in str(handler.get("command", "")):
+                owned.append(handler)
+    return owned
+
+
+def _intake_projection(
+    module: Any, mapping: Mapping[str, Any]
+) -> Tuple[Dict[str, List[Tuple[str, Any, str]]], List[str], List[str]]:
+    """Project Cartopian's hook entries onto the release-controlled contract."""
+    projection: Dict[str, List[Tuple[str, Any, str]]] = {}
+    interpreters: List[str] = []
+    adapters: List[str] = []
+    for event in sorted(mapping):
+        rows: List[Tuple[str, Any, str]] = []
+        for handler in _intake_owned_handlers(module, mapping[event]):
+            parts = _intake_command_parts(module, handler.get("command", ""))
+            if parts is None:
+                continue
+            interpreter, adapter, rest = parts
+            interpreters.append(interpreter)
+            adapters.append(adapter)
+            rows.append(
+                (
+                    " ".join(("<interpreter>",) + rest),
+                    handler.get("timeout"),
+                    str(handler.get("type", "")),
+                )
+            )
+        if rows:
+            projection[event] = sorted(rows)
+    return projection, interpreters, adapters
+
+
+def _intake_reverse_render(
+    template: str, observed: str
+) -> Optional[Dict[str, str]]:
+    """Recover the paths a rendered shim was written with.
+
+    Matching the observed file against the *template's* literal segments is
+    what separates the two questions this surface must answer separately: does
+    the shim body still match this release (a contract fact), and do the paths
+    it embeds still resolve (a machine fact).  A body that no longer matches
+    fails here, which is the drift signal.
+
+    Returns only the tokens this file actually carries.  A shipped file with no
+    placeholders -- a plugin manifest, say -- recovers nothing and contributes
+    no paths; reporting empty ones instead would fail the resolve check and
+    make every such host read as broken.
+    """
+    parts = _INTAKE_TOKEN_PATTERN.split(template)
+    pattern = ""
+    tokens: List[str] = []
+    for index, part in enumerate(parts):
+        if index % 2:
+            tokens.append(part)
+            pattern += "(.*?)"
+        else:
+            pattern += re.escape(part)
+    match = re.fullmatch(pattern, observed, flags=re.DOTALL)
+    if match is None:
+        return None
+    values: Dict[str, str] = {}
+    for token, value in zip(tokens, match.groups()):
+        if values.setdefault(token, value) != value:
+            return None
+    return values
+
+
+def _intake_resolved(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _intake_adapter_path(module: Any, install_root: Path) -> Path:
+    return install_root / "cli" / module.INTAKE_ADAPTER_SCRIPT
+
+
+def _intake_belongs_here(
+    module: Any, install_root: Path, adapters: Sequence[str]
+) -> bool:
+    """Whether these hook entries were written by *this* install root.
+
+    Ownership is what bounds the surface.  Hooks naming a different adapter
+    belong to another Cartopian install and are that install's to maintain: a
+    second install under a new ``--prefix`` must not report the operator's
+    existing capture as drift, and must never repoint it.  They are out of
+    scope, not dirty.
+
+    Paths are compared after resolution, never as literal strings.  An install
+    root reached through a symlink -- a symlinked home, a ``/tmp`` that is
+    really ``/private/tmp`` -- writes one spelling into the hook and resolves
+    to another here, and a string comparison would disown hooks this install
+    actually wrote.
+    """
+    if not adapters:
+        return False
+    expected = _intake_resolved(_intake_adapter_path(module, install_root))
+    return all(
+        _intake_resolved(Path(adapter)) == expected for adapter in adapters
+    )
+
+
+def _intake_interpreters_resolve(interpreters: Sequence[str]) -> bool:
+    """Whether every embedded interpreter still exists.
+
+    An interpreter that has moved is the quiet failure this catches: the hook
+    entry still parses, still names the right adapter, and still never runs.
+    """
+    for interpreter in interpreters:
+        candidate = Path(interpreter)
+        if candidate.is_absolute() and not candidate.exists():
+            return False
+    return True
+
+
+# A deployed shim package accumulates interpreter-generated artifacts that were
+# never shipped and never rendered.  Comparing them against the template would
+# report drift on every host that has simply run the plugin once.
+_INTAKE_GENERATED_DIRS = frozenset({"__pycache__"})
+_INTAKE_GENERATED_SUFFIXES = frozenset({".pyc", ".pyo"})
+
+
+def _intake_shim_files(root: Path) -> List[Tuple[str, Path]]:
+    if root.is_dir():
+        return sorted(
+            (str(item.relative_to(root)), item)
+            for item in root.rglob("*")
+            if item.is_file()
+            and item.suffix not in _INTAKE_GENERATED_SUFFIXES
+            and _INTAKE_GENERATED_DIRS.isdisjoint(
+                item.relative_to(root).parts
+            )
+        )
+    if root.is_file():
+        return [("", root)]
+    return []
+
+
+def _intake_shim_observation(
+    module: Any, host: str, source_root: Path, install_root: Path, target: Path
+) -> Optional[Dict[str, Any]]:
+    template_root = source_root / module.INTAKE_SHIM_HOSTS[host]
+    observed_files = _intake_shim_files(target)
+    if not observed_files:
+        return None
+    try:
+        payloads = {
+            name: path.read_text(encoding="utf-8")
+            for name, path in observed_files
+        }
+    except (OSError, UnicodeDecodeError):
+        return {"state": "malformed", "observed": "unreadable"}
+    if not any(module.INTAKE_SHIM_MARKER in body for body in payloads.values()):
+        # Something else owns this path; Cartopian never consented to it and
+        # must not claim, repair, or report it.
+        return None
+    if not any(
+        str(_intake_adapter_path(module, install_root)) in body
+        for body in payloads.values()
+    ):
+        # A Cartopian shim belonging to a different install root.  Ownership is
+        # decided before any drift verdict, because a body that does not match
+        # this release's template is exactly what another install's shim looks
+        # like -- calling that drift would let one install claim another's.
+        return None
+    template_files = dict(_intake_shim_files(template_root))
+    missing = sorted(set(template_files) - set(payloads))
+    if missing:
+        return {"state": "dirty", "observed": f"shim-file-missing:{missing[0]}"}
+    # An extra file is drift only when Cartopian wrote it.  Anything else in
+    # the plugin directory is the operator's: neither this observation nor the
+    # repair adapter may claim it, and counting it would leave the surface
+    # permanently dirty with no repair able to clear it.
+    stale = sorted(
+        name
+        for name in set(payloads) - set(template_files)
+        if module.INTAKE_SHIM_MARKER in payloads[name]
+    )
+    if stale:
+        return {"state": "dirty", "observed": f"stale-shim-file:{stale[0]}"}
+    interpreters: List[str] = []
+    adapters: List[str] = []
+    for name, template_path in sorted(template_files.items()):
+        try:
+            template = template_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return {"state": "malformed", "observed": "unreadable-template"}
+        recovered = _intake_reverse_render(template, payloads[name])
+        if recovered is None:
+            return {"state": "dirty", "observed": f"shim-body-differs:{name}"}
+        interpreter = recovered.get("__CARTOPIAN_PYTHON__")
+        adapter = recovered.get("__CARTOPIAN_ADAPTER__")
+        if interpreter:
+            interpreters.append(interpreter)
+        if adapter:
+            adapters.append(adapter)
+    if not _intake_belongs_here(module, install_root, adapters):
+        return None
+    if not _intake_interpreters_resolve(interpreters):
+        return {"state": "dirty", "observed": "interpreter-unresolvable"}
+    return {"state": "current", "observed": "shim-current"}
+
+
+def _intake_config_observation(
+    module: Any, host: str, install_root: Path, config: Path
+) -> Optional[Dict[str, Any]]:
+    if not config.is_file():
+        return None
+    try:
+        settings = json.loads(config.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        # Unreadable operator configuration is reported, never rewritten
+        # blind: the repair adapter must inspect it first.
+        return {"state": "malformed", "observed": "unreadable-configuration"}
+    if not isinstance(settings, dict):
+        return {"state": "malformed", "observed": "unexpected-configuration"}
+    named = host in module.INTAKE_NAMED_HOOK_HOSTS
+    if named:
+        block = settings.get(module.INTAKE_NAMED_HOOK_KEY)
+        observed_map = block if isinstance(block, dict) else {}
+    else:
+        hooks = settings.get("hooks")
+        observed_map = hooks if isinstance(hooks, dict) else {}
+    observed, interpreters, adapters = _intake_projection(module, observed_map)
+    if not observed:
+        # No Cartopian entries: this host was never opted in.
+        return None
+    if not _intake_belongs_here(module, install_root, adapters):
+        # Entries written by a different install root; that install maintains
+        # them, and this run neither reports nor repoints them.
+        return None
+    command = module.intake_hook_command(install_root, host)
+    desired_map = (
+        module._named_hook_entries(command)
+        if named
+        else module._intake_entries_for(host, command)
+    )
+    desired, _, _ = _intake_projection(
+        module,
+        {
+            event: (entry if isinstance(entry, list) else [entry])
+            for event, entry in desired_map.items()
+        },
+    )
+    if observed != desired:
+        return {"state": "dirty", "observed": "hook-contract-differs"}
+    if not _intake_interpreters_resolve(interpreters):
+        return {"state": "dirty", "observed": "interpreter-unresolvable"}
+    return {"state": "current", "observed": "hooks-current"}
+
+
+def _intake_observations(
+    source_root: Path, install_root: Path, client_home: Path
+) -> Dict[str, Dict[str, Any]]:
+    """Per-host intake-hook facts, limited to hosts already opted in.
+
+    Scope is deliberately independent of ``--client``: intake consent is
+    recorded per *host* by ``--intake-hooks``, which detects hosts itself, and
+    hooks already written stay stale whether or not this run happens to select
+    that client for registration.
+    """
+    module = _intake_module(source_root)
+    if module is None:
+        return {}
+    observations: Dict[str, Dict[str, Any]] = {}
+    for host in module.INTAKE_HOSTS:
+        config = module.intake_host_config_path(host, client_home)
+        if host in module.INTAKE_SHIM_HOSTS:
+            fact = _intake_shim_observation(
+                module, host, source_root, install_root, config
+            )
+        else:
+            fact = _intake_config_observation(module, host, install_root, config)
+        if fact is None:
+            continue
+        fact["path_class"] = f"{host}-user-intake-hooks"
+        observations[host] = fact
+    return observations
+
+
+def _intake_surface(source_root: Path, observations: Mapping[str, Any]) -> Dict[str, Any]:
+    surface = _aggregate_optional(
+        _INTAKE_SURFACE, observations, _intake_desired_identity(
+            source_root, observations
+        )
+    )
+    # Scope is the set of hosts the operator opted in, not the clients this
+    # run selected for registration, so the locator must not imply otherwise.
+    surface["locator"] = "consented-hosts:intake-hooks"
+    return surface
+
+
+def _intake_desired_identity(source_root: Path, observations: Mapping[str, Any]) -> str:
+    module = _intake_module(source_root)
+    marker = "unavailable" if module is None else module.INTAKE_ADAPTER_SCRIPT
+    return _digest_entries(
+        (host, f"{marker}:{host}".encode("utf-8"))
+        for host in sorted(observations)
+    )
+
+
 def _aggregate_optional(
     kind: str,
     observations: Mapping[str, Mapping[str, Any]],
@@ -1737,6 +2167,10 @@ def _choice(
         "bridges": "repair",
         "client-registrations": "register",
         "client-configuration": "reconfigure",
+        # Named for what repair may do here and no more: refresh the hooks a
+        # host already carries.  It never installs capture on a host without
+        # them; that stays an explicit `--intake-hooks` operation.
+        _INTAKE_SURFACE: "refresh-hooks",
     }[surface]
     return {
         "id": f"{surface}-{action}",
@@ -2199,6 +2633,8 @@ def plan_workflow(
             "locator": "supported-clients:client-configuration",
         }
     )
+    intake_facts = _intake_observations(source, install, home)
+    surfaces.append(_intake_surface(source, intake_facts))
     surfaces.append(
         _required_surface("verification-content", source, install)
     )
@@ -2302,7 +2738,16 @@ def plan_workflow(
         choice = _choice(
             kind,
             dispositions.get(kind),
-            fresh_authorized=operation == "fresh-install" and bool(clients),
+            # A fresh install authorizes the client surfaces it was asked to
+            # set up.  Intake hooks are excluded: the only hooks in scope on a
+            # fresh install point at a *different* install root, and silently
+            # repointing the operator's capture at a new one is a decision they
+            # did not make by choosing to install.  It is always offered.
+            fresh_authorized=(
+                operation == "fresh-install"
+                and bool(clients)
+                and kind != _INTAKE_SURFACE
+            ),
             carried_decline=(
                 dispositions.get(kind) is None
                 and prior_declines.get(kind) == context
@@ -2991,6 +3436,49 @@ def _apply_registrations(
             ) from exc
 
 
+def _apply_intake_hooks(
+    source_root: Path, install_root: Path, client_home: Path
+) -> None:
+    """Refresh intake hooks on hosts that already carry them.
+
+    The host list is re-derived from observation rather than taken from the
+    caller, so repair cannot reach a host that never opted in: a host with no
+    Cartopian entries is absent from the observation and is never passed to
+    the installer.  Rewriting uses the installer's own writer, which preserves
+    every unrelated hook.
+    """
+    module = _intake_module(source_root)
+    if module is None:
+        raise WorkflowRefusal(
+            "intake-hook contract is unavailable in the source tree"
+        )
+    observations = _intake_observations(source_root, install_root, client_home)
+    malformed = tuple(
+        host
+        for host, fact in observations.items()
+        if str(fact.get("state")) == "malformed"
+    )
+    if malformed:
+        raise WorkflowRefusal(
+            "unreadable host hook configuration preserved for: "
+            + ", ".join(malformed)
+        )
+    hosts = tuple(
+        host
+        for host, fact in observations.items()
+        if str(fact.get("state")) != "current"
+    )
+    if not hosts:
+        return
+    actions: List[str] = []
+    try:
+        module.install_intake_hooks(
+            install_root, actions, home=client_home, hosts=hosts
+        )
+    except SystemExit as exc:
+        raise WorkflowRefusal(f"intake hooks: {exc}") from exc
+
+
 @_hermes_scoped
 def _apply_bridges(
     clients: Sequence[str],
@@ -3616,6 +4104,24 @@ def _apply_under_lease(
             _apply_registrations(
                 clients, client_home, install_root, destinations
             )
+
+        if choices.get(_INTAKE_SURFACE, {}).get("state") == "authorized":
+            refused_surface = _INTAKE_SURFACE
+            attempted_action = "repair"
+            recovery = (
+                "inspect the operator-owned host hook configuration; unrelated "
+                "hooks were preserved, then retry the bounded repair"
+            )
+            recovery_artifact = "operator-host-hooks:preserved"
+            progress = open_boundary(
+                install_root,
+                progress,
+                surface=_INTAKE_SURFACE,
+                action=attempted_action,
+                phase="repair",
+                owner=owner,
+            )
+            _apply_intake_hooks(source_root, install_root, client_home)
     except (WorkflowRefusal, OSError) as exc:
         os_failure = isinstance(exc, OSError)
         failure_recovery = recovery
@@ -3712,10 +4218,18 @@ def _verification_checkpoint(
             "schema-observation"
             if surface["kind"] == "project-schema-migration-offers"
             else (
-                "registration-observation"
-                if surface["kind"]
-                in ("bridges", "client-registrations", "client-configuration")
-                else "file-digest"
+                "intake-hook-observation"
+                if surface["kind"] == _INTAKE_SURFACE
+                else (
+                    "registration-observation"
+                    if surface["kind"]
+                    in (
+                        "bridges",
+                        "client-registrations",
+                        "client-configuration",
+                    )
+                    else "file-digest"
+                )
             )
         ),
         "observed_identity": str(surface["observed_identity"]),
@@ -3801,6 +4315,8 @@ def verify_workflow(record: Mapping[str, Any]) -> "OrderedDict[str, Any]":
         "kind": "client-configuration",
         "locator": "supported-clients:client-configuration",
     }
+    intake_facts = _intake_observations(source_root, install_root, client_home)
+    optional[_INTAKE_SURFACE] = _intake_surface(source_root, intake_facts)
     for kind in _OPTIONAL_SURFACES:
         surface = optional[kind]
         choice = choices.get(kind)

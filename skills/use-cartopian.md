@@ -14,15 +14,19 @@ Execute the steps below in order.
 
 ## Step 0 — Quick update check (best-effort)
 
-The install-context prelude names the install root and installed version; use those values — do not re-derive them from the filesystem.
+The install-context prelude names the install root, the installed version, and the current restart status; use those values — do not re-derive them from the filesystem.
 
-First honor the prelude's restart state: on `restart_required` or `verification_pending`, give the operator its one current-client action and expected proof, state that activation is not proven, and stop; on `blocked`, report the boundary and stop. Continue only for `no_restart_needed` or `current`.
+Restart state and release currency are **independent facts**. Restart state describes the *connected process*; the release comparison describes the *on-disk install*. A pending restart therefore never suppresses the release check — it forbids claiming the installed behavior is active, nothing more. Report both, in the order below.
 
-If the installed version is a release tag (starts with `v`), issue a plain **unauthenticated** GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name` (`curl -s <url>` on Unix, `Invoke-RestMethod -Uri <url> -UseBasicParsing` on Windows; not `gh api`, not WebFetch).
+**First, compare releases.** If the installed version is a release tag (starts with `v`), issue a plain **unauthenticated** GET to `https://api.github.com/repos/fidensa/cartopian/releases/latest` and read `tag_name` (`curl -s <url>` on Unix, `Invoke-RestMethod -Uri <url> -UseBasicParsing` on Windows; not `gh api`, not WebFetch).
 
-- On HTTP 200 with a matching `tag_name`, say nothing about updates and proceed to Step 1. If it differs, offer the upgrade **once** (`<installed>` → `<latest>`); on yes, read `cartopian://skills/check_for_updates` and follow it, carrying forward the operator's approval so the runbook skips its own upgrade confirmation, then resume here. On no or "later", proceed.
+- On HTTP 200 with a matching `tag_name`, say nothing about updates. If it differs, offer the upgrade **once** (`<installed>` → `<latest>`); on yes, read `cartopian://skills/check_for_updates` and follow it, carrying forward the operator's approval so the runbook skips its own upgrade confirmation, then resume here. On no or "later", continue.
 - On HTTP 404 or any network error, skip silently — offline and pinned installs must not be blocked.
-- For `main` or `unknown`, skip the comparison and proceed.
+- For `main` or `unknown`, skip the comparison.
+
+Upgrading **while a restart is already pending is correct and preferred**: the release refresh and the stale runtime then clear on the same restart. Never defer the offer to "after the restart" — that costs the operator two restarts for one outcome, and because `mcp-server-files` changes on nearly every release, a deferred check is not merely delayed but indefinitely masked: an operator who upgrades without restarting would never be told about the release after that.
+
+**Then honor the restart state**, including any restart the upgrade just created — after an upgrade, use the restart state re-observed by `check_for_updates`, not the prelude you read at session start. On `restart_required` or `verification_pending`, give the operator its one current-client action and expected proof, state that activation is not proven, and stop before Step 1. On `blocked`, report the boundary — together with the release comparison you already ran — and stop without upgrading. Proceed to Step 1 only on `no_restart_needed` or `current`.
 
 Do not call any other Cartopian tool during this step.
 

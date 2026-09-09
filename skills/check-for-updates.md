@@ -30,15 +30,29 @@ diagnosed — never mutated — with `cartopian resume-install` (over MCP, the
 
 ## Steps
 
-### Step 0 — Honor pending restart state
+### Step 0 — Record pending restart state (do not stop on it)
 
-Read the authoritative install-context prelude before comparing release refs.
-If its restart status is `restart_required` or `verification_pending`, report
-the recorded reason, present its one current-client action and expected proof,
-and stop. The on-disk release may already be current while the connected
-process is stale; do not collapse those facts into "up to date." If status is
-`blocked`, report the unsupported/unknown client guidance boundary and stop.
-Continue only for `no_restart_needed` or `current`.
+Read the authoritative install-context prelude before comparing release refs
+and **record** its restart status, reason code, and any current-client
+instruction. Do not act on them yet.
+
+A pending restart is not a reason to skip the comparison. Restart state
+describes the *connected process*; the release comparison describes the
+*on-disk install*. The prelude's own rule — the on-disk release may already be
+current while the connected process is stale, so do not collapse those facts
+into "up to date" — is a rule about reporting **both** facts, not about
+checking only one. Suppress the activation claim, never the check. Stopping
+here instead would mask an available release for exactly as long as the
+restart stays pending, and would cost the operator two restarts to reach the
+state one restart can deliver.
+
+Carry the recorded status forward to Step 7, which re-observes it after the
+upgrade and presents a single restart instruction covering both the
+pre-existing staleness and any restart the upgrade itself created.
+
+If status is `blocked`, this workflow cannot give restart guidance for the
+client at all. Report that boundary, report the release comparison from Steps
+2-4 as information, and stop without upgrading.
 
 ### Step 1 — Resolve the install root
 
@@ -75,7 +89,7 @@ Parse the JSON response and extract `tag_name`.
   - If `installed_ref` is also `main`, report "no upstream releases yet; install tracks `main` and matches upstream" and stop. Do not offer an upgrade.
   - If `installed_ref` is `"unknown"`, proceed to Step 5 so the operator can re-run the installer to write a `VERSION` marker.
   - Otherwise (installed a tag, but no releases exist upstream — anomalous), report both refs and ask the operator whether to reinstall.
-- If `installed_ref` equals `latest_ref` and both are tag values, report "The installed Cartopian release is up to date (`<ref>`)" and stop.
+- If `installed_ref` equals `latest_ref` and both are tag values, report "The installed Cartopian release is up to date (`<ref>`)". If Step 0 recorded `restart_required` or `verification_pending`, do not stop there: the release is current on disk while the connected process is not, so continue to Step 7 to present that restart instruction rather than leaving the operator with a bare "up to date." Otherwise stop.
 - If `installed_ref` is `main` and `latest_ref` is a tag, report that the install is tracking `main` and a tagged release (`<latest_ref>`) is available, then continue.
 - Otherwise, report both refs side by side and continue.
 

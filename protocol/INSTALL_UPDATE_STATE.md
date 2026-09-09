@@ -174,11 +174,41 @@ provenance, not authenticated operator provenance. Callers cannot select an
 executable, add a surface kind, or supply a per-surface destination.
 
 Each plan accounts for `core-files`, `mcp-server-files`, `wrappers`, `bridges`,
-`client-registrations`, `client-configuration`, `verification-content`, and
-`project-schema-migration-offers` in contract order. Required file replacement
-uses a staged payload and a recoverable backup boundary. Client configuration
-is changed only after authorization, with existing siblings preserved; a
-malformed configuration is preserved and refused.
+`client-registrations`, `client-configuration`, `intake-hooks`,
+`verification-content`, and `project-schema-migration-offers` in contract
+order. Required file replacement uses a staged payload and a recoverable backup
+boundary. Client configuration is changed only after authorization, with
+existing siblings preserved; a malformed configuration is preserved and
+refused.
+
+`intake-hooks` covers Cartopian's request-evidence hooks in the operator's host
+configuration. Its scope is the set of hosts already carrying intake entries
+that name *this* install root's adapter, derived per host rather than from the
+clients this run selected, because intake consent is recorded per host. Two
+exclusions bound it, and both are decided before any drift verdict:
+
+- A host with no Cartopian entries is out of scope and reports
+  `not-applicable`. It is never reported as `missing`, so repair can never add
+  capture to a host that lacks it. Installing intake hooks afresh remains
+  exclusively an explicit `--intake-hooks` operation.
+- Entries naming a different install root's adapter belong to that install and
+  are out of scope too. A second install under a new `--prefix` neither reports
+  the operator's existing capture as drift nor repoints it.
+
+Embedded paths are compared after resolution, never as literal strings, so an
+install root reached through a symlink is not disowned by its own hooks.
+
+Within that scope the surface separates the two facts that can each break
+capture silently. The release-controlled contract is the event set, handler
+timeout, and argument vector a release would write, compared with the entries
+actually present; the adapter is located in that vector by name rather than by
+position, so a release that adds an interpreter flag ahead of it is reported
+rather than dropped as unparseable. The machine-controlled fact is whether the
+absolute interpreter path those entries embed still exists. Either mismatch
+reports `dirty`. Unreadable host configuration reports `malformed` and
+is preserved, never rewritten blind. This matters more than ordinary drift
+because evidence gates refuse without adapter evidence: undetected hook drift
+surfaces to the operator as a refusal at dispatch with no visible cause.
 
 When the install-root state boundary remains writable, every terminal apply
 result persists the stable projection at
@@ -282,13 +312,16 @@ result can be re-observed:
 | `bridges` | `idempotent` | `observable` |
 | `client-registrations` | `inspect-before-retry` | `partially-observable` |
 | `client-configuration` | `inspect-before-retry` | `partially-observable` |
+| `intake-hooks` | `inspect-before-retry` | `partially-observable` |
 | `verification-content` | `idempotent` | `observable` |
 | `project-schema-migration-offers` | `refuse-replay` | `unobservable` |
 
 Tool-owned content is replaced through a staged, digest-verified boundary, so
 repeating it converges. Client registration and configuration merge into
 operator-owned files whose non-Cartopian siblings cannot be fully re-derived, so
-a partial merge is inspected rather than replayed. A project schema migration is
+a partial merge is inspected rather than replayed. Intake hooks merge into
+operator-owned host configuration on the same terms and carry the same
+classification. A project schema migration is
 externally visible and not idempotent, so resume never replays it; it can only
 be re-offered.
 

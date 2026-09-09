@@ -577,8 +577,11 @@ def cleanup_claude_hook_registrations(project_dir: Path, actions: List[str]) -> 
 # --- Host intake hooks (operator-consented, user-level) --------------------
 # The request-evidence adapter (``cli/intake_adapter.py``) must run inside the
 # operator's *interactive* PM session, which no wrapper launches, so its hooks
-# live at user level: ``~/.claude/settings.json`` for Claude Code and
-# ``~/.codex/hooks.json`` for Codex CLI/desktop.  Installation is explicit
+# live at user level: ``~/.claude/settings.json`` for Claude Code,
+# ``~/.codex/hooks.json`` for Codex CLI/desktop, ``~/.gemini/config/hooks.json``
+# for Antigravity, and rendered plugin shims for Hermes and opencode (see
+# ``INTAKE_HOSTS`` below, which is the authoritative list).  Installation is
+# explicit
 # (``--intake-hooks``), idempotent, preserves every unrelated hook, and is
 # reversible with ``--remove-intake-hooks``, which removes only entries whose
 # command names the adapter script.
@@ -729,6 +732,29 @@ def _install_intake_shim(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(rendered, encoding="utf-8")
         changed = True
+    # Prune Cartopian-marked files a newer template no longer ships.  Writing
+    # is not enough on its own: a file dropped from the template would survive
+    # in the deployed plugin for ever, so the shim would never match the
+    # template again and every later run would re-offer a repair that cannot
+    # clear it.  Deletion stays bounded to Cartopian's own plugin directory and
+    # to files carrying its marker; operator content and interpreter-generated
+    # artifacts are left alone.
+    if source.is_dir() and target.is_dir():
+        keep = {dest for _, dest in pairs}
+        for existing in sorted(target.rglob("*")):
+            if not existing.is_file() or existing in keep:
+                continue
+            relative = existing.relative_to(target)
+            if existing.suffix in (".pyc", ".pyo") or "__pycache__" in relative.parts:
+                continue
+            try:
+                body = existing.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if INTAKE_SHIM_MARKER not in body:
+                continue
+            existing.unlink()
+            changed = True
     actions.append(
         f"intake hooks: {host} {'written to' if changed else 'already current in'} {target}"
     )
@@ -967,8 +993,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SURFACE=accept|decline|defer",
         help=(
             "explicitly disposition an affected bridges, "
-            "client-registrations, or client-configuration surface; the "
-            "project-schema-migration-offers surface accepts only defer"
+            "client-registrations, client-configuration, or intake-hooks "
+            "surface; the project-schema-migration-offers surface accepts "
+            "only defer. Repairing intake-hooks refreshes hooks on hosts that "
+            "already carry them and never adds capture to a host that does "
+            "not; installing afresh stays behind --intake-hooks"
         ),
     )
     p.add_argument(
@@ -1010,10 +1039,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "after install/update, write Cartopian's request-evidence intake "
-            "hooks at user level for each detected host (~/.claude/settings.json "
-            "for Claude Code, ~/.codex/hooks.json for Codex). Idempotent; "
-            "unrelated hooks are preserved. Prints a disclosure of what is "
-            "captured and where."
+            "hooks at user level for each detected host: "
+            "~/.claude/settings.json (Claude Code), ~/.codex/hooks.json "
+            "(Codex), ~/.gemini/config/hooks.json (Antigravity), a plugin "
+            "under ~/.hermes/plugins/ (Hermes), and a plugin under "
+            "~/.config/opencode/plugins/ (opencode). Idempotent; unrelated "
+            "hooks are preserved. Prints a disclosure of what is captured "
+            "and where."
         ),
     )
     p.add_argument(

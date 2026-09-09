@@ -44,6 +44,7 @@ SURFACE_KINDS: Tuple[str, ...] = (
     "bridges",
     "client-registrations",
     "client-configuration",
+    "intake-hooks",
     "verification-content",
     "project-schema-migration-offers",
 )
@@ -253,6 +254,7 @@ PORTABLE_EVIDENCE_KINDS: Tuple[str, ...] = (
     "file-digest",
     "configuration-fingerprint",
     "registration-observation",
+    "intake-hook-observation",
     "process-identity",
     "schema-observation",
 )

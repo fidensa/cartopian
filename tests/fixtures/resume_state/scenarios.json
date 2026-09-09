@@ -6,6 +6,7 @@
     "bridges": ["idempotent", "observable"],
     "client-registrations": ["inspect-before-retry", "partially-observable"],
     "client-configuration": ["inspect-before-retry", "partially-observable"],
+    "intake-hooks": ["inspect-before-retry", "partially-observable"],
     "verification-content": ["idempotent", "observable"],
     "project-schema-migration-offers": ["refuse-replay", "unobservable"]
   },
@@ -17,6 +18,7 @@
       "client-configuration",
       "client-registrations",
       "core-files",
+      "intake-hooks",
       "mcp-server-files",
       "project-schema-migration-offers",
       "verification-content"
@@ -30,6 +32,7 @@
       "bridges": "current",
       "client-registrations": "current",
       "client-configuration": "current",
+      "intake-hooks": "current",
       "verification-content": "current",
       "project-schema-migration-offers": "current"
     }
