@@ -15,7 +15,7 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import report_identity, request_trace, source_guidance
+from cli import contract_review, report_identity, request_trace, source_guidance
 from cli.commands.handoff_packet import _extract_task_id, _find_project_root
 from cli.commands.resolve_config import (
     _CliError,
@@ -335,6 +335,26 @@ def _review_file_skeleton(
         "",
         "<why the outcome is aligned with — or drifted from — the verbatim "
         "original request, compared against the separate PM-derived guidance>",
+        "",
+        contract_review.SECTION_HEADING,
+        "",
+        "Audit the governing operator request, task, and specification as "
+        "written before evaluating implementation. Do not silently repair "
+        "the contract or credit it for what the implementation does.",
+        "",
+        "Checks: " + "; ".join(name for _, name in contract_review.CHECKS) + ".",
+        "",
+        "Outcome: <" + " | ".join(contract_review.OUTCOMES) + ">",
+        "",
+        "<adequate means every check passes; record no gaps or only nits. "
+        "For needs changes, locate each deficient clause and state what "
+        "would resolve it. Do not score, count, or rank the checks. "
+        "Weigh contract and implementation together when setting Verdict.>",
+        "",
+        "<Contract gaps use `- C1. [blocker | major | minor | nit] "
+        "<check name> — <defect, location, and resolution>` here; "
+        "implementation findings use F<n> under Findings. "
+        "Remove this placeholder and record only actual gaps, or none.>",
         "",
         "## Implementation evidence",
         "",

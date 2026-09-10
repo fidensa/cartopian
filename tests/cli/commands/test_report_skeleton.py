@@ -11,8 +11,8 @@ import io
 import json
 import unittest
 
-from cli import source_guidance
-from cli.commands import report_skeleton
+from cli import contract_review, source_guidance
+from cli.commands import report_skeleton, review_intake
 from cli.main import EXIT_FAIL, EXIT_OK
 from tests.scaffold import project_scaffold
 
@@ -269,6 +269,55 @@ class TestUnverifiedClaimGrammar(unittest.TestCase):
 
 
 class TestReviewSkeleton(unittest.TestCase):
+    def test_generated_contract_audit_round_trips_through_intake(self) -> None:
+        # The production failure was a non-traced research task: intake
+        # required an audit that the generated reviewer input did not contain.
+        for source_backed in (False, True):
+            with self.subTest(source_backed=source_backed):
+                with project_scaffold(cartopian_toml=_TOML) as scaffold:
+                    task = scaffold.write(
+                        "tasks/in-review/TASK-05-009.md",
+                        _task_body(
+                            source_owner="task" if source_backed else "n/a",
+                            with_source_section=source_backed,
+                        ).replace("Spec: none", "Upstream trace: n/a\nSpec: none"),
+                    )
+                    rc, stdout, stderr = _invoke(task, "review")
+                    self.assertEqual(rc, EXIT_OK, stderr)
+                    skeleton = json.loads(stdout)["review_file_skeleton"]
+                    for _, name in contract_review.CHECKS:
+                        self.assertIn(name, skeleton)
+                    self.assertLess(
+                        skeleton.index("## Request comparison"),
+                        skeleton.index("## Contract quality"),
+                    )
+                    self.assertLess(
+                        skeleton.index("## Contract quality"),
+                        skeleton.index("## Implementation evidence"),
+                    )
+                    # Unfilled boilerplate must never certify the contract.
+                    self.assertFalse(contract_review.evaluate(skeleton).ok)
+                    for outcome, gaps in (
+                        ("adequate", ""),
+                        ("needs changes", "\n- C1. [major] Acceptance clarity — "
+                         "Acceptance item 1 lacks a pass condition; specify one.\n"),
+                    ):
+                        filled = skeleton.replace(
+                            "Outcome: <adequate | needs changes>",
+                            "Outcome: " + outcome + gaps,
+                        ).replace("Reviewer: <free text>", "Reviewer: independent reviewer")
+                        filled = filled.replace(
+                            "Verdict: <approve | request-changes | reject>",
+                            "Verdict: approve" if outcome == "adequate"
+                            else "Verdict: request-changes",
+                        )
+                        assessment = review_intake.assess(
+                            task.parents[2], task, filled,
+                        )
+                        self.assertEqual(assessment.blockers, [])
+                        self.assertEqual(assessment.quality.outcome, outcome)
+                        self.assertEqual(len(assessment.quality.gaps), bool(gaps))
+
     def test_machine_identity_values_are_exact(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:
             task = scaffold.write(
