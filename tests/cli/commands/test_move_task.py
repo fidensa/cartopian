@@ -285,6 +285,93 @@ class TestMoveTaskGuards(unittest.TestCase):
         self._expect_guard("in-progress", "open")
 
 
+class TestAdministrativeRecovery(unittest.TestCase):
+    def recover(self, task, target, home):
+        return _run(str(task), target, "--administrative", "--reason",
+                    "Operator requested correction of premature placement", home=home)
+
+    def test_never_started_assignment_can_return_to_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "in-progress")
+            before = task.read_bytes()
+            result = self.recover(task, "open", root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((task.parent.parent / "open" / task.name).read_bytes(), before)
+            record = json.loads(result.stdout)
+            self.assertTrue(record["details"]["administrative"])
+            self.assertIn("premature placement", record["details"]["reason"])
+
+    def test_any_assignment_evidence_refuses_unstart(self):
+        paths = ["prompts/PROMPT-01-007.md", "reviews/REVIEW-01-007.md"]
+        for name in ("REPORT-01-007.md", "REPORT-01-007-review.md"):
+            paths.extend("reports/" + name + suffix
+                         for suffix in ("", ".status", ".launch.log"))
+        for path in paths:
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                task = _seed_task(root, "in-progress")
+                evidence = root / "project" / path
+                evidence.write_text("preserve this evidence")
+                result = self.recover(task, "open", root)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("assignment evidence exists", result.stderr)
+                self.assertTrue(task.exists())
+                self.assertEqual(evidence.read_text(), "preserve this evidence")
+
+    def test_reopen_preserves_completion_and_review_for_reassessment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "done")
+            project = root / "project"
+            _seed_coder_report(project, "01-007", "TASK-01-007")
+            review = project / "reviews/REVIEW-01-007.md"
+            review.write_text("# REVIEW-01-007\nVerdict: approve\n")
+            report = project / "reports/REPORT-01-007.md"
+            before = (task.read_bytes(), report.read_bytes(), review.read_bytes())
+            result = self.recover(task, "in-review", root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            restored = task.parent.parent / "in-review" / task.name
+            self.assertEqual((restored.read_bytes(), report.read_bytes(), review.read_bytes()), before)
+
+    def test_reopen_requires_complete_report_review_and_no_status(self):
+        for defect in ("missing-report", "blocked-report", "missing-review", "task-status", "review-status"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                task = _seed_task(root, "done")
+                project = root / "project"
+                report = project / "reports/REPORT-01-007.md"
+                review = project / "reviews/REVIEW-01-007.md"
+                if defect != "missing-report":
+                    report.write_text("Status: blocked\n" if defect == "blocked-report" else "Status: complete\n")
+                if defect != "missing-review":
+                    review.write_text("Verdict: approve\n")
+                if defect in ("task-status", "review-status"):
+                    name = "REPORT-01-007.md" if defect == "task-status" else "REPORT-01-007-review.md"
+                    (project / "reports" / (name + ".status")).write_text("state=running\n")
+                result = self.recover(task, "in-review", root)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(task.exists())
+
+    def test_recovery_requires_reason(self):
+        for status, target in (("done", "in-review"), ("in-progress", "open")):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                task = _seed_task(root, status)
+                result = _run(str(task), target, "--administrative", home=root)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertTrue(task.exists())
+
+    def test_reopen_does_not_enable_review_when_policy_is_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _seed_task(root, "done", config=_NO_REVIEW_TOML)
+            result = self.recover(task, "in-review", root)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("requires task-closure review", result.stderr)
+            self.assertTrue(task.exists())
+
+
 class TestMoveTaskReviewOff(unittest.TestCase):
     def test_in_progress_to_done_requires_complete_task_report(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -251,6 +251,41 @@ _NO_REVIEW_GUARDS: Dict[Tuple[str, str], Callable[[Path, str, str], Optional[str
 }
 
 
+def _guard_administrative_recovery(
+    task_path: Path, from_status: str, to_status: str
+) -> Optional[str]:
+    """Recover placement without discarding evidence or certifying completion."""
+    suffix = _extract_nn_nnn(task_path)
+    root = _find_project_root(task_path)
+    if suffix is None or root is None:
+        return "administrative recovery requires a canonical task and project root"
+    completion = root / "reports" / f"REPORT-{suffix}.md"
+    review_report = root / "reports" / f"REPORT-{suffix}-review.md"
+    slots = (completion, review_report)
+    if (from_status, to_status) == ("in-progress", "open"):
+        evidence = [root / "prompts" / f"PROMPT-{suffix}.md",
+                    root / "reviews" / f"REVIEW-{suffix}.md"]
+        for slot in slots:
+            evidence.extend((slot, Path(str(slot) + ".status"),
+                             Path(str(slot) + ".launch.log")))
+        if any(os.path.lexists(path) for path in evidence):
+            return "assignment evidence exists; cannot undo a never-started assignment"
+        return None
+    # A status marker may denote a live writer. Never reopen while any
+    # marker remains; terminal companions can be cleared by delete-report.
+    if any(os.path.lexists(str(slot) + ".status") for slot in slots):
+        return "handoff status exists; resolve the handoff before reopening"
+    if resolve_review_policy(root)["task_closure"]["mode"] != "required":
+        return "reopening into in-review requires task-closure review"
+    error = _guard_coder_report(root, suffix, task_path.stem)
+    if error is not None:
+        return error
+    review = root / "reviews" / f"REVIEW-{suffix}.md"
+    if not review.is_file() or review.is_symlink():
+        return "reopening requires the preserved review artifact"
+    return None
+
+
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "task_path",
@@ -259,7 +294,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--administrative",
         action="store_true",
-        help="Allow the explicit administrative open -> done fast-forward",
+        help="Allow open -> done, never-started in-progress -> open, or done -> in-review recovery",
     )
     subparser.add_argument(
         "--reason",
@@ -294,8 +329,11 @@ def handler(args: argparse.Namespace) -> int:
     administrative = bool(getattr(args, "administrative", False))
     administrative_reason = getattr(args, "reason", None)
     if administrative:
-        if (from_status, to_status) != ("open", "done"):
-            _stderr("usage", "--administrative is only valid for open -> done")
+        if (from_status, to_status) not in {
+            ("open", "done"), ("in-progress", "open"), ("done", "in-review")
+        }:
+            _stderr("usage", "--administrative is only valid for open -> done, "
+                    "in-progress -> open, or done -> in-review")
             return EXIT_USAGE
         if not isinstance(administrative_reason, str) or not administrative_reason.strip():
             _stderr("usage", "--administrative requires a non-empty --reason")
@@ -316,7 +354,8 @@ def handler(args: argparse.Namespace) -> int:
         )
         return EXIT_FAIL
 
-    reason = DISALLOWED.get((from_status, to_status))
+    recovery = administrative and (from_status, to_status) != ("open", "done")
+    reason = None if recovery else DISALLOWED.get((from_status, to_status))
     if reason is not None:
         _stderr(
             "guard",
@@ -337,6 +376,16 @@ def handler(args: argparse.Namespace) -> int:
         )
         if refusal is not None:
             _stderr("guard", f"numbering trace invalid ({refusal[0]}): {refusal[1]}")
+            return EXIT_FAIL
+
+    if recovery:
+        try:
+            error = _guard_administrative_recovery(task_path, from_status, to_status)
+        except _CliError as err:
+            _stderr(err.prefix, err.message)
+            return err.exit_code
+        if error is not None:
+            _stderr("guard", error)
             return EXIT_FAIL
 
     policy_pairs = (
@@ -364,7 +413,7 @@ def handler(args: argparse.Namespace) -> int:
         regime_disallowed = (
             _REVIEW_REQUIRED_DISALLOWED if review_required else _REVIEW_OFF_DISALLOWED
         )
-        reason = regime_disallowed.get((from_status, to_status))
+        reason = None if recovery else regime_disallowed.get((from_status, to_status))
         if reason is not None:
             _stderr(
                 "guard",
