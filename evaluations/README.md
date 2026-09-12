@@ -7,6 +7,31 @@ python3 -m evaluations
 python3 -m evaluations --format json
 ```
 
+Measure portable session startup separately with:
+
+```sh
+python3 -m evaluations.startup_context
+python3 -m unittest tests.test_startup_context
+```
+
+This benchmark exercises registry discovery, adapter binding, named resource
+reads, and `next-action --compact --audit` in a temporary project. It measures
+the largest installed entry bridge, server instructions, required tool schemas,
+entry runbook, protocol slice, session runbook, and selection/brief responses.
+Each surface and their sum have absolute UTF-8 byte budgets; the full tool
+catalog has a separate budget for hosts that eagerly advertise tools. It does
+not enumerate that catalog into the scripted startup conversation. All eight
+entry bridges share the same resource-read instruction.
+
+The budgets are enforced by the unittest suite and the benchmark command's
+exit code. They cover emitted payloads, not model reasoning, user-supplied
+project size, or host-added instructions. They do not establish that a live
+agent follows the prescribed reads or predict tokenizer-specific savings.
+Measure context growth and cumulative/cached input in actual host sessions
+when evaluating those effects. Blocking findings are never truncated to meet
+a budget; the stress regression groups 300 nonblocking warnings while
+preserving blocking evidence and full-detail retrieval.
+
 Use repeatable `--category NAME` and `--case IDENTIFIER` filters for focused
 runs. Filters are applied after the complete case set is validated and preserve
 canonical identifier order. A matched run exits 0, an outcome mismatch exits 1,

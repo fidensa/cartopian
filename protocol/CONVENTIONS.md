@@ -24,7 +24,7 @@ AI agents come pre-trained to "be helpful and proactive". That training causes p
 
 Skill invocation names are derived from skill filenames by dropping `.md` and replacing hyphens with spaces. For example, `run-task.md` maps to `run task`.
 
-`use cartopian` is a common phrase used to start the cartopian project management system. This and other commands correlate to Cartopian MCP server tools and dialogs and other Cartopian skills. Map available skill and MCP server volcabulary before making assumptions about the Operator's instruction meaning.
+`use cartopian` starts Cartopian project management. Resolve the operator's instruction through the named skill and tools, loading only the relevant definitions. Do not load complete tool, resource, or skill catalogs to map vocabulary. The shared `read_context` MCP tool reads a named `cartopian://...` resource through the same reader as `resources/read`; both surfaces retain complete content and the same path validation. Hosts that must enumerate resources should filter to the named entries before returning the listing to the PM when local filtering is supported.
 
 ## Project Scope
 
@@ -45,7 +45,7 @@ A project is selected explicitly when the operator names a registered project ID
 For project-agnostic startup requests of any intent class (see [Request Intent](#request-intent)) — "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off" — the PM resolves eligible projects through the registry:
 
 1. Enumerate registered projects via `cartopian discover-projects`.
-2. If exactly one project is registered, use it and name it to the operator.
+2. If exactly one project is registered and the operator did not name it, name it and ask whether to open it or start a new project; select only on explicit confirmation.
 3. If more than one project is registered and none was selected, ask the operator which project to use. Do not read or mutate project-specific lifecycle artifacts until the project is selected.
 4. If no projects are registered, start with `skills/init-project.md`, which scaffolds a new project at an operator-supplied path and registers it via `cartopian register-project`.
 
@@ -64,6 +64,8 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 - `ready` — `task` names the exact next task (or the active task to continue) and `action` names the dispatch action. A ready verdict for an open task is proven, not assumed: the readiness checks passed and the assignment path was rehearsed read-only (role resolution, prompt composition, launch prerequisites — `cartopian validate-task-readiness --rehearse-dispatch`).
 - `blocked` — `detail` names the concrete failure, `owner` names the responsible party (`pm`, `operator`, `assignee`, or `host`), and `action` names the recovery.
 - `plan-complete` — nothing remains but closeout.
+
+Startup uses `next-action --compact --audit`: the same orientation and complete `plan-audit` evaluation in one call. An audit failure makes the combined command fail and prevents a ready verdict. Compact output retains request policy, PM effective grants, state disagreement, every blocker, and provenance guards. Nonblocking audit findings are grouped by kind; other roles' configuration is deferred. Returned `details` command/arguments retrieve the full records without these flags. Read full role records before assigning new work, and full audit findings when diagnosing or remediating them. Compact projections never skip checks, relax gates, or authorize mutations. The original detailed commands and resource URIs remain supported.
 
 `--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it is used only when the request's intent class authorizes a write (an execution or scoped directive); an informational request runs `next-action` without it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. A legacy tasks checkpoint that declares no `Plan ref:` covers only the earliest task-bearing phase; tasks generated later for another phase need a checkpoint whose `Plan ref:` covers them.
 

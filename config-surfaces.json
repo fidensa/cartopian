@@ -436,6 +436,7 @@
         "cli/commands/task_bundle.py",
         "cli/commands/wait_handoff.py",
         "cli/commands/wait_report.py",
+        "cli/context_projection.py",
         "cli/dispatch_rehearsal.py",
         "cli/planning_status.py",
         "cli/prompt_composer.py"

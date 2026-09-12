@@ -19,6 +19,7 @@ from cli.commands.resolve_config import (
     resolve_project_configuration,
 )
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
+from cli.context_projection import compact_audit
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.protocol_gate import (
@@ -116,6 +117,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "project_path",
         help="Absolute path to the project root",
+    )
+    subparser.add_argument(
+        "--compact", action="store_true",
+        help="Group nonblocking findings; retain all blockers and provenance guards. Omit for full detail.",
     )
 
 
@@ -1365,20 +1370,25 @@ def _check_standards_governance_reads(
     ]
 
 
-def handler(args: argparse.Namespace) -> int:
+def evaluate(args: argparse.Namespace) -> Tuple[Optional[Dict[str, Any]], int]:
+    """Run every audit check once, without printing successful evaluation data.
+
+    Input failures retain the CLI's existing diagnostic and exit code. Both
+    the standalone command and session orientation use this same evaluator.
+    """
     raw_path = args.project_path
     if not Path(raw_path).is_absolute():
         _stderr("usage", f"project_path must be an absolute path; got: {raw_path}")
-        return EXIT_USAGE
+        return None, EXIT_USAGE
 
     project_path = Path(raw_path).resolve()
     if not project_path.is_dir():
         _stderr("error", f"project path not found: {raw_path}")
-        return EXIT_FAIL
+        return None, EXIT_FAIL
 
     if not (project_path / "cartopian.toml").is_file():
         _stderr("error", f"no cartopian.toml found at: {project_path}")
-        return EXIT_FAIL
+        return None, EXIT_FAIL
 
     try:
         project_cfg = _load_project_config(project_path)
@@ -1387,7 +1397,7 @@ def handler(args: argparse.Namespace) -> int:
         )
     except _CliError as err:
         _stderr(err.prefix, err.message)
-        return err.exit_code
+        return None, err.exit_code
 
     # Config-schema migration gate: classify the config's declared
     # project_schema_version against the shipped schema target.
@@ -1398,7 +1408,7 @@ def handler(args: argparse.Namespace) -> int:
         shipped_schema_version = read_shipped_project_schema_version()
     except (OSError, RuntimeError) as exc:
         _stderr("error", str(exc))
-        return EXIT_FAIL
+        return None, EXIT_FAIL
     schema_gate = classify_project_schema_version(
         declared_schema_version, shipped_schema_version
     )
@@ -1415,7 +1425,7 @@ def handler(args: argparse.Namespace) -> int:
         review_policy = resolved_config["reviews"]
     except _CliError as err:
         _stderr(err.prefix, err.message)
-        return err.exit_code
+        return None, err.exit_code
 
     blockers: List[Dict[str, Any]] = []
     if schema_gate["status"] == GATE_BLOCKED:
@@ -1522,7 +1532,24 @@ def handler(args: argparse.Namespace) -> int:
         "attributions": attributions,
         "provenance": provenance,
     }
+    return record, EXIT_FAIL if blockers or prov_guards else EXIT_OK
+
+
+def handler(args: argparse.Namespace) -> int:
+    record, code = evaluate(args)
+    if record is None:
+        return code
+    if getattr(args, "compact", False):
+        emit_record(compact_audit(record))
+        # Findings are already in the machine record. Repeating their prose
+        # on stderr doubles the model-visible payload in MCP clients.
+        return code
     emit_record(record)
+    blockers = record["blockers"]
+    warnings = record["warnings"]
+    attributions = record["attributions"]
+    prov_guards = record["provenance"]["guard"]
+    prov_advisories = record["provenance"]["advisory"]
 
     # Provenance findings surface on their own machine-contract prefixes
     # (STANDARDS § Code Standards: `[guard]` for a detected violation,

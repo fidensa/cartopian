@@ -181,10 +181,10 @@
       },
       "startup": {
         "outcome": "Enter Cartopian PM mode through registry-first project selection.",
-        "mcp_host_action": "Read `cartopian://skills/use_cartopian` with your host's MCP resource reader and follow it.",
+        "mcp_host_action": "Read `cartopian://skills/use_cartopian` using the `read_context` MCP tool (uri argument), or your host's MCP resource reader, and follow it. Discover only the named tool or URI; do not dump tool or resource catalogs.",
         "mcp_prompt_action": "Follow this supplied startup runbook directly.",
         "mcp_resource_action": "Follow this supplied startup runbook directly.",
-        "client_bridge_action": "Read `cartopian://skills/use_cartopian` with your host's MCP resource reader and follow it."
+        "client_bridge_action": "Read `cartopian://skills/use_cartopian` using the `read_context` MCP tool (uri argument), or your host's MCP resource reader, and follow it. Discover only the named tool or URI; do not dump tool or resource catalogs."
       },
       "lifecycle": "shipped"
     }

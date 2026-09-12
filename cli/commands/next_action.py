@@ -34,6 +34,7 @@ from cli.commands.resolve_config import (
     resolve_project_configuration,
 )
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
+from cli.context_projection import compact_audit, compact_orientation
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
 from cli.protocol_gate import (
@@ -60,6 +61,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "project_path",
         help="Absolute path to the Cartopian project directory",
+    )
+    subparser.add_argument(
+        "--compact", action="store_true",
+        help="Return startup policy and PM grants; defer other role details to next-action without this flag.",
+    )
+    subparser.add_argument(
+        "--audit", action="store_true",
+        help="Include the full plan-audit evaluation and fail on audit blockers; combine with --compact for startup.",
     )
     subparser.add_argument(
         "--reconcile",
@@ -830,5 +839,32 @@ def handler(args: argparse.Namespace) -> int:
         ),
         "state_filesystem_disagreement": _detect_disagreement(project_path),
     }
-    emit_record(record)
-    return EXIT_OK
+    code = EXIT_OK
+    if getattr(args, "audit", False):
+        from cli.commands import plan_audit
+
+        audit, code = plan_audit.evaluate(args)
+        audit_recovery = "Resolve the plan-audit blockers, then rerun next-action --compact --audit."
+        if audit is None:
+            code = code or EXIT_FAIL
+            record["audit"] = {"exit_code": code, "evaluation_complete": False}
+            audit_details = ["plan-audit could not complete; see the accompanying diagnostic"]
+        else:
+            record["audit"] = compact_audit(audit) if getattr(args, "compact", False) else audit
+            record["audit"]["exit_code"] = code
+            audit_findings = audit["blockers"] + audit["provenance"]["guard"]
+            audit_details = [finding["detail"] for finding in audit_findings]
+            if audit_findings:
+                audit_recovery = audit_findings[0].get("recovery", audit_recovery)
+        if code != EXIT_OK:
+            if not audit_details:
+                audit_details = ["plan-audit failed without a blocking finding; inspect plan-audit diagnostics"]
+            record["blockers"] = list(dict.fromkeys(record["blockers"] + audit_details))
+            # Preserve any more specific orientation recovery already found.
+            if record["startup"]["verdict"] != "blocked":
+                record["startup"] = {
+                    "verdict": "blocked", "detail": audit_details[0], "owner": "pm",
+                    "action": audit_recovery,
+                }
+    emit_record(compact_orientation(record) if getattr(args, "compact", False) else record)
+    return code

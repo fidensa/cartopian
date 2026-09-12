@@ -662,7 +662,7 @@ def _use_cartopian_messages(
         context
         + startup
         + "You are in **Cartopian PM mode**. Execute in order:\n"
-        "1. Read `cartopian://protocol/CONVENTIONS`.\n"
+        "1. Read `cartopian://protocol/CONVENTIONS/startup`.\n"
         "2. Read `cartopian://skills/start_session`.\n"
         "3. Do not inspect workspace or project files yet.\n"
         "4. Call `discover_projects` and run Stage 0 of `start_session`."
@@ -912,6 +912,19 @@ def list_tools() -> List[Dict[str, Any]]:
         ),
         "inputSchema": _ADMIN_TOOL_SCHEMA,
     })
+    items.append({
+        "name": "read_context",
+        "description": (
+            "Read one Cartopian resource by exact URI, without listing catalogs. "
+            "Start with cartopian://skills/use_cartopian; follow its named skill "
+            "and protocol URIs on demand. Uses the same reader as resources/read."
+        ),
+        "inputSchema": {
+            "type": "object", "properties": {"uri": {"type": "string"}},
+            "required": ["uri"], "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True},
+    })
     return items
 
 
@@ -1108,6 +1121,18 @@ def call_tool(
     arguments: Optional[Dict[str, Any]],
     meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if name == "read_context":
+        if (
+            not isinstance(arguments, dict)
+            or set(arguments) != {"uri"}
+            or not isinstance(arguments["uri"], str)
+        ):
+            raise McpError(ERR_INVALID_PARAMS, "read_context requires exactly one string uri")
+        resource = read_resource(arguments["uri"])
+        return {
+            "content": [{"type": "text", "text": item["text"]} for item in resource["contents"]],
+            "isError": False,
+        }
     registry = _tool_registry()
     if name == ADMIN_TOOL_NAME:
         args = arguments or {}
@@ -1225,8 +1250,6 @@ PREAMBLE_SLUG = "preamble"
 # Fail-closed: if any heading disappears from CONVENTIONS.md the startup read
 # errors instead of silently dropping a guardrail.
 STARTUP_SECTIONS = (
-    "Core Principle",
-    "Protocol And Skills",
     "Project Scope",
     "Session Startup And Project Selection",
     "Request Intent",
@@ -1236,6 +1259,10 @@ STARTUP_SECTIONS = (
     "Roles",
     "Session State",
 )
+
+# Select complete normative subsections where the parent also carries rules
+# needed only during later work. Missing selectors fail closed, just like H2s.
+STARTUP_SUBSECTIONS = {"Tasks": ("task-execution-order",)}
 
 STARTUP_PREAMBLE = (
     "# Cartopian Protocol Conventions — startup slice\n\n"
@@ -1344,7 +1371,17 @@ def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
             # A curated heading vanished from CONVENTIONS.md — surface loudly
             # rather than serving a slice that silently lost a guardrail.
             raise McpError(ERR_INTERNAL, f"startup section missing from protocol doc: {uri}")
-        parts.append(entry[1])
+        selectors = STARTUP_SUBSECTIONS.get(heading)
+        if selectors is None:
+            parts.append(entry[1])
+            continue
+        subsections = _split_h3_sections(entry[1])
+        parts.append(f"## {heading}\n")
+        for slug in selectors:
+            subsection = subsections.get(slug)
+            if subsection is None:
+                raise McpError(ERR_INTERNAL, f"startup subsection missing from protocol doc: {uri}")
+            parts.append(subsection[1])
     return "\n".join(parts)
 
 

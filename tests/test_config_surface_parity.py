@@ -1234,8 +1234,15 @@ class TestCliMcpContractParity(unittest.TestCase):
                 for name in agent_facing
                 if name not in admin
             }
-            | {server.ADMIN_TOOL_NAME},
+            | {server.ADMIN_TOOL_NAME, "read_context"},
         )
+        # Named resource reads are MCP-native, sharing resources/read rather
+        # than exposing a new CLI mutation or an unbounded command dispatcher.
+        self.assertEqual(listed["read_context"]["inputSchema"], {
+            "type": "object", "properties": {"uri": {"type": "string"}},
+            "required": ["uri"], "additionalProperties": False,
+        })
+        self.assertTrue(listed["read_context"]["annotations"]["readOnlyHint"])
         self.assertEqual(
             listed[server.ADMIN_TOOL_NAME]["inputSchema"]["properties"][
                 "operation"
