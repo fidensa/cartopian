@@ -24,7 +24,9 @@ Operator evidence is the operator's own turns, captured by the host intake hooks
 
 ## Stage 0 - Open Session Context
 
-Governing slices: `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` (move guards, plan-audit blocker contract) and `cartopian://protocol/CONVENTIONS/lifecycle-authority`.
+Governing slices: `cartopian://protocol/CONVENTIONS/lifecycle-cli-guards` (move guards, plan-audit blocker contract), `cartopian://protocol/CONVENTIONS/lifecycle-authority`, and `cartopian://protocol/CONVENTIONS/tasks/task-execution-order` (selection, initiation and run boundaries). Read the execution-order slice here; startup defers it until execution is authorized.
+
+Before any `STATE.md` write or Situation-note resolution, read `cartopian://protocol/CONVENTIONS/session-state`.
 
 1. Run `cartopian next-action <project-path>`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (any declared role name) decides who performs it. Never infer task review from a role literally named `reviewer` or from description prose.
 2. Run `cartopian plan-audit <project-path>`; treat a non-zero exit as a blocker.
@@ -156,6 +158,8 @@ Do not treat reports as durable substitutes for task, review, or decision record
 ---
 
 ## Stage 8 - Close Session
+
+Governing slice: `cartopian://protocol/CONVENTIONS/session-state`. Read it before refreshing state if it is not already loaded.
 
 Refresh `STATE.md` through `cartopian write-state <project-root>` — the writer composes the canonical body from the filesystem in-process; do not run `compose-state` first or pass `--content`.
 

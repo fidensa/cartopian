@@ -28,15 +28,15 @@ from mcp_server.skill_metadata import BRIDGE_TARGETS
 # hosts that support deferred discovery need only the named startup tools.
 BUDGETS = {
     "entry_bridge": 2_000,
-    "server_instructions": 5_000,
+    "server_instructions": 2_500,
     "startup_tools": 4_500,
     "entry_resource": 9_000,
-    "protocol_slice": 23_000,
+    "protocol_slice": 14_000,
     "session_runbook": 7_000,
     "orientation_and_audit": 5_000,
     "selection": 2_000,
     "eager_tool_catalog": 44_000,
-    "startup_total": 48_000,
+    "startup_total": 38_000,
 }
 
 

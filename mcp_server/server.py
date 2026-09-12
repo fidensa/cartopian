@@ -515,14 +515,19 @@ def _install_context_lines(*, snapshot: bool = False) -> List[str]:
         # A cached block cannot carry a durable activation claim: whatever was
         # true at connect may be false by the time it is read.  Report the
         # observation, withhold the claim, and name the live source.
-        lines.append(
-            f"- Activation: `not claimed here`; restart status was "
-            f"`{restart['status']}` when this block was rendered at connect "
-            "and is not refreshed afterwards. Never cite this line as proof "
-            "that installed behavior is active. Re-read "
-            "`cartopian://skills/use_cartopian` (or call `verify_restart_state`) "
-            "for live restart state before acting on it."
-        )
+        # Hosts may prepend these instructions to every discovered tool.
+        # Keep routing and required action here; complete peer identities
+        # remain in initialize.cartopianIdentities and the live entry resource.
+        lines = [
+            "**Cartopian install context** (connect-time snapshot, not live activation proof):",
+            *[line for line in lines if line.startswith((
+                "- Install root:", "- Release version:", "- Restart status:",
+                "- Required action:", "- Expected post-restart proof:",
+            ))],
+            "- Activation: `not claimed here`. This snapshot is not refreshed. "
+            "Read `cartopian://skills/use_cartopian` for live restart state and "
+            "full installed/running identities before acting; never infer activation from this snapshot.",
+        ]
     elif restart["activation_claim_allowed"]:
         lines.append(
             "- Activation: `active`, proven by a fresh process with matching "
@@ -1245,24 +1250,25 @@ PREAMBLE_SLUG = "preamble"
 # H2 headings concatenated (in document order) into
 # `cartopian://protocol/CONVENTIONS/startup` — the sections a PM needs through
 # session startup: project selection, request-intent classification, role
-# resolution, state read, and the linear next-action default (Tasks carries
-# § Task Execution Order; Request Intent carries the initiation gate).
+# resolution and state read. Request Intent carries the initiation gate;
+# execution and state-authoring details are loaded at their action boundaries.
 # Fail-closed: if any heading disappears from CONVENTIONS.md the startup read
 # errors instead of silently dropping a guardrail.
 STARTUP_SECTIONS = (
     "Project Scope",
     "Session Startup And Project Selection",
     "Request Intent",
-    "Status Through Directory",
     "Lifecycle Authority",
-    "Tasks",
     "Roles",
     "Session State",
 )
 
 # Select complete normative subsections where the parent also carries rules
 # needed only during later work. Missing selectors fail closed, just like H2s.
-STARTUP_SUBSECTIONS = {"Tasks": ("task-execution-order",)}
+STARTUP_SUBSECTIONS = {
+    "Roles": (PREAMBLE_SLUG, "pm-scope"),
+    "Session State": (PREAMBLE_SLUG,),
+}
 
 STARTUP_PREAMBLE = (
     "# Cartopian Protocol Conventions — startup slice\n\n"
@@ -1376,9 +1382,15 @@ def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
             parts.append(entry[1])
             continue
         subsections = _split_h3_sections(entry[1])
-        parts.append(f"## {heading}\n")
+        if PREAMBLE_SLUG not in selectors:
+            parts.append(f"## {heading}\n")
         for slug in selectors:
             subsection = subsections.get(slug)
+            if subsection is None and slug == PREAMBLE_SLUG:
+                preamble = _h3_preamble(entry[1])
+                if preamble is not None:
+                    parts.append(preamble)
+                    continue
             if subsection is None:
                 raise McpError(ERR_INTERNAL, f"startup subsection missing from protocol doc: {uri}")
             parts.append(subsection[1])

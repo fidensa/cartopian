@@ -17,6 +17,9 @@ Read named `cartopian://...` resources with the `read_context` MCP tool
 or URIs; never print complete tool/schema/resource catalogs. If the host must
 enumerate first and supports local filtering, return only matching entries.
 An explicitly supplied runbook is already loaded; do not fetch it again.
+For exact tool discovery, return only the named tool's input schema or callable
+signature where supported; omit repeated server instructions. Keep the live
+install-context prelude below as the authoritative startup observation.
 Read later lifecycle rules only when entering the owning skill's stage.
 
 ## Step 0 — Quick update check (best-effort)

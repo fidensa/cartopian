@@ -188,9 +188,46 @@ class ContextResourceTests(unittest.TestCase):
             self.assertIn('do not dump tool or resource catalogs', text)
 
     def test_startup_subsection_selector_fails_closed(self):
-        with mock.patch.object(server, 'STARTUP_SUBSECTIONS', {'Tasks': ('missing',)}):
+        with mock.patch.object(server, 'STARTUP_SUBSECTIONS', {'Roles': ('missing',)}):
             with self.assertRaises(server.McpError):
                 server.read_resource('cartopian://protocol/CONVENTIONS/startup')
+
+    def test_startup_retains_authority_and_routes_deferred_rules_before_actions(self):
+        text = server.read_resource('cartopian://protocol/CONVENTIONS/startup')['contents'][0]['text']
+        for rule in ('**Directory scope.**', '**File-type scope.**', '**Authoring discipline.**',
+                     'names and descriptions explain responsibility but confer no',
+                     '**Informational requests**', 'only on explicit confirmation'):
+            self.assertIn(rule, text)
+        for deferred in ('### Task Execution Order', '### Situation notes',
+                         '### Config management and migration', '### Role configuration'):
+            self.assertNotIn(deferred, text)
+        self.assertEqual(text.count('## Roles\n'), 1)
+        self.assertEqual(text.count('## Session State\n'), 1)
+        for uri in ('cartopian://protocol/CONVENTIONS/roles/config-management-and-migration',
+                    'cartopian://protocol/CONVENTIONS/roles/role-configuration'):
+            self.assertIn(uri, text)
+            self.assertTrue(server.read_resource(uri)['contents'][0]['text'])
+        run_task = (ROOT / 'skills/run-task.md').read_text()
+        self.assertIn('cartopian://protocol/CONVENTIONS/tasks/task-execution-order', run_task)
+        self.assertIn('Before any `STATE.md` write', run_task)
+        start = (ROOT / 'skills/start-session.md').read_text()
+        self.assertIn('Before using `--reconcile`, read `cartopian://protocol/CONVENTIONS/session-state`', start)
+
+    def test_connect_snapshot_is_compact_but_keeps_required_restart_action(self):
+        restart = {'status': 'restart_required', 'reason_code': 'content-changed',
+                   'activation_claim_allowed': False,
+                   'instruction': {'action': 'Restart the current host.', 'expected_proof': 'Fresh matching process.'}}
+        with mock.patch.object(server, '_restart_projection', return_value=restart):
+            snapshot = '\n'.join(server._install_context_lines(snapshot=True))
+            live = '\n'.join(server._install_context_lines())
+        for required in ('Restart the current host.', 'Fresh matching process.', 'restart_required'):
+            self.assertIn(required, snapshot)
+        self.assertIn('not claimed here', snapshot)
+        self.assertNotIn('Activation: `active`', snapshot)
+        self.assertNotIn('- Installed MCP content:', snapshot)
+        self.assertIn('- Installed MCP content:', live)
+        self.assertIn('- Running server:', live)
+        self.assertLess(len(snapshot), len(live))
 
 
 if __name__ == '__main__':
