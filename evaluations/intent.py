@@ -31,12 +31,17 @@ INTENT_FIELDS = (
     "exclusions",
 )
 RESOLUTION_STATES = frozenset({"present", "missing", "conflicting"})
-REQUEST_CLASSES = frozenset({"informational", "scoped", "execution"})
+REQUEST_CLASSES = frozenset(
+    {"informational", "scoped", "execution", "session_boundary"}
+)
 INITIATION_MODES = frozenset({"operator", "auto"})
 OPERATIONS_BY_CLASS = {
     "informational": frozenset({"status"}),
     "scoped": frozenset({"plan", "generate_tasks"}),
     "execution": frozenset({"execute"}),
+    # A session boundary authorizes closeout and nothing else: refresh
+    # `STATE.md`, end the run. No planning operation is reachable from it.
+    "session_boundary": frozenset({"close_session"}),
 }
 SOURCE_TYPES = frozenset({"operator", "approved-artifact"})
 
@@ -516,13 +521,18 @@ def _evaluate_fixture(fixture: IntentFixture) -> dict[str, JsonValue]:
         )
     if request.request_class == "informational":
         starts_execution = False
+    # A session boundary ends the run; it never starts one and never locks
+    # planning, whatever the initiation policy says.
+    closing_session = request.request_class == "session_boundary"
+    if closing_session:
+        starts_execution = False
 
     return {
         "record": record,
         "questions": questions,
         "confirmed": confirmed,
-        "can_lock_requirements": confirmed,
-        "can_lock_plan": confirmed,
+        "can_lock_requirements": confirmed and not closing_session,
+        "can_lock_plan": confirmed and not closing_session,
         "request_class": request.request_class,
         "generated_phases": generated_phases,
         "expanded_future_phases": [],

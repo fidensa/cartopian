@@ -1,0 +1,11 @@
+{
+  "category": "intent-contract",
+  "expected_outcome": {
+    "outcome": "pass"
+  },
+  "identifier": "intent-session-boundary",
+  "input": {
+    "fixture": "evaluations/fixtures/intent-session-boundary.json"
+  },
+  "rationale": "Proves \"continue in a new session\" closes the session instead of initiating a run or locking planning, even under automatic initiation."
+}

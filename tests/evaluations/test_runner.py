@@ -127,6 +127,7 @@ class CanonicalEvaluationTests(unittest.TestCase):
                 "intent-name-only",
                 "intent-partial",
                 "intent-premature-execution",
+                "intent-session-boundary",
                 "routing-adoption-collision",
                 "routing-code-negative",
                 "routing-entry-positive",
@@ -139,9 +140,9 @@ class CanonicalEvaluationTests(unittest.TestCase):
                 "structural-text-mismatch",
             ],
         )
-        self.assertEqual(aggregate.matched, 17)
+        self.assertEqual(aggregate.matched, 18)
         self.assertEqual(aggregate.mismatched, 0)
-        self.assertEqual(aggregate.observed_pass, 16)
+        self.assertEqual(aggregate.observed_pass, 17)
         self.assertEqual(aggregate.observed_fail, 1)
         self.assertTrue(all(case.matched for case in aggregate.cases))
         self.assertEqual(

@@ -161,6 +161,8 @@ Do not treat reports as durable substitutes for task, review, or decision record
 
 Governing slice: `cartopian://protocol/CONVENTIONS/session-state`. Read it before refreshing state if it is not already loaded.
 
+This stage also runs on its own, at whatever point the run has reached, when the operator ends the session ("let's continue in a new session") — a session-boundary request, which ends the run under every `run_boundary` below. Close it the same way: refresh state, stop, and name the next protocol action. The refreshed `STATE.md` *is* the handoff. Do not write or edit a task, plan, phase, spec, prompt, report, decision, or any other artifact to carry context into the next session, and do not restate the session's work as instructions for it; an in-progress task stays in `tasks/in-progress/` and the composed body already reports it as active work, so the next session resumes from registry selection and `cartopian next-action` alone.
+
 Refresh `STATE.md` through `cartopian write-state <project-root>` — the writer composes the canonical body from the filesystem in-process; do not run `compose-state` first or pass `--content`.
 
 If — and only if — this session surfaced a fact that is about this project's current state, not derivable from the filesystem/config/protocol, and changes what the next session does, deliver it as a situation note: `cartopian write-state <project-root> --note "…"`. Notes are bounded (max 5, one line of ≤ 200 chars each) with a one-delivery TTL. Protocol-compliance feedback is never a note — it routes to `BACKLOG.md` via `cartopian write-backlog` (`cartopian://protocol/CONVENTIONS/session-state`).

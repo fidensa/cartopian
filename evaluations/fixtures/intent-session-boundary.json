@@ -1,0 +1,92 @@
+{
+  "expected": {
+    "asks_for_confidence": false,
+    "can_lock_plan": false,
+    "can_lock_requirements": false,
+    "confirmed": true,
+    "expanded_future_phases": [],
+    "generated_phases": [],
+    "questions": [],
+    "record": {
+      "beneficiary": {
+        "state": "present",
+        "value": "Project operators"
+      },
+      "binding_constraint": {
+        "state": "present",
+        "value": "STATE.md is the only cross-session handoff"
+      },
+      "exclusions": {
+        "state": "present",
+        "value": "No carry-forward task, plan edit, or handoff document"
+      },
+      "outcome": {
+        "state": "present",
+        "value": "Close the session with state refreshed"
+      },
+      "success_signal": {
+        "state": "present",
+        "value": "The next session resumes from next-action alone"
+      },
+      "why_now": {
+        "state": "present",
+        "value": "The operator is continuing in a new session"
+      }
+    },
+    "request_class": "session_boundary",
+    "starts_execution": false
+  },
+  "intent": {
+    "beneficiary": [
+      {
+        "meaning": "project-operators",
+        "source": "approved-artifact",
+        "value": "Project operators"
+      }
+    ],
+    "binding_constraint": [
+      {
+        "meaning": "state-is-the-handoff",
+        "source": "operator",
+        "value": "STATE.md is the only cross-session handoff"
+      }
+    ],
+    "exclusions": [
+      {
+        "meaning": "no-carry-forward-artifact",
+        "source": "operator",
+        "value": "No carry-forward task, plan edit, or handoff document"
+      }
+    ],
+    "outcome": [
+      {
+        "meaning": "session-closeout",
+        "source": "operator",
+        "value": "Close the session with state refreshed"
+      }
+    ],
+    "success_signal": [
+      {
+        "meaning": "resumes-from-next-action",
+        "source": "operator",
+        "value": "The next session resumes from next-action alone"
+      }
+    ],
+    "why_now": [
+      {
+        "meaning": "new-session-continuation",
+        "source": "operator",
+        "value": "The operator is continuing in a new session"
+      }
+    ]
+  },
+  "operator_confirmation": true,
+  "request": {
+    "active_phase": "PHASE-01-entry",
+    "class": "session_boundary",
+    "initiation": "auto",
+    "operation": "close_session",
+    "requested_phases": [],
+    "requested_scope": []
+  }
+}

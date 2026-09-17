@@ -62,8 +62,9 @@ The shipped domain categories are:
 - `intent-contract`: structured, model-free planning-intent scenarios covering
   the six compact fields, `present` / `missing` / `conflicting` resolution,
   unresolved fields becoming questions rather than values, direct lock on
-  complete resolution, request-intent side-effect boundaries, and
-  current-phase-only task generation. It tests the contract without treating
+  complete resolution, request-intent side-effect boundaries (including a
+  session-boundary request, which closes the session without starting a run or
+  locking planning), and current-phase-only task generation. It tests the contract without treating
   its structured semantic labels as a production natural-language parser.
 - `structural`: the original text-match seam plus the
   `skill-metadata-surfaces` repository check. The repository check consumes the

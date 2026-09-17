@@ -39,6 +39,7 @@ class IntentContractEvaluationTests(unittest.TestCase):
             "intent-excluded-scope.json",
             "intent-name-only.json",
             "intent-premature-execution.json",
+            "intent-session-boundary.json",
         )
 
         for fixture in fixtures:
@@ -47,7 +48,7 @@ class IntentContractEvaluationTests(unittest.TestCase):
                 self.assertEqual(evaluator.validate(case, ROOT), ())
                 self.assertEqual(evaluator.evaluate(case, ROOT).outcome, "pass")
 
-    def test_all_three_request_classes_remain_distinct(self) -> None:
+    def test_all_four_request_classes_remain_distinct(self) -> None:
         evaluator = IntentContractEvaluator()
         base = self._fixture("intent-complete.json")
         assert isinstance(base, dict)
@@ -60,6 +61,9 @@ class IntentContractEvaluationTests(unittest.TestCase):
             ("informational", "status", "auto", False),
             ("scoped", "generate_tasks", "operator", False),
             ("execution", "execute", "operator", True),
+            # A session boundary closes the session: it never starts a run and
+            # never locks planning, even under automatic initiation.
+            ("session_boundary", "close_session", "auto", False),
         )
         for request_class, operation, initiation, starts_execution in scenarios:
             with self.subTest(request_class=request_class):
@@ -73,6 +77,9 @@ class IntentContractEvaluationTests(unittest.TestCase):
                     if request_class == "scoped"
                     else []
                 )
+                closing = request_class == "session_boundary"
+                expected["can_lock_requirements"] = not closing
+                expected["can_lock_plan"] = not closing
                 case = self._case(base)
                 self.assertEqual(evaluator.validate(case, ROOT), ())
                 self.assertEqual(evaluator.evaluate(case, ROOT).outcome, "pass")
