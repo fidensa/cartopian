@@ -200,6 +200,21 @@ class RequestTraceContract(unittest.TestCase):
         self.assertIn("## Original operator request (verbatim)", context.section)
         self.assertIn("## PM-derived guidance and delivered outcome", context.section)
 
+    def test_request_section_binding_ignores_headings_inside_verbatim_fences(self) -> None:
+        section = (
+            "## Original operator request (verbatim)\n\n"
+            "Operator words:\n\n"
+            "```text\n"
+            "## A heading inside captured operator text\n"
+            "The heading remains part of the verbatim request.\n"
+            "```\n\n"
+            "## PM-derived guidance and delivered outcome\n\n"
+            "- phases/PHASE-03.md\n"
+        )
+        prompt = "# Review prompt\n\n" + section + "\n## Completion report\n"
+
+        self.assertEqual(request_trace.extract_request_sections(prompt), section)
+
     def test_explicit_correction_is_ordered_and_unrelated_history_is_absent(self) -> None:
         self.capture(ORIGINAL, unit="task:TASK-02-010")
         correction = "Correction: preserve the exact opening sentence too."

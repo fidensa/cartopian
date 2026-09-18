@@ -2360,10 +2360,28 @@ def _section_bounds(lines: Sequence[str]) -> Optional[Tuple[int, int]]:
         return None
     start = starts[0]
     end = len(lines)
+    fence_char: Optional[str] = None
+    fence_len = 0
     for i in range(start + 1, len(lines)):
+        line = lines[i].rstrip("\r\n")
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence_char is not None:
+            if (
+                fence is not None
+                and fence.group(1)[0] == fence_char
+                and len(fence.group(1)) >= fence_len
+                and not fence.group(2).strip()
+            ):
+                fence_char = None
+                fence_len = 0
+            continue
+        if fence is not None:
+            fence_char = fence.group(1)[0]
+            fence_len = len(fence.group(1))
+            continue
         if (
             lines[i].startswith("## ")
-            and lines[i].rstrip("\r\n")
+            and line
             not in (
                 PRESERVED_COMPLETION_HEADING,
                 CAPTURED_COMPLETION_HEADING,
