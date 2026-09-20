@@ -155,6 +155,20 @@ class TestHelperStatic:
         assert "CARTOPIAN_REPORT_POLL" in body
         assert "CARTOPIAN_REPORT_GRACE_POLLS" in body
 
+    def test_native_windows_batch_bridge_preserves_argv_and_kills_tree(self):
+        text = _helper_text()
+        body = _supervisor_body(text)
+        assert "Get-Command -Name $FilePath -CommandType Application" in body
+        assert "'.cmd'" in body and "'.bat'" in body
+        assert "[Console]::In.ReadToEnd()" in body
+        assert "ConvertFrom-Json" in body
+        assert "[Text.Encoding]::Unicode.GetBytes($bridgeScript)" in body
+        assert "'-EncodedCommand'" in body
+        assert "'-NoProfile'" in body and "'-NonInteractive'" in body
+        assert "Stop-CartopianProcessTree $proc" in body
+        assert "$Process.Kill($true)" in text
+        assert "taskkill.exe" in text and "/T /F" in text
+
 
 # --- static parity: every wrapper is routed through the supervisor ----------
 
@@ -177,9 +191,10 @@ class TestWrapperRouting:
     @pytest.mark.parametrize("wrapper,tool", PS1_WRAPPERS)
     def test_wrapper_calls_supervisor_with_ssot_timeout(self, wrapper, tool):
         text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
+        file_path = "$ClaudeExecutable" if tool == "claude" else tool
         call = (
             f"Invoke-CartopianSupervisedRun -ReportPath $ReportPath "
-            f"-FilePath {tool} -ArgumentList $Args -TimeoutSec $TimeoutSec"
+            f"-FilePath {file_path} -ArgumentList $Args -TimeoutSec $TimeoutSec"
         )
         assert call in text, f"{wrapper}: not routed through the supervisor"
         # $TimeoutSec must still be derived from the CARTOPIAN_TIMEOUT SSOT.

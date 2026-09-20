@@ -196,6 +196,25 @@ function ConvertTo-CartopianWindowsArgument {
     return $quoted.ToString()
 }
 
+function Stop-CartopianProcessTree {
+    param([Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process)
+
+    # .NET Core can terminate the entire descendant tree directly. Windows
+    # PowerShell 5.1 lacks that overload, so use taskkill /T there before the
+    # final single-process fallback.
+    try {
+        $Process.Kill($true)
+        return
+    } catch {}
+    if ($env:OS -eq 'Windows_NT') {
+        try {
+            & taskkill.exe /PID ([string]$Process.Id) /T /F 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { return }
+        } catch {}
+    }
+    try { $Process.Kill() } catch {}
+}
+
 function Invoke-CartopianSupervisedRun {
     param(
         [AllowEmptyString()][AllowNull()][string]$ReportPath,
@@ -215,22 +234,81 @@ function Invoke-CartopianSupervisedRun {
     }
     $pollMs = [int][Math]::Max(50.0, [double]$pollSec * 1000.0)
 
-    # Start-Process joins -ArgumentList values into one string and can corrupt
-    # JSON, quotes, and paths containing spaces on native Windows. Build the
-    # process directly so modern PowerShell/.NET receives an exact argv array.
-    # Windows PowerShell 5.1 lacks ProcessStartInfo.ArgumentList, so only that
-    # runtime uses the compatible pre-quoted command-line fallback.
+    # Resolve applications deterministically. npm exposes Claude primarily as
+    # a .cmd shim, which ProcessStartInfo cannot execute directly. For batch
+    # shims, launch a small no-profile PowerShell bridge and deliver the target
+    # plus exact argv as UTF-8 JSON/base64 over stdin. The payload therefore
+    # never enters cmd.exe command text or Windows' 32K command-line budget.
+    if ([IO.Path]::IsPathRooted($FilePath)) {
+        if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+            throw "application not found: $FilePath"
+        }
+        $resolvedPath = [IO.Path]::GetFullPath($FilePath)
+    } else {
+        $resolvedCommand = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+        if (-not $resolvedCommand) { throw "application not found: $FilePath" }
+        $resolvedPath = [string]$resolvedCommand.Source
+    }
+    $launchFile = $resolvedPath
+    [object[]]$launchArguments = @($ArgumentList)
+    $launchPayload = $null
+    $extension = [IO.Path]::GetExtension($resolvedPath).ToLowerInvariant()
+    if ($extension -eq '.cmd' -or $extension -eq '.bat') {
+        $payloadJson = ConvertTo-Json -Compress -Depth 4 -InputObject @{
+            # Execute exactly the path that preflight version-probed and
+            # protected. A same-named sibling is a different trust target.
+            FilePath = $resolvedPath
+            ArgumentList = @($ArgumentList | ForEach-Object { [string]$_ })
+        }
+        $launchPayload = [Convert]::ToBase64String(
+            [Text.Encoding]::UTF8.GetBytes($payloadJson)
+        )
+        $bridgeScript = @'
+try {
+    $encodedPayload = [Console]::In.ReadToEnd().Trim()
+    $payloadJson = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String($encodedPayload)
+    )
+    $payload = $payloadJson | ConvertFrom-Json
+    $target = [string]$payload.FilePath
+    [object[]]$argv = @($payload.ArgumentList | ForEach-Object { [string]$_ })
+    & $target @argv
+    $invocationSucceeded = $?
+    $childExitCode = $LASTEXITCODE
+    if ($null -eq $childExitCode) {
+        if ($invocationSucceeded) { $childExitCode = 0 } else { $childExitCode = 1 }
+    }
+    exit [int]$childExitCode
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 127
+}
+'@
+        $encodedBridge = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($bridgeScript)
+        )
+        $launchFile = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $launchArguments = @(
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-EncodedCommand', $encodedBridge
+        )
+    }
+
+    # Build the process directly so modern PowerShell/.NET receives an exact
+    # argv array. Windows PowerShell 5.1 lacks ProcessStartInfo.ArgumentList;
+    # only that runtime uses the compatible pre-quoted command-line fallback.
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $FilePath
+    $startInfo.FileName = $launchFile
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardInput = $true
     if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
-        foreach ($argument in $ArgumentList) {
+        foreach ($argument in $launchArguments) {
             [void]$startInfo.ArgumentList.Add([string]$argument)
         }
     } else {
-        $startInfo.Arguments = (($ArgumentList | ForEach-Object {
+        $startInfo.Arguments = (($launchArguments | ForEach-Object {
             ConvertTo-CartopianWindowsArgument ([string]$_)
         }) -join ' ')
     }
@@ -241,6 +319,9 @@ function Invoke-CartopianSupervisedRun {
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $startInfo
     [void]$proc.Start()
+    if ($null -ne $launchPayload) {
+        $proc.StandardInput.Write($launchPayload)
+    }
     $proc.StandardInput.Close()
     $reportSeen = $false
     while (-not $proc.HasExited) {
@@ -248,7 +329,7 @@ function Invoke-CartopianSupervisedRun {
         if ($remainingMs -le 0) {
             # Deadline elapsed: kill (the PowerShell analogue of coreutils
             # `timeout` sending SIGTERM and returning 124).
-            try { $proc.Kill() } catch {}
+            Stop-CartopianProcessTree $proc
             try { $proc.WaitForExit() } catch {}
             $timedOut = $true
             break
@@ -263,7 +344,7 @@ function Invoke-CartopianSupervisedRun {
                 [void]$proc.WaitForExit($g)
             }
             if (-not $proc.HasExited) {
-                try { $proc.Kill() } catch {}
+                Stop-CartopianProcessTree $proc
                 try { $proc.WaitForExit() } catch {}
             }
             break

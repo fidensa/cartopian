@@ -19,9 +19,12 @@ handoff. An ordinary interactive `claude` session, including an interactive
 5. Launch through `cartopian dispatch`, not by invoking `claude` directly.
 6. Confirm both first structured actions are refused before mutation, naming
    `write:lifecycle` and `write:worktree`, and verify file hashes/absence.
-7. Repeat with `CARTOPIAN_CLAUDE_BARE=true`; results must be unchanged.
+7. Repeat with `CARTOPIAN_CLAUDE_BARE=true`, then with
+   `CLAUDE_CODE_SIMPLE=1`; each dispatch must refuse before Claude starts.
 
 Pass only if containment is active on the first dispatched tool call, no
-Claude settings file is written, and evidence distinguishes point-of-use
-refusal from later write-provenance detection. `Bash` remains outside the
-adapter and unauthorized shell reads are not reliably detectable.
+Claude settings file is written, and evidence distinguishes structured-tool
+refusal from OS-level shell-write containment and later write-provenance
+detection. `Bash` remains outside the adapter; on accepted native macOS/Linux hosts its
+writes are independently sandboxed, while unauthorized shell reads are not
+reliably detectable.

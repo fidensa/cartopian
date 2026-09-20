@@ -22,8 +22,9 @@ $ErrorActionPreference = 'Stop'
 
 # --- Status-file helper (early-crash signal for wait-handoff) --------
 # Dot-source the shared helper that emits <report-path>.status on assignee
-# exit. Optional: if the helper is missing, fall back to no-op stubs so the
-# wrapper still runs (the status file is never a hard requirement).
+# exit. A standalone, non-mediated wrapper invocation may retain the historical
+# fallback below. Hook-bound dispatches require the installed helper chain and
+# refuse before probing Claude if it is incomplete.
 $CartopianStatusModule = Join-Path $PSScriptRoot 'CartopianStatus.ps1'
 if (Test-Path -LiteralPath $CartopianStatusModule) {
     . $CartopianStatusModule
@@ -51,9 +52,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # autonomous coder/reviewer handoff needs.
 $AllowedTools = if ($env:CARTOPIAN_CLAUDE_TOOLS) { $env:CARTOPIAN_CLAUDE_TOOLS } else { '' }
 $OutputFormat = if ($env:CARTOPIAN_CLAUDE_FORMAT) { $env:CARTOPIAN_CLAUDE_FORMAT } else { 'text' }
-# Bare mode skips auto-discovered hooks/plugins. Cartopian's process-scoped
-# capability and completion hooks still arrive through explicit --settings
-# when their independent dispatch boundaries apply.
+# Hook-enabled Cartopian launches reject bare mode because Claude suppresses
+# even explicit settings-file/flag hooks under --bare.
 $Bare = if ($env:CARTOPIAN_CLAUDE_BARE -eq 'true') { $true } else { $false }
 # Skip permission prompts so claude runs non-interactively. Matches
 # the autonomy posture of cartopian-codex and cartopian-agy. Set
@@ -66,10 +66,61 @@ if (-not (Test-Path $PromptPath)) {
     exit 1
 }
 
-if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-    Write-Error "cartopian-claude: 'claude' not found in PATH. Install: https://docs.anthropic.com/en/docs/claude-code"
+$HookBound = [bool]($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH)
+$StatusHelperPresent = Test-Path -LiteralPath $CartopianStatusModule -PathType Leaf
+if ($HookBound -and -not $StatusHelperPresent) {
+    Write-Error "cartopian-claude: hook-enabled launches require the installed status/supervisor helper: $CartopianStatusModule"
     exit 1
 }
+$ClaudeExecutable = $env:CARTOPIAN_CLAUDE_EXECUTABLE
+if ($HookBound) {
+    if (
+        -not $env:CARTOPIAN_LAUNCH_CWD -or
+        -not [IO.Path]::IsPathRooted($env:CARTOPIAN_LAUNCH_CWD) -or
+        -not (Test-Path -LiteralPath $env:CARTOPIAN_LAUNCH_CWD -PathType Container)
+    ) {
+        Write-Error 'cartopian-claude: hook-enabled launches require an absolute, existing CARTOPIAN_LAUNCH_CWD from cartopian dispatch'
+        exit 1
+    }
+    if (-not [IO.Path]::IsPathRooted($PromptPath)) {
+        Write-Error 'cartopian-claude: hook-enabled launches require an absolute prompt path from cartopian dispatch'
+        exit 1
+    }
+    if (
+        -not $ClaudeExecutable -or
+        -not [IO.Path]::IsPathRooted($ClaudeExecutable) -or
+        -not (Test-Path -LiteralPath $ClaudeExecutable -PathType Leaf)
+    ) {
+        Write-Error 'cartopian-claude: hook-enabled launches require an absolute CARTOPIAN_CLAUDE_EXECUTABLE file from cartopian dispatch'
+        exit 1
+    }
+    if ([IO.Path]::GetExtension($ClaudeExecutable).ToLowerInvariant() -in @('.cmd', '.bat')) {
+        Write-Error 'cartopian-claude: hook-enabled native-Windows launches require a native Claude executable; .cmd/.bat shims cannot preserve the exact settings argv boundary'
+        exit 1
+    }
+    $PythonPath = $env:CARTOPIAN_PYTHON
+    if (
+        -not $PythonPath -or
+        -not [IO.Path]::IsPathRooted($PythonPath) -or
+        -not (Test-Path -LiteralPath $PythonPath -PathType Leaf)
+    ) {
+        Write-Error 'cartopian-claude: hook-enabled launches require an absolute CARTOPIAN_PYTHON file from cartopian dispatch'
+        exit 1
+    }
+} elseif (-not $ClaudeExecutable) {
+    $ClaudeCommand = Get-Command -Name claude -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($ClaudeCommand) { $ClaudeExecutable = [string]$ClaudeCommand.Source }
+}
+if (
+    -not $ClaudeExecutable -or
+    -not [IO.Path]::IsPathRooted($ClaudeExecutable) -or
+    -not (Test-Path -LiteralPath $ClaudeExecutable -PathType Leaf)
+) {
+    Write-Error 'cartopian-claude: underlying Claude executable is missing, non-absolute, or not a file. Install Claude Code and launch through cartopian dispatch.'
+    exit 1
+}
+$env:CARTOPIAN_CLAUDE_EXECUTABLE = $ClaudeExecutable
 
 # Hand the agent the prompt FILE PATH, not the file's text. Embedding a
 # multi-KB markdown body as a command-line argument mangles under PowerShell
@@ -91,7 +142,11 @@ $StatusPath = Get-CartopianStatusPath $PromptPath
 # skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
 # or per-repo-sandbox setups. A non-existent path is a hard error, not
 # a silent fallback.
-if ($env:CARTOPIAN_LAUNCH_CWD) {
+if ($HookBound) {
+    $LaunchCwd = [IO.Path]::GetFullPath($env:CARTOPIAN_LAUNCH_CWD)
+    Set-Location -LiteralPath $LaunchCwd
+    Write-Host "cartopian-claude: cwd=$LaunchCwd (dispatch boundary)" -ForegroundColor DarkGray
+} elseif ($env:CARTOPIAN_LAUNCH_CWD) {
     if (-not (Test-Path -PathType Container $env:CARTOPIAN_LAUNCH_CWD)) {
         Write-Error "cartopian-claude: CARTOPIAN_LAUNCH_CWD='$($env:CARTOPIAN_LAUNCH_CWD)' is not a directory"
         exit 1
@@ -116,9 +171,10 @@ $Args = @('-p')
 
 # CARTOPIAN_ROLE is the mediated-dispatch role/config boundary consumed by the
 # capability hook; CARTOPIAN_EXPECTED_REPORT_PATH independently activates the
-# completion hook. Generate one process-scoped --settings value without
-# changing --setting-sources, so normal user, project, and local settings stay
-# loaded. A generation or compatibility failure refuses the launch.
+# completion hook. Generate one process-scoped --settings value. Activated
+# launches disable filesystem settings sources because user/plugin command
+# hooks execute outside shell containment. A generation or compatibility
+# failure refuses the launch.
 if ($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH) {
     $InstallRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
     $SettingsHelper = Join-Path $InstallRoot 'cli\claude_launch_settings.py'
@@ -135,31 +191,36 @@ if ($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH) {
     )
     if ($env:CARTOPIAN_ROLE) { $SettingsHelperArgs += '--capability' }
     if ($env:CARTOPIAN_EXPECTED_REPORT_PATH) { $SettingsHelperArgs += '--completion' }
-    if ($env:CARTOPIAN_PYTHON) {
-        $PythonPath = $env:CARTOPIAN_PYTHON
-        $ClaudeLaunchSettings = & $PythonPath @SettingsHelperArgs
-    } else {
-        $Python = Get-Command py -ErrorAction SilentlyContinue
+    & $PythonPath -I -S @SettingsHelperArgs --preflight-only | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error 'cartopian-claude: pre-containment Claude launch validation failed'
+        exit 1
     }
-    if (-not $env:CARTOPIAN_PYTHON -and $Python) {
-        $PythonPath = $Python.Source
-        $ClaudeLaunchSettings = & $PythonPath -3 @SettingsHelperArgs
-    } elseif (-not $env:CARTOPIAN_PYTHON) {
-        $Python = Get-Command python3 -ErrorAction SilentlyContinue
-        if (-not $Python) { $Python = Get-Command python -ErrorAction SilentlyContinue }
-        if (-not $Python) {
-            Write-Error 'cartopian-claude: Python 3 is required to construct process-scoped Claude hook settings'
-            exit 1
-        }
-        $PythonPath = $Python.Source
-        $ClaudeLaunchSettings = & $PythonPath @SettingsHelperArgs
+    $ClaudeVersionOutput = (& $ClaudeExecutable --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $ClaudeVersionOutput) {
+        Write-Error 'cartopian-claude: could not determine Claude Code version'
+        exit 1
     }
+    $SettingsHelperArgs += @('--claude-version', $ClaudeVersionOutput)
+    $ClaudeLaunchSettings = & $PythonPath -I -S @SettingsHelperArgs
     if ($LASTEXITCODE -ne 0 -or -not $ClaudeLaunchSettings) {
         Write-Error 'cartopian-claude: could not construct process-scoped Claude hook settings'
         exit 1
     }
     $ClaudeLaunchSettingsJson = $ClaudeLaunchSettings -join "`n"
     if ($ClaudeLaunchSettingsJson -ne '{}') {
+        if ($Bare) {
+            Write-Error 'cartopian-claude: CARTOPIAN_CLAUDE_BARE=true suppresses required process-scoped hooks'
+            exit 1
+        }
+        if ($ClaudeLaunchSettingsJson -match '"PreToolUse":') {
+            # Refuse user/plugin MCP surfaces plus delegated/worktree
+            # relocation outside the captured capability boundary.
+            $Args += '--strict-mcp-config'
+            $Args += @('--disallowedTools', 'Agent,Task,EnterWorktree,ExitWorktree,TeamCreate,TeamDelete,CronCreate,CronDelete,CronList,SendMessage,SendFile,RemoteTrigger')
+            $Args += @('--setting-sources', '')
+            $env:CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
+        }
         $Args += @('--settings', $ClaudeLaunchSettingsJson)
     }
 }
@@ -249,7 +310,7 @@ Write-Host "cartopian-claude: running claude -p (tools=$TraceTools, skip-perms=$
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
 $ReportPath = Get-CartopianReportPath $StatusPath
 
-$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath claude -ArgumentList $Args -TimeoutSec $TimeoutSec
+$run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath $ClaudeExecutable -ArgumentList $Args -TimeoutSec $TimeoutSec
 if ($run.TimedOut) {
     Write-Host "cartopian-claude: timeout after $TimeoutSpec -- process killed (exit 124)" -ForegroundColor DarkYellow
 }

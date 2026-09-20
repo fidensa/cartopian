@@ -10,13 +10,22 @@ Do not create project Claude settings. Run the matrix from the installed CLI.
 
 For `claude-code`, confirm:
 
-- `process_scoped_evidence.hook_present`, `settings_helper_present`,
-  `wrapper_chain_valid`, and `process_scoped` are true;
+- `process_scoped_evidence.hook_present`, `settings_helper_present`, and
+  `wrapper_chain_valid` are true;
 - `legacy_project_registration` is `absent`;
-- both structured boundaries have interception evidence without a project
-  registration;
-- both boundary tiers and the row tier are `contained-partial`, because
-  `shell_interception` is false;
+- on native macOS and Linux, the write boundary remains
+  `contained-partial` with `shell_write_policy_configured:true` and
+  `shell_interception:false` until a behavioral operator-acceptance run attests
+  the host sandbox; `process_scoped` is true and both structured boundaries
+  have interception evidence without a project registration; the read boundary
+  and row are also `contained-partial` because shell reads are outside the
+  capability policy;
+- on WSL2, activated launch refuses pending attestation of the optional
+  interop-blocking seccomp filter;
+- on native Windows, the activated helper probe refuses pending both an
+  attested shell sandbox and an exact native Claude executable chain; the row
+  is `advisory+detection` with `process_scoped:false` and that refusal detail,
+  not `contained-partial`;
 - the read boundary reports `unauthorized_read_detection:false`.
 
 Every host without a verified native adapter remains `advisory+detection`,
@@ -53,7 +62,9 @@ activated project after independently making each chain incomplete:
 1. remove the copied `cli/claude_hook.py`;
 2. restore and remove the copied `cli/claude_launch_settings.py`;
 3. restore and replace the copied platform Claude wrapper with an incomplete
-   stub (on Windows, also verify a missing/incomplete `.cmd` → `.ps1` chain).
+   stub (on Windows, also verify a missing/incomplete shipped
+   `cartopian-claude.cmd` → `cartopian-claude.ps1` chain; this is distinct from
+   the underlying Claude `.cmd`/`.bat` shims refused by hook-bound launches).
 
 Each case must downgrade Claude to `advisory+detection` and expose the failed
 evidence field. Documentation or configuration assertions alone never keep a
@@ -61,13 +72,15 @@ tier elevated.
 
 ## Compatibility registration
 
-Add an older project `PreToolUse` entry that targets the **current**
-interpreter and installed hook with the full matcher. The matrix reports it as
-`compatible`, and a dispatched launch reuses the entry so Claude de-duplicates
-it. Change its interpreter or hook path to a stale value: the matrix reports
-`incompatible`, downgrades, and dispatch refuses before Claude starts. Run
-`scripts/install.py --claude-hook <project-dir>` only as the explicit cleanup;
-confirm it removes Cartopian handlers and preserves unrelated settings/hooks.
+Copy an old Cartopian `PreToolUse` or `Stop` entry into normal project
+settings. For an activated launch, confirm the matrix reports
+`legacy_project_registration:"excluded"`: the empty settings-source list means
+the registration does not execute, does not duplicate the bound hook, and does
+not require cleanup. For a completion-only or ungated launch, normal settings
+remain loaded; confirm a persistent Stop registration that collides with the
+report-bound process hook refuses. If cleanup is desired, run
+`scripts/install.py --claude-hook <project-dir>` explicitly and confirm it
+removes Cartopian handlers while preserving unrelated settings/hooks.
 
 ## Ungated project
 
@@ -78,8 +91,12 @@ correctly emits no capability entry.
 ## Interpretation
 
 PreToolUse refusal is point-of-use enforcement for Claude's structured tools.
-Governed-write provenance is after-the-fact detection for writes that bypass
-that point. `Bash` is not intercepted, and unauthorized shell reads generally
-leave no reliable detection evidence. Completion Stop enforcement and the
-`exited-without-report` completion classification do not contribute to this
-matrix.
+On accepted native macOS/Linux hosts the process-scoped OS sandbox
+independently contains shell and child-process writes; it does not parse
+command text. Unauthorized shell reads generally leave no reliable detection
+evidence. Activated native-Windows launches are refused pending both
+shell-sandbox and exact-native-executable-chain attestation rather than run as
+a write residual. A native-Windows completion-only hook may run with a direct
+native Claude executable, but an underlying `.cmd`/`.bat` shim must refuse.
+Completion Stop enforcement and the `exited-without-report` completion
+classification do not contribute to this matrix.

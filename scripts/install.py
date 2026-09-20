@@ -535,7 +535,13 @@ def _without_hook_handler(entries: list, script_name: str) -> list:
             for handler in item["hooks"]
             if not (
                 isinstance(handler, dict)
-                and script_name in str(handler.get("command", ""))
+                and (
+                    script_name in str(handler.get("command", ""))
+                    or any(
+                        script_name in str(argument)
+                        for argument in handler.get("args", [])
+                    )
+                )
             )
         ]
         if handlers:

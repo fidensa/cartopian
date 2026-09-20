@@ -10,7 +10,9 @@ prerequisites ``cartopian dispatch`` will enforce — so planning can make
 "task 1 is dispatchable" its exit condition and startup can report it as one
 verdict instead of discovering it one refusal at a time.
 
-Nothing here writes, moves, launches, or consumes automation budget.
+Nothing here writes, moves, launches a handoff, or consumes automation budget.
+The shared launch preflight may execute a bounded local ``claude --version``
+probe so rehearsal and dispatch enforce the same wrapper compatibility floor.
 """
 from __future__ import annotations
 
@@ -76,7 +78,12 @@ def resolve_role(
 
 
 def _launch_record(
-    role: str, role_record: Dict[str, Any], resolved_work_roots: Dict[str, str]
+    role: str,
+    role_record: Dict[str, Any],
+    resolved_work_roots: Dict[str, str],
+    *,
+    project_root: Optional[Path] = None,
+    capabilities_activated: bool = False,
 ) -> Dict[str, Any]:
     """The prerequisites ``dispatch`` enforces, decided by the same code.
 
@@ -108,12 +115,22 @@ def _launch_record(
         )
         findings = [
             f
-            for f in launch_preflight.environment_checks(role, {}, resolved_work_roots)
+            for f in launch_preflight.environment_checks(
+                role,
+                {},
+                resolved_work_roots,
+                project_root=project_root,
+                capabilities_activated=capabilities_activated,
+            )
         ]
     else:
         findings = launch_preflight.role_checks(role, role_record, context="dispatch")
         findings += launch_preflight.environment_checks(
-            role, role_record, resolved_work_roots
+            role,
+            role_record,
+            resolved_work_roots,
+            project_root=project_root,
+            capabilities_activated=capabilities_activated,
         )
     if findings:
         record["ok"] = False
@@ -202,7 +219,14 @@ def rehearse(
         record["compose"] = {"outcome": "error", "findings": [str(exc)]}
         blockers.append(f"compose-assignment-prompt failed: {exc}")
 
-    launch = _launch_record(chosen, roles[chosen], resolved.get("work_roots") or {})
+    project_root = _find_project_root(task_path)
+    launch = _launch_record(
+        chosen,
+        roles[chosen],
+        resolved.get("work_roots") or {},
+        project_root=project_root,
+        capabilities_activated=bool(resolved["capabilities"]["activated"]),
+    )
     record["launch"] = launch
     if not launch["ok"]:
         blockers.append(launch["detail"])

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-claude — Cartopian wrapper for the Claude Code CLI.
 #
 # Usage:  cartopian-claude <absolute-prompt-path>
@@ -18,8 +18,15 @@ set -euo pipefail
 # Source the shared helper that emits <report-path>.status on assignee
 # exit. Optional: if the helper is missing, degrade to no-op stubs so the
 # wrapper still runs (the status file is never a hard requirement).
-_CARTOPIAN_WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_CARTOPIAN_WRAPPER_SOURCE="${BASH_SOURCE[0]}"
+case "$_CARTOPIAN_WRAPPER_SOURCE" in
+  */*) _CARTOPIAN_WRAPPER_PARENT="${_CARTOPIAN_WRAPPER_SOURCE%/*}" ;;
+  *) _CARTOPIAN_WRAPPER_PARENT="." ;;
+esac
+_CARTOPIAN_WRAPPER_DIR="$(cd -P -- "$_CARTOPIAN_WRAPPER_PARENT" && pwd)"
+_CARTOPIAN_STATUS_HELPER_PRESENT=false
 if [[ -f "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" ]]; then
+  _CARTOPIAN_STATUS_HELPER_PRESENT=true
   # shellcheck source=_cartopian-status.sh
   source "${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh"
 else
@@ -44,9 +51,8 @@ CLAUDE_ALLOWED_TOOLS="${CARTOPIAN_CLAUDE_TOOLS:-}"
 CLAUDE_OUTPUT_FORMAT="${CARTOPIAN_CLAUDE_FORMAT:-text}"
 
 # Use --bare to skip auto-discovery of hooks/plugins (faster startup).
-# Cartopian's process-scoped capability and completion hooks are supplied by
-# explicit per-launch --settings and remain active when their independent
-# dispatch boundaries apply.
+# Hook-enabled Cartopian launches reject bare mode because Claude suppresses
+# even explicit settings-file/flag hooks under --bare.
 CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
 
 # Skip all permission prompts so claude runs non-interactively. Without
@@ -71,20 +77,46 @@ if [[ ! -f "$PROMPT_PATH" ]]; then
   exit 1
 fi
 
-if ! command -v claude &>/dev/null; then
-  echo "cartopian-claude: error: 'claude' not found in PATH" >&2
-  echo "Install: https://docs.anthropic.com/en/docs/claude-code" >&2
+_CARTOPIAN_HOOK_BOUND=false
+if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
+  _CARTOPIAN_HOOK_BOUND=true
+fi
+if [[ "$_CARTOPIAN_HOOK_BOUND" == "true" && "$_CARTOPIAN_STATUS_HELPER_PRESENT" != "true" ]]; then
+  echo "cartopian-claude: error: hook-enabled launches require the installed status/supervisor helper: ${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" >&2
   exit 1
 fi
 
-# Hand the agent the prompt FILE PATH, not the file's text. Embedding a multi-KB
-# markdown body as a command-line argument is brittle across shells (it mangles
-# under PowerShell on the Windows wrapper); the agent opens the file itself.
-PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
-
-# Derive the optional status-file path now, before any cd, so a relative
-# prompt path still resolves. Empty when the prompt is outside a project.
-STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
+_CARTOPIAN_CLAUDE_EXECUTABLE="${CARTOPIAN_CLAUDE_EXECUTABLE:-}"
+if [[ "$_CARTOPIAN_HOOK_BOUND" == "true" ]]; then
+  if [[ "${CARTOPIAN_LAUNCH_CWD:-}" != /* || ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
+    echo "cartopian-claude: error: hook-enabled launches require an absolute, existing CARTOPIAN_LAUNCH_CWD from cartopian dispatch" >&2
+    exit 1
+  fi
+  if [[ "$PROMPT_PATH" != /* ]]; then
+    echo "cartopian-claude: error: hook-enabled launches require an absolute prompt path from cartopian dispatch" >&2
+    exit 1
+  fi
+  if [[ -z "$_CARTOPIAN_CLAUDE_EXECUTABLE" || "$_CARTOPIAN_CLAUDE_EXECUTABLE" != /* || ! -f "$_CARTOPIAN_CLAUDE_EXECUTABLE" || ! -x "$_CARTOPIAN_CLAUDE_EXECUTABLE" ]]; then
+    echo "cartopian-claude: error: hook-enabled launches require an absolute executable CARTOPIAN_CLAUDE_EXECUTABLE from cartopian dispatch" >&2
+    exit 1
+  fi
+  _CARTOPIAN_PYTHON="${CARTOPIAN_PYTHON:-}"
+  if [[ -z "$_CARTOPIAN_PYTHON" || "$_CARTOPIAN_PYTHON" != /* || ! -f "$_CARTOPIAN_PYTHON" || ! -x "$_CARTOPIAN_PYTHON" ]]; then
+    echo "cartopian-claude: error: hook-enabled launches require an absolute executable CARTOPIAN_PYTHON from cartopian dispatch" >&2
+    exit 1
+  fi
+elif [[ -z "$_CARTOPIAN_CLAUDE_EXECUTABLE" ]]; then
+  _CARTOPIAN_CLAUDE_EXECUTABLE="$(command -v claude || true)"
+  if [[ -n "$_CARTOPIAN_CLAUDE_EXECUTABLE" && "$_CARTOPIAN_CLAUDE_EXECUTABLE" != /* ]]; then
+    _CARTOPIAN_CLAUDE_EXECUTABLE="$PWD/${_CARTOPIAN_CLAUDE_EXECUTABLE#./}"
+  fi
+fi
+if [[ -z "$_CARTOPIAN_CLAUDE_EXECUTABLE" || "$_CARTOPIAN_CLAUDE_EXECUTABLE" != /* || ! -f "$_CARTOPIAN_CLAUDE_EXECUTABLE" || ! -x "$_CARTOPIAN_CLAUDE_EXECUTABLE" ]]; then
+  echo "cartopian-claude: error: underlying Claude executable is missing, non-absolute, or not executable" >&2
+  echo "Install Claude Code and launch through cartopian dispatch" >&2
+  exit 1
+fi
+export CARTOPIAN_CLAUDE_EXECUTABLE="$_CARTOPIAN_CLAUDE_EXECUTABLE"
 
 # --- Launch directory ------------------------------------------------
 # Assignee CLIs run with cwd set to the Cartopian project root (the
@@ -96,13 +128,19 @@ STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 # skip auto-resolution. Useful for split-layout, cross-drive, monorepo,
 # or per-repo-sandbox setups. A non-existent path is a hard error, not
 # a silent fallback.
-if [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
+if [[ "$_CARTOPIAN_HOOK_BOUND" == "true" ]]; then
+  LAUNCH_CWD="$CARTOPIAN_LAUNCH_CWD"
+  cd "$LAUNCH_CWD"
+  PROMPT_PATH_ABS="$PROMPT_PATH"
+  echo "cartopian-claude: cwd=$LAUNCH_CWD (dispatch boundary)" >&2
+elif [[ -n "${CARTOPIAN_LAUNCH_CWD:-}" ]]; then
   if [[ ! -d "$CARTOPIAN_LAUNCH_CWD" ]]; then
     echo "cartopian-claude: CARTOPIAN_LAUNCH_CWD='$CARTOPIAN_LAUNCH_CWD' is not a directory" >&2
     exit 1
   fi
   LAUNCH_CWD="$(cd "$CARTOPIAN_LAUNCH_CWD" && pwd)"
   cd "$LAUNCH_CWD"
+  PROMPT_PATH_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
   echo "cartopian-claude: cwd=$LAUNCH_CWD (CARTOPIAN_LAUNCH_CWD override)" >&2
 else
   PROMPT_ABS="$(cd "$(dirname "$PROMPT_PATH")" && pwd)/$(basename "$PROMPT_PATH")"
@@ -115,21 +153,26 @@ else
   else
     echo "cartopian-claude: prompt is outside a Cartopian project layout; leaving cwd unchanged (set CARTOPIAN_LAUNCH_CWD to override)" >&2
   fi
+  PROMPT_PATH_ABS="$PROMPT_ABS"
 fi
 # --------------------------------------------------------------------
 
-CMD=(claude -p)
+CMD=("$_CARTOPIAN_CLAUDE_EXECUTABLE" -p)
 
 # Build one compact JSON argument for Claude's additional per-launch settings
 # layer. CARTOPIAN_ROLE is exported only by mediated dispatch and asks the
 # helper to resolve capability activation from the same role/config boundary
 # claude_hook.py enforces. CARTOPIAN_EXPECTED_REPORT_PATH independently asks
-# for completion enforcement. User, project, and local settings remain loaded
-# because no --setting-sources override is used. --bare does not suppress this
-# explicit layer. Refuse before launch if the installed helper/hook chain is
-# missing, invalid, or conflicts with a stale project registration.
+# for completion enforcement. An activated capability boundary disables every
+# filesystem settings source at launch: user/project/plugin
+# hooks execute outside the Bash sandbox, and Claude otherwise discovers and
+# hot-reloads new project settings after a cwd change. Managed policy and this
+# explicit process settings object remain active. Claude suppresses
+# even explicit process settings hooks under --bare, so a hook-enabled launch
+# refuses that mode. Refuse before launch if the installed helper/hook chain is
+# missing, invalid, or conflicts with a stale registration.
 if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
-  _CARTOPIAN_INSTALL_ROOT="$(cd "${_CARTOPIAN_WRAPPER_DIR}/../.." && pwd)"
+  _CARTOPIAN_INSTALL_ROOT="$(cd -P -- "${_CARTOPIAN_WRAPPER_DIR}/../.." && pwd)"
   _CARTOPIAN_SETTINGS_HELPER="${_CARTOPIAN_INSTALL_ROOT}/cli/claude_launch_settings.py"
   if [[ ! -f "$_CARTOPIAN_SETTINGS_HELPER" ]]; then
     echo "cartopian-claude: error: Claude settings helper not found: $_CARTOPIAN_SETTINGS_HELPER" >&2
@@ -143,15 +186,45 @@ if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; t
   )
   [[ -n "${CARTOPIAN_ROLE:-}" ]] && _CARTOPIAN_SETTINGS_ARGS+=(--capability)
   [[ -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]] && _CARTOPIAN_SETTINGS_ARGS+=(--completion)
-  _CARTOPIAN_PYTHON="${CARTOPIAN_PYTHON:-python3}"
-  if ! _CARTOPIAN_CLAUDE_SETTINGS="$("$_CARTOPIAN_PYTHON" "${_CARTOPIAN_SETTINGS_ARGS[@]}")"; then
+  if ! "$_CARTOPIAN_PYTHON" -I -S "${_CARTOPIAN_SETTINGS_ARGS[@]}" --preflight-only >/dev/null; then
+    echo "cartopian-claude: error: pre-containment Claude launch validation failed" >&2
+    exit 1
+  fi
+  if ! _CARTOPIAN_CLAUDE_VERSION="$("$_CARTOPIAN_CLAUDE_EXECUTABLE" --version 2>&1)"; then
+    echo "cartopian-claude: error: could not determine Claude Code version" >&2
+    exit 1
+  fi
+  _CARTOPIAN_SETTINGS_ARGS+=(--claude-version "$_CARTOPIAN_CLAUDE_VERSION")
+  if ! _CARTOPIAN_CLAUDE_SETTINGS="$("$_CARTOPIAN_PYTHON" -I -S "${_CARTOPIAN_SETTINGS_ARGS[@]}")"; then
     echo "cartopian-claude: error: could not construct process-scoped Claude hook settings" >&2
     exit 1
   fi
   if [[ "$_CARTOPIAN_CLAUDE_SETTINGS" != "{}" ]]; then
+    if [[ "$CLAUDE_BARE" == "true" ]]; then
+      echo "cartopian-claude: error: CARTOPIAN_CLAUDE_BARE=true suppresses required process-scoped hooks" >&2
+      exit 1
+    fi
+    if [[ "$_CARTOPIAN_CLAUDE_SETTINGS" == *'"PreToolUse":'* ]]; then
+      # Capability matching covers Claude's built-in tools. Do not admit
+      # user/plugin MCP tools that could expose an unclassified filesystem
+      # mutation surface outside the hook and shell sandbox. Delegated agents
+      # and worktree relocation can likewise move execution or mutate shared
+      # Git metadata outside the captured boundary.
+      CMD+=(--strict-mcp-config --disallowedTools "Agent,Task,EnterWorktree,ExitWorktree,TeamCreate,TeamDelete,CronCreate,CronDelete,CronList,SendMessage,SendFile,RemoteTrigger")
+      # No user/project/local source: command hooks and plugin hooks run with
+      # the operator's full permissions, outside Claude's Bash sandbox. The
+      # empty argument is Claude's documented filesystem-settings isolation.
+      CMD+=(--setting-sources "")
+      export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+    fi
     CMD+=(--settings "$_CARTOPIAN_CLAUDE_SETTINGS")
   fi
 fi
+
+# Derive the optional status-file path only after pre-containment validation.
+# Dispatch supplies the exact report path, so mediated launches return from
+# this helper without invoking any PATH-resolved utility.
+STATUS_PATH="$(cartopian_status_path "$PROMPT_PATH")"
 
 if [[ -n "$CLAUDE_ALLOWED_TOOLS" ]]; then
   CMD+=(--allowedTools "$CLAUDE_ALLOWED_TOOLS")

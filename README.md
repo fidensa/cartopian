@@ -211,7 +211,7 @@ Project values beat global values, key by key. `cartopian resolve-config <projec
 
 **`CONFIG-MAPPING.md` is the complete field reference.** It lists every setting, every accepted value, every capability and preset, every wrapper name, and every flag for creating and editing configuration.
 
-Run `init workspace` to set global defaults and `init project` to create a project. Inside a project, ask the PM for a change and it applies it with `cartopian update-config`, which validates the result and preserves your comments.
+Run `init workspace` to set global defaults and `init project` to create a project. Inside a project, ask the PM for a change and it uses `cartopian update-config`, which validates the result and preserves your comments. An activated native macOS/Linux Claude handoff cannot execute that writer through its read-only project sandbox; it returns the exact command for the operator or another trusted host to run outside the handoff.
 
 ### A complete example
 

@@ -177,6 +177,64 @@ class TestMissingReport(StopHookCase):
         self.assertIn("guard attempt 1 of 3", reason)
         self.assertIn("exited-without-report", reason)
 
+    def test_counter_write_does_not_follow_predictable_temp_symlink(self):
+        state = claude_stop_hook.counter_path(
+            "sess-1", str(self.report_path), str(self.state_dir)
+        )
+        protected = self.root / "protected.txt"
+        protected.write_text("protected\n", encoding="utf-8")
+        planted = state.with_name(state.name + f".tmp.{os.getpid()}")
+        try:
+            planted.symlink_to(protected)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable on this platform")
+
+        self.assertTrue(claude_stop_hook._write_blocks(state, "sess-1", 1))
+        self.assertEqual(protected.read_text(encoding="utf-8"), "protected\n")
+        self.assertTrue(planted.is_symlink())
+
+    def test_counter_destination_symlink_is_replaced_not_followed(self):
+        state = claude_stop_hook.counter_path(
+            "sess-1", str(self.report_path), str(self.state_dir)
+        )
+        protected = self.root / "protected.txt"
+        protected.write_text("protected\n", encoding="utf-8")
+        try:
+            state.symlink_to(protected)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable on this platform")
+
+        self.assertTrue(claude_stop_hook._write_blocks(state, "sess-1", 1))
+        self.assertEqual(protected.read_text(encoding="utf-8"), "protected\n")
+        self.assertFalse(state.is_symlink())
+        self.assertEqual(
+            json.loads(state.read_text(encoding="utf-8")),
+            {"session_id": "sess-1", "blocks": 1},
+        )
+
+    def test_counter_read_does_not_follow_symlink(self):
+        state = claude_stop_hook.counter_path(
+            "sess-1", str(self.report_path), str(self.state_dir)
+        )
+        target = self.root / "counter-target.json"
+        target.write_text(
+            json.dumps({"session_id": "sess-1", "blocks": 99}),
+            encoding="utf-8",
+        )
+        try:
+            state.symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable on this platform")
+
+        self.assertEqual(claude_stop_hook._read_blocks(state, "sess-1"), 0)
+
+    def test_protected_state_directory_is_private_and_direct(self):
+        state = self.root / "cartopian" / "stop-state"
+        state.parent.mkdir()
+        prepared = claude_stop_hook._prepare_state_dir(str(state))
+        self.assertEqual(prepared, state)
+        self.assertEqual(state.stat().st_mode & 0o777, 0o700)
+
 
 class TestPartialReport(StopHookCase):
     def test_partial_report_blocks(self):
@@ -364,7 +422,7 @@ class TestHookIO(unittest.TestCase):
         self.report_path = self.reports / "REPORT-01-001.md"
         self.addCleanup(self._tmp.cleanup)
 
-    def _run(self, stdin: str, env_extra=None):
+    def _run(self, stdin: str, env_extra=None, arguments=()):
         env = dict(os.environ)
         env.pop("CARTOPIAN_EXPECTED_REPORT_PATH", None)
         env.pop("CARTOPIAN_EXPECTED_REPORT_VARIANT", None)
@@ -373,12 +431,34 @@ class TestHookIO(unittest.TestCase):
         (self.root / "tmp").mkdir(exist_ok=True)
         env.update(env_extra or {})
         return subprocess.run(
-            [sys.executable, str(HOOK_PATH)],
+            [sys.executable, str(HOOK_PATH), *arguments],
             input=stdin,
             capture_output=True,
             text=True,
             env=env,
         )
+
+    def test_bound_report_argv_overrides_mutable_settings_environment(self):
+        decoy = self.reports / "REPORT-DECOY.md"
+        decoy.write_text(TASK_REPORT_COMPLETE, encoding="utf-8")
+        result = self._run(
+            json.dumps(_payload()),
+            {
+                "CARTOPIAN_EXPECTED_REPORT_PATH": str(decoy),
+                "CARTOPIAN_EXPECTED_REPORT_VARIANT": "review",
+            },
+            arguments=(
+                "--expected-report",
+                str(self.report_path),
+                "--expected-variant",
+                "task",
+            ),
+        )
+        self.assertEqual(result.returncode, 0)
+        emitted = json.loads(result.stdout)
+        self.assertEqual(emitted["decision"], "block")
+        self.assertIn(str(self.report_path), emitted["reason"])
+        self.assertNotIn(str(decoy), emitted["reason"])
 
     def test_block_emits_the_documented_stop_decision(self):
         result = self._run(

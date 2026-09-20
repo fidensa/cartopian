@@ -11,6 +11,8 @@ write).
 import io
 import json
 import os
+import stat
+import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -72,34 +74,49 @@ class _Fixture(unittest.TestCase):
         self.root = str(self.scaffold.project_root)
         fake_home = self.scaffold.root / "home"
         fake_home.mkdir()
-        env_patch = patch.dict(os.environ, {"HOME": str(fake_home)})
+        self.fake_home = fake_home
+        fake_bin = self.scaffold.root / "fake-bin"
+        fake_bin.mkdir()
+        self.fake_claude = fake_bin / "claude"
+        self.set_claude_version("2.1.278 (Claude Code)")
+        env_patch = patch.dict(
+            os.environ,
+            {
+                "HOME": str(fake_home),
+                "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+            },
+        )
         env_patch.start()
         self.addCleanup(env_patch.stop)
+
+    def set_claude_version(self, version):
+        self.fake_claude.write_text(
+            "#!/bin/sh\nprintf '%s\\n' " + json.dumps(version) + "\n",
+            encoding="utf-8",
+        )
+        self.fake_claude.chmod(
+            self.fake_claude.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP
+        )
 
     # The full matcher the installer writes (read + write tools) and the
     # pre-read-boundary form that intercepts only the mutation tools.
     FULL_MATCHER = "Read|NotebookRead|Glob|Grep|Write|Edit|MultiEdit|NotebookEdit"
     WRITE_ONLY_MATCHER = "Write|Edit|MultiEdit|NotebookEdit"
 
-    def register_hook(self, matcher=FULL_MATCHER, command=None):
+    def register_hook(self, matcher=FULL_MATCHER, handler=None):
         """Write an older project registration for compatibility coverage."""
-        if command is None:
-            from cli import claude_launch_settings
-
-            command = claude_launch_settings.hook_command(
-                REPO_ROOT, "claude_hook.py", windows=False
-            )
+        if handler is None:
+            handler = {
+                "type": "command",
+                "command": sys.executable,
+                "args": [str(REPO_ROOT / "cli" / "claude_hook.py")],
+            }
         settings = {
             "hooks": {
                 "PreToolUse": [
                     {
                         "matcher": matcher,
-                        "hooks": [
-                            {
-                                "type": "command",
-                                "command": command,
-                            }
-                        ],
+                        "hooks": [handler],
                     }
                 ]
             }
@@ -153,6 +170,51 @@ class TestHonestTiersFromEvidence(_Fixture):
         self.assertEqual(claude["tier"], "contained-partial")
         self.assertTrue(claude["interception_registered"])
 
+    def test_unsupported_claude_version_downgrades(self):
+        self.set_claude_version("2.1.277 (Claude Code)")
+
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+
+        self.assertEqual(claude["tier"], "advisory+detection")
+        self.assertIn(
+            "upgrade to 2.1.278+",
+            claude["process_scoped_evidence"]["detail"],
+        )
+
+    def test_unidentifiable_claude_version_downgrades(self):
+        self.set_claude_version("development build")
+
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+
+        self.assertEqual(claude["tier"], "advisory+detection")
+        self.assertIn(
+            "cannot determine Claude Code version",
+            claude["process_scoped_evidence"]["detail"],
+        )
+
+    def test_host_temp_symlink_downgrades_in_read_only_matrix(self):
+        config_root = self.fake_home / ".cartopian"
+        config_root.mkdir()
+        outside = self.scaffold.root / "writable-host-temp"
+        outside.mkdir()
+        try:
+            config_root.joinpath("claude-host-tmp").symlink_to(
+                outside, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            self.skipTest("directory symlinks unavailable")
+
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+
+        self.assertEqual(claude["tier"], "advisory+detection")
+        self.assertIn(
+            "host temp must be a direct directory",
+            claude["process_scoped_evidence"]["detail"],
+        )
+
     def test_all_nine_hosts_present_with_assigned_ceilings(self):
         _, rows = self.rows()
         expected_ceilings = {
@@ -176,27 +238,103 @@ class TestReadBoundaryTiers(_Fixture):
     where the interception point actually intercepts the read tools; advisory
     + detection (with a plain disclosure) everywhere else."""
 
-    def test_process_matcher_renders_both_boundaries_partial(self):
+    def test_process_matcher_and_shell_sandbox_contain_write_boundary(self):
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+        self.assertEqual(
+            claude["boundaries"]["write"]["tier"], "contained-partial"
+        )
+        self.assertEqual(claude["boundaries"]["read"]["tier"], "contained-partial")
+        self.assertEqual(claude["tier"], "contained-partial")
+        self.assertFalse(claude["boundaries"]["write"]["shell_interception"])
+        self.assertTrue(
+            claude["boundaries"]["write"]["shell_write_policy_configured"]
+        )
+        self.assertFalse(claude["boundaries"]["read"]["shell_interception"])
+        self.assertFalse(claude["boundaries"]["read"]["unauthorized_read_detection"])
+
+    def test_normal_write_only_registration_is_excluded_from_activated_launch(self):
+        self.register_hook(matcher=self.WRITE_ONLY_MATCHER)
         _, rows = self.rows()
         claude = rows["claude-code"]
         self.assertEqual(claude["boundaries"]["write"]["tier"], "contained-partial")
         self.assertEqual(claude["boundaries"]["read"]["tier"], "contained-partial")
+        self.assertTrue(claude["boundaries"]["read"]["interception_registered"])
         self.assertEqual(claude["tier"], "contained-partial")
-        self.assertFalse(claude["boundaries"]["read"]["shell_interception"])
-        self.assertFalse(claude["boundaries"]["read"]["unauthorized_read_detection"])
-
-    def test_incompatible_write_only_registration_invalidates_process_chain(self):
-        self.register_hook(matcher=self.WRITE_ONLY_MATCHER)
-        _, rows = self.rows()
-        claude = rows["claude-code"]
-        self.assertEqual(claude["boundaries"]["write"]["tier"], "advisory+detection")
-        self.assertEqual(claude["boundaries"]["read"]["tier"], "advisory+detection")
-        self.assertFalse(claude["boundaries"]["read"]["interception_registered"])
-        self.assertEqual(claude["tier"], "advisory+detection")
+        self.assertTrue(claude["process_scoped_evidence"]["process_scoped"])
         self.assertEqual(
             claude["process_scoped_evidence"]["legacy_project_registration"],
-            "incompatible",
+            "excluded",
         )
+
+    def test_exact_role_bound_normal_registration_is_excluded(self):
+        from cli import claude_launch_settings
+
+        expected = claude_launch_settings.build_settings(
+            REPO_ROOT,
+            windows=False,
+            project_dir=self.scaffold.project_root,
+            include_capability=True,
+            environ={**os.environ, "CARTOPIAN_ROLE": "coder"},
+        )["hooks"]["PreToolUse"][0]
+        self.scaffold.write(
+            ".claude/settings.json",
+            json.dumps({"hooks": {"PreToolUse": [expected]}}, indent=2) + "\n",
+        )
+
+        _, rows = self.rows()
+
+        self.assertEqual(rows["claude-code"]["tier"], "contained-partial")
+        self.assertTrue(
+            rows["claude-code"]["process_scoped_evidence"]["process_scoped"]
+        )
+        self.assertEqual(
+            rows["claude-code"]["process_scoped_evidence"][
+                "legacy_project_registration"
+            ],
+            "excluded",
+            msg=rows["claude-code"]["process_scoped_evidence"],
+        )
+
+    def test_user_scope_stop_registration_is_excluded_from_activated_launch(self):
+        settings_path = self.fake_home / ".claude" / "settings.json"
+        settings_path.parent.mkdir()
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": sys.executable,
+                                        "args": [
+                                            str(
+                                                REPO_ROOT
+                                                / "cli"
+                                                / "claude_stop_hook.py"
+                                            )
+                                        ],
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        _, rows = self.rows()
+        claude = rows["claude-code"]
+        evidence = claude["process_scoped_evidence"]
+        self.assertEqual(claude["tier"], "contained-partial")
+        self.assertTrue(evidence["process_scoped"])
+        self.assertEqual(evidence["legacy_project_registration"], "excluded")
+        self.assertNotIn("detail", evidence)
 
     def test_read_boundary_advisory_on_hosts_without_adapter(self):
         _, rows = self.rows()
@@ -215,11 +353,12 @@ class TestReadBoundaryTiers(_Fixture):
     def test_no_registration_keeps_both_process_boundaries_active(self):
         _, rows = self.rows()
         claude = rows["claude-code"]
-        for boundary in ("read", "write"):
-            with self.subTest(boundary=boundary):
-                self.assertEqual(
-                    claude["boundaries"][boundary]["tier"], "contained-partial"
-                )
+        self.assertEqual(
+            claude["boundaries"]["write"]["tier"], "contained-partial"
+        )
+        self.assertEqual(
+            claude["boundaries"]["read"]["tier"], "contained-partial"
+        )
 
 
 class TestFailClosedGateWiring(_Fixture):
@@ -315,6 +454,11 @@ class TestInstalledProcessChainEvidence(_Fixture):
         _, rows = self.rows_at(self.install_root())
         evidence = rows["claude-code"]["process_scoped_evidence"]
         self.assertTrue(evidence["process_scoped"])
+        self.assertTrue(
+            rows["claude-code"]["boundaries"]["write"][
+                "shell_write_policy_configured"
+            ]
+        )
         self.assertTrue(evidence["wrapper_chain_valid"])
 
     def test_missing_hook_downgrades(self):
@@ -355,6 +499,38 @@ class TestInstalledProcessChainEvidence(_Fixture):
         self.assertFalse(
             rows["claude-code"]["process_scoped_evidence"]["wrapper_chain_valid"]
         )
+
+    def test_wrapper_omitting_one_uncontained_tool_downgrades(self):
+        root = self.install_root()
+        wrapper = root / "wrappers" / "bin" / "cartopian-claude"
+        wrapper.write_text(
+            wrapper.read_text(encoding="utf-8").replace(
+                ",RemoteTrigger\"", "\""
+            ),
+            encoding="utf-8",
+        )
+        _, rows = self.rows_at(root)
+        self.assertFalse(
+            rows["claude-code"]["process_scoped_evidence"]["wrapper_chain_valid"]
+        )
+
+    def test_windows_wrapper_requires_batch_bridge(self):
+        from cli.commands import containment_matrix
+
+        root = self.install_root()
+        with patch(
+            "cli.commands.containment_matrix._running_on_windows",
+            return_value=True,
+        ):
+            self.assertTrue(containment_matrix._wrapper_chain_valid(root))
+            helper = root / "wrappers" / "ps1" / "CartopianStatus.ps1"
+            helper.write_text(
+                helper.read_text(encoding="utf-8").replace(
+                    "ConvertFrom-Json", "ConvertFrom-BrokenJson"
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(containment_matrix._wrapper_chain_valid(root))
 
 
 class TestUsageGuards(_Fixture):

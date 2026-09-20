@@ -20,7 +20,7 @@ Run `cartopian next-action <project-path> --compact --audit`. Add `--reconcile` 
 
 Before using `--reconcile`, read `cartopian://protocol/CONVENTIONS/session-state`.
 
-This one call uses the `cartopian resolve-config` resolution chain, reads state, computes readiness, and runs every `cartopian plan-audit` check. Do not separately load config, `STATE.md`, task files, or repeat the audit for orientation. The `pm_role_declared` gate is binary: true continues, false stops for a missing PM role. Do not inspect or comment on whether its description was customized. Never proactively solicit config changes; repair only on the operator's explicit go-ahead through `cartopian update-config --set-role pm="..." --set-role-grants pm=...`.
+This one call uses the `cartopian resolve-config` resolution chain, reads state, computes readiness, and runs every `cartopian plan-audit` check. Do not separately load config, `STATE.md`, task files, or repeat the audit for orientation. The `pm_role_declared` gate is binary: true continues, false stops for a missing PM role. Do not inspect or comment on whether its description was customized. Never solicit config changes. On explicit go-ahead, use `cartopian update-config --set-role pm="..." --set-role-grants pm=...`; if the activated Claude project sandbox blocks it, report the exact outside-handoff operation.
 
 ## Stage 2 - Relay Session State
 

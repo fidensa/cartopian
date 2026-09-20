@@ -65,7 +65,12 @@ an inline ``--settings`` value whenever
             "hooks": [
               {
                 "type": "command",
-                "command": "python /installed/root/cli/claude_stop_hook.py"
+                "command": "/current/python",
+                "args": [
+                  "-I", "-S", "/installed/root/cli/claude_stop_hook.py",
+                  "--expected-report", "...", "--expected-variant", "...",
+                  "--max-blocks", "3"
+                ]
               }
             ]
           }
@@ -73,11 +78,15 @@ an inline ``--settings`` value whenever
       }
     }
 
-The actual command contains fully serialized installed paths; no settings file
-is written. Claude continues to load user, project, and local settings
-normally. ``CARTOPIAN_CLAUDE_BARE=true`` still passes ``--bare``;
-auto-discovered hooks stay skipped, while this explicitly supplied per-launch
-settings entry remains active. The same settings object may independently
+The directly spawned command contains immutable installed paths,
+report-path/variant arguments, and block limit, and runs the interpreter in
+isolated mode, so a normal settings ``env`` block cannot redirect the
+completion slot or its Python imports. No settings file is written. Activated
+launches exclude normal user, project, and local settings sources; completion-
+only launches keep their normal settings-source behavior.
+Hook-enabled wrappers refuse ``CARTOPIAN_CLAUDE_BARE=true`` because current
+Claude releases suppress even an explicitly supplied per-launch hook in bare
+mode. The same settings object may independently
 carry the capability-refusal PreToolUse hook when the dispatched project's
 resolved grants activate containment. The legacy ``scripts/install.py
 --claude-hook <project-dir>`` operation removes obsolete project-level
@@ -87,15 +96,17 @@ Hook I/O contract: the Stop payload arrives as JSON on stdin; a block is the
 documented ``{"decision": "block", "reason": ...}`` object on stdout with exit
 0; an allow produces no stdout at all. Standard library only.
 """
+import argparse
 import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 if __package__ in (None, ""):  # invoked as a script: `python .../cli/claude_stop_hook.py`
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -172,9 +183,30 @@ def _read_blocks(path: Path, session_id: str) -> int:
     A file from an earlier launch carries a different session id and reads as
     0 — a stale counter can never pre-exhaust a fresh handoff's guard.
     """
+    descriptor: Optional[int] = None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        info = os.fstat(descriptor)
+        lexical_info = path.lstat()
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or (info.st_dev, info.st_ino)
+            != (lexical_info.st_dev, lexical_info.st_ino)
+        ):
+            os.close(descriptor)
+            descriptor = None
+            return 0
+        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            descriptor = None
+            data = json.load(stream)
     except (OSError, ValueError):
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         return 0
     if not isinstance(data, dict) or data.get("session_id") != session_id:
         return 0
@@ -185,17 +217,59 @@ def _read_blocks(path: Path, session_id: str) -> int:
 def _write_blocks(path: Path, session_id: str, blocks: int) -> bool:
     """Persist the block count. Returns False when it could not be recorded."""
     payload = json.dumps({"session_id": session_id, "blocks": blocks})
-    tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+    descriptor: Optional[int] = None
+    tmp: Optional[Path] = None
     try:
-        tmp.write_text(payload, encoding="utf-8")
+        descriptor, tmp_name = tempfile.mkstemp(
+            prefix=path.name + ".tmp.", dir=path.parent
+        )
+        tmp = Path(tmp_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = None
+            stream.write(payload)
         os.replace(tmp, path)
         return True
     except OSError:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if tmp is not None:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
         return False
+
+
+def _prepare_state_dir(raw: str) -> Path:
+    """Create/validate the protected per-user counter directory.
+
+    Activated launches bind this path in immutable hook argv under Cartopian's
+    already shell-protected configuration root, so inherited TMPDIR values
+    cannot relocate the unsandboxed Stop hook's writes.
+    """
+    path = Path(raw)
+    if not path.is_absolute():
+        raise ValueError(f"Stop state directory must be absolute: {raw!r}")
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or path.is_symlink():
+        raise ValueError(
+            f"Stop state directory must be a direct directory: {path}"
+        )
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and info.st_uid != getuid():
+        raise ValueError(f"Stop state directory is not owned by this user: {path}")
+    if info.st_mode & 0o077:
+        raise ValueError(
+            f"Stop state directory must not be accessible by group/other: {path}"
+        )
+    return path
 
 
 def clear_counter(path: Path) -> None:
@@ -387,12 +461,22 @@ def evaluate(
     )
 
 
-def main() -> int:
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--expected-report")
+    parser.add_argument("--expected-variant", choices=VALID_VARIANTS)
+    parser.add_argument("--max-blocks", type=int)
+    parser.add_argument("--state-dir")
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
     """Hook entry point: Stop payload on stdin; structured block on stdout.
 
     Allows are silent on stdout (a diagnostic may go to stderr). Every failure
     mode allows: this guard must never be able to strand a session.
     """
+    args = _parser().parse_args(() if argv is None else argv)
     try:
         raw = sys.stdin.buffer.read()
         payload = json.loads(raw.decode("utf-8")) if raw.strip() else {}
@@ -406,7 +490,19 @@ def main() -> int:
         return 0
 
     try:
-        decision = evaluate(payload)
+        effective_environ = dict(os.environ)
+        if args.expected_report is not None:
+            effective_environ[REPORT_ENV] = args.expected_report
+        if args.expected_variant is not None:
+            effective_environ[VARIANT_ENV] = args.expected_variant
+        if args.max_blocks is not None:
+            effective_environ[MAX_BLOCKS_ENV] = str(args.max_blocks)
+        state_dir = (
+            str(_prepare_state_dir(args.state_dir))
+            if args.state_dir is not None
+            else None
+        )
+        decision = evaluate(payload, environ=effective_environ, tmpdir=state_dir)
     except Exception as exc:  # fail open: completion discipline, not a boundary
         sys.stderr.write(
             f"[cartopian] claude_stop_hook: evaluation failed ({exc}); "
@@ -425,4 +521,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -64,7 +64,7 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
   stage. Do not rewrite historical review files and do not fabricate request
   evidence.
 
-Do not raw-edit `cartopian.toml` / `cartopian.local.toml` — the harness denies structured raw edits to config, and `update-config` is the only edit path.
+Do not raw-edit `cartopian.toml` / `cartopian.local.toml` — the harness denies structured raw edits to config, and `update-config` is the only edit path. In an activated native macOS/Linux Claude handoff, record the exact operation for execution outside the handoff; the project sandbox intentionally blocks the writer, so migration remains incomplete until its evidence returns.
 
 ## Step 3 — Validate, then let the configuration executor update the marker
 

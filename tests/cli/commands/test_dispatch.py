@@ -40,6 +40,8 @@ from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
 from tests.scaffold import project_scaffold
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 @pytest.fixture(autouse=True)
 def _direct_cli_host_environment(monkeypatch):
@@ -51,6 +53,70 @@ def _direct_cli_host_environment(monkeypatch):
         host_capability.CLIENT_TITLE_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+def test_launch_environment_strips_precontainment_code_injection_controls():
+    source = {
+        "PATH": "/trusted/bin",
+        "SAFE": "kept",
+        "BASH_ENV": "/work/startup.sh",
+        "BASH_FUNC_cd%%": "() { payload; }",
+        "BUN_OPTIONS": "--preload=/work/inject.ts",
+        "BUN_TMPDIR": "/work/bun-temp",
+        "SHELLOPTS": "xtrace",
+        "PS4": "$(payload)",
+        "LD_PRELOAD": "/work/inject.so",
+        "DYLD_INSERT_LIBRARIES": "/work/inject.dylib",
+        "PYTHONPATH": "/work/python",
+        "__PYVENV_LAUNCHER__": "/work/python",
+        "NODE_OPTIONS": "--require=/work/inject.js",
+    }
+
+    sanitized = dispatch._sanitized_launch_environment(source)
+
+    assert sanitized == {"PATH": "/trusted/bin", "SAFE": "kept"}
+
+
+def test_activated_claude_host_temp_replaces_inherited_controls_in_two_phases(
+    tmp_path,
+):
+    home = tmp_path / "home"
+    home.joinpath(".cartopian").mkdir(parents=True)
+    hostile = tmp_path / "hostile-product-temp"
+    hostile.mkdir()
+    wrapper = REPO_ROOT / "wrappers" / "bin" / "cartopian-claude"
+    env = {
+        "HOME": str(home),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(hostile),
+        "TMP": str(hostile),
+        "TEMP": str(hostile),
+        "CARTOPIAN_CLAUDE_HOST_TMPDIR": str(hostile),
+    }
+
+    modeled = dispatch._bind_activated_claude_host_temp(
+        str(wrapper),
+        capabilities_activated=True,
+        environ=env,
+    )
+
+    expected = home / ".cartopian" / "claude-host-tmp"
+    assert modeled == str(expected)
+    assert not expected.exists(), "read-only preflight must not create operator state"
+    assert env["TMPDIR"] == str(expected)
+    assert env["CARTOPIAN_CLAUDE_HOST_TMPDIR"] == str(expected)
+    assert "TMP" not in env and "TEMP" not in env
+
+    materialized = dispatch._bind_activated_claude_host_temp(
+        str(wrapper),
+        capabilities_activated=True,
+        environ=env,
+        create=True,
+    )
+
+    assert materialized == str(expected)
+    assert expected.is_dir() and not expected.is_symlink()
+    assert stat.S_IMODE(expected.stat().st_mode) == 0o700
 
 # A minimal task-completion report the stub wrapper writes so `wait-handoff`
 # observes a terminal `done`. Must satisfy parse_report's task-variant schema
@@ -257,7 +323,10 @@ def _dispatch(task_path, role: str, fake_home: Path, prompt=None):
     """Invoke dispatch.handler with a fake HOME so the real global config can't leak."""
     args = argparse.Namespace(task_path=task_path, prompt=prompt, role=role)
     out, err = io.StringIO(), io.StringIO()
-    with mock.patch("cli.commands.dispatch.Path.home", return_value=fake_home):
+    fake_home.joinpath(".cartopian").mkdir(parents=True, exist_ok=True)
+    with mock.patch.dict(os.environ, {"HOME": str(fake_home)}, clear=False), mock.patch(
+        "cli.commands.dispatch.Path.home", return_value=fake_home
+    ):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = dispatch.handler(args)
     return out.getvalue(), err.getvalue(), rc
@@ -686,7 +755,8 @@ class TestDispatchDetachedStdio(unittest.TestCase):
             # The supervisor owns the wrapper pipe and atomically publishes
             # the independently bounded log named in its argv.
             self.assertIs(captured["stdout"], subprocess.DEVNULL)
-            self.assertTrue(captured["argv"][1].endswith("cli/output_safety.py"))
+            self.assertEqual(captured["argv"][1:3], ["-I", "-S"])
+            self.assertTrue(captured["argv"][3].endswith("cli/output_safety.py"))
             rec = json.loads(stdout.strip())
             self.assertIn("--log-path", captured["argv"])
             self.assertIn(rec["launch_log_path"], captured["argv"])
@@ -2130,6 +2200,45 @@ class TestDispatchAgentResolution(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("handoff agent not found on PATH", stderr)
 
+    def test_activated_claude_nested_work_root_refuses_before_launch(self):
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            claude_stub = REPO_ROOT / "wrappers" / "bin" / "cartopian-claude"
+            work_root = scaffold.project_root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.toml",
+                _toml(
+                    str(claude_stub),
+                    work_roots='"tool-repo"',
+                    grants="coder-like",
+                ),
+            )
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            task_path = _write_task_and_prompt(scaffold)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            fake_claude = tmp_path / "claude"
+            fake_claude.write_text(
+                "#!/bin/sh\necho '2.1.278 (Claude Code)'\n", encoding="utf-8"
+            )
+            fake_claude.chmod(fake_claude.stat().st_mode | stat.S_IXUSR)
+
+            with mock.patch.dict(
+                os.environ,
+                {"PATH": str(tmp_path) + os.pathsep + os.environ.get("PATH", "")},
+            ):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("cannot grant write:worktree", stderr)
+            self.assertIn("keep writable product roots disjoint", stderr)
+
     def test_build_launch_argv_windows_cmd_routes_through_comspec(self):
         cmd = r"C:\cartopian\wrappers\ps1\cartopian-claude.cmd"
         prompt = r"C:\proj\prompts\PROMPT-01-001.md"
@@ -2139,7 +2248,19 @@ class TestDispatchAgentResolution(unittest.TestCase):
             clear=False,
         ):
             argv = dispatch._build_launch_argv(cmd, prompt, is_windows=True)
-        self.assertEqual(argv, [r"C:\Windows\System32\cmd.exe", "/c", cmd, prompt])
+        self.assertEqual(
+            argv,
+            [
+                r"C:\Windows\System32\cmd.exe",
+                "/d",
+                "/v:off",
+                "/s",
+                "/c",
+                '""%CARTOPIAN_WINDOWS_AGENT_EXECUTABLE%" "%CARTOPIAN_WINDOWS_PROMPT_PATH%""',
+            ],
+        )
+        self.assertNotIn(cmd, argv[-1])
+        self.assertNotIn(prompt, argv[-1])
 
     def test_build_launch_argv_windows_cmd_absent_comspec_uses_system_root(self):
         # A curated process environment (e.g. the MCP server the harness spawns,
@@ -2155,7 +2276,30 @@ class TestDispatchAgentResolution(unittest.TestCase):
         ), mock.patch("cli.commands.dispatch.os.path.isfile", return_value=True):
             argv = dispatch._build_launch_argv(cmd, prompt, is_windows=True)
         expected_comspec = os.path.join(r"C:\Windows", "System32", "cmd.exe")
-        self.assertEqual(argv, [expected_comspec, "/c", cmd, prompt])
+        self.assertEqual(
+            argv,
+            [
+                expected_comspec,
+                "/d",
+                "/v:off",
+                "/s",
+                "/c",
+                '""%CARTOPIAN_WINDOWS_AGENT_EXECUTABLE%" "%CARTOPIAN_WINDOWS_PROMPT_PATH%""',
+            ],
+        )
+
+    def test_build_launch_argv_keeps_windows_metacharacters_out_of_command_text(self):
+        argv = dispatch._build_launch_argv(
+            r"C:\cartopian & !tools\cartopian-claude.cmd",
+            r"C:\project\prompts\PROMPT-%PATH%-&-!-01-001.md",
+            is_windows=True,
+        )
+
+        self.assertEqual(argv[1:5], ["/d", "/v:off", "/s", "/c"])
+        self.assertNotIn("call", argv[-1].lower())
+        self.assertNotIn("&", argv[-1])
+        self.assertNotIn("!", argv[-1])
+        self.assertNotIn("%PATH%", argv[-1])
 
     def test_resolve_comspec_prefers_comspec_then_system_root_then_which(self):
         # COMSPEC wins when set.

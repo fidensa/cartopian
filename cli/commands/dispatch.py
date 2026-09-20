@@ -110,6 +110,97 @@ HANDOFF_ID_ENV = "CARTOPIAN_HANDOFF_ID"
 EXPECTED_VARIANT_ENV = "CARTOPIAN_EXPECTED_REPORT_VARIANT"
 EXPECTED_REPORT_ENV = "CARTOPIAN_EXPECTED_REPORT_PATH"
 PYTHON_ENV = "CARTOPIAN_PYTHON"
+WINDOWS_AGENT_ENV = "CARTOPIAN_WINDOWS_AGENT_EXECUTABLE"
+WINDOWS_PROMPT_ENV = "CARTOPIAN_WINDOWS_PROMPT_PATH"
+
+# The detached launch chain starts Python and, for the POSIX Claude wrapper,
+# Bash and Node before Claude's sandbox exists.  These inherited controls can
+# execute startup code in those host processes (BASH_ENV, exported functions,
+# LD_PRELOAD/DYLD_*, PYTHONPATH/sitecustomize, NODE_OPTIONS=--require, etc.).
+# Strip them in the trusted dispatch parent rather than attempting a check in
+# the child after its interpreter/loader has already consumed them.
+_PRECONTAINMENT_ENV_KEYS = frozenset(
+    {
+        "BASHOPTS",
+        "BASH_ENV",
+        "BASH_XTRACEFD",
+        "ENV",
+        "GCONV_PATH",
+        "GLIBC_TUNABLES",
+        "__PYVENV_LAUNCHER__",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "OPENSSL_CONF",
+        "OPENSSL_MODULES",
+        "PS4",
+        "SHELLOPTS",
+    }
+)
+_PRECONTAINMENT_ENV_PREFIXES = (
+    "BASH_FUNC_",
+    "BUN_",
+    "DYLD_",
+    "LD_",
+    "PYTHON",
+)
+
+
+def _sanitized_launch_environment(source: Dict[str, str]) -> Dict[str, str]:
+    """Copy ``source`` without interpreter/loader startup injection knobs."""
+    return {
+        key: value
+        for key, value in source.items()
+        if key not in _PRECONTAINMENT_ENV_KEYS
+        and not key.startswith(_PRECONTAINMENT_ENV_PREFIXES)
+    }
+
+
+def _bind_activated_claude_host_temp(
+    agent: object,
+    *,
+    capabilities_activated: bool,
+    environ: Dict[str, str],
+    create: bool = False,
+) -> Optional[str]:
+    """Replace inherited temp controls for one trusted activated Claude launch.
+
+    Claude's host-side Sandbox Runtime mux opens its Unix socket before a Bash
+    command enters the OS sandbox.  Its location must therefore be bound by
+    dispatch, not supplied by the operator environment or by product content.
+    """
+    if not capabilities_activated or _running_on_windows():
+        return None
+    resolved_agent = shutil.which(str(agent), path=environ.get("PATH"))
+    if (
+        not launch_preflight._is_cartopian_claude_agent(agent, resolved_agent)
+        or launch_preflight._cartopian_claude_install_root(resolved_agent) is None
+    ):
+        return None
+
+    from cli.claude_launch_settings import (
+        CLAUDE_HOST_TMPDIR_ENV,
+        prepare_claude_host_tmpdir,
+    )
+
+    # This is a per-dispatch binding. Never accept a parent-provided value,
+    # even if it happens to name a directory that currently looks safe.
+    for temp_key in (CLAUDE_HOST_TMPDIR_ENV, "TMPDIR", "TMP", "TEMP"):
+        environ.pop(temp_key, None)
+    host_tmp = prepare_claude_host_tmpdir(
+        environ,
+        windows=False,
+        create=create,
+        allow_missing=not create,
+    )
+    environ[CLAUDE_HOST_TMPDIR_ENV] = host_tmp
+    environ["TMPDIR"] = host_tmp
+    prepare_claude_host_tmpdir(
+        environ,
+        windows=False,
+        allow_missing=not create,
+        require_binding=True,
+    )
+    return host_tmp
 
 def _running_on_windows() -> bool:
     """Platform seam for the two native-Windows launch branches (argv routing
@@ -153,7 +244,20 @@ def _build_launch_argv(resolved_agent: str, prompt_path: str, is_windows: bool) 
     executable scripts and launch directly.
     """
     if is_windows and resolved_agent.lower().endswith((".cmd", ".bat")):
-        return [_resolve_comspec(), "/c", resolved_agent, prompt_path]
+        # cmd.exe reparses metacharacters in ordinary argv after /c. Keep the
+        # command text fixed and carry both operator-selected paths in quoted
+        # environment expansions; Windows filenames cannot contain a quote,
+        # and expansion values are not recursively percent-expanded.
+        # The outer quote pair is cmd.exe's standard /s /c form for a quoted
+        # executable. Do not use CALL: CALL performs a second percent-expansion
+        # pass over values introduced by the first environment expansion.
+        command = (
+            f'""%{WINDOWS_AGENT_ENV}%" '
+            f'"%{WINDOWS_PROMPT_ENV}%""'
+        )
+        # Disable delayed expansion explicitly so a literal ``!`` in either
+        # transported path survives the outer command interpreter unchanged.
+        return [_resolve_comspec(), "/d", "/v:off", "/s", "/c", command]
     return [resolved_agent, prompt_path]
 
 
@@ -624,11 +728,43 @@ def handler(args: argparse.Namespace) -> int:
     # Shared with the rehearsal: mapped work roots exist and the agent resolves
     # on PATH (`shutil.which` honors PATHEXT, so the `.cmd` shim is found on
     # native Windows and the extensionless wrapper on POSIX).
-    for finding in launch_preflight.environment_checks(role, role_record, resolved_roots):
+    launch_bindings: Dict[str, str] = {}
+    launch_environment = _sanitized_launch_environment(dict(os.environ))
+    try:
+        _bind_activated_claude_host_temp(
+            agent,
+            capabilities_activated=bool(resolved["capabilities"]["activated"]),
+            environ=launch_environment,
+        )
+    except Exception as exc:
+        # The helper raises SettingsError, but keep this launch boundary
+        # fail-closed if filesystem inspection itself reports an unexpected
+        # platform error. No assignee process has started at this point.
+        stderr_guard(f"activated Claude host-temp binding failed: {exc}")
+        return EXIT_FAIL
+    for finding in launch_preflight.environment_checks(
+        role,
+        role_record,
+        resolved_roots,
+        project_root=project_root,
+        capabilities_activated=bool(resolved["capabilities"]["activated"]),
+        launch_bindings=launch_bindings,
+        environ=launch_environment,
+    ):
         if finding["prefix"] == "error":
             stderr_error(finding["message"])
         else:
             stderr_guard(finding["message"])
+        return EXIT_FAIL
+    try:
+        _bind_activated_claude_host_temp(
+            agent,
+            capabilities_activated=bool(resolved["capabilities"]["activated"]),
+            environ=launch_environment,
+            create=True,
+        )
+    except Exception as exc:
+        stderr_guard(f"activated Claude host-temp binding failed: {exc}")
         return EXIT_FAIL
 
     # --- Launch (per-invocation; non-blocking) -------------------------------
@@ -642,7 +778,11 @@ def handler(args: argparse.Namespace) -> int:
     # remain inside the hook. Resolved work roots let wrappers widen an agent
     # CLI sandbox to cover the declared work roots.
     launch_cwd = str(project_root)
-    env = dict(os.environ)
+    env = launch_environment
+    # This is a per-dispatch binding, never an inherited operator/session
+    # override. It is repopulated below after the underlying Claude binary is
+    # resolved and checked against the governed roots.
+    env.pop("CARTOPIAN_CLAUDE_EXECUTABLE", None)
     # Connected-host identity belongs to the MCP boundary.  It is evidence for
     # this preflight only and must not leak into the detached assignee. The
     # trusted host marker and its Hermes home companion override clientInfo,
@@ -692,16 +832,29 @@ def handler(args: argparse.Namespace) -> int:
         env[WORK_ROOTS_ENV] = os.pathsep.join(work_root_paths)
     else:
         env.pop(WORK_ROOTS_ENV, None)
-    # Resolve the agent to a full path before launching. `subprocess.Popen` with
-    # a bare name uses CreateProcess on native Windows, which resolves only
-    # `.exe` — not the `.cmd` shim that exposes a PowerShell wrapper (CreateProcess
-    # ignores PATHEXT). `shutil.which` DOES honor PATHEXT, so it finds the `.cmd`
-    # on Windows and the extensionless wrapper script on POSIX. An absolute
-    # role handoff agent resolves through `shutil.which` unchanged.
-    resolved_agent = shutil.which(str(agent))
+    # Launch exactly the path resolved and validated by the shared preflight.
+    # Repeating PATH resolution here would reopen a check/use race and, on
+    # native Windows, could select a different PATHEXT shim.
+    resolved_agent = launch_bindings.get("agent")
     if resolved_agent is None:  # pragma: no cover - environment_checks refused above
         stderr_error(f"handoff agent not found on PATH: {agent}")
         return EXIT_FAIL
+    if (
+        launch_preflight._is_cartopian_claude_agent(agent, resolved_agent)
+        and launch_preflight._cartopian_claude_install_root(resolved_agent)
+        is not None
+    ):
+        from cli.claude_launch_settings import (
+            CLAUDE_EXECUTABLE_ENV,
+        )
+
+        claude_executable = launch_bindings.get("claude_executable")
+        if claude_executable is None:  # pragma: no cover - preflight owns refusal
+            stderr_guard("trusted Claude launch is missing its checked executable binding")
+            return EXIT_FAIL
+        # Freeze the exact executable selected at the trusted dispatch boundary.
+        # The wrapper uses this path for both the version probe and the launch.
+        env[CLAUDE_EXECUTABLE_ENV] = claude_executable
     try:
         slot_clear = _clear_handoff_slot(expected_report_path)
         status_path = Path(str(expected_report_path) + ".status")
@@ -721,6 +874,12 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(err.message)
         return err.exit_code
     is_windows = _running_on_windows()
+    if is_windows and resolved_agent.lower().endswith((".cmd", ".bat")):
+        env[WINDOWS_AGENT_ENV] = resolved_agent
+        env[WINDOWS_PROMPT_ENV] = str(prompt_path)
+    else:
+        env.pop(WINDOWS_AGENT_ENV, None)
+        env.pop(WINDOWS_PROMPT_ENV, None)
     launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), is_windows)
     # The detached supervisor continuously drains the configured wrapper
     # through a pipe and atomically publishes only the bounded retained log.
@@ -729,6 +888,8 @@ def handler(args: argparse.Namespace) -> int:
     output_safety.project_environment(env, output_limits, launch_log)
     supervisor_argv = [
         sys.executable,
+        "-I",
+        "-S",
         str(Path(output_safety.__file__).resolve()),
         "--status-path",
         str(status_path),
