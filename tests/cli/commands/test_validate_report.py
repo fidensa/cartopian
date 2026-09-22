@@ -109,6 +109,39 @@ class TestTaskReportValidation(unittest.TestCase):
             for item in failed.values():
                 self.assertTrue(item["recovery"])
 
+    def test_blocked_report_declaring_readiness_yes_is_substantive(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            scaffold.write("tasks/in-progress/TASK-05-009.md", _TASK)
+            report = scaffold.write(
+                "reports/REPORT-05-009.md",
+                "Status: blocked\n\n## Identity\n\n- Work root: n/a\n\n"
+                "## Completion evidence\n\nStopped at a hold.\n\n"
+                "## Remaining risks\n\nnone.\n\n"
+                "## Ready for review\n\nyes\n",
+            )
+            rc, stdout, _stderr = _invoke(report)
+            self.assertEqual(rc, EXIT_FAIL)
+            failed = _failed_checks(stdout)
+            self.assertEqual(set(failed), {"status-readiness-consistent"})
+            self.assertEqual(
+                failed["status-readiness-consistent"]["failure_class"],
+                "substantive",
+            )
+
+    def test_blocked_report_with_readiness_no_passes(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            scaffold.write("tasks/in-progress/TASK-05-009.md", _TASK)
+            report = scaffold.write(
+                "reports/REPORT-05-009.md",
+                "Status: blocked\n\n## Identity\n\n- Work root: n/a\n\n"
+                "## Completion evidence\n\nStopped at a hold.\n\n"
+                "## Remaining risks\n\nnone.\n\n"
+                "## Ready to close\n\nno — blocked on missing input\n",
+            )
+            rc, stdout, stderr = _invoke(report)
+            self.assertEqual(rc, EXIT_OK, stderr)
+            self.assertTrue(json.loads(stdout)["ok"])
+
     def test_evidence_outside_guidance_is_a_named_failure(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:
             scaffold.write("tasks/in-progress/TASK-05-009.md", _TASK)

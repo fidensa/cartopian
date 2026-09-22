@@ -130,6 +130,23 @@ def extract_ready_for_review(content: str) -> Optional[bool]:
     return value.group(1).lower() == "yes"
 
 
+def readiness_contradiction(variant: str, content: str) -> Optional[str]:
+    """Why a task report's Status and readiness contradict, or None.
+
+    ``blocked`` and ``failed`` declare unfinished work; readiness ``yes``
+    declares the work complete. A report asserting both routes nowhere
+    coherently, so every acceptance surface rejects it rather than choosing
+    one of the two claims. ``complete`` with ``no`` stays valid — it is the
+    documented "accepted but not ready" route.
+    """
+    if variant != "task":
+        return None
+    status = extract_routing_status(content)
+    if status in ("blocked", "failed") and extract_ready_for_review(content):
+        return f"Status: {status} contradicts readiness yes"
+    return None
+
+
 def extract_routing_status(content: str) -> Optional[str]:
     """The report's ``Status:`` token iff it is a valid routing status.
 
@@ -493,6 +510,8 @@ def handler(args: argparse.Namespace) -> int:
                 else:
                     verdict = STATUS_VERDICT[raw_status]
                     review_verdict = raw_verdict
+            elif readiness_contradiction(variant, content) is not None:
+                verdict = "failed-to-parse"
             else:
                 verdict = STATUS_VERDICT[raw_status]
 

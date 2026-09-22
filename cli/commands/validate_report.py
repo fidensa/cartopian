@@ -245,6 +245,23 @@ def _readiness_value_check(variant: str, content: str) -> Dict[str, Any]:
     )
 
 
+def _status_readiness_check(variant: str, content: str) -> Dict[str, Any]:
+    """A blocked or failed task report must not declare readiness ``yes``.
+
+    Substantive, not mechanical: resolving it means choosing which of the
+    producer's two claims is true, which a transcription fix cannot do.
+    """
+    reason = parse_report.readiness_contradiction(variant, content)
+    return _check(
+        "status-readiness-consistent",
+        reason is None,
+        reason,
+        "the producer states one outcome: Status: complete with readiness "
+        "yes when the work is done, or blocked/failed with readiness no",
+        "substantive",
+    )
+
+
 def _report_task_id(report_path: Path, variant: str) -> Optional[str]:
     if variant == "task":
         match = report_identity.TASK_COMPLETION_REPORT_RE.match(report_path.name)
@@ -504,6 +521,7 @@ def collect_checks(
         _status_check(content),
         _review_verdict_check(variant, content),
         _readiness_value_check(variant, content),
+        _status_readiness_check(variant, content),
         _identity_alignment_check(project_root, report_path, content, variant),
         _alignment_check(report_path, content, variant),
         *_source_evidence_checks(project_root, report_path, content, variant),

@@ -285,17 +285,29 @@ class TestFinishedHandoffsAllowStop(StopHookCase):
     def test_blocked_report_allows(self):
         """A blocked report is a *finished* handoff; the PM judges the verdict."""
         self.report_path.write_text(
-            TASK_REPORT_COMPLETE.replace("Status: complete", "Status: blocked"),
+            TASK_REPORT_COMPLETE.replace("Status: complete", "Status: blocked")
+            .replace("## Ready to close\n\nyes", "## Ready to close\n\nno"),
             encoding="utf-8",
         )
         self.assertEqual(self.evaluate().action, "allow")
 
     def test_failed_report_allows(self):
         self.report_path.write_text(
-            TASK_REPORT_COMPLETE.replace("Status: complete", "Status: failed"),
+            TASK_REPORT_COMPLETE.replace("Status: complete", "Status: failed")
+            .replace("## Ready to close\n\nyes", "## Ready to close\n\nno"),
             encoding="utf-8",
         )
         self.assertEqual(self.evaluate().action, "allow")
+
+    def test_blocked_report_declaring_readiness_yes_blocks(self):
+        """Blocked plus ready is contradictory, not a finished handoff."""
+        self.report_path.write_text(
+            TASK_REPORT_COMPLETE.replace("Status: complete", "Status: blocked"),
+            encoding="utf-8",
+        )
+        decision = self.evaluate()
+        self.assertEqual(decision.action, "block")
+        self.assertIn("Status: blocked contradicts readiness yes", decision.reason)
 
     def test_completion_clears_the_counter(self):
         first = self.evaluate()

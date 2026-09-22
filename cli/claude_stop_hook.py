@@ -316,6 +316,14 @@ def _missing_elements(report_path: Path, variant: Optional[str]) -> List[str]:
     elif variant in parse_report.REVIEW_VARIANTS:
         if parse_report._extract_review_verdict(content) is None:
             missing.append("a `## Verdict` value of approve / request-changes / reject")
+    else:
+        contradiction = parse_report.readiness_contradiction(variant, content)
+        if contradiction is not None:
+            missing.append(
+                f"a readiness value that agrees with Status ({contradiction}: "
+                "use complete with yes when the work is done, blocked or "
+                "failed with no)"
+            )
     return missing
 
 

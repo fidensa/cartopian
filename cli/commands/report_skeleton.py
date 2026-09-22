@@ -217,8 +217,9 @@ def _task_skeleton(
                 "`yes` means your own work is complete and enters the "
                 "required independent closure review — it does not approve "
                 "closure and does not certify the reviewer's verdict. "
-                "`no` is only for genuinely incomplete or blocked work. A "
-                "short rationale may follow the token on the same line.",
+                "`no` is only for genuinely incomplete or blocked work, and "
+                "`Status: blocked` or `failed` requires `no`. A short "
+                "rationale may follow the token on the same line.",
             ]
         )
     else:
@@ -231,8 +232,8 @@ def _task_skeleton(
                 "`yes` means your work is complete; with task-closure "
                 "review off it routes the accepted task toward direct "
                 "closure. `no` is only for genuinely incomplete or blocked "
-                "work. A short rationale may follow the token on the same "
-                "line.",
+                "work, and `Status: blocked` or `failed` requires `no`. A "
+                "short rationale may follow the token on the same line.",
             ]
         )
     return "\n".join(lines) + "\n"

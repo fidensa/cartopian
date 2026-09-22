@@ -395,18 +395,34 @@ def render_risk_guidance(projection: Dict[str, Any]) -> str:
 def render_judgment_guidance(projection: Dict[str, Any]) -> Optional[str]:
     if projection["outcome"] != "active":
         return None
-    lines: List[str] = []
+    # Holds are PM-owned: the assignee cannot satisfy any release requirement
+    # from inside its session, so the prompt translates each hold into what
+    # the assignee does — finish, name the claim, report complete — instead
+    # of projecting the PM-facing stop-and-wait body.
+    lines: List[str] = [
+        "The PM enforces these holds before the task closes. They are not "
+        "yours to release and not a reason to stop, wait, or report blocked.",
+        "",
+    ]
     for hold in projection["holds"]:
         lines.append(
-            f"- Active hold at the **{hold['boundary_id']}** boundary: "
-            f"{hold['lifecycle_boundary'] or hold['boundary_id']}"
-        )
-        lines.append(
-            f"  Open failure ({hold['failure_id']}): "
+            f"- **{hold['boundary_id']}** ({hold['failure_id']}): "
             f"{hold['non_enforceable_failure'] or hold['failure_id']}"
         )
-    if projection["instructions"]:
-        lines += ["", _embed(projection["instructions"], strip_h1=True, demote=2)]
+        lines.append(
+            f"  Claim to name: {hold['claim_to_name'] or hold['failure_id']}. "
+            f"Released by: {hold['resume_requirement'] or 'the PM'}."
+        )
+    lines += [
+        "",
+        "Finish the assigned work and produce any release evidence your "
+        "assignment lets you produce. Under `## Remaining risks`, record each "
+        "hold in four plain sentences: the unverified claim, the missing "
+        "authority or evidence, the consequence of proceeding, and the "
+        "decision or proof that would release it. When the work itself is "
+        "done, report `Status: complete` with readiness `yes`; "
+        "`Status: blocked` is only for work you could not finish.",
+    ]
     return "\n".join(lines)
 
 

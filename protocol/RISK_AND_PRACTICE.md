@@ -234,7 +234,7 @@ The four cards share one grammar, owned centrally. A pack may reference a card, 
 
 **An active card is a hold, not a reminder.** The four elements are the report an assignee owes at a closed boundary, not four topics to mention. The central body states the stopping behavior once, for every card:
 
-- Activation stops the work at the boundary that activated it. The assignee reports the four elements and waits.
+- Activation stops the work at the boundary that activated it. The PM owns that stop: it reports the four elements and waits before closure. An assignee cannot release a hold from inside its session, so the assignment prompt never carries this body; it carries each hold's claim to name and release requirement, and the assignee finishes the work, records the four elements under `## Remaining risks`, and reports `Status: complete` with readiness `yes`.
 - The four elements are filled against the **active card's named failure**, not against the task in general. The body carries one row per recorded failure naming the claim to state and the condition that ends the hold, so `inferred-intent-not-confirmed` and `artifact-mistaken-for-outcome` do not produce the same sentence.
 - `missing-authority-or-evidence` resolves to one of two things and says which: the decision authority who can settle the claim, or the observation that would.
 - `next-decision-or-proof` is one satisfiable requirement. Work resumes only when that exact requirement is met and recorded; plausibility, urgency, a partial result, and a restatement of the claim do not satisfy it.

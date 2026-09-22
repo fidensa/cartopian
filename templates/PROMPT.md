@@ -30,7 +30,7 @@ The composed structure (owned by `protocol/assignment-prompt-contract.json`):
 
 Composition guarantees, enforced fail-closed by validation:
 
-- No raw diagnostic JSON reaches the assignee; selector results appear only as their assignee projections (risk band with reasons and expectations; active judgment holds with the release requirement; the selected practice profile's execution capsule and applicable source identities).
+- No raw diagnostic JSON reaches the assignee; selector results appear only as their assignee projections (risk band with reasons and expectations; active judgment holds translated for the assignee — claim to name and release requirement, enforced by the PM before closure, never a reason for the assignee to stop or report blocked; the selected practice profile's execution capsule and applicable source identities).
 - Source guidance is rendered exactly once; the specification projection and the report skeleton reference it instead of repeating it.
 - The specification appears as its **assignment projection**: implementation contract only — no author/reviewer metadata, planning status, review checklists, open-question sections, or PM identifiers. A spec with unresolved open questions refuses composition.
 - Repeated contract content is removed: a task goal or acceptance criterion already stated by the specification is not restated.

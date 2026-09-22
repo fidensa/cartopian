@@ -79,5 +79,5 @@ Status: <complete | blocked | failed>
 
 <yes | no>
 
-`yes` means your work is complete; with task-closure review off it routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work. A short rationale may follow the token on the same line.
+`yes` means your work is complete; with task-closure review off it routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work, and `Status: blocked` or `failed` requires `no`. A short rationale may follow the token on the same line.
 ```

@@ -508,6 +508,37 @@ class TestReportActionReviewOff(unittest.TestCase):
                 self.assertFalse(record["path_mismatch"])
                 self.assertEqual(record["recommended_action"], "return-control-to-operator")
 
+    def test_blocked_or_failed_with_readiness_yes_is_failed_to_parse(self) -> None:
+        for status in ("blocked", "failed"):
+            with self.subTest(status=status):
+                with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
+                    home = scaffold.root / "home"
+                    home.mkdir()
+                    task_path = scaffold.write(
+                        "tasks/in-progress/TASK-01-006.md",
+                        "# TASK-01-006: demo\n\nWork root: tool-repo\n",
+                    )
+                    report_path = scaffold.write(
+                        "reports/REPORT-01-006.md",
+                        _task_report(
+                            task_id="TASK-01-006",
+                            prompt_path=scaffold.prompts / "PROMPT-01-006.md",
+                            task_path=task_path,
+                            work_root="tool-repo",
+                            status=status,
+                            ready_for_review="yes",
+                        ),
+                    )
+
+                    result = _run(str(report_path), home=home)
+
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                record = _parse_single_record(result)
+                self.assertEqual(record["verdict"], "failed-to-parse")
+                self.assertEqual(record["status"], status)
+                self.assertIsNone(record["target_task_status"])
+                self.assertEqual(record["recommended_action"], "stop-for-inspection")
+
 
 class TestReportActionReviewVariants(unittest.TestCase):
     def test_review_accepts_and_resolves_task_fields(self) -> None:

@@ -89,7 +89,7 @@ When evidence gate was `n/a`:
 
 <yes | no>
 
-`Ready for review` is an equally valid heading, and generated skeletons use it when the project requires task-closure review. The value declares **your own work's** state, never anyone else's future verdict: under required task-closure review, `yes` means your work is complete and routes the task into the independent review — it does not approve closure, and you are not being asked to certify the reviewer's outcome. When task review is off, `yes` routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work. A short rationale may follow the token on the same line (e.g. `yes — entering required review`).
+`Ready for review` is an equally valid heading, and generated skeletons use it when the project requires task-closure review. The value declares **your own work's** state, never anyone else's future verdict: under required task-closure review, `yes` means your work is complete and routes the task into the independent review — it does not approve closure, and you are not being asked to certify the reviewer's outcome. When task review is off, `yes` routes the accepted task toward direct closure. `no` is only for genuinely incomplete or blocked work. `Status` and readiness must agree: `blocked` or `failed` with `yes` is rejected. A short rationale may follow the token on the same line (e.g. `yes — entering required review`).
 
 ---
 

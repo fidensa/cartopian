@@ -332,6 +332,8 @@ def _parse_report_state(
             return parse_report.REVIEW_VERDICT_OUTCOME[raw_verdict], variant, raw_status, raw_verdict
         return parse_report.STATUS_VERDICT[raw_status], variant, raw_status, raw_verdict
 
+    if parse_report.readiness_contradiction(variant, content) is not None:
+        return "failed-to-parse", variant, raw_status, None
     return parse_report.STATUS_VERDICT[raw_status], variant, raw_status, None
 
 

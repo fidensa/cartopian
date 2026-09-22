@@ -95,34 +95,12 @@ Risk band: bounded. The observations behind it:
 
 ### Judgment holds
 
-- Active hold at the **evidence-and-review-gate** boundary: Acceptance of completion evidence and the risk or review gate that follows it.
-  Open failure (evidence-self-certified-or-missing): The producer self-certifies quality, treats missing or indirect evidence as success, or skips independent judgment where deterministic checks cannot decide adequacy.
+The PM enforces these holds before the task closes. They are not yours to release and not a reason to stop, wait, or report blocked.
 
-One grammar, shared by every judgment card. It applies only at the lifecycle boundary that activated the card, and only to the named failure that is still open.
+- **evidence-and-review-gate** (evidence-self-certified-or-missing): The producer self-certifies quality, treats missing or indirect evidence as success, or skips independent judgment where deterministic checks cannot decide adequacy.
+  Claim to name: the adequacy you asserted without decisive evidence. Released by: the missing evidence, or a judgment by someone who did not produce the work.
 
-**An active card is a hold.** Stop at that boundary. Report the four parts below, in order, in plain sentences, against the active card's named failure — not against the task in general. Then wait. Proceed only after the requirement you named under Next Decision Or Proof is satisfied and recorded; until then the boundary stays closed. Do not rate confidence, compute a score, or ask another model to agree.
-
-Bind the four parts to the active card's failure:
-
-| Active failure | Name this claim | The hold ends on |
-| --- | --- | --- |
-| `evidence-self-certified-or-missing` | the adequacy you asserted without decisive evidence | the missing evidence, or a judgment by someone who did not produce the work |
-
-#### Unverified Claim
-
-Name the claim that is not yet verified. Quote it as you stated it, scoped to that failure.
-
-#### Missing Authority Or Evidence
-
-Name the authority or evidence that is missing. Say which one it is: the decision authority who can settle it, or the observation that would.
-
-#### Consequence Of Proceeding
-
-State what happens if the work proceeds anyway. Name the boundary that would be crossed unverified and what would be committed, delivered, or relied on behind it.
-
-#### Next Decision Or Proof
-
-State the next decision or the proof that would settle it. Make it one satisfiable requirement — who decides, or what observation counts — and resume only when that exact requirement is met and recorded. Plausibility, urgency, a partial result, and a restatement of the claim do not satisfy it.
+Finish the assigned work and produce any release evidence your assignment lets you produce. Under `## Remaining risks`, record each hold in four plain sentences: the unverified claim, the missing authority or evidence, the consequence of proceeding, and the decision or proof that would release it. When the work itself is done, report `Status: complete` with readiness `yes`; `Status: blocked` is only for work you could not finish.
 
 ### Practice profile: software-delivery
 
@@ -230,5 +208,5 @@ A `decisive` claim may not remain unverified in a complete report.
 
 <yes | no>
 
-`yes` means your own work is complete and enters the required independent closure review — it does not approve closure and does not certify the reviewer's verdict. `no` is only for genuinely incomplete or blocked work. A short rationale may follow the token on the same line.
+`yes` means your own work is complete and enters the required independent closure review — it does not approve closure and does not certify the reviewer's verdict. `no` is only for genuinely incomplete or blocked work, and `Status: blocked` or `failed` requires `no`. A short rationale may follow the token on the same line.
 ```

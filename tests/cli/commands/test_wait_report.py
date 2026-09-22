@@ -70,7 +70,7 @@ def _task_report(*, report_stem: str, task_id: str, prompt_path: Path, task_path
         "## Remaining risks\n\n"
         "None.\n\n"
         "## Ready for review\n\n"
-        "yes\n"
+        f"{'yes' if status == 'complete' else 'no'}\n"
     )
 
 

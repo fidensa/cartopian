@@ -578,7 +578,12 @@ class _Harness:
             "review-file": templates / "review-file.md",
         }
         self.templates["task"].write_text(
-            _TASK_REPORT.replace("__STATUS__", task_status), encoding="utf-8"
+            _TASK_REPORT.replace("__STATUS__", task_status).replace(
+                "## Ready to close\n\nyes",
+                "## Ready to close\n\n"
+                + ("yes" if task_status == "complete" else "no"),
+            ),
+            encoding="utf-8",
         )
         self.templates["review-report"].write_text(
             _REVIEW_REPORT.replace("__VERDICT__", verdict), encoding="utf-8"

@@ -1452,16 +1452,46 @@ class TestProjectionUnits(unittest.TestCase):
         )
         self.assertEqual(result["outcome"], "active")
         projection = judgment_guidance.assignee_projection(result)
-        self.assertIn("evidence-self-certified-or-missing", projection["instructions"])
-        self.assertNotIn("inferred-intent-not-confirmed", projection["instructions"])
-        self.assertNotIn("---", projection["instructions"].splitlines()[0])
+        self.assertEqual(
+            [hold["failure_id"] for hold in projection["holds"]],
+            ["evidence-self-certified-or-missing"],
+        )
+        hold = projection["holds"][0]
+        self.assertTrue(hold["claim_to_name"])
+        self.assertTrue(hold["resume_requirement"])
+        # The PM-facing stop-and-wait body never reaches the assignee.
+        self.assertNotIn("instructions", projection)
+        self.assertNotIn("body", projection)
+
+    def test_judgment_holds_render_as_pm_enforced_not_stop_and_wait(self) -> None:
+        result = judgment_guidance.select_judgment_guidance(
+            {
+                "lifecycle_boundaries": [
+                    "evidence-and-review-gate",
+                    "delivery-and-closeout",
+                ],
+                "open_failure_conditions": [
+                    "evidence-self-certified-or-missing",
+                    "artifact-mistaken-for-outcome",
+                ],
+            }
+        )
+        text = prompt_composer.render_judgment_guidance(
+            judgment_guidance.assignee_projection(result)
+        )
+        self.assertIn("The PM enforces these holds before the task closes", text)
+        self.assertIn("`Status: complete` with readiness `yes`", text)
+        self.assertIn("recipient acceptance, or the observed real-world effect", text)
+        self.assertNotIn("Then wait", text)
+        self.assertNotIn("Stop at that boundary", text)
+        self.assertNotIn("An active card is a hold", text)
 
     def test_judgment_projection_none_outcome(self) -> None:
         result = judgment_guidance.select_judgment_guidance(
             {"lifecycle_boundaries": [], "open_failure_conditions": []}
         )
         projection = judgment_guidance.assignee_projection(result)
-        self.assertEqual(projection, {"outcome": "none", "holds": [], "instructions": None})
+        self.assertEqual(projection, {"outcome": "none", "holds": []})
 
     def test_pack_projection_capsule_and_sources(self) -> None:
         result = practice_packs.select_practice_pack(

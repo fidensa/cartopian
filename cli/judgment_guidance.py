@@ -395,37 +395,21 @@ def _activation_reason(card: Mapping[str, Any]) -> str:
     return f"{card['boundary_id']}+{card['failure_id']}:matched"
 
 
-_TABLE_ROW_ID_RE = re.compile(r"^\|\s*`([a-z][a-z0-9-]*)`\s*\|")
-
-
-def _active_instructions(body: str, active_failures: set[str]) -> str:
-    """Project the one central body down to the active guidance only.
-
-    Strips the machine metadata header and drops binding-table rows for
-    failures this activation did not open — inactive rows are routing surface,
-    not instructions the assignee follows.
-    """
-    _, guidance = _parse_body_header(body)
-    lines = []
-    for line in guidance.splitlines():
-        match = _TABLE_ROW_ID_RE.match(line)
-        if match and match.group(1) not in active_failures:
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip() + "\n"
-
-
 def assignee_projection(result: Mapping[str, Any]) -> dict[str, Any]:
     """Project an activation result down to what changes assignee behavior.
 
-    The full result is the trace record. The assignee needs, per active card,
-    the lifecycle boundary being crossed, the open failure condition (the
-    observable condition that creates the hold), and the release requirement —
-    plus the compact central instructions. Inactive cards, context receipts,
-    byte budgets, and content identities never cross into the projection.
+    The full result is the trace record. Every hold is PM-owned: its release
+    (operator confirmation, independent judgment, an observed running state,
+    recipient acceptance) is enforced by the PM before closure and is never
+    something the assignee can satisfy from inside its session. The central
+    body's stop-and-wait instructions therefore stay PM-facing; the assignee
+    receives, per active card, the boundary, the open failure, the claim to
+    name, and the release requirement the PM will enforce. Inactive cards,
+    the central body, context receipts, byte budgets, and content identities
+    never cross into the projection.
     """
     if result["outcome"] != "active":
-        return {"outcome": result["outcome"], "holds": [], "instructions": None}
+        return {"outcome": result["outcome"], "holds": []}
     try:
         registry = _load_registry()
         cards_by_id = {
@@ -434,25 +418,19 @@ def assignee_projection(result: Mapping[str, Any]) -> dict[str, Any]:
     except JudgmentGuidanceError:
         cards_by_id = {}
     holds = []
-    active_failures = set()
     for active in result["active_cards"]:
         card = cards_by_id.get(active["card_id"], {})
-        active_failures.add(active["failure_id"])
         holds.append(
             {
                 "boundary_id": active["boundary_id"],
                 "failure_id": active["failure_id"],
                 "lifecycle_boundary": card.get("lifecycle_boundary"),
                 "non_enforceable_failure": card.get("non_enforceable_failure"),
+                "claim_to_name": card.get("claim_to_name"),
+                "resume_requirement": card.get("resume_requirement"),
             }
         )
-    body = result.get("body")
-    instructions = (
-        _active_instructions(body, active_failures)
-        if isinstance(body, str)
-        else None
-    )
-    return {"outcome": "active", "holds": holds, "instructions": instructions}
+    return {"outcome": "active", "holds": holds}
 
 
 def select_judgment_guidance(
