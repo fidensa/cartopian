@@ -1816,6 +1816,28 @@ def parse_determinations(text: str) -> Tuple[List[Determination], Optional[str]]
     return out, declared
 
 
+def _misplaced_determinations_hint(text: str) -> str:
+    """Name the headings that hold determination lines intake does not read."""
+    headings: List[str] = []
+    current = "(before any heading)"
+    for line in text.splitlines():
+        match = _H2_RE.match(line)
+        if match:
+            current = "## " + match.group(1).strip()
+            continue
+        if _DETERMINATION_RE.match(line.strip()) and current not in headings:
+            headings.append(current)
+    if not headings:
+        return ""
+    return (
+        "; determination lines were found under "
+        + ", ".join(f"`{h}`" for h in headings)
+        + ", which intake does not read — move them, with their "
+        "Trace-identity line, under "
+        f"`{DETERMINATION_SECTION_HEADING}`"
+    )
+
+
 def evaluate_closure(
     trace: Trace, review_text: str, *, attributed_to: str = ""
 ) -> ClosureResult:
@@ -1834,8 +1856,14 @@ def evaluate_closure(
             Finding(
                 "acceptance-item-unmet",
                 "closure",
-                "the review records no closure determinations; D1 and D2 are "
-                "required per material criterion and neither defaults to pass",
+                "the review records no closure determinations under "
+                f"`{DETERMINATION_SECTION_HEADING}`; D1 and D2 are required per "
+                "material criterion and neither defaults to pass. Expected "
+                "`Trace-identity: sha256:<64 hex>` followed by one "
+                "`D1 C<nn>: <pass|fail> reason:<code|->` and one `D2 C<nn>: ...` "
+                "line per criterion (fenced or unfenced), as `report-skeleton "
+                "--variant review` generates"
+                + _misplaced_determinations_hint(review_text),
             )
         )
         return ClosureResult(determinations, declared, blockers)

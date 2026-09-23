@@ -15,7 +15,14 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import contract_review, report_identity, request_trace, source_guidance
+from cli import (
+    acceptance_trace,
+    contract_review,
+    report_identity,
+    request_trace,
+    source_guidance,
+    trace_binding,
+)
 from cli.commands.handoff_packet import _extract_task_id, _find_project_root
 from cli.commands.resolve_config import (
     _CliError,
@@ -313,6 +320,7 @@ def _review_file_skeleton(
     headers: Dict[str, str],
     bindings: Dict[str, Optional[str]],
     source_backed: bool,
+    binding: trace_binding.Binding,
 ) -> str:
     evidence_value = bindings["evidence"] or "<ordered evidence identities | none>"
     context_identity = bindings["context_identity"] or "<sha256:...>"
@@ -375,6 +383,7 @@ def _review_file_skeleton(
         )
     else:
         lines.extend(["", "n/a — task is not source-backed"])
+    lines.extend(["", *_closure_lines(binding)])
     lines.extend(
         [
             "",
@@ -385,6 +394,29 @@ def _review_file_skeleton(
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def _closure_lines(binding: trace_binding.Binding) -> List[str]:
+    """The determination output slot intake reads, or its n/a line.
+
+    A traced task gets the determinations projection already placed under
+    the heading intake parses, so the reviewer never has to choose between
+    the PM provenance block and a template example. A trace that cannot be
+    bound still gets the heading, with the refusal named, rather than a
+    silently missing slot.
+    """
+    heading = acceptance_trace.DETERMINATION_SECTION_HEADING
+    if binding.trace is not None:
+        return trace_binding.closure_section(binding.trace).rstrip("\n").split("\n")
+    if binding.refusal is not None:
+        return [
+            heading,
+            "",
+            f"<the upstream trace does not bind ({binding.refusal.code}): "
+            f"{binding.refusal.detail}. The PM must repair the trace and "
+            "regenerate this skeleton before determinations can be recorded.>",
+        ]
+    return [heading, "", "n/a — task does not declare an upstream trace"]
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -481,7 +513,11 @@ def handler(args: argparse.Namespace) -> int:
         bindings = _review_request_bindings(project_root, task_path)
         skeleton = _review_skeleton(identity, bindings)
         review_file_skeleton = _review_file_skeleton(
-            identity, headers, bindings, source_backed
+            identity,
+            headers,
+            bindings,
+            source_backed,
+            trace_binding.bind(project_root, task_path, task_text=content),
         )
         expected_report_path = review_report_path
         machine_fields = {**identity, "request_evidence": bindings["evidence"]}

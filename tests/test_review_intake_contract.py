@@ -18,7 +18,7 @@ from cli import acceptance_trace as at
 from cli import prompt_evidence as pe
 from cli import trace_binding
 from cli.commands import acceptance_trace as acceptance_trace_command
-from cli.commands import move_task, review_intake
+from cli.commands import move_task, report_skeleton, review_intake
 from tests.scaffold import project_scaffold
 from tests.mcp_result import tool_records
 
@@ -419,6 +419,105 @@ class FailClosedNeverBlockingTests(IntakeFixture):
         code, record, _ = self.run_intake(self.write_review())
         self.assertEqual(code, 1)
         self.assertIn("criterion-digest-mismatch", self.rules(record))
+
+
+class GeneratedDeterminationSlotTests(IntakeFixture):
+    """The generated review inputs must round-trip through intake.
+
+    The production failure: the review-file skeleton carried no determination
+    slot, the only generated D1/D2 placeholders sat inside the PM provenance
+    block, and a reviewer who filled them there was told only that no
+    determinations were found.
+    """
+
+    PLACEHOLDER = "<pass|fail> reason:<code|->"
+
+    def skeleton(self):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = report_skeleton.handler(
+                argparse.Namespace(task_path=str(self.task), variant="review")
+            )
+        self.assertEqual(code, 0, err.getvalue())
+        return json.loads(out.getvalue())["review_file_skeleton"]
+
+    def fill(self, text):
+        return (
+            text.replace("Reviewer: <free text>", "Reviewer: independent reviewer")
+            .replace(
+                "Verdict: <approve | request-changes | reject>", "Verdict: approve"
+            )
+            .replace(
+                "Outcome: <adequate | needs changes>", "Outcome: adequate"
+            )
+            .replace(self.PLACEHOLDER, "pass reason:-")
+        )
+
+    def test_the_skeleton_carries_the_determinations_projection(self):
+        skeleton = self.skeleton()
+        section = skeleton.split(at.DETERMINATION_SECTION_HEADING, 1)[1]
+        section = section.split("\n## ", 1)[0]
+        projection = self.trace.completion_evidence(
+            self.trace.determination_template()
+        )
+        self.assertIn(projection, section)
+        self.assertEqual(
+            section.count(self.PLACEHOLDER), 2 * len(self.trace.criteria)
+        )
+
+    def test_a_filled_skeleton_is_approvable_at_intake(self):
+        filled = self.fill(self.skeleton())
+        self.assertNotIn(self.PLACEHOLDER, filled)
+        review = self.scaffold.write("reviews/REVIEW-99-001.md", filled)
+        code, record, err = self.run_intake(review, no_evidence=True)
+        self.assertEqual(code, 0, err)
+        self.assertTrue(record["approvable"], record["blockers"])
+        self.assertEqual(
+            record["closure"]["declared_trace_identity"],
+            self.trace.trace_identity(),
+        )
+        self.assertEqual(
+            len(record["closure"]["determinations"]), 2 * len(self.trace.criteria)
+        )
+
+    def test_an_undeclared_task_gets_the_n_a_line(self):
+        self.scaffold.write(
+            f"tasks/in-review/{UNIT}.md",
+            task_body(self.trace_block())
+            .split("\n## Upstream trace\n", 1)[0]
+            .replace("Upstream trace: required", "Upstream trace: n/a"),
+        )
+        skeleton = self.skeleton()
+        self.assertIn(
+            at.DETERMINATION_SECTION_HEADING
+            + "\n\nn/a — task does not declare an upstream trace",
+            skeleton,
+        )
+
+    def test_the_provenance_block_points_reviewers_at_the_output_slot(self):
+        section = trace_binding.reviewer_section(self.trace)
+        self.assertIn(at.DETERMINATION_SECTION_HEADING, section)
+
+    def test_verdicts_filled_in_the_provenance_block_name_the_right_section(self):
+        # Reproduces the reported review: every placeholder filled, trace
+        # identity intact, but under the PM provenance heading.
+        provenance = trace_binding.reviewer_section(self.trace).replace(
+            self.PLACEHOLDER, "pass reason:-"
+        )
+        body = self.write_review(determinations="").read_text(encoding="utf-8")
+        body = body.replace(
+            at.DETERMINATION_SECTION_HEADING + "\n\n\n", ""
+        ).replace("## Findings", provenance + "\n## Findings", 1)
+        self.assertNotIn("\n" + at.DETERMINATION_SECTION_HEADING + "\n", body)
+        review = self.scaffold.write("reviews/REVIEW-99-001.md", body)
+        code, record, _ = self.run_intake(review, no_evidence=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(record["closure"]["determinations"], [])
+        details = " ".join(b["detail"] for b in record["blockers"])
+        self.assertIn(
+            f"found under `{trace_binding.REVIEWER_SECTION_HEADING}`", details
+        )
+        self.assertIn(f"`{at.DETERMINATION_SECTION_HEADING}`", details)
 
 
 class PassOrdinalTests(IntakeFixture):

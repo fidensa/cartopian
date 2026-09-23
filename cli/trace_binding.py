@@ -466,7 +466,21 @@ _REVIEWER_PREAMBLE = (
     "whether the delivered work satisfies the task and specification; `D2` asks "
     "whether the task and specification adequately satisfy the upstream sources "
     "reached through the trace. They fail independently and neither may be "
-    "recorded as \"same as above\"."
+    "recorded as \"same as above\". This block is input, not an output slot: "
+    "intake reads verdicts only from the review file's "
+    f"`{acceptance_trace.DETERMINATION_SECTION_HEADING}` section, so record "
+    "them there, in the block the review-file skeleton generates."
+)
+
+_CLOSURE_PREAMBLE = (
+    "Fill in every verdict below; do not move these lines under another "
+    "heading. Intake reads determinations only from this section. A passing "
+    "line carries `reason:-`; a failing D1 line carries "
+    "`acceptance-item-unmet`; a failing D2 line carries "
+    "`upstream-intent-uncovered`, `exemption-unjustified`, or "
+    "`unresolved-source-conflict`. Record an identity no criterion claims on "
+    "an added `D2 task: fail reason:<source-uncovered | request-uncovered | "
+    "waiver-rejected>` line. Keep the `Trace-identity:` line unchanged."
 )
 
 
@@ -484,6 +498,21 @@ def reviewer_section(trace: acceptance_trace.Trace) -> str:
     return (
         f"{REVIEWER_SECTION_HEADING}\n\n{_REVIEWER_PREAMBLE}\n\n```trace-provenance\n"
         + trace.reviewer_projection()
+        + "```\n"
+    )
+
+
+def closure_section(trace: acceptance_trace.Trace) -> str:
+    """The review file's determination output slot, pre-populated.
+
+    Byte-identical to ``acceptance-trace --projection determinations`` inside
+    the heading intake reads, so a reviewer who fills every placeholder has
+    produced an evaluable determination block without transcribing anything.
+    """
+    return (
+        f"{acceptance_trace.DETERMINATION_SECTION_HEADING}\n\n"
+        f"{_CLOSURE_PREAMBLE}\n\n```\n"
+        + trace.completion_evidence(trace.determination_template())
         + "```\n"
     )
 
