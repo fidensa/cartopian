@@ -947,6 +947,8 @@ def resolve(
     source_texts: Sequence[str] = (),
     *,
     allow_project_origin: bool = False,
+    exact_ids: Sequence[str] = (),
+    exact_source: str = "approval",
     store: Optional[intake_adapter.SessionStore] = None,
 ) -> Resolution:
     """Applicable captured evidence for ``target`` in presentation order.
@@ -957,6 +959,13 @@ def resolve(
     Referenced turns after the confirmation are corrections; everything is
     ordered by binding order then receipt ordinal, and deduplicated by
     presentation. Unreferenced turns are omitted and only counted.
+
+    ``exact_ids`` are capture identities a durable applicability decision
+    (an approved planning review) recorded. Each is referenced exactly as an
+    artifact selector for ``target`` would reference it, unless a decision
+    reference already binds it (that binding is kept), and is confirmed like
+    every other reference, so revoked, uncaptured, inconsistent, or unpaired
+    turns still fail closed.
     """
     project_root = Path(project_root)
     candidates = load_candidates(project_root, store)
@@ -967,6 +976,12 @@ def resolve(
     text_unit = target if target.kind == "task" else PROJECT_UNIT
     for text in source_texts:
         refs.extend(text_references(text, text_unit, "artifact"))
+    referenced = {ref.capture_id for ref in refs}
+    for cid in exact_ids:
+        if cid in referenced or not CAPTURE_ID_RE.fullmatch(cid):
+            continue
+        referenced.add(cid)
+        refs.append(Reference(cid, text_unit, exact_source))
     confirmed, rejected = _confirm_references(refs, candidates, revoked)
     unconfirmed.extend(rejected)
     unconfirmed.extend(chat_records_unconfirmed(project_root))

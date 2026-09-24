@@ -656,5 +656,153 @@ class RevocationTests(ResolverCase):
         self.assertEqual([(u.reference, u.reason) for u in evidence_resolver.resolve(self.root, PROJECT).unconfirmed], [(turn, "revoked")])
 
 
+class ApprovedPlanningInheritanceTests(ResolverCase):
+    """A planned task inherits the exact identities an approved review bound."""
+
+    def seed_plan(self, plan_refs: list[str]) -> None:
+        items = "".join(f"- `{ref}` — Sync.\n" for ref in plan_refs)
+        (self.root / "IMPLEMENTATION_PLAN.md").write_text(f"# Plan\n\n{items}", encoding="utf-8")
+        (self.root / "phases/PHASE-01.md").write_text(f"# PHASE-01\n\n{items}", encoding="utf-8")
+
+    def seed_task(self, task_id: str, plan_ref: str) -> Path:
+        task = self.root / "tasks/open" / f"{task_id}.md"
+        task.write_text(f"# {task_id}: Sync\n\nPhase: PHASE-01\nPlan ref: {plan_ref}\n", encoding="utf-8")
+        return task
+
+    def corrected_intake(self) -> tuple[Session, list[str]]:
+        """One project confirmation, then two corrections the requirements name."""
+        session = self.session()
+        self.bind(session)
+        reply = self.planning_exchange(session)
+        self.assertEqual(self.lock_requirements()[0], 0)
+        first = session.exchange("Also skip drafts older than a year.", "Noted; old drafts are skipped.")
+        second = session.exchange("And keep the export folder flat.", "Noted; the export folder stays flat.")
+        (self.root / "REQUIREMENTS.md").write_text(
+            f"# Requirements\n\n## Request evidence\n\n- {first}\n- {second}\n", encoding="utf-8"
+        )
+        return session, [reply, first, second]
+
+    def approve_through_retired_prompt(self, plan_ref: str, expected: list[str], extra: list[str] = ()) -> None:
+        context = request_trace.context_for_checkpoint(self.root, "PLAN-001")
+        self.assertEqual(context.evidence_ids, expected)
+        prompt = self.root / "prompts/PROMPT-PLAN-001.md"
+        prompt.write_text(
+            request_trace.upsert_request_sections("# Planning review\n", context.section), encoding="utf-8"
+        )
+        self.approve_checkpoint("PLAN-001", plan_ref, [*expected, *extra], context.context_identity)
+        # The review prompt is transient; the review header is the durable binding.
+        prompt.unlink()
+
+    def assert_refused(self, task: Path, rule: str) -> RequestRefusal:
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(caught.exception.rule, rule)
+        return caught.exception
+
+    def test_task_inherits_confirmation_and_corrections_from_the_review(self) -> None:
+        from cli.commands import validate_task_readiness
+
+        _session, ids = self.corrected_intake()
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", ids)
+
+        trace, _summary, _identity = request_trace.lookup_unit(self.root, GovernedUnit("planning", "PLAN-001"))
+        self.assertEqual([item.record_id for item in trace], ids)
+
+        assignment = request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(assignment.evidence_ids, ids)
+        self.assertEqual([r.kind for r in assignment.trace], ["confirmation", "correction", "correction"])
+        self.assertEqual({r.unit for r in assignment.trace}, {PROJECT})
+        self.assertIn("Also skip drafts older than a year.", assignment.section)
+        self.assertIn("And keep the export folder flat.", assignment.section)
+        self.assertEqual(request_trace.context_for_task(self.root, task).evidence_ids, ids)
+
+        content = task.read_text(encoding="utf-8")
+        record, _warnings = validate_task_readiness.evaluate(self.root, task, content)
+        checks = {check["name"]: check for check in record["checks"]}
+        for name in ("request-trace-valid", "upstream-trace-valid"):
+            self.assertTrue(checks[name]["pass"], checks[name]["reason"])
+
+    def test_inheritance_is_stable_after_planning_artifacts_change(self) -> None:
+        _session, ids = self.corrected_intake()
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", ids)
+
+        # The selectors that named the corrections at review time are gone.
+        (self.root / "REQUIREMENTS.md").write_text("# Requirements\n\nRewritten.\n", encoding="utf-8")
+        self.seed_plan(["BUILD-01-001", "BUILD-01-002"])
+        self.assertEqual(request_trace.context_for_checkpoint(self.root, "PLAN-001").evidence_ids, ids[:1])
+        self.assertEqual(request_trace.context_for_task_assignment(self.root, task).evidence_ids, ids)
+
+    def test_review_covering_a_plan_ref_range_governs_every_covered_task(self) -> None:
+        _session, ids = self.corrected_intake()
+        self.seed_plan(["BUILD-01-001", "BUILD-01-002", "BUILD-01-003", "BUILD-01-004"])
+        tasks = [self.seed_task(f"TASK-01-00{n}", f"BUILD-01-00{n}") for n in (1, 2, 3)]
+        outside = self.seed_task("TASK-01-004", "BUILD-01-004")
+        self.approve_through_retired_prompt("BUILD-01-001 through BUILD-01-003", ids)
+
+        for task in tasks:
+            self.assertEqual(request_trace.context_for_task_assignment(self.root, task).evidence_ids, ids, task.name)
+        # Outside the reviewed range only the project-origin fallback applies.
+        self.assertEqual(request_trace.context_for_task_assignment(self.root, outside).evidence_ids, ids[:1])
+
+    def test_checkpoint_bound_evidence_stays_preferred_and_unflattened(self) -> None:
+        session, ids = self.corrected_intake()
+        bound = session.exchange("For this checkpoint, ship the exporter first.", "Noted; exporter first.")
+        self.write_decision("DEC-001", f"Operator request evidence for: planning:PLAN-001: {bound}")
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", [*ids, bound])
+
+        context = request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(context.evidence_ids, [bound])
+        self.assertEqual(context.trace[0].unit, GovernedUnit("planning", "PLAN-001"))
+
+    def test_absent_identity_fails_closed(self) -> None:
+        session, ids = self.corrected_intake()
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        absent = f"{session.handle}/turn-999"
+        self.approve_through_retired_prompt("BUILD-01-001", ids, [absent])
+
+        refusal = self.assert_refused(task, "stale-planning-approval-evidence")
+        self.assertTrue(refusal.detail.endswith(f"unavailable request evidence: {absent}"), refusal.detail)
+
+    def test_revoked_identity_fails_closed(self) -> None:
+        _session, ids = self.corrected_intake()
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", ids)
+
+        self.revoke([ids[2]])
+        refusal = self.assert_refused(task, "revoked-evidence")
+        self.assertIn(ids[2], refusal.detail)
+
+    def test_unpaired_identity_fails_closed(self) -> None:
+        session, ids = self.corrected_intake()
+        session.say("Also add a dry-run flag.")  # no Stop was recorded
+        unpaired = session.say("yes")
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", ids, [unpaired])
+
+        refusal = self.assert_refused(task, "stale-planning-approval-evidence")
+        self.assertIn(unpaired, refusal.detail)
+
+    def test_inconsistent_identity_fails_closed(self) -> None:
+        session, ids = self.corrected_intake()
+        session.say("What about attachments?", turn_id="late")
+        session.stop("Shall I include attachments?", turn_id="late")
+        inconsistent = session.say("Yes, include attachments in every export.")
+        session.stop("Shall I include attachments and cloud backups?", turn_id="late")
+        self.seed_plan(["BUILD-01-001"])
+        task = self.seed_task("TASK-01-001", "BUILD-01-001")
+        self.approve_through_retired_prompt("BUILD-01-001", ids, [inconsistent])
+
+        self.assert_refused(task, "inconsistent-pair")
+
+
 if __name__ == "__main__":
     unittest.main()

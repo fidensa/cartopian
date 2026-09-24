@@ -952,6 +952,8 @@ def _resolve_trace(
     source_texts: Sequence[str],
     *,
     allow_project_origin: bool = False,
+    exact_ids: Sequence[str] = (),
+    exact_source: str = "approval",
 ) -> List[RequestEvidence]:
     """The shared resolver's view for one governed unit.
 
@@ -962,7 +964,12 @@ def _resolve_trace(
     ``requests/chat/`` JSON are unconfirmed and never enter the trace.
     """
     return _resolve_trace_with_summary(
-        project_root, target, source_texts, allow_project_origin=allow_project_origin
+        project_root,
+        target,
+        source_texts,
+        allow_project_origin=allow_project_origin,
+        exact_ids=exact_ids,
+        exact_source=exact_source,
     )[0]
 
 
@@ -972,6 +979,8 @@ def _resolve_trace_with_summary(
     source_texts: Sequence[str],
     *,
     allow_project_origin: bool = False,
+    exact_ids: Sequence[str] = (),
+    exact_source: str = "approval",
 ) -> Tuple[List[RequestEvidence], ResolutionSummary]:
     """:func:`_resolve_trace` plus the resolver's summary of the final pass."""
     from cli import evidence_resolver
@@ -985,6 +994,8 @@ def _resolve_trace_with_summary(
             target,
             source_texts,
             allow_project_origin=include_project_origin,
+            exact_ids=exact_ids,
+            exact_source=exact_source,
         )
         stored = [
             _record_evidence(project_root, record)
@@ -1125,7 +1136,10 @@ def _approved_planning_trace(
     refs.  A descendant task inherits the checkpoint-bound excerpts recorded
     by that review, not every historical ``project:project`` quotation.  When
     a checkpoint has no checkpoint-bound excerpt, its reviewed project trace
-    remains the compatibility fallback.
+    remains the compatibility fallback.  The identities in the review's
+    ``Request evidence`` header are resolved exactly, so corrections that an
+    artifact selector named at review time stay inherited after that
+    artifact, prompt, or report changes or is retired.
     """
     task_text = read_contained_text(
         project_root, task_path, what="task planning-evidence target"
@@ -1180,21 +1194,27 @@ def _approved_planning_trace(
                 "rerun the planning review after a fresh operator statement supersedes the revoked evidence",
             )
         checkpoint = match.group(1)
+        # The review header is the durable selector: its identities resolve
+        # directly against the capture store, not through the requirements,
+        # plan, or prompt text that selected them when the review ran.
         available = _resolve_trace(
             project_root,
             GovernedUnit("planning", checkpoint),
             (),
             allow_project_origin=True,
+            exact_ids=evidence_ids,
+            exact_source=path.name,
         )
-        by_id = {item.record_id: item for item in available}
-        missing = [item for item in evidence_ids if item not in by_id]
+        wanted = set(evidence_ids)
+        resolved = {item.record_id for item in available}
+        missing = [item for item in dict.fromkeys(evidence_ids) if item not in resolved]
         if missing:
             raise RequestRefusal(
                 "stale-planning-approval-evidence",
                 f"{path.name} references unavailable request evidence: {', '.join(missing)}",
                 "restore the exact source or rerun the planning review",
             )
-        reviewed = [by_id[item] for item in evidence_ids]
+        reviewed = [item for item in available if item.record_id in wanted]
         checkpoint_unit = GovernedUnit("planning", checkpoint)
         checkpoint_bound = [item for item in reviewed if item.unit == checkpoint_unit]
         inherited.extend(checkpoint_bound or reviewed)
