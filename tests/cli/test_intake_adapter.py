@@ -349,6 +349,39 @@ class PairingTests(AdapterCase):
         pair = self._pairs()[-1]
         self.assertEqual((pair["state"], pair["unpaired_reason"]), ("unpaired", "no-stop"))
 
+    def test_claude_harness_turns_are_not_operator_turns(self) -> None:
+        notice = (
+            "<task-notification>\n<task-id>k1</task-id>\n<status>completed</status>\n"
+            "<result>{\"verdict\": \"approved\"}</result>\n</task-notification>"
+        )
+        hand_back = '<agent-message from="a1">\n  report text\n</agent-message>\n'
+        self._start()
+        self._submit("run the review", "t1")
+        self._stop("Review is running in the background.", "t1")
+        self._submit(notice, "t2")
+        self._stop("The reviewer approved. Close the plan?", "t2")
+        self._submit(hand_back, "t3")
+        self._submit("yes", "t4")
+        events = self.store.read_events("claude", "sess-1")
+        prompts = [e["text"] for e in events if e["event"] == "UserPromptSubmit"]
+        self.assertEqual(prompts, ["run the review", "yes"])
+        pairs = self._pairs()
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[-1]["state"], "paired")
+        self.assertEqual(pairs[-1]["proposal_turn_id"], "t2")
+        self.assertEqual(
+            events[pairs[-1]["proposal_ordinal"] - 1]["text"], "The reviewer approved. Close the plan?"
+        )
+
+    def test_operator_words_around_an_envelope_are_still_captured(self) -> None:
+        quoted = "<task-notification>\n<status>failed</status>\n</task-notification>\nwhy did this fail?"
+        self.assertFalse(intake_adapter.is_host_injected_prompt("claude", quoted))
+        self.assertFalse(intake_adapter.is_host_injected_prompt("codex", "<task-notification></task-notification>"))
+        self._start()
+        self._submit(quoted, "t1")
+        prompts = [e for e in self.store.read_events("claude", "sess-1") if e["event"] == "UserPromptSubmit"]
+        self.assertEqual([e["text"] for e in prompts], [quoted])
+
     def test_evicted_proposal_is_reported_as_evicted(self) -> None:
         self._start()
         self._submit("go", "t1")

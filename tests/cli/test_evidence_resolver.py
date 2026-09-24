@@ -481,6 +481,18 @@ class ContinuityTests(ResolverCase):
 
 
 class RefusalTests(ResolverCase):
+    def test_task_notification_recorded_by_an_older_adapter_is_not_a_candidate(self) -> None:
+        session = self.session()
+        self.bind(session)
+        operator = session.say("Sync notes to Markdown.")
+        notice = session.store.append_event(session.record, {
+            "event": "UserPromptSubmit", "received": "2026-09-24T00:00:00+00:00", "turn_id": "t9",
+            "text": "<task-notification>\n<status>completed</status>\n</task-notification>",
+        })
+        candidates = evidence_resolver.load_candidates(self.root, self.store)
+        self.assertEqual([t.capture_id for t in candidates.turns], [operator])
+        self.assertIsNone(candidates.by_id(f"{session.handle}/turn-{notice['ordinal']}"))
+
     def test_bare_assent_after_no_stop_is_unpaired(self) -> None:
         session = self.session()
         self.bind(session)

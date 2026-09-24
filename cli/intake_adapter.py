@@ -14,6 +14,9 @@ Events recorded (both hosts unless noted):
 - ``SessionStart``      — creates the session record and its opaque handle.
 - ``UserPromptSubmit``  — the operator's prompt text (``prompt``); the first
                           one in a session prints the routing line below.
+                          Claude Code's harness-started turns (task
+                          notifications, agent hand-backs) are not the
+                          operator's and are ignored.
 - ``Stop``              — the assistant's final message for the turn
                           (``last_assistant_message``).
 - ``SessionEnd``        — ends the session; an unbound session's buffer is
@@ -66,6 +69,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -112,6 +116,19 @@ _ALWAYS_JSON_HOSTS = frozenset({"antigravity"})
 RECORDED_EVENTS = frozenset(
     {"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "Interrupt"}
 )
+
+# Claude Code fires ``UserPromptSubmit`` for turns its harness starts on its
+# own: a background task's completion notice and a delegated agent's
+# hand-back. The hook payload carries no origin field, so the only signal is
+# the prompt being nothing but the harness's envelope. Such a turn holds tool
+# or model output, not the operator's words, and is ignored like
+# ``SubagentStop``. An operator who types the bare envelope loses the turn's
+# capture rather than lending it their authority.
+_HOST_INJECTED_PROMPT = {
+    "claude": re.compile(
+        r"\s*<(task-notification|agent-message)(?:\s[^>]*)?>.*</\1>\s*", re.DOTALL
+    ),
+}
 
 
 def default_intake_root() -> Path:
@@ -414,6 +431,12 @@ def _turn_id(host: str, payload: Dict[str, Any]) -> Optional[str]:
     return value if isinstance(value, str) and value else None
 
 
+def is_host_injected_prompt(host: str, text: str) -> bool:
+    """True when ``text`` is a turn the host started, not the operator."""
+    pattern = _HOST_INJECTED_PROMPT.get(host)
+    return bool(pattern and pattern.fullmatch(text))
+
+
 def normalize_payload(host: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Translate a host's own hook vocabulary into the canonical events.
 
@@ -644,6 +667,10 @@ def handle_event(
     payload = normalize_payload(host, payload)
     event = payload.get("hook_event_name")
     if event not in RECORDED_EVENTS:
+        return None, None
+    if event == "UserPromptSubmit" and is_host_injected_prompt(
+        host, _text_field(payload, "prompt")
+    ):
         return None, None
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:

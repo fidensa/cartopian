@@ -428,6 +428,8 @@ def load_candidates(
             if ordinal < lo or (hi is not None and ordinal > hi):
                 continue
             text = event.get("text") if isinstance(event.get("text"), str) else ""
+            if intake_adapter.is_host_injected_prompt(host, text):
+                continue  # recorded before the adapter learned to ignore it
             pair = pairs.get(f"{handle}/pair-{ordinal}")
             proposal: Optional[CapturedProposal] = None
             pair_state = None
