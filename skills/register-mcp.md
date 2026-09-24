@@ -33,7 +33,7 @@ Check for the presence of each supported agent using the platform-appropriate si
 | Claude Code | `claude` on PATH | n/a — uses CLI | n/a — uses CLI |
 | Codex | `codex` on PATH | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
 | Antigravity | `agy` on PATH | `~/.gemini/config/mcp_config.json` | `%USERPROFILE%\.gemini\config\mcp_config.json` |
-| Devin | `devin` on PATH **or** config file exists | `~/.config/devin/config.json` | `%APPDATA%\devin\config.json` |
+| Devin | `devin` on PATH **or** config file exists | `~/.config/devin/mcp_config.json` (legacy: `config.json`) | `%APPDATA%\devin\mcp_config.json` (legacy: `config.json`) |
 | Windsurf | `~/.codeium/windsurf/` dir exists | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Windsurf\mcp_config.json` |
 | Claude Desktop | Config file exists | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/` dir exists | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
@@ -297,10 +297,10 @@ Create the `workflows/` directory if it does not exist. Do not modify the templa
 
 This recipe targets **Devin for Terminal** (the local `devin` CLI that the `cartopian-devin` wrapper drives), not cloud Devin. Cloud Devin's reusable instructions are web-UI Playbooks/Knowledge with no local file to install, so only the MCP registration (Part A) applies there.
 
-**Part A — register the MCP server.** Same `mcpServers` structure as Claude Desktop. Read the config file; if it does not exist, create the parent directory (`~/.config/devin/` on Unix or `%APPDATA%\devin\` on Windows) and write a fresh `{}` first. Merge the `cartopian` entry under `mcpServers`, preserving every existing top-level key and every existing sibling under `mcpServers` — Devin stores other settings in this same file and a clobbering write would lose them.
+**Part A — register the MCP server.** Same `mcpServers` structure as Claude Desktop. Devin 3000.x keeps user-level MCP servers in `mcp_config.json` and, on first launch, migrates any `mcpServers` out of the legacy `config.json` into it, leaving only settings behind. Target `mcp_config.json` unless it is absent **and** `config.json` still carries an `mcpServers` key (a Devin that has not migrated yet) — then target `config.json`. `devin mcp list` shows which servers Devin actually loaded. Read the target file; if it does not exist, create the parent directory (`~/.config/devin/` on Unix or `%APPDATA%\devin\` on Windows) and write a fresh `{}` first. Merge the `cartopian` entry under `mcpServers`, preserving every existing top-level key and every existing sibling under `mcpServers` — a clobbering write would lose the operator's other servers or, in the legacy file, Devin's settings.
 
-**macOS/Linux:** `~/.config/devin/config.json`  
-**Windows:** `%APPDATA%\devin\config.json`
+**macOS/Linux:** `~/.config/devin/mcp_config.json` (legacy: `~/.config/devin/config.json`)  
+**Windows:** `%APPDATA%\devin\mcp_config.json` (legacy: `%APPDATA%\devin\config.json`; the Windows location of `mcp_config.json` is **unverified**)
 
 ```json
 {

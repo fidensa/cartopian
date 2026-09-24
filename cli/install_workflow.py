@@ -666,6 +666,39 @@ def _hermes_verdict(
     return "current" if current else "owned-but-drifted"
 
 
+def _devin_config_dir(client_home: Path) -> Path:
+    if os.name == "nt":
+        return _appdata_root(client_home) / "devin"
+    return client_home / ".config" / "devin"
+
+
+def _devin_config_candidates(client_home: Path) -> Tuple[Path, ...]:
+    """Devin's MCP store, then the legacy settings file that once held it."""
+    base = _devin_config_dir(client_home)
+    return (base / "mcp_config.json", base / "config.json")
+
+
+def _devin_config_path(client_home: Path) -> Path:
+    """The file Devin for Terminal loads user-level MCP servers from.
+
+    Devin 3000.x keeps them in ``mcp_config.json`` and, on first launch,
+    migrates any ``mcpServers`` out of ``config.json`` into it. The legacy
+    file stays the target only while it still carries ``mcpServers`` and no
+    ``mcp_config.json`` exists (a Devin that has not migrated yet); otherwise,
+    including a fresh install, the current store is the target.
+    """
+    mcp_config, legacy = _devin_config_candidates(client_home)
+    if mcp_config.exists() or not legacy.exists():
+        return mcp_config
+    try:
+        data = json.loads(legacy.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return mcp_config
+    if isinstance(data, dict) and "mcpServers" in data:
+        return legacy
+    return mcp_config
+
+
 _CLIENTS: Dict[str, Dict[str, Any]] = {
     "claude-code": {
         "config": ".claude.json",
@@ -707,8 +740,11 @@ _CLIENTS: Dict[str, Dict[str, Any]] = {
         ),
     },
     "devin": {
-        "config": ".config/devin/config.json",
-        "config_windows": "devin/config.json",
+        # Devin 3000.x moved user-level MCP servers from `config.json` into
+        # `mcp_config.json`; the resolver picks whichever file Devin loads,
+        # and both are registration candidates.
+        "config_resolver": _devin_config_path,
+        "candidates_resolver": _devin_config_candidates,
         "format": "json",
         "bridges": (
             (
@@ -1093,6 +1129,9 @@ def _registration_candidate_paths(
     descriptor = _CLIENTS[client]
     if descriptor["format"] == "opencode-json":
         return _opencode_target_candidates(_opencode_install_target(client_home))
+    resolver = descriptor.get("candidates_resolver")
+    if resolver is not None:
+        return resolver(client_home)
     return (_client_config_path(client, client_home),)
 
 
@@ -2577,7 +2616,10 @@ def plan_workflow(
         detected = []
         for client in SUPPORTED_CLIENTS:
             descriptor = _CLIENTS[client]
-            config_exists = _client_config_path(client, home).exists()
+            config_exists = any(
+                path.exists()
+                for path in _registration_candidate_paths(client, home)
+            )
             bridge_exists = any(
                 destination.exists()
                 for _source, destination in _client_bridge_rows(client, home)

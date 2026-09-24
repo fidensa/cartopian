@@ -100,7 +100,7 @@ def test_static_clients_resolve_to_the_same_paths_as_before(tmp_path):
         "claude-code": ".claude.json",
         "codex": ".codex/config.toml",
         "antigravity": ".gemini/config/mcp_config.json",
-        "devin": ".config/devin/config.json",
+        "devin": ".config/devin/mcp_config.json",
         "windsurf": ".codeium/windsurf/mcp_config.json",
         "claude-desktop": (
             "Library/Application Support/Claude/claude_desktop_config.json"

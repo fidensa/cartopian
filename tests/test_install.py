@@ -216,9 +216,8 @@ class InstallScriptInvocationTests(_InstallTestBase):
 class ConnectedVerificationContinuationTests(_InstallTestBase):
     """A process-only verification residual must not become an update loop."""
 
-    def test_blocked_restart_record_returns_bounded_continuation(self) -> None:
-        client_home = Path(self.tmp.name) / "isolated-home"
-        client_home.mkdir()
+    def _seed_restart_row(self, client_home: Path) -> None:
+        """Persist a restart row from a connected install, then clear the home."""
         initial = apply_workflow(
             plan_workflow(
                 source_root=REPO_ROOT,
@@ -254,12 +253,15 @@ class ConnectedVerificationContinuationTests(_InstallTestBase):
         shutil.rmtree(client_home)
         client_home.mkdir()
 
+    def _run_terminal_update(
+        self, client_home: Path
+    ) -> "subprocess.CompletedProcess[str]":
         environment = dict(
             os.environ,
             HOME=str(client_home),
             USERPROFILE=str(client_home),
         )
-        completed = subprocess.run(
+        return subprocess.run(
             [
                 sys.executable,
                 str(SCRIPT),
@@ -275,6 +277,20 @@ class ConnectedVerificationContinuationTests(_InstallTestBase):
             env=environment,
         )
 
+    def _persisted_state(self) -> dict:
+        return json.loads(
+            (self.install_root / "install-update-state.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def test_blocked_restart_record_returns_bounded_continuation(self) -> None:
+        client_home = Path(self.tmp.name) / "isolated-home"
+        client_home.mkdir()
+        self._seed_restart_row(client_home)
+
+        completed = self._run_terminal_update(client_home)
+
         self.assertEqual(
             completed.returncode,
             install_mod.EXIT_CONNECTED_VERIFICATION,
@@ -282,14 +298,74 @@ class ConnectedVerificationContinuationTests(_InstallTestBase):
         )
         self.assertIn("[verification-required]", completed.stderr)
         self.assertNotIn("[residual]", completed.stderr)
-        persisted = json.loads(
-            (self.install_root / "install-update-state.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        persisted = self._persisted_state()
         self.assertEqual(persisted["outcome"]["status"], "blocked")
         self.assertEqual(persisted["outcome"]["blocked_surfaces"], [])
         self.assertFalse(persisted["outcome"]["fully_updated"])
+
+    def test_pending_client_repair_offers_keep_bounded_continuation(
+        self,
+    ) -> None:
+        """Registration drift beside a blocked restart row is not a failure.
+
+        Two detected clients keep the terminal context unavailable (so the
+        restart row stays blocked) while their missing registrations raise
+        repair offers that only an operator disposition resolves.
+        """
+        client_home = Path(self.tmp.name) / "isolated-home"
+        client_home.mkdir()
+        self._seed_restart_row(client_home)
+        cursor_config = client_home / ".cursor" / "mcp.json"
+        cursor_config.parent.mkdir(parents=True)
+        cursor_config.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+        codex_config = client_home / ".codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True)
+        codex_config.write_text("", encoding="utf-8")
+
+        completed = self._run_terminal_update(client_home)
+
+        self.assertEqual(
+            completed.returncode,
+            install_mod.EXIT_CONNECTED_VERIFICATION,
+            f"stderr={completed.stderr}\nstdout={completed.stdout}",
+        )
+        self.assertIn("[verification-required]", completed.stderr)
+        self.assertNotIn("[residual]", completed.stderr)
+        self.assertIn("client repair offers remain pending", completed.stdout)
+        persisted = self._persisted_state()
+        self.assertEqual(persisted["outcome"]["status"], "blocked")
+        self.assertEqual(persisted["outcome"]["blocked_surfaces"], [])
+        self.assertIn(
+            "client-registrations", persisted["outcome"]["pending_surfaces"]
+        )
+        self.assertIn(
+            "client-configuration", persisted["outcome"]["pending_surfaces"]
+        )
+        self.assertFalse(persisted["outcome"]["fully_updated"])
+        # No disposition was given, so neither client config was touched.
+        self.assertEqual(
+            cursor_config.read_text(encoding="utf-8"), '{"mcpServers": {}}\n'
+        )
+        self.assertEqual(codex_config.read_text(encoding="utf-8"), "")
+
+    def test_non_client_pending_surface_still_fails(self) -> None:
+        result = {
+            "outcome": {
+                "status": "blocked",
+                "pending_surfaces": ["project-schema-migration-offers"],
+                "blocked_surfaces": [],
+                "completed_surfaces": ["core-files"],
+            },
+            "surfaces": [
+                {"kind": "core-files", "state": "verified"},
+                {
+                    "kind": "project-schema-migration-offers",
+                    "state": "offered",
+                },
+            ],
+            "restarts": [{"status": "blocked"}],
+        }
+        self.assertFalse(install_mod._requires_connected_verification(result))
 
 
 class VersionMarkerTests(_InstallTestBase):

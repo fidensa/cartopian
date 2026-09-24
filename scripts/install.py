@@ -65,6 +65,37 @@ EXIT_USAGE = 2
 EXIT_BAD_PYTHON = 3
 EXIT_CONNECTED_VERIFICATION = 4
 
+# Optional client surfaces whose pending repair offer is resolved by the
+# operator's accept/decline/defer disposition on a re-run, not by this run.
+CLIENT_REPAIR_SURFACES = frozenset(
+    ("bridges", "client-registrations", "client-configuration")
+)
+
+
+def _pending_client_repair_offers(
+    workflow_result: Mapping[str, Any],
+) -> List[str]:
+    """Return pending surfaces when every one is an offered client repair."""
+    outcome = workflow_result.get("outcome")
+    if not isinstance(outcome, Mapping):
+        return []
+    pending = outcome.get("pending_surfaces")
+    if not isinstance(pending, list) or not pending:
+        return []
+    if any(kind not in CLIENT_REPAIR_SURFACES for kind in pending):
+        return []
+    surfaces = workflow_result.get("surfaces")
+    if not isinstance(surfaces, list):
+        return []
+    states = {
+        surface.get("kind"): surface.get("state")
+        for surface in surfaces
+        if isinstance(surface, Mapping)
+    }
+    if any(states.get(kind) != "offered" for kind in pending):
+        return []
+    return [str(kind) for kind in pending]
+
 
 def _requires_connected_verification(
     workflow_result: Mapping[str, Any],
@@ -75,11 +106,17 @@ def _requires_connected_verification(
     calling client.  Preserve the workflow's fail-closed ``blocked`` record,
     but distinguish that bounded continuation from an apply failure when every
     install surface has already reached a terminal, non-blocking state.
+    Pending client repair offers do not block the continuation: the operator
+    resolves them with ``--repair`` on a re-run, alongside the connected
+    verification.
     """
     outcome = workflow_result.get("outcome")
     if not isinstance(outcome, Mapping) or outcome.get("status") != "blocked":
         return False
-    if outcome.get("pending_surfaces") or outcome.get("blocked_surfaces"):
+    if outcome.get("blocked_surfaces"):
+        return False
+    offered = set(_pending_client_repair_offers(workflow_result))
+    if outcome.get("pending_surfaces") and not offered:
         return False
 
     surfaces = workflow_result.get("surfaces")
@@ -93,7 +130,7 @@ def _requires_connected_verification(
     completed_surfaces = outcome.get("completed_surfaces")
     if (
         not isinstance(completed_surfaces, list)
-        or set(completed_surfaces) != surface_kinds
+        or set(completed_surfaces) != surface_kinds - offered
     ):
         return False
     terminal_surface_states = {
@@ -105,7 +142,10 @@ def _requires_connected_verification(
     }
     if any(
         not isinstance(surface, Mapping)
-        or surface.get("state") not in terminal_surface_states
+        or (
+            surface.get("state") not in terminal_surface_states
+            and surface.get("kind") not in offered
+        )
         for surface in surfaces
     ):
         return False
@@ -1315,6 +1355,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"remain pending in {install_root / 'install-update-state.json'}."
         )
     elif _requires_connected_verification(workflow_result):
+        if _pending_client_repair_offers(workflow_result):
+            print(
+                "cartopian core installation is verified; client repair offers "
+                f"remain pending in {install_root / 'install-update-state.json'}."
+            )
         _eprint(
             "[verification-required] installed surfaces are verified; "
             "connected MCP restart-state verification remains required."
