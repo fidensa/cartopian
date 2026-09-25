@@ -19,7 +19,7 @@ The caller supplies: a Cartopian project directory; the role being assigned; the
 Run `cartopian resolve-config <project-path>` and read: the resolved `[roles.<role>]` records (description, effective grants, assigned work types, `launch`, `auto_launch`, attribution) and the `[automation]` policy (default `run_boundary = "handoff-complete"`; `max_handoffs_per_run` is reported only under `run_boundary = "handoff-budget"` and is `null` otherwise).
 
 - Role not declared in `[roles]`: stop and return a blocked outcome ("role not declared in `[roles]`; declare it or assign a different role").
-- Role declared but `launch.agent` unset: return a manual-dispatch outcome — the operator handles execution against the prompt and report paths.
+- Role declared but `launch.agent` unset: a manual (human) role — continue through Stage 1 unchanged (`handoff-packet` serves it with `launch.agent: null`), then take the operator-performed branch of Stage 2; the operator handles execution against the prompt and report paths.
 
 ---
 

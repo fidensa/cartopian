@@ -42,7 +42,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--role",
         required=True,
-        help="Role identifier being dispatched (must have roles.<role>.agent)",
+        help="Declared role identifier being handed off (manual roles need no agent)",
     )
 
 
@@ -593,12 +593,9 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(f"role {role!r} is not declared")
         return EXIT_FAIL
     role_record = roles[role]
-    if role_record["launch"]["agent"] is None:
-        stderr_guard(
-            f"roles.{role}.agent is not configured — "
-            f"dispatch this role manually"
-        )
-        return EXIT_FAIL
+    # A role without `agent` is a manual (human) role. The packet is the
+    # manual path's required preflight, so it serves that role with
+    # `launch.agent = null`; only `dispatch` requires a configured agent.
 
     git_versioning = resolved["git_versioning"]
     git_policy = (

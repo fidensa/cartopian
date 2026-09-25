@@ -1,7 +1,8 @@
 """Tests for `cartopian handoff-packet`.
 
 Covers the happy path (NDJSON contract), no-plan project, missing
-config → EXIT_ENV, missing roles.<role>.agent guard, and read-only invariant.
+config → EXIT_ENV, manual (agentless) roles, undeclared-role guard, and
+read-only invariant.
 """
 import argparse
 import contextlib
@@ -364,35 +365,56 @@ class TestHandoffPacketMissingConfig(unittest.TestCase):
             self.assertIn("project config not found", stderr)
 
 
-class TestHandoffPacketMissingHandoffBlock(unittest.TestCase):
-    """Requesting a role with no ``roles.<role>.launch`` block (project or
-    global) must fail non-zero with a ``[guard]`` stderr line.
+class TestHandoffPacketManualRole(unittest.TestCase):
+    """A declared role with no ``agent`` is a manual (human) role. The packet
+    is the manual handoff's required preflight, so it must serve that role
+    with ``launch.agent = null`` rather than refuse it; only ``dispatch``
+    requires an agent. An undeclared role still fails with a ``[guard]``.
     """
 
-    _TOML_NO_HANDOFFS = (
+    _TOML_MANUAL_ROLE = (
         "[project]\n"
-        'id = "no-handoff-proj"\n'
-        'name = "No Handoffs"\n'
+        'id = "manual-role-proj"\n'
+        'name = "Manual Role"\n'
         'project_schema_version = "v0.13.0"\n'
         "\n"
-        "[roles.coder]\n"
-        'description = "Implements tasks per spec."\n'
+        "[roles.operator]\n"
+        'description = "Performs manually assigned work."\n'
     )
 
-    def test_emits_guard_when_role_block_missing(self) -> None:
-        with project_scaffold(cartopian_toml=self._TOML_NO_HANDOFFS) as scaffold:
+    def test_serves_manual_role_without_agent(self) -> None:
+        with project_scaffold(cartopian_toml=self._TOML_MANUAL_ROLE) as scaffold:
             task_path = scaffold.write(
                 "tasks/open/TASK-01-050.md",
-                "# TASK-01-050: No Block\n",
+                "# TASK-01-050: Manual Work\n",
+            )
+
+            stdout, stderr, rc = _invoke(str(task_path), "operator")
+
+            self.assertEqual(rc, EXIT_OK, stderr)
+            self.assertNotIn("[guard]", stderr)
+            rec = json.loads(stdout.strip())
+            self.assertEqual(rec["role"], "operator")
+            self.assertEqual(
+                rec["role_description"], "Performs manually assigned work."
+            )
+            self.assertIsNone(rec["launch"]["agent"])
+            self.assertEqual(rec["auto_launch"], [])
+            self.assertTrue(rec["expected_report_path"].endswith("REPORT-01-050.md"))
+
+    def test_emits_guard_when_role_undeclared(self) -> None:
+        with project_scaffold(cartopian_toml=self._TOML_MANUAL_ROLE) as scaffold:
+            task_path = scaffold.write(
+                "tasks/open/TASK-01-051.md",
+                "# TASK-01-051: Unknown Role\n",
             )
 
             stdout, stderr, rc = _invoke(str(task_path), "coder")
 
-            self.assertNotEqual(rc, EXIT_OK)
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
             self.assertIn("[guard]", stderr)
-            self.assertIn("roles.coder.agent", stderr)
+            self.assertIn("'coder' is not declared", stderr)
 
 
 class TestBoundedUtf8Truncation(unittest.TestCase):
