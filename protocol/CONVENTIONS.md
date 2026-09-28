@@ -1186,6 +1186,10 @@ Every non-trivial decision gets its own immutable file in `decisions/`, named `D
 
 A decision that changes a prior decision creates a new file with `Supersedes: DEC-NNN`. The superseded decision file remains unchanged.
 
+`cartopian write-decision` reports the nearest live locked decisions beside the one it just recorded: a fixed three, ranked by topical proximity over each decision's title and ruling text, each row naming the terms that drew it in. This exists because every other gate verifies only the sources an author *declared* — source guidance, acceptance trace, and `plan-audit` all check the sources named, never the locked decision nobody thought to name — so reading three titles at the moment of writing is the one cheap point at which that gap closes. The rows are advisory and never change the exit code: proximity establishes that two rulings address the same subject, not that they disagree, and a decision the new body already names is listed and marked rather than dropped, because naming a ruling is not reconciling with it. The budget is three because that is where recall stops improving, not as a tunable.
+
+The same computation reaches the planning reviewer through `review-context --review-kind planning`, as the bounded set of locked decision pairs that are mutually near and have never cross-referenced each other. That list is reviewer evidence and carries no verdict; a task-closure review receives none of it, so the decision set never becomes ambient review context.
+
 ## Backlog
 
 `BACKLOG.md` at the project root is the durable home for PM/reviewer follow-up notes — actionable tech debt, process debt, and protocol-hardening items that are not yet promoted into a task or roadmap entry. Follow-up notes belong here, never in `STATE.md`, which stays canonical composed state under its 5KB ceiling; the mediated `write-state` enforces this by composing the body itself (see Session State). Protocol-compliance feedback (e.g. the operator points out a protocol or config rule the PM missed) is process debt and lands here the moment it arises — not in a `STATE.md` situation note.

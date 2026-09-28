@@ -149,7 +149,7 @@ Run only when `reviews.task_closure.mode == "required"`. Governing slices: `cart
 
 ## Stage 7 - Update Durable Records
 
-1. Record any non-trivial decisions by writing `decisions/DEC-NNN.md` through `cartopian write-decision <project-root> --dec-id DEC-NNN --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>` (it also renders the `decisions/INDEX.md` row).
+1. Record any non-trivial decisions by writing `decisions/DEC-NNN.md` through `cartopian write-decision <project-root> --dec-id DEC-NNN --title "<title>" --date <YYYY-MM-DD> --content-file <body-path>` (it also renders the `decisions/INDEX.md` row). The command also reports the three nearest live locked decisions: read those titles before moving on, and open one only when it plausibly governs what you just ruled, then re-issue the decision reconciled (`cartopian://protocol/CONVENTIONS/decisions`).
 2. Ensure task, review, and report evidence agree.
 3. Remove superseded prompts with `cartopian delete-prompt <prompt-path>`, never a raw `rm`.
 4. Leave reports in place until their evidence is captured in task, review, decision, or backlog records; then clear each consumed slot with its own `cartopian delete-report` call (idempotent over absent companions). `STATE.md` is not an evidence home.

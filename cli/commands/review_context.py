@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-from cli import acceptance_trace, contract_review, delivery_contract, trace_binding
+from cli import acceptance_trace, contract_review, decision_neighbors, delivery_contract, trace_binding
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.config_schema import MACHINE_RECORD_SCHEMA_VERSION
 from cli.emit import emit_record
@@ -87,6 +87,23 @@ def handler(args: argparse.Namespace) -> int:
         # of it, so the delivery record never becomes ambient review context.
         "delivery_contract": (
             delivery_contract.review_projection_for_plan(root)
+            if args.review_kind == "planning"
+            else None
+        ),
+        # Only the planning review receives the decision-proximity list. The
+        # planning reviewer is the one asked whether a new ruling sits badly
+        # beside the locked set, and today that depends on how widely it reads.
+        # These are the pairs worth reading: mutually near, never cross-
+        # referenced. Proximity is not contradiction — the list is evidence the
+        # reviewer weighs, never a finding — so it carries no verdict and never
+        # affects the exit code. A task-closure review gets none of it, so the
+        # decision set never becomes ambient review context.
+        "decision_proximity": (
+            {
+                "budget": decision_neighbors.NEIGHBOR_BUDGET,
+                "cap": decision_neighbors.REVIEW_PAIR_CAP,
+                "pairs": decision_neighbors.unreferenced_pairs(root),
+            }
             if args.review_kind == "planning"
             else None
         ),

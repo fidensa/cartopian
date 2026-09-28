@@ -6,7 +6,15 @@ invocation:
 - writes ``decisions/DEC-NNN.md`` (the body, via ``--content`` /
   ``--content-file``), then
 - updates ``decisions/INDEX.md`` — appending the matching table row, or
-  replacing the existing row for the same ``DEC-NNN`` on re-issue.
+  replacing the existing row for the same ``DEC-NNN`` on re-issue, then
+- reports the nearest live locked decisions (``cli/decision_neighbors.py``).
+
+The neighbor rows are the one surface that tells the PM which existing
+rulings sit next to the one it just recorded. They are advisory and never
+change the exit code: a decision is a ruling, and detecting that two rulings
+are *about* the same thing is not the same as knowing they disagree. The
+rows cost a fixed three lines, are emitted only here, and add nothing to
+session startup.
 
 Both writes go through the mediated-write primitive (``decision``
 dest_kind). The INDEX update is a read-modify-write of the full file rendered
@@ -17,6 +25,7 @@ import argparse
 from pathlib import Path
 from typing import List
 
+from cli import decision_neighbors
 from cli.commands import _writers
 from cli.mediated_write import GuardRefusal, mediated_write
 
@@ -163,11 +172,20 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
+    # Advisory, and deliberately last: a failure to rank neighbors must never
+    # cost a caller the decision it already wrote to disk.
+    try:
+        body = content.decode("utf-8", "replace") if isinstance(content, bytes) else content
+        neighbors = decision_neighbors.neighbors(root, body, exclude_id=dec_id)
+    except Exception:  # pragma: no cover - advisory surface, never fatal
+        neighbors = []
+
     _writers.emit_record({
         "action": "write-decision",
         "details": {
             "dest_kind": "decision",
             "dec_id": dec_id,
+            "neighbors": neighbors,
             "decision_path": dec_result["path"],
             "decision_bytes": dec_result["bytes"],
             "index_path": index_result["path"],

@@ -164,7 +164,9 @@
       "task_delta_bytes": null,
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "max_output_bytes": 131072,
-      "request_trace_channel_note": "Phase 00 had no review-context surface. The v0.9 surface carries exact UTF-8 request excerpts with a 24 KiB per-excerpt refusal bound, stable source provenance, and a separate list of existing PM-derived artifact paths."
+      "request_trace_channel_note": "Phase 00 had no review-context surface. The v0.9 surface carries exact UTF-8 request excerpts with a 24 KiB per-excerpt refusal bound, stable source provenance, and a separate list of existing PM-derived artifact paths.",
+      "decision_proximity_delta_bytes": 9591,
+      "decision_proximity_note": "Only the planning review carries decision_proximity: the bounded set of locked decision pairs that are mutually near and have never cross-referenced each other, which is the reviewer's candidate list for a new ruling that contradicts an older locked one. 9591 bytes is the exact worst case computed from the declared caps (20 pairs, each two 120-character titles and three 48-character shared terms), not a measured sample. A task-closure review carries null, so the decision set never becomes ambient review context."
     }
   ],
   "discovery": [
