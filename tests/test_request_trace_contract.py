@@ -354,7 +354,7 @@ class RequestTraceContract(unittest.TestCase):
         }
         for decision_id, (attribution, quote) in legacy.items():
             (decisions / f"{decision_id}-legacy.md").write_text(
-                f"# {decision_id}\n\nDate: 2026-07-27\n\n## Context\n\n"
+                f"# {decision_id}\n\nDate: 2026-07-27\nStatus: locked\n\n## Context\n\n"
                 f"{attribution}\n\n> \"{quote}\"\n",
                 encoding="utf-8",
             )
@@ -398,7 +398,7 @@ class RequestTraceContract(unittest.TestCase):
         decisions = self.root / "decisions"
         decisions.mkdir(exist_ok=True)
         (decisions / "DEC-012.md").write_text(
-            "# DEC-012\n\n"
+            "# DEC-012\n\nStatus: locked\n\n"
             "Operator request quote for: project:project\n\n"
             "> \"Same text.\"\n\n"
             "Operator request quote for: task:TASK-02-010\n\n"

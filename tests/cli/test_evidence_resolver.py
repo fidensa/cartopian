@@ -149,9 +149,12 @@ class ResolverCase(unittest.TestCase):
         session.exchange("The old tool is retired next month.", SUMMARY)
         return session.say(reply)
 
-    def write_decision(self, dec_id: str, marker: str, quote: str | None = None) -> None:
+    def write_decision(
+        self, dec_id: str, marker: str, quote: str | None = None,
+        *, status: str = "locked", supersedes: str = "none",
+    ) -> None:
         body = (
-            f"# {dec_id}: Scope\n\nDate: 2026-09-08\nStatus: locked\nSupersedes: none\n\n"
+            f"# {dec_id}: Scope\n\nDate: 2026-09-08\nStatus: {status}\nSupersedes: {supersedes}\n\n"
             f"## Context\n\n{marker}\n"
         )
         if quote is not None:
@@ -353,6 +356,52 @@ class ReferenceTests(ResolverCase):
         self.assertEqual(context.evidence_ids, [reply])
         reasons = {u.reason for u in evidence_resolver.resolve(self.root, PROJECT).unconfirmed}
         self.assertEqual(reasons, {"cross-unit"})
+
+    def test_only_current_locked_decisions_select_evidence(self) -> None:
+        session, reply = self._confirmed()
+        old = session.exchange("Skip drafts.", "Noted.")
+        current = session.exchange("Include drafts after all.", "Noted.")
+        for status in ("locked", "open", "", "unknown"):
+            with self.subTest(status=status):
+                self.write_decision(
+                    "DEC-001-scope", f"Operator request evidence for: project:project: {old}",
+                )
+                self.write_decision(
+                    "DEC-002", f"Operator request evidence for: project:project: {current}",
+                    status=status, supersedes="DEC-001",
+                )
+                resolution = evidence_resolver.resolve(self.root, PROJECT)
+                expected = [reply, current] if status == "locked" else [reply]
+                self.assertEqual([e.record_id for e in resolution.evidence], expected)
+                self.assertEqual(resolution.unconfirmed, [])
+
+    def test_retired_reference_does_not_conflict_with_current_unit(self) -> None:
+        session, _ = self._confirmed()
+        turn = session.exchange("Skip drafts.", "Noted.")
+        self.write_decision("DEC-001", f"Operator request evidence for: project:project: {turn}")
+        self.write_decision(
+            "DEC-002", f"Operator request evidence for: task:TASK-01-001: {turn}",
+            supersedes="DEC-001",
+        )
+        resolution = evidence_resolver.resolve(self.root, GovernedUnit("task", "TASK-01-001"))
+        self.assertEqual([e.record_id for e in resolution.evidence], [turn])
+        self.assertEqual(resolution.unconfirmed, [])
+
+    def test_inactive_decision_markers_are_not_validated_or_reported(self) -> None:
+        self._confirmed()
+        markers = (
+            "Operator request evidence for: invalid",
+            "Operator request quote for: project:project\n\n> Legacy words.",
+        )
+        for marker in markers:
+            for status in ("locked", "open", "", "unknown"):
+                with self.subTest(marker=marker, status=status):
+                    self.write_decision("DEC-001", marker, status=status)
+                    self.write_decision("DEC-002", "Replacement ruling.", supersedes="DEC-001")
+                    self.assertEqual(evidence_resolver.decision_references(self.root), ([], []))
+                    if status != "locked":
+                        self.write_decision("DEC-002", "Unrelated ruling.")
+                        self.assertEqual(evidence_resolver.decision_references(self.root), ([], []))
 
     def test_referenced_bare_assent_without_proposal_is_unconfirmed(self) -> None:
         session, reply = self._confirmed()

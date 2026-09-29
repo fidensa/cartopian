@@ -11,6 +11,10 @@ Use this skill when you are starting from scratch and want a guided requirements
 
 ## Intake precondition
 
+Use ordinary chat replies for intent confirmation and scope statements that
+need evidence. `AskUserQuestion` selections are tool responses, not captured
+operator prompts; never infer a capture identity from a selection.
+
 Operator evidence is the operator's own turns, captured by the host intake
 hooks and bound by `select_project` at the end of Stage 0. The Stage 1 intent
 summary and the operator's reply bind automatically at lock, so never ask the

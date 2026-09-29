@@ -17,7 +17,7 @@ from unittest import mock
 
 from cli import evidence_resolver, provenance, request_trace
 from cli.commands import plan_audit, revoke_evidence
-from cli.main import OPERATOR_ONLY_SUBCOMMANDS
+from cli.main import OPERATOR_ONLY_SUBCOMMANDS, main
 from mcp_server import server
 from tests.cli.test_evidence_resolver import ResolverCase
 
@@ -149,11 +149,97 @@ class RevokeCommandTests(RevokeCase):
 
 
 class RequestStoreAuditTests(RevokeCase):
+    def test_superseding_uncaptured_reference_clears_audit_and_startup(self) -> None:
+        session, reply, _ = self.confirmed_project()
+        missing = f"{session.handle}/turn-38"
+        self.write_decision(
+            "DEC-001", f"Operator request evidence for: project:project: {reply}, {missing}",
+        )
+        old_path = self.root / "decisions/DEC-001.md"
+        old_bytes = old_path.read_bytes()
+        active = self.root / "tasks/in-progress/TASK-01-001.md"
+        active.parent.mkdir()
+        active.write_text("# TASK-01-001: Sync\n\nPhase: PHASE-01\n", encoding="utf-8")
+        (self.root / "phases/PHASE-01.md").write_text("# PHASE-01: Sync\n", encoding="utf-8")
+        (self.root / "prompts/PROMPT-01-001.md").write_text("# Prompt\n", encoding="utf-8")
+
+        def invoke(command, *flags):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main([command, str(self.root), *flags])
+            return code, json.loads(out.getvalue()), err.getvalue()
+
+        code, before, err = invoke("next-action", "--compact", "--audit")
+        self.assertEqual(code, 1, err)
+        self.assertEqual(before["startup"]["verdict"], "blocked")
+        blockers, _ = plan_audit._check_request_store(self.root, "notes")
+        self.assertEqual(
+            [(b["kind"], b["reference"], b["source"], b["failure_class"]) for b in blockers],
+            [("unconfirmed-evidence-reference", missing, "DEC-001", "not-captured")],
+        )
+
+        self.write_decision(
+            "DEC-002", f"Operator request evidence for: project:project: {reply}",
+            supersedes="DEC-001",
+        )
+        (self.root / "decisions/INDEX.md").write_text(
+            "# Decisions\n\n| ID | Title | Date | Status | Supersedes |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| DEC-001 | Scope | 2026-09-08 | locked | none |\n"
+            "| DEC-002 | Scope | 2026-09-08 | locked | DEC-001 |\n",
+            encoding="utf-8",
+        )
+        for flags in ((), ("--compact",)):
+            with self.subTest(flags=flags):
+                code, audit, err = invoke("plan-audit", *flags)
+                self.assertEqual(code, 0, err)
+                self.assertEqual(audit["blockers"], [])
+        code, after, err = invoke("next-action", "--compact", "--audit")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(after["startup"]["verdict"], "ready", after["startup"])
+        self.assertEqual(old_path.read_bytes(), old_bytes)
+
     def test_clean_project_has_no_store_findings(self) -> None:
         self.confirmed_project()
         blockers, warnings = plan_audit._check_request_store(self.root, "notes")
         self.assertEqual(blockers, [])
         self.assertEqual(warnings, [])
+
+    def test_retiring_decision_does_not_hide_a_live_artifact_reference(self) -> None:
+        session, reply, _ = self.confirmed_project()
+        missing = f"{session.handle}/turn-38"
+        self.write_decision("DEC-001", f"Operator request evidence for: project:project: {missing}")
+        self.write_decision(
+            "DEC-002", f"Operator request evidence for: project:project: {reply}",
+            supersedes="DEC-001",
+        )
+        (self.root / "REQUIREMENTS.md").write_text(
+            f"# Requirements\n\n## Request evidence\n\n- {missing}\n", encoding="utf-8",
+        )
+        blockers, _ = plan_audit._check_request_store(self.root, "notes")
+        self.assertEqual(
+            [(b["kind"], b["source"], b["reference"]) for b in blockers],
+            [("unconfirmed-evidence-reference", "artifact", missing)],
+        )
+
+    def test_retired_revoked_reference_clears_but_bound_review_still_blocks(self) -> None:
+        session, reply, _ = self.confirmed_project()
+        turn = session.exchange("Skip drafts.", "Noted.")
+        self.write_decision("DEC-001", f"Operator request evidence for: project:project: {turn}")
+        self.revoke([turn])
+        blockers, _ = plan_audit._check_request_store(self.root, "notes")
+        self.assertEqual([b["failure_class"] for b in blockers], ["revoked"])
+        self.write_decision(
+            "DEC-002", f"Operator request evidence for: project:project: {reply}",
+            supersedes="DEC-001",
+        )
+        self.assertEqual(plan_audit._check_request_store(self.root, "notes"), ([], []))
+        self.approve_checkpoint("PLAN-002", "BUILD-01-002", [turn])
+        blockers, _ = plan_audit._check_request_store(self.root, "notes")
+        self.assertEqual(
+            [(b["kind"], b["reference"]) for b in blockers],
+            [("revoked-evidence-in-use", turn)],
+        )
 
     def test_unreceipted_binding_and_foreign_binding_block(self) -> None:
         self.confirmed_project()

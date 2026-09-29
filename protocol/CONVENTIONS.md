@@ -423,7 +423,8 @@ Applicable evidence for a unit is selected, never searched for:
    writer resolves that pair from adapter state in code and binds it into the
    project's binding record as the `project:project` original. Nothing is
    asked again: a resumed session, a new task, or a new agent inherits it.
-2. **Referenced turns.** A decision names captured turns with the structural
+2. **Referenced turns.** A current, locked decision (not open, not named by
+   another decision's `Supersedes:`) names captured turns with the structural
    marker `Operator request evidence for: <unit>: <capture-id>[, ...]`, where
    the unit is exactly one of `project:project`, `planning:PLAN-NNN`, or
    `task:TASK-NN-NNN`; requirements and task files may name capture identities
@@ -433,6 +434,9 @@ Applicable evidence for a unit is selected, never searched for:
    modulo whitespace, or the reference is `unconfirmed`. A reference inherits
    the capture's unit, pairing state, and revocation; a turn referenced under
    two units is `cross-unit` for both. A malformed marker fails closed.
+   Superseded and non-locked decisions neither select evidence nor produce
+   evidence-reference findings; their historical text remains unchanged.
+   Requirements, tasks, and retained reviews still validate their own references.
 3. **Corrections.** Referenced turns later than the confirmation, in receipt
    order. Where a reply differs from the proposal it answered, the reply
    governs; both are kept whole.
@@ -443,6 +447,11 @@ A capture identity is `<handle>/turn-<ordinal>`; its paired proposal is
 unit one line each, or exactly one missing item with its operator-facing
 remedy; it never returns captured text. The PM takes identities from the
 lookup (`--recent` for turns not yet selected), never from memory.
+
+`AskUserQuestion` selections are tool responses, not intake-captured operator
+prompts. Use ordinary chat replies for intent confirmation and scope statements
+that need evidence. Never infer a capture identity from a tool selection; only
+cite an identity returned by `lookup-evidence`.
 
 Everything else is unconfirmed and satisfies no gate: block quotes under the
 retired `Operator request quote for:` marker, the historical DEC-007..DEC-009

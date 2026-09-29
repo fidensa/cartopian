@@ -248,6 +248,11 @@ def superseded_ids(texts: Dict[str, str]) -> Set[str]:
     return retired
 
 
+def is_current_locked_decision(decision_id: str, text: str, retired: Set[str]) -> bool:
+    """Whether a decision can authorize a disposition or select evidence."""
+    return decision_id not in retired and decision_header(text, "Status").lower() == "locked"
+
+
 def unreadable_status_decisions(project_root: Path) -> List[Dict[str, str]]:
     """Decisions whose ``Status:`` is absent or outside the vocabulary.
 
@@ -286,25 +291,12 @@ def out_of_plan_dispositions(project_root: Path) -> Dict[str, str]:
     ``Supersedes:`` line has been retired by a later ruling — whichever way
     that ruling went, the retired text no longer authorizes anything.
     """
-    decisions = Path(project_root) / "decisions"
     out: Dict[str, str] = {}
-    if not decisions.is_dir():
-        return out
-    texts: Dict[str, str] = {}
-    for path in sorted(decisions.glob("DEC-*.md")):
-        try:
-            texts[path.stem] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-    superseded: set = set()
-    for text in texts.values():
-        for token in re.findall(r"DEC-\d{3}", decision_header(text, "Supersedes")):
-            superseded.add(token)
+    texts = decision_bodies(project_root)
+    superseded = superseded_ids(texts)
     for stem in sorted(texts):
         text = texts[stem]
-        if stem in superseded:
-            continue
-        if decision_header(text, "Status").lower() != "locked":
+        if not is_current_locked_decision(stem, text, superseded):
             continue
         for line in text.splitlines():
             stripped = line.strip()

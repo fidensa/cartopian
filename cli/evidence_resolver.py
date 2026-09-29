@@ -18,7 +18,7 @@ Sources, in trust order:
   and the confirming or correcting reply) into the binding. That pair is the
   project's original evidence. At most one non-revoked confirmation exists;
   a fresh one after revocation records ``supersedes``.
-- **References.** A decision names captured turns with one structural
+- **References.** A current, locked decision names captured turns with one structural
   marker, ``Operator request evidence for: <unit>: <capture-id>[, ...]``,
   and requirements or a task name them in their evidence sections. Text
   and provenance always come from the capture; a block quote under the
@@ -726,13 +726,14 @@ def _quote_after(lines: Sequence[str], index: int) -> Tuple[Optional[str], int]:
 
 
 def decision_references(project_root: Path) -> Tuple[List[Reference], List[Unconfirmed]]:
-    """Structural capture references from every decision, plus legacy quotes.
+    """Structural capture references from current, locked decisions, plus legacy quotes.
 
-    Legacy ``Operator request quote for:`` markers stay readable (their shape
-    is still validated so a malformed marker fails closed) but are reported
-    as unconfirmed: a quotation carries no receipt.
+    Superseded decisions are immutable history and open decisions authorize
+    nothing. Neither selects evidence or produces evidence-reference findings.
+    In current, locked decisions, legacy ``Operator request quote for:``
+    markers are shape-validated but unconfirmed: a quotation carries no receipt.
     """
-    from cli import request_trace  # local: request_trace imports this module lazily
+    from cli import request_trace, trace_binding  # local: request_trace imports this module lazily
 
     decisions_dir = Path(project_root) / "decisions"
     refs: List[Reference] = []
@@ -744,9 +745,16 @@ def decision_references(project_root: Path) -> Tuple[List[Reference], List[Uncon
         match = re.fullmatch(r"(DEC-\d{3})(?:-.*)?\.md", path.name)
         if match:
             grouped.setdefault(match.group(1), []).append(path)
+    texts = {
+        path: read_contained_text(project_root, path, what="decision request source")
+        for paths in grouped.values() for path in paths
+    }
+    retired = trace_binding.superseded_ids({path.stem: text for path, text in texts.items()})
     for decision_id, paths in sorted(grouped.items()):
         for path in paths:
-            text = read_contained_text(project_root, path, what="decision request source")
+            text = texts[path]
+            if not trace_binding.is_current_locked_decision(decision_id, text, retired):
+                continue
             lines = text.splitlines()
             i = 0
             while i < len(lines):

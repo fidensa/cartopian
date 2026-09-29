@@ -12,6 +12,10 @@ Run one Cartopian task from assignment through evidence-supported closure, any r
 
 Operator evidence is the operator's own turns, captured by the host intake hooks and bound by `select_project`; the writers resolve it, and a planned task inherits the project evidence through its verified task-to-phase-to-plan ancestry with no later operator restatement. A task-specific operator statement reaches the task only by capture identity from `cartopian lookup-evidence <project-root> --unit task:TASK-NN-NNN --recent`, referenced from a decision or the task's `## Request evidence` section; PM prose is never operator evidence. Never create, copy, or edit anything under `requests/` or the intake directory, never invoke operator-only intake, and never use shell or escalation to bypass an evidence gate; relay any evidence refusal to the operator verbatim and stop. Rules: `cartopian://protocol/CONVENTIONS/up-front-operator-request-evidence`.
 
+Use ordinary chat replies for scope statements that need evidence.
+`AskUserQuestion` selections are tool responses, not captured operator prompts;
+never infer a capture identity from a selection.
+
 ---
 
 ## Prerequisites
