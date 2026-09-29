@@ -1166,6 +1166,38 @@ def _check_scoped_request_coverage(project_path: Path) -> List[Dict[str, Any]]:
     return warnings
 
 
+def _check_decision_status(project_path: Path) -> List[Dict[str, Any]]:
+    """Warn on a decision whose ``Status:`` no mechanical reader can act on.
+
+    Authorization readers require an explicit ``locked``. A decision whose
+    status header is absent or outside the vocabulary therefore authorizes
+    nothing and disposes nothing, however plainly its prose rules — it is a
+    governing ruling invisible to every gate that would enforce it. Nothing
+    can be inferred safely on the decision's behalf, so the repair is the
+    PM's: declare the status the ruling actually has.
+
+    A warning rather than a blocker, because existing plans carry these and
+    closing a plan is not the moment to discover them.
+    """
+    warnings: List[Dict[str, Any]] = []
+    for item in trace_binding.unreadable_status_decisions(project_path):
+        declared = item["declared"]
+        warnings.append({
+            "kind": "decision-status-unreadable",
+            "decision": item["decision"],
+            "declared": declared,
+            "detail": (
+                f"{item['decision']} declares "
+                + (f"Status: {declared!r}" if declared else "no Status: header")
+                + "; authorization readers act only on `locked`, so this "
+                "decision currently authorizes and disposes nothing. Re-issue "
+                "it through write-decision with the status the ruling has "
+                f"({' or '.join(trace_binding.DECISION_STATUSES)})"
+            ),
+        })
+    return warnings
+
+
 def _check_situation_notes(project_path: Path) -> List[Dict[str, Any]]:
     """Block while STATE.md carries undelivered-mail Situation notes.
 
@@ -1494,6 +1526,7 @@ def evaluate(args: argparse.Namespace) -> Tuple[Optional[Dict[str, Any]], int]:
     warnings.extend(store_warnings)
     warnings.extend(intent_warnings)
     warnings.extend(_check_scoped_request_coverage(project_path))
+    warnings.extend(_check_decision_status(project_path))
 
     # Universal raw-edit detection floor. Runs as part of this ordinary CLI
     # command — no harness interception — so it is the portable floor: it

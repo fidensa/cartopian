@@ -18,7 +18,7 @@ import json
 import unittest
 from pathlib import Path
 
-from cli import decision_neighbors
+from cli import decision_neighbors, trace_binding
 from cli.commands import write_decision
 from tests.scaffold import project_scaffold
 from tests.test_trace_seams import SeamFixture
@@ -101,6 +101,63 @@ class DecisionCorpusTest(unittest.TestCase):
         self.assertEqual(decision_neighbors.corpus(empty.project_root), {})
         self.assertEqual(decision_neighbors.neighbors(empty.project_root, AMENDMENT), [])
         self.assertEqual(decision_neighbors.unreferenced_pairs(empty.project_root), [])
+
+
+class LivenessSplitTest(unittest.TestCase):
+    """Retrieval liveness is wider than authorization liveness, on purpose."""
+
+    def setUp(self) -> None:
+        self.scaffold = project_scaffold()
+        self.addCleanup(self.scaffold.cleanup)
+        self.root = self.scaffold.project_root
+
+    def test_an_unreadable_status_still_reaches_the_retrieval_corpus(self) -> None:
+        """A malformed header must not hide a governing ruling from a reader.
+
+        Both shapes found in real projects: no ``Status:`` line at all, and a
+        status outside the vocabulary. Authorization readers correctly refuse
+        to act on either. Refusing to *show* them costs recall and buys no
+        safety, because surfacing a decision for a human to read authorizes
+        nothing.
+        """
+        self.scaffold.write("decisions/DEC-001.md", BOUNDARY.replace("Status: locked\n", ""))
+        self.scaffold.write("decisions/DEC-002.md", LIMITS.replace("Status: locked", "Status: accepted"))
+        self.assertEqual(sorted(decision_neighbors.corpus(self.root)), ["DEC-001", "DEC-002"])
+
+    def test_a_proposal_is_not_offered_as_a_ruling_to_reconcile(self) -> None:
+        self.scaffold.write("decisions/DEC-001.md", decision(
+            "DEC-001: Proposed boundary", "Not yet ruled.", status="open"))
+        self.assertEqual(decision_neighbors.corpus(self.root), {})
+
+    def test_authorization_liveness_is_unchanged(self) -> None:
+        """out_of_plan_dispositions must keep refusing anything but `locked`."""
+        marker = f"\n{trace_binding.OUT_OF_PLAN_MARKER} sha256:{'a' * 64}\n"
+        self.scaffold.write(
+            "decisions/DEC-001.md",
+            BOUNDARY.replace("Status: locked\n", "") + marker,
+        )
+        self.assertEqual(trace_binding.out_of_plan_dispositions(self.root), {})
+        self.assertIn("DEC-001", decision_neighbors.corpus(self.root))
+
+    def test_unreadable_statuses_are_reported_for_repair(self) -> None:
+        self.scaffold.write("decisions/DEC-001.md", BOUNDARY.replace("Status: locked\n", ""))
+        self.scaffold.write("decisions/DEC-002.md", LIMITS.replace("Status: locked", "Status: accepted"))
+        self.scaffold.write("decisions/DEC-003.md", ROSTER)
+        found = {
+            item["decision"]: item["reason"]
+            for item in trace_binding.unreadable_status_decisions(self.root)
+        }
+        self.assertEqual(found, {
+            "decisions/DEC-001.md": "absent",
+            "decisions/DEC-002.md": "unrecognized",
+        })
+
+    def test_a_superseded_decision_is_not_reported_for_repair(self) -> None:
+        """Retired text is not worth a header correction."""
+        self.scaffold.write("decisions/DEC-001.md", BOUNDARY.replace("Status: locked\n", ""))
+        self.scaffold.write(
+            "decisions/DEC-002.md", decision("DEC-002: Replacement", "New ruling.", supersedes="DEC-001"))
+        self.assertEqual(trace_binding.unreadable_status_decisions(self.root), [])
 
 
 class NeighborRankingTest(unittest.TestCase):
@@ -291,29 +348,66 @@ class WriteDecisionSurfaceTest(unittest.TestCase):
         self.assertNotIn("DEC-001", surfaced)
         self.assertIn("DEC-002", surfaced, "the constraint it did not retire still stands")
 
-    def test_liveness_follows_the_body_header_not_the_index_flag(self) -> None:
-        """Pins an existing seam this surface inherits rather than introduces.
-
-        ``write-decision --supersedes`` populates the INDEX.md row; the body's
-        own ``Supersedes:`` header is what every liveness reader consults. When
-        a caller sets the flag alone the two disagree, and the named decision
-        stays live here exactly as it stays live for `trace_binding`. Changing
-        that is a write-decision guard question, not a proximity question.
-        """
-        source = self.scaffold.root / "flag-only.md"
-        source.write_text(AMENDMENT, encoding="utf-8")
+    def _write_raw(self, dec_id: str, body: str, **flags):
+        source = self.scaffold.root / f"{dec_id}-raw.md"
+        source.write_text(body, encoding="utf-8")
         args = argparse.Namespace(
-            project_root=str(self.root), dec_id="DEC-005",
+            project_root=str(self.root), dec_id=dec_id,
             title="Demonstration scope amended", date="2026-09-01",
-            status="locked", supersedes="DEC-001",
+            status=flags.get("status"), supersedes=flags.get("supersedes"),
             content=None, content_file=str(source),
         )
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            self.assertEqual(write_decision.handler(args), 0, err.getvalue())
-        record = json.loads(out.getvalue().strip().splitlines()[-1])
-        self.assertIn("DEC-001", [row["id"] for row in record["details"]["neighbors"]])
-        self.assertIn("DEC-001", decision_neighbors.corpus(self.root))
+            code = write_decision.handler(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def _index_row(self, dec_id: str) -> str:
+        text = (self.root / "decisions" / "INDEX.md").read_text(encoding="utf-8")
+        return next(line for line in text.splitlines() if line.startswith(f"| [{dec_id}]"))
+
+    def test_body_header_fills_the_index_row_when_the_flag_is_omitted(self) -> None:
+        """The decision file is the ruling; the index row projects it."""
+        body = AMENDMENT.replace("Supersedes: none", "Supersedes: DEC-001")
+        code, _, err = self._write_raw("DEC-005", body)
+        self.assertEqual(code, 0, err)
+        self.assertIn("DEC-001", self._index_row("DEC-005"))
+
+    def test_a_flag_contradicting_the_body_is_refused(self) -> None:
+        code, _, err = self._write_raw("DEC-005", AMENDMENT, supersedes="DEC-001")
+        self.assertEqual(code, 1)
+        self.assertIn("decision-header-conflict", err)
+        self.assertFalse((self.root / "decisions" / "DEC-005.md").exists())
+
+    def test_an_absent_header_is_stamped_so_the_two_cannot_drift(self) -> None:
+        body = AMENDMENT.replace("Status: locked\n", "")
+        code, _, err = self._write_raw("DEC-005", body, status="open")
+        self.assertEqual(code, 0, err)
+        written = (self.root / "decisions" / "DEC-005.md").read_text(encoding="utf-8")
+        self.assertEqual(trace_binding.decision_header(written, "Status"), "open")
+        self.assertIn("| open |", self._index_row("DEC-005"))
+
+    def test_an_unrecognized_status_is_refused_rather_than_indexed(self) -> None:
+        """The exact shape found in a real project: indexed locked, body 'accepted'."""
+        body = AMENDMENT.replace("Status: locked", "Status: accepted")
+        code, _, err = self._write_raw("DEC-005", body)
+        self.assertEqual(code, 1)
+        self.assertIn("decision-status-unrecognized", err)
+        self.assertFalse((self.root / "decisions" / "DEC-005.md").exists())
+
+    def test_index_and_body_agree_after_every_accepted_write(self) -> None:
+        for dec_id, body, flags in (
+            ("DEC-005", AMENDMENT, {}),
+            ("DEC-006", AMENDMENT.replace("Supersedes: none", "Supersedes: DEC-002"), {}),
+            ("DEC-007", AMENDMENT.replace("Status: locked", "Status: open"), {}),
+        ):
+            code, _, err = self._write_raw(dec_id, body, **flags)
+            self.assertEqual(code, 0, err)
+            written = (self.root / "decisions" / f"{dec_id}.md").read_text(encoding="utf-8")
+            row = self._index_row(dec_id)
+            self.assertIn(f"| {trace_binding.decision_header(written, 'Status')} |", row)
+            declared = trace_binding.decision_header(written, "Supersedes")
+            self.assertIn(declared, row)
 
     def test_ranking_failure_never_costs_the_caller_the_decision(self) -> None:
         """The decision is on disk before ranking runs. It stays there."""
@@ -327,6 +421,30 @@ class WriteDecisionSurfaceTest(unittest.TestCase):
         _, record = self._write("DEC-006", AMENDMENT)
         self.assertEqual(record["details"]["neighbors"], [])
         self.assertTrue((self.root / "decisions" / "DEC-006.md").is_file())
+
+
+class AuditWarningTest(SeamFixture):
+    """plan-audit is where an unreadable decision status gets found."""
+
+    def test_warning_names_the_decision_and_the_repair(self) -> None:
+        (self.root / "decisions/DEC-001.md").write_text(
+            BOUNDARY.replace("Status: locked\n", ""), encoding="utf-8")
+        code, records, err = self.run_cli("plan-audit", str(self.root))
+        warnings = [
+            w for w in records[0]["warnings"] if w["kind"] == "decision-status-unreadable"
+        ]
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0]["decision"], "decisions/DEC-001.md")
+        self.assertIn("locked", warnings[0]["detail"])
+
+    def test_a_well_formed_decision_set_warns_about_nothing(self) -> None:
+        (self.root / "decisions/DEC-001.md").write_text(BOUNDARY, encoding="utf-8")
+        (self.root / "decisions/DEC-002.md").write_text(LIMITS, encoding="utf-8")
+        code, records, err = self.run_cli("plan-audit", str(self.root))
+        self.assertEqual(
+            [w for w in records[0]["warnings"] if w["kind"] == "decision-status-unreadable"],
+            [],
+        )
 
 
 class ReviewProjectionTest(SeamFixture):

@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from cli import acceptance_trace, request_trace, source_guidance
 
@@ -203,7 +203,20 @@ def enumerate_inputs(
 OUT_OF_PLAN_MARKER = "Out-of-plan request:"
 
 
-def _decision_header(text: str, name: str) -> str:
+#: The statuses a decision may declare. ``locked`` is a ruling in force;
+#: ``open`` is a proposal. Anything else — including an absent header — is
+#: unreadable, and readers say so rather than guessing.
+DECISION_STATUSES: Tuple[str, ...] = ("locked", "open")
+
+
+def decision_header(text: str, name: str) -> str:
+    """One ``Name: value`` line from a decision's top header block.
+
+    The block is the run of lines before the first ``## `` section, matching
+    the boundary every other header reader in the CLI uses. Returns ``""`` when
+    the field is absent, which callers must distinguish from a declared empty
+    value if the difference matters to them.
+    """
     for line in text.splitlines():
         if line.startswith("## "):
             break
@@ -211,6 +224,53 @@ def _decision_header(text: str, name: str) -> str:
         if stripped.startswith(f"{name}:"):
             return stripped[len(name) + 1 :].strip()
     return ""
+
+
+def decision_bodies(project_root: Path) -> Dict[str, str]:
+    """``{DEC-NNN: body}`` for every decision file, readable or not."""
+    directory = Path(project_root) / "decisions"
+    if not directory.is_dir():
+        return {}
+    texts: Dict[str, str] = {}
+    for path in sorted(directory.glob("DEC-*.md")):
+        try:
+            texts[path.stem] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return texts
+
+
+def superseded_ids(texts: Dict[str, str]) -> Set[str]:
+    """Decision ids any other decision retires through ``Supersedes:``."""
+    retired: Set[str] = set()
+    for text in texts.values():
+        retired.update(re.findall(r"DEC-\d{3}", decision_header(text, "Supersedes")))
+    return retired
+
+
+def unreadable_status_decisions(project_root: Path) -> List[Dict[str, str]]:
+    """Decisions whose ``Status:`` is absent or outside the vocabulary.
+
+    These are not a cosmetic defect. Authorization readers require an explicit
+    ``locked``, so such a decision silently authorizes nothing however plainly
+    its prose rules — a governing ruling that no mechanical reader can see.
+    Detection belongs in ``plan-audit``; correcting the header is PM work.
+    """
+    findings: List[Dict[str, str]] = []
+    texts = decision_bodies(project_root)
+    retired = superseded_ids(texts)
+    for stem in sorted(texts):
+        if stem in retired:
+            continue
+        declared = decision_header(texts[stem], "Status")
+        if declared.lower() in DECISION_STATUSES:
+            continue
+        findings.append({
+            "decision": f"decisions/{stem}.md",
+            "declared": declared,
+            "reason": "absent" if not declared else "unrecognized",
+        })
+    return findings
 
 
 def out_of_plan_dispositions(project_root: Path) -> Dict[str, str]:
@@ -238,13 +298,13 @@ def out_of_plan_dispositions(project_root: Path) -> Dict[str, str]:
             continue
     superseded: set = set()
     for text in texts.values():
-        for token in re.findall(r"DEC-\d{3}", _decision_header(text, "Supersedes")):
+        for token in re.findall(r"DEC-\d{3}", decision_header(text, "Supersedes")):
             superseded.add(token)
     for stem in sorted(texts):
         text = texts[stem]
         if stem in superseded:
             continue
-        if _decision_header(text, "Status").lower() != "locked":
+        if decision_header(text, "Status").lower() != "locked":
             continue
         for line in text.splitlines():
             stripped = line.strip()

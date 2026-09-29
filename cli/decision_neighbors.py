@@ -170,33 +170,30 @@ def _terms(sections: Tuple[str, str, str]) -> Dict[Tuple[str, str], float]:
 
 
 def corpus(project_root: Path) -> Dict[str, str]:
-    """``{DEC-NNN: body}`` for every **live, locked** decision.
+    """``{DEC-NNN: body}`` for every decision worth reconciling against.
 
-    Liveness follows the same rule `trace_binding` applies to out-of-plan
-    dispositions, and reuses its header reader so the two cannot drift: an
-    ``open`` decision is a proposal rather than a ruling, and one named in a
-    later decision's ``Supersedes:`` line has been retired. Neither governs, so
-    neither is worth surfacing as a thing to reconcile against.
+    Liveness here is **retrieval** liveness, which is deliberately wider than
+    the **authorization** liveness `trace_binding.out_of_plan_dispositions`
+    applies. That reader must refuse to act on anything but an explicit
+    ``locked`` ruling, so an absent or unrecognized ``Status:`` correctly
+    authorizes nothing. This reader is answering a different question: which
+    existing rulings might the one being written contradict. Dropping a
+    governing decision because its header is malformed is pure loss, with no
+    safety gained — nothing is authorized by surfacing it for a human to read.
+
+    So the rule is: exclude a decision a later one retires through
+    ``Supersedes:``, and exclude a decision that declares itself ``open``,
+    because a proposal is not yet a ruling. Everything else is included,
+    malformed header and all, and `plan-audit` reports the malformed ones
+    separately so they get fixed rather than silently tolerated.
     """
-    directory = Path(project_root) / "decisions"
-    if not directory.is_dir():
-        return {}
-    texts: Dict[str, str] = {}
-    for path in sorted(directory.glob("DEC-*.md")):
-        try:
-            texts[path.stem] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-    superseded = set()
-    for text in texts.values():
-        superseded.update(
-            _DEC_REF_RE.findall(trace_binding._decision_header(text, "Supersedes"))
-        )
+    texts = trace_binding.decision_bodies(project_root)
+    retired = trace_binding.superseded_ids(texts)
     return {
         stem: text
         for stem, text in texts.items()
-        if stem not in superseded
-        and trace_binding._decision_header(text, "Status").lower() == "locked"
+        if stem not in retired
+        and trace_binding.decision_header(text, "Status").lower() != "open"
     }
 
 

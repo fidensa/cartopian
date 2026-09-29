@@ -22,10 +22,11 @@ back through the primitive — no raw edit, no second bypass surface. The DEC
 file is written first; if it refuses, the index is left untouched.
 """
 import argparse
+import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 
-from cli import decision_neighbors
+from cli import decision_neighbors, trace_binding
 from cli.commands import _writers
 from cli.mediated_write import GuardRefusal, mediated_write
 
@@ -55,15 +56,106 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     )
     subparser.add_argument(
         "--status",
-        choices=("locked", "open"),
-        default="locked",
-        help="Decision status for the INDEX.md row (default: locked)",
+        choices=trace_binding.DECISION_STATUSES,
+        default=None,
+        help=(
+            "Decision status. Omit to take the body's own `Status:` header; "
+            "supplying a value that contradicts that header is refused "
+            "(default when neither declares one: locked)"
+        ),
     )
     subparser.add_argument(
         "--supersedes",
-        default="none",
-        help="DEC-NNN this supersedes, or 'none' (default: none)",
+        default=None,
+        help=(
+            "DEC-NNN this supersedes, or 'none'. Omit to take the body's own "
+            "`Supersedes:` header; supplying a value that contradicts that "
+            "header is refused (default when neither declares one: none)"
+        ),
     )
+
+
+#: Body header fields the INDEX row projects, with the value used when neither
+#: the body nor the caller declares one.
+_PROJECTED_FIELDS = (("Status", "status", "locked"), ("Supersedes", "supersedes", "none"))
+
+
+_HEADER_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _/-]*:")
+
+
+def _stamp_missing_header(content: str, field: str, value: str) -> str:
+    """Insert a ``Field: value`` line into a decision's header block.
+
+    Only ever called for a field the body does not declare, so this inserts and
+    never replaces. The line goes after the last existing header line, which
+    keeps the block contiguous and in template order (Date, Status,
+    Supersedes); with no header block yet it goes under the H1, followed by the
+    blank line the block needs to read as one.
+    """
+    lines = content.splitlines(keepends=True)
+    block_end = next((i for i, text in enumerate(lines) if text.startswith("## ")), len(lines))
+    insert_at, h1_at = None, None
+    for i in range(block_end):
+        stripped = lines[i].strip()
+        if _HEADER_LINE_RE.match(stripped):
+            insert_at = i + 1
+        elif h1_at is None and lines[i].startswith("# "):
+            h1_at = i
+    if insert_at is not None:
+        lines.insert(insert_at, f"{field}: {value}\n")
+        return "".join(lines)
+    at = (h1_at + 1) if h1_at is not None else 0
+    block = [f"{field}: {value}\n"]
+    if h1_at is not None:
+        block.insert(0, "\n")
+    if at < len(lines) and lines[at].strip():
+        block.append("\n")
+    lines[at:at] = block
+    return "".join(lines)
+
+
+def _equivalent(field: str, left: str, right: str) -> bool:
+    """Compare two values for one projected field the way the field means them."""
+    if field == "Supersedes":
+        blank = {"none", "n/a", ""}
+        left_n = "none" if left.strip().lower() in blank else left.strip()
+        right_n = "none" if right.strip().lower() in blank else right.strip()
+        return left_n == right_n
+    return left.strip().lower() == right.strip().lower()
+
+
+def _reconcile_header(
+    content: str, field: str, supplied: Optional[str], fallback: str
+) -> Tuple[str, str, Optional[str]]:
+    """Agree the body header and the INDEX cell, or refuse.
+
+    The decision file is the ruling; the INDEX row is a projection of it. When
+    those two can disagree the projection stops being trustworthy, and the
+    disagreement is silent — which is how a decision ends up indexed as locked
+    while every reader treats it as unreadable. So: the body wins when it
+    declares the field, the caller's value fills it in when the body is silent
+    (and is stamped into the body so they cannot drift later), and an explicit
+    contradiction is refused rather than resolved by precedence.
+
+    Returns ``(content, resolved value, error)``.
+    """
+    declared = trace_binding.decision_header(content, field)
+    if declared:
+        if field == "Status" and declared.lower() not in trace_binding.DECISION_STATUSES:
+            return content, declared, (
+                f"decision-status-unrecognized: body declares {field}: {declared!r}; "
+                f"a decision is {' or '.join(trace_binding.DECISION_STATUSES)} "
+                "— an unrecognized status authorizes nothing"
+            )
+        if supplied is not None and not _equivalent(field, declared, supplied):
+            return content, declared, (
+                f"decision-header-conflict: body declares {field}: {declared!r} but "
+                f"--{field.lower()} says {supplied!r}; the decision file is the ruling, "
+                "so correct one of them rather than indexing a value the file denies"
+            )
+        return content, declared, None
+    resolved = supplied if supplied is not None else fallback
+    return _stamp_missing_header(content, field, resolved), resolved, None
 
 
 def _sanitize_cell(value: str) -> str:
@@ -119,6 +211,24 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr("usage", cerr)
         return _writers.EXIT_USAGE
 
+    # Reconcile before a byte lands: the body and its INDEX row are written in
+    # the same breath, so they have no excuse to disagree afterwards.
+    # --content-file always yields bytes; a decision body is markdown, so decode
+    # once here and let both the reconciliation and the write see the same text.
+    if isinstance(content, bytes):
+        try:
+            content = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            _writers.stderr("usage", f"decision body must be UTF-8 text: {exc}")
+            return _writers.EXIT_USAGE
+    resolved: dict = {}
+    for field, attr, fallback in _PROJECTED_FIELDS:
+        content, value, err = _reconcile_header(content, field, getattr(args, attr), fallback)
+        if err is not None:
+            _writers.stderr("guard", err)
+            return _writers.EXIT_FAIL
+        resolved[attr] = value
+
     dec_filename = f"{dec_id}.md"
     matches = _writers.identifier_files(root / "decisions", dec_id)
     if len(matches) > 1:
@@ -146,10 +256,10 @@ def handler(args: argparse.Namespace) -> int:
     #    existing row for this DEC id (re-issue), else append.
     index_path = Path(root) / "decisions" / "INDEX.md"
     title = _sanitize_cell(args.title)
-    supersedes = _sanitize_cell(args.supersedes)
+    supersedes = _sanitize_cell(resolved["supersedes"])
     new_row = (
         f"| [{dec_id}]({dec_filename}) | {title} | {args.date} | "
-        f"{args.status} | {supersedes} |"
+        f"{resolved['status']} | {supersedes} |"
     )
 
     rows = _existing_rows(index_path)
@@ -175,8 +285,7 @@ def handler(args: argparse.Namespace) -> int:
     # Advisory, and deliberately last: a failure to rank neighbors must never
     # cost a caller the decision it already wrote to disk.
     try:
-        body = content.decode("utf-8", "replace") if isinstance(content, bytes) else content
-        neighbors = decision_neighbors.neighbors(root, body, exclude_id=dec_id)
+        neighbors = decision_neighbors.neighbors(root, content, exclude_id=dec_id)
     except Exception:  # pragma: no cover - advisory surface, never fatal
         neighbors = []
 
