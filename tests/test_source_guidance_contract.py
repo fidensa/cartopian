@@ -1,13 +1,14 @@
 """Red-to-green contract tests for domain-neutral source-backed work."""
 from __future__ import annotations
 
-import json
 import argparse
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cli import source_guidance
 from cli.commands import task_bundle
@@ -55,6 +56,56 @@ def _single_source_evidence(*, identity: str = "Service operating policy") -> st
 
 
 class SourceGuidanceNegativeFixtureTests(unittest.TestCase):
+    def test_every_record_field_requires_its_own_delimited_label(self) -> None:
+        section = _source_section()
+        contract = source_guidance.contract()
+        for fields, subsection in (
+            ("source_fields", "Authoritative sources"),
+            ("conflict_fields", "Conflict resolution"),
+            ("claim_fields", "Unverified claims"),
+        ):
+            body = section.split("### " + subsection, 1)[1].split("### ", 1)[0]
+            for field in contract[fields]:
+                label = field["label"] + ":"
+                row = next(line for line in body.splitlines() if label in line)
+                parts = row.removeprefix("- ").split("; ")
+                index = next(i for i, part in enumerate(parts) if part.startswith(label))
+                variants = ["- " + "; ".join(parts[:index] + parts[index + 1:])]
+                if index:
+                    variants.append(row.replace("; " + label, ". " + label))
+                for replacement in variants:
+                    with self.subTest(fields=fields, label=label, row=replacement):
+                        result = source_guidance.resolve_task_guidance(
+                            Path("TASK-04-002.md"),
+                            content=_task_body(section.replace(row, replacement)),
+                        )
+                        self.assertEqual(result["outcome"], "invalid")
+                        self.assertTrue(result["blockers"])
+                        self.assertIsNone(result["deidentified_guidance"])
+
+    def test_none_conflict_requires_decision_field(self) -> None:
+        section = _single_source_evidence().replace("Source evidence", "Source guidance")
+        for replacement in ("", ". Decision: n/a", "; Decision:"):
+            with self.subTest(replacement=replacement):
+                result = source_guidance.resolve_task_guidance(
+                    Path("TASK-04-002.md"),
+                    content=_task_body(section.replace("; Decision: n/a", replacement)),
+                )
+                self.assertEqual(result["outcome"], "invalid")
+                self.assertIn("missing-conflict-resolution", result["blocker_codes"])
+                self.assertIn("Decision", result["blockers"][0]["detail"])
+
+    def test_report_evidence_missing_decision_is_invalid(self) -> None:
+        section = _single_source_evidence().replace("Source evidence", "Source guidance")
+        result = source_guidance.resolve_report_evidence(
+            Path("TASK-04-002.md"),
+            _single_source_evidence().replace("; Decision: n/a", ""),
+            task_content=_task_body(section),
+        )
+        self.assertEqual(result["outcome"], "invalid")
+        self.assertIn("missing-conflict-resolution", result["blocker_codes"])
+        self.assertIn("Source evidence", result["blockers"][0]["detail"])
+
     def test_missing_authority_fails_closed(self) -> None:
         result = source_guidance.resolve_task_guidance(
             FIXTURES / "missing-authority.md"
@@ -85,6 +136,15 @@ class SourceGuidanceNegativeFixtureTests(unittest.TestCase):
 
 
 class SourceGuidanceGreenFixtureTests(unittest.TestCase):
+    def test_none_conflict_accepts_delimited_decision_after_rule_semicolons(self) -> None:
+        section = _single_source_evidence().replace("Source evidence", "Source guidance")
+        section = section.replace("; Decision:", "; separate scopes; no overlap; Decision:")
+        result = source_guidance.resolve_task_guidance(
+            Path("TASK-04-002.md"), content=_task_body(section),
+        )
+        self.assertEqual(result["outcome"], "valid")
+        self.assertEqual(result["conflict_resolution"]["decision"], "n/a")
+
     def test_machine_authority_declares_the_human_and_runtime_contract(self) -> None:
         declared = source_guidance.contract()
         self.assertEqual(declared["contract_id"], "source-guidance")
@@ -358,6 +418,51 @@ class SourceGuidanceProjectionTests(unittest.TestCase):
             "\n[reviews]\nplanning = \"off\"\ntask_closure = \"off\"\n"
         )
         return project_scaffold(cartopian_toml=toml)
+
+    def test_mcp_writers_guard_missing_trailing_fields_without_writing(self) -> None:
+        section = _single_source_evidence().replace("Source evidence", "Source guidance")
+        for tool, artifact_id, content in (
+            ("write_task", "TASK-04-002", _task_body(section)),
+            ("write_spec", "SPEC-04-002", "# SPEC-04-002\n\nSource guidance: required\n\n" + section),
+        ):
+            for replacement in ("", ". Decision: n/a"):
+                with self.subTest(tool=tool, replacement=replacement), self._scaffold() as scaffold:
+                    result = server.handle_request("tools/call", {
+                        "name": tool,
+                        "arguments": {
+                            "project_root": str(scaffold.project_root),
+                            tool.removeprefix("write_") + "_id": artifact_id,
+                            "content": content.replace("; Decision: n/a", replacement),
+                        },
+                    })
+                    self.assertEqual(result["_meta"]["exit_code"], 1)
+                    diagnostic = "\n".join(result["_meta"]["stderr_lines"])
+                    self.assertIn("[guard]", diagnostic)
+                    self.assertIn("missing-conflict-resolution", diagnostic)
+                    self.assertIn("Decision", diagnostic)
+                    self.assertNotIn("unexpected exception", diagnostic)
+                    self.assertFalse(list(scaffold.project_root.rglob(artifact_id + ".md")))
+
+    def test_unexpected_parser_failure_names_artifact_and_section_without_leaking(self) -> None:
+        with self._scaffold() as scaffold, patch.object(
+            source_guidance, "_parse_labeled_row",
+            side_effect=RuntimeError("secret body at /private/internal/path"),
+        ), patch.object(server, "_log_internal"):
+            result = server.handle_request("tools/call", {
+                "name": "write_task",
+                "arguments": {
+                    "project_root": str(scaffold.project_root),
+                    "task_id": "TASK-04-002",
+                    "content": _task_body(_source_section()),
+                },
+            })
+        self.assertEqual(result["_meta"]["exit_code"], 1)
+        diagnostic = "\n".join(result["_meta"]["stderr_lines"])
+        self.assertIn("write-task", diagnostic)
+        self.assertIn("TASK-04-002.md", diagnostic)
+        self.assertIn("Source guidance", diagnostic)
+        for private in ("secret body", "/private/internal/path", "Traceback", "RuntimeError"):
+            self.assertNotIn(private, diagnostic)
 
     def test_task_bundle_projects_the_shared_record(self) -> None:
         with self._scaffold() as scaffold:

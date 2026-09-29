@@ -28,6 +28,22 @@ class TestIdentifierRegex(unittest.TestCase):
 
 
 class TestDeidentifySpec(unittest.TestCase):
+    def test_open_question_placeholders_accept_list_markers(self):
+        for empty in ("none", "none.", "n/a", "- none", "  - None.  ", "* none", "+ n/a"):
+            with self.subTest(empty=empty):
+                _, receipt = deidentify.assignment_spec_projection(
+                    "# Spec\n\n## Open questions\n\n" + empty + "\n",
+                )
+                self.assertEqual(receipt["open_question_lines"], [])
+
+    def test_placeholder_does_not_mask_real_open_question(self):
+        for question in ("- Which error type?", "- none of the sources agree; which governs?"):
+            with self.subTest(question=question):
+                _, receipt = deidentify.assignment_spec_projection(
+                    "# Spec\n\n## Open questions\n\n- none\n" + question + "\n",
+                )
+                self.assertEqual(receipt["open_question_lines"], [question])
+
     def _clean(self, text):
         body, _ = deidentify.deidentify_spec(text)
         return body

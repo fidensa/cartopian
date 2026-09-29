@@ -675,6 +675,17 @@ class TestComposedWriteFlow(unittest.TestCase):
 
 
 class TestValidationFailClosed(unittest.TestCase):
+    def test_bulleted_none_open_questions_allow_composition(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_REVIEW_REQUIRED) as scaffold:
+            task_path = _build_full(scaffold)
+            scaffold.write("specs/SPEC-01-002.md", _FULL_SPEC.replace(
+                "## Open questions\n", "## Open questions\n\n- none\n",
+            ))
+            record = prompt_composer.compose(task_path, "coder")
+            self.assertEqual(record["outcome"], "composed")
+            records, stderr, code = _invoke_cli(str(task_path), "coder")
+            self.assertEqual(code, 0, stderr)
+
     def test_spec_open_questions_refuse_composition(self) -> None:
         spec = _FULL_SPEC.replace(
             "## Open questions\n",

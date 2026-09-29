@@ -12,14 +12,16 @@ allowlisted ``task`` dest_kind.
 """
 import argparse
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 from cli.commands import _writers
 
 STATUSES = ("open", "in-progress", "in-review", "done")
 
 
-def _schema_errors(content: Union[str, bytes]) -> List[str]:
+def _schema_errors(
+    content: Union[str, bytes], *, owner_path: Optional[Path] = None,
+) -> List[str]:
     """Structural (content-shape) reasons this task body would fail readiness.
 
     Fail-closed gate for ``write-task``: a body that omits the ``Evidence gate:``
@@ -58,7 +60,7 @@ def _schema_errors(content: Union[str, bytes]) -> List[str]:
         errors.append(acceptance["reason"])
     declaration = source_guidance._header(text, "Source guidance")
     if declaration is not None and declaration.lower() in {"task", "n/a"}:
-        probe = Path("TASK.md")
+        probe = owner_path or Path("TASK.md")
         source_record = source_guidance.resolve_task_guidance(probe, content=text)
         source_check = source_guidance.readiness_check(source_record)
         if not source_check["pass"]:
@@ -192,7 +194,7 @@ def handler(args: argparse.Namespace) -> int:
 
     # Fail-closed schema gate: refuse a body that could never pass readiness,
     # before any on-disk rename so a refusal leaves the tree unchanged.
-    schema_errors = _schema_errors(content)
+    schema_errors = _schema_errors(content, owner_path=Path(f"{task_id}.md"))
     if schema_errors:
         _writers.stderr(
             "guard",

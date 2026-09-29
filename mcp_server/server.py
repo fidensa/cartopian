@@ -1063,12 +1063,21 @@ def _invoke_cli_captured(
                 code = handler(args)
             except SystemExit as exc:
                 code = exc.code if isinstance(exc.code, int) else 1
-    except Exception:  # pragma: no cover — defensive
+    except Exception as exc:  # defensive
         # Internal details (paths, stack frames) go to the real stderr for
         # operator debugging — never into the captured stderr that gets
-        # surfaced back to the model.
+        # surfaced back to the model. Explicit parser context carries only an
+        # artifact basename and section, never the exception's arbitrary text.
+        from cli.source_guidance import SourceGuidanceParseError
+
         _log_internal(f"_invoke_cli unexpected exception in {subcommand}:")
-        err_buf.write("[error] mcp_server caught unexpected exception\n")
+        context = f" in {subcommand}"
+        if isinstance(exc, SourceGuidanceParseError):
+            context += (
+                f" (artifact={json.dumps(exc.artifact)},"
+                f" section={json.dumps(exc.section)})"
+            )
+        err_buf.write(f"[error] mcp_server caught unexpected exception{context}\n")
         return _build_invoke_result(1, out_buf, err_buf)
 
     return _build_invoke_result(code, out_buf, err_buf)

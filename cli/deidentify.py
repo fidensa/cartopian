@@ -194,7 +194,8 @@ def assignment_spec_projection(text: str) -> Tuple[str, dict]:
                 skipping = ""
             elif skipping:
                 if skipping == "Open questions" and line.strip():
-                    if not _OPEN_QUESTIONS_PLACEHOLDER_RE.fullmatch(line):
+                    question = re.sub(r"^\s*[-*+]\s+", "", line)
+                    if not _OPEN_QUESTIONS_PLACEHOLDER_RE.fullmatch(question):
                         open_question_lines.append(line.strip())
                 continue
             elif in_header:

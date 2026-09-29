@@ -26,6 +26,19 @@ _CONTEXT_IDENTITY_RE = re.compile(r"\d")
 _PLACEHOLDER_RE = re.compile(r"^\s*(?:<.*>|n/?a|none|unknown|tbd|\.\.\.|…)?\s*$", re.I)
 
 
+class SourceGuidanceParseError(RuntimeError):
+    """Unexpected parser failure with context safe to return through MCP.
+
+    Keep exception text, body content, and absolute paths in the chained
+    exception for operator logs; callers need only the artifact and section.
+    """
+
+    def __init__(self, artifact: str, section: str) -> None:
+        self.artifact = artifact
+        self.section = section
+        super().__init__(f"artifact={artifact!r}, section={section!r}")
+
+
 @lru_cache(maxsize=1)
 def contract() -> Dict[str, Any]:
     """Load the one authoritative source-guidance vocabulary."""
@@ -210,6 +223,24 @@ def evaluate_record(
     owner_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Parse and validate one declared source-guidance/evidence section."""
+    try:
+        return _evaluate_record(
+            content, heading=heading, declaration=declaration,
+            owner_kind=owner_kind, owner_path=owner_path,
+        )
+    except Exception as exc:
+        artifact = owner_path.name if owner_path is not None else f"{owner_kind} content"
+        raise SourceGuidanceParseError(artifact, heading) from exc
+
+
+def _evaluate_record(
+    content: str,
+    *,
+    heading: str,
+    declaration: str,
+    owner_kind: str,
+    owner_path: Optional[Path],
+) -> Dict[str, Any]:
     spec = contract()
     record = _base_record(declaration, owner_kind, owner_path)
     body = _section(content, heading)
@@ -309,7 +340,13 @@ def evaluate_record(
                 "the conflict record names no precedence rule or decision authority",
                 "name the rule or authority that decides which source governs",
             ))
-        if status == "resolved" and _placeholder(conflict.get("decision")):
+        if not conflict.get("decision", "").strip():
+            record["blockers"].append(_blocker(
+                "missing-conflict-resolution",
+                f"## {heading} > ### Conflict resolution: Decision field is missing or empty",
+                "add '; Decision: n/a' when no conflict exists, or '; Decision: <applied resolution>'; separate labeled fields with semicolons",
+            ))
+        elif status == "resolved" and _placeholder(conflict.get("decision")):
             record["blockers"].append(_blocker(
                 "missing-conflict-resolution",
                 "a resolved conflict names no decision",
