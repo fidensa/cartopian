@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Union
 
+from cli import checkpoint_identity
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.mediated_write import GuardRefusal, mediated_write
@@ -53,9 +54,9 @@ def identifier_files(directory: Path, identifier: str) -> list[Path]:
 DEC_ID_RE = re.compile(r"^DEC-\d{3}$")
 BL_ID_RE = re.compile(r"^BL-\d{3}$")
 PROMPT_ID_RE = re.compile(
-    r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})$"
+    rf"^PROMPT-(?:\d{{2}}-\d{{3}}|{checkpoint_identity.CHECKPOINT_PATTERN})$"
 )
-PROMPT_CANONICAL_ID_RE = re.compile(r"^PROMPT-(?:\d{2}-\d{3}|PLAN-\d{3})$")
+PROMPT_CANONICAL_ID_RE = PROMPT_ID_RE
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 

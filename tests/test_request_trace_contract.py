@@ -109,6 +109,7 @@ class RequestTraceContract(unittest.TestCase):
         (self.root / "reviews" / f"REVIEW-{checkpoint}.md").write_text(
             f"# REVIEW-{checkpoint}\n\n"
             f"Target: planning:{checkpoint}\n"
+            "Planning stage: tasks-and-specs\nPhase: PHASE-02\n"
             f"Plan ref: {plan_ref}\n"
             f"Verdict: {value('approve')}\n"
             f"Request alignment: {value('aligned')}\n"

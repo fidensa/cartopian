@@ -66,7 +66,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from cli import intake_adapter
+from cli import checkpoint_identity, intake_adapter
 from cli.request_trace import (
     REQUESTS_DIRNAME,
     HOST_CHAT_DIRNAME,
@@ -92,7 +92,7 @@ HANDLE_RE = re.compile(r"^cs-[0-9a-f]{16}$")
 CAPTURE_ID_RE = re.compile(r"^(cs-[0-9a-f]{16})/turn-(\d+)$")
 CAPTURE_ID_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9/_-])(cs-[0-9a-f]{16}/turn-\d+)(?![A-Za-z0-9_-])")
 SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
-UNIT_RE = r"(project:project|planning:PLAN-\d{3}|task:TASK-\d{2}-\d{3})"
+UNIT_RE = rf"(project:project|planning:{checkpoint_identity.CHECKPOINT_PATTERN}|task:TASK-\d{{2}}-\d{{3}})"
 
 DECISION_EVIDENCE_MARKER = "Operator request evidence for:"
 DECISION_EVIDENCE_MARKER_RE = re.compile(

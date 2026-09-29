@@ -1,6 +1,6 @@
 """`cartopian lookup-evidence <project-root> --unit <unit>` — the lookup tool.
 
-For one governed unit (``project:project``, ``planning:PLAN-NNN``, or
+For one governed unit (``project:project``, ``planning:<checkpoint-id>``, or
 ``task:TASK-NN-NNN``) this returns the applicable operator-evidence
 identities, one line each, resolved through the same seam every review
 prompt, dispatch preflight, and audit uses. When nothing resolves it returns
@@ -52,7 +52,7 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--unit",
         required=True,
-        help="Governed unit: project:project | planning:PLAN-NNN | task:TASK-NN-NNN",
+        help="Governed unit: project:project | planning:<checkpoint-id> | task:TASK-NN-NNN",
     )
     subparser.add_argument(
         "--recent",
@@ -110,7 +110,7 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"project config not found: {root / 'cartopian.toml'}")
         return EXIT_ENV
     if not UNIT_ARG_RE.fullmatch(args.unit or ""):
-        stderr_usage("--unit must be project:project, planning:PLAN-NNN, or task:TASK-NN-NNN")
+        stderr_usage("--unit must be project:project, planning:<checkpoint-id>, or task:TASK-NN-NNN")
         return EXIT_USAGE
     unit = GovernedUnit(*args.unit.split(":", 1))
     try:

@@ -67,7 +67,7 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 
 Startup uses `next-action --compact --audit`: the same orientation and complete `plan-audit` evaluation in one call. An audit failure makes the combined command fail and prevents a ready verdict. Compact output retains request policy, PM effective grants, state disagreement, every blocker, and provenance guards. Nonblocking audit findings are grouped by kind; other roles' configuration is deferred. Returned `details` command/arguments retrieve the full records without these flags. Read full role records before assigning new work, and full audit findings when diagnosing or remediating them. Compact projections never skip checks, relax gates, or authorize mutations. The original detailed commands and resource URIs remain supported.
 
-`--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it is used only when the request's intent class authorizes a write (an execution or scoped directive); an informational request runs `next-action` without it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. A legacy tasks checkpoint that declares no `Plan ref:` covers only the earliest task-bearing phase; tasks generated later for another phase need a checkpoint whose `Plan ref:` covers them.
+`--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it is used only when the request's intent class authorizes a write (an execution or scoped directive); an informational request runs `next-action` without it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. Required reviews are selected by stage and scope, never by counter position or the presence of downstream artifacts. Every generated phase and task needs its own covering approval; dispatch does not waive missing approvals. `plan-audit` reports missing required reviews as blockers, including skipped earlier stages.
 
 ## Request Intent
 
@@ -164,12 +164,12 @@ intent never changes the request's intent class.
 - Tasks: `TASK-NN-NNN.md`. `NN` is the two-digit phase; `NNN` is the three-digit counter within that phase.
 - Specs: `SPEC-NN-NNN.md`. Spec numbering is locked to task numbering; specs do not have an independent counter.
 - Reviews: `REVIEW-NN-NNN.md`. One task-closure review per task; overwritten on re-review.
-- Planning-checkpoint reviews: `REVIEW-PLAN-NNN.md`. `NNN` is a per-project sequential counter independent of task numbering.
+- Planning-checkpoint reviews: `REVIEW-<checkpoint-id>.md`. Checkpoint identities carry their reviewed scope (below).
 - Prompts: `PROMPT-NN-NNN.md`. Temporary task handoff artifacts in `prompts/`.
-- Planning-checkpoint prompts: `PROMPT-PLAN-NNN.md`. Temporary review handoff artifacts in `prompts/`.
+- Planning-checkpoint prompts: `PROMPT-<checkpoint-id>.md`. Temporary review handoff artifacts in `prompts/`.
 - Reports: `REPORT-NN-NNN.md`. Task-completion handoff result artifacts in `reports/`, preserved unchanged throughout any task-closure review.
 - Task-review reports: `REPORT-NN-NNN-review.md`. Independent task-review completion result artifacts in `reports/`; they share the task's `NN-NNN` identity but never the completion report's slot.
-- Planning-checkpoint reports: `REPORT-PLAN-NNN.md`. Temporary planning-review handoff result artifacts in `reports/`.
+- Planning-checkpoint reports: `REPORT-<checkpoint-id>.md`. Temporary planning-review handoff result artifacts in `reports/`.
 - Phases: `PHASE-NN.md`. `NN` matches the plan phase order.
 - Implementation plan: `IMPLEMENTATION_PLAN.md`. One live plan per project.
 - Plan archives: `archive/PLAN-NNN/`. Optional completed-plan snapshots created only during plan closeout.
@@ -189,7 +189,16 @@ The trace chain is identifier-based, not physical nesting. Related artifacts liv
 
 `IMPLEMENTATION_PLAN.md` defines phase sections and is the numbering authority. A plan ref such as `BUILD-01-003` allocates `01-003`; the matching phase file carries that ref, and the bound task, optional spec, prompt, completion report, review report, and review carry the same `01-003` unchanged. The task file carries the plan ref explicitly, so forward lookup from the plan and backward lookup from any task-scoped artifact are deterministic.
 
-Planning-checkpoint prompts, reports, and reviews are not part of the task trace chain because they attach to planning stages, not tasks.
+Planning checkpoints preserve the reviewed scope in their identity end to end:
+
+- `PLAN-REQUIREMENTS` reviews requirements and standards before a plan exists.
+- `PLAN-IMPLEMENTATION` reviews the implementation plan before phase expansion.
+- `PLAN-PHASE-NN` reviews `PHASE-NN.md`.
+- `PLAN-KIND-NN-NNN` reviews the task and optional spec bound to `KIND-NN-NNN`.
+
+For example, `BUILD-01-005` has planning artifacts `PROMPT-PLAN-BUILD-01-005.md`, `REPORT-PLAN-BUILD-01-005.md`, and `REVIEW-PLAN-BUILD-01-005.md`. The identity preserves the full plan ref and its `01-005` suffix; no independent checkpoint counter loses the relationship. Each scope retains its own verdict at its canonical review path. A rerun overwrites the same scoped identity.
+
+Canonical checkpoint IDs determine `Planning stage:`, `Phase:`, and `Plan ref:`; any supplied metadata must agree. The planning prompt writer materializes these headers. Retained reviews carry the same scope. Legacy `PLAN-NNN` artifacts remain readable without renaming, but their numbers imply no stage: only an explicit `Planning stage:` (`requirements-and-standards`, `implementation-plan`, `phases`, or `tasks-and-specs`) and applicable `Phase:` / `Plan ref:` can establish coverage. A legacy tasks-and-specs review may cover a same-kind plan-ref range within its explicit phase. Unscoped legacy approvals are unverifiable and the affected checkpoint must be reviewed again; merely assigning a new name or metadata is not evidence of a past review.
 
 ### Plan/Task Numbering Contract
 
@@ -378,9 +387,9 @@ Task-closure reviews use `reviews/REVIEW-NN-NNN.md`. There is one review file pe
 
 A review file carries a two-line `## Summary` and one self-contained `F<n>.` row per finding (`templates/REVIEW.md`). Those rows are what `cartopian report-action` projects to the PM as the bounded `review_projection`, so the PM applies a verdict without re-reading the whole review; the unbounded review body stays on disk as the durable evidence, and the PM opens it only when a projected finding requires the surrounding detail.
 
-Planning-checkpoint reviews use `reviews/REVIEW-PLAN-NNN.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
+Planning-checkpoint reviews use `reviews/REVIEW-<checkpoint-id>.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
-An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-PLAN-NNN.md`) and report (`reports/REPORT-PLAN-NNN.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
+An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-<checkpoint-id>.md`) and report (`reports/REPORT-<checkpoint-id>.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
 
 Review verdicts are:
 
@@ -426,7 +435,7 @@ Applicable evidence for a unit is selected, never searched for:
 2. **Referenced turns.** A current, locked decision (not open, not named by
    another decision's `Supersedes:`) names captured turns with the structural
    marker `Operator request evidence for: <unit>: <capture-id>[, ...]`, where
-   the unit is exactly one of `project:project`, `planning:PLAN-NNN`, or
+   the unit is exactly one of `project:project`, `planning:<checkpoint-id>`, or
    `task:TASK-NN-NNN`; requirements and task files may name capture identities
    under `## Operator intent`, `## Original request evidence`, or `## Request
    evidence`. Text and provenance always come from the capture. An optional
@@ -788,7 +797,7 @@ The readiness value is the producer's declaration about **its own work**, never 
 
 `## Source evidence` is conditionally required when the governing task resolves to valid source guidance. It repeats the shared record shape as completion evidence, not as a second authority: it names the non-empty subset actually applied and what remains unverified. `parse-report` and `report-action` project the validated record; a complete source-backed report with no applied source or with a source identity/context absent from the governing guidance fails closed. Sources in the broader guidance that were not applied are not completion-report requirements.
 
-Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use the independent `reports/REPORT-NN-NNN-review.md`. Planning-checkpoint review completion reports use `reports/REPORT-PLAN-NNN.md`. The task-completion report is preserved unchanged throughout task review — the reviewer reads it directly from its compatibility path — and neither task-scoped artifact can satisfy the other's completion signal.
+Task completion reports use `reports/REPORT-NN-NNN.md`. Task review completion reports use the independent `reports/REPORT-NN-NNN-review.md`. Planning-checkpoint review completion reports use `reports/REPORT-<checkpoint-id>.md`. The task-completion report is preserved unchanged throughout task review — the reviewer reads it directly from its compatibility path — and neither task-scoped artifact can satisfy the other's completion signal.
 
 Task review completion reports declare the absolute `Task path:` in `## Identity`. The path must name the task implied by the report filename's `NN-NNN` identity in its current lifecycle directory; a missing, stale, or wrong task path is invalid completion evidence. This requirement does not apply to deidentified task completion reports or to planning-review completion reports.
 

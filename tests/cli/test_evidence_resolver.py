@@ -170,7 +170,7 @@ class ResolverCase(unittest.TestCase):
 
     def approve_checkpoint(self, checkpoint: str, plan_ref: str, evidence: list[str], context_identity: str = "") -> None:
         lines = [
-            f"# REVIEW-{checkpoint}", "", f"Target: planning:{checkpoint}", f"Plan ref: {plan_ref}",
+            f"# REVIEW-{checkpoint}", "", f"Target: planning:{checkpoint}", "Planning stage: tasks-and-specs", "Phase: PHASE-01", f"Plan ref: {plan_ref}",
             "Verdict: approve", "Request alignment: aligned", f"Request evidence: {', '.join(evidence)}",
         ]
         if context_identity:

@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import governance_reads, request_trace, trace_binding
+from cli import governance_reads, planning_status, request_trace, trace_binding
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -1471,6 +1471,8 @@ def evaluate(args: argparse.Namespace) -> Tuple[Optional[Dict[str, Any]], int]:
         _check_standards_governance_reads(project_path, declared_schema_version)
     )
     blockers.extend(_check_situation_notes(project_path))
+    if review_policy["planning"]["mode"] == "required":
+        blockers.extend(planning_status.missing_reviews(project_path))
     task_review_required = review_policy["task_closure"]["mode"] == "required"
     artifact_blockers, review_warnings = _check_artifact_chains(
         project_path, task_review_required

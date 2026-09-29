@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import prompt_composer, prompt_evidence, trace_binding
+from cli import checkpoint_identity, prompt_composer, prompt_evidence, trace_binding
 from cli.commands import _writers
 from cli.request_trace import (
     CHECKPOINT_ID_RE, PHASE_ID_RE, PLAN_REF_RE, REVIEW_KINDS, RequestRefusal,
@@ -336,13 +336,35 @@ def handler(args: argparse.Namespace) -> int:
                 )
             else:
                 if not args.checkpoint or not CHECKPOINT_ID_RE.fullmatch(args.checkpoint):
-                    raise RequestRefusal("missing-review-target", "--checkpoint must match PLAN-NNN")
+                    raise RequestRefusal("missing-review-target", "--checkpoint must be a valid planning checkpoint identity")
                 if args.prompt_id != f"PROMPT-{args.checkpoint}":
                     raise RequestRefusal(
                         "prompt-target-mismatch",
                         "planning prompt identity must match the checkpoint identity",
                     )
-                context = context_for_checkpoint(root, args.checkpoint, phase_id=args.phase, plan_ref=args.plan_ref)
+                scope = checkpoint_identity.identity_scope(args.checkpoint)
+                if scope["stage"]:
+                    checked = checkpoint_identity.scope(args.checkpoint, body)
+                    if checked["scope_error"]:
+                        raise RequestRefusal("checkpoint-scope-mismatch", checked["scope_error"])
+                    # Put machine-owned scope in the header, before any body sections.
+                    lines = body.splitlines()
+                    fields = (("Planning stage", "stage"), ("Phase", "phase"), ("Plan ref", "plan_ref"))
+                    header_end = next(
+                        (i for i, line in enumerate(lines) if line.startswith("## ")),
+                        len(lines),
+                    )
+                    lines = [
+                        line for line in lines[:header_end]
+                        if not any(line.strip().startswith(field + ":") for field, _ in fields)
+                    ] + lines[header_end:]
+                    header = "\n".join(f"{field}: {scope[key] or 'n/a'}" for field, key in fields)
+                    lines.insert(1 if lines and lines[0].startswith("# ") else 0, "\n" + header + "\n")
+                    body = "\n".join(lines) + "\n"
+                context = context_for_checkpoint(
+                    root, args.checkpoint, phase_id=args.phase,
+                    plan_ref=args.plan_ref, checkpoint_text=body,
+                )
             content = upsert_request_sections(body, context.section)
             if args.review_kind == "task-closure":
                 content = _append_trace_projection(

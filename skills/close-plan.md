@@ -77,7 +77,7 @@ cartopian close-audit <project-path>
     Superseded planning-checkpoint prompts are cleared the same way:
 
     ```
-    cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN.md
+    cartopian delete-prompt <project-path>/prompts/PROMPT-<checkpoint-id>.md
     ```
 
     Do not delete a prompt whose work is still active or ambiguous; obtain an operator decision first.

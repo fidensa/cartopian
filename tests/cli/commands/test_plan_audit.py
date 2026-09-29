@@ -23,14 +23,15 @@ _MINIMAL_TOML = (
     'project_schema_version = "v0.13.0"\n'
 )
 
+# These fixtures isolate task closure; planning gates are exercised in
+# tests/cli/test_planning_checkpoints.py with planning review required.
 _REVIEW_TOML = (
     '\n'
     '[roles.reviewer]\n'
     'description = "Reviews completed work."\n'
     '\n'
     '[reviews]\n'
-    'planning = "required"\n'
-    'planning_role = "reviewer"\n'
+    'planning = "off"\n'
     'task_closure = "required"\n'
     'task_role = "reviewer"\n'
 )

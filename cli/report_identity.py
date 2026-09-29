@@ -12,7 +12,7 @@ The contract:
   ``REPORT-NN-NNN-review.md``. The completion report is preserved, unmodified,
   for the reviewer to read directly; neither artifact can satisfy the other's
   completion signal.
-- Planning-checkpoint reviews use ``REPORT-PLAN-NNN.md``.
+- Planning-checkpoint reviews use ``REPORT-<checkpoint-id>.md``.
 
 Standard library only (NF-001).
 """
@@ -22,6 +22,8 @@ import hashlib
 import re
 from pathlib import Path
 from typing import Optional, Union
+
+from cli import checkpoint_identity
 
 TASK_COMPLETION_VARIANT = "task"
 TASK_REVIEW_VARIANT = "review"
@@ -35,12 +37,12 @@ NN_NNN_RE = re.compile(r"^\d{2}-\d{3}$")
 TASK_COMPLETION_REPORT_RE = re.compile(r"^REPORT-(\d{2}-\d{3})\.md$")
 TASK_REVIEW_REPORT_RE = re.compile(r"^REPORT-(\d{2}-\d{3})-review\.md$")
 PLANNING_REVIEW_REPORT_RE = re.compile(
-    r"^REPORT-(PLAN-\d{3})\.md$"
+    rf"^REPORT-({checkpoint_identity.CHECKPOINT_PATTERN})\.md$"
 )
 
 # The complete report-filename grammar (cleanup and validation surfaces).
 REPORT_FILENAME_RE = re.compile(
-    r"^REPORT-(?:\d{2}-\d{3}(?:-review)?|PLAN-\d{3})\.md$"
+    rf"^REPORT-(?:\d{{2}}-\d{{3}}(?:-review)?|{checkpoint_identity.CHECKPOINT_PATTERN})\.md$"
 )
 
 # The one content-identity grammar every report surface shares: the wait

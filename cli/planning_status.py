@@ -9,14 +9,8 @@ the planning surface — ``REQUIREMENTS.md``, ``IMPLEMENTATION_PLAN.md``,
 review slots — and names the exact remaining planning step, so ``next-action``
 and ``compose-state`` state the same thing.
 
-Checkpoint status is read from the retained planning review
-(``reviews/REVIEW-PLAN-NNN.md``, the durable checkpoint record) and from the
-temporary prompt and report slots that exist only while a checkpoint is in
-flight. A checkpoint for generated tasks is satisfied by an approved review
-numbered from ``PLAN-004`` upward whose ``Plan ref:`` covers the task's plan
-ref. A legacy checkpoint that declares no plan ref is honored only for the
-earliest task-bearing phase (the initial generation it reviewed); tasks
-generated later for another phase need their own scoped checkpoint.
+Checkpoint approval is scoped by identity or explicit legacy metadata. Neither
+artifact presence nor a checkpoint's position substitutes for a stage review.
 
 Read-only, standard library only, and cheap: it reads headers, not bodies.
 """
@@ -24,24 +18,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
-from cli import request_trace
+from cli import checkpoint_identity, request_trace
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 _PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}$")
-_CHECKPOINT_RE = re.compile(r"^(PLAN-\d{3})$")
 _ALL_STATUSES = ("open", "in-progress", "in-review", "done")
-
-#: The standard checkpoint sequence (``skills/plan-project.md``).
-STANDARD_CHECKPOINTS: Tuple[Tuple[str, str], ...] = (
-    ("PLAN-001", "requirements-and-standards"),
-    ("PLAN-002", "implementation-plan"),
-    ("PLAN-003", "phases"),
-    ("PLAN-004", "tasks-and-specs"),
-)
-#: Checkpoints at or above this number review generated tasks and specs.
-TASK_CHECKPOINT_FLOOR = 4
 
 STATUS_APPROVED = "approved"
 STATUS_REQUEST_CHANGES = "request-changes"
@@ -127,15 +110,15 @@ def checkpoint_records(project_path: Path) -> Dict[str, Dict[str, Any]]:
     reviews_dir = project_path / "reviews"
     if reviews_dir.is_dir():
         for path in sorted(reviews_dir.glob("REVIEW-PLAN-*.md")):
-            match = re.fullmatch(r"REVIEW-(PLAN-\d{3})\.md", path.name)
-            if match is None:
+            checkpoint = checkpoint_identity.artifact_checkpoint(path.name, "REVIEW")
+            if checkpoint is None:
                 continue
             text = _read(path)
-            record = slot(match.group(1))
+            record = slot(checkpoint)
             record["review"] = True
             verdict = (_header(text, "Verdict") or "").strip().lower() or None
             record["verdict"] = verdict
-            record["plan_ref"] = _header(text, "Plan ref")
+            record.update(checkpoint_identity.scope(checkpoint, text))
             if verdict == "approve":
                 record["status"] = STATUS_APPROVED
             elif verdict in {"request-changes", "reject"}:
@@ -145,59 +128,89 @@ def checkpoint_records(project_path: Path) -> Dict[str, Dict[str, Any]]:
     reports_dir = project_path / "reports"
     if reports_dir.is_dir():
         for path in sorted(reports_dir.glob("REPORT-PLAN-*.md")):
-            match = re.fullmatch(r"REPORT-(PLAN-\d{3})\.md", path.name)
-            if match is None:
+            checkpoint = checkpoint_identity.artifact_checkpoint(path.name, "REPORT")
+            if checkpoint is None:
                 continue
-            record = slot(match.group(1))
+            record = slot(checkpoint)
             record["report"] = True
             if record["status"] == STATUS_PENDING:
                 record["status"] = STATUS_AWAITING_VERDICT
+                record.update(checkpoint_identity.scope(checkpoint, _read(path)))
     prompts_dir = project_path / "prompts"
     if prompts_dir.is_dir():
         for path in sorted(prompts_dir.glob("PROMPT-PLAN-*.md")):
-            match = re.fullmatch(r"PROMPT-(PLAN-\d{3})\.md", path.name)
-            if match is None:
+            checkpoint = checkpoint_identity.artifact_checkpoint(path.name, "PROMPT")
+            if checkpoint is None:
                 continue
-            record = slot(match.group(1))
+            record = slot(checkpoint)
             record["prompt"] = True
+            prompt_scope = checkpoint_identity.scope(checkpoint, _read(path))
             if record["status"] == STATUS_PENDING:
                 record["status"] = STATUS_AWAITING_REPORT
+                record.update(prompt_scope)
+            elif not record["review"] and not any(
+                record.get(key) for key in ("stage", "phase", "plan_ref")
+            ):
+                # A legacy report may omit scope; its prompt can identify the
+                # pending handoff. A retained verdict must carry its own scope.
+                record.update(prompt_scope)
     return records
 
 
-def _checkpoint_number(checkpoint: str) -> int:
-    return int(checkpoint.rsplit("-", 1)[1])
-
-
-def _task_checkpoint_covers(
-    record: Dict[str, Any], task: Dict[str, Any], first_task_phase: Optional[str]
+def _covers(
+    record: Dict[str, Any], stage: str, phase: Optional[str] = None,
+    plan_ref: Optional[str] = None,
 ) -> bool:
-    """Whether one approved checkpoint covers one task.
-
-    A checkpoint that declares plan refs covers exactly those refs. A legacy
-    checkpoint that declares none is honored only for the initial task
-    generation — the earliest task-bearing phase — and never for a phase
-    whose tasks were generated later: that work has not been reviewed by
-    anyone, and an unscoped approval must not become a standing pass for
-    everything that follows.
-    """
-    if record["status"] != STATUS_APPROVED:
+    if record.get("scope_error") or record.get("stage") != stage:
         return False
-    if _checkpoint_number(record["id"]) < TASK_CHECKPOINT_FLOOR:
+    if phase is not None and record.get("phase") != phase:
         return False
-    declared = (record.get("plan_ref") or "").strip()
-    if not declared or declared.lower() in {"n/a", "none"}:
-        return first_task_phase is not None and task["phase"] == first_task_phase
-    plan_ref = task["plan_ref"]
-    if not plan_ref:
-        return False
-    return request_trace._review_covers_plan_ref(declared, plan_ref)  # noqa: SLF001
+    return plan_ref is None or request_trace._review_covers_plan_ref(
+        record.get("plan_ref") or "", plan_ref
+    )
 
 
-def _next_checkpoint_id(records: Dict[str, Dict[str, Any]]) -> str:
-    numbers = [_checkpoint_number(cid) for cid in records]
-    highest = max(numbers) if numbers else 0
-    return f"PLAN-{max(highest + 1, TASK_CHECKPOINT_FLOOR):03d}"
+def _gate_record(
+    records: Dict[str, Dict[str, Any]], checkpoint: str, stage: str,
+    phase: Optional[str] = None, plan_ref: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    matching = [r for r in records.values() if _covers(r, stage, phase, plan_ref)]
+    if any(r["status"] == STATUS_APPROVED for r in matching):
+        return None
+    return next(iter(matching), {"id": checkpoint, "status": STATUS_PENDING, "verdict": None})
+
+
+def missing_reviews(project_path: Path) -> List[Dict[str, Any]]:
+    """Every required review reached by the artifacts, including bypassed stages."""
+    project_path = Path(project_path)
+    records = checkpoint_records(project_path)
+    phases = phase_stems(project_path)
+    tasks = task_headers(project_path)
+    plan = (project_path / "IMPLEMENTATION_PLAN.md").is_file()
+    gates = []
+    if (project_path / "REQUIREMENTS.md").is_file() or plan or phases or tasks:
+        gates.append(("PLAN-REQUIREMENTS", "requirements-and-standards", None, None))
+    if plan or phases or tasks:
+        gates.append(("PLAN-IMPLEMENTATION", "implementation-plan", None, None))
+    gates.extend(("PLAN-" + phase, "phases", phase, None) for phase in phases)
+    missing = []
+    for task in tasks:
+        if not request_trace.PLAN_REF_RE.fullmatch(task["plan_ref"] or ""):
+            missing.append({
+                "kind": "planning-review-scope-missing", "task": task["id"],
+                "detail": f"{task['id']} needs a canonical Plan ref before its planning review can be resolved.",
+            })
+            continue
+        gates.append(("PLAN-" + task["plan_ref"], "tasks-and-specs", task["phase"], task["plan_ref"]))
+    for checkpoint, stage, phase, plan_ref in gates:
+        record = _gate_record(records, checkpoint, stage, phase, plan_ref)
+        if record:
+            missing.append({
+                "kind": "planning-review-missing", "checkpoint": record["id"],
+                "stage": stage, "phase": phase, "plan_ref": plan_ref,
+                "detail": _in_flight_step(record, stage),
+            })
+    return missing
 
 
 def _in_flight_step(record: Dict[str, Any], what: str) -> str:
@@ -307,105 +320,51 @@ def derive(project_path: Path, *, planning_review_required: bool) -> Dict[str, A
             "checkpoints": checkpoints,
         }
 
-    def review_gate(checkpoint: str, what: str, stage: str) -> Optional[Dict[str, Any]]:
+    def review_gate(checkpoint: str, what: str, stage: str,
+                    phase: Optional[str] = None, plan_ref: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not planning_review_required:
             return None
-        record = records.get(checkpoint)
-        if record is not None and record["status"] == STATUS_APPROVED:
+        record = _gate_record(records, checkpoint, what, phase, plan_ref)
+        if record is None:
             return None
-        record = record or {"id": checkpoint, "status": STATUS_PENDING, "verdict": None}
-        return result(stage, _in_flight_step(record, what), checkpoint)
+        return result(stage, _in_flight_step(record, what), record["id"])
 
     if not requirements and not plan and not stems and not tasks:
-        return result(
-            "no-plan",
-            "No plan exists: begin planning with plan project (Stage 1, requirements).",
-        )
+        return result("no-plan", "No plan exists: begin planning with plan project (Stage 1, requirements).")
+    if not requirements and (planning_review_required or not plan):
+        return result("requirements", "Author REQUIREMENTS.md and STANDARDS.md (plan project Stage 1).")
+    gate = review_gate("PLAN-REQUIREMENTS", "requirements-and-standards", "requirements-review")
+    if gate:
+        return gate
     if not plan:
-        if not requirements:
-            return result(
-                "requirements",
-                "Author REQUIREMENTS.md and STANDARDS.md (plan project Stage 1).",
-            )
-        gate = review_gate("PLAN-001", "requirements-and-standards", "requirements-review")
-        if gate:
-            return gate
-        return result(
-            "plan", "Generate IMPLEMENTATION_PLAN.md (plan project Stage 2)."
-        )
+        return result("plan", "Generate IMPLEMENTATION_PLAN.md (plan project Stage 2).")
+    gate = review_gate("PLAN-IMPLEMENTATION", "implementation-plan", "plan-review")
+    if gate:
+        return gate
     if not stems:
-        gate = review_gate("PLAN-002", "implementation-plan", "plan-review")
+        return result("phases", "Generate the phase files (plan project Stage 3).")
+    for phase in stems:
+        gate = review_gate("PLAN-" + phase, "phases", "phases-review", phase)
         if gate:
             return gate
-        return result("phases", "Generate the phase files (plan project Stage 3).")
 
     active = [t for t in tasks if t["status"] in ("open", "in-progress", "in-review")]
     unstarted = _unstarted_phase(stems, tasks)
-    if not tasks or (not active and unstarted is not None):
-        if not tasks:
-            gate = review_gate("PLAN-003", "phases", "phases-review")
+    # Check all generated work, even after dispatch: execution cannot create approval.
+    if planning_review_required:
+        for task in tasks:
+            if not request_trace.PLAN_REF_RE.fullmatch(task["plan_ref"] or ""):
+                return result("tasks", f"Set the canonical Plan ref for {task['id']} before its planning review.")
+            checkpoint = "PLAN-" + task["plan_ref"]
+            gate = review_gate(checkpoint, "tasks-and-specs", "tasks-review",
+                               task["phase"], task["plan_ref"])
             if gate:
                 return gate
+    if not tasks or (not active and unstarted is not None):
         target = unstarted or stems[0]
         return result(
-            "tasks",
-            f"Generate tasks and specs for {target} (plan project Stage 4), then "
-            + (
-                f"run planning checkpoint {_next_checkpoint_id(records)} (tasks-and-specs)."
-                if planning_review_required
-                else "rehearse task 1 with validate-task-readiness --rehearse-dispatch."
-            ),
+            "tasks", f"Generate tasks and specs for {target} (plan project Stage 4), then "
+            + ("review each plan ref using its PLAN-<plan-ref> checkpoint."
+               if planning_review_required else "rehearse task 1 with validate-task-readiness --rehearse-dispatch."),
         )
-
-    # The tasks-and-specs checkpoint is demanded only for a phase that has not
-    # started executing. Once any task of the current phase has left `open`,
-    # the phase was evidently dispatched under whatever review record existed
-    # then, and a legacy project whose reviews were cleared under the earlier
-    # convention is not sent back to planning mid-execution.
-    current_phase = min(
-        (t["phase"] for t in active if t["phase"] in stems),
-        key=stems.index,
-        default=None,
-    )
-    phase_started = any(
-        t["status"] != "open" and t["phase"] == current_phase for t in tasks
-    )
-    if planning_review_required and not phase_started:
-        open_tasks = [t for t in tasks if t["status"] == "open"]
-        first_task_phase = min(
-            (t["phase"] for t in tasks if t["phase"] in stems),
-            key=stems.index,
-            default=None,
-        )
-        uncovered = [
-            t
-            for t in open_tasks
-            if not any(
-                _task_checkpoint_covers(r, t, first_task_phase) for r in records.values()
-            )
-        ]
-        if uncovered:
-            in_flight = [
-                r
-                for r in records.values()
-                if _checkpoint_number(r["id"]) >= TASK_CHECKPOINT_FLOOR
-                and r["status"] != STATUS_APPROVED
-            ]
-            if in_flight:
-                record = sorted(in_flight, key=lambda r: r["id"])[-1]
-                return result(
-                    "tasks-review",
-                    _in_flight_step(record, "tasks-and-specs"),
-                    record["id"],
-                )
-            checkpoint = _next_checkpoint_id(records)
-            names = ", ".join(t["id"] for t in uncovered[:3])
-            more = f" (+{len(uncovered) - 3} more)" if len(uncovered) > 3 else ""
-            return result(
-                "tasks-review",
-                f"Run planning checkpoint {checkpoint} (tasks-and-specs) with "
-                f"--plan-ref covering {names}{more}; no approved checkpoint covers "
-                "their plan refs.",
-                checkpoint,
-            )
     return result("complete", None)

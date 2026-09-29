@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from cli import checkpoint_identity, report_identity
 from cli.atomic_write import (
     DIR_FD_SUPPORTED,
     GuardRefusal,
@@ -23,7 +24,6 @@ from cli.atomic_write import (
     _snapshot_chain,
     make_tmp_name,
 )
-from cli import report_identity
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
 from cli.request_trace import (
@@ -53,7 +53,7 @@ NON_OPERATOR_MARKERS = ("CARTOPIAN_ROLE", "CARTOPIAN_MCP_TOOL_CALL")
 def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("project_root", help="Absolute Cartopian project root")
     parser.add_argument("--request-id", required=True, help="REQUEST-NNN")
-    parser.add_argument("--unit", required=True, help="project, planning:PLAN-NNN, or task:TASK-NN-NNN")
+    parser.add_argument("--unit", required=True, help="project, planning:<checkpoint-id>, or task:TASK-NN-NNN")
     parser.add_argument(
         "--content-file",
         required=True,
@@ -139,8 +139,8 @@ def _unit(raw: str) -> GovernedUnit:
         return GovernedUnit("project", "project")
     kind, sep, identifier = raw.partition(":")
     if not sep or kind not in ("planning", "task"):
-        raise ValueError("--unit must be project, planning:PLAN-NNN, or task:TASK-NN-NNN")
-    grammar = r"PLAN-\d{3}" if kind == "planning" else r"TASK-\d{2}-\d{3}"
+        raise ValueError("--unit must be project, planning:<checkpoint-id>, or task:TASK-NN-NNN")
+    grammar = checkpoint_identity.CHECKPOINT_PATTERN if kind == "planning" else r"TASK-\d{2}-\d{3}"
     if re.fullmatch(grammar, identifier) is None:
         raise ValueError(f"invalid {kind} unit id: {identifier!r}")
     return GovernedUnit(kind, identifier)

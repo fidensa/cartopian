@@ -24,7 +24,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from cli import numbering_contract, report_identity
+from cli import checkpoint_identity, numbering_contract, report_identity
 
 
 REQUESTS_DIRNAME = "requests"
@@ -34,7 +34,7 @@ CORRECTION_ID_RE = re.compile(r"^(REQUEST-\d{3})-CORRECTION-(\d{3})$")
 CHAT_RECORD_ID_RE = re.compile(r"^CHAT-[A-Z0-9][A-Z0-9-]{1,79}$")
 PHASE_ID_RE = numbering_contract.PHASE_NAME_RE
 PLAN_REF_RE = numbering_contract.SUPPORTED_PLAN_REF_RE
-CHECKPOINT_ID_RE = re.compile(r"^PLAN-\d{3}$")
+CHECKPOINT_ID_RE = checkpoint_identity.CHECKPOINT_ID_RE
 PLAN_REF_TOKEN_RE = re.compile(
     r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*-\d{2}-\d{3})(?![A-Z0-9-])"
 )
@@ -64,7 +64,7 @@ REQUEST_CAPTURE_FROM = (0, 9, 0)
 DECISION_QUOTE_MARKER = "Operator request quote for:"
 DECISION_QUOTE_MARKER_RE = re.compile(
     r"^Operator request quote for:\s*"
-    r"(project:project|planning:PLAN-\d{3}|"
+    rf"(project:project|planning:{checkpoint_identity.CHECKPOINT_PATTERN}|"
     r"task:TASK-\d{2}-\d{3})$"
 )
 LEGACY_DECISION_ATTRIBUTIONS = (
@@ -1157,7 +1157,7 @@ def _approved_planning_trace(
 
     inherited: List[RequestEvidence] = []
     for path in sorted(reviews_dir.glob("REVIEW-PLAN-*.md")):
-        match = re.fullmatch(r"REVIEW-(PLAN-\d{3})\.md", path.name)
+        match = re.fullmatch(rf"REVIEW-({checkpoint_identity.CHECKPOINT_PATTERN})\.md", path.name)
         if match is None:
             continue
         review_text = read_contained_text(
@@ -1167,7 +1167,11 @@ def _approved_planning_trace(
             continue
         if (_review_header(review_text, ALIGNMENT_FIELD) or "").lower() != "aligned":
             continue
-        review_plan_ref = _review_header(review_text, "Plan ref") or ""
+        scope = checkpoint_identity.scope(match.group(1), review_text)
+        if (scope["scope_error"] or scope["stage"] != "tasks-and-specs"
+                or scope["phase"] != _header(task_text, "Phase")):
+            continue
+        review_plan_ref = scope["plan_ref"] or ""
         if not _review_covers_plan_ref(review_plan_ref, plan_ref):
             continue
         raw_ids = _review_header(review_text, ALIGNMENT_EVIDENCE_FIELD) or ""
@@ -1329,6 +1333,12 @@ def _management_artifacts(
         resolved_phase = phase_id or _phase_from_text(checkpoint_text or "")
         if resolved_phase:
             add("phase", project_root / "phases" / f"{resolved_phase}.md")
+        scope = checkpoint_identity.identity_scope(checkpoint_id)
+        if scope["plan_ref"]:
+            suffix = scope["plan_ref"].split("-", 1)[1]
+            for task in sorted((project_root / "tasks").glob(f"*/TASK-{suffix}.md")):
+                add("task", task)
+            add("spec", project_root / "specs" / f"SPEC-{suffix}.md")
         add("prompt", project_root / "prompts" / f"PROMPT-{checkpoint_id}.md")
         add("report", report_identity.planning_report_path(project_root, checkpoint_id))
         add("review", project_root / "reviews" / f"REVIEW-{checkpoint_id}.md")
@@ -2311,6 +2321,16 @@ def context_for_task_assignment(
 
 
 def context_for_checkpoint(project_root: Path, checkpoint_id: str, *, phase_id: Optional[str] = None, plan_ref: Optional[str] = None, checkpoint_text: Optional[str] = None) -> ReviewContext:
+    identity = checkpoint_identity.identity_scope(checkpoint_id)
+    if identity["stage"]:
+        resolved = checkpoint_identity.scope(checkpoint_id, checkpoint_text or "")
+        if resolved["scope_error"]:
+            raise RequestRefusal("checkpoint-scope-mismatch", resolved["scope_error"])
+        for label, supplied, expected in (("--phase", phase_id, identity["phase"]),
+                                          ("--plan-ref", plan_ref, identity["plan_ref"])):
+            if supplied and supplied != expected:
+                raise RequestRefusal("checkpoint-scope-mismatch", f"{label} conflicts with {checkpoint_id}")
+        phase_id, plan_ref = identity["phase"], identity["plan_ref"]
     return _context(
         Path(project_root),
         "planning",

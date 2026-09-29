@@ -63,6 +63,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
+from cli import checkpoint_identity
+
 # ---------------------------------------------------------------------------
 # Write-log location.
 #
@@ -207,7 +209,8 @@ def _append_record(project_root: Path, record: Dict[str, object]) -> bool:
 # open (``\d+``) because the grammar is fail-closed: a year-like suffix reads
 # as an identifier rather than letting a real one leak.
 PM_IDENTIFIER_RE = re.compile(
-    r"\b(?:FR|NF|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC|REQUEST|PLAN|REQ)"
+    rf"\b(?:(?:PROMPT|REPORT|REVIEW)-)?{checkpoint_identity.CHECKPOINT_PATTERN}\b"
+    r"|\b(?:FR|NF|DEC|TASK|BL|OQ|REVIEW|PHASE|PROMPT|REPORT|SPEC|REQUEST|PLAN|REQ)"
     r"-(?:[A-Z]+-)?\d+(?:-\d+)*\b"
     r"|\b(?:BUILD|DESIGN|RESEARCH|TEST|RELEASE|VERIFY|CORRECTIVE)-\d{2}-\d{3}\b"
     # Historical phase-first plan refs are still management identifiers.

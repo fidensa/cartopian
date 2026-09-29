@@ -1,6 +1,8 @@
 # REVIEW-NN-NNN
 
-Target: <TASK-NN-NNN or SPEC-NN-NNN>
+Target: <TASK-NN-NNN or SPEC-NN-NNN or planning checkpoint ID>
+Planning stage: <requirements-and-standards | implementation-plan | phases | tasks-and-specs | n/a>
+Phase: <PHASE-NN | n/a>
 Plan ref: <KIND-NN-NNN | n/a>
 Work root: <name | name, name | n/a>
 Reviewer: <free text>

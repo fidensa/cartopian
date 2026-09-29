@@ -174,7 +174,7 @@ cartopian write-standards <project-root> --content-file <body-path>
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `001 requirements-and-standards` using the Review Flow Reference.
+1. Run planning-review checkpoint `PLAN-REQUIREMENTS` using the Review Flow Reference.
 2. Target artifacts: `REQUIREMENTS.md` and `STANDARDS.md`.
 3. The checkpoint verifies standards admission discipline: every `STANDARDS.md` statement passes the `CONVENTIONS § Standards` admission test, and any content owned by another artifact — restated product behavior or scope, phase deliverables or exclusions, lifecycle or PM behavior, unresolved questions — is a `request-changes` finding routed to its owning artifact.
 4. If `approve`: proceed to Stage 2.
@@ -221,7 +221,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `002 implementation-plan` using the Review Flow Reference.
+1. Run planning-review checkpoint `PLAN-IMPLEMENTATION` using the Review Flow Reference.
 2. Target artifact: `IMPLEMENTATION_PLAN.md`.
 3. If `approve`: proceed to Stage 3.
 4. If `request-changes`: revise the implementation plan in place and rerun the checkpoint.
@@ -258,7 +258,7 @@ Use the phase number from the plan. The two-digit phase number (`NN`) must match
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `003 phases` using the Review Flow Reference.
+1. Run planning-review checkpoint `PLAN-PHASE-NN` for each generated phase using the Review Flow Reference.
 2. Target artifacts: `phases/PHASE-*.md`.
 3. If `approve`: proceed to Stage 4.
 4. If `request-changes`: revise phase files in place and rerun the checkpoint.
@@ -324,7 +324,7 @@ Before any reviewer sees the generated tasks, catch mechanical defects here — 
 
 If `reviews.planning.mode` is `required`:
 
-1. Run planning-review checkpoint `004 tasks-and-specs` using the Review Flow Reference. The prompt's `--plan-ref` names the plan refs the checkpoint covers (a canonical same-kind range such as `BUILD-01-001 through BUILD-01-004`, or the single ref); task assignment inherits the checkpoint's evidence through that coverage.
+1. Run planning-review checkpoint `PLAN-KIND-NN-NNN` for each generated plan ref using the Review Flow Reference. The prompt's `--plan-ref` names the exact plan ref encoded in its checkpoint ID (for example, `PLAN-BUILD-01-005` uses `--plan-ref BUILD-01-005 --phase PHASE-01`); task assignment inherits the checkpoint's evidence through that coverage.
 2. Target artifacts: generated files in `tasks/open/` and `specs/`. In the checkpoint prompt, require the reviewer to verify every spec's profile classification. For each software-profile spec, require all eight SRS/TDS areas and treat source code, executable code, pseudocode, step-by-step algorithms, function/class bodies, complete configuration/build files, or copy/paste-ready implementation as a blocking finding requiring changes.
 3. If `approve`: proceed to Stage 5.
 4. If `request-changes`: revise tasks and specs in place, rerun 4.4, and rerun the checkpoint.
@@ -372,33 +372,33 @@ Planning — including task generation — is a **scoped directive** (`cartopian
 
 ## Review Flow Reference
 
-Planning-checkpoint reviews use `REVIEW-PLAN-NNN.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-PLAN-NNN.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-PLAN-NNN --content-file <body-path> --review-kind planning --checkpoint PLAN-NNN` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent intake request channel and generates its bound prompt section. `NNN` is a per-project sequential counter independent of task-scoped numbering — no tasks exist at the point of requirements generation.
+Planning-checkpoint reviews use `REVIEW-<checkpoint-id>.md` in `reviews/` (authored by the role named by `reviews.planning.role`). The PM authors a matching `PROMPT-<checkpoint-id>.md` in `prompts/` through the mediated writer — `cartopian write-prompt <project-root> --prompt-id PROMPT-<checkpoint-id> --content-file <body-path> --review-kind planning --checkpoint <checkpoint-id>` plus the applicable `--phase` / `--plan-ref` — to hand off the review work; the contained PM has no raw `Write`. The writer resolves the independent intake request channel and generates its bound prompt section. Use the scope-bearing identities below. Requirements and implementation-plan checkpoints use named project scopes; phase and task checkpoints preserve their phase or full plan ref. Never infer coverage from a counter or from artifact presence. The writer generates `Planning stage:`, `Phase:`, and `Plan ref:` headers; the reviewer retains that scope in the review. Existing counter-based reviews count only with explicit stage and applicable scope metadata; unknown coverage requires a fresh review.
 
 The standard checkpoint sequence is:
 
-| NNN | Stage | Prompt | Report | Review |
+| Checkpoint ID | Stage | Prompt | Report | Review |
 | --- | --- | --- | --- | --- |
-| 001 | Requirements & Standards | `PROMPT-PLAN-001.md` | `REPORT-PLAN-001.md` | `REVIEW-PLAN-001.md` |
-| 002 | Implementation Plan | `PROMPT-PLAN-002.md` | `REPORT-PLAN-002.md` | `REVIEW-PLAN-002.md` |
-| 003 | Phases | `PROMPT-PLAN-003.md` | `REPORT-PLAN-003.md` | `REVIEW-PLAN-003.md` |
-| 004 | Tasks & Specs | `PROMPT-PLAN-004.md` | `REPORT-PLAN-004.md` | `REVIEW-PLAN-004.md` |
+| PLAN-REQUIREMENTS | Requirements & Standards | `PROMPT-PLAN-REQUIREMENTS.md` | `REPORT-PLAN-REQUIREMENTS.md` | `REVIEW-PLAN-REQUIREMENTS.md` |
+| PLAN-IMPLEMENTATION | Implementation Plan | `PROMPT-PLAN-IMPLEMENTATION.md` | `REPORT-PLAN-IMPLEMENTATION.md` | `REVIEW-PLAN-IMPLEMENTATION.md` |
+| PLAN-PHASE-NN | Each phase | `PROMPT-PLAN-PHASE-NN.md` | `REPORT-PLAN-PHASE-NN.md` | `REVIEW-PLAN-PHASE-NN.md` |
+| PLAN-KIND-NN-NNN | Each task & spec | `PROMPT-PLAN-KIND-NN-NNN.md` | `REPORT-PLAN-KIND-NN-NNN.md` | `REVIEW-PLAN-KIND-NN-NNN.md` |
 
 At every review checkpoint:
 
-1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Open the prose with a role preface (`## Your role`) addressed to the reviewer, sourced from the resolved `[roles.<role>]` record's description for the role named by `reviews.planning.role` — orientation only; it grants no authority beyond the role's configured grants. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint PLAN-NNN --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
+1. Author the checkpoint prompt at the table's prompt path via `cartopian write-prompt` (see the note above), resolved to an absolute project path. Open the prose with a role preface (`## Your role`) addressed to the reviewer, sourced from the resolved `[roles.<role>]` record's description for the role named by `reviews.planning.role` — orientation only; it grants no authority beyond the role's configured grants. Include absolute paths to the target artifacts, the expected review file, the expected report file, and `cartopian://templates/REPORT.md`. Never hand-author the generated request-comparison sections. Validate the finished artifact with `cartopian review-context <project-root> --review-kind planning --checkpoint <checkpoint-id> --prompt <absolute-prompt-path>` before manual handoff; automatic dispatch performs the identical preflight.
 2. Call `skills/run-handoff.md` with:
    - Role: the exact resolved `reviews.planning.role` value
-   - Absolute prompt path: `<project>/prompts/PROMPT-PLAN-NNN.md`
-   - Absolute report path: `<project>/reports/REPORT-PLAN-NNN.md`
+   - Absolute prompt path: `<project>/prompts/PROMPT-<checkpoint-id>.md`
+   - Absolute report path: `<project>/reports/REPORT-<checkpoint-id>.md`
    - Expected report variant: planning-review completion
    - Allowed lifecycle action: return outcome to this skill
-3. Require the configured reviewer to create `reviews/REVIEW-PLAN-NNN.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Request alignment:` and `Request evidence:`. Drift or missing/mismatched evidence blocks approval; only generated `unavailable-for-legacy` is non-blocking.
+3. Require the configured reviewer to create `reviews/REVIEW-<checkpoint-id>.md` using `cartopian://templates/REVIEW.md`. The review file and planning-review completion report record `Request alignment:` and `Request evidence:`. Drift or missing/mismatched evidence blocks approval; only generated `unavailable-for-legacy` is non-blocking.
 4. Apply the returned verdict in the stage-specific checkpoint section.
 
 Completion detection at every checkpoint uses the lower-level wait primitive on the checkpoint report path rather than a hand-rolled timing loop or a manual "tell me when the review is done" prompt:
 
 ```
-cartopian wait-report <project>/reports/REPORT-PLAN-NNN.md --role <role>
+cartopian wait-report <project>/reports/REPORT-<checkpoint-id>.md --role <role>
 ```
 
 `cartopian wait-report` is a read-only observer: the report file is the authoritative completion signal. It is terminal by default — one call blocks until the report lands or the resolved role launch timeout elapses (`timeout`). It emits `accepted` when the planning-review report is present and parses, a `[guard]` failure when a report is present but not acceptable, `timeout` when the ceiling elapses first, or — only under an explicitly requested `--max-block` observation slice, which exists solely to fit a host `tools/call` ceiling that cannot be raised — `still_running` when that budget elapses before the report lands. Treat `still-running` / `still_running` as a nonterminal internal observation boundary. Routine nonterminal slices are silent and context-neutral: keep the initiated run active and re-invoke the same canonical wait primitive in another bounded slice without user-facing text or repeated state when no material state changed. User-facing output is allowed only for a terminal result, blocker, timeout/failure, meaningful new progress evidence, or a deliberately throttled long-running threshold. The re-wait is read-only, does not launch a second reviewer, and does not consume a `max_handoffs_per_run` unit; only the original launch does. Do not ask for operator continuation between slices. When the checkpoint is dispatched through `skills/run-handoff.md`, that skill owns this wait step under the same contract.
@@ -410,13 +410,13 @@ Planning-checkpoint prompts and reports are temporary artifacts; the approved re
 - Remove the checkpoint prompt:
 
   ```
-  cartopian delete-prompt <project-path>/prompts/PROMPT-PLAN-NNN.md
+  cartopian delete-prompt <project-path>/prompts/PROMPT-<checkpoint-id>.md
   ```
 
 - Remove the checkpoint report (if present):
 
   ```
-  cartopian delete-report <project-path>/reports/REPORT-PLAN-NNN.md
+  cartopian delete-report <project-path>/reports/REPORT-<checkpoint-id>.md
   ```
 
 No archival for prompts or reports.

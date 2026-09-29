@@ -524,8 +524,9 @@ def _startup_verdict(
 ) -> Dict[str, Any]:
     """Collapse the session's state into one verdict with one named action.
 
-    Precedence: a blocker wins (nothing moves while one exists); an active
-    task is continued; incomplete planning names its exact remaining step;
+    Precedence: a blocker wins (nothing moves while one exists); a missing
+    required review names its checkpoint; an active task is continued;
+    other incomplete planning names its exact remaining step;
     a ready queue is proven by rehearsal before it is called ready; a plan
     with nothing left is closeout. ``owner`` names who acts.
     """
@@ -546,6 +547,14 @@ def _startup_verdict(
         return verdict(
             "blocked", first["detail"], first["owner"],
             first["recovery"] + "; then rerun next-action",
+        )
+    if not planning["complete"] and planning["checkpoint"] is not None:
+        return verdict(
+            "planning-incomplete",
+            f"planning stage: {planning['stage']}",
+            "pm",
+            planning["next"],
+            checkpoint=planning["checkpoint"],
         )
     if active_task is not None:
         return verdict(

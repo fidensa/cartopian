@@ -280,49 +280,49 @@ class PlanningStatusTests(unittest.TestCase):
             self.assertEqual(record["stage"], "tasks")
             self.assertIn("Generate tasks and specs for PHASE-01", record["next"])
 
-    def test_phases_approved_but_tasks_missing_names_stage_4_then_plan_004(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a")]
+    def test_phases_approved_but_tasks_missing_names_stage_4_then_scoped_reviews(self):
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, tasks=False, checkpoints=checkpoints)
             record = planning_status.derive(root, planning_review_required=True)
             self.assertEqual(record["stage"], "tasks")
             self.assertIn("PHASE-01", record["next"])
-            self.assertIn("PLAN-004", record["next"])
+            self.assertIn("PLAN-<plan-ref>", record["next"])
             self.assertEqual(list(record["checkpoints"].values()), ["approved"] * 3)
 
-    def test_phases_unreviewed_names_plan_003(self):
+    def test_phases_unreviewed_names_phase_checkpoint(self):
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
-            root = _plan_project(scaffold, tasks=False, checkpoints=[("PLAN-001", "n/a"), ("PLAN-002", "n/a")])
+            root = _plan_project(scaffold, tasks=False, checkpoints=[("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a")])
             record = planning_status.derive(root, planning_review_required=True)
             self.assertEqual(record["stage"], "phases-review")
-            self.assertEqual(record["checkpoint"], "PLAN-003")
+            self.assertEqual(record["checkpoint"], "PLAN-PHASE-01")
 
-    def test_generated_tasks_without_covering_checkpoint_names_plan_004(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a")]
+    def test_generated_tasks_without_covering_checkpoint_names_plan_ref(self):
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, checkpoints=checkpoints)
             record = planning_status.derive(root, planning_review_required=True)
             self.assertEqual(record["stage"], "tasks-review")
-            self.assertEqual(record["checkpoint"], "PLAN-004")
-            self.assertIn("TASK-01-001", record["next"])
+            self.assertEqual(record["checkpoint"], "PLAN-RESEARCH-01-001")
+            self.assertIn("PLAN-RESEARCH-01-001", record["next"])
 
     def test_in_flight_checkpoint_names_the_wait(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a")]
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, checkpoints=checkpoints)
-            scaffold.write("prompts/PROMPT-PLAN-004.md", "# PROMPT-PLAN-004\n")
+            scaffold.write("prompts/PROMPT-PLAN-RESEARCH-01-001.md", "# PROMPT-PLAN-RESEARCH-01-001\n")
             record = planning_status.derive(root, planning_review_required=True)
-            self.assertEqual(record["checkpoint"], "PLAN-004")
+            self.assertEqual(record["checkpoint"], "PLAN-RESEARCH-01-001")
             self.assertIn("wait-report", record["next"])
-            scaffold.write("reports/REPORT-PLAN-004.md", "Status: complete\n")
+            scaffold.write("reports/REPORT-PLAN-RESEARCH-01-001.md", "Status: complete\n")
             record = planning_status.derive(root, planning_review_required=True)
             self.assertIn("report-action", record["next"])
 
-    def test_a_legacy_unscoped_checkpoint_does_not_approve_a_later_phase(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a"), ("PLAN-004", "n/a")]
+    def test_scoped_checkpoint_does_not_approve_a_later_phase(self):
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a"), ("PLAN-RESEARCH-01-001", "RESEARCH-01-001")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, checkpoints=checkpoints)
-            # The unscoped PLAN-004 covers the initial generation (phase 1).
+            # The identity covers only this plan ref in phase 1.
             self.assertTrue(planning_status.derive(root, planning_review_required=True)["complete"])
             # Phase 1 completes; phase 2's tasks are generated with no new checkpoint.
             (root / "tasks/open/TASK-01-001.md").rename(root / "tasks/done/TASK-01-001.md")
@@ -333,18 +333,20 @@ class PlanningStatusTests(unittest.TestCase):
             scaffold.write("tasks/open/TASK-02-001.md", second)
             record = planning_status.derive(root, planning_review_required=True)
             self.assertFalse(record["complete"], record)
-            self.assertEqual(record["checkpoint"], "PLAN-005")
-            self.assertIn("--plan-ref", record["next"])
+            self.assertEqual(record["checkpoint"], "PLAN-PHASE-02")
+            scaffold.write("reviews/REVIEW-PLAN-PHASE-02.md", "Verdict: approve\n")
+            record = planning_status.derive(root, planning_review_required=True)
+            self.assertEqual(record["checkpoint"], "PLAN-RESEARCH-02-001")
             # A scoped checkpoint covering phase 2 completes it.
             scaffold.write(
-                "reviews/REVIEW-PLAN-005.md",
-                "# REVIEW-PLAN-005\n\nTarget: PLAN-005\nPlan ref: RESEARCH-02-001\n"
+                "reviews/REVIEW-PLAN-RESEARCH-02-001.md",
+                "# REVIEW-PLAN-RESEARCH-02-001\n\nTarget: PLAN-RESEARCH-02-001\nPlan ref: RESEARCH-02-001\n"
                 "Verdict: approve\nRequest alignment: aligned\nRequest evidence: REQUEST-001\n",
             )
             self.assertTrue(planning_status.derive(root, planning_review_required=True)["complete"])
 
-    def test_an_executing_phase_is_not_sent_back_to_planning(self):
-        """A legacy project whose reviews were cleared mid-plan keeps running."""
+    def test_execution_does_not_substitute_for_missing_review(self):
+        """Even dispatched work must retain its required planning approvals."""
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold)
             second = TASK_BODY.replace("TASK-01-001", "TASK-01-002").replace(
@@ -352,10 +354,11 @@ class PlanningStatusTests(unittest.TestCase):
             )
             scaffold.write("tasks/done/TASK-01-002.md", second)
             record = planning_status.derive(root, planning_review_required=True)
-            self.assertTrue(record["complete"], record)
+            self.assertFalse(record["complete"], record)
+            self.assertEqual(record["checkpoint"], "PLAN-REQUIREMENTS")
 
-    def test_approved_plan_004_covering_the_plan_ref_completes_planning(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a"), ("PLAN-004", "RESEARCH-01-001")]
+    def test_approved_checkpoint_covering_the_plan_ref_completes_planning(self):
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a"), ("PLAN-RESEARCH-01-001", "RESEARCH-01-001")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, checkpoints=checkpoints)
             record = planning_status.derive(root, planning_review_required=True)
@@ -402,7 +405,7 @@ class StartupVerdictTests(unittest.TestCase):
         return _run(next_action.handler, project_path=str(root), reconcile=reconcile)
 
     def test_planning_incomplete_names_the_exact_remaining_step(self):
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a")]
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, tasks=False, checkpoints=checkpoints)
             code, records, err = self._next_action(root)
@@ -410,13 +413,13 @@ class StartupVerdictTests(unittest.TestCase):
             startup = records[0]["startup"]
             self.assertEqual(startup["verdict"], "planning-incomplete")
             self.assertIn("PHASE-01", startup["action"])
-            self.assertIn("PLAN-004", startup["action"])
+            self.assertIn("PLAN-<plan-ref>", startup["action"])
             self.assertEqual(startup["owner"], "pm")
             self.assertFalse(records[0]["planning"]["complete"])
 
     def test_fresh_session_reaches_task_one_dispatch_with_no_planning_left(self):
         """The acceptance rehearsal: planning finished, reopen, dispatch is named."""
-        checkpoints = [("PLAN-001", "n/a"), ("PLAN-002", "n/a"), ("PLAN-003", "n/a"), ("PLAN-004", "RESEARCH-01-001")]
+        checkpoints = [("PLAN-REQUIREMENTS", "n/a"), ("PLAN-IMPLEMENTATION", "n/a"), ("PLAN-PHASE-01", "n/a"), ("PLAN-RESEARCH-01-001", "RESEARCH-01-001")]
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_PLANNING_REVIEW) as scaffold:
             root = _plan_project(scaffold, checkpoints=checkpoints)
             # Session close: STATE.md refreshed by the composer.

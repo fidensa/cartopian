@@ -20,6 +20,7 @@ Stdlib only.
 import re
 from typing import List, Tuple
 
+from cli import checkpoint_identity
 from cli.markdown_fences import FenceTracker
 
 # Bare identifier alternation (no anchors). Kept in sync with the per-artifact
@@ -31,11 +32,11 @@ _ID = (
     r"TASK-\d{2}-\d{3}"
     r"|SPEC-\d{2}-\d{3}"
     r"|PHASE-\d{2}"
-    r"|PROMPT-PLAN-\d{3}"
+    rf"|PROMPT-{checkpoint_identity.CHECKPOINT_PATTERN}"
     r"|PROMPT-\d{2}-\d{3}"
-    r"|REVIEW-PLAN-\d{3}"
+    rf"|REVIEW-{checkpoint_identity.CHECKPOINT_PATTERN}"
     r"|REVIEW-\d{2}-\d{3}"
-    r"|REPORT-PLAN-\d{3}"
+    rf"|REPORT-{checkpoint_identity.CHECKPOINT_PATTERN}"
     r"|REPORT-\d{2}-\d{3}-review"
     r"|REPORT-\d{2}-\d{3}"
     r"|DEC-\d{3}"

@@ -8,7 +8,7 @@ Ordinary decision prose is PM-derived guidance. A decision names operator
 evidence only by reference to turns the host intake adapter captured, with
 the exact structural marker below. The marker binds one or more capture
 identities (from the evidence lookup; never typed from memory) to one
-governed unit (`project:project`, `planning:PLAN-NNN`, or
+governed unit (`project:project`, `planning:<checkpoint-id>`, or
 `task:TASK-NN-NNN`). Text and provenance always come from the capture. An
 optional block quote directly under the marker must equal the captured text
 whole, or the reference is unconfirmed. Block quotes without a reference,
