@@ -217,7 +217,7 @@ def handler(args: argparse.Namespace) -> int:
         )
         if observation.terminal:
             classification = observation.classification
-            common = handoff_observer.record_fields(observation)
+            common = handoff_observer.record_fields(observation, report_path)
             emit_record(
                 {
                     "report_path": str(report_path.resolve()),

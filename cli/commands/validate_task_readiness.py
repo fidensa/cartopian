@@ -33,6 +33,7 @@ from cli.protocol_gate import (
 
 CHECK_ORDER = (
     "project-schema-current",
+    "launch-mode-valid",
     "phase-exists",
     "plan-ref-exists",
     "plan-ref-aligned",
@@ -121,6 +122,15 @@ def _parse_headers(content: str) -> Tuple[Dict[str, str], Dict[str, bool]]:
 
 def _split_csv(value: str) -> List[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def _check_launch_mode(content: str) -> Dict[str, Any]:
+    from cli.task_launch import launch_mode
+    try:
+        launch_mode(content)
+        return {"name": "launch-mode-valid", "pass": True, "reason": None}
+    except ValueError as exc:
+        return {"name": "launch-mode-valid", "pass": False, "reason": str(exc)}
 
 
 def _check_phase(project_root: Path, headers: Dict[str, str]) -> Dict[str, Any]:
@@ -599,7 +609,9 @@ def _run_checks(
     *,
     title: str = "",
 ) -> List[Dict[str, Any]]:
+    launch_check = _check_launch_mode(content)
     checks_by_name = {
+        "launch-mode-valid": launch_check,
         "project-schema-current": _check_project_schema(project_root),
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref(project_root, headers),

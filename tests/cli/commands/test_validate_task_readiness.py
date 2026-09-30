@@ -158,6 +158,7 @@ class _Sandbox:
 
 CHECK_NAMES_IN_ORDER = [
     "project-schema-current",
+    "launch-mode-valid",
     "phase-exists",
     "plan-ref-exists",
     "plan-ref-aligned",

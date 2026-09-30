@@ -45,11 +45,13 @@ MARKER = "cartopian-input"
 
 CHANNEL_EXISTING = "existing-deliverable"
 CHANNEL_DEPENDENCY = "dependency-deliverable"
+CHANNEL_REWORK = "rework-review"
 
 #: The one prompt section each payload channel may appear in.
 CHANNEL_SECTIONS = {
     CHANNEL_EXISTING: "Existing deliverable input",
     CHANNEL_DEPENDENCY: "Upstream contract input",
+    CHANNEL_REWORK: "Review findings input",
 }
 
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$")

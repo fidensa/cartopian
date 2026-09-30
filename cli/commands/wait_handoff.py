@@ -374,7 +374,7 @@ def _emit(
 ) -> int:
     """Emit the single terminal NDJSON record and return the mapped exit code."""
     budget = host_capability.resolve_host_budget()
-    common = handoff_observer.record_fields(observation)
+    common = handoff_observer.record_fields(observation, report_path)
     if status in {"timeout", "still-running"}:
         common["terminal"] = status == "timeout"
         common["classification"] = status

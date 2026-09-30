@@ -389,7 +389,7 @@ A review file carries a two-line `## Summary` and one self-contained `F<n>.` row
 
 Planning-checkpoint reviews use `reviews/REVIEW-<checkpoint-id>.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
-An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-<checkpoint-id>.md`) and report (`reports/REPORT-<checkpoint-id>.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
+An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-<checkpoint-id>.md`) and report (`reports/REPORT-<checkpoint-id>.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. Before preparing a rerun review prompt, the writer preserves the prior retained review body and content identity in `.cartopian/provenance.log`. Routing a complete review publication preserves the new body there as `review-publication` provenance. These records retain the full text for recovery in projects without git; deleting or overwriting the review slot does not retire its provenance. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
 
 Review verdicts are:
 
@@ -408,6 +408,27 @@ retained consumed prompt correctly reports `stale-request-context` in
 `cartopian plan-audit` and at the dispatch preflight until it is retired or
 regenerated. Retirement never precedes the verdict: a `blocked`, `failed`, or
 `failed-to-parse` review outcome preserves the prompt for inspection.
+
+
+### Historical planning-review scope backfill
+
+A retained `REVIEW-PLAN-NNN.md` with an approved verdict but no `Planning stage:`
+header is unaddressed evidence, not proof that the review was deleted. Read the
+historical review and establish the checkpoint it actually approved. Record
+that explicit mapping with:
+
+```sh
+cartopian backfill-review-scope <project-root> --review REVIEW-PLAN-NNN \
+  --checkpoint PLAN-<canonical-scope> --expected-identity sha256:<review-hash>
+```
+
+The command records a scope sidecar in project provenance, pinned to the exact
+unchanged review bytes. It never edits or renames the historical file and never
+infers scope from sequential position. It is idempotent for the same mapping;
+a different mapping or changed review refuses. Planning gates and approved
+request-evidence inheritance consume the same sidecar. Backfill supplies scope,
+not missing approval or request evidence; those requirements still apply. Repeat `--checkpoint` in one call when a historical batch review approved several checkpoint scopes; the complete explicit mapping is retained and each scope resolves independently.
+
 
 ## Up-front Operator Request Evidence
 
@@ -442,10 +463,19 @@ Applicable evidence for a unit is selected, never searched for:
    block quote directly under the marker must equal the captured text whole,
    modulo whitespace, or the reference is `unconfirmed`. A reference inherits
    the capture's unit, pairing state, and revocation; a turn referenced under
-   two units is `cross-unit` for both. A malformed marker fails closed.
+   two units by different decisions is `cross-unit` for both. One current,
+   locked decision may repeat the header to bind the same ruling explicitly
+   to several units. Each header names one unit; repeat it for every unit
+   governed by a shared ruling. A malformed marker fails closed.
    Superseded and non-locked decisions neither select evidence nor produce
    evidence-reference findings; their historical text remains unchanged.
    Requirements, tasks, and retained reviews still validate their own references.
+   A decision that names a checkpoint or its plan ref, or is cited by a task,
+   must carry its operator authority into that unit's channel through a unit binding, `project:project`, or the task's approved planning-review inheritance.
+   An authority bound only to another unit is a refusal
+   (`governing-decision-evidence-unbound`), even when inherited project
+   evidence exists. Unconfirmed authority also refuses. `lookup-evidence`
+   distinguishes `unit-bound` authority from `project-inherited` evidence.
 3. **Corrections.** Referenced turns later than the confirmation, in receipt
    order. Where a reply differs from the proposal it answered, the reply
    governs; both are kept whole.
@@ -783,6 +813,19 @@ Coder (task) handoffs are **deidentified**. Project-management identifiers — `
 
 Task prompts are deleted when the task reaches `done/` or when the prompt is superseded before assignment. Planning-checkpoint prompts are deleted when the checkpoint is approved or superseded. Prompts are never archived as durable records.
 
+### Retained findings on rework assignments
+
+The assignment composer automatically resolves a task's retained closure review
+when its verdict is `request-changes` or `reject`. It embeds the complete review
+as the machine-created `rework-review` input under `Review findings input`, with
+an exact byte count and content digest in the bound receipt. Findings and their
+recorded history reach the assignee without a task-contract amendment. The
+mediated writer, manual handoff packet, and automatic dispatch all verify that
+this input still matches the retained artifact; missing, duplicate, or changed
+payloads refuse. Recompose after a new review round. Review handoffs themselves
+do not require this assignee input.
+
+
 ## Reports
 
 Reports are protocol-defined handoff result artifacts in `reports/`. They are evidence for the PM, not replacements for task, review, decision, or backlog records.
@@ -940,6 +983,8 @@ Role launch and permission fields are:
 - `model`: optional model identifier, exported to the wrapper as the `CARTOPIAN_MODEL` environment variable; the wrapper translates it into the tool-specific model-selection flag. When unset, no variable is exported and the tool's own default model applies.
 - `effort`: optional effort/thinking level for the assigned agent, exported to the wrapper as the `CARTOPIAN_EFFORT` environment variable; the wrapper translates it into the tool-specific effort flag. When unset, no variable is exported and the tool's own default effort applies. A value outside the wrapper's CLI-wide vocabulary makes the wrapper warn on stderr and launch at the default; whether a specific model supports a vocabulary-valid level is the tool's own behavior.
 - `auto_launch`: a closed unique list containing applicable assigned work types from `task_run`, `task_review`, and `planning_review`. The list chooses launch mode only after `[automation].initiation` has allowed the run to begin and `run_boundary` permits the handoff; it never initiates a run. It does not assign review, control pace, select a task, or grant capabilities. `cartopian dispatch` enforces the applicable permission fail-closed.
+- A task may declare `Launch mode: auto` (also the legacy default when absent) or `Launch mode: native-interactive`. The native reservation overrides role `auto_launch` for `task_run`: readiness rehearsal reports a manual native handoff with `auto_launch_task_run: false`, the handoff packet removes that automatic permission, and `dispatch` refuses before clearing report slots or launching. Invalid or duplicate declarations fail readiness. Start the assignee in its native interactive host and supply the generated prompt; an unattended dispatch wrapper cannot satisfy this reservation. Task review retains its independently configured launch policy.
+
 - `timeout`: optional maximum wall-clock duration for PM-launched handoffs. The protocol default is `60m`.
 
 Legacy compatibility only: migration tooling recognizes `project.protocol_version`, `[roles.<role>.launch]`, `[handoffs.<role>]`, `auto_start`, `auto_start_tasks`, `auto_start_reviews`, and `planning_reviews` as migration-source vocabulary. Preferred validation rejects them, and current generation, editing, examples, CLI/MCP authored schemas, and canonical TOML never emit them. Resolved machine records may expose a derived `launch` projection.
@@ -1065,7 +1110,7 @@ The PM detects handoff completion by observing the filesystem through two canoni
 
 The completion contract is:
 
-- **The report file is the authoritative completion signal, and a terminal observation binds final bytes.** Path appearance alone is not terminal. A complete report that parses as the expected handoff variant routes its actual verdict (`accepted`, `blocked`, `failed`, `changes-requested`, or `rejected`) — but only once its bytes can no longer change. While a matching automated launch is still `state=running`, the report writer is alive and may still rewrite even a syntactically complete report (the supervisor's post-report grace window is exactly such a period), so the canonical observer holds a complete report nonterminal until the launch publishes `state=exited`. The supervisor publishes that status — and, for retained-log launches, the atomic launch-log snapshot immediately before it — only after the child process is provably gone; because the prior slot's log was removed before the running marker, a safe single-link regular `<report-path>.launch.log` therefore also proves the writer is gone if the following status replacement is lost or raced (supervisor loss after final publication). Each wait's terminal record names the accepted bytes as `report_content_identity`; downstream parsing and routing accept that identity back (`report-action --expected-identity`, `validate-report --expected-identity`) and refuse fail-closed on a mismatch instead of acting on different bytes. This live-launch barrier never changes the report verdict and never opens or reads the log body. Manual/report-only observation has no status requirement, and a matching `state=exited` status is the normal publication boundary: a dead supervisor cannot strand an already complete authoritative report. Incomplete or temporarily malformed bytes remain nonterminal while the current wrapper can still finish publication. After wrapper exit, stable malformed bytes classify `failed-to-parse`; a non-zero exit with no report classifies `failed`; a clean exit with no report classifies `exited-without-report`. A `timeout`, hard process stop, crash, or missing/late/permanently invalid report is not successful completion evidence.
+- **The report file is the authoritative completion signal, and a terminal observation binds final bytes.** Path appearance alone is not terminal. A complete report that parses as the expected handoff variant routes its actual verdict (`accepted`, `blocked`, `failed`, `changes-requested`, or `rejected`) — but only once its bytes can no longer change. While a matching automated launch is still `state=running`, the report writer is alive and may still rewrite even a syntactically complete report (the supervisor's post-report grace window is exactly such a period), so the canonical observer holds a complete report nonterminal until the launch publishes `state=exited`. The supervisor publishes that status — and, for retained-log launches, the atomic launch-log snapshot immediately before it — only after the child process is provably gone; because the prior slot's log was removed before the running marker, a safe single-link regular `<report-path>.launch.log` therefore also proves the writer is gone if the following status replacement is lost or raced (supervisor loss after final publication). Each review wait also returns `review_content_identity` for the contained canonical retained review when present; pass it to `report-action --expected-review-identity` alongside the report identity. Complete review routing refuses when the retained review is missing, aliased, has a different verdict or Request-context identity, or differs from the pinned review identity. A refusal emits no findings projection and no task transition. Each wait's terminal record names the accepted bytes as `report_content_identity`; downstream parsing and routing accept that identity back (`report-action --expected-identity`, `validate-report --expected-identity`) and refuse fail-closed on a mismatch instead of acting on different bytes. This live-launch barrier never changes the report verdict and never opens or reads the log body. Manual/report-only observation has no status requirement, and a matching `state=exited` status is the normal publication boundary: a dead supervisor cannot strand an already complete authoritative report. Incomplete or temporarily malformed bytes remain nonterminal while the current wrapper can still finish publication. After wrapper exit, stable malformed bytes classify `failed-to-parse`; a non-zero exit with no report classifies `failed`; a clean exit with no report classifies `exited-without-report`. A `timeout`, hard process stop, crash, or missing/late/permanently invalid report is not successful completion evidence.
 - **Wrapper status is current, secondary evidence.** Automatic dispatch clears the launch's own expected report and `<report-path>.status` after all preflights (for task review that is the independent `REPORT-NN-NNN-review.md` slot — the preserved completion report is never cleared by a review launch), removes any prior launch log while establishing a safe destination, publishes a fresh `state=running` status carrying the launch identity and expected variant before child creation, and removes that marker if supervisor creation fails. When bounded retention is available, that marker also carries `guarantee_scope=retained-launch-log` and `retained_log_ready=false`. Once a complete report is observed, the outer supervisor grants the child a short grace to exit, reaps it if it lingers, and only then — with the writer provably gone — atomically publishes the retained snapshot followed by the final `state=exited` clean/error/timeout status with retained-log facts, so a custom wrapper or wrapper-launch failure cannot strand `running` and no publication signal ever precedes final bytes. If that status replacement is lost after the atomic snapshot publication, waits recognize the safe deterministic launch-log companion as publication metadata without opening its body. Retained-log truncation is nonterminal metadata and never changes that lifecycle result. Manual launches may omit running identity; absence remains valid and waits use report-only observation. A stale or variant-mismatched status cannot terminate or delay a new handoff. The `.status` file remains transient and is removed through `cartopian delete-report`. Both wait commands are read-only — they never write project state, move tasks, launch processes, or read `.launch.log` bodies.
 - **Coder completion evidence and reviewer completion are separate artifacts.** The accepted coder report stays preserved at `reports/REPORT-NN-NNN.md` throughout task-closure review, and the reviewer publishes independently to `reports/REPORT-NN-NNN-review.md`. The review-prompt writer binds the preserved completion report by absolute path, outcome facts, and SHA-256 content identity inside the generated review context — the reviewer reads the artifact directly and the prompt never reproduces the report body. That binding also covers exact operator evidence, PM-derived artifact paths, task, prompt, review target, and the expected review-report path. Review preflight re-verifies the preserved artifact against the bound identity: a missing completion report blocks the review launch, and a mutated one is a stale binding. Task review expects the `review` report variant at the review path, so completion-shaped content in the review slot — or a review report in the completion slot — is a path/variant mismatch and cannot satisfy the other signal. Review retries clear only the review slot's transient state; the completion artifact stays byte-identical.
 - **Waiting is terminal by default: one launch, one wait call, one result.** Called without `--max-block`, a wait primitive blocks until a terminal observation, bounded by the resolved handoff timeout as the absolute ceiling. This is the only supported shape. Cartopian has no wake, resume, or callback mechanism, and no host is assumed to supply one — a blocking call that survives to the report is the entire completion mechanism. **The silence while that call is outstanding is correct.** No model turn is in progress during a pending tool call, so a host instruction requiring periodic commentary during ongoing work does not govern it: such instructions govern turns the model holds, and a pending call holds none. A PM that slices a wait into short `--max-block` observations to create opportunities to speak has converted a correct silence into per-slice context cost and nonterminal records that decide nothing. Slice only for a host ceiling that cannot be raised, never for narration.

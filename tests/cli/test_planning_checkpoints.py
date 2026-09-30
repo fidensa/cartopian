@@ -178,7 +178,7 @@ class CheckpointLifecycleTests(unittest.TestCase):
             self.assertEqual(report_action._report_suffix(report, 'planning-review'), 'BUILD-01-005')
             self.assertEqual(checkpoint_identity.artifact_checkpoint(report.name, 'REPORT'), checkpoint)
             review = root / f'reviews/REVIEW-{checkpoint}.md'
-            review.write_text('Verdict: approve\nRequest alignment: aligned\nRequest evidence: REQUEST-001\n')
+            review.write_text(f'Request-context identity: {context.context_identity}\nVerdict: approve\nRequest alignment: aligned\nRequest evidence: REQUEST-001\n')
             report.write_text(_review_report(
                 report_stem=report.stem, review_id=review.stem, prompt_path=prompt,
                 task_path=None, review_path=review, status='complete', verdict='approve'))

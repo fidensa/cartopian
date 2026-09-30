@@ -453,6 +453,8 @@ def _expected_input_bindings(
     project_cfg: Dict[str, Any],
     content: str,
     deliverable: Optional[Dict[str, Any]],
+    *,
+    include_rework: bool = True,
 ) -> List[Dict[str, Any]]:
     """Machine-resolve every binding a prompt payload may legitimately claim.
 
@@ -498,6 +500,12 @@ def _expected_input_bindings(
                 project_cfg, project_root, _deliverable_value(dependency_content)
             ),
         )
+    from cli import rework_review
+    title = re.search(r"^#\s+(TASK-\d{2}-\d{3})", content, re.MULTILINE)
+    if title and include_rework:
+        review_input = rework_review.resolve(project_root, title.group(1))
+        if review_input is not None:
+            bindings.append(review_input)
     return bindings
 
 
@@ -520,6 +528,8 @@ def audit_prompt_payloads(
     content: str,
     deliverable: Optional[Dict[str, Any]],
     prompt_text: str,
+    *,
+    include_rework: bool = True,
 ) -> Dict[str, Any]:
     """Audit every payload declaration in a handoff prompt.
 
@@ -529,10 +539,19 @@ def audit_prompt_payloads(
     handoff before launch. Hand-authored text therefore cannot smuggle
     content past validation by declaring itself a trusted payload.
     """
-    expected = _expected_input_bindings(
-        project_root, project_cfg, content, deliverable
-    )
-    return assignment_inputs.audit_payloads(prompt_text, expected)
+    try:
+        expected = _expected_input_bindings(project_root, project_cfg, content, deliverable,
+                                            include_rework=include_rework)
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "problems": [f"rework-review-invalid: {exc}"]}
+    audit = assignment_inputs.audit_payloads(prompt_text, expected)
+    for item in expected:
+        if item["channel"] == assignment_inputs.CHANNEL_REWORK:
+            bound = assignment_inputs.verify_bound_payload(prompt_text, item["channel"], item["logical"], item["content"].encode("utf-8"))
+            if bound["state"] != "bound":
+                audit["problems"].append("retained review findings input is missing or stale: " + bound["detail"])
+                audit["ok"] = False
+    return audit
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -714,7 +733,8 @@ def handler(args: argparse.Namespace) -> int:
         None
         if prompt_text is None
         else audit_prompt_payloads(
-            project_root, project_cfg, content, deliverable, prompt_text
+            project_root, project_cfg, content, deliverable, prompt_text,
+            include_rework=task_path.parent.name != "in-review",
         )
     )
     # The machine projection stays bounded: full problem details go to
@@ -732,6 +752,13 @@ def handler(args: argparse.Namespace) -> int:
             ),
         }
     )
+    from cli.task_launch import launch_mode
+    try:
+        task_launch_mode = launch_mode(content)
+    except ValueError as exc:
+        stderr_guard(f"task-launch-mode-invalid: {exc}")
+        return EXIT_FAIL
+    native_required = task_launch_mode == "native-interactive" and task_path.parent.name != "in-review"
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
         "schema_identity": resolved["schema_identity"],
@@ -744,7 +771,9 @@ def handler(args: argparse.Namespace) -> int:
         "effective_grants": role_record["effective_grants"],
         "assigned_work_types": role_record["assigned_work_types"],
         "launch": role_record["launch"],
-        "auto_launch": role_record["auto_launch"],
+        "auto_launch": [a for a in role_record["auto_launch"] if not (native_required and a == "task_run")],
+        "task_launch_mode": task_launch_mode,
+        "native_interactive_required": native_required,
         "attribution": role_record["attribution"],
         "work_roots": work_roots,
         "deliverable": deliverable,

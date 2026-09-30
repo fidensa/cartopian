@@ -561,6 +561,16 @@ def handler(args: argparse.Namespace) -> int:
             if task_path.parent.name == "in-review"
             else "task_run"
         )
+        if activity == "task_run":
+            from cli.task_launch import launch_mode
+            try:
+                mode = launch_mode(task_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError) as exc:
+                stderr_guard(f"task-launch-mode-invalid: {exc}")
+                return EXIT_FAIL
+            if mode == "native-interactive":
+                stderr_guard("task-launch-mode-reserved: task requires a native interactive launch; use the manual handoff")
+                return EXIT_FAIL
         if activity not in role_record["auto_launch"]:
             stderr_guard(
                 f"automatic {activity} dispatch is not enabled for role {role} "
@@ -646,6 +656,7 @@ def handler(args: argparse.Namespace) -> int:
             task_content,
             deliverable,
             prompt_text,
+            include_rework=activity == "task_run",
         )
         if not payload_audit["ok"]:
             for problem in payload_audit["problems"]:

@@ -63,7 +63,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
-from cli import checkpoint_identity
+from cli import artifact_paths, checkpoint_identity
 
 # ---------------------------------------------------------------------------
 # Write-log location.
@@ -411,7 +411,7 @@ def migration_write_evidenced(
     return False
 
 
-def _read_log(project_root: Path) -> Optional[List[Dict[str, str]]]:
+def _read_log(project_root: Path) -> Optional[List[Dict[str, object]]]:
     """Return the parsed write-log records, or None if no log exists.
 
     Malformed or non-object lines are skipped (a corrupt tail must not crash an
@@ -419,12 +419,11 @@ def _read_log(project_root: Path) -> Optional[List[Dict[str, str]]]:
     established, just with nothing tracked yet.
     """
     log_path = Path(os.path.realpath(os.fspath(project_root))) / PROVENANCE_DIRNAME / LOG_BASENAME
-    if not log_path.is_file():
-        return None
-    records: List[Dict[str, str]] = []
+    records: List[Dict[str, object]] = []
     try:
-        raw = log_path.read_text(encoding="utf-8")
-    except OSError:
+        _, raw = artifact_paths.read(project_root, log_path,
+                                     subdirs=(PROVENANCE_DIRNAME,), label="provenance log")
+    except artifact_paths.ArtifactRefusal:
         return None
     for line in raw.splitlines():
         line = line.strip()
@@ -635,3 +634,21 @@ def audit_provenance(project_root: Union[str, os.PathLike]) -> Dict[str, object]
         "guard": guard,
         "advisory": advisory,
     }
+
+
+def record_review(project_root: Path, path: Path, content: str) -> bool:
+    """Preserve every observed reviewer publication, including its recoverable body.
+
+    Idempotent for identical bytes. Reviews remain reviewer-authored; this is
+    observation provenance, not PM write authority.
+    """
+    rel = path.relative_to(project_root).as_posix()
+    identity = hash_bytes(content.encode("utf-8"))
+    records = _read_log(project_root) or []
+    if any(r.get("relpath") == rel and r.get("hash") == identity
+           and r.get("action") == "review-publication" for r in records):
+        return True
+    return _append_record(project_root, {
+        "relpath": rel, "hash": identity, "action": "review-publication",
+        "content": content, "ts": time.time(),
+    })

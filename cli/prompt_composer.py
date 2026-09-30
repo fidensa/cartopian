@@ -37,6 +37,7 @@ from cli import (
     practice_packs,
     report_identity,
     request_trace,
+    rework_review,
     risk_contract,
     source_guidance,
 )
@@ -1278,6 +1279,11 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
             }
         )
 
+    try:
+        rework_input = rework_review.resolve(project_root, task_id) if task_path.parent.name != "in-review" else None
+    except (ValueError, OSError) as exc:
+        raise ComposeRefusal("rework-review-invalid", str(exc)) from exc
+
     prompt = _render_prompt(
         contract=contract,
         title=_deidentified_title(task_title),
@@ -1297,6 +1303,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         deliverable=deliverable,
         existing_input=existing_input,
         upstream_inputs=upstream_inputs,
+        rework_input=rework_input,
         skeleton=skeleton,
         pm_owns_branches=pm_owns_branches,
         git_versioning=git_versioning,
@@ -1310,6 +1317,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         for item in (
             ([existing_input] if existing_input is not None else [])
             + upstream_inputs
+            + ([rework_input] if rework_input is not None else [])
         )
     ]
 
@@ -1354,6 +1362,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         "deliverable": deliverable,
         "work_roots": work_roots,
         "input_payloads": input_payload_manifest,
+        "rework_review": rework_input,
         "section_sizes": sections,
         "findings": findings,
         "prompt_content_identity": prompt_identity,
@@ -1505,6 +1514,15 @@ def materialize_input_sections(
             ),
             "",
         ]
+    try:
+        review_input = rework_review.resolve(Path(project_root), "-".join(Path(task_path).stem.split("-")[:3]))
+    except (ValueError, OSError) as exc:
+        raise ComposeRefusal("rework-review-invalid", str(exc)) from exc
+    if review_input is not None:
+        manifest.append({key: review_input[key] for key in ("channel", "logical", "content_bytes", "content_sha256")})
+        parts += ["## Review findings input", "", "Remedy the live findings in the retained review below.", "",
+                  assignment_inputs.render_payload_block(assignment_inputs.CHANNEL_REWORK,
+                      review_input["logical"], review_input["content"]), ""]
     if upstream_parts:
         parts += [
             "## Upstream contract input",
@@ -1540,6 +1558,7 @@ def _render_prompt(
     deliverable: Optional[Dict[str, Any]],
     existing_input: Optional[Dict[str, Any]],
     upstream_inputs: List[Dict[str, Any]],
+    rework_input: Optional[Dict[str, Any]],
     skeleton: str,
     pm_owns_branches: bool,
     git_versioning: bool,
@@ -1743,6 +1762,12 @@ def _render_prompt(
                 ),
                 "",
             ]
+
+    if rework_input is not None:
+        parts += ["## Review findings input", "",
+                  "Remedy the live findings in this retained review. Use their recorded status to distinguish the current remediation set from closed history.", "",
+                  assignment_inputs.render_payload_block(
+                      assignment_inputs.CHANNEL_REWORK, rework_input["logical"], rework_input["content"]), ""]
 
     # Deliverable ---------------------------------------------------------------
     if deliverable is not None:

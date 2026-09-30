@@ -17,6 +17,8 @@ attribution, and any file the PM writes under `requests/` are not evidence.
 
 ```markdown
 Operator request evidence for: task:TASK-NN-NNN: cs-<handle>/turn-<N>[, cs-<handle>/turn-<M>]
+
+Repeat this header for every governed unit when one captured ruling authorizes several tasks or checkpoints. The same capture identity may appear on each header in this decision.
 ```
 
 A decision may also record that the plan deliberately leaves an operator

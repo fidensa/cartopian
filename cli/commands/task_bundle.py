@@ -215,7 +215,9 @@ def _build_validation_checks(
     presence: Dict[str, bool],
 ) -> List[Dict[str, Any]]:
     warnings: List[str] = []
+    from cli.commands.validate_task_readiness import _check_launch_mode
     checks_by_name = {
+        "launch-mode-valid": _check_launch_mode(content),
         "project-schema-current": _check_project_schema(project_root),
         "phase-exists": _check_phase(project_root, headers),
         "plan-ref-exists": _check_plan_ref_bundle(project_root, headers),

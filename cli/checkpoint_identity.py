@@ -67,3 +67,26 @@ def scope(checkpoint: str, text: str) -> Dict[str, Optional[str]]:
 def artifact_checkpoint(name: str, family: str) -> Optional[str]:
     match = re.fullmatch(rf"{family}-({CHECKPOINT_PATTERN})\.md", name)
     return match.group(1) if match else None
+
+
+def retained_scopes(project_root, path, checkpoint: str, text: str):
+    """Resolve an explicit batch backfill, pinned to unchanged historical bytes."""
+    from cli import provenance
+    result = scope(checkpoint, text)
+    if not LEGACY_ID_RE.fullmatch(checkpoint) or header(text, "Planning stage"):
+        return [result]
+    rel = path.relative_to(project_root).as_posix()
+    entries = [r for r in provenance._read_log(project_root) or []
+               if r.get("action") == "planning-review-scope" and r.get("relpath") == rel]
+    if not entries:
+        return [result]
+    entry = entries[-1]
+    if entry.get("hash") != provenance.hash_bytes(text.encode("utf-8")):
+        return [{**result, "scope_error": "historical review changed after scope backfill"}]
+    checkpoints = entry.get("checkpoints") or [entry.get("checkpoint")]
+    if (not isinstance(checkpoints, list) or not checkpoints
+            or any(not isinstance(key, str) or not CHECKPOINT_ID_RE.fullmatch(key)
+                   or not identity_scope(key)["stage"] for key in checkpoints)):
+        return [{**result, "scope_error": "invalid historical review scope binding"}]
+    return [{**identity_scope(key), "scope_error": None, "backfill_checkpoint": key}
+            for key in checkpoints]

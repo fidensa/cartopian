@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import artifact_paths, report_identity, source_guidance
+from cli import artifact_paths, provenance, report_identity, request_trace, source_guidance
 from cli.commands import parse_report
 from cli.commands.plan_audit import _resolve_pm_owns_product_branches
 from cli.commands.resolve_config import (
@@ -103,6 +103,7 @@ def _review_projection(
     project_root: Path,
     review_path: Optional[Path],
     report_content: str,
+    captured_review: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Bounded PM-facing projection of the durable review file.
 
@@ -111,10 +112,11 @@ def _review_projection(
     input that could point the projection at an arbitrary readable file. The
     slot is read through the ``artifact_paths.review`` containment helper, so
     a symlinked or hardlinked slot aliasing an outside-project file is
-    refused rather than read. On any refusal (absent slot included), fall
-    back to the completion report's `## Blocking findings` body so the PM
-    still gets a bounded findings read. Best-effort throughout — the
-    projection informs the PM, never the routing verdict.
+    refused rather than read. Complete publications supply the captured
+    review bytes only after the routing guard proves artifact, request-context,
+    verdict, and optional content-identity agreement. Incomplete failure
+    reports may still expose their own Blocking findings as diagnostic context;
+    that fallback never makes a complete review actionable.
     """
     verdict: Optional[str] = None
     summary: Optional[str] = None
@@ -124,7 +126,9 @@ def _review_projection(
     source = None
     if review_path is not None:
         try:
-            _, review_content = artifact_paths.review(project_root, review_path)
+            review_content = captured_review
+            if review_content is None:
+                _, review_content = artifact_paths.review(project_root, review_path)
         except artifact_paths.ArtifactRefusal:
             review_content = None
         if review_content is not None:
@@ -184,6 +188,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
             "with a grammar-matching report filename"
         ),
     )
+    subparser.add_argument("--expected-review-identity", default=None,
+        help="Bind the retained review to its sha256 content identity")
     subparser.add_argument(
         "--expected-identity",
         dest="expected_identity",
@@ -678,6 +684,11 @@ def handler(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
 
+    expected_review_identity = getattr(args, "expected_review_identity", None)
+    if expected_review_identity is not None and not report_identity.CONTENT_IDENTITY_RE.fullmatch(expected_review_identity):
+        stderr_usage("invalid --expected-review-identity; expected sha256:<64 lowercase hex digits>")
+        return EXIT_USAGE
+
     project_root = _find_project_root(report_path)
     if project_root is None:
         stderr_error(f"project config not found for report: {raw_path}")
@@ -809,6 +820,50 @@ def handler(args: argparse.Namespace) -> int:
             expected_review_id,
         )
 
+    captured_review = None
+    review_content_identity = None
+    review_binding = None
+    if variant in parse_report.REVIEW_VARIANTS and status_value == "complete":
+        try:
+            if path_mismatch or expected_review_id is None:
+                raise ValueError("review artifact path does not match the report")
+            canonical_review = project_root / "reviews" / f"{expected_review_id}.md"
+            _, captured_review = artifact_paths.review(project_root, canonical_review)
+            review_content_identity = report_identity.content_identity(captured_review)
+            pinned = expected_review_identity
+            if pinned is not None and pinned != review_content_identity:
+                raise ValueError("retained review content identity changed")
+            report_context = request_trace._header(content, "Request-context identity")
+            review_context = request_trace._header(captured_review, "Request-context identity")
+            if report_context != review_context:
+                raise ValueError("retained review Request-context identity differs from the report")
+            if alignment_record and alignment_record.get("context_identity"):
+                if review_context != alignment_record["context_identity"]:
+                    raise ValueError("retained review is not bound to the current request context")
+            retained_verdict = request_trace._header(captured_review, "Verdict")
+            if retained_verdict != review_verdict:
+                raise ValueError("retained review verdict differs from the report")
+            if not provenance.record_review(project_root, canonical_review, captured_review):
+                raise ValueError("retained review provenance could not be preserved")
+            review_binding = {"ok": True, "detail": None}
+        except (artifact_paths.ArtifactRefusal, OSError, UnicodeError, ValueError) as exc:
+            emit_record({
+                "verdict": "failed-to-parse", "variant": variant,
+                "report_path": str(report_path), "report_content_identity": observed_identity,
+                "review_content_identity": review_content_identity,
+                "review_binding": {"ok": False, "detail": str(exc)},
+                "review_projection": None, "target_task_status": None,
+                "prompt_to_overwrite": None, "recommended_action": "stop-for-inspection",
+                "status": status_value, "review_verdict": review_verdict,
+                "request_alignment": alignment_record,
+                "declared_report_task_path": str(declared_task_path) if declared_task_path else None,
+                "expected_task_path": str(expected_task_path) if expected_task_path else None,
+                "requires_pr_step": False, "review_path": None,
+                "path_mismatch": path_mismatch,
+            })
+            stderr_guard(f"review-publication-mismatch: {exc}")
+            return EXIT_FAIL
+
     # The declared task path is untrusted report input: it is recorded and
     # cross-checked, never dereferenced. Only the once-read contained task
     # content is consulted.
@@ -856,7 +911,7 @@ def handler(args: argparse.Namespace) -> int:
             else None
         )
         review_projection = _review_projection(
-            project_root, projection_review_path, content
+            project_root, projection_review_path, content, captured_review
         )
     record = {
         "verdict": verdict,
@@ -867,6 +922,8 @@ def handler(args: argparse.Namespace) -> int:
         "pm_summary": pm_summary,
         "pm_summary_truncated": pm_summary_truncated,
         "review_projection": review_projection,
+        "review_content_identity": review_content_identity,
+        "review_binding": review_binding,
         "review_verdict": review_verdict,
         "request_alignment": alignment_record,
         "source_evidence": source_evidence_record,

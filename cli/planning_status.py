@@ -45,7 +45,8 @@ def _header(text: str, name: str) -> Optional[str]:
 
 def _read(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
     except (OSError, UnicodeDecodeError):
         return ""
 
@@ -114,17 +115,19 @@ def checkpoint_records(project_path: Path) -> Dict[str, Dict[str, Any]]:
             if checkpoint is None:
                 continue
             text = _read(path)
-            record = slot(checkpoint)
-            record["review"] = True
-            verdict = (_header(text, "Verdict") or "").strip().lower() or None
-            record["verdict"] = verdict
-            record.update(checkpoint_identity.scope(checkpoint, text))
-            if verdict == "approve":
-                record["status"] = STATUS_APPROVED
-            elif verdict in {"request-changes", "reject"}:
-                record["status"] = STATUS_REQUEST_CHANGES
-            else:
-                record["status"] = STATUS_AWAITING_VERDICT
+            for review_scope in checkpoint_identity.retained_scopes(project_path, path, checkpoint, text):
+                record = slot(review_scope.get("backfill_checkpoint") or checkpoint)
+                record["review"] = True
+                record["review_source"] = path.name
+                verdict = (_header(text, "Verdict") or "").strip().lower() or None
+                record["verdict"] = verdict
+                record.update(review_scope)
+                if verdict == "approve":
+                    record["status"] = STATUS_APPROVED
+                elif verdict in {"request-changes", "reject"}:
+                    record["status"] = STATUS_REQUEST_CHANGES
+                else:
+                    record["status"] = STATUS_AWAITING_VERDICT
     reports_dir = project_path / "reports"
     if reports_dir.is_dir():
         for path in sorted(reports_dir.glob("REPORT-PLAN-*.md")):
@@ -177,7 +180,13 @@ def _gate_record(
     matching = [r for r in records.values() if _covers(r, stage, phase, plan_ref)]
     if any(r["status"] == STATUS_APPROVED for r in matching):
         return None
-    return next(iter(matching), {"id": checkpoint, "status": STATUS_PENDING, "verdict": None})
+    if matching:
+        return matching[0]
+    unaddressed = [r for r in records.values() if r["status"] == STATUS_APPROVED
+                   and r.get("scope_error") and not r.get("stage")]
+    return {"id": checkpoint, "status": STATUS_PENDING, "verdict": None,
+            "unaddressed_reviews": [r["id"] for r in unaddressed]}
+
 
 
 def missing_reviews(project_path: Path) -> List[Dict[str, Any]]:
@@ -232,10 +241,15 @@ def _in_flight_step(record: Dict[str, Any], what: str) -> str:
             f"Checkpoint {checkpoint} ({what}) returned {record['verdict']}: revise "
             "the target artifacts in place and rerun the checkpoint."
         )
+    if record.get("unaddressed_reviews"):
+        return (
+            f"Approved legacy review evidence exists but lacks checkpoint scope for {checkpoint} ({what}); "
+            "establish its actual scope and use cartopian backfill-review-scope."
+        )
     return (
         f"No approved review is retained for checkpoint {checkpoint} ({what}): run "
-        "it (a checkpoint whose review was deleted under the earlier convention "
-        "must be rerun)."
+        "it, or explicitly backfill the scope of an existing approved legacy review "
+        "with cartopian backfill-review-scope. Missing scope does not prove deletion."
     )
 
 

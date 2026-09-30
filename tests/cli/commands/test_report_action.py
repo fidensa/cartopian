@@ -118,9 +118,23 @@ def _review_report(
     bound = prompt_path.is_file()
     alignment = "aligned" if bound else "unavailable-for-legacy"
     evidence = "REQUEST-001" if bound else "none"
+    context_identity = request_trace._header(prompt_path.read_text(), "Request-context identity") if bound else None
+    # Build a complete publication pair. Malicious path fixtures are left
+    # untouched so containment tests still exercise the real refusal.
+    if (review_path.parent == prompt_path.parent.parent / "reviews"
+            and review_path.is_file() and not review_path.is_symlink()
+            and review_path.stat().st_nlink == 1):
+        retained = review_path.read_text()
+        if context_identity and "Request-context identity:" not in retained:
+            retained = retained.replace("\n", f"\nRequest-context identity: {context_identity}\n", 1)
+        if verdict and "Verdict:" not in retained:
+            retained = retained.replace("\n", f"\nVerdict: {verdict}\n", 1)
+        review_path.write_text(retained)
+    context_header = f"Request-context identity: {context_identity}\n\n" if context_identity else ""
     return (
         f"# {report_stem}\n\n"
         f"Status: {status}\n\n"
+        f"{context_header}"
         f"Request alignment: {alignment}\n\n"
         f"Request evidence: {evidence}\n\n"
         "## Identity\n\n"
@@ -607,7 +621,7 @@ class TestReportActionReviewVariants(unittest.TestCase):
 
             result = _run(str(report_path), home=home)
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
         record = _parse_single_record(result)
         self.assertEqual(record["verdict"], "failed-to-parse")
         self.assertEqual(record["variant"], "review")
@@ -644,11 +658,10 @@ class TestReportActionReviewVariants(unittest.TestCase):
 
             result = _run(str(report_path), home=home)
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
         record = _parse_single_record(result)
-        self.assertEqual(record["verdict"], "accepted")
-        self.assertEqual(record["declared_report_task_path"], str(wrong_task_path.resolve()))
-        self.assertEqual(record["expected_task_path"], str(expected_task_path.resolve()))
+        self.assertEqual(record["verdict"], "failed-to-parse")
+        self.assertIsNone(record["target_task_status"])
         self.assertTrue(record["path_mismatch"])
 
     def test_review_blocked_and_failed_keep_task_in_review(self) -> None:
@@ -801,6 +814,9 @@ class TestReportActionVariantInference(unittest.TestCase):
                 ),
             )
 
+            context = request_trace._header((scaffold.prompts / 'PROMPT-01-010.md').read_text(), "Request-context identity")
+            review_path.write_text(f"# REVIEW-01-010\nVerdict: approve\nRequest-context identity: {context}\n")
+            report_path.write_text(report_path.read_text().replace("Status: complete", f"Request-context identity: {context}\nStatus: complete"))
             result = _run(str(report_path), home=home)
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -1230,7 +1246,7 @@ class TestBoundedProjections(unittest.TestCase):
 
         The declared `Review file path` is untrusted input; on a path
         mismatch the projection must not dereference any review file and
-        falls back to the report's own `## Blocking findings` body.
+        refuses the complete publication without projecting a verdict.
         """
         with project_scaffold(cartopian_toml=_PROJECT_TOML) as scaffold:
             home = scaffold.root / "home"
@@ -1272,11 +1288,11 @@ class TestBoundedProjections(unittest.TestCase):
             )
             result = _run(str(report_path), home=home)
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
         record = _parse_single_record(result)
         self.assertTrue(record["path_mismatch"])
         projection = record["review_projection"]
-        self.assertEqual(projection["source"], "report-blocking-findings")
+        self.assertIsNone(projection)
         serialized = json.dumps(record)
         self.assertNotIn("SECRET-CONTENT", serialized)
         self.assertNotIn("SECRET-FINDING", serialized)
@@ -1322,11 +1338,11 @@ class TestBoundedProjections(unittest.TestCase):
             )
             result = _run(str(report_path), home=home)
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
         record = _parse_single_record(result)
         self.assertFalse(record["path_mismatch"])
         projection = record["review_projection"]
-        self.assertEqual(projection["source"], "report-blocking-findings")
+        self.assertIsNone(projection)
         serialized = json.dumps(record)
         self.assertNotIn("SECRET-CONTENT", serialized)
         self.assertNotIn("SECRET-FINDING", serialized)
@@ -1365,10 +1381,10 @@ class TestBoundedProjections(unittest.TestCase):
             )
             result = _run(str(report_path), home=home)
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
         record = _parse_single_record(result)
         projection = record["review_projection"]
-        self.assertEqual(projection["source"], "report-blocking-findings")
+        self.assertIsNone(projection)
         self.assertNotIn("SECRET-CONTENT", json.dumps(record))
 
 class TestContainedTaskPaths(unittest.TestCase):

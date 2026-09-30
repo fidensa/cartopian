@@ -600,9 +600,14 @@ def validate_plan_revision(
                 "blocking": True,
                 "plan_ref": plan_ref,
                 "detail": (
-                    f"new allocation {plan_ref} uses unsupported kind "
-                    f"{parsed['kind']}; supported kinds: "
-                    f"{', '.join(SUPPORTED_KINDS)}"
+                    f"plan document reference {plan_ref} uses {parsed['kind']}, "
+                    "but plan documents cite plan refs (KIND-NN-NNN), not task "
+                    "or spec identifiers; use the corresponding plan ref "
+                    f"(for example BUILD-{plan_ref.split('-', 1)[1]}) "
+                    f"or omit the identifier; supported kinds: {', '.join(SUPPORTED_KINDS)}"
+                    if parsed["kind"] in {"TASK", "SPEC"} else
+                    f"new allocation {plan_ref} uses unsupported kind {parsed['kind']}; "
+                    f"supported kinds: {', '.join(SUPPORTED_KINDS)}"
                 ),
             })
 

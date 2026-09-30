@@ -1,6 +1,6 @@
 {
   "contract_id": "assignment-prompt",
-  "contract_version": 5,
+  "contract_version": 6,
   "purpose": "Deterministic composition contract for assignee (coder) task-assignment prompts: the audience-scoped section set and the validation rules that fail composition closed. The composed prompt is an execution interface; machine provenance, routing diagnostics, and lifecycle bookkeeping live in the bound trace receipt, never in the prompt body. Section sizes are measured into the trace receipt (section_sizes) as telemetry only: no size threshold rejects a prompt, a section, or a typed input payload, because no operator-authorized requirement bounds legitimate content by byte count.",
   "sections": {
     "order": [
@@ -14,6 +14,7 @@
       "Active guidance",
       "Existing deliverable input",
       "Upstream contract input",
+      "Review findings input",
       "Deliverable",
       "Completion report"
     ],
@@ -31,6 +32,7 @@
       "Source guidance",
       "Existing deliverable input",
       "Upstream contract input",
+      "Review findings input",
       "Deliverable"
     ]
   },
@@ -85,7 +87,8 @@
     "marker": "cartopian-input",
     "channels": {
       "existing-deliverable": "Existing deliverable input",
-      "dependency-deliverable": "Upstream contract input"
+      "dependency-deliverable": "Upstream contract input",
+      "rework-review": "Review findings input"
     },
     "binding_fields": ["channel", "logical", "bytes", "sha256"],
     "size_meaning": "A payload carries no byte ceiling: its size is a property of the governed resource, not of prompt authoring, and no operator-authorized requirement bounds it. A resource is always embedded complete and byte-exact — a legitimate rework assignment always carries its full existing deliverable. Only an unreadable or non-UTF-8 resource fails closed (deliverable-input-unreadable). The binding's byte count and SHA-256 digest are exact identity, verified at composition, mediated write, manual preflight, and dispatch.",

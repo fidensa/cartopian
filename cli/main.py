@@ -17,6 +17,7 @@ EXIT_ENV = 3
 SUBCOMMANDS: List[str] = [
     "adversarial-review-context",
     "apply-migration-entry",
+    "backfill-review-scope",
     # bounded acceptance-to-source trace, its projections, and its bounds
     "acceptance-trace",
     "classify-risk",
@@ -171,6 +172,7 @@ def _real_handlers():
         acceptance_trace,
         adversarial_review_context,
         apply_migration_entry,
+        backfill_review_scope,
         archive_plan,
         capture_request,
         classify_risk,
@@ -260,6 +262,7 @@ def _real_handlers():
             compose_assignment_prompt.configure_parser,
             compose_assignment_prompt.handler,
         ),
+        "backfill-review-scope": (backfill_review_scope.configure_parser, backfill_review_scope.handler),
         "compose-state": (compose_state.configure_parser, compose_state.handler),
         "containment-matrix": (containment_matrix.configure_parser, containment_matrix.handler),
         "correct-report": (correct_report.configure_parser, correct_report.handler),

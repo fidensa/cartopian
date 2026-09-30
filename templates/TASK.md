@@ -5,6 +5,7 @@ Plan ref: KIND-NN-NNN
 Source: <BL-NNN | n/a>
 Work root: <name | name, name | n/a>
 Deliverable: <root:relative/path | project:resources/relative/path | n/a>
+Launch mode: <auto | native-interactive>
 Assignee: <free text; decided per task>
 Spec: <SPEC-NN-NNN.md | none>
 Depends on: <TASK-NN-NNN, TASK-NN-NNN | none>

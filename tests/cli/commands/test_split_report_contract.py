@@ -770,12 +770,13 @@ def test_report_action_resolves_review_identities_at_review_path(capsys):
     with project_scaffold(cartopian_toml=_config()) as scaffold:
         task_path, _report, prompt_path, _context = _captured_review_setup(scaffold)
         root = scaffold.project_root.resolve()
-        review_file = scaffold.write("reviews/REVIEW-01-003.md", "# REVIEW-01-003\n")
+        review_file = scaffold.write("reviews/REVIEW-01-003.md", f"# REVIEW-01-003\nVerdict: approve\nRequest-context identity: {_context.context_identity}\n")
         review_report = scaffold.write(
             "reports/REPORT-01-003-review.md",
             f"""# REPORT-01-003-review
 
 Status: complete
+Request-context identity: {_context.context_identity}
 Request alignment: aligned — matches the initiating request
 Request evidence: REQUEST-001
 

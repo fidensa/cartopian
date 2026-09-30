@@ -157,6 +157,7 @@ def handler(args: argparse.Namespace) -> int:
         "candidates": summary.as_record(trace) if summary is not None else None,
         "context_identity": context_identity,
         "missing": None,
+        "authority_scope": evidence_resolver.authority_scope(unit, trace),
     }
     if loaded is not None:
         selected = {

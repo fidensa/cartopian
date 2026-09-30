@@ -66,6 +66,8 @@ For each applicable entry, oldest first, walk its **Agent-followable migration s
 
 Do not raw-edit `cartopian.toml` / `cartopian.local.toml` — the harness denies structured raw edits to config, and `update-config` is the only edit path. In an activated native macOS/Linux Claude handoff, record the exact operation for execution outside the handoff; the project sandbox intentionally blocks the writer, so migration remains incomplete until its evidence returns.
 
+For approved sequential planning reviews that lack checkpoint scope, use the historical scope backfill in `protocol/CONVENTIONS.md`: establish the actual scope from the retained review and call `cartopian backfill-review-scope <project-root> --review REVIEW-PLAN-NNN --checkpoint <canonical-checkpoint> --expected-identity <review-hash>`. Preserve historical bytes. Never infer a mapping from the review counter or label existing but unaddressed evidence as deleted. Validate the affected planning gate and request-evidence inheritance after recording the mapping.
+
 ## Step 3 — Validate, then let the configuration executor update the marker
 
 The marker update is the **last** configuration-migration step and is conditional:

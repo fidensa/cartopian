@@ -61,6 +61,9 @@ if os.environ.get("HARNESS_SUPPRESS") == role or not prompt:
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(prompt)))
 nn = os.path.basename(prompt)[len("PROMPT-"):-len(".md")]
+with open(prompt, encoding="utf-8") as handle:
+    context_identity = next((line.split(":", 1)[1].strip() for line in handle
+                             if line.startswith("Request-context identity:")), "")
 
 
 def publish(relative, template_env):
@@ -72,12 +75,12 @@ def publish(relative, template_env):
     with open(template, encoding="utf-8") as handle:
         body = handle.read()
     with open(target, "w", encoding="utf-8") as handle:
-        handle.write(body.replace("{nn}", nn).replace("{root}", root))
+        handle.write(body.replace("{nn}", nn).replace("{root}", root).replace("__CONTEXT_IDENTITY__", context_identity))
 
 
 if role == os.environ.get("HARNESS_REVIEW_ROLE"):
-    publish("reports/REPORT-%s-review.md", "HARNESS_REVIEW_REPORT")
     publish("reviews/REVIEW-%s.md", "HARNESS_REVIEW_FILE")
+    publish("reports/REPORT-%s-review.md", "HARNESS_REVIEW_REPORT")
 else:
     publish("reports/REPORT-%s.md", "HARNESS_TASK_REPORT")
 '''
@@ -160,6 +163,7 @@ _REVIEW_REPORT = """# REPORT-{nn}-review
 Status: complete
 Request alignment: aligned
 Request evidence: REQUEST-001
+Request-context identity: __CONTEXT_IDENTITY__
 
 ## Identity
 
@@ -187,6 +191,7 @@ Target: TASK-{nn}
 Verdict: __VERDICT__
 Request alignment: aligned
 Request evidence: REQUEST-001
+Request-context identity: __CONTEXT_IDENTITY__
 """
 
 BOUND = "TASK-01-001"

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from cli import checkpoint_identity, prompt_composer, prompt_evidence, trace_binding
-from cli.commands import _writers
+from cli.commands import _writers, handoff_packet
+from cli.commands.resolve_config import _CliError, _load_toml, _resolve_deliverable
 from cli.request_trace import (
     CHECKPOINT_ID_RE, PHASE_ID_RE, PLAN_REF_RE, REVIEW_KINDS, RequestRefusal,
     context_for_checkpoint, context_for_task, context_for_task_assignment,
@@ -283,6 +284,12 @@ def handler(args: argparse.Namespace) -> int:
                     root, task.resolve(), body
                 )
                 details["input_payloads"] = materialized
+            task_content = task.read_text(encoding="utf-8")
+            cfg = _load_toml(root / "cartopian.toml", "project config") or {}
+            deliverable = _resolve_deliverable(cfg, root, handoff_packet._deliverable_value(task_content))
+            audit = handoff_packet.audit_prompt_payloads(root, cfg, task_content, deliverable, body)
+            if not audit["ok"]:
+                raise RequestRefusal("assignment-input-stale", audit["problems"][0])
             context = context_for_task_assignment(root, task.resolve())
             content = _append_trace_projection(
                 root,
@@ -291,6 +298,9 @@ def handler(args: argparse.Namespace) -> int:
                 details,
                 audience="coder",
             )
+        except (OSError, UnicodeError, _CliError) as exc:
+            _writers.stderr("guard", f"assignment-input-unavailable: {exc}")
+            return _writers.EXIT_FAIL
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
             return _writers.EXIT_FAIL
@@ -397,6 +407,15 @@ def handler(args: argparse.Namespace) -> int:
             if refusal is not None:
                 _writers.stderr("guard", f"{refusal[0]}: {refusal[1]}")
                 return _writers.EXIT_FAIL
+    if args.review_kind:
+        from cli import rework_review
+        review_id = args.prompt_id.replace("PROMPT-", "REVIEW-", 1)
+        try:
+            rework_review.preserve(root, root / "reviews" / f"{review_id}.md")
+        except (ValueError, OSError) as exc:
+            _writers.stderr("guard", f"review-preservation-failed: {exc}")
+            return _writers.EXIT_FAIL
+
     def _record_size(project_root: Path, written: dict) -> None:
         written["prompt_evidence"] = _capture_prompt_size(
             project_root, args.prompt_id, content

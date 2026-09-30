@@ -223,7 +223,7 @@ def observe_once(
     return HandoffObservation(False, None, report, wrapper)
 
 
-def record_fields(observation: HandoffObservation) -> Dict[str, Any]:
+def record_fields(observation: HandoffObservation, report_path: Optional[Path] = None) -> Dict[str, Any]:
     """Common machine fields emitted unchanged by both wait surfaces."""
     fields = {
         "terminal": observation.terminal,
@@ -239,4 +239,19 @@ def record_fields(observation: HandoffObservation) -> Dict[str, Any]:
         "status_expected_variant": observation.wrapper.expected_variant,
         "status_variant_matches": observation.wrapper.variant_matches,
     }
+    if observation.terminal and report_path is not None and observation.report.variant in ("review", "planning-review"):
+        from cli import artifact_paths, report_identity
+        name = report_path.name
+        task_match = report_identity.TASK_REVIEW_REPORT_RE.fullmatch(name)
+        plan_match = report_identity.PLANNING_REVIEW_REPORT_RE.fullmatch(name)
+        review_id = ("REVIEW-" + task_match.group(1) if task_match else
+                     "REVIEW-" + plan_match.group(1) if plan_match else None)
+        fields["review_content_identity"] = None
+        if review_id:
+            root = report_path.parent.parent
+            try:
+                _, content = artifact_paths.review(root, root / "reviews" / f"{review_id}.md")
+                fields["review_content_identity"] = report_identity.content_identity(content)
+            except artifact_paths.ArtifactRefusal:
+                pass
     return fields

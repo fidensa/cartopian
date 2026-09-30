@@ -84,6 +84,7 @@ def _launch_record(
     *,
     project_root: Optional[Path] = None,
     capabilities_activated: bool = False,
+    task_launch_mode: str = "auto",
 ) -> Dict[str, Any]:
     """The prerequisites ``dispatch`` enforces, decided by the same code.
 
@@ -95,9 +96,10 @@ def _launch_record(
 
     launch = role_record.get("launch") or {}
     agent = launch.get("agent")
-    auto = "task_run" in (role_record.get("auto_launch") or [])
+    auto = task_launch_mode != "native-interactive" and "task_run" in (role_record.get("auto_launch") or [])
     record: Dict[str, Any] = {
         "role": role,
+        "task_launch_mode": task_launch_mode,
         "mode": "dispatch" if (agent and auto) else "manual",
         "agent": agent,
         "auto_launch_task_run": auto,
@@ -106,7 +108,7 @@ def _launch_record(
     }
     if record["mode"] == "manual":
         record["detail"] = (
-            "manual handoff: "
+            "native interactive handoff required by task" if task_launch_mode == "native-interactive" else "manual handoff: "
             + (
                 f"roles.{role}.agent is not configured"
                 if not agent
@@ -220,10 +222,17 @@ def rehearse(
         blockers.append(f"compose-assignment-prompt failed: {exc}")
 
     project_root = _find_project_root(task_path)
+    from cli.task_launch import launch_mode
+    try:
+        mode = launch_mode(content)
+    except ValueError as exc:
+        blockers.append(f"task-launch-mode-invalid: {exc}")
+        return record
     launch = _launch_record(
         chosen,
         roles[chosen],
         resolved.get("work_roots") or {},
+        task_launch_mode=mode,
         project_root=project_root,
         capabilities_activated=bool(resolved["capabilities"]["activated"]),
     )

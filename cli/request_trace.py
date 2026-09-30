@@ -1167,12 +1167,11 @@ def _approved_planning_trace(
             continue
         if (_review_header(review_text, ALIGNMENT_FIELD) or "").lower() != "aligned":
             continue
-        scope = checkpoint_identity.scope(match.group(1), review_text)
-        if (scope["scope_error"] or scope["stage"] != "tasks-and-specs"
-                or scope["phase"] != _header(task_text, "Phase")):
-            continue
-        review_plan_ref = scope["plan_ref"] or ""
-        if not _review_covers_plan_ref(review_plan_ref, plan_ref):
+        scopes = checkpoint_identity.retained_scopes(project_root, path, match.group(1), review_text)
+        if not any(not item["scope_error"] and item["stage"] == "tasks-and-specs"
+                   and item["phase"] == _header(task_text, "Phase")
+                   and _review_covers_plan_ref(item["plan_ref"] or "", plan_ref)
+                   for item in scopes):
             continue
         raw_ids = _review_header(review_text, ALIGNMENT_EVIDENCE_FIELD) or ""
         evidence_ids = [
@@ -2197,6 +2196,8 @@ def _context(
             source_texts,
             allow_project_origin=review_kind == "planning",
         )
+    if target.kind == "task":
+        evidence_resolver.require_task_authority(project_root, target, source_texts, trace)
     if (
         not trace
         and (
@@ -2449,11 +2450,13 @@ def upsert_request_sections(prompt_text: str, section: str) -> str:
 
 
 def preflight_prompt_binding(context: ReviewContext, prompt_text: str) -> Dict[str, Any]:
+    from cli import evidence_resolver
     actual = extract_request_sections(prompt_text)
     ok = actual is not None and bound_section_text(actual) == bound_section_text(context.section)
     return {
         "ok": ok,
         "rule": None if ok else "stale-request-context",
+        "authority_scope": evidence_resolver.authority_scope(context.target, context.trace),
         "detail": "request context is current" if ok else "prompt omits or changes the generated request comparison context",
         "recovery": "regenerate the prompt from the current intake trace" if not ok else "",
         "context_identity": context.context_identity,

@@ -838,7 +838,9 @@ def _confirm_references(
         unconfirmed.append(Unconfirmed(ref.capture_id, ref.source, reason, detail, ref.unit))
 
     for ref in refs:
-        if len(units_by_id[ref.capture_id]) > 1:
+        sources = {item.source for item in refs if item.capture_id == ref.capture_id}
+        shared_decision = len(sources) == 1 and next(iter(sources)).startswith("DEC-")
+        if len(units_by_id[ref.capture_id]) > 1 and not shared_decision:
             reject(ref, "cross-unit", "the same captured turn is referenced under more than one governed unit")
             continue
         turn = candidates.by_id(ref.capture_id)
@@ -986,6 +988,41 @@ def resolve(
     text_unit = target if target.kind == "task" else PROJECT_UNIT
     for text in source_texts:
         refs.extend(text_references(text, text_unit, "artifact"))
+    # A decision that governs this unit must carry its ruling into this
+    # channel. Project inheritance cannot conceal a ruling bound elsewhere.
+    governing_bindings = []
+    if target.kind == "planning":
+        identities = [target.identifier]
+        identities.append(target.identifier.removeprefix("PLAN-"))
+        by_decision: Dict[str, List[Reference]] = {}
+        for ref in refs:
+            if ref.source.startswith("DEC-"):
+                by_decision.setdefault(ref.source, []).append(ref)
+        for decision_id, declared in by_decision.items():
+            paths = list((project_root / "decisions").glob(f"{decision_id}-*.md"))
+            canonical = project_root / "decisions" / f"{decision_id}.md"
+            if canonical.is_file():
+                paths.append(canonical)
+            governs = any(
+                any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(identity)}(?![A-Za-z0-9-])",
+                              read_contained_text(project_root, path, what="decision scope"))
+                    for identity in identities)
+                for path in paths
+            )
+            if not governs:
+                continue
+            required = {ref.capture_id for ref in declared}
+            carried = {ref.capture_id for ref in declared if ref.unit in (target, PROJECT_UNIT)}
+            missing = sorted(required) if not carried else []
+            governing_bindings.extend(ref for ref in declared if ref.unit in (target, PROJECT_UNIT))
+            if missing:
+                raise RequestRefusal(
+                    "governing-decision-evidence-unbound",
+                    f"{decision_id} governs {target.kind}:{target.identifier} but its ruling "
+                    f"is bound to other units: {', '.join(missing)}",
+                    "repeat Operator request evidence for: headers for every governed unit, "
+                    "using the original captured identities",
+                )
     referenced = {ref.capture_id for ref in refs}
     for cid in exact_ids:
         if cid in referenced or not CAPTURE_ID_RE.fullmatch(cid):
@@ -993,6 +1030,14 @@ def resolve(
         referenced.add(cid)
         refs.append(Reference(cid, text_unit, exact_source))
     confirmed, rejected = _confirm_references(refs, candidates, revoked)
+    usable = {(ref.capture_id, ref.unit, ref.source) for ref, _ in confirmed}
+    unresolved = [ref for ref in governing_bindings if (ref.capture_id, ref.unit, ref.source) not in usable]
+    if unresolved:
+        raise RequestRefusal(
+            "governing-decision-evidence-unconfirmed",
+            f"{unresolved[0].source} cites operator authority that is not confirmed for {target.kind}:{target.identifier}",
+            "restore the exact captured source or bind a fresh attributable operator ruling before dispatch",
+        )
     unconfirmed.extend(rejected)
     unconfirmed.extend(chat_records_unconfirmed(project_root))
 
@@ -1003,7 +1048,7 @@ def resolve(
     if confirmation is not None and applies(PROJECT_UNIT):
         selected[confirmation.reply.capture_id] = (confirmation.reply, PROJECT_UNIT)
     for ref, turn in confirmed:
-        if applies(ref.unit) and turn.capture_id not in selected:
+        if applies(ref.unit) and (turn.capture_id not in selected or ref.unit == target):
             selected[turn.capture_id] = (turn, ref.unit)
 
     ordered = sorted(selected.values(), key=lambda item: item[0].position)
@@ -1164,3 +1209,37 @@ def bind_confirmation(
                 binding["confirmation"] = dict(record)
         store.save_session(session)
     return record
+
+
+def require_task_authority(project_root: Path, target: GovernedUnit,
+                           source_texts: Sequence[str], trace: Sequence[RequestEvidence]) -> None:
+    """Verify the final task channel, including approved planning inheritance."""
+    refs, _ = decision_references(project_root)
+    carried = {item.record_id for item in trace}
+    for decision_id in sorted({ref.source for ref in refs}):
+        if not decision_id.startswith("DEC-"):
+            continue
+        paths = list((project_root / "decisions").glob(f"{decision_id}-*.md"))
+        canonical = project_root / "decisions" / f"{decision_id}.md"
+        if canonical.is_file():
+            paths.append(canonical)
+        cited = any(re.search(rf"\b{decision_id}\b", text) for text in source_texts)
+        named = any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(target.identifier)}(?![A-Za-z0-9-])",
+                              read_contained_text(project_root, path, what="decision scope")) for path in paths)
+        required = {ref.capture_id for ref in refs if ref.source == decision_id}
+        if (cited or named) and not required.intersection(carried):
+            raise RequestRefusal(
+                "governing-decision-evidence-unbound",
+                f"{decision_id} governs {target.kind}:{target.identifier} but its operator ruling is absent from the task channel",
+                "bind the ruling to this task or retain its approved checkpoint evidence, then regenerate the prompt",
+            )
+
+
+def authority_scope(target: GovernedUnit, trace: Sequence[RequestEvidence]) -> str:
+    if not trace:
+        return "unavailable-for-legacy"
+    if any(item.unit == target for item in trace):
+        return "unit-bound"
+    if any(item.unit.kind == "planning" for item in trace):
+        return "planning-inherited"
+    return "project-inherited"
