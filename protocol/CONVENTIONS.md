@@ -705,8 +705,15 @@ Canonical same-kind ranges written as `REF through REF` are supported. A stale
 or missing evidence identity in an applicable approval fails closed. When no
 applicable approved checkpoint carries exact evidence, the verified planned
 task falls back to project-origin intake for compatibility. Direct task-bound
-evidence still takes precedence, allowing an explicit correction or scope
-addition to govern that task without mixing it with inherited evidence.
+evidence still takes precedence over general inherited intent. It does not
+remove the captured authority of a current locked decision that the task cites
+or that explicitly governs the task. A verified planned task retains those
+project-bound rulings, and any governing checkpoint-bound rulings supported by
+its applicable approved planning reviews, alongside the task correction in
+capture order. Each excerpt keeps its original unit and provenance; no capture
+is rebound to the task. Unrelated project evidence and sibling-task or
+unapproved checkpoint authority are not added. Revoked, unconfirmed, and
+unavailable authority still fails closed.
 
 An ad-hoc task (`Plan ref: n/a`), a task with malformed or mismatched ancestry,
 or a task whose plan anchors are missing never inherits project intent. When no

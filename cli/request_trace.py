@@ -981,6 +981,7 @@ def _resolve_trace_with_summary(
     allow_project_origin: bool = False,
     exact_ids: Sequence[str] = (),
     exact_source: str = "approval",
+    inherited_authority_ids: Sequence[str] = (),
 ) -> Tuple[List[RequestEvidence], ResolutionSummary]:
     """:func:`_resolve_trace` plus the resolver's summary of the final pass."""
     from cli import evidence_resolver
@@ -996,6 +997,7 @@ def _resolve_trace_with_summary(
             allow_project_origin=include_project_origin,
             exact_ids=exact_ids,
             exact_source=exact_source,
+            inherited_authority_ids=inherited_authority_ids,
         )
         stored = [
             _record_evidence(project_root, record)
@@ -2180,6 +2182,29 @@ def _context(
             source_texts,
             allow_project_origin=False,
         )
+        if trace:
+            # A task correction replaces general inherited intent, but cannot
+            # discard the authority of decisions that still govern this task.
+            # Retain only those rulings, in their existing units and capture
+            # order. Checkpoint authority must first pass the actual ancestry
+            # and approval checks; a sibling checkpoint cannot supply it.
+            governing = evidence_resolver.task_governing_references(project_root, target, source_texts)
+            authority_ids = {ref.capture_id for ref in governing if ref.unit.kind == "project"}
+            carried = {item.record_id for item in trace}
+            planning_ids = {
+                ref.capture_id for ref in governing
+                if ref.unit.kind == "planning" and ref.capture_id not in carried
+            }
+            if planning_ids:
+                approved = _approved_planning_trace(project_root, task_path)
+                authority_ids.update(item.record_id for item in approved if item.record_id in planning_ids)
+            if authority_ids:
+                trace, summary = _resolve_trace_with_summary(
+                    project_root,
+                    target,
+                    source_texts,
+                    inherited_authority_ids=sorted(authority_ids),
+                )
         if not trace:
             trace = _approved_planning_trace(project_root, task_path)
         if not trace:

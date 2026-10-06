@@ -961,6 +961,7 @@ def resolve(
     allow_project_origin: bool = False,
     exact_ids: Sequence[str] = (),
     exact_source: str = "approval",
+    inherited_authority_ids: Sequence[str] = (),
     store: Optional[intake_adapter.SessionStore] = None,
 ) -> Resolution:
     """Applicable captured evidence for ``target`` in presentation order.
@@ -978,6 +979,11 @@ def resolve(
     reference already binds it (that binding is kept), and is confirmed like
     every other reference, so revoked, uncaptured, inconsistent, or unpaired
     turns still fail closed.
+
+    ``inherited_authority_ids`` retains governing project rulings or verified
+    planning-approval rulings alongside a planned task's direct corrections.
+    It selects confirmed references in their original units; it never rebinds
+    a capture or admits another task's authority.
     """
     project_root = Path(project_root)
     candidates = load_candidates(project_root, store)
@@ -1041,14 +1047,24 @@ def resolve(
     unconfirmed.extend(rejected)
     unconfirmed.extend(chat_records_unconfirmed(project_root))
 
-    def applies(unit: GovernedUnit) -> bool:
-        return unit == target or (allow_project_origin and unit == PROJECT_UNIT)
+    inherited_authority = set(inherited_authority_ids)
+
+    def applies(unit: GovernedUnit, capture_id: str) -> bool:
+        return (
+            unit == target
+            or (allow_project_origin and unit == PROJECT_UNIT)
+            or (
+                target.kind == "task"
+                and unit.kind in {"project", "planning"}
+                and capture_id in inherited_authority
+            )
+        )
 
     selected: Dict[str, Tuple[CapturedTurn, GovernedUnit]] = {}
-    if confirmation is not None and applies(PROJECT_UNIT):
+    if confirmation is not None and (target == PROJECT_UNIT or allow_project_origin):
         selected[confirmation.reply.capture_id] = (confirmation.reply, PROJECT_UNIT)
     for ref, turn in confirmed:
-        if applies(ref.unit) and (turn.capture_id not in selected or ref.unit == target):
+        if applies(ref.unit, turn.capture_id) and (turn.capture_id not in selected or ref.unit == target):
             selected[turn.capture_id] = (turn, ref.unit)
 
     ordered = sorted(selected.values(), key=lambda item: item[0].position)
@@ -1211,11 +1227,11 @@ def bind_confirmation(
     return record
 
 
-def require_task_authority(project_root: Path, target: GovernedUnit,
-                           source_texts: Sequence[str], trace: Sequence[RequestEvidence]) -> None:
-    """Verify the final task channel, including approved planning inheritance."""
+def task_governing_references(project_root: Path, target: GovernedUnit,
+                              source_texts: Sequence[str]) -> List[Reference]:
+    """Capture references owned by current locked decisions governing a task."""
     refs, _ = decision_references(project_root)
-    carried = {item.record_id for item in trace}
+    governing: List[Reference] = []
     for decision_id in sorted({ref.source for ref in refs}):
         if not decision_id.startswith("DEC-"):
             continue
@@ -1226,8 +1242,19 @@ def require_task_authority(project_root: Path, target: GovernedUnit,
         cited = any(re.search(rf"\b{decision_id}\b", text) for text in source_texts)
         named = any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(target.identifier)}(?![A-Za-z0-9-])",
                               read_contained_text(project_root, path, what="decision scope")) for path in paths)
+        if cited or named:
+            governing.extend(ref for ref in refs if ref.source == decision_id)
+    return governing
+
+
+def require_task_authority(project_root: Path, target: GovernedUnit,
+                           source_texts: Sequence[str], trace: Sequence[RequestEvidence]) -> None:
+    """Verify the final task channel, including approved planning inheritance."""
+    refs = task_governing_references(project_root, target, source_texts)
+    carried = {item.record_id for item in trace}
+    for decision_id in sorted({ref.source for ref in refs}):
         required = {ref.capture_id for ref in refs if ref.source == decision_id}
-        if (cited or named) and not required.intersection(carried):
+        if not required.intersection(carried):
             raise RequestRefusal(
                 "governing-decision-evidence-unbound",
                 f"{decision_id} governs {target.kind}:{target.identifier} but its operator ruling is absent from the task channel",
