@@ -4,7 +4,7 @@ from cli.request_trace import GovernedUnit, RequestRefusal
 from tests.cli.test_evidence_resolver import PROJECT, ResolverCase
 
 
-class TaskAuthorityInheritanceTests(ResolverCase):
+class TaskAuthorityFixture(ResolverCase):
     def baseline(self):
         session = self.session()
         self.bind(session)
@@ -24,6 +24,8 @@ class TaskAuthorityInheritanceTests(ResolverCase):
         self.write_decision("DEC-002", f"Operator request evidence for: task:TASK-01-001: {correction}")
         return correction
 
+
+class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
     def test_project_ruling_survives_a_task_correction_in_assignment_and_review(self):
         session, original, task = self.baseline()
         correction = self.task_correction(session)
@@ -139,3 +141,96 @@ class TaskAuthorityInheritanceTests(ResolverCase):
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
         self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+
+
+class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
+    """A decision the task only mentions can be classified, not bound.
+
+    RED: every governing-decision-evidence-unbound refusal offered only "bind
+    the ruling" or "retain checkpoint evidence", even when the cited decision
+    governs nothing in the task — pushing the PM toward fabricating a binding.
+    GREEN: a cited-only decision names a third remedy, and a reviewable
+    ``A|DEC-NNN|outside-scope|<why>`` record in the task's upstream trace
+    releases it. A decision that names the task in its own text, a
+    ``governing-constraint`` classification, and an unparseable trace still
+    refuse.
+    """
+
+    def cite_other_checkpoint_ruling(self, session):
+        ruling = session.exchange("For a different checkpoint, add a billing integration.", "Noted.")
+        self.write_decision("DEC-003", f"Operator request evidence for: planning:PLAN-BUILD-01-002: {ruling}")
+        self.approve_checkpoint("PLAN-BUILD-01-002", "BUILD-01-002", [ruling])
+        return ruling
+
+    def classify(self, task, applicability_class, *, fence="```trace"):
+        head, body = task.read_text().split("\n\n", 1)
+        task.write_text(
+            head + "\n\nUpstream trace: required\n" + body
+            + f"\n## Upstream trace\n\n{fence}\nA|DEC-003|{applicability_class}|billing belongs to BUILD-01-002\n```\n"
+        )
+
+    def refusal(self, task):
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        return caught.exception
+
+    def test_cited_only_refusal_offers_the_non_governing_branch(self):
+        session, _original, task = self.baseline()
+        self.cite_other_checkpoint_ruling(session)
+        task.write_text(task.read_text() + "\n- DEC-003\n")
+        self.task_correction(session)
+        refusal = self.refusal(task)
+        self.assertIn("mentions DEC-003", refusal.detail)
+        self.assertIn("A|DEC-003|outside-scope|<why>", refusal.recovery)
+        self.assertIn("remove the mention", refusal.recovery)
+        self.assertIn("governing-constraint", refusal.recovery)
+
+    def test_outside_scope_classification_releases_a_cited_only_decision(self):
+        session, original, task = self.baseline()
+        ruling = self.cite_other_checkpoint_ruling(session)
+        task.write_text(task.read_text() + "\n- DEC-003\n")
+        correction = self.task_correction(session)
+        self.classify(task, "outside-scope")
+        for context in (
+            request_trace.context_for_task_assignment(self.root, task),
+            request_trace.context_for_task(self.root, task),
+        ):
+            self.assertEqual(context.evidence_ids, [original, correction])
+            self.assertNotIn(ruling, context.evidence_ids)
+
+    def test_governing_constraint_classification_still_requires_the_ruling(self):
+        session, _original, task = self.baseline()
+        self.cite_other_checkpoint_ruling(session)
+        self.task_correction(session)
+        self.classify(task, "governing-constraint")
+        self.assertIn("mentions DEC-003", self.refusal(task).detail)
+
+    def test_unparseable_trace_scopes_nothing_out(self):
+        session, _original, task = self.baseline()
+        self.cite_other_checkpoint_ruling(session)
+        self.task_correction(session)
+        self.classify(task, "not-a-class")
+        self.refusal(task)
+
+    def test_classification_without_the_trace_declaration_is_ignored(self):
+        session, _original, task = self.baseline()
+        self.cite_other_checkpoint_ruling(session)
+        self.task_correction(session)
+        self.classify(task, "outside-scope")
+        task.write_text(task.read_text().replace("Upstream trace: required\n", ""))
+        self.refusal(task)
+
+    def test_a_decision_that_names_the_task_cannot_be_scoped_out(self):
+        session, _original, task = self.baseline()
+        ruling = session.exchange("For a different checkpoint, add a billing integration.", "Noted.")
+        self.write_decision(
+            "DEC-003",
+            f"Operator request evidence for: planning:PLAN-BUILD-01-002: {ruling}\nApplies to TASK-01-001.",
+        )
+        self.approve_checkpoint("PLAN-BUILD-01-002", "BUILD-01-002", [ruling])
+        self.task_correction(session)
+        self.classify(task, "outside-scope")
+        refusal = self.refusal(task)
+        self.assertIn("names task:TASK-01-001 in its own text", refusal.detail)
+        self.assertIn("superseding decision", refusal.recovery)

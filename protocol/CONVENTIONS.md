@@ -229,7 +229,7 @@ Task status is the directory the task file lives in:
 
 Task files never carry a `status:` field because duplicated status can go stale.
 
-When task-closure review is required, tasks can move backward on failed review. `request-changes` returns the task to `in-progress/`; `reject` returns it to `open/`. The original task remains the unit of work, so failed reviews do not spawn replacement tasks or follow-up tasks.
+When task-closure review is required, tasks can move backward on failed review. `request-changes` returns the task to `in-progress/`; `reject` returns it to `open/`. The original task remains the unit of work, so failed reviews do not spawn replacement tasks or follow-up tasks. `write-task` enforces this: it refuses (`review-follow-up-task`) a write that newly cites a retained `request-changes` or `reject` review of a different task still in `open/`, `in-progress/`, or `in-review/`. Remedy the findings in the reviewed task's rework, and record non-blocking follow-up notes in `BACKLOG.md`.
 
 ## Lifecycle Authority
 
@@ -474,6 +474,13 @@ Applicable evidence for a unit is selected, never searched for:
    Requirements, tasks, and retained reviews still validate their own references.
    A decision that names a checkpoint or its plan ref, or is cited by a task,
    must carry its operator authority into that unit's channel through a unit binding, `project:project`, or the task's approved planning-review inheritance.
+   Any `DEC-NNN` mention in a task file counts as a citation. When a task
+   mentions a decision that does not govern its outcome, the PM binds nothing:
+   an `A|DEC-NNN|outside-scope|<why>` record in the task's upstream trace
+   releases the citation, and the reviewer confirms it at closure. A
+   `governing-constraint` record does not release it, because a decision that
+   constrains the work governs it. Nor can any task-side record release a
+   decision whose own text names the task.
    An authority bound only to another unit is a refusal
    (`governing-decision-evidence-unbound`), even when inherited project
    evidence exists. Unconfirmed authority also refuses. `lookup-evidence`

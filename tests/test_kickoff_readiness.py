@@ -711,6 +711,49 @@ class TraceCommandAuthoringTests(unittest.TestCase):
         task = scaffold.write("tasks/open/TASK-01-001.md", body)
         return root, task
 
+    def test_a_scoped_out_decision_is_not_an_unclaimed_operator_excerpt(self):
+        """Only operator excerpts carry plan-level coverage.
+
+        An ``A|DEC-NNN|outside-scope`` record says a cited decision does not
+        govern the task; it must not surface as a phantom unclaimed excerpt
+        that blocks closeout.
+        """
+        from cli import trace_binding
+
+        with _isolated_home(), project_scaffold(cartopian_toml=_TOML_REVIEW_OFF) as scaffold:
+            root, task = self._project(scaffold)
+            mapping = scaffold.root / "mapping.json"
+            mapping.write_text(json.dumps({
+                "edges": [{
+                    "criterion": "C01", "type": "operator-request", "source": "REQ-001",
+                    "context": "evidence order 1",
+                }],
+                "exemptions": [
+                    {"criterion": "C02", "reason": "derived-mechanical"},
+                    {"criterion": "C03", "reason": "template-fixed"},
+                ],
+                "applicability": [
+                    {"identity": "REQ-002", "class": "outside-scope",
+                     "scope": "pricing statement; this task inventories vendors only"},
+                    {"identity": "DEC-009", "class": "outside-scope",
+                     "scope": "background reference; governs another plan item"},
+                ],
+            }), encoding="utf-8")
+            code, records, err = _run(
+                trace_command.handler, project_root=str(root), task=str(task),
+                projection=None, anchor=False, enumerate_inputs=False,
+                compose_from=str(mapping),
+            )
+            self.assertEqual(code, 0, err)
+            self.assertIn("A|DEC-009|outside-scope|", records[0]["block"])
+            task.write_text(
+                task.read_text(encoding="utf-8") + "\n## Upstream trace\n\n" + records[0]["block"],
+                encoding="utf-8",
+            )
+            unclaimed = trace_binding.unclaimed_scoped_excerpts(root)
+            self.assertEqual(len(unclaimed), 1, unclaimed)
+            self.assertTrue(unclaimed[0]["identity"].startswith("REQ-002 sha256:"))
+
     def test_enumerate_lists_criteria_sources_and_excerpts(self):
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_REVIEW_OFF) as scaffold:
             root, task = self._project(scaffold)

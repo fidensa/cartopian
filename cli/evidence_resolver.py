@@ -1227,11 +1227,50 @@ def bind_confirmation(
     return record
 
 
-def task_governing_references(project_root: Path, target: GovernedUnit,
-                              source_texts: Sequence[str]) -> List[Reference]:
-    """Capture references owned by current locked decisions governing a task."""
-    refs, _ = decision_references(project_root)
-    governing: List[Reference] = []
+def scoped_out_decisions(task_text: str) -> Set[str]:
+    """Decision ids a task's upstream trace classifies ``outside-scope``.
+
+    An ``A|DEC-NNN|outside-scope|<why>`` record is the PM's reviewable
+    statement that a decision the task mentions does not govern it. Only a
+    task declaring ``Upstream trace: required`` carries one, and a record
+    block that does not parse scopes nothing out (fail closed). Readiness
+    still validates the whole trace, and the reviewer confirms each ``A|``
+    record at closure. A ``governing-constraint`` record does not appear
+    here: a decision that constrains the work governs it.
+    """
+    from cli import acceptance_trace, trace_binding
+
+    if trace_binding.declaration(task_text) != trace_binding.REQUIRED:
+        return set()
+    lines = acceptance_trace.extract_record_block(task_text)
+    if not lines:
+        return set()
+    try:
+        record_set = acceptance_trace.parse_record_set(lines)
+    except (acceptance_trace.TraceRefusal, ValueError):
+        return set()
+    return {
+        record.identity
+        for record in record_set.applicability
+        if record.applicability_class == "outside-scope"
+        and re.fullmatch(r"DEC-\d{3}", record.identity)
+    }
+
+
+def _task_decision_governance(project_root: Path, target: GovernedUnit,
+                              source_texts: Sequence[str],
+                              refs: Sequence[Reference]) -> Dict[str, str]:
+    """How each current locked decision with captured rulings governs a task.
+
+    ``named`` — the decision's own text names the task, so it governs by its
+    declared scope. ``cited`` — the task text mentions the decision anywhere
+    and has not classified it ``outside-scope``. A task-side classification
+    never overrides a decision that names the task.
+    """
+    scoped_out: Set[str] = set()
+    for text in source_texts:
+        scoped_out |= scoped_out_decisions(text)
+    governance: Dict[str, str] = {}
     for decision_id in sorted({ref.source for ref in refs}):
         if not decision_id.startswith("DEC-"):
             continue
@@ -1239,27 +1278,66 @@ def task_governing_references(project_root: Path, target: GovernedUnit,
         canonical = project_root / "decisions" / f"{decision_id}.md"
         if canonical.is_file():
             paths.append(canonical)
-        cited = any(re.search(rf"\b{decision_id}\b", text) for text in source_texts)
         named = any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(target.identifier)}(?![A-Za-z0-9-])",
                               read_contained_text(project_root, path, what="decision scope")) for path in paths)
-        if cited or named:
-            governing.extend(ref for ref in refs if ref.source == decision_id)
-    return governing
+        cited = any(re.search(rf"\b{decision_id}\b", text) for text in source_texts)
+        if named:
+            governance[decision_id] = "named"
+        elif cited and decision_id not in scoped_out:
+            governance[decision_id] = "cited"
+    return governance
+
+
+def task_governing_references(project_root: Path, target: GovernedUnit,
+                              source_texts: Sequence[str]) -> List[Reference]:
+    """Capture references owned by current locked decisions governing a task."""
+    refs, _ = decision_references(project_root)
+    governance = _task_decision_governance(project_root, target, source_texts, refs)
+    return [ref for ref in refs if ref.source in governance]
 
 
 def require_task_authority(project_root: Path, target: GovernedUnit,
                            source_texts: Sequence[str], trace: Sequence[RequestEvidence]) -> None:
     """Verify the final task channel, including approved planning inheritance."""
-    refs = task_governing_references(project_root, target, source_texts)
+    refs, _ = decision_references(project_root)
+    governance = _task_decision_governance(project_root, target, source_texts, refs)
     carried = {item.record_id for item in trace}
-    for decision_id in sorted({ref.source for ref in refs}):
+    for decision_id, how in governance.items():
         required = {ref.capture_id for ref in refs if ref.source == decision_id}
-        if not required.intersection(carried):
-            raise RequestRefusal(
-                "governing-decision-evidence-unbound",
-                f"{decision_id} governs {target.kind}:{target.identifier} but its operator ruling is absent from the task channel",
-                "bind the ruling to this task or retain its approved checkpoint evidence, then regenerate the prompt",
+        if required.intersection(carried):
+            continue
+        unit = f"{target.kind}:{target.identifier}"
+        if how == "named":
+            detail = (
+                f"{decision_id} names {unit} in its own text, so it governs this "
+                "task, but its operator ruling is absent from the task channel"
             )
+            recovery = (
+                "bind the ruling to this task (`Operator request evidence for: "
+                f"{unit}: <capture-id>` in a current locked decision) or retain "
+                "its approved checkpoint evidence, then regenerate the prompt. "
+                "If the decision names this task in error, correct its scope "
+                "with a superseding decision; a task-side classification "
+                "cannot override it"
+            )
+        else:
+            detail = (
+                f"{target.identifier} mentions {decision_id}, which counts as "
+                "citing it as governing, but the decision's operator ruling is "
+                "absent from the task channel"
+            )
+            recovery = (
+                "if the decision governs this task, bind its ruling to the task "
+                "or retain its approved checkpoint evidence, then regenerate the "
+                "prompt. If it does not govern this task's outcome, bind "
+                "nothing: record `A|" + decision_id + "|outside-scope|<why>` in "
+                "the task's Upstream trace for the reviewer to confirm, or, in a "
+                "task without an upstream trace, remove the mention — any "
+                f"{decision_id} mention in the task file counts as a citation. "
+                "A `governing-constraint` classification still requires the "
+                "ruling, because a decision that constrains the work governs it"
+            )
+        raise RequestRefusal("governing-decision-evidence-unbound", detail, recovery)
 
 
 def authority_scope(target: GovernedUnit, trace: Sequence[RequestEvidence]) -> str:

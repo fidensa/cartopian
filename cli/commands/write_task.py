@@ -222,6 +222,21 @@ def handler(args: argparse.Namespace) -> int:
         )
         return _writers.EXIT_FAIL
 
+    # Failed reviews return their task for rework; a task citing a live
+    # failed review of another task is a follow-up the protocol forbids.
+    from cli import rework_review
+
+    previous = ""
+    if matches:
+        try:
+            previous = matches[0].read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            previous = ""
+    follow_up = rework_review.follow_up_refusal(root, task_id, content, previous)
+    if follow_up is not None:
+        _writers.stderr("guard", f"{follow_up[0]}: {follow_up[1]}")
+        return _writers.EXIT_FAIL
+
     # Prospective plan-ref numbering contract: once the reviewed correction is
     # carried by an installed operator-owned tag and proven active, a newly
     # created task binds one kind-first plan ref with the same phase-wide

@@ -342,6 +342,7 @@ def unclaimed_scoped_excerpts(project_root: Path) -> List[Dict[str, Any]]:
             if binding.trace is None:
                 continue
             trace = binding.trace
+            task_excerpts = {excerpt.split(" ", 1)[-1] for excerpt in trace.excerpts}
             for excerpt in trace.excerpts:
                 seen.setdefault(excerpt.split(" ", 1)[-1], excerpt)
             for record in trace.records:
@@ -350,7 +351,13 @@ def unclaimed_scoped_excerpts(project_root: Path) -> List[Dict[str, Any]]:
             for waiver in trace.waivers:
                 claimed.add(waiver.identity.split(" ", 1)[-1])
             for record in trace.applicability:
-                if record.applicability_class == "outside-scope":
+                # Only operator excerpts carry plan-level coverage; an A|
+                # record for a source or a cited decision scopes nothing the
+                # plan must still claim.
+                if (
+                    record.applicability_class == "outside-scope"
+                    and record.identity.split(" ", 1)[-1] in task_excerpts
+                ):
                     scoped.setdefault(record.identity.split(" ", 1)[-1], []).append(
                         match.group(1)
                     )
