@@ -1675,6 +1675,12 @@ def _parse_bound_completion(
             "the preserved completion report no longer matches the bound "
             "content identity; completion evidence must stay immutable "
             "throughout task review",
+            "preserve the prompt and reports and investigate the change; "
+            "after an accepted producer recovery or operator-authorized "
+            "replacement, use handoff-packet --prepare-review to prepare "
+            "a fresh write-prompt --review-kind task-closure binding, then "
+            "rerun normal handoff-packet and plan-audit; unexplained changes "
+            "remain blocked",
         )
     status = fields.get("Coder status")
     ready_raw = fields.get("Ready to close")

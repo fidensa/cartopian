@@ -16,6 +16,8 @@ Use ordinary chat replies for scope statements that need evidence.
 `AskUserQuestion` selections are tool responses, not captured operator prompts;
 never infer a capture identity from a selection.
 
+An explainable stale **derived review-prompt binding** is recovered through Stage 5 below. That input repair does not manufacture operator evidence or waive an evidence gate. Unavailable, revoked or unexplained changed evidence still stops the run.
+
 ---
 
 ## Prerequisites
@@ -35,6 +37,8 @@ Before any `STATE.md` write or Situation-note resolution, read `cartopian://prot
 1. Run `cartopian next-action <project-path>`. Retain `reviews.task_closure.mode` and `reviews.task_closure.role`: policy decides whether Stage 5 exists, and the role value (any declared role name) decides who performs it. Never infer task review from a role literally named `reviewer` or from description prose.
 2. Run `cartopian plan-audit <project-path>`; treat a non-zero exit as a blocker.
 3. Before proposing any action, surface `state_filesystem_disagreement` (the filesystem is authoritative — offer to refresh `STATE.md` via the mediated `cartopian write-state`) and every `blockers` entry. Resolve blockers with the operator before Stage 1; do not advance lifecycle state while blockers exist.
+
+When execution or scoped remediation is authorized, a stale review binding explained by an accepted producer recovery or operator-authorized replacement routes to Stage 5's recovery procedure. Input preparation and repair may resolve that blocker; dispatch and lifecycle movement remain forbidden until the complete audit passes. An unexplained mutation is not a recovery authorization.
 
 ---
 
@@ -110,7 +114,19 @@ Governing slice: `cartopian://protocol/CONVENTIONS/handoffs/waiting-for-completi
 
 ## Stage 5 - Assign Review
 
+Governing slice: `cartopian://protocol/CONVENTIONS/handoffs/review-prompt-preparation-and-recovery`.
+
 Run only when `reviews.task_closure.mode == "required"`; assign the exact role named by `reviews.task_closure.role`.
+
+First get the review's current inputs with `cartopian handoff-packet <absolute-in-review-task-path> --role <configured-task-closure-role> --prepare-review`. Consume its resolved fields for prompt authoring; do not demand a preflight of the stale or missing prompt being prepared. The preparation packet has no launch preflight. After writing, rerun the normal packet without this flag and require a passing request and payload preflight.
+
+### Recover a stale completion-report binding
+
+If the retained prompt binds an earlier completion report, preserve the prompt and both producer reports while diagnosing the change. An accepted producer recovery or an operator-authorized replacement explains a new publication; an unexplained edit remains blocked. Validate the current report with `validate-report`, inspect the retained recovery and deliverable evidence, and route substantive differences through the configured independent review. Do not ask the operator to attest to report bytes or hashes the PM can inspect.
+
+For an explained replacement, preserve the prior prompt verbatim through `write-resource` at a fresh `resources/evidence/` path before overwriting it. Then obtain the preparation packet above and author a fresh review body through `write-prompt --review-kind task-closure`. Keep the report and deliverable unchanged; the writer generates the new request/completion binding and skeletons. Never hand-edit a hash, request channel or skeleton, delete the old prompt to bypass a guard, or certify a review on the PM's behalf. Rerun `handoff-packet` without `--prepare-review` and `next-action --compact --audit`; resume only when both pass. Report parsing and task closure still require the new independent review.
+
+### Write the review prompt
 
 Author the review prompt through the mediated writer (PM-performed, never a raw write):
 

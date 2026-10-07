@@ -1159,6 +1159,12 @@ Every existing fail-closed condition remains terminal for the run and leaves gov
 
 Handoffs are sequential. Concurrent child agents are out of scope.
 
+### Review Prompt Preparation And Recovery
+
+Task-closure prompt authoring precedes launch preflight. `cartopian handoff-packet <absolute-in-review-task-path> --role <configured-task-closure-role> --prepare-review` is a read-only preparation projection: it resolves current operator evidence, the complete coder report, source guidance, role and work-root inputs without consuming the stale or missing prompt being replaced. It applies only to an `in-review` task with required task-closure review and its configured review role. Its `packet_mode` is `review-preparation`; prompt-binding and payload preflights are `null`, never a passing launch signal. Missing or invalid current evidence still refuses. Normal handoff packets and `dispatch` continue to enforce the bound completion identity and every prompt/payload check.
+
+A completion-report identity mismatch stops dispatch, report routing and task movement. When an accepted producer recovery or operator-authorized replacement explains the new publication, an execution or scoped remediation directive authorizes PM input repair: preserve the prior prompt verbatim through `write-resource` at a fresh `resources/evidence/` path, retain the producer evidence, validate the current report, obtain the preparation projection, then regenerate the task-closure prompt through `write-prompt`. This establishes a fresh snapshot for a new independent review; it certifies no delivered outcome and does not rejudge or repair the prior review. Never edit a binding hash, mutate request evidence or delete a prompt to defeat the mismatch. Unexplained report changes remain blocked. The PM uses retained producer and deliverable evidence to diagnose the change rather than asking the operator to attest to file bytes. After regeneration, the normal packet without `--prepare-review` and the complete plan audit must pass before either manual or automatic launch or any lifecycle move.
+
 ### Waiting For Completion
 
 The PM detects handoff completion by observing the filesystem through two canonical read-only wait primitives, which replace all ad-hoc polling, hand-rolled timing loops, manual "tell me when it's done" prompts, and PM-side watchdog timers:

@@ -39,6 +39,8 @@ An `unresolved situation note in STATE.md` blocker is PM work: act on it, promot
 
 ## Stage 3 - Take The Next Action
 
+Under an execution directive or scoped remediation, a stale task-review binding explained by an accepted producer recovery or operator-authorized replacement routes to `run task` Stage 5's recovery procedure. This is PM-owned input repair, not permission to dispatch or move a task while audit blockers remain. Obtain current review inputs with `handoff-packet --prepare-review`, preserve the earlier prompt and reports, regenerate through the mediated review writer, and rerun normal preflight and the complete startup audit. Unexplained mutations and unavailable or revoked request evidence remain blocked. Informational requests only report the recovery action.
+
 - **Informational**: answer the summary, name the exact next action, stop. Never initiate execution from an informational request, even under `initiation = "auto"`.
 - **Scoped directive**: perform exactly the named operation via its owning skill; stop afterward under `initiation = "operator"`. Under `initiation = "auto"`, the newly ready queue may initiate execution.
 - **Execution directive**: continue `active_task` in `in-progress` or `in-review`; otherwise start `next_open_task`, through `run task`.

@@ -383,6 +383,115 @@ def test_review_binding_blocks_when_preserved_report_mutates():
             )
 
 
+def _packet(task_path, *, prepare_review=False, role="reviewer"):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = handoff_packet.handler(argparse.Namespace(
+            task_path=str(task_path), role=role, prepare_review=prepare_review,
+        ))
+    return rc, [json.loads(line) for line in out.getvalue().splitlines()], err.getvalue()
+
+
+def test_review_preparation_breaks_stale_prompt_cycle_without_allowing_launch():
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task, report, prompt, _context = _captured_review_setup(scaffold)
+        # Model an accepted producer recovery publishing a corrected report.
+        report.write_text(TASK_REPORT.replace("focused checks", "recovery checks"))
+        before = {p: p.read_bytes() for p in scaffold.root.rglob("*") if p.is_file()}
+
+        code, _records, err = _packet(task)
+        assert code == EXIT_FAIL
+        assert "stale-request-context" in err
+        assert "--prepare-review" in err
+        code, records, err = _packet(task, prepare_review=True)
+        assert code == EXIT_OK, err
+        record = records[0]
+        assert record["packet_mode"] == "review-preparation"
+        assert record["request_trace"]["preflight"] is None
+        assert record["input_payload_audit"] is None
+        assert record["request_trace"]["captured_completion_evidence"]["content_identity"] == request_trace.content_identity(report.read_bytes())
+        assert record["expected_report_path"].endswith("REPORT-01-003-review.md")
+        assert before == {p: p.read_bytes() for p in scaffold.root.rglob("*") if p.is_file()}
+        code, _out, err, launched = _dispatch_review(task)
+        assert code == EXIT_FAIL
+        assert "stale-request-context" in err
+        assert "argv" not in launched
+
+        # The mediated writer takes the new snapshot; it never edits the report.
+        parser = build_parser()
+        args = parser.parse_args([
+            "write-prompt", str(scaffold.project_root), "--prompt-id", "PROMPT-01-003",
+            "--review-kind", "task-closure", "--task", str(task),
+            "--content", "# Review the recovered completion evidence\n",
+        ])
+        writer_err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(writer_err):
+            code = args._handler(args)
+        assert code == EXIT_OK, writer_err.getvalue()
+        assert report.read_bytes() == before[report]
+        code, records, err = _packet(task)
+        assert code == EXIT_OK, err
+        assert records[0]["packet_mode"] == "preflight"
+        assert records[0]["request_trace"]["preflight"]["ok"]
+        code, _out, err, launched = _dispatch_review(task)
+        assert code == EXIT_OK, err
+        assert "argv" in launched
+        assert report.read_bytes() == before[report]
+
+
+def test_review_preparation_accepts_missing_prompt_but_requires_report_and_request():
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task, report, prompt, _context = _captured_review_setup(scaffold)
+        prompt.unlink()
+        code, records, err = _packet(task, prepare_review=True)
+        assert code == EXIT_OK, err
+        assert records[0]["request_trace"]["preflight"] is None
+        code, _records, err = _packet(task)
+        assert code == EXIT_FAIL
+        assert "missing-prompt" in err
+        report.write_text(TASK_REPORT.replace("Status: complete", "Status: failed"))
+        code, _records, err = _packet(task, prepare_review=True)
+        assert code == EXIT_FAIL
+        assert "malformed-coder-completion-evidence" in err
+        report.unlink()
+        code, _records, err = _packet(task, prepare_review=True)
+        assert code == EXIT_FAIL
+        assert "missing-coder-completion-evidence" in err
+
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task = _task(scaffold)
+        scaffold.write("reports/REPORT-01-003.md", TASK_REPORT)
+        code, _records, err = _packet(task, prepare_review=True)
+        assert code == EXIT_FAIL
+        assert "unit-request-not-captured" in err
+
+
+def test_review_preparation_is_not_an_assignment_or_role_bypass():
+    with project_scaffold(cartopian_toml=_config()) as scaffold:
+        task, _report, _prompt, _context = _captured_review_setup(scaffold)
+        code, _records, err = _packet(task, prepare_review=True, role="coder")
+        assert code == EXIT_USAGE
+        assert "configured task-closure reviewer" in err
+        open_task = _task(scaffold, status="open")
+        code, _records, err = _packet(open_task, prepare_review=True)
+        assert code == EXIT_USAGE
+        assert "in-review" in err
+
+
+def test_review_preparation_option_is_available_to_cli_and_mcp():
+    parser = build_parser()
+    args = parser.parse_args([
+        "handoff-packet", "/project/tasks/in-review/TASK-01-003.md",
+        "--role", "reviewer", "--prepare-review",
+    ])
+    assert args.prepare_review
+    from mcp_server import server
+
+    subparser = server._subparsers_map(parser)["handoff-packet"]
+    schema, _actions = server._command_input_schema(subparser)
+    assert schema["properties"]["prepare_review"]["type"] == "boolean"
+
+
 def test_legacy_embedded_completion_prompt_is_refused():
     """A pre-activation prompt embedding the report body cannot bind a new review."""
     with project_scaffold(cartopian_toml=_config()) as scaffold:

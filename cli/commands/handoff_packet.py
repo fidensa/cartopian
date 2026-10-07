@@ -50,6 +50,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Declared role identifier being handed off (manual roles need no agent)",
     )
+    subparser.add_argument(
+        "--prepare-review",
+        action="store_true",
+        help=(
+            "Resolve current inputs for writing an in-review task's prompt; "
+            "does not preflight the existing prompt or authorize launch"
+        ),
+    )
 
 
 def _first_heading(content: str) -> str:
@@ -617,6 +625,17 @@ def handler(args: argparse.Namespace) -> int:
         stderr_guard(f"role {role!r} is not declared")
         return EXIT_FAIL
     role_record = roles[role]
+    prepare_review = getattr(args, "prepare_review", False)
+    if prepare_review and (
+        task_path.parent.name != "in-review"
+        or resolved["reviews"]["task_closure"]["mode"] != "required"
+        or resolved["reviews"]["task_closure"]["role"] != role
+    ):
+        stderr_usage(
+            "--prepare-review requires an in-review task and its configured "
+            "task-closure reviewer"
+        )
+        return EXIT_USAGE
     # A role without `agent` is a manual (human) role. The packet is the
     # manual path's required preflight, so it serves that role with
     # `launch.agent = null`; only `dispatch` requires a configured agent.
@@ -656,9 +675,10 @@ def handler(args: argparse.Namespace) -> int:
         task_path, content=content
     )
 
-    # Manual task handoffs consume exactly the artifact automatic dispatch
-    # does: the same resolved review context and the same binding preflight.
-    # Bypassing `cartopian dispatch` therefore cannot bypass intent resolution.
+    # Preparation resolves the current inputs without consuming the prompt
+    # being replaced. Normal packets still enforce the exact binding and
+    # payload preflight automatic dispatch does; preparation is never launch
+    # evidence. Both modes require current request and completion evidence.
     request_trace_record: Optional[Dict[str, Any]] = None
     prompt_text: Optional[str] = None
     if task_path.parent.name in ("in-progress", "in-review"):
@@ -682,7 +702,7 @@ def handler(args: argparse.Namespace) -> int:
                 stderr_guard(f"recovery: {refusal.recovery}")
             return EXIT_FAIL
         preflight: Optional[Dict[str, Any]] = None
-        if review_prompt.is_file():
+        if review_prompt.is_file() and not prepare_review:
             try:
                 prompt_text = request_trace.read_contained_text(
                     project_root, review_prompt, what="review prompt"
@@ -710,7 +730,7 @@ def handler(args: argparse.Namespace) -> int:
             )
             preflight["prompt_path"] = str(review_prompt)
             context = prompt_context
-        elif task_path.parent.name == "in-review":
+        elif task_path.parent.name == "in-review" and not prepare_review:
             preflight = {
                 "ok": False,
                 "rule": "missing-prompt",
@@ -766,6 +786,7 @@ def handler(args: argparse.Namespace) -> int:
     native_required = task_launch_mode == "native-interactive" and task_path.parent.name != "in-review"
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+        "packet_mode": "review-preparation" if prepare_review else "preflight",
         "schema_identity": resolved["schema_identity"],
         "project_schema_version": resolved["project_schema_version"],
         "task_id": task_id,
