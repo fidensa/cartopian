@@ -97,6 +97,16 @@ class PlanningCheckpointTests(unittest.TestCase):
         self.task('01-007')
         self.assertEqual(self.derive()['checkpoint'], 'PLAN-BUILD-01-007')
 
+    def test_done_legacy_plan_ref_needs_no_rewrite_or_review(self):
+        self.phase()
+        self.approve('PLAN-PHASE-01')
+        self.write('tasks/done/TASK-01-001.md', 'Phase: PHASE-01\nPlan ref: P01-BUILD-001\n')
+        self.assertEqual(planning_status.missing_reviews(self.root), [])
+        self.assertTrue(self.derive()['complete'])
+        self.write('tasks/open/TASK-01-002.md', 'Phase: PHASE-01\nPlan ref: P01-BUILD-002\n')
+        self.assertEqual([x['task'] for x in planning_status.missing_reviews(self.root)], ['TASK-01-002'])
+        self.assertEqual(self.derive()['stage'], 'tasks')
+
     def test_unrelated_inflight_checkpoint_does_not_capture_next_action(self):
         self.phase()
         self.approve('PLAN-PHASE-01')

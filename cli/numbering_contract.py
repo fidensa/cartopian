@@ -74,6 +74,9 @@ PLAN_REF_RE = re.compile(r"^([A-Z][A-Z0-9]*)-(\d{2})-(\d{3})$")
 SUPPORTED_PLAN_REF_RE = re.compile(
     rf"^(?:{'|'.join(SUPPORTED_KINDS)})-\d{{2}}-\d{{3}}$"
 )
+# Historical phase-first form (``P01-BUILD-001``). Existing artifacts that carry
+# it stay accepted without renumbering; writers never allocate it anew.
+LEGACY_PLAN_REF_RE = re.compile(r"^P(\d{2})-([A-Z][A-Z0-9]*)-(\d{3})$")
 PHASE_NAME_RE = re.compile(r"^PHASE-(\d{2})$")
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2})-(\d{3})$")
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")

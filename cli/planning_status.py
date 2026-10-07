@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from cli import checkpoint_identity, request_trace
+from cli import checkpoint_identity, numbering_contract, request_trace
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 _PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}$")
@@ -84,6 +84,18 @@ def task_headers(project_path: Path) -> List[Dict[str, Any]]:
                 }
             )
     return out
+
+
+def _historical_legacy_task(task: Dict[str, Any]) -> bool:
+    """A done task carrying a pre-contract ``P00-KIND-NNN`` Plan ref.
+
+    The numbering contract keeps existing artifacts accepted with no
+    renumbering or rewrite, so completed legacy work owes no
+    ``PLAN-<plan-ref>`` review. Unfinished legacy tasks still fail closed.
+    """
+    return task["status"] == "done" and bool(
+        numbering_contract.LEGACY_PLAN_REF_RE.fullmatch(task["plan_ref"] or "")
+    )
 
 
 def checkpoint_records(project_path: Path) -> Dict[str, Dict[str, Any]]:
@@ -204,6 +216,8 @@ def missing_reviews(project_path: Path) -> List[Dict[str, Any]]:
     gates.extend(("PLAN-" + phase, "phases", phase, None) for phase in phases)
     missing = []
     for task in tasks:
+        if _historical_legacy_task(task):
+            continue
         if not request_trace.PLAN_REF_RE.fullmatch(task["plan_ref"] or ""):
             missing.append({
                 "kind": "planning-review-scope-missing", "task": task["id"],
@@ -367,6 +381,8 @@ def derive(project_path: Path, *, planning_review_required: bool) -> Dict[str, A
     # Check all generated work, even after dispatch: execution cannot create approval.
     if planning_review_required:
         for task in tasks:
+            if _historical_legacy_task(task):
+                continue
             if not request_trace.PLAN_REF_RE.fullmatch(task["plan_ref"] or ""):
                 return result("tasks", f"Set the canonical Plan ref for {task['id']} before its planning review.")
             checkpoint = "PLAN-" + task["plan_ref"]
