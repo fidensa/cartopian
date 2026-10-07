@@ -5,6 +5,18 @@ from typing import Any, Dict, Optional
 from cli import artifact_paths, assignment_inputs, checkpoint_identity, provenance
 
 
+def applies(task_path: Path) -> bool:
+    """Whether retained findings are an input for this task's assignment.
+
+    Retained findings direct rework, so they bind to the coder assignment
+    only. A task in review is assigned for closure review, which judges the
+    delivered work and never receives the rework payload. The composer,
+    writer, and preflight all consult this predicate, so they agree on the
+    allowed inputs for each assignment purpose.
+    """
+    return Path(task_path).parent.name != "in-review"
+
+
 def resolve(project_root: Path, task_id: str) -> Optional[Dict[str, Any]]:
     path = project_root / "reviews" / f"REVIEW-{task_id.removeprefix('TASK-')}.md"
     if not path.exists() and not path.is_symlink():

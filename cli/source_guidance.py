@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from cli import deidentify
 
@@ -117,17 +117,50 @@ def _rows(lines: Sequence[str]) -> List[str]:
     return rows
 
 
-def _parse_labeled_row(row: str, fields: Sequence[Dict[str, str]]) -> Dict[str, str]:
+def _parse_labeled_row(
+    row: str, fields: Sequence[Dict[str, str]]
+) -> Tuple[Dict[str, str], List[str]]:
+    """Parse one labeled record row into field values plus ambiguity problems.
+
+    A field starts only where one of this row's declared labels and a colon
+    begin the row or follow a semicolon. Any other semicolon is literal value
+    text, so a Scope or Rule such as ``runtime; containment`` is kept whole
+    instead of being cut at its first separator. Input that cannot be read
+    one way is reported, never silently trimmed: a label declared twice
+    (including a value that itself contains ``; <Label>:``) and text before
+    the first label each produce a problem the caller turns into a blocker.
+    """
     labels = {item["label"].lower(): item["id"] for item in fields}
+    alternation = "|".join(
+        re.escape(item["label"])
+        for item in sorted(fields, key=lambda item: -len(item["label"]))
+    )
+    boundaries = list(
+        re.finditer(rf"(?:^|;)\s*({alternation})\s*:", row, re.IGNORECASE)
+    )
     parsed: Dict[str, str] = {}
-    for part in row.split(";"):
-        label, sep, value = part.partition(":")
-        if not sep:
+    problems: List[str] = []
+    if boundaries and row[: boundaries[0].start()].strip():
+        problems.append("text precedes the first field label")
+    for index, match in enumerate(boundaries):
+        end = boundaries[index + 1].start() if index + 1 < len(boundaries) else len(row)
+        label = match.group(1)
+        field_id = labels[label.lower()]
+        if field_id in parsed:
+            problems.append(f"field {label.strip()!r} appears more than once")
             continue
-        field_id = labels.get(label.strip().lower())
-        if field_id is not None and field_id not in parsed:
-            parsed[field_id] = value.strip()
-    return parsed
+        parsed[field_id] = row[match.end():end].strip()
+    return parsed, problems
+
+
+def _ambiguous_row_blocker(where: str, problems: Sequence[str]) -> Dict[str, str]:
+    return _blocker(
+        "ambiguous-source-field",
+        f"{where} cannot be parsed unambiguously: {'; '.join(problems)}",
+        "begin the row with its first field label and give each field once; "
+        "a semicolon followed by a field label and a colon starts a new "
+        "field, so reword any value containing that sequence",
+    )
 
 
 def _placeholder(value: Optional[str], *, allow_na: bool = False) -> bool:
@@ -263,8 +296,12 @@ def _evaluate_record(
         ))
     else:
         for index, row in enumerate(source_rows, start=1):
-            parsed = _parse_labeled_row(row, spec["source_fields"])
+            parsed, problems = _parse_labeled_row(row, spec["source_fields"])
             record["authoritative_sources"].append(parsed)
+            if problems:
+                record["blockers"].append(
+                    _ambiguous_row_blocker(f"authoritative source {index}", problems)
+                )
             if _placeholder(parsed.get("identity")):
                 record["blockers"].append(_blocker(
                     "missing-authoritative-source",
@@ -325,8 +362,12 @@ def _evaluate_record(
             "record Status: none, resolved, or unresolved plus the governing rule or decision authority",
         ))
     else:
-        conflict = _parse_labeled_row(conflict_rows[0], spec["conflict_fields"])
+        conflict, problems = _parse_labeled_row(conflict_rows[0], spec["conflict_fields"])
         record["conflict_resolution"] = conflict
+        if problems:
+            record["blockers"].append(
+                _ambiguous_row_blocker("the conflict-resolution record", problems)
+            )
         status = conflict.get("status", "").lower()
         if status not in spec["conflict_statuses"]:
             record["blockers"].append(_blocker(
@@ -374,8 +415,14 @@ def _evaluate_record(
         ))
     elif [row.lower() for row in claim_rows] != ["none"]:
         for index, row in enumerate(claim_rows, start=1):
-            parsed = _parse_labeled_row(row, spec["claim_fields"])
+            parsed, problems = _parse_labeled_row(row, spec["claim_fields"])
             record["unverified_claims"].append(parsed)
+            if problems:
+                # Worded as "claim record" so the correction surface's claim
+                # row index never treats this substantive blocker as a row edit.
+                record["blockers"].append(
+                    _ambiguous_row_blocker(f"claim record {index}", problems)
+                )
             missing_fields = [
                 item["id"] for item in spec["claim_fields"]
                 if _placeholder(parsed.get(item["id"]))

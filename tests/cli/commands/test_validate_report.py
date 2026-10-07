@@ -380,7 +380,8 @@ class TestReviewReportValidation(unittest.TestCase):
         )
         if write_review_file:
             scaffold.write(
-                "reviews/REVIEW-05-009.md", "# REVIEW-05-009\n\nFindings.\n"
+                "reviews/REVIEW-05-009.md",
+                "# REVIEW-05-009\nVerdict: approve\n\nFindings.\n",
             )
         task_path = scaffold.tasks_in_review / "TASK-05-009.md"
         review_path = scaffold.reviews / "REVIEW-05-009.md"

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import checkpoint_identity, prompt_composer, prompt_evidence, trace_binding
+from cli import checkpoint_identity, prompt_composer, prompt_evidence, rework_review, trace_binding
 from cli.commands import _writers, handoff_packet
 from cli.commands.resolve_config import _CliError, _load_toml, _resolve_deliverable
 from cli.request_trace import (
@@ -287,7 +287,10 @@ def handler(args: argparse.Namespace) -> int:
             task_content = task.read_text(encoding="utf-8")
             cfg = _load_toml(root / "cartopian.toml", "project config") or {}
             deliverable = _resolve_deliverable(cfg, root, handoff_packet._deliverable_value(task_content))
-            audit = handoff_packet.audit_prompt_payloads(root, cfg, task_content, deliverable, body)
+            audit = handoff_packet.audit_prompt_payloads(
+                root, cfg, task_content, deliverable, body,
+                include_rework=rework_review.applies(task.resolve()),
+            )
             if not audit["ok"]:
                 raise RequestRefusal("assignment-input-stale", audit["problems"][0])
             context = context_for_task_assignment(root, task.resolve())
@@ -339,6 +342,20 @@ def handler(args: argparse.Namespace) -> int:
                     root, task.resolve(), body
                 )
                 details["input_payloads"] = materialized
+                # Hold the written prompt to the exact audit handoff
+                # preflight applies, so the writer cannot persist a payload
+                # the reviewer's preflight would reject.
+                task_content = task.read_text(encoding="utf-8")
+                cfg = _load_toml(root / "cartopian.toml", "project config") or {}
+                deliverable = _resolve_deliverable(
+                    cfg, root, handoff_packet._deliverable_value(task_content)
+                )
+                audit = handoff_packet.audit_prompt_payloads(
+                    root, cfg, task_content, deliverable, body,
+                    include_rework=rework_review.applies(task.resolve()),
+                )
+                if not audit["ok"]:
+                    raise RequestRefusal("assignment-input-stale", audit["problems"][0])
                 context = context_for_task(
                     root,
                     task.resolve(),
@@ -380,6 +397,9 @@ def handler(args: argparse.Namespace) -> int:
                 content = _append_trace_projection(
                     root, task.resolve(), content, details, audience="reviewer"
                 )
+        except (OSError, UnicodeError, _CliError) as exc:
+            _writers.stderr("guard", f"review-input-unavailable: {exc}")
+            return _writers.EXIT_FAIL
         except RequestRefusal as refusal:
             _writers.stderr("guard", f"{refusal.rule}: {refusal.detail}")
             return _writers.EXIT_FAIL
@@ -408,7 +428,6 @@ def handler(args: argparse.Namespace) -> int:
                 _writers.stderr("guard", f"{refusal[0]}: {refusal[1]}")
                 return _writers.EXIT_FAIL
     if args.review_kind:
-        from cli import rework_review
         review_id = args.prompt_id.replace("PROMPT-", "REVIEW-", 1)
         try:
             rework_review.preserve(root, root / "reviews" / f"{review_id}.md")

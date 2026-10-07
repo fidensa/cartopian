@@ -319,6 +319,8 @@ A source record contains:
 - exactly one conflict disposition: `none | resolved | unresolved`, with a precedence rule or named decision authority and the applied decision when resolved; and
 - either `none` or every claim that remains unverified, each naming whether it is decisive, the missing authority or evidence, the consequence of proceeding, and the next decision or proof required.
 
+Each record is one `- Label: value; Label: value` row. A field starts only where one of that row's labels and a colon begin the row or follow a semicolon. Any other semicolon is literal value text, so a Scope or Rule may contain `;` without losing its trailing text. A row with text before its first label, or with a label given more than once (including a value that itself contains `; <Label>:`), fails as `ambiguous-source-field` rather than being parsed partially.
+
 The rule is dominance, not averaging. Missing decisive authority, missing or stale applicable context, an unresolved conflict, or a decisive unverified claim fails readiness and blocks handoff. Favorable observations from other sources cannot offset that condition. The failure record names the exact claim or source condition, why proceeding matters, and the next authority or proof required. It never emits a numeric score.
 
 Non-decisive unverified claims may remain only when the full failure signal is explicit. They are not converted into verified claims and do not silently grant authority. A complete task report for source-backed work carries `## Source evidence` in the same shape and names the non-empty subset of governing sources and applicable contexts actually used. It does not repeat sources that were not applied, and it may not introduce a source or context absent from the governing guidance. A complete report cannot close with a decisive unverified claim. `report-action` fails such a purported completion report closed as `failed-to-parse`; a `blocked` report may still truthfully report that the required authority or proof could not be obtained.
@@ -730,6 +732,16 @@ request but is not the reviewer. Review files and completion reports record:
 Request alignment: aligned | drifted | unavailable-for-legacy
 Request evidence: <ordered evidence identities> | none
 ```
+
+A review report and its retained review file also both carry the bound
+prompt's `Request-context identity:`. `report-action` refuses a complete
+review report whose value differs from the retained review's, and
+`validate-report` names the same rule as the `retained-review-bound` check.
+When the retained review carries the verified current context identity, a
+missing or different report value is a `mechanical` defect that
+`correct-report` may repair by copying that value into the report header.
+A stale review, an unverified context, or a verdict mismatch is
+`substantive`.
 
 Coverage of inherited evidence is **scoped, not blanket**. A planned task
 inherits every applicable operator excerpt and authoritative source, but a

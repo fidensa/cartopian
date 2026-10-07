@@ -277,12 +277,14 @@ def _review_skeleton(
     bindings: Dict[str, Optional[str]],
 ) -> str:
     evidence_value = bindings["evidence"] or "<ordered evidence identities | none>"
+    context_identity = bindings["context_identity"] or "<sha256:...>"
     lines: List[str] = [
         f"# {identity['report_id']}",
         "",
         "Status: <complete | blocked | failed>",
         "Request alignment: <aligned | drifted>",
         f"Request evidence: {evidence_value}",
+        f"Request-context identity: {context_identity}",
         "",
         "## Summary",
         "",
@@ -520,7 +522,11 @@ def handler(args: argparse.Namespace) -> int:
             trace_binding.bind(project_root, task_path, task_text=content),
         )
         expected_report_path = review_report_path
-        machine_fields = {**identity, "request_evidence": bindings["evidence"]}
+        machine_fields = {
+            **identity,
+            "request_evidence": bindings["evidence"],
+            "request_context_identity": bindings["context_identity"],
+        }
 
     emit_record(
         {

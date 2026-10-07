@@ -216,6 +216,46 @@ def test_report_complete_and_self_exit_is_clean(tmp_path, wrapper, tool):
     assert fields["reason"] == "clean", fields
 
 
+# --- stopping the watcher releases the caller's output promptly --------------
+
+
+@pytest.mark.parametrize("with_report", [True, False])
+@pytest.mark.parametrize("wrapper,tool", BASH_WRAPPERS)
+def test_self_exit_releases_output_without_waiting_out_the_poll(
+    tmp_path, wrapper, tool, with_report
+):
+    """A finished handoff returns its output without waiting out a poll.
+
+    The watcher used to be killed mid-``sleep``, and the orphaned sleep held
+    the wrapper's stdout/stderr open, so every caller that captures output
+    (dispatch, tests) waited up to one full poll interval after the assignee
+    had already exited. With a deliberately long poll, the captured run must
+    still finish well inside it and leave no watcher sleep behind.
+    """
+    import time
+
+    prompt = _make_project(tmp_path)
+    report = _report_path(prompt)
+    body = (
+        f"cat > '{report}' <<'REPORT_EOF'\n{COMPLETE_REPORT}REPORT_EOF\n"
+        if with_report
+        else ""
+    ) + "exit 0\n"
+    started = time.monotonic()
+    proc = _run_wrapper(
+        wrapper, tool, prompt, body, timeout_spec="30s",
+        extra_env={"CARTOPIAN_REPORT_POLL": "7"},
+    )
+    elapsed = time.monotonic() - started
+    assert proc.returncode == 0, proc.stderr
+    assert elapsed < 5, f"{wrapper}: captured output held for {elapsed:.1f}s"
+    if shutil.which("pgrep"):
+        stray = subprocess.run(
+            ["pgrep", "-f", "^sleep 7$"], capture_output=True, text=True
+        )
+        assert stray.stdout.strip() == "", f"{wrapper}: orphaned watcher sleep"
+
+
 # --- readiness token may carry a rationale ----------------------------------
 
 

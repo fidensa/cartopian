@@ -202,22 +202,37 @@ cartopian_run_supervised() {
   # only — it imposes no deadline of its own and self-terminates when the child
   # is gone. Its kill of a *lingering* child is what turns a deadline kill into a
   # prompt clean exit.
+  #
+  # Stopping the watcher must not leave its in-flight poll `sleep` behind: an
+  # orphaned sleep keeps the wrapper's stdout/stderr open, so whoever reads the
+  # wrapper's output waits out the rest of the poll interval after the handoff
+  # has finished. The watcher therefore sleeps in the background and kills that
+  # sleep on TERM, and it writes nothing, so its streams go to /dev/null — even
+  # a sleep orphaned by a signal race can never hold the caller's pipes.
   (
+    nap=""
+    trap '[ -n "$nap" ] && kill "$nap" 2>/dev/null; exit 0' TERM
+    cartopian_watch_nap() {
+      sleep "$poll" &
+      nap=$!
+      wait "$nap"
+      nap=""
+    }
     while kill -0 "$child" 2>/dev/null; do
       if cartopian_report_complete "$report_path"; then
         i=0
         while [ "$i" -lt "$grace_polls" ] && kill -0 "$child" 2>/dev/null; do
-          sleep "$poll"
+          cartopian_watch_nap
           i=$((i + 1))
         done
         kill -TERM "$child" 2>/dev/null
-        sleep "$poll"
+        cartopian_watch_nap
         kill -KILL "$child" 2>/dev/null
         break
       fi
-      sleep "$poll"
+      cartopian_watch_nap
     done
-  ) &
+  ) >/dev/null 2>&1 &
   local watcher=$!
 
   # Blocks until the child exits — on its own, by the watcher's reap, or by the

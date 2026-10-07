@@ -81,6 +81,7 @@ _SOURCE_BLOCKER_CLASSES: Dict[str, str] = {
     "missing-applicable-context": "substantive",
     "missing-conflict-resolution": "substantive",
     "missing-source-scope": "substantive",
+    "ambiguous-source-field": "substantive",
 }
 
 # Fail closed: a blocker code this module has never audited must not become
@@ -459,10 +460,7 @@ def _identity_alignment_check(
     )
 
 
-def _alignment_check(
-    report_path: Path, content: str, variant: str
-) -> Dict[str, Any]:
-    record = parse_report.review_alignment_record(report_path, content, variant)
+def _alignment_check(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if record is None or not record["blocking"]:
         return _check("request-alignment-valid", True)
     failure_class = (
@@ -475,6 +473,94 @@ def _alignment_check(
         "carry the bound request evidence identities verbatim (see "
         "`cartopian report-skeleton`); a recorded drift is a reviewer "
         "judgment for the operator, not a formatting fix",
+        failure_class,
+    )
+
+
+_FAILURE_CLASS_RANK = ("mechanical", "missing-input", "substantive")
+
+
+def retained_review_defects(
+    project_root: Optional[Path],
+    report_path: Path,
+    content: str,
+    variant: str,
+    alignment_record: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """The router's retained-review binding defects for one review report.
+
+    Mirrors ``report-action``: binding applies exactly when routing reaches
+    it — a schema-valid, complete review report with a parseable verdict —
+    and resolves the canonical review from the report filename, so a report
+    that validates is never refused by routing for its retained review. The
+    earlier preconditions are named by their own checks.
+    """
+    if (
+        variant not in parse_report.REVIEW_VARIANTS
+        or project_root is None
+        or not parse_report._schema_ok(variant, content)
+        or parse_report._extract_status(content) != "complete"
+    ):
+        return []
+    review_verdict = parse_report._extract_review_verdict(content)
+    if review_verdict is None:
+        return []
+    from cli.commands import report_action
+
+    review_id = report_action._expected_paths(
+        project_root, report_path, variant, {}
+    )["expected_review_id"]
+    if review_id is None:
+        # The filename names no review identity; the Identity checks already
+        # fail this report.
+        return []
+    if alignment_record is None:
+        alignment_record = parse_report.review_alignment_record(
+            report_path, content, variant
+        )
+    return report_action.retained_review_binding(
+        project_root,
+        content,
+        review_id.name,
+        review_verdict,
+        alignment_record,
+    )["defects"]
+
+
+def _retained_review_check(
+    project_root: Optional[Path],
+    report_path: Path,
+    content: str,
+    variant: str,
+    alignment_record: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    defects = retained_review_defects(
+        project_root, report_path, content, variant, alignment_record
+    )
+    if not defects:
+        return _check("retained-review-bound", True)
+    failure_class = max(
+        (item["failure_class"] for item in defects),
+        key=_FAILURE_CLASS_RANK.index,
+    )
+    if failure_class == "mechanical":
+        recovery = (
+            "copy the machine-resolved Request-context identity from "
+            "`cartopian report-skeleton` (it equals the retained review's "
+            "verified value) into the report header"
+        )
+    else:
+        recovery = (
+            "write the retained review file before the review report and "
+            "keep its verdict and Request-context identity identical to the "
+            "report's; a stale or different review is reviewer rework, not "
+            "a formatting fix"
+        )
+    return _check(
+        "retained-review-bound",
+        False,
+        "; ".join(item["detail"] for item in defects),
+        recovery,
         failure_class,
     )
 
@@ -515,6 +601,9 @@ def collect_checks(
     mechanical-correction surface, so a corrected report is judged by exactly
     the contract it failed.
     """
+    alignment_record = parse_report.review_alignment_record(
+        report_path, content, variant
+    )
     return [
         _sections_check(variant, content),
         _identity_keys_check(variant, content),
@@ -523,7 +612,10 @@ def collect_checks(
         _readiness_value_check(variant, content),
         _status_readiness_check(variant, content),
         _identity_alignment_check(project_root, report_path, content, variant),
-        _alignment_check(report_path, content, variant),
+        _alignment_check(alignment_record),
+        _retained_review_check(
+            project_root, report_path, content, variant, alignment_record
+        ),
         *_source_evidence_checks(project_root, report_path, content, variant),
     ]
 

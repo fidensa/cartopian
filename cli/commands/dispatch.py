@@ -58,6 +58,7 @@ from cli import (
     output_safety,
     report_identity,
     request_trace,
+    rework_review,
     source_guidance,
 )
 from cli.commands import handoff_packet
@@ -656,7 +657,7 @@ def handler(args: argparse.Namespace) -> int:
             task_content,
             deliverable,
             prompt_text,
-            include_rework=activity == "task_run",
+            include_rework=rework_review.applies(task_path),
         )
         if not payload_audit["ok"]:
             for problem in payload_audit["problems"]:

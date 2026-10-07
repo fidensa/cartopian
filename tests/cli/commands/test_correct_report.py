@@ -353,7 +353,8 @@ class TestMechanicalCorrection(unittest.TestCase):
             "prompts/PROMPT-05-010.md", "# Prompt\n\nReview the task.\n"
         )
         review = scaffold.write(
-            "reviews/REVIEW-05-010.md", "# REVIEW-05-010\n\nFindings.\n"
+            "reviews/REVIEW-05-010.md",
+            "# REVIEW-05-010\nVerdict: approve\n\nFindings.\n",
         )
         task_path = scaffold.tasks_in_review / "TASK-05-010.md"
         return (

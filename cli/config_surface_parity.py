@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
@@ -125,6 +126,7 @@ _PROTECTED_PERIOD_ABBREVIATIONS = frozenset(
     }
 )
 _PERIOD_TOKEN_RE = re.compile(r"(?i)([a-z][a-z.]*)\.$")
+_PERIOD_TOKEN_CHAR_RE = re.compile(r"(?i)[a-z.]")
 _DOTTED_INITIALISM_RE = re.compile(r"(?:[A-Za-z]\.){2,}$")
 _SINGLE_INITIAL_RE = re.compile(r"\b[A-Z]\.$")
 _EXPLICIT_COMPATIBILITY_SENTENCE_RE = re.compile(
@@ -307,21 +309,31 @@ def _retired_nested_role_fields() -> Tuple[str, ...]:
 
 
 def _period_ends_sentence(text: str, period_index: int) -> bool:
-    """Return false only for explicit abbreviation shapes ending at a period."""
-    prefix = text[: period_index + 1]
-    token = _PERIOD_TOKEN_RE.search(prefix)
+    """Return false only for explicit abbreviation shapes ending at a period.
+
+    Each shape is anchored at the period, so each search reads only the
+    window that can match there: the trailing run of token characters, the
+    last four characters, and the last two plus one for the word boundary.
+    Searching the whole prefix gave identical answers in quadratic time.
+    """
+    end = period_index + 1
+    run_start = period_index
+    while run_start > 0 and _PERIOD_TOKEN_CHAR_RE.fullmatch(text[run_start - 1]):
+        run_start -= 1
+    token = _PERIOD_TOKEN_RE.search(text, run_start, end)
     if (
         token is not None
         and token.group(1).lower() + "." in _PROTECTED_PERIOD_ABBREVIATIONS
     ):
         return False
-    if _DOTTED_INITIALISM_RE.search(prefix):
+    if _DOTTED_INITIALISM_RE.search(text[max(0, end - 4) : end]):
         return False
-    if _SINGLE_INITIAL_RE.search(prefix):
+    if _SINGLE_INITIAL_RE.search(text[max(0, end - 3) : end]):
         return False
     return True
 
 
+@lru_cache(maxsize=64)
 def _sentence_boundaries(text: str) -> Tuple[Tuple[int, int], ...]:
     """Return punctuation-end and following-content offsets for sentences."""
     boundaries = []

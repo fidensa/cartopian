@@ -387,6 +387,21 @@ def _build_authorization(
             auth.verdict_token = True
         elif name == "readiness-value-valid":
             auth.ready_token = True
+        elif name == "retained-review-bound":
+            # Only the report's Request-context identity header may change,
+            # and only to the value the machine verified against the current
+            # bound context; revalidation pins it to that exact value.
+            defects = validate_report.retained_review_defects(
+                project_root, report_path, current, variant
+            )
+            fields = {item["field"] for item in defects}
+            if not defects or None in fields:
+                return None, (
+                    "the retained review binding defect is not a "
+                    "machine-derivable header; route this defect per "
+                    "run-handoff failure routing instead"
+                )
+            auth.preamble_headers.update(field.lower() for field in fields)
         elif name.startswith("source-evidence:"):
             source_implicated = True
         else:

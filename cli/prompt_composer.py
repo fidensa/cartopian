@@ -1280,7 +1280,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         )
 
     try:
-        rework_input = rework_review.resolve(project_root, task_id) if task_path.parent.name != "in-review" else None
+        rework_input = rework_review.resolve(project_root, task_id) if rework_review.applies(task_path) else None
     except (ValueError, OSError) as exc:
         raise ComposeRefusal("rework-review-invalid", str(exc)) from exc
 
@@ -1515,7 +1515,11 @@ def materialize_input_sections(
             "",
         ]
     try:
-        review_input = rework_review.resolve(Path(project_root), "-".join(Path(task_path).stem.split("-")[:3]))
+        review_input = (
+            rework_review.resolve(Path(project_root), "-".join(Path(task_path).stem.split("-")[:3]))
+            if rework_review.applies(task_path)
+            else None
+        )
     except (ValueError, OSError) as exc:
         raise ComposeRefusal("rework-review-invalid", str(exc)) from exc
     if review_input is not None:

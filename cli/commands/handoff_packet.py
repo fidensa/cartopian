@@ -10,7 +10,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import assignment_inputs, report_identity, request_trace, source_guidance
+from cli import (
+    assignment_inputs,
+    report_identity,
+    request_trace,
+    rework_review,
+    source_guidance,
+)
 from cli.commands.resolve_config import (
     _CliError,
     _load_toml,
@@ -500,7 +506,6 @@ def _expected_input_bindings(
                 project_cfg, project_root, _deliverable_value(dependency_content)
             ),
         )
-    from cli import rework_review
     title = re.search(r"^#\s+(TASK-\d{2}-\d{3})", content, re.MULTILINE)
     if title and include_rework:
         review_input = rework_review.resolve(project_root, title.group(1))
@@ -734,7 +739,7 @@ def handler(args: argparse.Namespace) -> int:
         if prompt_text is None
         else audit_prompt_payloads(
             project_root, project_cfg, content, deliverable, prompt_text,
-            include_rework=task_path.parent.name != "in-review",
+            include_rework=rework_review.applies(task_path),
         )
     )
     # The machine projection stays bounded: full problem details go to

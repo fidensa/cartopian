@@ -102,6 +102,7 @@ Use this section instead of the above when reporting on a task-closure review ha
 Status: <complete | blocked | failed>
 Request alignment: <aligned | drifted | unavailable-for-legacy>
 Request evidence: <ordered evidence identities | none>
+Request-context identity: <sha256:... from the bound prompt; identical to the review file>
 
 ## Identity
 
@@ -115,7 +116,8 @@ Request evidence: <ordered evidence identities | none>
 <What was inspected: the preserved completion report, code, specs, test results, etc.>
 
 Include the bound verbatim request context and separate PM-derived guidance.
-The alignment/evidence header fields must match the durable review file.
+The alignment, evidence, and Request-context identity header fields must
+match the durable review file.
 
 ## Verdict
 
@@ -136,6 +138,7 @@ Use this section instead of the above when reporting on a planning- checkpoint r
 Status: <complete | blocked | failed>
 Request alignment: <aligned | drifted | unavailable-for-legacy>
 Request evidence: <ordered evidence identities | none>
+Request-context identity: <sha256:... from the bound prompt; identical to the review file>
 
 ## Identity
 
@@ -148,7 +151,8 @@ Request evidence: <ordered evidence identities | none>
 <What was inspected: requirements, plan, phases, tasks/specs, etc.>
 
 Include the bound verbatim request context and separate PM-derived guidance.
-The alignment/evidence header fields must match the planning review file.
+The alignment, evidence, and Request-context identity header fields must
+match the planning review file.
 
 ## Verdict
 

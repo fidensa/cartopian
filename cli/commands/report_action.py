@@ -3,7 +3,7 @@ import argparse
 import datetime
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from cli import artifact_paths, provenance, report_identity, request_trace, source_guidance
 from cli.commands import parse_report
@@ -635,6 +635,98 @@ def _recommended_action(
     return "return-control-to-operator"
 
 
+REQUEST_CONTEXT_FIELD = "Request-context identity"
+
+
+def retained_review_binding(
+    project_root: Path,
+    content: str,
+    review_id: str,
+    review_verdict: Optional[str],
+    alignment_record: Optional[Dict[str, Any]],
+    *,
+    pinned_identity: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Bind a complete review report to its retained canonical review file.
+
+    The single rule routing applies and ``validate-report`` names as a
+    check, so a report the validator accepts is never refused by the router
+    on the same bytes. Read-only: provenance preservation stays with the
+    router. Returns the captured review text, its content identity, and the
+    ordered defects, each classified for the correction surface:
+
+    - ``mechanical`` — the report's ``Request-context identity`` header is
+      absent or differs while the retained review carries the verified
+      current context identity. The value is a machine fact of the bound
+      trace, so it may be copied in; ``expected`` names it.
+    - ``missing-input`` — the retained review file cannot be read.
+    - ``substantive`` — the review is stale, unverified, or its verdict
+      differs; repairing it needs reviewer judgment, not an edit.
+    """
+    result: Dict[str, Any] = {
+        "review": None,
+        "review_content_identity": None,
+        "defects": [],
+    }
+    defects: List[Dict[str, Any]] = result["defects"]
+    canonical_review = project_root / "reviews" / f"{review_id}.md"
+    try:
+        _, captured_review = artifact_paths.review(project_root, canonical_review)
+    except (artifact_paths.ArtifactRefusal, OSError, UnicodeError) as exc:
+        defects.append({
+            "detail": str(exc),
+            "failure_class": "missing-input",
+            "field": None,
+            "expected": None,
+        })
+        return result
+    result["review"] = captured_review
+    result["review_content_identity"] = report_identity.content_identity(captured_review)
+    if pinned_identity is not None and pinned_identity != result["review_content_identity"]:
+        defects.append({
+            "detail": "retained review content identity changed",
+            "failure_class": "substantive",
+            "field": None,
+            "expected": None,
+        })
+    current_context = (alignment_record or {}).get("context_identity")
+    report_context = request_trace._header(content, REQUEST_CONTEXT_FIELD)
+    review_context = request_trace._header(captured_review, REQUEST_CONTEXT_FIELD)
+    if report_context != review_context:
+        # Copying the review's value is mechanical only when the machine
+        # verified it against the current bound request context.
+        verified = review_context is not None and review_context == current_context
+        defects.append({
+            "detail": (
+                "retained review Request-context identity differs from the report"
+                + (
+                    f" (report declares {report_context or 'none'}; the "
+                    f"retained review and current bound context are {review_context})"
+                    if verified
+                    else ""
+                )
+            ),
+            "failure_class": "mechanical" if verified else "substantive",
+            "field": REQUEST_CONTEXT_FIELD if verified else None,
+            "expected": review_context if verified else None,
+        })
+    if current_context and review_context != current_context:
+        defects.append({
+            "detail": "retained review is not bound to the current request context",
+            "failure_class": "substantive",
+            "field": None,
+            "expected": None,
+        })
+    if request_trace._header(captured_review, "Verdict") != review_verdict:
+        defects.append({
+            "detail": "retained review verdict differs from the report",
+            "failure_class": "substantive",
+            "field": None,
+            "expected": None,
+        })
+    return result
+
+
 def handler(args: argparse.Namespace) -> int:
     """Parse a handoff report and emit a single routing record."""
     raw_path = args.report_path
@@ -828,21 +920,18 @@ def handler(args: argparse.Namespace) -> int:
             if path_mismatch or expected_review_id is None:
                 raise ValueError("review artifact path does not match the report")
             canonical_review = project_root / "reviews" / f"{expected_review_id}.md"
-            _, captured_review = artifact_paths.review(project_root, canonical_review)
-            review_content_identity = report_identity.content_identity(captured_review)
-            pinned = expected_review_identity
-            if pinned is not None and pinned != review_content_identity:
-                raise ValueError("retained review content identity changed")
-            report_context = request_trace._header(content, "Request-context identity")
-            review_context = request_trace._header(captured_review, "Request-context identity")
-            if report_context != review_context:
-                raise ValueError("retained review Request-context identity differs from the report")
-            if alignment_record and alignment_record.get("context_identity"):
-                if review_context != alignment_record["context_identity"]:
-                    raise ValueError("retained review is not bound to the current request context")
-            retained_verdict = request_trace._header(captured_review, "Verdict")
-            if retained_verdict != review_verdict:
-                raise ValueError("retained review verdict differs from the report")
+            bound = retained_review_binding(
+                project_root,
+                content,
+                expected_review_id,
+                review_verdict,
+                alignment_record,
+                pinned_identity=expected_review_identity,
+            )
+            captured_review = bound["review"]
+            review_content_identity = bound["review_content_identity"]
+            if bound["defects"]:
+                raise ValueError(bound["defects"][0]["detail"])
             if not provenance.record_review(project_root, canonical_review, captured_review):
                 raise ValueError("retained review provenance could not be preserved")
             review_binding = {"ok": True, "detail": None}
