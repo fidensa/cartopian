@@ -732,6 +732,18 @@ def _check_backlog_invariants(
     return blockers, warnings
 
 
+def _unfinished_blockers(project_path: Path, task_file: Path) -> List[str]:
+    """``Blocked by:`` task ids of ``task_file`` that are not in ``tasks/done/``."""
+    from cli.commands.next_action import _collect_done_task_ids, _parse_blocked_by
+
+    try:
+        text = task_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    done = _collect_done_task_ids(project_path / "tasks")
+    return [dep for dep in _parse_blocked_by(text) if dep not in done]
+
+
 def _check_request_trace(
     project_path: Path,
     declared_schema_version: Optional[str],
@@ -780,7 +792,7 @@ def _check_request_trace(
                     allow_historical_legacy=not contract_applies,
                 )
             except request_trace.RequestRefusal as refusal:
-                blockers.append({
+                finding = {
                     "kind": "invalid-request-trace",
                     "task_id": task_id,
                     "task_path": str(task_file),
@@ -790,7 +802,28 @@ def _check_request_trace(
                         f"{task_id} cannot resolve its request trace "
                         f"({refusal.rule}): {refusal.detail}"
                     ),
-                })
+                }
+                waiting = (
+                    _unfinished_blockers(project_path, task_file)
+                    if status_dir == "open" else []
+                )
+                if waiting:
+                    # An open task still waiting on its Blocked by: cannot be
+                    # dispatched, so its trace does not hold up the project.
+                    # Readiness and the dispatch preflight still refuse it
+                    # once it becomes the next task.
+                    warnings.append({
+                        **finding,
+                        "kind": "deferred-request-trace",
+                        "blocked_by": waiting,
+                        "detail": (
+                            f"{finding['detail']} (deferred: {task_id} is blocked by "
+                            f"unfinished {', '.join(waiting)}; readiness and dispatch "
+                            "still refuse it until this is resolved)"
+                        ),
+                    })
+                else:
+                    blockers.append(finding)
                 continue
 
             # A prompt with no v0.9 section and no governing request record is

@@ -24,6 +24,13 @@ class TaskAuthorityFixture(ResolverCase):
         self.write_decision("DEC-002", f"Operator request evidence for: task:TASK-01-001: {correction}")
         return correction
 
+    def named_checkpoint_ruling(self, session, dec_id, checkpoint):
+        ruling = session.exchange(f"For {checkpoint}, retain export provenance.", "Noted.")
+        self.write_decision(
+            dec_id, f"Operator request evidence for: planning:{checkpoint}: {ruling}\nApplies to TASK-01-001."
+        )
+        return ruling
+
 
 class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
     def test_project_ruling_survives_a_task_correction_in_assignment_and_review(self):
@@ -206,12 +213,16 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
         self.classify(task, "governing-constraint")
         self.assertIn("mentions DEC-003", self.refusal(task).detail)
 
-    def test_unparseable_trace_scopes_nothing_out(self):
+    def test_unparseable_trace_scopes_nothing_out_and_is_reported_first(self):
         session, _original, task = self.baseline()
         self.cite_other_checkpoint_ruling(session)
         self.task_correction(session)
         self.classify(task, "not-a-class")
-        self.refusal(task)
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(caught.exception.rule, "trace-unparseable")
+        self.assertIn("applicability class outside the closed set", caught.exception.detail)
+        self.assertIn("DEC-003", caught.exception.detail)
 
     def test_classification_without_the_trace_declaration_is_ignored(self):
         session, _original, task = self.baseline()
@@ -234,3 +245,150 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
         refusal = self.refusal(task)
         self.assertIn("names task:TASK-01-001 in its own text", refusal.detail)
         self.assertIn("superseding decision", refusal.recovery)
+
+
+class GoverningDecisionReportingTests(TaskAuthorityFixture):
+    """Every unresolved governing decision is reported in one pass.
+
+    RED: the refusal named only the first failing decision, so fixing it just
+    revealed the next, and a checkpoint review that did not pass its ruling on
+    was never explained. GREEN: one refusal lists every decision, and says
+    why each checkpoint's retained review did not qualify.
+    """
+
+    def test_all_unresolved_named_decisions_are_listed(self):
+        session, _original, task = self.baseline()
+        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.named_checkpoint_ruling(session, "DEC-004", "PLAN-BUILD-01-003")
+        self.task_correction(session)
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, task)
+        refusal = caught.exception
+        self.assertEqual(refusal.rule, "governing-decision-evidence-unbound")
+        self.assertIn("2 governing decisions", refusal.detail)
+        self.assertIn("DEC-003, DEC-004", refusal.detail)
+        self.assertIn("no retained REVIEW-PLAN-BUILD-01-002.md", refusal.detail)
+        self.assertIn("Supersedes: DEC-003, DEC-004", refusal.recovery)
+        self.assertIn("separate, non-superseding decision does not clear", refusal.recovery)
+
+    def test_narrow_backfill_is_named_and_widening_restores_inheritance(self):
+        from cli import report_identity
+        from cli.commands import backfill_review_scope
+        from tests.cli.test_fail_open_defects import invoke
+
+        session, original, task = self.baseline()
+        ruling = self.named_checkpoint_ruling(session, "DEC-003", "PLAN-007")
+        review = self.root / "reviews" / "REVIEW-PLAN-007.md"
+        review.write_text(
+            "# REVIEW-PLAN-007\n\nTarget: planning:PLAN-007\nPlan ref: BUILD-01-002, BUILD-01-001\n"
+            "Verdict: approve\nRequest alignment: aligned\n"
+            f"Request evidence: {original}, {ruling}\n",
+            encoding="utf-8",
+        )
+        identity = report_identity.content_identity(review.read_bytes())
+
+        def backfill(*checkpoints):
+            return invoke(
+                backfill_review_scope.handler, project_root=str(self.root), review=review.stem,
+                checkpoint=list(checkpoints), expected_identity=identity,
+            )
+
+        self.assertEqual(backfill("PLAN-BUILD-01-002")[0], 0)
+        correction = self.task_correction(session)
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.context_for_task_assignment(self.root, task)
+        detail = caught.exception.detail
+        self.assertIn("names BUILD-01-001 in its Plan ref header", detail)
+        self.assertIn("binds only PLAN-BUILD-01-002", detail)
+
+        # Narrowing/replacing and adding a plan ref the review never named refuse.
+        self.assertEqual(backfill("PLAN-BUILD-01-001")[0], 1)
+        code, _records, err = backfill("PLAN-BUILD-01-002", "PLAN-BUILD-01-003")
+        self.assertEqual(code, 1)
+        self.assertIn("does not name", err)
+
+        code, records, err = backfill("PLAN-BUILD-01-002", "PLAN-BUILD-01-001")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["status"], "widened")
+        self.assertEqual(records[0]["previous_checkpoints"], ["PLAN-BUILD-01-002"])
+        self.assertEqual(backfill("PLAN-BUILD-01-002", "PLAN-BUILD-01-001")[2], "")
+        context = request_trace.context_for_task_assignment(self.root, task)
+        self.assertIn(ruling, context.evidence_ids)
+        self.assertIn(correction, context.evidence_ids)
+
+
+class BlockedTaskTraceDeferralTests(TaskAuthorityFixture):
+    """A trace refusal on a task that cannot yet dispatch does not block the project.
+
+    RED: plan-audit made every task's request-trace refusal a blocker, so an
+    open task waiting on unfinished work stopped startup for the active task.
+    GREEN: that finding is a ``deferred-request-trace`` warning; readiness
+    still refuses the task, and in-flight or unblocked tasks still block.
+    """
+
+    def refusing_task(self):
+        session, _original, task = self.baseline()
+        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.task_correction(session)
+        return task
+
+    def audit(self):
+        from cli.commands import plan_audit
+
+        return plan_audit._check_request_trace(self.root, "v0.14.0", True)
+
+    def test_open_task_with_unfinished_blocker_is_deferred(self):
+        from cli.commands import validate_task_readiness
+
+        task = self.refusing_task()
+        text = task.read_text().replace("Plan ref: BUILD-01-001\n", "Plan ref: BUILD-01-001\nBlocked by: TASK-01-009\n")
+        task.write_text(text)
+        blockers, warnings = self.audit()
+        self.assertEqual([b for b in blockers if b.get("task_id") == "TASK-01-001"], [])
+        deferred = [w for w in warnings if w["kind"] == "deferred-request-trace"]
+        self.assertEqual([w["task_id"] for w in deferred], ["TASK-01-001"])
+        self.assertEqual(deferred[0]["blocked_by"], ["TASK-01-009"])
+        self.assertEqual(deferred[0]["failure_class"], "governing-decision-evidence-unbound")
+        record, _ = validate_task_readiness.evaluate(self.root, task, task.read_text())
+        check = next(c for c in record["checks"] if c["name"] == "request-trace-valid")
+        self.assertFalse(check["pass"])
+
+    def test_unblocked_or_in_flight_task_still_blocks(self):
+        task = self.refusing_task()
+        blockers, _ = self.audit()
+        self.assertEqual([b["kind"] for b in blockers if b.get("task_id") == "TASK-01-001"], ["invalid-request-trace"])
+        text = task.read_text().replace("Plan ref: BUILD-01-001\n", "Plan ref: BUILD-01-001\nBlocked by: TASK-01-009\n")
+        moved = self.root / "tasks/in-progress/TASK-01-001.md"
+        moved.parent.mkdir(exist_ok=True)
+        moved.write_text(text)
+        task.unlink()
+        blockers, _ = self.audit()
+        self.assertEqual([b["kind"] for b in blockers if b.get("task_id") == "TASK-01-001"], ["invalid-request-trace"])
+
+
+class EnumerateWhileRefusingTests(TaskAuthorityFixture):
+    """``acceptance-trace --enumerate`` serves the PM fixing a refusing task.
+
+    RED: the authoring aid refused with ``trace-incomplete`` and no output
+    while the task's evidence refused, so the ``A|`` record that would fix it
+    could not be composed. GREEN: criteria and sources are listed, excerpts
+    are omitted, and the refusal rides along.
+    """
+
+    def test_enumerate_lists_criteria_and_reports_the_refusal(self):
+        from cli.commands import acceptance_trace
+        from tests.cli.test_fail_open_defects import invoke
+
+        session, _original, task = self.baseline()
+        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.task_correction(session)
+        task.write_text(task.read_text() + "\n## Acceptance\n\n- [ ] Notes sync to Markdown\n")
+        code, records, err = invoke(
+            acceptance_trace.handler, project_root=str(self.root), task=str(task),
+            projection=None, anchor=False, enumerate_inputs=True, compose_from=None,
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c["text"] for c in records[0]["criteria"]], ["Notes sync to Markdown"])
+        self.assertEqual(records[0]["excerpts"], [])
+        self.assertEqual(records[0]["excerpts_refusal"]["rule"], "governing-decision-evidence-unbound")
+        self.assertIn("excerpts unavailable", err)

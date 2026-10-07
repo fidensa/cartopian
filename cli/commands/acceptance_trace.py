@@ -28,6 +28,7 @@ from cli import acceptance_trace as mechanism
 from cli import artifact_paths, trace_binding
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_error, stderr_guard, stderr_usage
+from cli.request_trace import RequestRefusal
 
 PROJECTIONS = ("coder", "reviewer", "trace", "criteria", "determinations", "diagnostic")
 
@@ -173,14 +174,25 @@ def handler(args: argparse.Namespace) -> int:
 
 
 def _enumerate(root: Path, task: Path, task_text: str) -> int:
+    # The record set is often what fixes a request-evidence refusal (an
+    # ``A|DEC-NNN|outside-scope`` release), so the inputs stay available
+    # while the task's evidence refuses; the refusal rides along.
     try:
-        inputs = trace_binding.enumerate_inputs(root, task, task_text=task_text)
+        inputs = trace_binding.enumerate_inputs(
+            root, task, task_text=task_text, tolerate_request_refusal=True
+        )
     except mechanism.TraceRefusal as refusal:
         stderr_guard(f"{refusal.code}: {refusal.detail}")
         return EXIT_FAIL
-    except Exception as exc:  # request/source resolution refusals
+    except Exception as exc:  # source resolution refusals
         stderr_guard(f"trace-incomplete: {exc}")
         return EXIT_FAIL
+    refusal = inputs.get("excerpts_refusal")
+    if refusal:
+        stderr_guard(
+            f"excerpts unavailable ({refusal['rule']}); criteria and sources "
+            f"are listed. {refusal['detail']}"
+        )
     emit_record(
         {
             "action": "acceptance-trace",
@@ -236,7 +248,12 @@ def _compose(root: Path, task: Path, task_text: str, mapping_path: str) -> int:
         identity = f" [{refusal.identity}]" if refusal.identity else ""
         stderr_guard(f"{refusal.code}: {refusal.detail}{identity}")
         return EXIT_FAIL
-    except Exception as exc:  # request/source resolution refusals
+    except RequestRefusal as refusal:
+        stderr_guard(f"{refusal.rule}: {refusal.detail}")
+        if refusal.recovery:
+            stderr_guard(f"recovery: {refusal.recovery}")
+        return EXIT_FAIL
+    except Exception as exc:  # source resolution refusals
         stderr_guard(f"trace-incomplete: {exc}")
         return EXIT_FAIL
     emit_record(

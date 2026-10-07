@@ -1482,3 +1482,36 @@ class TestHostIdentityAndProgress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnexpectedExceptionDiagnostic(unittest.TestCase):
+    """An unexpected CLI exception names its type and Cartopian source line.
+
+    RED: the model saw only "caught unexpected exception in write-task", so a
+    plain TypeError needed a direct CLI rerun to diagnose. GREEN: the type and
+    the raising cli/ frame are surfaced; the message and traceback, which can
+    carry body text or paths, stay in the operator log.
+    """
+
+    def test_type_and_origin_are_surfaced_without_the_message(self) -> None:
+        from tests.scaffold import project_scaffold
+
+        with project_scaffold() as scaffold, patch(
+            "cli.rework_review.follow_up_refusal",
+            side_effect=TypeError("secret body at /private/internal/path"),
+        ), patch.object(server, "_log_internal"):
+            result = server.handle_request("tools/call", {
+                "name": "write_task",
+                "arguments": {
+                    "project_root": str(scaffold.project_root),
+                    "task_id": "TASK-01-001",
+                    "content": "# T\n\nEvidence gate: n/a\n\n## Acceptance\n\n- [ ] done\n",
+                },
+            })
+        diagnostic = "\n".join(result["_meta"]["stderr_lines"])
+        self.assertEqual(result["_meta"]["exit_code"], 1)
+        self.assertIn("unexpected exception in write-task: TypeError", diagnostic)
+        self.assertIn("at cli/commands/write_task.py:", diagnostic)
+        self.assertIn("in handler", diagnostic)
+        for private in ("secret body", "/private/internal/path", "Traceback"):
+            self.assertNotIn(private, diagnostic)

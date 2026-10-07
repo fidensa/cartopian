@@ -22,7 +22,7 @@ import stat
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from cli import checkpoint_identity, numbering_contract, report_identity
 
@@ -1202,14 +1202,24 @@ def _approved_planning_trace(
         # The review header is the durable selector: its identities resolve
         # directly against the capture store, not through the requirements,
         # plan, or prompt text that selected them when the review ran.
-        available = _resolve_trace(
-            project_root,
-            GovernedUnit("planning", checkpoint),
-            (),
-            allow_project_origin=True,
-            exact_ids=evidence_ids,
-            exact_source=path.name,
-        )
+        try:
+            available = _resolve_trace(
+                project_root,
+                GovernedUnit("planning", checkpoint),
+                (),
+                allow_project_origin=True,
+                exact_ids=evidence_ids,
+                exact_source=path.name,
+            )
+        except RequestRefusal as refusal:
+            # Name the inheritance path: the refused unit is the checkpoint,
+            # not the task the caller asked about.
+            raise RequestRefusal(
+                refusal.rule,
+                f"{task_path.stem} inherits approved checkpoint evidence from "
+                f"{path.name} ({plan_ref}), which cannot resolve: {refusal.detail}",
+                refusal.recovery,
+            ) from refusal
         wanted = set(evidence_ids)
         resolved = {item.record_id for item in available}
         missing = [item for item in dict.fromkeys(evidence_ids) if item not in resolved]
@@ -1229,6 +1239,84 @@ def _approved_planning_trace(
         replace(evidence, sequence=index)
         for index, evidence in enumerate(unique, start=1)
     ]
+
+
+def _checkpoint_inheritance_gaps(
+    project_root: Path,
+    task_path: Path,
+    target: GovernedUnit,
+    source_texts: Sequence[str],
+    trace: Sequence[RequestEvidence],
+) -> List[str]:
+    """Why each checkpoint a governing ruling is bound to did not pass it on.
+
+    A ruling bound to ``planning:<checkpoint>`` reaches a task only through
+    that checkpoint's approved review (:func:`_approved_planning_trace`).
+    When the ruling is absent, say which qualification the retained review
+    failed, so "retain its approved checkpoint evidence" is actionable.
+    """
+    from cli import evidence_resolver
+
+    carried = {item.record_id for item in trace}
+    wanted: Dict[str, Set[str]] = {}
+    sources: Dict[str, Set[str]] = {}
+    for ref in evidence_resolver.task_governing_references(project_root, target, source_texts):
+        if ref.unit.kind == "planning" and ref.capture_id not in carried:
+            wanted.setdefault(ref.unit.identifier, set()).add(ref.capture_id)
+            sources.setdefault(ref.unit.identifier, set()).add(ref.source)
+    if not wanted:
+        return []
+    task_text = read_contained_text(project_root, task_path, what="task planning-evidence target")
+    plan_ref = _header(task_text, "Plan ref") or "n/a"
+    phase = _header(task_text, "Phase")
+    gaps: List[str] = []
+    widen = False
+    for checkpoint, captures in sorted(wanted.items()):
+        path = Path(project_root) / "reviews" / f"REVIEW-{checkpoint}.md"
+        name = f"{path.name} ({', '.join(sorted(sources[checkpoint]))})"
+        if not path.is_file():
+            gaps.append(f"no retained {name} approves planning:{checkpoint}.")
+            continue
+        review = read_contained_text(project_root, path, what="planning approval evidence")
+        verdict = (_review_header(review, "Verdict") or "").lower()
+        alignment = (_review_header(review, ALIGNMENT_FIELD) or "").lower()
+        if verdict != "approve" or alignment != "aligned":
+            gaps.append(
+                f"{name} does not qualify: Verdict {verdict or 'absent'}, "
+                f"{ALIGNMENT_FIELD} {alignment or 'absent'} (needs approve / aligned)."
+            )
+            continue
+        scopes = checkpoint_identity.retained_scopes(project_root, path, checkpoint, review)
+        if not any(not item["scope_error"] and item["stage"] == "tasks-and-specs"
+                   and item["phase"] == phase
+                   and _review_covers_plan_ref(item["plan_ref"] or "", plan_ref)
+                   for item in scopes):
+            backfilled = [item["backfill_checkpoint"] for item in scopes if item.get("backfill_checkpoint")]
+            errors = sorted({item["scope_error"] for item in scopes if item["scope_error"]})
+            if errors:
+                gaps.append(f"{name} has no usable scope ({'; '.join(errors)}).")
+            elif backfilled and _review_covers_plan_ref(_review_header(review, "Plan ref") or "", plan_ref):
+                widen = True
+                gaps.append(
+                    f"{name} names {plan_ref} in its Plan ref header, but its scope "
+                    f"backfill binds only {', '.join(backfilled)}."
+                )
+            else:
+                gaps.append(f"{name} does not cover {plan_ref} in {phase or 'its phase'}.")
+            continue
+        recorded = {item.strip() for item in (_review_header(review, ALIGNMENT_EVIDENCE_FIELD) or "").split(",")}
+        absent = sorted(captures - recorded)
+        if absent:
+            gaps.append(f"{name}: its Request evidence does not record {', '.join(absent)}.")
+    if gaps:
+        gaps.insert(0, "Checkpoint inheritance did not apply:")
+    if widen:
+        gaps.append(
+            "A backfill that omits a plan ref its review names can be widened: "
+            "rerun `backfill-review-scope` with every recorded --checkpoint plus "
+            f"PLAN-{plan_ref}."
+        )
+    return gaps
 
 
 def _bound_management_artifacts(project_root: Path, prompt_text: str) -> Optional[List[str]]:
@@ -2222,7 +2310,23 @@ def _context(
             allow_project_origin=review_kind == "planning",
         )
     if target.kind == "task":
-        evidence_resolver.require_task_authority(project_root, target, source_texts, trace)
+        try:
+            evidence_resolver.require_task_authority(project_root, target, source_texts, trace)
+        except RequestRefusal as refusal:
+            gaps: List[str] = []
+            if task_path is not None and refusal.rule == "governing-decision-evidence-unbound":
+                try:
+                    gaps = _checkpoint_inheritance_gaps(
+                        project_root, task_path, target, source_texts, trace
+                    )
+                except (RequestRefusal, OSError, UnicodeError, ValueError):
+                    # The diagnosis is advisory; the refusal stands without it.
+                    gaps = []
+            if not gaps:
+                raise
+            raise RequestRefusal(
+                refusal.rule, f"{refusal.detail}. {' '.join(gaps)}", refusal.recovery
+            ) from refusal
     if (
         not trace
         and (

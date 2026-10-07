@@ -429,7 +429,7 @@ unchanged review bytes. It never edits or renames the historical file and never
 infers scope from sequential position. It is idempotent for the same mapping;
 a different mapping or changed review refuses. Planning gates and approved
 request-evidence inheritance consume the same sidecar. Backfill supplies scope,
-not missing approval or request evidence; those requirements still apply. Repeat `--checkpoint` in one call when a historical batch review approved several checkpoint scopes; the complete explicit mapping is retained and each scope resolves independently.
+not missing approval or request evidence; those requirements still apply. Repeat `--checkpoint` in one call when a historical batch review approved several checkpoint scopes; the complete explicit mapping is retained and each scope resolves independently. A recorded mapping can later be widened, never narrowed or replaced: rerun with every recorded checkpoint plus each omitted `PLAN-<plan-ref>` whose plan ref the review's own `Plan ref:` header names, against the same unchanged bytes. The latest mapping governs.
 
 
 ## Up-front Operator Request Evidence
@@ -477,14 +477,33 @@ Applicable evidence for a unit is selected, never searched for:
    Any `DEC-NNN` mention in a task file counts as a citation. When a task
    mentions a decision that does not govern its outcome, the PM binds nothing:
    an `A|DEC-NNN|outside-scope|<why>` record in the task's upstream trace
-   releases the citation, and the reviewer confirms it at closure. A
+   releases the citation, and the reviewer confirms it at closure. Each
+   `A|` record is at most 183 B including its newline; `write-task` refuses
+   a record block that does not parse, and while a task's block does not
+   parse its `A|` records release nothing and the refusal is
+   `trace-unparseable`, not the citation it would have released. A
    `governing-constraint` record does not release it, because a decision that
    constrains the work governs it. Nor can any task-side record release a
    decision whose own text names the task.
    An authority bound only to another unit is a refusal
    (`governing-decision-evidence-unbound`), even when inherited project
-   evidence exists. Unconfirmed authority also refuses. `lookup-evidence`
+   evidence exists, and the refusal lists every unresolved governing decision
+   for the unit at once. Unconfirmed authority also refuses. `lookup-evidence`
    distinguishes `unit-bound` authority from `project-inherited` evidence.
+   Decisions are immutable, so a ruling reaches a further unit (or stops
+   naming one) only through one superseding, locked decision that restates
+   it and repeats `Operator request evidence for:` for every unit the retired
+   decision bound plus each newly governed unit, with the original capture
+   identities. Any other current decision that binds the same turn to a
+   different unit must be superseded by that same decision, or the turn is
+   `cross-unit`. A fresh ruling bound in a separate decision that does not
+   supersede `DEC-X` binds the new capture but does not clear a refusal that
+   `DEC-X` governs the unit: only `DEC-X`'s own captures, carried by a unit
+   binding or by approved checkpoint inheritance, satisfy it. `plan-audit`
+   reports an unresolvable task request trace as a blocker, except for an
+   open task whose `Blocked by:` tasks are not all done: that task cannot be
+   dispatched, so the finding is a `deferred-request-trace` warning, and
+   readiness and the dispatch preflight still refuse the task once it is next.
 3. **Corrections.** Referenced turns later than the confirmation, in receipt
    order. Where a reply differs from the proposal it answered, the reply
    governs; both are kept whole.
@@ -777,7 +796,9 @@ applicability decision added or changed after a review was recorded makes
 that review's `Trace-identity` stale. `cartopian acceptance-trace
 --enumerate` / `--compose-from` derive the mechanical record syntax from a
 structured mapping so the PM never hand-computes digests, ordinals, or sort
-order.
+order. `--enumerate` still lists the criteria and source identities while the
+task's request evidence refuses (often the refusal an `A|` record fixes); it
+then omits the excerpts and reports the refusal as `excerpts_refusal`.
 
 Contradiction, narrowing, widening, omission, or substitution is `drifted` and
 blocks approval even when every PM artifact agrees with the implementation.

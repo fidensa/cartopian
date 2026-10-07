@@ -1001,6 +1001,7 @@ def resolve(
         identities = [target.identifier]
         identities.append(target.identifier.removeprefix("PLAN-"))
         by_decision: Dict[str, List[Reference]] = {}
+        unbound: List[str] = []
         for ref in refs:
             if ref.source.startswith("DEC-"):
                 by_decision.setdefault(ref.source, []).append(ref)
@@ -1019,16 +1020,32 @@ def resolve(
                 continue
             required = {ref.capture_id for ref in declared}
             carried = {ref.capture_id for ref in declared if ref.unit in (target, PROJECT_UNIT)}
-            missing = sorted(required) if not carried else []
             governing_bindings.extend(ref for ref in declared if ref.unit in (target, PROJECT_UNIT))
-            if missing:
-                raise RequestRefusal(
-                    "governing-decision-evidence-unbound",
-                    f"{decision_id} governs {target.kind}:{target.identifier} but its ruling "
-                    f"is bound to other units: {', '.join(missing)}",
-                    "repeat Operator request evidence for: headers for every governed unit, "
-                    "using the original captured identities",
-                )
+            if not carried:
+                unbound.append(f"{decision_id} ({', '.join(sorted(required))})")
+        if unbound:
+            # Report every decision at once: fixing one must not just reveal the next.
+            unit = f"{target.kind}:{target.identifier}"
+            ids = ", ".join(item.split(" ", 1)[0] for item in unbound)
+            raise RequestRefusal(
+                "governing-decision-evidence-unbound",
+                f"{'; '.join(unbound)} "
+                f"{'governs' if len(unbound) == 1 else 'govern'} {unit} "
+                f"(the decision text names {target.identifier} or its plan ref) "
+                "but the ruling is bound to other units",
+                "decisions are immutable, so do not add a header in a new, "
+                "separate decision: a turn bound to two units by different "
+                "current decisions is cross-unit for both. Write one "
+                f"superseding locked decision (`Supersedes: {ids}`) that "
+                "restates the ruling and repeats `Operator request evidence "
+                f"for:` for every unit the retired decision bound plus {unit}, "
+                "with the original capture identities, and supersede every "
+                "other current decision binding the same turn to a different "
+                "unit. If the decision mentions the checkpoint only in "
+                "passing (history, a Related: list), the superseding "
+                "decision restates it without naming the checkpoint or its "
+                "plan ref, and needs no new binding",
+            )
     referenced = {ref.capture_id for ref in refs}
     for cid in exact_ids:
         if cid in referenced or not CAPTURE_ID_RE.fullmatch(cid):
@@ -1227,6 +1244,26 @@ def bind_confirmation(
     return record
 
 
+def trace_parse_refusal(task_text: str):
+    """The ``TraceRefusal`` a required trace's record block raises, if any.
+
+    ``None`` when the task does not declare ``Upstream trace: required``, has
+    no record block, or the block parses.
+    """
+    from cli import acceptance_trace, trace_binding
+
+    if trace_binding.declaration(task_text) != trace_binding.REQUIRED:
+        return None
+    lines = acceptance_trace.extract_record_block(task_text)
+    if not lines:
+        return None
+    try:
+        acceptance_trace.parse_record_set(lines)
+    except acceptance_trace.TraceRefusal as refusal:
+        return refusal
+    return None
+
+
 def scoped_out_decisions(task_text: str) -> Set[str]:
     """Decision ids a task's upstream trace classifies ``outside-scope``.
 
@@ -1296,48 +1333,111 @@ def task_governing_references(project_root: Path, target: GovernedUnit,
     return [ref for ref in refs if ref.source in governance]
 
 
+def _named_recovery(unit: str, decision_ids: Sequence[str]) -> str:
+    listed = ", ".join(decision_ids)
+    return (
+        "decisions are immutable, so the ruling reaches this task one of two "
+        "ways: retain an approved checkpoint review that covers this task's "
+        "plan ref and records the ruling's capture, or write one superseding "
+        f"locked decision (`Supersedes: {listed}`) that restates the ruling "
+        "and repeats `Operator request evidence for:` for every unit the "
+        f"retired decision bound plus {unit}, with the original capture "
+        "identities. One decision binding a turn to several units is not "
+        "cross-unit; a different current decision binding the same turn to "
+        "another unit makes it cross-unit for both, so supersede every "
+        "current decision that binds it. A fresh ruling bound in a separate, "
+        f"non-superseding decision does not clear this while {listed} stays "
+        "current. If a decision names this task only in passing, the same "
+        "superseding decision restates it without naming the task; a "
+        "task-side classification cannot override it. Then regenerate the prompt"
+    )
+
+
+def _cited_recovery(decision_ids: Sequence[str]) -> str:
+    example = decision_ids[0] if len(decision_ids) == 1 else "DEC-NNN"
+    return (
+        "if the decision governs this task, bind its ruling to the task "
+        "or retain its approved checkpoint evidence, then regenerate the "
+        "prompt. If it does not govern this task's outcome, bind "
+        "nothing: record `A|" + example + "|outside-scope|<why>` (one "
+        "record per decision, each at most 183 B including its newline) in "
+        "the task's Upstream trace for the reviewer to confirm, or, in a "
+        "task without an upstream trace, remove the mention — any "
+        f"{example} mention in the task file counts as a citation. "
+        "A `governing-constraint` classification still requires the "
+        "ruling, because a decision that constrains the work governs it"
+    )
+
+
 def require_task_authority(project_root: Path, target: GovernedUnit,
                            source_texts: Sequence[str], trace: Sequence[RequestEvidence]) -> None:
-    """Verify the final task channel, including approved planning inheritance."""
+    """Verify the final task channel, including approved planning inheritance.
+
+    Every governing decision whose ruling is absent is reported in one
+    refusal, so fixing one never just reveals the next. When a cited-only
+    decision fails and the task's upstream trace does not parse, the parse
+    failure is reported instead: an ``A|`` release cannot apply until the
+    record block parses.
+    """
     refs, _ = decision_references(project_root)
     governance = _task_decision_governance(project_root, target, source_texts, refs)
     carried = {item.record_id for item in trace}
+    named: List[str] = []
+    cited: List[str] = []
     for decision_id, how in governance.items():
         required = {ref.capture_id for ref in refs if ref.source == decision_id}
         if required.intersection(carried):
             continue
-        unit = f"{target.kind}:{target.identifier}"
-        if how == "named":
-            detail = (
-                f"{decision_id} names {unit} in its own text, so it governs this "
-                "task, but its operator ruling is absent from the task channel"
+        (named if how == "named" else cited).append(decision_id)
+    if not named and not cited:
+        return
+    unit = f"{target.kind}:{target.identifier}"
+    if cited:
+        parse = next(
+            (r for r in (trace_parse_refusal(text) for text in source_texts) if r is not None),
+            None,
+        )
+        if parse is not None:
+            pending = ", ".join(named + cited)
+            raise RequestRefusal(
+                "trace-unparseable",
+                f"{target.identifier}'s Upstream trace does not parse "
+                f"({parse.code}: {parse.detail}), so none of its A| records "
+                f"apply; until it parses, these decisions stay unresolved: {pending}",
+                "fix the named record (`acceptance-trace --projection "
+                "diagnostic` shows the full refusal), rewrite the task with "
+                "write-task, then rerun",
             )
-            recovery = (
-                "bind the ruling to this task (`Operator request evidence for: "
-                f"{unit}: <capture-id>` in a current locked decision) or retain "
-                "its approved checkpoint evidence, then regenerate the prompt. "
-                "If the decision names this task in error, correct its scope "
-                "with a superseding decision; a task-side classification "
-                "cannot override it"
-            )
-        else:
-            detail = (
-                f"{target.identifier} mentions {decision_id}, which counts as "
-                "citing it as governing, but the decision's operator ruling is "
-                "absent from the task channel"
-            )
-            recovery = (
-                "if the decision governs this task, bind its ruling to the task "
-                "or retain its approved checkpoint evidence, then regenerate the "
-                "prompt. If it does not govern this task's outcome, bind "
-                "nothing: record `A|" + decision_id + "|outside-scope|<why>` in "
-                "the task's Upstream trace for the reviewer to confirm, or, in a "
-                "task without an upstream trace, remove the mention — any "
-                f"{decision_id} mention in the task file counts as a citation. "
-                "A `governing-constraint` classification still requires the "
-                "ruling, because a decision that constrains the work governs it"
-            )
-        raise RequestRefusal("governing-decision-evidence-unbound", detail, recovery)
+    if len(named) + len(cited) == 1 and named:
+        detail = (
+            f"{named[0]} names {unit} in its own text, so it governs this "
+            "task, but its operator ruling is absent from the task channel"
+        )
+        recovery = _named_recovery(unit, named)
+    elif len(named) + len(cited) == 1:
+        detail = (
+            f"{target.identifier} mentions {cited[0]}, which counts as "
+            "citing it as governing, but the decision's operator ruling is "
+            "absent from the task channel"
+        )
+        recovery = _cited_recovery(cited)
+    else:
+        groups = []
+        if named:
+            groups.append(f"naming {unit} in their own text: {', '.join(named)}")
+        if cited:
+            groups.append(f"mentioned by {target.identifier}: {', '.join(cited)}")
+        detail = (
+            f"{len(named) + len(cited)} governing decisions lack their operator "
+            f"ruling in the task channel — " + "; ".join(groups)
+        )
+        parts = []
+        if named:
+            parts.append(f"For {', '.join(named)}: " + _named_recovery(unit, named))
+        if cited:
+            parts.append(f"For {', '.join(cited)}: " + _cited_recovery(cited))
+        recovery = ". ".join(parts)
+    raise RequestRefusal("governing-decision-evidence-unbound", detail, recovery)
 
 
 def authority_scope(target: GovernedUnit, trace: Sequence[RequestEvidence]) -> str:

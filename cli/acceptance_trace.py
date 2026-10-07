@@ -569,10 +569,12 @@ def _parse_typed_record(line: str) -> Record:
 
 
 def _parse_disposition(line: str) -> Disposition:
-    if len(line.encode("utf-8")) + 1 > CAP_DISPOSITION_RECORD:
+    width = len(line.encode("utf-8")) + 1
+    if width > CAP_DISPOSITION_RECORD:
         raise TraceRefusal(
             "trace-unparseable",
-            f"X| record exceeds its {CAP_DISPOSITION_RECORD} B cap: {line}",
+            f"X| record is {width} B (UTF-8, counting its newline), over "
+            f"its {CAP_DISPOSITION_RECORD} B cap; shorten the final field: {line}",
             identity=line,
         )
     fields = line.split("|", 3)
@@ -625,10 +627,12 @@ def _parse_origin(line: str) -> Origin:
 
 
 def _parse_waiver(line: str) -> Waiver:
-    if len(line.encode("utf-8")) + 1 > CAP_WAIVER_RECORD:
+    width = len(line.encode("utf-8")) + 1
+    if width > CAP_WAIVER_RECORD:
         raise TraceRefusal(
             "trace-unparseable",
-            f"W| record exceeds its {CAP_WAIVER_RECORD} B cap: {line}",
+            f"W| record is {width} B (UTF-8, counting its newline), over "
+            f"its {CAP_WAIVER_RECORD} B cap; shorten the final field: {line}",
             identity=line,
         )
     fields = line.split("|", 3)
@@ -654,10 +658,12 @@ def _parse_waiver(line: str) -> Waiver:
 
 
 def _parse_applicability(line: str) -> Applicability:
-    if len(line.encode("utf-8")) + 1 > CAP_APPLICABILITY_RECORD:
+    width = len(line.encode("utf-8")) + 1
+    if width > CAP_APPLICABILITY_RECORD:
         raise TraceRefusal(
             "trace-unparseable",
-            f"A| record exceeds its {CAP_APPLICABILITY_RECORD} B cap: {line}",
+            f"A| record is {width} B (UTF-8, counting its newline), over "
+            f"its {CAP_APPLICABILITY_RECORD} B cap; shorten the final field: {line}",
             identity=line,
         )
     fields = line.split("|", 3)

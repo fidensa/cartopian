@@ -1077,10 +1077,38 @@ def _invoke_cli_captured(
                 f" (artifact={json.dumps(exc.artifact)},"
                 f" section={json.dumps(exc.section)})"
             )
+        else:
+            # The type and the raising Cartopian source line are code facts,
+            # safe to surface; the message can carry body text or paths and
+            # stays in the operator log with the full traceback.
+            context += f": {type(exc).__name__}"
+            origin = _exception_origin(exc)
+            if origin:
+                context += f" at {origin}"
+            context += " (message and traceback are in the MCP server's stderr log)"
         err_buf.write(f"[error] mcp_server caught unexpected exception{context}\n")
         return _build_invoke_result(1, out_buf, err_buf)
 
     return _build_invoke_result(code, out_buf, err_buf)
+
+
+_SOURCE_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _exception_origin(exc: BaseException) -> Optional[str]:
+    """``cli/module.py:LINE in function`` for the innermost Cartopian frame.
+
+    Only frames under this install's ``cli/`` or ``mcp_server/`` qualify, and
+    the path is relative to the install, so no absolute path is disclosed.
+    """
+    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+        try:
+            relative = Path(frame.filename).resolve().relative_to(_SOURCE_ROOT)
+        except (OSError, ValueError):
+            continue
+        if relative.parts and relative.parts[0] in ("cli", "mcp_server"):
+            return f"{relative.as_posix()}:{frame.lineno} in {frame.name}"
+    return None
 
 
 def _build_invoke_result(code: int, out_buf: io.StringIO, err_buf: io.StringIO) -> Dict[str, Any]:

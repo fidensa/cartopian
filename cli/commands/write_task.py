@@ -68,6 +68,20 @@ def _schema_errors(
     return errors
 
 
+def _trace_syntax_error(text: str) -> Optional[str]:
+    """``<code>: <detail>`` when the ``## Upstream trace`` block cannot parse.
+
+    Only the per-line structure and field/record caps are checked here; they
+    hold regardless of project state. Completeness, ordering, digests, and
+    source binding stay with ``validate-task-readiness``, because a task may
+    be authored before its trace can be complete.
+    """
+    from cli.evidence_resolver import trace_parse_refusal
+
+    refusal = trace_parse_refusal(text)
+    return None if refusal is None else f"{refusal.code}: {refusal.detail}"
+
+
 def _declared_deliverables(project_root: Path, exclude_task_id: str) -> List[str]:
     """Every other task's ``Deliverable:`` value, so defaults never collide."""
     values: List[str] = []
@@ -172,6 +186,23 @@ def handler(args: argparse.Namespace) -> int:
     if cerr is not None:
         _writers.stderr("usage", cerr)
         return _writers.EXIT_USAGE
+    # `--content-file` yields bytes. Every guard below reads the body as
+    # text, so decode once here; UTF-8 round-trips, so the bytes that land
+    # are unchanged.
+    if isinstance(content, bytes):
+        try:
+            content = content.decode("utf-8")
+        except UnicodeDecodeError:
+            _writers.stderr("guard", "task-schema-invalid: task body must be valid UTF-8 text")
+            return _writers.EXIT_FAIL
+
+    # Upstream trace syntax: a record line that cannot parse makes the whole
+    # block scope nothing out, and the failure would otherwise surface later
+    # as an unrelated evidence refusal. Refuse it here, naming the record.
+    trace_error = _trace_syntax_error(content)
+    if trace_error is not None:
+        _writers.stderr("guard", trace_error)
+        return _writers.EXIT_FAIL
 
     # Promotion stamp (--source): validate + verify the referent is live and
     # render `Source: BL-NNN` into the header ourselves, before any on-disk move.

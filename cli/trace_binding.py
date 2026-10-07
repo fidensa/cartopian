@@ -140,7 +140,11 @@ def excerpt_identities(project_root: Path, task_path: Path) -> List[str]:
 
 
 def enumerate_inputs(
-    project_root: Path, task_path: Path, *, task_text: Optional[str] = None
+    project_root: Path,
+    task_path: Path,
+    *,
+    task_text: Optional[str] = None,
+    tolerate_request_refusal: bool = False,
 ) -> Dict[str, Any]:
     """The mechanical inputs a PM maps before any record exists.
 
@@ -151,6 +155,11 @@ def enumerate_inputs(
     bounded text preview — so the PM maps criteria to authority without
     hashing anything by hand. Read-only and on demand: it is never part of a
     routine assignment or review body.
+
+    With ``tolerate_request_refusal``, a request-evidence refusal (such as an
+    unbound governing decision, which an ``A|`` record may be the fix for)
+    leaves ``excerpts`` empty and is reported under ``excerpts_refusal``
+    instead of hiding the criteria and source identities.
     """
     project_root = Path(project_root)
     task_path = Path(task_path)
@@ -167,9 +176,16 @@ def enumerate_inputs(
         [acceptance_trace.normalize(t) for t in task_items],
         (),
     )
-    context = request_trace.context_for_task_assignment(project_root, task_path)
     excerpts = []
-    for record in context.evidence:
+    excerpts_refusal = None
+    try:
+        evidence = request_trace.context_for_task_assignment(project_root, task_path).evidence
+    except request_trace.RequestRefusal as refusal:
+        if not tolerate_request_refusal:
+            raise
+        evidence = []
+        excerpts_refusal = refusal.as_record()
+    for record in evidence:
         preview = acceptance_trace.normalize(record.text)
         if len(preview) > 160:
             preview = preview[:157] + "..."
@@ -195,6 +211,7 @@ def enumerate_inputs(
         ],
         "sources": source_identities(task_path, text),
         "excerpts": excerpts,
+        "excerpts_refusal": excerpts_refusal,
     }
 
 
