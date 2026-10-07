@@ -28,7 +28,7 @@ _ACTIVATED_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.13.0"\n'
+    'project_schema_version = "v0.14.0"\n'
     "\n"
     "[roles.coder]\n"
     'description = "Implements tasks per spec."\n'
@@ -39,7 +39,7 @@ _UNGATED_TOML = (
     "[project]\n"
     'id = "demo"\n'
     'name = "Demo Project"\n'
-    'project_schema_version = "v0.13.0"\n'
+    'project_schema_version = "v0.14.0"\n'
     "\n"
     "[roles.pm]\n"
     'description = "Plans the work."\n'
@@ -566,3 +566,38 @@ class TestMcpExposure(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoleSandboxExceptions(_Fixture):
+    def test_declared_exceptions_are_reported_and_keep_the_partial_tier(self):
+        self.scaffold.write(
+            "cartopian.toml",
+            _ACTIVATED_TOML
+            + "\n[roles.coder.sandbox]\nallow_local_binding = true\n"
+            + 'allowed_domains = ["proxy.golang.org"]\n',
+        )
+        _record, rows = self.rows()
+        claude = rows["claude-code"]
+        self.assertEqual(claude["tier"], "contained-partial")
+        self.assertEqual(
+            claude["sandbox_exceptions"],
+            {"coder": {"allow_local_binding": True, "allowed_domains": ["proxy.golang.org"]}},
+        )
+        self.assertNotIn("weakened_containment", claude)
+
+    def test_unix_socket_exception_is_reported_as_weakened(self):
+        self.scaffold.write(
+            "cartopian.toml",
+            _ACTIVATED_TOML + "\n[roles.coder.sandbox]\nallow_unix_sockets = true\n",
+        )
+        code, recs, err = run_cli("containment-matrix", self.root)
+        self.assertEqual(code, 0, msg=err)
+        claude = {row["host"]: row for row in recs[0]["hosts"]}["claude-code"]
+        self.assertEqual(claude["weakened_containment"], ["coder"])
+        self.assertFalse(claude["boundaries"]["write"]["shell_write_policy_configured"])
+        self.assertIn("Unix-socket access is open for role(s) coder", claude["disclosure"])
+        self.assertIn("Unix-socket access is open", err)
+
+    def test_undeclared_projects_carry_no_exception_keys(self):
+        _record, rows = self.rows()
+        self.assertNotIn("sandbox_exceptions", rows["claude-code"])

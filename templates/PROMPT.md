@@ -51,12 +51,18 @@ cartopian write-prompt <project-root> ... --review-kind <planning|task-closure>
 
 The writer owns the generated `## Original operator request (verbatim)` and `## PM-derived guidance and delivered outcome` sections and binds them to one deterministic review-context identity. Do not author, summarize, remove, or edit either section.
 
-A review prompt includes, sourced from the handoff packet and the review skeletons (`cartopian report-skeleton <task-path> --variant review`):
+The writer also appends the reviewer's output formats as two generated sections, last in the prompt, for both planning and task-closure reviews:
+
+- `## Review file skeleton` — the absolute review file path (`reviews/REVIEW-<id>.md`) and the fenced review-file skeleton.
+- `## Review completion report skeleton` — the absolute review-completion report path (`reports/REPORT-NN-NNN-review.md` or `reports/REPORT-<checkpoint-id>.md`) and the fenced report skeleton.
+
+Task-closure skeletons come from the same builders as `cartopian report-skeleton --variant review`; planning skeletons exist only in the generated prompt, which is the authoritative copy for both kinds (`validate-report` recoveries point the reviewer back to it). Their machine-owned values are already filled: identities, paths, planning scope, request evidence, and the `Request-context identity` the prompt binds. The reviewer supplies the verdict, findings, and comparisons only. Do not paste skeletons or templates into the body. A rewrite regenerates both sections, and any authored copy of either heading is replaced.
+
+The PM-authored body of a review prompt includes, sourced from the handoff packet:
 
 - A `## Your role` preface from the record's `role_description` — orientation only; it grants no authority beyond the role's configured grants and carries no PM identifiers into product code.
-- Absolute paths to the task file, the spec when present, the deliverable when declared (the **primary artifact to review**), the expected review file (`reviews/REVIEW-NN-NNN.md`), and the expected review-completion report path.
+- Absolute paths to the task file, the spec when present, and the deliverable when declared (the **primary artifact to review**). The expected review file and review-completion report paths are generated.
 - The generated `## Preserved coder completion evidence` section — the content-hashed binding naming the preserved completion report by absolute path. The reviewer reads coder evidence directly from that preserved artifact; the prompt never reproduces the report body, and the completion report must stay byte-identical throughout the review.
-- The review-report skeleton and review-file skeleton pasted from `report-skeleton --variant review` — instead of the full templates. Machine-owned Identity values are already filled; the reviewer supplies verdict, findings, and comparisons only.
 - A `## Pull request` block (`PR URL`, `Preview URL`) when the PM-owned product-repo git workflow applies; `n/a` otherwise. Omit when the work has no pull-request workflow.
 - Reminders that reviewers do not modify spec, task, phase, or prompt files; do not move task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup. A wrong or ambiguous spec is a review finding, never a spec edit.
 - For a verification-only task under the no-product-git model: the effective git operating model — a dirty work root containing prior completed tasks' deliverables is the expected steady state, not a review defect.

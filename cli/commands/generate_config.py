@@ -24,6 +24,7 @@ from cli.config_schema import (
     BUDGETED_RUN_BOUNDARY,
     CONFIG_SCHEMA,
     ConfigDiagnostic,
+    parse_role_sandbox_assignment,
     resolve_configuration,
     validate_authored_config,
 )
@@ -91,6 +92,11 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Repeatable closed automatic-launch permission list")
     subparser.add_argument("--role-launch-timeout", action="append", default=[],
                            metavar="ROLE=DURATION", help="Repeatable role launch timeout")
+    subparser.add_argument("--role-sandbox", action="append", default=[],
+                           metavar="ROLE.KEY=VALUE",
+                           help="Repeatable operator-owned shell-sandbox exception "
+                                "(allow_local_binding, allow_unix_sockets = true|false; "
+                                "allowed_domains, writable_paths = comma-separated list)")
     subparser.add_argument("--automation-initiation", default=None,
                            action=_SingleValuedAction,
                            choices=_closed_values("automation.initiation"),
@@ -429,12 +435,26 @@ def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict
             seen_keys.add(key)
             git_block[key] = _parse_git_key_value(value)
 
+    role_sandbox: Dict[str, Dict[str, Any]] = {}
+    for raw in args.role_sandbox:
+        try:
+            role_name, key, value = parse_role_sandbox_assignment(raw, "--role-sandbox")
+        except ValueError as exc:
+            raise _Usage(str(exc)) from exc
+        if role_name not in roles:
+            raise _Usage(f"--role-sandbox names undeclared role {role_name!r}")
+        if key in role_sandbox.get(role_name, {}):
+            raise _Usage(f"--role-sandbox {role_name}.{key} declared more than once")
+        role_sandbox.setdefault(role_name, {})[key] = value
+
     roles_block: Dict[str, Any] = {}
     for role_name, description in roles.items():
         role_block: Dict[str, Any] = {"description": description}
         if role_name in role_grants:
             role_block["grants"] = role_grants[role_name]
         role_block.update(role_execution.get(role_name, {}))
+        if role_name in role_sandbox:
+            role_block["sandbox"] = role_sandbox[role_name]
         roles_block[role_name] = role_block
 
     reviews_block: Dict[str, Any] = {}

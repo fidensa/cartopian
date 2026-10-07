@@ -56,6 +56,7 @@ from cli.config_schema import (
     AUTO_LAUNCH_ACTIVITIES,
     CONFIG_SCHEMA,
     ConfigDiagnostic,
+    parse_role_sandbox_assignment,
     resolve_configuration,
 )
 from cli.commands._registry import is_kebab_case
@@ -484,6 +485,13 @@ class _Model:
         self._append_table(("roles", name), body)
 
     def remove_role(self, name: str) -> None:
+        # A role's sub-tables (e.g. [roles.<name>.sandbox]) would otherwise
+        # re-declare the removed role implicitly.
+        for sub in [
+            b for b in self.blocks
+            if b.path is not None and len(b.path) > 2 and b.path[:2] == ("roles", name)
+        ]:
+            self.blocks.remove(sub)
         blk = self.find_block(("roles", name))
         if blk is not None:
             self.blocks.remove(blk)
@@ -501,6 +509,14 @@ class _Model:
 
     def set_role_auto_launch(self, role: str, value_token: str) -> None:
         self.set_key(("roles", role), "auto_launch", value_token)
+
+    def set_role_sandbox(self, role: str, key: str, value_token: str) -> None:
+        self.set_key(("roles", role, "sandbox"), key, value_token)
+
+    def remove_role_sandbox(self, role: str) -> None:
+        blk = self.find_block(("roles", role, "sandbox"))
+        if blk is not None:
+            self.blocks.remove(blk)
 
     def remove_role_launch(self, role: str) -> None:
         for field in _ROLE_LAUNCH_FIELDS:
@@ -594,6 +610,14 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--set-role-auto-launch", action="append", default=[],
                            metavar="ROLE=ACTIVITY[,ACTIVITY...]",
                            help="Set a role's closed automatic-launch permission list")
+    subparser.add_argument("--set-role-sandbox", action="append", default=[],
+                           metavar="ROLE.KEY=VALUE",
+                           help="Set an operator-owned shell-sandbox exception "
+                                "(allow_local_binding, allow_unix_sockets = true|false; "
+                                "allowed_domains, writable_paths = comma-separated list, "
+                                "empty = explicit empty list)")
+    subparser.add_argument("--remove-role-sandbox", action="append", default=[],
+                           metavar="ROLE", help="Remove a role's sandbox exception table")
     subparser.add_argument("--remove-role", action="append", default=[], metavar="NAME",
                            help="Remove a role (repeatable)")
     subparser.add_argument("--remove-role-launch", action="append", default=[],
@@ -738,6 +762,31 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
         token = "[" + ", ".join(_toml_str(item) for item in activities) + "]"
         ops.append(("set-role-auto-launch", role, token))
 
+    sandbox_keys: set = set()
+    for raw in args.set_role_sandbox:
+        try:
+            role, key, value = parse_role_sandbox_assignment(raw, "--set-role-sandbox")
+        except ValueError as exc:
+            raise _Usage(str(exc)) from exc
+        if (role, key) in sandbox_keys:
+            raise _Usage(f"--set-role-sandbox {role}.{key} given more than once")
+        sandbox_keys.add((role, key))
+        if isinstance(value, bool):
+            token = "true" if value else "false"
+        else:
+            token = "[" + ", ".join(_toml_str(item) for item in value) + "]"
+        ops.append(("set-role-sandbox", role, key, token))
+
+    removed_sandboxes: set = set()
+    for role in args.remove_role_sandbox:
+        role = role.strip()
+        if not _NAME_RE.match(role):
+            raise _Usage(f"--remove-role-sandbox role must match [A-Za-z0-9_-]+; got: {role!r}")
+        if role in removed_sandboxes:
+            raise _Usage(f"--remove-role-sandbox {role!r} given more than once")
+        removed_sandboxes.add(role)
+        ops.append(("remove-role-sandbox", role))
+
     for name in args.remove_role:
         name = name.strip()
         if not _NAME_RE.match(name):
@@ -764,6 +813,9 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
     hconflict = launch_set_roles & removed_launches
     if hconflict:
         raise _Usage(f"role launch(es) both set and removed: {', '.join(sorted(hconflict))}")
+    sconflict = {r for r, _ in sandbox_keys} & (removed_sandboxes | removed_roles)
+    if sconflict:
+        raise _Usage(f"role sandbox(es) both set and removed: {', '.join(sorted(sconflict))}")
     return ops
 
 
@@ -808,6 +860,8 @@ def _apply_project_ops(model: _Model, ops: List[Tuple]) -> None:
         model.set_role_launch_field(op[1], op[2], op[3])
     for op in [o for o in ops if o[0] == "set-role-auto-launch"]:
         model.set_role_auto_launch(op[1], op[2])
+    for op in [o for o in ops if o[0] == "set-role-sandbox"]:
+        model.set_role_sandbox(op[1], op[2], op[3])
     for op in [o for o in ops if o[0] == "set"]:
         model.set_key(op[1], op[2], op[3])
     for op in [o for o in ops if o[0] == "unset"]:
@@ -816,6 +870,8 @@ def _apply_project_ops(model: _Model, ops: List[Tuple]) -> None:
         model.remove_role(op[1])
     for op in [o for o in ops if o[0] == "remove-role-launch"]:
         model.remove_role_launch(op[1])
+    for op in [o for o in ops if o[0] == "remove-role-sandbox"]:
+        model.remove_role_sandbox(op[1])
 
 
 def _apply_local_ops(model: _Model, ops: List[Tuple]) -> None:
@@ -838,6 +894,10 @@ def _changed_labels(ops: List[Tuple]) -> List[str]:
             out.append(f"roles.{op[1]}.{op[2]}")
         elif kind == "set-role-auto-launch":
             out.append(f"roles.{op[1]}.auto_launch")
+        elif kind == "set-role-sandbox":
+            out.append(f"roles.{op[1]}.sandbox.{op[2]}")
+        elif kind == "remove-role-sandbox":
+            out.append(f"roles.{op[1]}.sandbox")
         elif kind == "remove-role-launch":
             out.extend(
                 f"roles.{op[1]}.{field}" for field in _ROLE_LAUNCH_FIELDS
@@ -918,6 +978,7 @@ def handler(args: argparse.Namespace) -> int:
     project_ops_present = any([
         getattr(args, "set"), getattr(args, "unset"), args.set_role, args.set_role_grants,
         args.set_role_launch, args.set_role_auto_launch,
+        args.set_role_sandbox, args.remove_role_sandbox,
         args.remove_role, args.remove_role_launch,
     ])
     local_ops_present = bool(args.set_work_root or args.unset_work_root)

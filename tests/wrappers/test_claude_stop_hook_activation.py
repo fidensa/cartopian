@@ -650,7 +650,7 @@ def test_posix_sandbox_grants_only_authorized_work_roots(tmp_path):
         "[project]\n"
         'id = "foreign"\n'
         'name = "Foreign"\n'
-        'project_schema_version = "v0.13.0"\n\n'
+        'project_schema_version = "v0.14.0"\n\n'
         + UNGATED_ROLES,
         encoding="utf-8",
     )
@@ -669,7 +669,7 @@ def test_posix_sandbox_grants_only_authorized_work_roots(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
@@ -724,7 +724,7 @@ def test_posix_settings_reject_cross_boundary_work_root_hardlink(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -754,7 +754,7 @@ def test_settings_refuse_posix_work_root_path_list_separator(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -835,7 +835,7 @@ def test_linked_project_git_metadata_is_protected_but_product_git_is_writable(
         "[project]\n"
         'id = "linked-demo"\n'
         'name = "Linked Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -984,7 +984,7 @@ def test_posix_sandbox_fails_closed_for_unknown_dispatched_role(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -1030,7 +1030,7 @@ def test_posix_sandbox_refuses_authorized_work_root_inside_project(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -1064,7 +1064,7 @@ def test_posix_sandbox_refuses_literal_paths_with_glob_syntax(
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",
@@ -1114,7 +1114,7 @@ def test_posix_sandbox_refuses_nested_work_root_through_filesystem_alias(
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["product"]\n\n'
         + GATED_ROLES,
         encoding="utf-8",

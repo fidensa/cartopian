@@ -64,6 +64,10 @@ A role's name and description carry no authority. They help the PM match work to
 | `roles.<role>.effort` | Any effort word the chosen agent accepts | Sets the thinking or effort level. |
 | `roles.<role>.timeout` | A whole number with an `s`, `m`, or `h` suffix, such as 90s, 30m, or 2h | Caps how long one handoff may run. Dispatch falls back to 60m. |
 | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` | Lets the PM start this role's assigned work without asking you first. |
+| `roles.<role>.sandbox.allow_local_binding` | `true` or `false` (default `false`) | Lets this role's shell commands open loopback ports, for local test servers. |
+| `roles.<role>.sandbox.allowed_domains` | Lowercase host names, optionally starting with `*.` | Lets this role's shell commands reach those hosts, such as a package proxy. |
+| `roles.<role>.sandbox.writable_paths` | Existing directories, absolute or starting with `~/` | Lets this role's shell commands write there, such as a build or module cache. |
+| `roles.<role>.sandbox.allow_unix_sockets` | `true` or `false` (default `false`) | Lets this role's shell commands use any Unix socket. This weakens containment. |
 
 ```toml
 [roles.coder]
@@ -78,6 +82,22 @@ timeout = "60m"
 ```
 
 The `pm` role is interactive. It may not have an agent and may not declare automatic launch.
+
+### Sandbox exceptions
+
+When grants are on, a Claude assignee's shell commands run in a strict sandbox on macOS and Linux. They cannot write the project, open local ports, use the network, or touch Unix sockets. If a role's build or tests need one of those, list it under `[roles.<role>.sandbox]`. Each exception applies only to that role. The PM proposes an exception when a build or test step is blocked, and adds it only after you approve. The assignee cannot add one at all.
+
+```toml
+[roles.coder.sandbox]
+allow_local_binding = true
+allowed_domains = ["proxy.golang.org", "sum.golang.org"]
+writable_paths = ["~/go/pkg/mod", "~/Library/Caches/go-build"]
+```
+
+- `allow_local_binding` takes effect on macOS. On Linux the sandbox already gives the shell its own private network.
+- Each `writable_paths` entry must already exist as a real directory. It may not overlap the project, Cartopian's own folders, or any work root, so launch stops if one does.
+- `allow_unix_sockets` cannot be narrowed to particular sockets. With it on, the shell can reach services such as a container engine or ssh-agent. `dispatch` and `containment-matrix` then report the role as weakened containment.
+- `pm` cannot have a sandbox table, because it is never launched through the assignee sandbox.
 
 ### What a role may access
 

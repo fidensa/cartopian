@@ -28,6 +28,21 @@ AUTO_LAUNCH_ACTIVITIES: Tuple[str, ...] = (
     "task_review",
     "planning_review",
 )
+# Operator-owned exceptions to the activated Claude shell sandbox. Each
+# exception widens one role's OS-enforced boundary, so every default is the
+# strict policy and an absent table changes nothing.
+ROLE_SANDBOX_KEYS: Tuple[str, ...] = (
+    "allow_local_binding",
+    "allow_unix_sockets",
+    "allowed_domains",
+    "writable_paths",
+)
+ROLE_SANDBOX_DEFAULTS: Dict[str, Any] = {
+    "allow_local_binding": False,
+    "allow_unix_sockets": False,
+    "allowed_domains": (),
+    "writable_paths": (),
+}
 MACHINE_RECORD_SCHEMA_VERSION = 1
 LEGACY_AUTHORED_CONFIG_PATHS: Tuple[str, ...] = (
     "project.protocol_version",
@@ -188,6 +203,7 @@ CONFIG_SCHEMA: Dict[str, Any] = {
         "assigned_work_types",
         "launch",
         "auto_launch",
+        "sandbox",
         "attribution",
     ),
     "fields": OrderedDict(
@@ -280,6 +296,42 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                     "scopes": ("global", "project"),
                     "type": "closed-unique-list",
                     "values": AUTO_LAUNCH_ACTIVITIES,
+                    "default": (),
+                    "merge": "replace",
+                },
+            ),
+            (
+                "roles.*.sandbox.allow_local_binding",
+                {
+                    "scopes": ("global", "project"),
+                    "type": "boolean",
+                    "default": False,
+                    "merge": "field-override",
+                },
+            ),
+            (
+                "roles.*.sandbox.allow_unix_sockets",
+                {
+                    "scopes": ("global", "project"),
+                    "type": "boolean",
+                    "default": False,
+                    "merge": "field-override",
+                },
+            ),
+            (
+                "roles.*.sandbox.allowed_domains",
+                {
+                    "scopes": ("global", "project"),
+                    "type": "unique-domain-list",
+                    "default": (),
+                    "merge": "replace",
+                },
+            ),
+            (
+                "roles.*.sandbox.writable_paths",
+                {
+                    "scopes": ("global", "project"),
+                    "type": "unique-home-or-absolute-path-list",
                     "default": (),
                     "merge": "replace",
                 },
@@ -417,8 +469,13 @@ _ROOT_KEYS = {
 }
 _ROLE_LAUNCH_KEYS = ("agent", "model", "effort", "timeout")
 _ROLE_KEYS = frozenset(
-    ("description", "grants", *_ROLE_LAUNCH_KEYS, "auto_launch")
+    ("description", "grants", *_ROLE_LAUNCH_KEYS, "auto_launch", "sandbox")
 )
+_DOMAIN_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_SANDBOX_DOMAIN_RE = re.compile(
+    rf"^(?:\*\.)?(?:{_DOMAIN_LABEL}\.)*{_DOMAIN_LABEL}$"
+)
+_SANDBOX_PATH_FORBIDDEN = frozenset("*?[]")
 _REVIEW_KEYS = frozenset(
     ("planning", "planning_role", "task_closure", "task_role")
 )
@@ -600,6 +657,8 @@ def _validate_roles(raw: Any, scope: str) -> None:
         for key in _ROLE_LAUNCH_KEYS:
             if key in role:
                 _nonempty_string(role[key], f"{field}.{key}", scope)
+        if "sandbox" in role:
+            _validate_role_sandbox(role["sandbox"], f"{field}.sandbox", scope)
         if "timeout" in role and not _DURATION_RE.fullmatch(role["timeout"]):
             _fail(
                 "invalid-timeout",
@@ -607,6 +666,116 @@ def _validate_roles(raw: Any, scope: str) -> None:
                 scope,
                 "must be a positive duration with s, m, or h suffix",
             )
+
+
+def _sandbox_path_problem(value: Any) -> Optional[str]:
+    """Return why a sandbox writable path is not a literal launch path."""
+    if not isinstance(value, str) or not value:
+        return "must be a non-empty string"
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        return "must not contain control characters"
+    if any(character in _SANDBOX_PATH_FORBIDDEN for character in value):
+        # Claude reads *, ?, [ and ] in sandbox paths as glob syntax.
+        return "must be a literal path without *, ?, [ or ]"
+    if value.startswith("~/"):
+        relative = value[2:]
+        if not relative:
+            return "must name a directory below the home directory, not ~ itself"
+    elif value.startswith("/"):
+        relative = value[1:]
+        if not relative:
+            return "must not be the filesystem root"
+    else:
+        return "must be absolute or start with ~/"
+    parts = relative.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return "must be normalized (no empty, ., or .. components, no trailing /)"
+    return None
+
+
+def _validate_role_sandbox(raw: Any, field: str, scope: str) -> None:
+    sandbox = _require_table(raw, field, scope)
+    _unknown_keys(sandbox, ROLE_SANDBOX_KEYS, field, scope)
+    for key in ("allow_local_binding", "allow_unix_sockets"):
+        if key in sandbox and not isinstance(sandbox[key], bool):
+            _fail("invalid-type", f"{field}.{key}", scope, "must be a boolean")
+    if "allowed_domains" in sandbox:
+        domains = sandbox["allowed_domains"]
+        if not isinstance(domains, list):
+            _fail("invalid-type", f"{field}.allowed_domains", scope, "must be a list")
+        seen = set()
+        for domain in domains:
+            if not isinstance(domain, str) or not _SANDBOX_DOMAIN_RE.fullmatch(domain):
+                _fail(
+                    "invalid-value",
+                    f"{field}.allowed_domains",
+                    scope,
+                    f"{domain!r} must be a lowercase host name, optionally "
+                    "prefixed by *. (no scheme, port, or path)",
+                )
+            if domain in seen:
+                _fail(
+                    "duplicate-value",
+                    f"{field}.allowed_domains",
+                    scope,
+                    f"duplicate domain {domain!r}",
+                )
+            seen.add(domain)
+    if "writable_paths" in sandbox:
+        paths = sandbox["writable_paths"]
+        if not isinstance(paths, list):
+            _fail("invalid-type", f"{field}.writable_paths", scope, "must be a list")
+        seen = set()
+        for path in paths:
+            problem = _sandbox_path_problem(path)
+            if problem is not None:
+                _fail(
+                    "invalid-value",
+                    f"{field}.writable_paths",
+                    scope,
+                    f"{path!r} {problem}",
+                )
+            if path in seen:
+                _fail(
+                    "duplicate-value",
+                    f"{field}.writable_paths",
+                    scope,
+                    f"duplicate path {path!r}",
+                )
+            seen.add(path)
+
+
+def parse_role_sandbox_assignment(raw: str, flag: str) -> Tuple[str, str, Any]:
+    """Parse one ``ROLE.KEY=VALUE`` sandbox exception for the config editors.
+
+    Booleans take ``true``/``false``; list keys take a comma-separated value
+    where an empty value declares an explicitly empty list. Raises
+    ``ValueError`` with an operator-facing message.
+    """
+    lhs, separator, value = raw.partition("=")
+    if not separator or "." not in lhs:
+        raise ValueError(f"{flag} expects ROLE.KEY=VALUE; got: {raw}")
+    role, key = lhs.strip().split(".", 1)
+    if not _NAME_RE.fullmatch(role):
+        raise ValueError(f"{flag} role must match [A-Za-z0-9_-]+; got: {role!r}")
+    if role == "pm":
+        raise ValueError(f"{flag}: the pm role is never launched through the assignee sandbox")
+    if key not in ROLE_SANDBOX_KEYS:
+        raise ValueError(
+            f"{flag} key must be one of {', '.join(ROLE_SANDBOX_KEYS)}; got: {key!r}"
+        )
+    parsed: Any
+    if key in ("allow_local_binding", "allow_unix_sockets"):
+        if value not in ("true", "false"):
+            raise ValueError(f"{flag} {role}.{key} must be true or false; got: {value!r}")
+        parsed = value == "true"
+    else:
+        parsed = [] if value == "" else [item.strip() for item in value.split(",")]
+    try:
+        _validate_role_sandbox({key: parsed}, f"roles.{role}.sandbox", "project")
+    except ConfigDiagnostic as exc:
+        raise ValueError(f"{flag} {role}.{key}: {exc.message}") from exc
+    return role, key, parsed
 
 
 def _validate_reviews(raw: Any, scope: str) -> None:
@@ -854,6 +1023,19 @@ def _merge_role(
         launch_sources[key] = launch_source
     merged["launch"] = launch
     attribution["launch"] = launch_sources
+
+    g_sandbox = g.get("sandbox") or {}
+    p_sandbox = p.get("sandbox") or {}
+    sandbox: Dict[str, Any] = OrderedDict()
+    sandbox_sources: Dict[str, str] = OrderedDict()
+    for key in ROLE_SANDBOX_KEYS:
+        value, sandbox_source = _field_value(
+            g_sandbox, p_sandbox, key, ROLE_SANDBOX_DEFAULTS[key]
+        )
+        sandbox[key] = list(value) if isinstance(value, (list, tuple)) else value
+        sandbox_sources[key] = sandbox_source
+    merged["sandbox"] = sandbox
+    attribution["sandbox"] = sandbox_sources
     return merged, attribution
 
 
@@ -947,6 +1129,18 @@ def resolve_configuration(
                 "the interactive PM role cannot declare automatic-launch activity",
                 "remove-pm-auto-launch",
             )
+        if name == "pm" and any(
+            source != "protocol-default"
+            for source in attribution["sandbox"].values()
+        ):
+            _fail(
+                "pm-sandbox-forbidden",
+                "roles.pm.sandbox",
+                "resolved",
+                "the interactive PM role is never launched through the "
+                "assignee sandbox",
+                "remove-pm-sandbox",
+            )
         merged_roles[name] = merged
         role_attribution[name] = attribution
         raw: Dict[str, Any] = {"description": merged["description"]}
@@ -998,6 +1192,20 @@ def resolve_configuration(
                 )
         attribution = role_attribution[name]
         attribution["assigned_work_types"] = assigned_sources
+        # Bounded projection: a role without operator-declared sandbox
+        # exceptions carries null, and a declared table carries only the keys
+        # that differ from the strict defaults.
+        declared_sandbox = OrderedDict(
+            (key, value)
+            for key, value in role["sandbox"].items()
+            if attribution["sandbox"][key] != "protocol-default"
+        )
+        if declared_sandbox:
+            attribution["sandbox"] = OrderedDict(
+                (key, attribution["sandbox"][key]) for key in declared_sandbox
+            )
+        else:
+            attribution.pop("sandbox")
         attribution["effective_grants"] = "derived"
         merged_roles[name] = OrderedDict(
             (
@@ -1009,6 +1217,7 @@ def resolve_configuration(
                 ("assigned_work_types", assigned),
                 ("launch", role["launch"]),
                 ("auto_launch", role["auto_launch"]),
+                ("sandbox", declared_sandbox or None),
                 ("attribution", attribution),
             )
         )

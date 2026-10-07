@@ -22,7 +22,7 @@ _TOML = (
     "[project]\n"
     'id = "test-proj"\n'
     'name = "Test Project"\n'
-    'project_schema_version = "v0.13.0"\n'
+    'project_schema_version = "v0.14.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
     "[roles.coder]\n"
@@ -250,7 +250,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
         "[project]\n"
         'id = "min-proj"\n'
         'name = "Minimal"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         "\n"
         "[roles.coder]\n"
         'description = "Implements tasks."\n'
@@ -376,7 +376,7 @@ class TestHandoffPacketManualRole(unittest.TestCase):
         "[project]\n"
         'id = "manual-role-proj"\n'
         'name = "Manual Role"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         "\n"
         "[roles.operator]\n"
         'description = "Performs manually assigned work."\n'

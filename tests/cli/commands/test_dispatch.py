@@ -267,7 +267,7 @@ def _toml(
         "[project]\n"
         'id = "dispatch-proj"\n'
         'name = "Dispatch Project"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         f"{wr}"
         "\n"
         "[roles.coder]\n"
@@ -1335,7 +1335,7 @@ class TestDispatchFailClosed(unittest.TestCase):
             "[project]\n"
             'id = "p"\n'
             'name = "P"\n'
-            'project_schema_version = "v0.13.0"\n'
+            'project_schema_version = "v0.14.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'
@@ -2329,3 +2329,128 @@ class TestDispatchAgentResolution(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestDispatchInteractive(unittest.TestCase):
+    """`--interactive`: the operator-attended form of the contained launch."""
+
+    def _setup(self, scaffold, tmp_path: Path, *, native: bool = True) -> Path:
+        stub = _make_stub(tmp_path)
+        work_root = tmp_path / "tool-repo"
+        work_root.mkdir()
+        scaffold.write(
+            "cartopian.toml",
+            _toml(str(stub), work_roots='"tool-repo"', auto_launch_tasks=False),
+        )
+        scaffold.write(
+            "cartopian.local.toml", f'[work_roots]\ntool-repo = "{work_root}"\n'
+        )
+        task = _write_task_and_prompt(scaffold)
+        if native:
+            task.write_text(
+                task.read_text().replace(
+                    "Assignee: coder", "Launch mode: native-interactive\nAssignee: coder"
+                ),
+                encoding="utf-8",
+            )
+        return task
+
+    def _dispatch_interactive(self, task: Path, home: Path, *, extra_env=None):
+        args = argparse.Namespace(
+            task_path=str(task), prompt=None, role="coder", interactive=True
+        )
+        out, err = io.StringIO(), io.StringIO()
+        home.joinpath(".cartopian").mkdir(parents=True, exist_ok=True)
+        env = {"HOME": str(home), **(extra_env or {})}
+        with mock.patch.dict(os.environ, env, clear=False), mock.patch(
+            "cli.commands.dispatch.Path.home", return_value=home
+        ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = dispatch.handler(args)
+        return out.getvalue(), err.getvalue(), rc
+
+    def test_refuses_without_an_operator_terminal(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            task = self._setup(scaffold, Path(tmp))
+            with mock.patch.object(dispatch, "_operator_terminal_attached", return_value=False):
+                stdout, stderr, rc = self._dispatch_interactive(task, Path(tmp) / "home")
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertEqual(stdout, "")
+            self.assertIn("operator terminal", stderr)
+
+    def test_refuses_inside_an_mcp_tool_call(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            task = self._setup(scaffold, Path(tmp))
+            with mock.patch.object(dispatch, "_operator_terminal_attached", return_value=True):
+                stdout, stderr, rc = self._dispatch_interactive(
+                    task, Path(tmp) / "home", extra_env={"CARTOPIAN_MCP_TOOL_CALL": "dispatch"}
+                )
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn("cannot run inside an MCP tool call", stderr)
+
+    def test_requires_the_shipped_claude_wrapper(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            task = self._setup(scaffold, Path(tmp))
+            with mock.patch.object(dispatch, "_operator_terminal_attached", return_value=True), \
+                    mock.patch("cli.commands.dispatch.subprocess.run") as run:
+                stdout, stderr, rc = self._dispatch_interactive(task, Path(tmp) / "home")
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn("shipped cartopian-claude wrapper", stderr)
+            run.assert_not_called()
+
+    def test_runs_the_contained_wrapper_in_the_foreground(self) -> None:
+        from cli import launch_preflight
+
+        real_checks = launch_preflight.environment_checks
+
+        def checks(*args, **kwargs):
+            findings = real_checks(*args, **kwargs)
+            kwargs["launch_bindings"]["claude_executable"] = "/usr/bin/true"
+            return findings
+
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            task = self._setup(scaffold, Path(tmp))
+            completed = subprocess.CompletedProcess(args=[], returncode=0)
+            real_run = subprocess.run
+            launches = []
+
+            def run_side_effect(argv, *args, **kwargs):
+                if str(argv[0]).endswith("stub-wrapper"):
+                    launches.append((argv, kwargs))
+                    return completed
+                return real_run(argv, *args, **kwargs)
+
+            with mock.patch.object(dispatch, "_operator_terminal_attached", return_value=True), \
+                    mock.patch.object(launch_preflight, "_is_cartopian_claude_agent", return_value=True), \
+                    mock.patch.object(
+                        launch_preflight, "_cartopian_claude_install_root", return_value=Path(tmp)
+                    ), \
+                    mock.patch.object(launch_preflight, "environment_checks", side_effect=checks), \
+                    mock.patch(
+                        "cli.commands.dispatch.subprocess.run", side_effect=run_side_effect
+                    ):
+                stdout, stderr, rc = self._dispatch_interactive(task, Path(tmp) / "home")
+            self.assertEqual(rc, EXIT_OK, msg=stderr)
+            # The only launch is the foreground wrapper run; no detached
+            # supervisor was started.
+            self.assertEqual(len(launches), 1)
+            env = launches[0][1]["env"]
+            self.assertEqual(env["CARTOPIAN_CLAUDE_INTERACTIVE"], "true")
+            self.assertEqual(env["CARTOPIAN_ROLE"], "coder")
+            self.assertTrue(env["CARTOPIAN_EXPECTED_REPORT_PATH"].endswith("REPORT-01-004.md"))
+            self.assertNotIn("stdin", launches[0][1])
+            record = json.loads(stdout)
+            self.assertEqual(record["mode"], "interactive")
+            self.assertEqual(record["exit_code"], 0)
+            self.assertEqual(record["status"], "exited")
+
+    def test_native_reservation_without_interactive_names_the_command(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            task = self._setup(scaffold, Path(tmp))
+            stdout, stderr, rc = _dispatch(str(task), "coder", Path(tmp) / "home")
+            self.assertEqual(rc, EXIT_FAIL)
+            self.assertIn("--interactive", stderr)

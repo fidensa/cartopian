@@ -2008,6 +2008,96 @@ def _refuse_unattested_wsl(environ: Mapping[str, str]) -> None:
         )
 
 
+def role_sandbox_writable_paths(
+    exceptions: Mapping[str, Any],
+    environ: Mapping[str, str],
+) -> tuple[str, ...]:
+    """Resolve a role's operator-declared extra shell-writable directories.
+
+    Configuration validation already guarantees normalized literal spellings;
+    launch binds each one to an existing direct directory so a later symlink
+    cannot redirect the exception after the policy is emitted.
+    """
+    resolved: list[str] = []
+    for raw in exceptions.get("writable_paths") or ():
+        if raw.startswith("~/"):
+            candidate = os.path.join(
+                os.fspath(_user_home(environ, windows=False)), raw[2:]
+            )
+        else:
+            candidate = raw
+        try:
+            info = os.lstat(candidate)
+        except OSError as exc:
+            raise SettingsError(
+                f"sandbox writable path {raw!r} must exist as a directory "
+                f"before activated launch ({candidate}: {exc}); create it or "
+                "remove it from the role's sandbox.writable_paths"
+            ) from exc
+        if not stat.S_ISDIR(info.st_mode):
+            raise SettingsError(
+                f"sandbox writable path {raw!r} is not a direct directory at "
+                f"launch: {candidate}"
+            )
+        canonical = os.path.realpath(candidate)
+        if canonical != os.path.abspath(candidate):
+            raise SettingsError(
+                f"sandbox writable path {raw!r} traverses a symlink "
+                f"({candidate} resolves to {canonical}); declare the "
+                "canonical directory instead"
+            )
+        if canonical not in resolved:
+            resolved.append(canonical)
+    return tuple(resolved)
+
+
+def _validate_role_writable_paths(
+    writable_paths: Sequence[str],
+    *,
+    protected_roots: Sequence[str],
+    other_roots: Sequence[str],
+    environ: Mapping[str, str],
+) -> None:
+    """Keep role writable exceptions disjoint from every governed boundary.
+
+    Claude resolves write rules deny-over-allow, so an exception nested in a
+    protected root would silently fail, and one enclosing a protected root
+    could rename that root's directory entry around a path-based deny.
+    """
+    conflicts: list[str] = []
+    for path in writable_paths:
+        for root in (*protected_roots, *other_roots):
+            canonical_root = os.path.realpath(root)
+            if filesystem_path_is_within(path, canonical_root) or (
+                filesystem_path_is_within(canonical_root, path)
+            ):
+                conflicts.append(f"{path} versus {canonical_root}")
+                break
+        else:
+            for implicit in sandbox_implicit_writable_roots(environ):
+                canonical_implicit = os.path.realpath(implicit)
+                if filesystem_path_is_within(
+                    path, canonical_implicit
+                ) or filesystem_path_is_within(canonical_implicit, path):
+                    conflicts.append(
+                        f"{path} versus implicit {canonical_implicit}"
+                    )
+                    break
+            else:
+                for other in writable_paths:
+                    if other != path and filesystem_path_is_within(path, other):
+                        conflicts.append(f"{path} inside {other}")
+                        break
+    if conflicts:
+        raise SettingsError(
+            "activated POSIX Claude sandbox refuses a role sandbox.writable_paths "
+            "entry that overlaps a protected, work-root, host-executable, "
+            "implicit-writable, or other writable directory ("
+            + ", ".join(conflicts)
+            + "); declare disjoint directories"
+        )
+
+
 def capability_sandbox(
     install_root: Path,
     project_dir: Path,
@@ -2043,6 +2133,8 @@ def capability_sandbox(
         {os.path.realpath(path) for path in work_roots.values()}
     )
     held = resolution.grants_for(_session_roles(environ))
+    exceptions = resolution.sandbox_for(_session_roles(environ))
+    role_writable_paths = role_sandbox_writable_paths(exceptions, environ)
     deny_write: list[str] = []
     host_tool_environ, _host_tool_sources = _effective_host_tool_environment(
         project_dir, environ
@@ -2107,16 +2199,28 @@ def capability_sandbox(
         tuple(work_roots.values()), foreign_work_roots
     )
     validate_implicit_writable_overlaps(protected_policy_paths, environ)
+    _validate_role_writable_paths(
+        role_writable_paths,
+        protected_roots=protected_policy_paths,
+        other_roots=(
+            *resolved_work_roots,
+            *foreign_work_roots,
+            *host_executable_roots,
+        ),
+        environ=environ,
+    )
     validate_linux_mount_boundaries(
-        (project_root, *resolved_work_roots, *implicit_roots),
+        (project_root, *resolved_work_roots, *implicit_roots, *role_writable_paths),
         (*protected_policy_paths, *foreign_work_roots),
     )
     validate_shell_writable_hardlinks(
-        tuple(work_roots.values()),
+        (*work_roots.values(), *role_writable_paths),
         environ,
         protected_roots=protected_policy_paths,
     )
-    refuse_sandbox_glob_paths((*protected_policy_paths, *resolved_work_roots))
+    refuse_sandbox_glob_paths(
+        (*protected_policy_paths, *resolved_work_roots, *role_writable_paths)
+    )
     for path in protected_policy_paths:
         if path not in deny_write:
             deny_write.append(path)
@@ -2187,6 +2291,12 @@ def capability_sandbox(
         for path in resolved_work_roots:
             if path not in deny_write:
                 deny_write.append(path)
+    # Operator-declared toolchain directories (build/module caches) are
+    # shell-writable for this role only; validation above keeps them disjoint
+    # from every protected and work root.
+    for path in role_writable_paths:
+        if path not in allow_write:
+            allow_write.append(path)
     filesystem: dict[str, Any] = {
         # A higher-precedence process setting must not inherit a user setting
         # that disabled filesystem isolation.
@@ -2195,6 +2305,22 @@ def capability_sandbox(
     }
     if allow_write:
         filesystem["allowWrite"] = allow_write
+    network: dict[str, Any] = {
+        "allowUnixSockets": [],
+        "allowAllUnixSockets": False,
+        "allowMachLookup": [],
+    }
+    if exceptions["allow_local_binding"]:
+        # Loopback listeners for local test servers. Claude applies this on
+        # macOS; Linux sandboxes already run in a private network namespace.
+        network["allowLocalBinding"] = True
+    if exceptions["allowed_domains"]:
+        network["allowedDomains"] = list(exceptions["allowed_domains"])
+    if exceptions["allow_unix_sockets"]:
+        # Claude cannot scope Unix sockets by path on Linux, so this admits
+        # every host socket (for example container or agent daemons). It is an
+        # explicit operator weakening, reported by dispatch and the matrix.
+        network["allowAllUnixSockets"] = True
     return {
         "enabled": True,
         "failIfUnavailable": True,
@@ -2207,11 +2333,7 @@ def capability_sandbox(
         "enableWeakerNestedSandbox": False,
         "excludedCommands": [],
         "ignoreViolations": {},
-        "network": {
-            "allowUnixSockets": [],
-            "allowAllUnixSockets": False,
-            "allowMachLookup": [],
-        },
+        "network": network,
         "filesystem": filesystem,
     }
 

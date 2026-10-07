@@ -772,6 +772,29 @@ def handler(args: argparse.Namespace) -> int:
             if public_evidence.get("detail") is None:
                 public_evidence.pop("detail", None)
             row["process_scoped_evidence"] = public_evidence
+            # Operator-declared shell-sandbox exceptions are part of the
+            # boundary actually enforced, so the row names them. Unix-socket
+            # access cannot be path-scoped and is reported as weakening.
+            exceptions = {
+                name: role["sandbox"]
+                for name, role in resolved["roles"].items()
+                if role.get("sandbox")
+            }
+            if exceptions:
+                row["sandbox_exceptions"] = exceptions
+                weakened = sorted(
+                    name
+                    for name, declared in exceptions.items()
+                    if declared.get("allow_unix_sockets") is True
+                )
+                if weakened:
+                    row["weakened_containment"] = weakened
+                    row["disclosure"] = (
+                        (row["disclosure"] + " " if row["disclosure"] else "")
+                        + "Unix-socket access is open for role(s) "
+                        + ", ".join(weakened)
+                        + "; their shell commands can reach host daemons."
+                    )
         hosts.append(row)
 
     record: Dict[str, Any] = {

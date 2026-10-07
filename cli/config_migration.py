@@ -70,6 +70,7 @@ SUPPORTED_OLDER_MARKERS = (
     "v0.10.0",
     "v0.11.0",
     "v0.12.0",
+    "v0.13.0",
 )
 ACTIVITY_ORDER = ("task_run", "task_review", "planning_review")
 _PEER_SCOPE_PREFIX = "registered-project:"
@@ -390,6 +391,35 @@ CONFIGURATION_MIGRATION_ENTRIES = (
         identity="config-v0.13-partial-repair",
         from_identities=("v0.13.0",),
         to_identity="v0.13.0",
+        supported_forms=("superseded-role-launch", "partial"),
+        transforms=(
+            "flatten-role-launch-fields",
+            "remove-supported-residual-vocabulary",
+            "remove-legacy-comment-tombstones",
+        ),
+        validation_gates=(
+            "explicit-old-new-agreement",
+            "effective-semantic-equivalence",
+            "canonical-output-has-one-role-table",
+        ),
+        recovery="resolve conflicting old and preferred definitions, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.13-to-v0.14",
+        from_identities=("v0.13.0",),
+        to_identity="v0.14.0",
+        supported_forms=("preferred", "partial"),
+        transforms=("marker-last-advancement",),
+        validation_gates=(
+            "effective-semantic-equivalence",
+            "strict-role-sandbox-defaults",
+        ),
+        recovery="repair the reported configuration diagnostic, then rerun",
+    ),
+    ConfigurationMigrationEntry(
+        identity="config-v0.14-partial-repair",
+        from_identities=("v0.14.0",),
+        to_identity="v0.14.0",
         supported_forms=("superseded-role-launch", "partial"),
         transforms=(
             "flatten-role-launch-fields",
@@ -2617,6 +2647,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.5.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[1])
         if _version_tuple(current) >= (0, 7, 0):
@@ -2633,6 +2665,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.6.0":
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[2])
         if _version_tuple(current) >= (0, 8, 0):
@@ -2647,6 +2681,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.7.0":
         # v0.7 -> v0.8 introduces no configuration key. It advances the marker
         # after the resolver confirms effective behavior is unchanged — the
@@ -2663,6 +2699,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.8.0" and _version_tuple(current) >= (0, 9, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[4])
@@ -2675,6 +2713,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.9.0" and _version_tuple(current) >= (0, 10, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[6])
@@ -2685,6 +2725,8 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.10.0" and _version_tuple(current) >= (0, 11, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[8])
@@ -2693,18 +2735,30 @@ def _entry_chain(
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.11.0" and _version_tuple(current) >= (0, 12, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[10])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[11])
         if _version_tuple(current) >= (0, 13, 0):
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == "v0.12.0" and _version_tuple(current) >= (0, 13, 0):
         if has_residual:
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[12])
         entries.append(CONFIGURATION_MIGRATION_ENTRIES[13])
+        if _version_tuple(current) >= (0, 14, 0):
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
+    elif detected == "v0.13.0" and _version_tuple(current) >= (0, 14, 0):
+        if has_residual:
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[14])
+        entries.append(CONFIGURATION_MIGRATION_ENTRIES[15])
     elif detected == current and has_residual:
-        if current == "v0.13.0":
+        if current == "v0.14.0":
+            entries.append(CONFIGURATION_MIGRATION_ENTRIES[16])
+        elif current == "v0.13.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[14])
         elif current == "v0.12.0":
             entries.append(CONFIGURATION_MIGRATION_ENTRIES[12])

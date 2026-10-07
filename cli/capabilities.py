@@ -124,6 +124,10 @@ class GrantResolution:
     activated: bool
     role_grants: Dict[str, FrozenSet[str]]
     invalid: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    # Resolved ``roles.<role>.sandbox`` exceptions, keyed by role. Consumed
+    # only by the activated Claude launch helper; grant decisions never read
+    # them.
+    role_sandbox: Dict[str, Mapping[str, Any]] = field(default_factory=dict)
 
     def grants_for(self, role_names: Iterable[str]) -> FrozenSet[str]:
         """Effective grants for a session holding `role_names` (the union).
@@ -138,6 +142,29 @@ class GrantResolution:
         for name in role_names:
             held |= self.role_grants.get(name, frozenset())
         return frozenset(held)
+
+    def sandbox_for(self, role_names: Iterable[str]) -> Dict[str, Any]:
+        """Shell-sandbox exceptions for a session holding `role_names`.
+
+        A multi-role session receives the union: either role's boolean
+        exception applies, and list entries combine in declared order. Role
+        names absent from the config contribute nothing.
+        """
+        merged: Dict[str, Any] = {
+            "allow_local_binding": False,
+            "allow_unix_sockets": False,
+            "allowed_domains": [],
+            "writable_paths": [],
+        }
+        for name in role_names:
+            exceptions = self.role_sandbox.get(name) or {}
+            for key in ("allow_local_binding", "allow_unix_sockets"):
+                merged[key] = merged[key] or exceptions.get(key) is True
+            for key in ("allowed_domains", "writable_paths"):
+                for value in exceptions.get(key) or ():
+                    if value not in merged[key]:
+                        merged[key].append(value)
+        return merged
 
 
 def _declares_grants(value: Any) -> bool:

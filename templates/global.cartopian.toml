@@ -45,6 +45,10 @@
 # | `roles.<role>.effort` | non-empty string |
 # | `roles.<role>.timeout` | positive duration |
 # | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` |
+# | `roles.<role>.sandbox.allow_local_binding` | boolean (default false) |
+# | `roles.<role>.sandbox.allow_unix_sockets` | boolean (default false; weakens containment) |
+# | `roles.<role>.sandbox.allowed_domains` | unique host-name list (default empty) |
+# | `roles.<role>.sandbox.writable_paths` | unique absolute or `~/` path list (default empty) |
 # | `reviews.planning` | `required`, `off` |
 # | `reviews.planning_role` | role reference |
 # | `reviews.task_closure` | `required`, `off` |
@@ -201,6 +205,23 @@
 # Never configure a PM handoff agent or automatic-launch permission: the PM is
 # the interactive orchestrator and is never itself launched.
 #
+# [roles.<role>.sandbox] — operator-owned exceptions to the activated Claude
+# shell sandbox (macOS/Linux, only when grants are active). Every default is
+# the strict policy; declare only what a role's build or tests need:
+#   allow_local_binding — let shell commands bind loopback ports (local test
+#                         servers). Applied by Claude on macOS.
+#   allowed_domains     — host names shell commands may reach, e.g.
+#                         ["proxy.golang.org", "sum.golang.org"]; "*." prefix
+#                         allowed. No scheme, port, or path.
+#   writable_paths      — extra shell-writable directories such as toolchain
+#                         caches, e.g. ["~/go/pkg/mod", "~/Library/Caches/go-build"].
+#                         Each must exist and stay disjoint from the project,
+#                         Cartopian config, and every work root.
+#   allow_unix_sockets  — admit all Unix sockets. Claude cannot scope this by
+#                         path, so commands can reach host daemons (container
+#                         engine, ssh-agent). Dispatch and containment-matrix
+#                         report the role as weakened containment.
+#
 # Example — uncomment and edit to wire up an automated `coder` dispatch:
 
 # [roles.coder]
@@ -211,6 +232,11 @@
 # timeout = "60m"
 # model = "claude-opus-4-8"
 # effort = "high"
+#
+# [roles.coder.sandbox]
+# allow_local_binding = true
+# allowed_domains = ["proxy.golang.org", "sum.golang.org"]
+# writable_paths = ["~/go/pkg/mod"]
 
 # -----------------------------------------------------------------------------
 # [project] — schema reference only; rarely set at the global level

@@ -133,7 +133,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 project_cfg["roles"]["coder"]["auto_launch"], ["task_run"]
             )
             self.assertEqual(
-                project_cfg["project"]["project_schema_version"], "v0.13.0"
+                project_cfg["project"]["project_schema_version"], "v0.14.0"
             )
             for migrated_text in (
                 (home / ".cartopian" / "cartopian.toml").read_text(),
@@ -210,6 +210,7 @@ class TestConfigurationMigration(unittest.TestCase):
             "config-v0.10-to-v0.11",
             "config-v0.11-to-v0.12",
             "config-v0.12-to-v0.13",
+            "config-v0.13-to-v0.14",
         ],
             )
             config_migration.execute_configuration_migration(
@@ -227,7 +228,7 @@ class TestConfigurationMigration(unittest.TestCase):
                 "cartopian-manual",
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.13.0"
+                migrated["project"]["project_schema_version"], "v0.14.0"
             )
             self.assertFalse((project / ".cartopian").exists())
 
@@ -641,6 +642,7 @@ timeout = "45m"
                     "config-v0.10-to-v0.11",
                     "config-v0.11-to-v0.12",
                     "config-v0.12-to-v0.13",
+                    "config-v0.13-to-v0.14",
                 ],
             )
             source = dict(plan.source_effective)
@@ -676,7 +678,7 @@ timeout = "45m"
             self.assertIn("# Unrelated operator heading remains.", migrated_text)
             self.assertNotIn("# migrated legacy:", migrated_text)
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.13.0"
+                migrated["project"]["project_schema_version"], "v0.14.0"
             )
 
             before_rerun = path.read_bytes()
@@ -755,7 +757,7 @@ timeout = "45m"
                 self.assertNotIn("# migrated legacy:", path.read_text())
             self.assertEqual(
                 records[0]["details"]["plan"]["entries"][0]["identity"],
-                "config-v0.13-partial-repair",
+                "config-v0.14-partial-repair",
             )
 
             before_rerun = _config_bytes(home, project)
@@ -791,7 +793,7 @@ timeout = "30m"
             self.assertEqual(public_result["status"], "complete")
             self.assertEqual(
                 public_plan["entries"][0]["identity"],
-                "config-v0.13-partial-repair",
+                "config-v0.14-partial-repair",
             )
             self.assertIn(
                 "superseded-role-launch",
@@ -1288,7 +1290,7 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.13.0"
+                migrated["project"]["project_schema_version"], "v0.14.0"
             )
 
     def test_conforming_standards_advance_v010_to_v011(self):
@@ -1310,10 +1312,11 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                     "config-v0.10-to-v0.11",
                     "config-v0.11-to-v0.12",
                     "config-v0.12-to-v0.13",
+                    "config-v0.13-to-v0.14",
                 ],
             )
             self.assertEqual(plan.marker_update["from"], "v0.10.0")
-            self.assertEqual(plan.marker_update["to"], "v0.13.0")
+            self.assertEqual(plan.marker_update["to"], "v0.14.0")
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
             )
@@ -1322,7 +1325,7 @@ class TestStandardsAdmissionGate(unittest.TestCase):
                 (project / "cartopian.toml").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                migrated["project"]["project_schema_version"], "v0.13.0"
+                migrated["project"]["project_schema_version"], "v0.14.0"
             )
 
 
@@ -1419,13 +1422,13 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
             self.assertEqual(plan.status, "planned")
             self.assertEqual(
                 [entry.identity for entry in plan.entries],
-                ["config-v0.11-to-v0.12", "config-v0.12-to-v0.13"],
+                ["config-v0.11-to-v0.12", "config-v0.12-to-v0.13", "config-v0.13-to-v0.14"],
             )
             self.assertIn(
                 "delivery-contract-declared", plan.entries[0].validation_gates
             )
             self.assertEqual(plan.marker_update["from"], "v0.11.0")
-            self.assertEqual(plan.marker_update["to"], "v0.13.0")
+            self.assertEqual(plan.marker_update["to"], "v0.14.0")
             result = config_migration.execute_configuration_migration(
                 project, plan, home_root=home
             )
@@ -1434,7 +1437,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                 tomllib.loads(
                     (project / "cartopian.toml").read_text(encoding="utf-8")
                 )["project"]["project_schema_version"],
-                "v0.13.0",
+                "v0.14.0",
             )
             # Idempotent: re-planning a migrated project is a no-op that
             # advances nothing and reports the marker already current.
@@ -1456,7 +1459,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                 project, home_root=home
             )
             self.assertEqual(plan.status, "planned")
-            self.assertEqual(plan.marker_update["to"], "v0.13.0")
+            self.assertEqual(plan.marker_update["to"], "v0.14.0")
 
     def test_honest_mid_flight_record_still_migrates(self):
         """A declared record reporting an unreached state is migratable.
@@ -1481,7 +1484,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
                         project, home_root=home
                     )
                     self.assertEqual(plan.status, "planned", msg=plan.diagnostics)
-                    self.assertEqual(plan.marker_update["to"], "v0.13.0")
+                    self.assertEqual(plan.marker_update["to"], "v0.14.0")
 
     def test_changelog_head_names_the_new_entry(self):
         changelog = (
@@ -1519,7 +1522,7 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
             (project / "cartopian.toml").write_text(
                 (project / "cartopian.toml")
                 .read_text(encoding="utf-8")
-                .replace("v0.11.0", "v0.13.0"),
+                .replace("v0.11.0", "v0.14.0"),
                 encoding="utf-8",
             )
             plan = config_migration.plan_configuration_migration(
@@ -1532,3 +1535,53 @@ class TestDeliveryContractMigrationGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoleSandboxMigration(unittest.TestCase):
+    """v0.14.0: additive role sandbox table; the marker is the only edit."""
+
+    _CONFIG = (
+        "[project]\n"
+        'id = "sandbox-migration"\n'
+        'name = "Sandbox Migration"\n'
+        'project_schema_version = "v0.13.0"\n\n'
+        "# operator note: keep this comment\n"
+        "[roles.coder]\n"
+        'description = "Implements tasks."\n'
+        'grants = ["coder-like"]\n'
+        'agent = "cartopian-claude"\n'
+    )
+
+    def test_v013_project_advances_marker_only_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw) / "home"
+            (home / ".cartopian").mkdir(parents=True)
+            project = Path(raw) / "project"
+            project.mkdir()
+            (project / "STANDARDS.md").write_text(
+                "# Standards: P\n\n## Working standards\n\nRules.\n", encoding="utf-8"
+            )
+            config = project / "cartopian.toml"
+            config.write_text(self._CONFIG, encoding="utf-8")
+
+            plan = config_migration.plan_configuration_migration(project, home_root=home)
+            self.assertEqual(plan.status, "planned", msg=plan.diagnostics)
+            self.assertEqual(
+                [entry.identity for entry in plan.entries], ["config-v0.13-to-v0.14"]
+            )
+            self.assertEqual(plan.entries[0].transforms, ("marker-last-advancement",))
+            self.assertEqual(plan.marker_update, {"from": "v0.13.0", "to": "v0.14.0"} | {
+                k: v for k, v in plan.marker_update.items() if k not in ("from", "to")
+            })
+            result = config_migration.execute_configuration_migration(
+                project, plan, home_root=home
+            )
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(
+                config.read_text(encoding="utf-8"),
+                self._CONFIG.replace('"v0.13.0"', '"v0.14.0"'),
+            )
+
+            again = config_migration.plan_configuration_migration(project, home_root=home)
+            self.assertEqual(again.status, "noop", msg=again.diagnostics)
+            self.assertEqual(again.entries, ())

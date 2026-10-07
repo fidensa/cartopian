@@ -68,7 +68,7 @@ _PROJECT_TABLE = (
     "[project]\n"
     'id = "guard-proj"\n'
     'name = "Guard Project"\n'
-    'project_schema_version = "v0.13.0"\n'
+    'project_schema_version = "v0.14.0"\n'
     'work_roots = ["tool-repo"]\n'
     "\n"
 )
@@ -199,7 +199,7 @@ def _claiming_project(
         "[project]\n"
         f'id = "{project_id}"\n'
         f'name = "{project_id}"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["shared"]\n\n'
         + roles_toml,
         encoding="utf-8",
@@ -461,7 +461,7 @@ class TestDispatchedProjectBinding(unittest.TestCase):
                 "[project]\n"
                 'id = "foreign-project"\n'
                 'name = "Foreign Project"\n'
-                'project_schema_version = "v0.13.0"\n'
+                'project_schema_version = "v0.14.0"\n'
                 'work_roots = ["product"]\n\n'
                 + _READ_ROLES,
                 encoding="utf-8",
@@ -618,7 +618,7 @@ class TestDispatchedProjectBinding(unittest.TestCase):
                 "[project]\n"
                 'id = "outer"\n'
                 'name = "Outer"\n'
-                'project_schema_version = "v0.13.0"\n'
+                'project_schema_version = "v0.14.0"\n'
                 "work_roots = []\n\n"
                 + _READ_ROLES,
                 encoding="utf-8",
@@ -2293,7 +2293,7 @@ class TestDispatchExportsRole(unittest.TestCase):
             "[project]\n"
             'id = "dispatch-proj"\n'
             'name = "Dispatch Project"\n'
-            'project_schema_version = "v0.13.0"\n'
+            'project_schema_version = "v0.14.0"\n'
             "\n"
             "[roles.coder]\n"
             'description = "Implements tasks per spec."\n'

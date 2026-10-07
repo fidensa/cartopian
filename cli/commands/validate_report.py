@@ -180,7 +180,8 @@ def _identity_keys_check(variant: str, content: str) -> Dict[str, Any]:
         not missing,
         f"missing Identity key(s): {', '.join(missing)}",
         "add each key as a `- Key: value` bullet under ## Identity, using "
-        "the machine-generated values from `cartopian report-skeleton`",
+        "the machine-generated values from the report skeleton in your "
+        "handoff prompt",
         "mechanical",
     )
 
@@ -453,9 +454,9 @@ def _identity_alignment_check(
         "identity-values-aligned",
         not mismatches,
         "; ".join(message for _key, message in mismatches),
-        "use the machine-generated Identity values from "
-        "`cartopian report-skeleton` verbatim, and write the review file "
-        "before the review report",
+        "use the machine-generated Identity values from the report skeleton "
+        "in your handoff prompt verbatim, and write the review file before "
+        "the review report",
         "mechanical",
     )
 
@@ -470,9 +471,9 @@ def _alignment_check(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "request-alignment-valid",
         False,
         record["detail"],
-        "carry the bound request evidence identities verbatim (see "
-        "`cartopian report-skeleton`); a recorded drift is a reviewer "
-        "judgment for the operator, not a formatting fix",
+        "carry the bound request evidence identities verbatim from the "
+        "report skeleton in your handoff prompt; a recorded drift is a "
+        "reviewer judgment for the operator, not a formatting fix",
         failure_class,
     )
 
@@ -545,9 +546,9 @@ def _retained_review_check(
     )
     if failure_class == "mechanical":
         recovery = (
-            "copy the machine-resolved Request-context identity from "
-            "`cartopian report-skeleton` (it equals the retained review's "
-            "verified value) into the report header"
+            "copy the Request-context identity from the report skeleton in "
+            "your handoff prompt (the prompt binds the verified value) into "
+            "the report header"
         )
     else:
         recovery = (
@@ -562,6 +563,59 @@ def _retained_review_check(
         "; ".join(item["detail"] for item in defects),
         recovery,
         failure_class,
+    )
+
+
+def _review_findings_check(
+    project_root: Optional[Path],
+    report_path: Path,
+    content: str,
+    variant: str,
+) -> Dict[str, Any]:
+    """A non-approving review must carry findings the PM can route on.
+
+    ``report-action`` projects the review file's `F<n>.`/`C<n>.` rows so the
+    PM routes a verdict without reading the whole review. A request-changes
+    or reject verdict with no projectable row leaves the PM nothing to act on
+    except re-reading the full review.
+    """
+    if (
+        variant not in parse_report.REVIEW_VARIANTS
+        or project_root is None
+        or not parse_report._schema_ok(variant, content)
+        or parse_report._extract_status(content) != "complete"
+    ):
+        return _check("review-findings-projectable", True)
+    from cli.commands import report_action
+
+    review_id = report_action._expected_paths(
+        project_root, report_path, variant, {}
+    )["expected_review_id"]
+    if review_id is None:
+        return _check("review-findings-projectable", True)
+    # The same lexical canonical slot report-action projects from, so the
+    # containment helper refuses a symlinked slot here exactly as it does
+    # at routing.
+    projection = report_action._review_projection(
+        project_root, project_root / "reviews" / f"{review_id.name}.md", content
+    )
+    if (
+        projection is None
+        or projection["source"] != "review-file"
+        or projection["verdict"] not in ("request-changes", "reject")
+        or projection["findings"]
+    ):
+        return _check("review-findings-projectable", True)
+    return _check(
+        "review-findings-projectable",
+        False,
+        f"review verdict is {projection['verdict']} but the review file "
+        "records no finding rows",
+        "record each finding in the review file as a "
+        "`- F<n>. [severity] — <defect, location, and resolution>` row under "
+        "`## Findings`, as the review file skeleton in your handoff prompt "
+        "shows",
+        "substantive",
     )
 
 
@@ -616,6 +670,7 @@ def collect_checks(
         _retained_review_check(
             project_root, report_path, content, variant, alignment_record
         ),
+        _review_findings_check(project_root, report_path, content, variant),
         *_source_evidence_checks(project_root, report_path, content, variant),
     ]
 

@@ -32,6 +32,105 @@ Every Cartopian project's `cartopian.toml` carries a `[project] protocol_version
 
 ## Entries
 
+### v0.14.0 — Operator-owned role sandbox exceptions and contained interactive launch
+
+- **Protocol version:** `v0.14.0`
+- **One-line summary:** Adds an optional `[roles.<role>.sandbox]` table so an operator can grant one role the narrow shell-sandbox exceptions its builds and tests need (loopback binds, reachable domains, extra writable directories, and — as a reported weakening — Unix sockets), and lets a `native-interactive` task run through the same contained Claude launch as an operator-attended interactive session instead of a hand-built native launch.
+
+#### What changed
+
+An activated Claude handoff on native macOS/Linux runs its shell under a strict
+OS sandbox: no project writes, no loopback or Unix-socket listeners, no
+network, and only authorized work roots writable. Before this version that
+policy had no exception surface, so a project whose build or tests needed a
+local listener, a package proxy, or a toolchain cache had to launch the
+assignee outside the wrapper entirely — losing the capability hook, the
+sandbox, strict MCP isolation, and settings-source isolation all at once. Such
+an assignee also loaded the operator's own MCP servers and skills, including
+the instructions that start Cartopian PM mode.
+
+`[roles.<role>.sandbox]` is a new optional table in the global and project
+scopes, closed to four keys, each defaulting to the strict policy:
+
+- `allow_local_binding` (boolean) — loopback listener binds.
+- `allowed_domains` (unique lowercase host names, `*.` prefix allowed) — hosts
+  shell commands may reach.
+- `writable_paths` (unique absolute or `~/` paths) — existing direct
+  directories, such as toolchain caches, that become shell-writable for that
+  role only. Each must be disjoint from the project, Cartopian's own
+  configuration and runtime, every work root, host-helper executables, and
+  Claude's implicit writable directories, or the launch refuses.
+- `allow_unix_sockets` (boolean) — every Unix socket. Claude cannot scope this
+  by path, so it also reaches host daemons; `dispatch` warns and
+  `containment-matrix` reports the role under `weakened_containment`.
+
+The `pm` role cannot carry the table. Each resolved role record gains a
+`sandbox` field: `null` until exceptions are declared, otherwise only the
+declared keys. The exceptions live in configuration files no assignee can
+write, so an assignee cannot grant itself one.
+
+A task declaring `Launch mode: native-interactive` whose role agent is the
+shipped `cartopian-claude` wrapper can now run through `cartopian dispatch
+<task-path> --role <role> --interactive`: every dispatch preflight, then the
+same contained launch as an automatic handoff, in the operator's terminal as an
+interactive session. Dispatch refuses that form inside an MCP tool call, so the
+PM presents it and never runs it.
+
+No existing configuration key changes meaning, and no project behavior changes
+until an operator declares an exception.
+
+#### Applies when
+
+Applies when `[project].project_schema_version` is numerically less than
+`v0.14.0`. The schema change is additive: no authored configuration needs an
+edit, so the marker advances with no configuration change.
+
+#### Agent-followable migration steps
+
+This entry has **no registered filesystem transform**; do not invoke
+`apply-migration-entry` for it. Every step is PM-performed on operator
+approval; the operator never edits configuration or runs a command.
+
+1. Plan with `cartopian migrate-config <project-root>`. It reports the
+   `config-v0.13-to-v0.14` entry with a single marker advancement and no
+   configuration edit.
+2. Apply with `cartopian migrate-config <project-root> --apply`. The project
+   schema marker is the only change.
+3. Review the project's standing launch rules. When a locked decision, task
+   `Launch mode`, or prompt routes Claude assignees outside the
+   `cartopian-claude` wrapper because its sandbox blocked a required build or
+   test step, identify from the recorded blocking evidence the narrowest
+   exceptions that would let that step run contained — for example a loopback
+   listener, the specific package hosts, or a named cache directory — and
+   propose them to the operator in plain language, naming any Unix-socket
+   exception as a weakening of containment.
+4. On approval, apply exactly the approved exceptions with
+   `cartopian update-config <project-root> --set-role-sandbox
+   <role>.<key>=<value>` (one flag per key; list values are comma-separated),
+   then record a decision that supersedes the earlier launch rule through
+   `cartopian write-decision`. A step that still cannot run in the sandbox
+   (for example one that depends on set-group-ID bits) stays an
+   operator-performed native launch for that step alone.
+5. For a task that remains `native-interactive`, the operator-facing launch is
+   the contained `cartopian dispatch <task-path> --role <role> --interactive`
+   rather than a hand-built native `claude` command.
+6. Refresh derived state with `cartopian write-state <project-root>`.
+
+#### Idempotence guarantee
+
+Re-applying the steps to a conforming project is a no-op: `migrate-config`
+reports the marker current with no planned entries, and `update-config` with an
+already-present exception rewrites the same value. The marker advancement reads
+and writes only `cartopian.toml`; exception edits change only the named role's
+`[roles.<role>.sandbox]` table and never widen another role.
+
+#### Post-migration validation hint
+
+`cartopian migrate-config <project-root>` reports the schema marker current,
+`cartopian resolve-config <project-root>` exits zero with a `sandbox` field on
+every role (`null` unless declared), and `cartopian containment-matrix
+<project-root>` lists any declared exceptions under `sandbox_exceptions`.
+
 ### v0.13.0 — Domain-neutral task-completion run boundary
 
 - **Protocol version:** `v0.13.0`

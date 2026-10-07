@@ -429,6 +429,43 @@ def _remove_own_running_status(status_path: Path, launch_id: str) -> None:
         pass
 
 
+def _run_interactive(
+    launch_argv: List[str],
+    *,
+    launch_cwd: str,
+    env: Dict[str, str],
+    status_path: Path,
+    launch_id: str,
+    record: Dict[str, Any],
+) -> int:
+    """Run the contained wrapper in the foreground on the operator's terminal.
+
+    The wrapper keeps every containment control of an automatic launch; only
+    the session shape changes (no ``-p``, no deadline, no report reaper). The
+    wrapper writes the final status file on exit, as it does for a detached
+    launch, so the PM's wait primitives observe the same signals.
+    """
+    env["CARTOPIAN_CLAUDE_INTERACTIVE"] = "true"
+    sandbox = record.get("sandbox_exceptions") or {}
+    if sandbox.get("allow_unix_sockets") is True:
+        stderr_guard(
+            f"role {record['role']} has allow_unix_sockets: its shell commands "
+            "can reach host daemons (weakened containment)"
+        )
+    try:
+        completed = subprocess.run(  # noqa: S603 — agent is operator-configured
+            launch_argv, cwd=launch_cwd, env=env, check=False
+        )
+    except OSError as exc:
+        _remove_own_running_status(status_path, launch_id)
+        stderr_error(f"failed to launch interactive handoff: {exc}")
+        return EXIT_FAIL
+    record["exit_code"] = completed.returncode
+    record["status"] = "exited"
+    emit_record(record)
+    return EXIT_OK if completed.returncode == 0 else EXIT_FAIL
+
+
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
     """Add arguments for dispatch.
 
@@ -460,6 +497,46 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         required=True,
         help="Role identifier being dispatched (must have a handoff agent)",
     )
+    subparser.add_argument(
+        "--interactive",
+        action="store_true",
+        help=(
+            "Operator-performed: run the same contained cartopian-claude launch "
+            "as an interactive session in this terminal (native macOS/Linux "
+            "only; never from an MCP host). Satisfies `Launch mode: "
+            "native-interactive` and needs no auto_launch permission"
+        ),
+    )
+
+
+def _operator_terminal_attached() -> bool:
+    """True when this dispatch runs in an operator's terminal."""
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _interactive_refusal() -> Optional[str]:
+    """Why an operator-attended interactive launch cannot start here, if not."""
+    if _running_on_windows():
+        return (
+            "interactive dispatch is available on native macOS/Linux only; "
+            "start the assignee natively on this host"
+        )
+    if os.environ.get("CARTOPIAN_MCP_TOOL_CALL") or os.environ.get(
+        host_capability.CONNECTED_ENV
+    ):
+        return (
+            "interactive dispatch is operator-performed and cannot run inside "
+            "an MCP tool call — present the command to the operator"
+        )
+    if not _operator_terminal_attached():
+        return (
+            "interactive dispatch requires an operator terminal on stdin and "
+            "stdout — run the command in your own shell"
+        )
+    return None
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -467,6 +544,12 @@ def handler(args: argparse.Namespace) -> int:
     raw_task: Optional[str] = args.task_path
     raw_prompt: Optional[str] = args.prompt
     role: str = args.role
+    interactive: bool = bool(getattr(args, "interactive", False))
+    if interactive:
+        refusal = _interactive_refusal()
+        if refusal is not None:
+            stderr_guard(refusal)
+            return EXIT_FAIL
 
     if (raw_task is None) == (raw_prompt is None):
         stderr_usage(
@@ -569,10 +652,16 @@ def handler(args: argparse.Namespace) -> int:
             except (OSError, UnicodeError, ValueError) as exc:
                 stderr_guard(f"task-launch-mode-invalid: {exc}")
                 return EXIT_FAIL
-            if mode == "native-interactive":
-                stderr_guard("task-launch-mode-reserved: task requires a native interactive launch; use the manual handoff")
+            if mode == "native-interactive" and not interactive:
+                stderr_guard(
+                    "task-launch-mode-reserved: task requires a native interactive "
+                    "launch; the operator runs `cartopian dispatch <task-path> "
+                    "--role <role> --interactive` in their terminal"
+                )
                 return EXIT_FAIL
-        if activity not in role_record["auto_launch"]:
+        # An operator-attended launch is the operator's own action, so the
+        # automatic-launch permission does not apply to it.
+        if not interactive and activity not in role_record["auto_launch"]:
             stderr_guard(
                 f"automatic {activity} dispatch is not enabled for role {role} "
                 f"— add {activity!r} to roles.{role}.auto_launch, or present "
@@ -700,7 +789,7 @@ def handler(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
         # --- Fail-closed: planning-review automatic launch is explicit -------
-        if "planning_review" not in role_record["auto_launch"]:
+        if not interactive and "planning_review" not in role_record["auto_launch"]:
             stderr_guard(
                 f"automatic planning-review dispatch is not enabled for role {role} — "
                 f"add 'planning_review' to roles.{role}.auto_launch, or present "
@@ -851,11 +940,18 @@ def handler(args: argparse.Namespace) -> int:
     if resolved_agent is None:  # pragma: no cover - environment_checks refused above
         stderr_error(f"handoff agent not found on PATH: {agent}")
         return EXIT_FAIL
-    if (
+    trusted_claude_wrapper = (
         launch_preflight._is_cartopian_claude_agent(agent, resolved_agent)
         and launch_preflight._cartopian_claude_install_root(resolved_agent)
         is not None
-    ):
+    )
+    if interactive and not trusted_claude_wrapper:
+        stderr_guard(
+            f"interactive dispatch requires roles.{role}.agent to be the shipped "
+            f"cartopian-claude wrapper (got {agent!r}); start this agent natively"
+        )
+        return EXIT_FAIL
+    if trusted_claude_wrapper:
         from cli.claude_launch_settings import (
             CLAUDE_EXECUTABLE_ENV,
         )
@@ -893,6 +989,34 @@ def handler(args: argparse.Namespace) -> int:
         env.pop(WINDOWS_AGENT_ENV, None)
         env.pop(WINDOWS_PROMPT_ENV, None)
     launch_argv = _build_launch_argv(resolved_agent, str(prompt_path), is_windows)
+    if interactive:
+        return _run_interactive(
+            launch_argv,
+            launch_cwd=launch_cwd,
+            env=env,
+            status_path=status_path,
+            launch_id=launch_id,
+            record={
+                "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
+                "schema_identity": resolved["schema_identity"],
+                "project_schema_version": resolved["project_schema_version"],
+                "task_id": task_id,
+                "prompt_id": prompt_path.stem,
+                "role": role,
+                "activity": activity,
+                "mode": "interactive",
+                "launch": {"agent": agent, "model": model, "effort": effort},
+                "sandbox_exceptions": role_record.get("sandbox"),
+                "work_roots": work_root_paths,
+                "prompt_path": str(prompt_path),
+                "expected_report_path": str(expected_report_path),
+                "cwd": launch_cwd,
+                "launch_id": launch_id,
+                "expected_report_variant": expected_variant,
+                "slot_clear": slot_clear,
+                "request_trace": request_record,
+            },
+        )
     # The detached supervisor continuously drains the configured wrapper
     # through a pipe and atomically publishes only the bounded retained log.
     # Bytes outside that representation are discarded without affecting the
@@ -963,6 +1087,7 @@ def handler(args: argparse.Namespace) -> int:
             "effort": effort,
             "timeout": timeout,
         },
+        "sandbox_exceptions": role_record.get("sandbox"),
         "work_roots": work_root_paths,
         "prompt_path": str(prompt_path),
         "expected_report_path": str(expected_report_path),

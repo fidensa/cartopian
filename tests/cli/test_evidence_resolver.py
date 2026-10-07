@@ -99,7 +99,7 @@ class ResolverCase(unittest.TestCase):
         self.root = base / "notes"
         for sub in ("tasks/open", "tasks/in-review", "phases", "decisions", "reviews", "prompts", "reports"):
             (self.root / sub).mkdir(parents=True)
-        self.write_config("v0.13.0")
+        self.write_config("v0.14.0")
         (self.home / ".cartopian" / "projects.json").write_text(
             json.dumps([{"id": "notes", "path": str(self.root), "label": "notes"}])
         )

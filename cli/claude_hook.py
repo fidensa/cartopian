@@ -863,6 +863,10 @@ def _resolve_project_grants(
             name: frozenset(role["effective_grants"])
             for name, role in resolved["roles"].items()
         },
+        role_sandbox={
+            name: dict(role.get("sandbox") or {})
+            for name, role in resolved["roles"].items()
+        },
     )
     return grants, resolved["work_roots"]
 

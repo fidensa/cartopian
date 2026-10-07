@@ -1721,7 +1721,7 @@ class TestMigrationEntryRegistry(unittest.TestCase):
         _, _, body = _read(CHANGELOG).partition("\n## Entries\n")
         head = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, re.MULTILINE)
         self.assertIsNotNone(head)
-        self.assertEqual(head.group(1), "v0.13.0")
+        self.assertEqual(head.group(1), "v0.14.0")
         entry = body.partition("### v0.12.0")[0]
         self.assertIn("run_boundary", entry)
         self.assertIn("task-complete", entry)

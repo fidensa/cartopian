@@ -91,7 +91,7 @@ else:
 _CONFIG = """[project]
 id = "run-boundary-harness"
 name = "Run Boundary Harness"
-project_schema_version = "v0.13.0"
+project_schema_version = "v0.14.0"
 
 [automation]
 initiation = "operator"

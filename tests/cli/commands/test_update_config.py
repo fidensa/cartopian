@@ -367,3 +367,54 @@ class TestLocalTarget(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoleSandbox(_Base):
+    def test_set_and_remove_role_sandbox_exceptions(self):
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-role-sandbox", "coder.allow_local_binding=true",
+            "--set-role-sandbox", "coder.allowed_domains=proxy.golang.org,sum.golang.org",
+            "--set-role-sandbox", "coder.writable_paths=~/go/pkg/mod",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        cfg = tomllib.loads(self.cfg.read_text())
+        self.assertEqual(
+            cfg["roles"]["coder"]["sandbox"],
+            {
+                "allow_local_binding": True,
+                "allowed_domains": ["proxy.golang.org", "sum.golang.org"],
+                "writable_paths": ["~/go/pkg/mod"],
+            },
+        )
+        self.assertIn("# operator note: keep this comment", self.cfg.read_text())
+        changed = json.loads(proc.stdout)["details"]["changed"]
+        self.assertIn("roles.coder.sandbox.allow_local_binding", changed)
+
+        proc = self.run_uc(str(self.proj), "--remove-role-sandbox", "coder")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        cfg = tomllib.loads(self.cfg.read_text())
+        self.assertNotIn("sandbox", cfg["roles"]["coder"])
+        self.assertEqual(cfg["roles"]["coder"]["description"], "Implements.")
+
+    def test_remove_role_removes_its_sandbox_table(self):
+        proc = self.run_uc(str(self.proj), "--set-role-sandbox", "coder.allow_unix_sockets=true")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        proc = self.run_uc(str(self.proj), "--remove-role", "coder")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertNotIn("coder", tomllib.loads(self.cfg.read_text())["roles"])
+
+    def test_invalid_sandbox_assignments_are_usage_errors(self):
+        original = self.cfg.read_text()
+        for raw in (
+            "coder.allow_local_binding=yes",
+            "coder.allowed_domains=https://proxy.golang.org",
+            "coder.writable_paths=relative/cache",
+            "coder.unknown=true",
+            "pm.allow_local_binding=true",
+            "coder",
+        ):
+            with self.subTest(raw=raw):
+                proc = self.run_uc(str(self.proj), "--set-role-sandbox", raw)
+                self.assertEqual(proc.returncode, 2, msg=proc.stderr)
+        self.assertEqual(self.cfg.read_text(), original)

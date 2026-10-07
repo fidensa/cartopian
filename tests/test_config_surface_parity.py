@@ -1147,6 +1147,10 @@ class TestCliMcpContractParity(unittest.TestCase):
             "roles.*.effort": "role_launch_effort",
             "roles.*.timeout": "role_launch_timeout",
             "roles.*.auto_launch": "role_auto_launch",
+            "roles.*.sandbox.allow_local_binding": "role_sandbox",
+            "roles.*.sandbox.allow_unix_sockets": "role_sandbox",
+            "roles.*.sandbox.allowed_domains": "role_sandbox",
+            "roles.*.sandbox.writable_paths": "role_sandbox",
             "reviews.planning": "review_planning",
             "reviews.planning_role": "review_planning_role",
             "reviews.task_closure": "review_task_closure",
@@ -1183,6 +1187,10 @@ class TestCliMcpContractParity(unittest.TestCase):
                 "roles.*.effort",
                 "roles.*.timeout",
                 "roles.*.auto_launch",
+                "roles.*.sandbox.allow_local_binding",
+                "roles.*.sandbox.allow_unix_sockets",
+                "roles.*.sandbox.allowed_domains",
+                "roles.*.sandbox.writable_paths",
                 "work_roots.*",
             }
         )
@@ -1348,7 +1356,7 @@ class TestProjectionParity(unittest.TestCase):
         "[project]\n"
         'id = "surface-parity"\n'
         'name = "Surface Parity"\n'
-        'project_schema_version = "v0.13.0"\n'
+        'project_schema_version = "v0.14.0"\n'
         'work_roots = ["tool-repo"]\n'
         "\n"
         "[roles.coder]\n"

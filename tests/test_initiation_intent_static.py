@@ -161,7 +161,7 @@ class ConfigSurfaceTest(unittest.TestCase):
         _, _, body = text.partition("\n## Entries\n")
         m = re.search(r"^###\s+(v\d+\.\d+\.\d+)\b", body, flags=re.MULTILINE)
         self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "v0.13.0")
+        self.assertEqual(m.group(1), "v0.14.0")
         self.assertIn("### v0.4.0", body)
         self.assertIn("never choose silently", body)
         self.assertIn('initiation = "auto"', body)

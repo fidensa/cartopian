@@ -7,6 +7,10 @@
 # non-interactive flags. Edit the Configuration section below to change
 # allowed tools, output format, and other tool-specific settings.
 #
+# `cartopian dispatch --interactive` sets CARTOPIAN_CLAUDE_INTERACTIVE=true
+# to run the same contained launch as an operator-attended interactive
+# session in the operator's terminal (no -p, no deadline, no report reaper).
+#
 # Exit codes:
 #   0   — claude completed successfully
 #   1   — wrapper error (missing file, missing CLI, bad arguments)
@@ -81,6 +85,27 @@ _CARTOPIAN_HOOK_BOUND=false
 if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
   _CARTOPIAN_HOOK_BOUND=true
 fi
+# Operator-attended interactive mode is honored only for a dispatch-bound
+# launch with a terminal attached, so it never weakens an unattended handoff.
+_CARTOPIAN_INTERACTIVE=false
+if [[ "${CARTOPIAN_CLAUDE_INTERACTIVE:-}" == "true" ]]; then
+  if [[ "$_CARTOPIAN_HOOK_BOUND" != "true" ]]; then
+    echo "cartopian-claude: error: interactive mode is available only through cartopian dispatch --interactive" >&2
+    exit 1
+  fi
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "cartopian-claude: error: interactive mode requires an operator terminal on stdin and stdout" >&2
+    exit 1
+  fi
+  _CARTOPIAN_INTERACTIVE=true
+  # The operator is watching: keep Claude's permission prompts unless the
+  # operator explicitly opted out for this launch.
+  CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-false}"
+elif [[ -n "${CARTOPIAN_CLAUDE_INTERACTIVE:-}" ]]; then
+  echo "cartopian-claude: error: CARTOPIAN_CLAUDE_INTERACTIVE must be true or unset" >&2
+  exit 1
+fi
+
 if [[ "$_CARTOPIAN_HOOK_BOUND" == "true" && "$_CARTOPIAN_STATUS_HELPER_PRESENT" != "true" ]]; then
   echo "cartopian-claude: error: hook-enabled launches require the installed status/supervisor helper: ${_CARTOPIAN_WRAPPER_DIR}/_cartopian-status.sh" >&2
   exit 1
@@ -157,7 +182,11 @@ else
 fi
 # --------------------------------------------------------------------
 
-CMD=("$_CARTOPIAN_CLAUDE_EXECUTABLE" -p)
+if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
+  CMD=("$_CARTOPIAN_CLAUDE_EXECUTABLE")
+else
+  CMD=("$_CARTOPIAN_CLAUDE_EXECUTABLE" -p)
+fi
 
 # Build one compact JSON argument for Claude's additional per-launch settings
 # layer. CARTOPIAN_ROLE is exported only by mediated dispatch and asks the
@@ -230,7 +259,7 @@ if [[ -n "$CLAUDE_ALLOWED_TOOLS" ]]; then
   CMD+=(--allowedTools "$CLAUDE_ALLOWED_TOOLS")
 fi
 
-if [[ "$CLAUDE_OUTPUT_FORMAT" != "text" ]]; then
+if [[ "$CLAUDE_OUTPUT_FORMAT" != "text" && "$_CARTOPIAN_INTERACTIVE" != "true" ]]; then
   CMD+=(--output-format "$CLAUDE_OUTPUT_FORMAT")
 fi
 
@@ -294,7 +323,11 @@ TIMEOUT_DURATION="${CARTOPIAN_TIMEOUT:-60m}"
 # Whether an OS timeout wraps the command — lets the status file distinguish
 # a deadline kill (exit 124) from a plain non-zero exit.
 TIMEOUT_APPLIED=false
-if command -v timeout &>/dev/null; then
+if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
+  # The operator attends and ends an interactive session; a deadline would
+  # kill it mid-conversation.
+  TIMEOUT_DURATION="operator-attended"
+elif command -v timeout &>/dev/null; then
   CMD=(timeout "$TIMEOUT_DURATION" "${CMD[@]}")
   TIMEOUT_APPLIED=true
 elif command -v gtimeout &>/dev/null; then
@@ -307,7 +340,11 @@ fi
 # --------------------------------------------------------------------
 
 TRACE_TOOLS="${CLAUDE_ALLOWED_TOOLS:-default}"
-echo "cartopian-claude: running claude -p (tools=$TRACE_TOOLS, skip-perms=$CLAUDE_SKIP_PERMISSIONS, timeout=$TIMEOUT_DURATION)" >&2
+if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
+  echo "cartopian-claude: running claude interactively (tools=$TRACE_TOOLS, skip-perms=$CLAUDE_SKIP_PERMISSIONS, timeout=$TIMEOUT_DURATION)" >&2
+else
+  echo "cartopian-claude: running claude -p (tools=$TRACE_TOOLS, skip-perms=$CLAUDE_SKIP_PERMISSIONS, timeout=$TIMEOUT_DURATION)" >&2
+fi
 
 # Run the assignee (not exec) so we can capture its exit outcome and emit
 # the optional status file wait-handoff polls for early-crash detection.
@@ -323,8 +360,15 @@ REPORT_PATH="${STATUS_PATH%.status}"
 [[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
 
 set +e
-cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
-ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
+  # No report reaper: the operator may keep talking to the session after the
+  # report lands, and ends it themselves.
+  "${CMD[@]}"
+  ASSIGNEE_EXIT=$?
+else
+  cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
+  ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+fi
 set -e
 cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"
 exit "$ASSIGNEE_EXIT"

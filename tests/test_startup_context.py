@@ -19,7 +19,7 @@ from tests.scaffold import project_scaffold
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = (
     '[project]\nid = "context-test"\nname = "Context Test"\n'
-    'project_schema_version = "v0.13.0"\n'
+    'project_schema_version = "v0.14.0"\n'
     '[roles.worker]\ndescription = "Performs assigned work."\n'
 )
 
@@ -104,7 +104,7 @@ class StartupContextTests(unittest.TestCase):
     def test_situation_notes_and_migration_still_block(self):
         for config, state in (
             (CONFIG, '# State\n\n## Situation\n\n- Worker is blocked pending operator decision.\n'),
-            (CONFIG.replace('v0.13.0', 'v0.12.0'), '# State\n'),
+            (CONFIG.replace('v0.14.0', 'v0.12.0'), '# State\n'),
         ):
             with self.subTest(config=config, state=state):
                 self.scaffold.write('cartopian.toml', config)

@@ -78,7 +78,7 @@ Use `n/a — no practice-pack body changed` otherwise.
 
 ## Closure determinations
 
-Required when the task declares `Upstream trace: required`; use `n/a — task does not declare an upstream trace` otherwise. `cartopian report-skeleton --variant review` generates this section already populated with the task's `Trace-identity` and one D1/D2 placeholder pair per material criterion (the same lines as `cartopian acceptance-trace --projection determinations`); fill in each verdict here, so the determinations are recorded against the exact record set the assignment was issued under. The `## Upstream trace provenance` block in your review context is PM-computed input to review, not an output slot: verdicts written there or under any other heading are not read, and intake reports no determinations.
+Required when the task declares `Upstream trace: required`; use `n/a — task does not declare an upstream trace` otherwise. The review prompt's generated `## Review file skeleton` (the same builder as `cartopian report-skeleton --variant review`) carries this section already populated with the task's `Trace-identity` and one D1/D2 placeholder pair per material criterion (the same lines as `cartopian acceptance-trace --projection determinations`); fill in each verdict here, so the determinations are recorded against the exact record set the assignment was issued under. The `## Upstream trace provenance` block in your review context is PM-computed input to review, not an output slot: verdicts written there or under any other heading are not read, and intake reports no determinations.
 
 Two determinations per material criterion, with **different inputs and different semantics**:
 

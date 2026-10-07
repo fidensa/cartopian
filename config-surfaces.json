@@ -78,7 +78,9 @@
       "identity_evidence_note": "Adds revision_attribution and verification_evidence to installed_content, and covers the longer content-digest revision a materialized install reports, so a copy-mode install states its installed revision and verification with the evidence class behind them instead of collapsing to unknown.",
       "observed_ref_delta_bytes": 50,
       "observed_ref_note": "Adds observed_ref and observed_ref_state to release_version so an operator reading an unknown release version can see the marker token actually on disk and why it was not honored, without the token ever being promoted to a release claim.",
-      "max_output_bytes": 3620
+      "role_sandbox_delta_bytes": 45,
+      "role_sandbox_note": "Adds a stable roles.<role>.sandbox key. A role without operator-declared shell-sandbox exceptions projects null (15 compact bytes per resolved role; 45 for the fixture's three roles), and a declared table carries only the keys that differ from the strict defaults, with attribution only for those keys, so undeclared exceptions never become ambient context. The ceiling rises by that measured delta, preserving the prior headroom.",
+      "max_output_bytes": 3665
     },
     {
       "surface": "next-action",

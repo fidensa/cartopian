@@ -66,6 +66,7 @@ class TestClosedSchema(unittest.TestCase):
                 "assigned_work_types",
                 "launch",
                 "auto_launch",
+                "sandbox",
                 "attribution",
             ),
         )

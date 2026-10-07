@@ -204,6 +204,7 @@ Cartopian reads a global file, a project file, and an optional machine-local fil
 | `[git]` | Global or project | Branch ownership, branch naming, and merge strategy |
 | `[automation]` | Global or project | Run initiation, the run boundary, and the per-run handoff ceiling |
 | `[roles.<name>]` | Global or project | One flat table per role: description, grants, agent, launch options, and launch permissions |
+| `[roles.<name>.sandbox]` | Global or project | Optional, operator-approved exceptions to a Claude assignee's shell sandbox: local ports, reachable hosts, extra writable folders, Unix sockets |
 | `[reviews]` | Global or project | The two independent review policies and the role assigned to each |
 | `[work_roots]` | Machine-local only | Absolute paths for the names `[project].work_roots` declares |
 
