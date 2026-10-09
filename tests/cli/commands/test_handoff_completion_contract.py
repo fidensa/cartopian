@@ -13,7 +13,7 @@ import pytest
 from cli import emit, host_capability, request_trace
 from cli.commands import dispatch, wait_handoff, wait_report
 from cli.main import EXIT_FAIL, EXIT_OK, build_parser
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 
 TASK_REPORT = """# REPORT-01-003

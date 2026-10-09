@@ -13,7 +13,7 @@ from evaluations.startup_context import BUDGETS, measure
 from mcp_server import server
 from mcp_server.skill_metadata import BRIDGE_TARGETS, load_metadata
 from tests import test_kickoff_readiness as kickoff
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 
 ROOT = Path(__file__).resolve().parents[1]

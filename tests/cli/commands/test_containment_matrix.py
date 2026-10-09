@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cli.main import build_parser
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HOOK_PATH = REPO_ROOT / "cli" / "claude_hook.py"
@@ -601,3 +601,27 @@ class TestRoleSandboxExceptions(_Fixture):
     def test_undeclared_projects_carry_no_exception_keys(self):
         _record, rows = self.rows()
         self.assertNotIn("sandbox_exceptions", rows["claude-code"])
+
+
+@unittest.skipUnless(sys.platform == "darwin", "native macOS contained policy")
+class TestProjectContainedVersionEvidence(_Fixture):
+    def setUp(self):
+        super().setUp()
+        # Bypass the external-fixture convenience: test the protocol default.
+        self.scaffold.config.write_text(_ACTIVATED_TOML)
+        (self.scaffold.project_root / "cartopian.local.toml").unlink()
+
+    def test_version_below_contained_floor_is_refused_in_matrix(self):
+        _record, rows = self.rows()
+        row = rows["claude-code"]
+        self.assertEqual(row["project_work_access"]["coder"]["status"], "refused")
+        self.assertIn("2.1.295", row["project_work_access"]["coder"]["detail"])
+        self.assertFalse(row["boundaries"]["write"]["shell_write_policy_configured"])
+
+    def test_attested_version_reports_configuration_without_claiming_live_proof(self):
+        self.set_claude_version("2.1.295 (Claude Code)")
+        _record, rows = self.rows()
+        row = rows["claude-code"]
+        self.assertEqual(row["project_work_access"]["coder"]["status"], "configured-unattested")
+        self.assertTrue(row["boundaries"]["write"]["shell_write_policy_configured"])
+        self.assertFalse(row["boundaries"]["write"]["shell_interception"])

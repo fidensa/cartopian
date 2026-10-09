@@ -245,6 +245,9 @@
 # <project-root>/cartopian.toml, not here. It is documented in this global
 # seed so operators have one canonical reference for the schema.
 #
+# With no project work_roots, resources/ is the default work root.
+# Folder selection grants no access; contained writes require explicit
+# read:work-roots and write:worktree and a supported sandboxed adapter.
 # work_roots: per DEC-004, this is an inline list of operator-chosen
 # identifier strings under [project]. Each string is a logical handle
 # (e.g. "product", "design", "docs") for an external work location the

@@ -214,6 +214,8 @@ Project values beat global values, key by key. `cartopian resolve-config <projec
 
 Run `init workspace` to set global defaults and `init project` to create a project. Inside a project, ask the PM for a change and it uses `cartopian update-config`, which validates the result and preserves your comments. An activated native macOS/Linux Claude handoff cannot execute that writer through its read-only project sandbox; it returns the exact command for the operator or another trusted host to run outside the handoff.
 
+With no work roots configured, the project's work content lives in `resources/`. Named roots can select a narrower subtree, a supporting sibling or an external folder. Explicit role grants authorize access; folder selection does not. See [project-contained work roots, supported adapters and native evidence](wrappers/PROJECT-WORK-ACCESS.md).
+
 ### A complete example
 
 This project requires both reviews and runs unattended in short bursts:

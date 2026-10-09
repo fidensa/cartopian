@@ -4,9 +4,10 @@
 
 You are a coder — Implements tasks per spec. This preface is orientation only: it grants no authority beyond the role's configured grants.
 
-- Project root (your launch working directory; not authority to edit project-management files): <SCAFFOLD>/scaffold-project
-- Work roots (product work happens only here): tool-repo: <SCAFFOLD>/tool-repo
-- Report path (the only authorized write inside the governing project unless a section below says otherwise): <SCAFFOLD>/scaffold-project/reports/REPORT-02-001.md
+- Project root (governance context; not authority to edit project-management files): <SCAFFOLD>/scaffold-project
+- Launch working directory: <SCAFFOLD>/scaffold-project
+- Work roots (assigned content; access requires configured grants): tool-repo: <SCAFFOLD>/tool-repo
+- Report path (publication remains mediated): <SCAFFOLD>/scaffold-project/reports/REPORT-02-001.md
 
 ## Outcome and done criteria
 
@@ -21,7 +22,7 @@ Normalize the fixture data files to one record per line.
 ## Scope and authority boundaries
 
 - Implement only what the Implementation contract and done criteria require. If any supplied input is wrong, ambiguous, or insufficient, stop and report it as a blocker in the completion report instead of adapting the input to what you built.
-- Do not create, edit, move, or delete project-management files (task, specification, prompt, phase, or state records) or perform lifecycle cleanup; your writes are the work roots above and the report path.
+- Do not create, edit, move, or delete project-management files (task, specification, prompt, phase, or state records) or perform lifecycle cleanup. Within your configured grants, change assigned work content only in the work roots above; publish the completion report through the mediated report path.
 - This project runs without git versioning: a work root may already contain uncommitted output from earlier completed work. That steady state is expected and is not itself a defect; evaluate and report only changes attributable to this assignment.
 
 ## Verification

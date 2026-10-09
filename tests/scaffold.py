@@ -43,6 +43,7 @@ DEFAULT_SUBDIRS: tuple[str, ...] = (
     "phases",
     "prompts",
     "reports",
+    "resources",
     "reviews",
     "specs",
     *(f"tasks/{status}" for status in TASK_STATUS_DIRS),
@@ -231,6 +232,32 @@ def capture_request_for_test(
         unit=unit,
         text=text,
     )
+
+
+def external_work_root_scaffold(**kwargs) -> ProjectScaffold:
+    """Launch regressions use an explicit external root, independent of defaults.
+
+    These fixtures exercise supervisor/report behavior with stub adapters. The
+    contained-root adapter contract has its own conformance and native probes.
+    """
+    import tomllib
+
+    scaffold = project_scaffold(**kwargs)
+    original_write = scaffold.write
+    product = scaffold.root / "external-product"
+    product.mkdir()
+
+    def write(relative: str, contents: str) -> Path:
+        if relative == "cartopian.toml" and contents.strip():
+            config = tomllib.loads(contents)
+            if not config.get("project", {}).get("work_roots"):
+                contents = contents.replace("[project]\n", '[project]\nwork_roots = ["tool-repo"]\n', 1)
+                original_write("cartopian.local.toml", f'[work_roots]\ntool-repo = "{product}"\n')
+        return original_write(relative, contents)
+
+    scaffold.write = write
+    write("cartopian.toml", scaffold.config.read_text())
+    return scaffold
 
 
 def write_disagreement_layout(

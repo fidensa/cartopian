@@ -956,10 +956,10 @@ def _validate_effective(project_root: Path, new_project_cfg: Dict[str, Any]) -> 
     }
     for name in new_project_cfg.get("project", {}).get("work_roots", []):
         validation_local["work_roots"].setdefault(
-            name, str((project_root / name).resolve())
+            name, str((project_root.parent / "__cartopian_unmapped__" / name).resolve())
         )
     try:
-        resolve_configuration(global_cfg, new_project_cfg, validation_local)
+        resolve_configuration(global_cfg, new_project_cfg, validation_local, project_root=project_root)
     except ConfigDiagnostic as err:
         raise _Guard("config", str(err)) from err
 
@@ -1045,7 +1045,7 @@ def handler(args: argparse.Namespace) -> int:
                 "global config",
             ) or {}
             try:
-                resolve_configuration(global_cfg, project_cfg, new_cfg)
+                resolve_configuration(global_cfg, project_cfg, new_cfg, project_root=project_root)
             except ConfigDiagnostic as exc:
                 raise _Guard("config", str(exc)) from exc
 

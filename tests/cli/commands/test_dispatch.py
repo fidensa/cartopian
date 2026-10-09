@@ -38,7 +38,7 @@ import pytest
 from cli import handoff_observer, host_capability, request_trace
 from cli.commands import dispatch, report_action, wait_handoff
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -345,8 +345,8 @@ class TestDispatchPositive(unittest.TestCase):
             template.write_text(_STUB_REPORT, encoding="utf-8")
             capture = tmp_path / "capture.json"
 
-            work_root = scaffold.project_root / "tool-repo"
-            docs_root = scaffold.project_root / "docs-repo"
+            work_root = scaffold.root / "tool-repo"
+            docs_root = scaffold.root / "docs-repo"
             work_root.mkdir()
             docs_root.mkdir()
             scaffold.write(
@@ -597,7 +597,7 @@ class TestDispatchPositive(unittest.TestCase):
             # No model/effort in roles.coder — stale CARTOPIAN_MODEL /
             # CARTOPIAN_EFFORT inherited from the parent environment must NOT
             # leak into the wrapper.
-            work_root = scaffold.project_root / "tool-repo"
+            work_root = scaffold.root / "tool-repo"
             work_root.mkdir()
             scaffold.write("cartopian.toml", _toml(str(stub), work_roots='"tool-repo"'))
             scaffold.write(
@@ -639,17 +639,15 @@ class TestDispatchPositive(unittest.TestCase):
             # grant, never passed through.
             self.assertEqual(cap["work_roots"], str(work_root))
 
-    def test_clears_stale_work_roots_when_project_declares_none(self) -> None:
+    def test_replaces_stale_work_roots_with_configured_external_root(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
             stub = _make_stub(tmp_path)
             capture = tmp_path / "capture.json"
 
-            # No [project].work_roots — a stale CARTOPIAN_WORK_ROOTS inherited
-            # from the parent environment must NOT leak into the wrapper (it
-            # would widen an agent CLI's sandbox to a path this project never
-            # declared).
+            # The fixture declares an external product root. A stale parent
+            # CARTOPIAN_WORK_ROOTS must not replace that configured boundary.
             scaffold.write("cartopian.toml", _toml(str(stub)))
             task_path = _write_task_and_prompt(scaffold)
 
@@ -666,7 +664,7 @@ class TestDispatchPositive(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
             rec = json.loads(stdout.strip())
-            self.assertEqual(rec["work_roots"], [])
+            self.assertEqual(rec["work_roots"], [str(scaffold.root / "external-product")])
 
             cap = None
             deadline = time.monotonic() + 5.0
@@ -676,7 +674,7 @@ class TestDispatchPositive(unittest.TestCase):
                 except (OSError, json.JSONDecodeError):
                     time.sleep(0.05)
             self.assertIsNotNone(cap, "stub wrapper did not run")
-            self.assertIsNone(cap["work_roots"])
+            self.assertEqual(cap["work_roots"], str(scaffold.root / "external-product"))
 
 
 class TestDispatchDetachedStdio(unittest.TestCase):
@@ -2183,7 +2181,7 @@ class TestDispatchAgentResolution(unittest.TestCase):
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
-            work_root = scaffold.project_root / "tool-repo"
+            work_root = scaffold.root / "tool-repo"
             work_root.mkdir()
             scaffold.write(
                 "cartopian.toml",
@@ -2200,12 +2198,12 @@ class TestDispatchAgentResolution(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("handoff agent not found on PATH", stderr)
 
-    def test_activated_claude_nested_work_root_refuses_before_launch(self):
+    def test_contained_claude_requires_attested_version_before_launch(self):
         with project_scaffold(cartopian_toml="") as scaffold, \
                 tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
             tmp_path = Path(tmp)
             claude_stub = REPO_ROOT / "wrappers" / "bin" / "cartopian-claude"
-            work_root = scaffold.project_root / "tool-repo"
+            work_root = scaffold.project_root.resolve() / "tool-repo"
             work_root.mkdir()
             scaffold.write(
                 "cartopian.toml",
@@ -2236,8 +2234,7 @@ class TestDispatchAgentResolution(unittest.TestCase):
 
             self.assertEqual(rc, EXIT_FAIL)
             self.assertEqual(stdout, "")
-            self.assertIn("cannot grant write:worktree", stderr)
-            self.assertIn("keep writable product roots disjoint", stderr)
+            self.assertIn("2.1.295", stderr)
 
     def test_build_launch_argv_windows_cmd_routes_through_comspec(self):
         cmd = r"C:\cartopian\wrappers\ps1\cartopian-claude.cmd"

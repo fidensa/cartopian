@@ -1,0 +1,182 @@
+{
+  "platform": "darwin",
+  "launch": "real CLI with shipped wrapper settings",
+  "claude_version": "2.1.295 (Claude Code)",
+  "fixture": "/private/tmp/cartopian-native-work-access-j6_ofw_n",
+  "process_exit": 0,
+  "passed": 36,
+  "records": [
+    {
+      "operation": "create directory",
+      "result": "allowed"
+    },
+    {
+      "operation": "write source snapshot",
+      "result": "allowed"
+    },
+    {
+      "operation": "modify source",
+      "result": "allowed"
+    },
+    {
+      "operation": "build bytecode",
+      "result": "allowed"
+    },
+    {
+      "operation": "child process writes",
+      "result": "allowed"
+    },
+    {
+      "operation": "remove file",
+      "result": "allowed"
+    },
+    {
+      "operation": "remove directory",
+      "result": "allowed"
+    },
+    {
+      "operation": "write REQUIREMENTS.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write STANDARDS.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write IMPLEMENTATION_PLAN.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write STATE.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write cartopian.toml",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write cartopian.local.toml",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write .git/config",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write tasks/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write specs/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write phases/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write decisions/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write prompts/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write reports/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "write .requests/input.md",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "default resources content",
+      "result": "allowed"
+    },
+    {
+      "operation": "new project file",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "other project",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "runtime file",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "host executable",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "host setting",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "traversal",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "fresh hard-link escape",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "symlink escape",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "rename project/resources",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "rename project",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "rename .",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "rename project",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "remove empty work-root entry",
+      "result": "denied",
+      "errno": 1
+    },
+    {
+      "operation": "replace work-root entry",
+      "result": "denied",
+      "errno": 1
+    }
+  ]
+}

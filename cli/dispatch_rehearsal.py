@@ -119,7 +119,7 @@ def _launch_record(
             f
             for f in launch_preflight.environment_checks(
                 role,
-                {},
+                role_record,
                 resolved_work_roots,
                 project_root=project_root,
                 capabilities_activated=capabilities_activated,

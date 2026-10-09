@@ -76,6 +76,7 @@ CAPABILITY_MATCHER = "|".join(
         "Edit",
         "MultiEdit",
         "NotebookEdit",
+        "Bash",
         *_UNCONTAINED_SESSION_TOOLS,
     )
 )
@@ -158,6 +159,7 @@ CLAUDE_EXEC_HOOK_MIN_VERSION = (2, 1, 139)
 # profile blocks creation of fresh hard links; launch-time alias validation
 # separately rejects pre-existing links that leave authorized work roots.
 CLAUDE_ACTIVATED_MIN_VERSION = (2, 1, 278)
+CLAUDE_PROJECT_WORK_MIN_VERSION = (2, 1, 295)
 _SANDBOX_GLOB_CHARACTERS = frozenset("*?[]")
 _EXPLICIT_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
 
@@ -1428,6 +1430,12 @@ def validate_precontainment_launch(
         environ=environ,
         windows=windows,
     )
+    from cli.work_access import WorkAccessError, wrapper_preflight
+
+    try:
+        wrapper_preflight("claude", project_dir, platform="win32" if windows else sys.platform, environ=environ)
+    except WorkAccessError as exc:
+        raise SettingsError(str(exc)) from exc
     if not resolution.activated:
         return
     if windows:
@@ -2109,8 +2117,9 @@ def capability_sandbox(
 ) -> dict[str, Any]:
     """Return the OS-enforced shell write boundary for one dispatched role.
 
-    Governance is deliberately structured-tool-only: no role writes inside
-    the Cartopian project directory through a shell. External work roots are
+    Governance is deliberately structured-tool-only. Contained work content
+    is shell-writable only through the shared explicit access contract; the
+    rest of the project remains deny-default. External work roots are
     writable only with ``write:worktree``; otherwise ``denyWrite`` counteracts
     the wrapper's ``--add-dir`` visibility grant.
     """
@@ -2133,7 +2142,17 @@ def capability_sandbox(
         {os.path.realpath(path) for path in work_roots.values()}
     )
     held = resolution.grants_for(_session_roles(environ))
+    from cli.work_access import adapter_problem, effective_access
+
+    access = effective_access(project_dir, work_roots, held, activated=resolution.activated)
+    problem = adapter_problem("claude", sys.platform, access, activated=resolution.activated)
+    if problem:
+        raise SettingsError(problem)
+    if access.writable and os.path.realpath(environ.get("CARTOPIAN_LAUNCH_CWD", "")) != access.launch_cwd:
+        raise SettingsError("project-contained shell writes require launch cwd bound to " + access.launch_cwd)
     exceptions = resolution.sandbox_for(_session_roles(environ))
+    if access.contained and exceptions["allow_unix_sockets"]:
+        raise SettingsError("project-contained work roots cannot enforce their boundary with allow_unix_sockets=true; remove that exception")
     role_writable_paths = role_sandbox_writable_paths(exceptions, environ)
     deny_write: list[str] = []
     host_tool_environ, _host_tool_sources = _effective_host_tool_environment(
@@ -2190,6 +2209,12 @@ def capability_sandbox(
             )
         )
     )
+    # Keep full project protection for exception validation. A contained
+    # writer runs from its work root; deny-default protects the rest of the
+    # project without an overlapping recursive deny that would close the root.
+    project_boundaries = protected_policy_paths
+    if access.writable:
+        protected_policy_paths = tuple(path for path in protected_policy_paths if os.path.realpath(path) != project_root)
     implicit_roots = tuple(
         path
         for path in sandbox_implicit_writable_roots(environ)
@@ -2198,10 +2223,10 @@ def capability_sandbox(
     validate_foreign_work_root_aliases(
         tuple(work_roots.values()), foreign_work_roots
     )
-    validate_implicit_writable_overlaps(protected_policy_paths, environ)
+    validate_implicit_writable_overlaps(project_boundaries, environ)
     _validate_role_writable_paths(
         role_writable_paths,
-        protected_roots=protected_policy_paths,
+        protected_roots=project_boundaries,
         other_roots=(
             *resolved_work_roots,
             *foreign_work_roots,
@@ -2229,6 +2254,9 @@ def capability_sandbox(
         nested: list[str] = []
         protected_roots = protected_policy_paths
         for path in resolved_work_roots:
+            if path in access.contained and path not in access.writable:
+                deny_write.append(path)
+                continue
             for protected_root in protected_roots:
                 if filesystem_path_is_within(path, protected_root):
                     nested.append(f"{path} (inside protected {protected_root})")
@@ -2286,7 +2314,7 @@ def capability_sandbox(
                 "search directory inside an authorized writable work root "
                 f"({rendered}); keep Claude host helpers outside every work root"
             )
-        allow_write.extend(resolved_work_roots)
+        allow_write.extend(path for path in resolved_work_roots if path not in access.contained or path in access.writable)
     else:
         for path in resolved_work_roots:
             if path not in deny_write:
@@ -2303,6 +2331,14 @@ def capability_sandbox(
         "disabled": False,
         "denyWrite": deny_write,
     }
+    for path in access.writable:
+        # SRT pins the ancestors of a denyWrite path using exact-vnode
+        # unlink/create denies on macOS. This reserved, absent path
+        # protects the work-root entry without recursively denying its content.
+        deny_write.append(os.path.join(path, ".cartopian-work-root-boundary"))
+    unreadable = [path for path in access.contained if path not in access.readable]
+    if unreadable:
+        filesystem["denyRead"] = unreadable
     if allow_write:
         filesystem["allowWrite"] = allow_write
     network: dict[str, Any] = {
@@ -2362,6 +2398,12 @@ def build_settings(
             environ=environ,
             windows=windows,
         )
+        from cli.work_access import adapter_problem, effective_access
+
+        access = effective_access(project_dir, work_roots, resolution.grants_for(_session_roles(environ)), activated=resolution.activated)
+        problem = adapter_problem("claude", "win32" if windows else sys.platform, access, activated=resolution.activated)
+        if problem:
+            raise SettingsError(problem)
         refuse_work_root_transport_paths(
             tuple(work_roots.values()), windows=windows
         )
@@ -2386,6 +2428,8 @@ def build_settings(
                 "--cartopian-home",
                 os.path.realpath(_cartopian_home(environ, windows=windows)),
             ]
+            if access.writable:
+                hook_arguments.extend(("--shell-cwd", access.launch_cwd))
             for name, work_root in sorted(work_roots.items()):
                 captured_path = os.path.realpath(work_root)
                 try:
@@ -2557,6 +2601,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 windows=windows,
                 interpreter=Path(sys.executable),
             )
+            from cli.work_access import wrapper_preflight
+
+            access = wrapper_preflight("claude", project_dir, platform="win32" if windows else sys.platform)
+            if access.contained and os.path.realpath(os.getcwd()) != access.launch_cwd:
+                raise SettingsError("wrapper process cwd does not match the authorized work-access launch cwd")
         settings = build_settings(
             args.install_root.resolve(),
             windows=windows,
@@ -2575,6 +2624,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.claude_version,
                 activated="PreToolUse" in settings.get("hooks", {}),
             )
+            if args.capability and project_dir is not None and access.contained and parse_claude_version(args.claude_version) < CLAUDE_PROJECT_WORK_MIN_VERSION:
+                raise SettingsError("project-contained work roots require Claude Code 2.1.295 or newer, the first build attested for this boundary")
     except Exception as exc:
         sys.stderr.write(f"cartopian Claude settings error: {exc}\n")
         return 1

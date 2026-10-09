@@ -42,7 +42,7 @@ from cli.commands import (
     wait_report,
 )
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, build_parser
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 
 TASK_REPORT = """# REPORT-01-003

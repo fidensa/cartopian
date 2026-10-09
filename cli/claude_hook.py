@@ -756,9 +756,14 @@ def _validate_config_file_identity(path: Path, label: str) -> None:
         )
 
 
-def _validate_activated_project_aliases(project_root: Path) -> None:
+def _validate_activated_project_aliases(
+    project_root: Path, work_roots: Optional[Mapping[str, str]] = None
+) -> None:
     """Reject project aliases that escape path-based hook/sandbox policy."""
     walk_errors: list[OSError] = []
+    from cli.work_access import contained_roots
+
+    supporting = set(contained_roots(project_root, work_roots or {}))
 
     def record_walk_error(exc: OSError) -> None:
         walk_errors.append(exc)
@@ -766,6 +771,10 @@ def _validate_activated_project_aliases(project_root: Path) -> None:
     for directory, subdirs, filenames in os.walk(
         project_root, followlinks=False, onerror=record_walk_error
     ):
+        # Work content may legitimately contain venv symlinks and internal
+        # hard links. Shell enforcement and the complete writable-set scan
+        # secure these; governance still rejects every alias. The root entries
+        # themselves are checked before pruning their descendants.
         for name in (*subdirs, *filenames):
             candidate = Path(directory) / name
             if candidate.is_symlink():
@@ -796,6 +805,7 @@ def _validate_activated_project_aliases(project_root: Path) -> None:
                     "activated project contains a multiply-linked file whose "
                     f"other name could bypass path policy: {candidate}",
                 )
+        subdirs[:] = [name for name in subdirs if os.path.realpath(Path(directory) / name) not in supporting]
     if walk_errors:
         raise _CliError(
             1,
@@ -839,7 +849,7 @@ def _resolve_project_grants(
         local_toml, "local config"
     ) or {}
     try:
-        resolved = resolve_configuration(global_cfg, project_cfg, local_cfg)
+        resolved = resolve_configuration(global_cfg, project_cfg, local_cfg, project_root=project_root)
     except ConfigDiagnostic as exc:
         raise _CliError(1, "guard", str(exc)) from exc
     for name, work_root in resolved["work_roots"].items():
@@ -856,7 +866,7 @@ def _resolve_project_grants(
                 f"path: {work_root!r} ({exc})",
             ) from exc
     if resolved["capabilities"]["activated"] and validate_project_aliases:
-        _validate_activated_project_aliases(project_root)
+        _validate_activated_project_aliases(project_root, resolved["work_roots"])
     grants = GrantResolution(
         activated=resolved["capabilities"]["activated"],
         role_grants={
@@ -1213,6 +1223,8 @@ def _gate_inside_project(
                 required_grant,
                 roles,
             )
+    if axis == "write" and klass.startswith("work-root:") and session_project is not None:
+        return _deny_bound_work_root_structured_write(tool_name, target, project_id, klass.split(":", 1)[1])
     return _ALLOW
 
 
@@ -1591,6 +1603,7 @@ def evaluate(
     protected_settings_paths: Optional[Sequence[str]] = None,
     protected_roots: Optional[Sequence[str]] = None,
     bound_work_roots: Optional[Mapping[str, Tuple[str, int, int]]] = None,
+    shell_cwd: Optional[str] = None,
 ) -> Decision:
     """Decide allow/deny for one PreToolUse payload.
 
@@ -1606,6 +1619,31 @@ def evaluate(
         resolve = os.path.realpath if flavor is os.path else (lambda p: p)
 
     tool_name = payload.get("tool_name")
+    if tool_name == "Bash" and shell_cwd is not None:
+        # Never parse command text. Pin the CLI's shell policy coordinate:
+        # a prior `cd` must not make a broader directory implicitly writable
+        # for the next sandbox invocation.
+        cwd = payload.get("cwd")
+        if not isinstance(cwd, str) or resolve(cwd) != resolve(shell_cwd):
+            return Decision("deny", "[guard] Bash denied: shell cwd changed from the launch-bound work root; return to " + shell_cwd)
+        try:
+            root = environ.get(PROJECT_ROOT_ENV)
+            if not root or bound_work_roots is None:
+                raise ValueError("missing launch-captured project/work-root binding")
+            resolution, roots = _resolve_project_grants(Path(root), cartopian_home)
+            from cli.work_access import effective_access
+
+            access = effective_access(Path(root), roots, resolution.grants_for(_session_roles(environ)), activated=resolution.activated)
+            if access.launch_cwd != resolve(shell_cwd) or not access.writable:
+                raise ValueError("the role no longer holds explicit read:work-roots and write:worktree")
+            if set(roots) != set(bound_work_roots):
+                raise ValueError("work-root declarations changed after launch")
+            for name, (path, device, inode) in bound_work_roots.items():
+                info = os.lstat(path)
+                if resolve(roots[name]) != path or (info.st_dev, info.st_ino) != (device, inode) or not stat.S_ISDIR(info.st_mode):
+                    raise ValueError("work-root identity changed after launch: " + name)
+        except Exception as exc:
+            return Decision("deny", "[guard] Bash denied: project work-access binding failed (" + str(exc) + ")")
     if tool_name in UNCONTAINED_SESSION_TOOLS:
         bound_root = environ.get(PROJECT_ROOT_ENV)
         if not bound_root:
@@ -1873,6 +1911,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--work-root", action="append", nargs=4)
     parser.add_argument("--settings-path", action="append")
     parser.add_argument("--protected-root", action="append")
+    parser.add_argument("--shell-cwd")
     return parser
 
 
@@ -1924,6 +1963,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         protected_settings_paths=args.settings_path,
         protected_roots=tuple(dict.fromkeys(protected_roots)),
         bound_work_roots=bound_work_roots,
+        shell_cwd=args.shell_cwd,
     )
     if decision.action == "deny":
         sys.stdout.write(

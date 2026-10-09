@@ -29,6 +29,7 @@ from cli.protocol_gate import (
     classify_project_schema_version,
     read_shipped_project_schema_version,
 )
+from cli.work_access import contained_roots
 from cli.provenance import audit_provenance, request_store_inventory, scan_pm_identifiers
 
 _TASK_ID_RE = re.compile(r"^TASK-(\d{2}-\d{3})")
@@ -272,7 +273,9 @@ def _load_work_roots(project_path: Path) -> Dict[str, str]:
 
     names = (project_cfg.get("project", {}) or {}).get("work_roots", []) or []
     if not names:
-        return {}
+        from cli.config_schema import default_work_roots
+
+        return default_work_roots(project_path)
 
     local_toml = project_path / "cartopian.local.toml"
     if not local_toml.exists():
@@ -479,6 +482,10 @@ def _check_work_root_provenance(
     warnings: List[Dict[str, Any]] = []
     attributions: List[Dict[str, Any]] = []
     for name, abs_path in work_roots.items():
+        if contained_roots(project_path, {name: abs_path}):
+            # Product Git automation never owns the governing project's Git
+            # state, including when the product content is inside that project.
+            continue
         changed = changed_by_root.get(name)
         if changed is None or not changed:
             continue
@@ -1536,7 +1543,8 @@ def evaluate(args: argparse.Namespace) -> Tuple[Optional[Dict[str, Any]], int]:
     # (one `git status` subprocess per work root) and the task-content index
     # (one read per task file) feed both the provenance and infra checks.
     changed_by_root: Dict[str, Optional[List[str]]] = {
-        name: _git_changed_files(abs_path) for name, abs_path in work_roots.items()
+        name: None if contained_roots(project_path, {name: abs_path}) else _git_changed_files(abs_path)
+        for name, abs_path in work_roots.items()
     }
     task_index = _load_task_index(project_path) if work_roots else []
     warnings, attributions = _check_work_root_provenance(

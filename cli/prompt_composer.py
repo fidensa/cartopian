@@ -1077,6 +1077,8 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
     except _CliError as err:
         raise ComposeRefusal("work-root-resolution-failed", err.message) from err
     work_roots: List[Dict[str, str]] = []
+    if not root_names:
+        root_names = list(resolved_roots)
     for name in root_names:
         absolute = resolved_roots.get(name)
         if absolute is None:
@@ -1284,6 +1286,12 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
     except (ValueError, OSError) as exc:
         raise ComposeRefusal("rework-review-invalid", str(exc)) from exc
 
+    from cli.work_access import effective_access
+
+    work_access = effective_access(
+        project_root, resolved_roots, grants,
+        activated=bool(resolved["capabilities"]["activated"]),
+    )
     prompt = _render_prompt(
         contract=contract,
         title=_deidentified_title(task_title),
@@ -1291,6 +1299,7 @@ def compose(task_path: Path, role: str) -> Dict[str, Any]:
         role_description=role_record["description"],
         project_root=project_root,
         work_roots=work_roots,
+        launch_cwd=work_access.launch_cwd,
         expected_report_path=expected_report_path,
         content=content,
         headers=headers,
@@ -1566,6 +1575,7 @@ def _render_prompt(
     skeleton: str,
     pm_owns_branches: bool,
     git_versioning: bool,
+    launch_cwd: Optional[str] = None,
 ) -> str:
     parts: List[str] = [f"# {title}", ""]
 
@@ -1574,7 +1584,7 @@ def _render_prompt(
         ", ".join(
             f"{item['name']}: {item['absolute_path']}" for item in work_roots
         )
-        or "n/a — this assignment touches nothing outside the project root"
+        or "n/a — no work content roots selected"
     )
     parts += [
         "## Role and workspace",
@@ -1583,11 +1593,11 @@ def _render_prompt(
         "This preface is orientation only: it grants no authority beyond "
         "the role's configured grants.",
         "",
-        f"- Project root (your launch working directory; not authority to "
+        f"- Project root (governance context; not authority to "
         f"edit project-management files): {project_root}",
-        f"- Work roots (product work happens only here): {roots_value}",
-        f"- Report path (the only authorized write inside the governing "
-        f"project unless a section below says otherwise): "
+        f"- Launch working directory: {launch_cwd or project_root}",
+        f"- Work roots (assigned content; access requires configured grants): {roots_value}",
+        f"- Report path (publication remains mediated): "
         f"{expected_report_path}",
         "",
     ]
@@ -1667,8 +1677,9 @@ def _render_prompt(
         "report instead of adapting the input to what you built.",
         "- Do not create, edit, move, or delete project-management files "
         "(task, specification, prompt, phase, or state records) or perform "
-        "lifecycle cleanup; your writes are the work roots above and the "
-        "report path.",
+        "lifecycle cleanup. Within your configured grants, change assigned "
+        "work content only in the work roots above; publish the completion "
+        "report through the mediated report path.",
     ]
     if pm_owns_branches and work_roots:
         boundary_lines.append(

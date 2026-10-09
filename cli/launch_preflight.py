@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -82,6 +83,7 @@ def _cartopian_claude_install_root(
     if not same_install:
         return None
     required = (
+        root / "cli" / "work_access.py",
         root / "cli" / "claude_launch_settings.py",
         root / "cli" / "claude_hook.py",
         root / "cli" / "claude_stop_hook.py",
@@ -90,11 +92,13 @@ def _cartopian_claude_install_root(
                 root / "wrappers" / "ps1" / "cartopian-claude.cmd",
                 root / "wrappers" / "ps1" / "cartopian-claude.ps1",
                 root / "wrappers" / "ps1" / "CartopianStatus.ps1",
+                root / "wrappers" / "ps1" / "CartopianWorkAccess.ps1",
             )
             if windows
             else (
                 root / "wrappers" / "bin" / "cartopian-claude",
                 root / "wrappers" / "bin" / "_cartopian-status.sh",
+                root / "wrappers" / "bin" / "_cartopian-work-access.sh",
             )
         ),
     )
@@ -212,7 +216,7 @@ def environment_checks(
                 "guard",
                 "work root path(s) do not exist on this machine: "
                 + ", ".join(missing_roots)
-                + " — fix the [work_roots] mapping in cartopian.local.toml",
+                + " — create the selected directory; for a configured root, fix its [work_roots] mapping in cartopian.local.toml",
             )
         )
     agent = (role_record.get("launch") or {}).get("agent")
@@ -249,6 +253,21 @@ def environment_checks(
     registry_project_roots: tuple[str, ...] = ()
     foreign_work_roots: tuple[str, ...] = ()
     active_environ = os.environ if environ is None else environ
+    access = None
+    if project_root is not None:
+        from cli.work_access import WorkAccessError, adapter_problem, effective_access
+
+        try:
+            access = effective_access(project_root, resolved_work_roots, role_record.get("effective_grants") or (), activated=capabilities_activated)
+        except WorkAccessError as exc:
+            return [_finding("protected-work-root", "guard", str(exc))]
+        problem = adapter_problem(
+            "claude" if trusted_cartopian_claude else str(agent or "manual"),
+            "win32" if _running_on_windows() else sys.platform,
+            access, activated=capabilities_activated,
+        )
+        if problem and agent:
+            return [_finding("work-root-contract-unsupported", "guard", problem)]
     if capability_claude:
         # A real dispatch replaces inherited temp controls with a protected
         # host-only directory before the wrapper or Claude starts. Model that
@@ -502,7 +521,7 @@ def environment_checks(
                 _cartopian_home(alias_environ, windows=False) / "projects.json",
                 "project registry",
             )
-            _validate_activated_project_aliases(project_root)
+            _validate_activated_project_aliases(project_root, resolved_work_roots)
         except Exception as exc:
             findings.append(
                 _finding("claude-project-path-alias", "guard", str(exc))
@@ -633,6 +652,9 @@ def environment_checks(
             *git_protected_roots,
             *startup_paths,
         )
+        full_project_boundaries = protected_policy_paths
+        if access is not None and access.writable:
+            protected_policy_paths = tuple(path for path in protected_policy_paths if os.path.realpath(path) != access.project)
         implicit_roots = tuple(
             path
             for path in sandbox_implicit_writable_roots(active_environ)
@@ -648,7 +670,7 @@ def environment_checks(
             )
         try:
             validate_implicit_writable_overlaps(
-                protected_policy_paths, active_environ
+                full_project_boundaries, active_environ
             )
         except SettingsError as exc:
             findings.append(
@@ -787,6 +809,11 @@ def environment_checks(
                 ".".join(map(str, version)),
                 activated=bool(activated_claude),
             )
+            if access is not None and access.contained:
+                from cli.claude_launch_settings import CLAUDE_PROJECT_WORK_MIN_VERSION
+
+                if version < CLAUDE_PROJECT_WORK_MIN_VERSION:
+                    raise SettingsError("project-contained work roots require Claude Code 2.1.295 or newer, the first build attested for this boundary")
         except SettingsError as exc:
             findings.append(_finding("claude-version-unsupported", "guard", str(exc)))
     if agent and resolved_agent is None:
@@ -799,4 +826,16 @@ def environment_checks(
                 f"or set roles.{role}.agent to an absolute path",
             )
         )
+    if access is not None and access.contained and capability_claude and not findings:
+        from cli.claude_launch_settings import build_settings
+
+        modeled = dict(active_environ)
+        modeled["CARTOPIAN_ROLE"] = role
+        modeled["CARTOPIAN_LAUNCH_CWD"] = access.launch_cwd
+        if launch_bindings and launch_bindings.get("claude_executable"):
+            modeled["CARTOPIAN_CLAUDE_EXECUTABLE"] = launch_bindings["claude_executable"]
+        try:
+            build_settings(wrapper_install_root, project_dir=project_root, windows=False, include_capability=True, environ=modeled)
+        except Exception as exc:
+            findings.append(_finding("work-root-policy-invalid", "guard", str(exc)))
     return findings

@@ -181,6 +181,7 @@ class CriticalReviewContextTests(unittest.TestCase):
         risk_result = classify_risk(_observations(authority="absent"))
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
+            (root / "resources").mkdir()
             artifact = root / "artifact.txt"
             contract = root / "governing-contract.md"
             artifact.write_text("delivered artifact\n", encoding="utf-8")
@@ -210,6 +211,7 @@ class CriticalReviewContextTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
+            (root / "resources").mkdir()
             artifact = root / "artifact.txt"
             contract = root / "contract.md"
             artifact.write_text("artifact", encoding="utf-8")
@@ -308,6 +310,7 @@ class RiskSurfaceParityTests(unittest.TestCase):
                 'project_schema_version = "v0.14.0"\n',
                 encoding="utf-8",
             )
+            (root / "resources").mkdir()
             artifact = root / "artifact.txt"
             contract = root / "contract.md"
             artifact.write_text("artifact\n", encoding="utf-8")

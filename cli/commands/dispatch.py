@@ -878,7 +878,10 @@ def handler(args: argparse.Namespace) -> int:
     # boundary only to attach its native enforcement hook; grant decisions
     # remain inside the hook. Resolved work roots let wrappers widen an agent
     # CLI sandbox to cover the declared work roots.
-    launch_cwd = str(project_root)
+    from cli.work_access import effective_access
+
+    work_access = effective_access(project_root, resolved_roots, role_record["effective_grants"], activated=bool(resolved["capabilities"]["activated"]))
+    launch_cwd = work_access.launch_cwd
     env = launch_environment
     # This is a per-dispatch binding, never an inherited operator/session
     # override. It is repopulated below after the underlying Claude binary is
@@ -902,6 +905,7 @@ def handler(args: argparse.Namespace) -> int:
     launch_id = secrets.token_hex(16)
     env["CARTOPIAN_TIMEOUT"] = str(timeout)
     env["CARTOPIAN_LAUNCH_CWD"] = launch_cwd
+    env["CARTOPIAN_PROJECT_ROOT"] = str(project_root)
     # Session-role marker for capability enforcement points (e.g. the Claude
     # Code refusal adapter, cli/claude_hook.py). Carries identity only — the
     # wrapper stays a neutral launcher and never keys behavior on it; the

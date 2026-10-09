@@ -1,5 +1,8 @@
 # Agent CLI Wrappers
 
+Project-contained work roots use the shared contract in `cli/work_access.py`. Omitted/empty project roots select `resources/`; configured names replace that default. Selection grants no permissions. Explicit `read:work-roots` permits input reads; both it and `write:worktree` authorize sandboxed filesystem mutations and child processes. Only Claude on native macOS (2.1.295+) currently enforces this contract. All other shipped adapters/platforms, including PowerShell on Windows, refuse before launch. No bypass or unsandboxed fallback is allowed. Governance, report publication, Git, other projects, runtime and host boundaries remain protected. See [configuration and native evidence](PROJECT-WORK-ACCESS.md).
+
+
 ## The problem
 
 Cartopian's handoff contract is simple:
@@ -261,13 +264,13 @@ Emitting the status file is optional; omitting it simply leaves wait-handoff on 
 
 ## Where the wrapper runs from
 
-Cartopian wrappers always change directory to the **Cartopian project root** before invoking the underlying CLI (FR-012). The launch cwd is derived from the absolute prompt path, which always lives at:
+Cartopian wrappers normally start at the **Cartopian project root**. A contained writer instead starts at its first authorized work root, with `CARTOPIAN_PROJECT_ROOT` binding governance separately. The launch cwd is derived from the absolute prompt path, which always lives at:
 
 ```text
 <workspace>/projects/<project-id>/prompts/PROMPT-NN-NNN.md
 ```
 
-So `LAUNCH_CWD = <workspace>/projects/<project-id>`.
+This remains the default launch cwd for external-root and read-only launches.
 
 Why this matters: launching at the Cartopian project root ensures all handoff-relative paths in prompts resolve correctly. The prompt the PM authors references any outside-the-project resources (work roots, etc.) by absolute path/URI. Where the agent CLI imposes its *own* sandbox rooted at the launch cwd, the wrapper widens it with the declared work roots (see [Scope and gating](#scope-and-gating)). For Claude only, the wrapper also loads the native capability hook at this exact dispatched project boundary.
 
@@ -275,7 +278,7 @@ If the prompt is not inside a recognizable Cartopian project layout (missing the
 
 ### Override: `CARTOPIAN_LAUNCH_CWD`
 
-If the recommended layout doesn't fit (split layouts where target repos live elsewhere, cross-drive setups on Windows, monorepo-internal workspaces, security policies that prefer narrower per-repo sandboxes, etc.), set `CARTOPIAN_LAUNCH_CWD` to the absolute or relative path the wrapper should `cd` to instead. Auto-resolution is skipped entirely.
+If the recommended layout doesn't fit (split layouts where target repos live elsewhere, cross-drive setups on Windows, monorepo-internal workspaces, security policies that prefer narrower per-repo sandboxes, etc.), set `CARTOPIAN_LAUNCH_CWD` to the absolute or relative path the wrapper should `cd` to instead. Auto-resolution is skipped entirely for generic launches. Contained dispatches require the exact resolved cwd and root list; changing either refuses.
 
 ```bash
 # bash / zsh
@@ -297,7 +300,7 @@ There is no `cartopian.toml` field for this. The launch cwd is treated as enviro
 
 The wrappers retain a **neutral launcher** role for ordinary CLI translation: they map the resolved dispatch environment into client flags, set cwd, enforce the deadline, and emit an exit signal. They do not interpret review policy, assignment, run automation, task selection, launch permission, schema identity, or application identity. The Claude wrapper has one additional responsibility: when dispatch supplies `CARTOPIAN_ROLE`, its settings helper resolves whether the project activates grants and, if so, loads the harness's PreToolUse refusal adapter. On POSIX, the same resolved grants produce a process-scoped shell-write sandbox policy. The wrapper never authorizes by role or wrapper name; the hook and sandbox policy use effective grants. If you want approval-in-the-loop behavior, use the operator-performed path instead of the wrapper. Per-tool autonomy knobs (codex sandbox scope, claude tool whitelist, etc.) are in [Configuration](#configuration).
 
-One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). Wrappers make the work roots exported through `CARTOPIAN_WORK_ROOTS` visible to those CLIs. On an activated native macOS/Linux Claude handoff, visibility is not authorization: the process-scoped policy always denies shell writes to the Cartopian project root and allows shell writes to declared work roots only when the dispatched role holds `write:worktree`. Activated WSL2 Claude handoffs refuse preflight pending seccomp attestation. Activated native-Windows Claude handoffs also refuse preflight pending both shell-sandbox and exact-native-executable-chain attestation; they do not run with a partial boundary. Other wrappers retain their documented scope. Where a tool's sandbox has no per-path grant surface (devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
+One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at the launch cwd (codex `--sandbox workspace-write`). Wrappers make the work roots exported through `CARTOPIAN_WORK_ROOTS` visible to those CLIs. On an activated native macOS/Linux Claude handoff, visibility is not authorization: the process-scoped policy protects governance and denies writes outside authorized contained roots (or the entire project for external-root launches) and allows shell writes to declared work roots only when the dispatched role holds `write:worktree`. Activated WSL2 Claude handoffs refuse preflight pending seccomp attestation. Activated native-Windows Claude handoffs also refuse preflight pending both shell-sandbox and exact-native-executable-chain attestation; they do not run with a partial boundary. Other wrappers retain their documented scope. Where a tool's sandbox has no per-path grant surface (devin `--sandbox`), the wrapper warns on stderr that declared work roots may be unwritable inside it.
 
 ## Configuration
 
@@ -308,7 +311,7 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | `CARTOPIAN_TIMEOUT` | `60m` | OS-enforced wall-clock deadline from the resolved dispatch record. Accepts `30s`, `15m`, `2h`, or a bare integer (interpreted as minutes). When the deadline elapses, the wrapper sends SIGTERM to the upstream process and exits 124. |
 | `CARTOPIAN_MODEL` | _(unset)_ | Agent-neutral model selection from the resolved dispatch record; each wrapper translates it into the tool-specific model flag (`claude --model`, `codex exec --model`, `agy --model`, `devin --model`, `opencode run --model`, `hermes -m`). Unset means the tool's own default model. |
 | `CARTOPIAN_EFFORT` | _(unset)_ | Agent-neutral effort/thinking level from the resolved dispatch record. Claude, Codex, Antigravity, opencode, and Hermes translate it into their tool-specific flags (`--effort`, `-c model_reasoning_effort=...`, `--effort`, `--variant`, `--reasoning`); Devin ignores it with a stderr notice. A value outside a wrapper's CLI vocabulary is omitted with a notice, so the tool uses its default effort. When a pinned agy model id already encodes an effort level (`-low`/`-medium`/`-high` suffix), the model pin wins and the wrapper drops the effort with a notice — agy hard-fails a conflicting `--model`/`--effort` pair. |
-| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral declared-work-root list. Exported by `cartopian dispatch` as resolved absolute paths joined with the OS path separator (`:` on POSIX, `;` on Windows); dispatch refuses a declared path containing that separator or a control character because the line-oriented list could not encode it losslessly. The codex wrapper widens its `workspace-write` sandbox with the roots (`-c sandbox_workspace_write.writable_roots=[...]`); Claude and agy pass each as `--add-dir`. On activated native macOS/Linux Claude handoffs, a stricter process policy then permits shell writes only when the role holds `write:worktree`. Activated WSL2 and native-Windows Claude handoffs refuse at their respective unattested host boundaries before receiving the grant. The devin sandbox exposes no per-path grant surface, so that wrapper warns that declared roots may be unwritable. opencode and Hermes have no default path sandbox and print an explicit no-op notice. Unset means no work roots are declared; dispatch never exports a stale inherited value. |
+| `CARTOPIAN_WORK_ROOTS` | _(unset)_ | Agent-neutral declared-work-root list. Exported by `cartopian dispatch` as resolved absolute paths joined with the OS path separator (`:` on POSIX, `;` on Windows); dispatch refuses a declared path containing that separator or a control character because the line-oriented list could not encode it losslessly. The codex wrapper widens its `workspace-write` sandbox with the roots (`-c sandbox_workspace_write.writable_roots=[...]`); Claude and agy pass each as `--add-dir`. On activated native macOS/Linux Claude handoffs, a stricter process policy then permits shell writes only when the role holds `write:worktree`. Activated WSL2 and native-Windows Claude handoffs refuse at their respective unattested host boundaries before receiving the grant. The devin sandbox exposes no per-path grant surface, so that wrapper warns that declared roots may be unwritable. opencode and Hermes have no default path sandbox and print an explicit no-op notice. Dispatch exports the effective configured roots or default resources root and replaces stale inherited values. |
 | `CARTOPIAN_HANDOFF_ID` | _(unset on manual launch)_ | Fresh dispatch identity copied into the secondary status signal. |
 | `CARTOPIAN_ROLE` | _(unset on manual launch)_ | Dispatch role/config boundary inherited by the capability hook. On Claude it also asks the settings helper to resolve whether process-scoped capability enforcement is active; it never authorizes by role name. |
 | `CARTOPIAN_PYTHON` | _(unset on manual launch)_ | Exact absolute Python interpreter exported by dispatch for pre-containment validation and per-launch hook commands. A hook-enabled wrapper refuses a missing, relative, or non-executable binding instead of searching `PATH`. |

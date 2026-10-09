@@ -112,25 +112,19 @@ class TestAssignmentLaunchGuidanceContract(unittest.TestCase):
         text = (ROOT / "templates" / "PROMPT.md").read_text(encoding="utf-8")
         lowered = text.lower()
 
-        self.assertIn(
-            "launched with cwd set to the **cartopian project root**",
-            lowered,
-        )
-        self.assertNotIn("cwd set to the **primary work root**", lowered)
-        self.assertIn("cartopian_work_roots", lowered)
-        self.assertIn("declared work-root access does not grant", lowered)
-        for wrapper in ("codex", "claude", "antigravity", "devin"):
-            self.assertIn(wrapper, lowered)
-        self.assertIn("may be unwritable", lowered)
+        self.assertIn("contained writer starts in its first authorized work root", lowered)
+        self.assertIn("other launches start at the project root", lowered)
+        self.assertIn("configured roots replace the default `resources` root", lowered)
+        self.assertIn("never governance or lifecycle actions", lowered)
+        self.assertIn("other shipped adapters/platforms refuse before launch", lowered)
+        self.assertIn("report publication remains mediated", lowered)
 
     def test_handoff_runbook_states_the_same_launch_boundary(self) -> None:
         text = (ROOT / "skills" / "run-handoff.md").read_text(encoding="utf-8")
         lowered = text.lower()
 
-        self.assertIn(
-            "assignee clis run with cwd set to the cartopian project root",
-            lowered,
-        )
+        self.assertIn("contained writers start in their first authorized work root", lowered)
+        self.assertIn("other assignee clis start at the project root", lowered)
         self.assertIn("cartopian_work_roots", lowered)
         self.assertIn("does not grant pm lifecycle authority", lowered)
         self.assertIn("codex", lowered)

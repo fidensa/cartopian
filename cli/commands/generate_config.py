@@ -521,11 +521,11 @@ def handler(args: argparse.Namespace) -> int:
         # all other cross-field authority checks still run before writing.
         local_validation = {
             "work_roots": {
-                name: str((project_path / name).resolve())
+                name: str((project_path.parent / "__cartopian_unmapped__" / name).resolve())
                 for name in cfg["project"].get("work_roots", [])
             }
         }
-        resolve_configuration(global_cfg, cfg, local_validation)
+        resolve_configuration(global_cfg, cfg, local_validation, project_root=project_path)
     except ConfigDiagnostic as exc:
         _stderr("usage", str(exc))
         return EXIT_USAGE

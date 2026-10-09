@@ -20,6 +20,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Shared contract runs before any underlying agent/version/permission probe.
+$WorkAccessHelper = Join-Path $PSScriptRoot 'CartopianWorkAccess.ps1'
+if (Test-Path -LiteralPath $WorkAccessHelper -PathType Leaf) {
+    & $WorkAccessHelper 'claude' $PromptPath
+} else {
+    throw 'Missing required work-access adapter; reinstall Cartopian'
+}
+
 # --- Status-file helper (early-crash signal for wait-handoff) --------
 # Dot-source the shared helper that emits <report-path>.status on assignee
 # exit. A standalone, non-mediated wrapper invocation may retain the historical
@@ -182,7 +190,7 @@ if ($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH) {
         Write-Error "cartopian-claude: Claude settings helper not found: $SettingsHelper"
         exit 1
     }
-    $ProjectDir = (Get-Location).Path
+    $ProjectDir = if ($env:CARTOPIAN_PROJECT_ROOT) { $env:CARTOPIAN_PROJECT_ROOT } else { (Get-Location).Path }
     $SettingsHelperArgs = @(
         $SettingsHelper,
         '--install-root', $InstallRoot,
@@ -260,7 +268,11 @@ if ($env:CARTOPIAN_EFFORT) {
 # Claude 2.1.212+ parses --add-dir as variadic. Keep the positional prompt
 # before every --add-dir occurrence so the final variadic option cannot
 # consume it as another directory.
-$Args += $PromptPathAbs
+if ($env:CARTOPIAN_PROJECT_ROOT -and $env:CARTOPIAN_LAUNCH_CWD -ne $env:CARTOPIAN_PROJECT_ROOT) {
+    $Args += "Read this authorized handoff file and carry out its task within your configured permissions: $PromptPathAbs"
+} else {
+    $Args += $PromptPathAbs
+}
 
 # Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a pathsep-joined
 # list — ';' on Windows — of the project's resolved work-root absolute

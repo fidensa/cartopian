@@ -19,7 +19,10 @@ Resolution semantics (see ``resolve_grants``):
 
 - **Ungated mode** — no role in the resolved config declares a ``grants``
   key: gating is inactive and every role behaves as if all read and write
-  grants were held. Configs that predate the vocabulary work unchanged.
+  grants were held for legacy surfaces and external work roots. Project-
+  contained work-root launches separately require activation and explicit
+  grants through ``cli.work_access``; they never inherit this compatibility
+  permission.
 - **Activated mode** — at least one role declares a ``grants`` key:
   containment is active project-wide and resolution fails closed. A role
   whose grant list contains an unknown name, is explicitly empty, is
@@ -38,7 +41,7 @@ READ_CAPABILITIES: Tuple[str, ...] = (
     "read:governance",   # management/strategy artifacts plus specs
     "read:reports",      # reports and reviews
     "read:prompts",      # the prompts/ directory — the assignee's handoff
-    "read:work-roots",   # the product tree
+    "read:work-roots",   # project-defined work content
 )
 
 WRITE_CAPABILITIES: Tuple[str, ...] = (

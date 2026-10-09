@@ -30,7 +30,7 @@ from cli.commands import (
     write_task,
 )
 from cli.protocol_gate import read_shipped_project_schema_version
-from tests.scaffold import project_scaffold
+from tests.scaffold import external_work_root_scaffold as project_scaffold
 
 SCHEMA = read_shipped_project_schema_version()
 

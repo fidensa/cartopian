@@ -62,11 +62,15 @@ def _project(tmp_path: Path, *, gated: bool = True) -> tuple[Path, Path, Path]:
     root = tmp_path / "project with spaces"
     (root / "prompts").mkdir(parents=True)
     (root / "reports").mkdir()
+    product = tmp_path / "external product"
+    product.mkdir(exist_ok=True)
+    (root / "cartopian.local.toml").write_text(f'[work_roots]\nproduct = "{product}"\n')
     root.joinpath("cartopian.toml").write_text(
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.9.0"\n\n'
+        'project_schema_version = "v0.14.0"\n'
+        'work_roots = ["product"]\n\n'
         + (GATED_ROLES if gated else UNGATED_ROLES),
         encoding="utf-8",
     )
@@ -101,7 +105,7 @@ def _run_result(
         "PATH": os.pathsep.join(path_parts),
         "HOME": str(home),
         "CARTOPIAN_TIMEOUT": "30s",
-        "CARTOPIAN_LAUNCH_CWD": str(prompt.parent.parent),
+        **({"CARTOPIAN_LAUNCH_CWD": str(prompt.parent.parent)} if dispatched else {}),
         "CARTOPIAN_CLAUDE_EXECUTABLE": str((fake_bin / "claude").resolve()),
         claude_launch_settings.CLAUDE_HOST_TMPDIR_ENV: str(host_tmp),
         "TMPDIR": str(host_tmp),
@@ -264,7 +268,7 @@ def test_installed_posix_dispatch_receives_capability_and_completion_hooks(tmp_p
     assert capability_argv[capability_argv.index("--project-root") + 1] == str(
         project.resolve()
     )
-    assert capability_argv.count("--work-root") == 0
+    assert capability_argv.count("--work-root") == 1
     assert capability_argv.count("--settings-path") == 1
     assert capability_argv[capability_argv.index("--settings-path") + 1] == str(
         (tmp_path / "home with spaces" / ".claude.json").resolve()
@@ -351,6 +355,7 @@ def test_activated_wrapper_refuses_missing_host_temp_binding_before_claude(tmp_p
 
 def test_no_dispatch_boundary_and_no_expected_report_adds_no_settings(tmp_path):
     _root, prompt, _report = _project(tmp_path)
+    (_root / "cartopian.toml").unlink()
     argv = _run(
         POSIX_WRAPPER,
         prompt,
@@ -497,6 +502,7 @@ def test_bare_gated_handoff_refuses_before_claude(tmp_path):
 
 def test_bare_launch_without_cartopian_hooks_remains_available(tmp_path):
     _root, prompt, _report = _project(tmp_path)
+    (_root / "cartopian.toml").unlink()
     argv = _run(
         POSIX_WRAPPER,
         prompt,
@@ -1022,7 +1028,7 @@ def test_activated_wsl_launch_refuses_unattested_interop_boundary(tmp_path):
         )
 
 
-def test_posix_sandbox_refuses_authorized_work_root_inside_project(tmp_path):
+def test_posix_sandbox_refuses_contained_work_root_without_cwd_binding(tmp_path):
     project, _prompt, _report = _project(tmp_path, gated=True)
     work_root = project / "nested product"
     work_root.mkdir()
@@ -1041,7 +1047,7 @@ def test_posix_sandbox_refuses_authorized_work_root_inside_project(tmp_path):
 
     with pytest.raises(
         claude_launch_settings.SettingsError,
-        match="cannot grant write:worktree.*protected enforcement/runtime root",
+        match="require launch cwd bound",
     ):
         claude_launch_settings.build_settings(
             REPO_ROOT,
@@ -1201,7 +1207,7 @@ def test_activated_settings_isolation_ignores_normal_write_wideners(
     )
 
     assert settings["sandbox"]["enabled"] is True
-    assert settings["sandbox"]["filesystem"].get("allowWrite", []) == []
+    assert settings["sandbox"]["filesystem"].get("allowWrite", []) == [str(tmp_path / "external product")]
 
 
 @pytest.mark.parametrize(
@@ -2114,7 +2120,7 @@ def test_bound_capability_hook_accepts_leading_hyphen_role_name(tmp_path):
         "[project]\n"
         'id = "demo"\n'
         'name = "Demo"\n'
-        'project_schema_version = "v0.9.0"\n\n'
+        'project_schema_version = "v0.14.0"\nwork_roots = ["product"]\n\n'
         '[roles."-coder"]\n'
         'description = "Implements tasks."\n'
         'grants = ["coder-like"]\n',

@@ -27,6 +27,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Shared contract runs before any underlying agent/version/permission probe.
+$WorkAccessHelper = Join-Path $PSScriptRoot 'CartopianWorkAccess.ps1'
+if (Test-Path -LiteralPath $WorkAccessHelper -PathType Leaf) {
+    & $WorkAccessHelper 'agy' $PromptPath
+} else {
+    throw 'Missing required work-access adapter; reinstall Cartopian'
+}
+
 # --- Status-file helper (early-crash signal for wait-handoff) --------
 # Dot-source the shared helper that emits <report-path>.status on assignee
 # exit. Optional: if the helper is missing, fall back to no-op stubs so the

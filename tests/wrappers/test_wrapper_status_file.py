@@ -61,7 +61,7 @@ def _make_project(tmp_path: Path) -> Path:
     """Scaffold a minimal project with a prompt and return the prompt path."""
     project = tmp_path / "proj"
     (project / "prompts").mkdir(parents=True)
-    (project / "cartopian.toml").write_text(CONFIG_BODY, encoding="utf-8")
+    # Generic wrapper/status tests are outside a configured project.
     prompt = project / "prompts" / "PROMPT-01-007.md"
     prompt.write_text("do the thing\n", encoding="utf-8")
     return prompt

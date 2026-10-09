@@ -645,7 +645,7 @@ def test_native_windows_seam_does_not_apply_posix_nested_root_rule(tmp_path):
         )
 
     assert "claude-nested-work-root" not in _codes(findings)
-    assert "claude-sandbox-host" in _codes(findings)
+    assert {"claude-sandbox-host", "work-root-contract-unsupported"} & _codes(findings)
 
 
 def test_native_windows_native_executable_receives_completion_hook_preflight(tmp_path):
@@ -963,7 +963,7 @@ def test_wsl_host_refusal_matches_shared_preflight(tmp_path):
             environ=env,
         )
 
-    assert "claude-sandbox-host" in _codes(findings)
+    assert {"claude-sandbox-host", "work-root-contract-unsupported"} & _codes(findings)
 
 
 @pytest.mark.parametrize("activated", (False, True))

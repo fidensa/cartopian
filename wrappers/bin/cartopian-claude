@@ -81,6 +81,15 @@ if [[ ! -f "$PROMPT_PATH" ]]; then
   exit 1
 fi
 
+# Shared project work-root contract, before the underlying agent is probed.
+_CARTOPIAN_WORK_ACCESS="${_CARTOPIAN_WRAPPER_DIR}/_cartopian-work-access.sh"
+if [[ -f "$_CARTOPIAN_WORK_ACCESS" ]]; then
+  source "$_CARTOPIAN_WORK_ACCESS" claude "$PROMPT_PATH"
+else
+  echo "cartopian-claude: missing required work-access adapter; reinstall Cartopian" >&2
+  exit 1
+fi
+
 _CARTOPIAN_HOOK_BOUND=false
 if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
   _CARTOPIAN_HOOK_BOUND=true
@@ -210,7 +219,7 @@ if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; t
   _CARTOPIAN_SETTINGS_ARGS=(
     "$_CARTOPIAN_SETTINGS_HELPER"
     --install-root "$_CARTOPIAN_INSTALL_ROOT"
-    --project-dir "$PWD"
+    --project-dir "${CARTOPIAN_PROJECT_ROOT:-$PWD}"
     --platform posix
   )
   [[ -n "${CARTOPIAN_ROLE:-}" ]] && _CARTOPIAN_SETTINGS_ARGS+=(--capability)
@@ -299,7 +308,11 @@ fi
 # Claude 2.1.212+ parses --add-dir as variadic. Keep the positional prompt
 # before every --add-dir occurrence so the final variadic option cannot
 # consume it as another directory.
-CMD+=("$PROMPT_PATH_ABS")
+if [[ -n "${CARTOPIAN_PROJECT_ROOT:-}" && "${CARTOPIAN_LAUNCH_CWD:-}" != "$CARTOPIAN_PROJECT_ROOT" ]]; then
+  CMD+=("Read this authorized handoff file and carry out its task within your configured permissions: $PROMPT_PATH_ABS")
+else
+  CMD+=("$PROMPT_PATH_ABS")
+fi
 
 # Work-root grant: dispatch exports CARTOPIAN_WORK_ROOTS (a colon-joined
 # list of the project's resolved work-root absolute paths). Declared work

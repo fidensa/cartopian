@@ -121,7 +121,9 @@ def _build_work_roots(
     Re-raises ``_CliError`` with ``EXIT_ENV`` (unreadable local config).
     """
     project_table = project_cfg.get("project", {}) or {}
-    names = project_table.get("work_roots", []) or []
+    from cli.config_schema import work_root_names
+
+    names = work_root_names(project_cfg)
     try:
         resolved = _resolve_work_roots(project_cfg, project_root)
     except _CliError as err:

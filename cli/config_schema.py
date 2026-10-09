@@ -1080,10 +1080,21 @@ def _resolve_reviews(
     return result
 
 
+def work_root_names(project_cfg: Mapping[str, Any]) -> list[str]:
+    """Effective protocol names, including the implicit resources work root."""
+    return list((project_cfg.get("project", {}) or {}).get("work_roots") or ["resources"])
+
+
+def default_work_roots(project_root: os.PathLike[str]) -> Dict[str, str]:
+    return {"resources": os.path.join(os.path.realpath(project_root), "resources")}
+
+
 def resolve_configuration(
     global_cfg: Mapping[str, Any],
     project_cfg: Mapping[str, Any],
     local_cfg: Optional[Mapping[str, Any]] = None,
+    *,
+    project_root: Optional[os.PathLike[str]] = None,
 ) -> Dict[str, Any]:
     """Validate, merge, attribute, and emit the canonical resolved record."""
     validate_authored_config(global_cfg, "global")
@@ -1311,6 +1322,22 @@ def resolve_configuration(
             "declaration": "project",
             "mapping": "machine-local",
         }
+    # Schema-only callers have no filesystem binding. Every file-backed
+    # consumer supplies it, including the hook and prospective config writers.
+    if not declared_roots and project_root is not None:
+        resolved_roots.update(default_work_roots(project_root))
+        roots_attribution["resources"] = {
+            "declaration": "protocol-default",
+            "mapping": "protocol-default",
+        }
+    if project_root is not None:
+        from pathlib import Path
+        from cli.work_access import WorkAccessError, validate_supporting_roots
+
+        try:
+            validate_supporting_roots(Path(project_root), resolved_roots)
+        except WorkAccessError as exc:
+            _fail("protected-work-root", "project.work_roots", "project", str(exc), "select-supporting-directory")
 
     return OrderedDict(
         (

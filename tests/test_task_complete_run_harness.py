@@ -529,6 +529,10 @@ class _Harness:
         )
 
         config = _CONFIG.format(stub=self.stub, boundary=boundary)
+        product = self.project_root.parent / "external-product"
+        product.mkdir()
+        config = config.replace("[project]\n", '[project]\nwork_roots = ["tool-repo"]\n', 1)
+        (self.project_root / "cartopian.local.toml").write_text(f'[work_roots]\ntool-repo = "{product}"\n')
         if budget is not None:
             config = config.replace(
                 f'run_boundary = "{boundary}"',

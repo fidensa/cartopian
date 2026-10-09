@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from cli.config_schema import (
     ConfigDiagnostic,
+    default_work_roots,
     resolve_configuration,
 )
 from cli.emit import emit_record
@@ -126,7 +127,7 @@ def resolve_project_configuration(
         project_path / "cartopian.local.toml", "local config"
     ) or {}
     try:
-        record = resolve_configuration(global_cfg, project_cfg, local_cfg)
+        record = resolve_configuration(global_cfg, project_cfg, local_cfg, project_root=project_path)
     except ConfigDiagnostic as exc:
         raise _CliError(EXIT_FAIL, "config", str(exc)) from exc
     record["project_path"] = str(project_path)
@@ -144,7 +145,9 @@ def _resolve_work_roots(
     project_table = project_cfg.get("project", {}) or {}
     names = project_table.get("work_roots", []) or []
     if not names:
-        return {}
+        resolved = default_work_roots(project_path)
+        _validate_work_root_mapping(project_path, resolved)
+        return resolved
     local_path = project_path / "cartopian.local.toml"
     local_cfg: Dict[str, Any] = {}
     if local_path.exists():
@@ -178,7 +181,17 @@ def _resolve_work_roots(
                 ),
             )
         resolved[name] = str(candidate)
+    _validate_work_root_mapping(project_path, resolved)
     return resolved
+
+
+def _validate_work_root_mapping(project_path: Path, roots: Dict[str, str]) -> None:
+    from cli.work_access import WorkAccessError, validate_supporting_roots
+
+    try:
+        validate_supporting_roots(project_path, roots)
+    except WorkAccessError as exc:
+        raise _CliError(EXIT_FAIL, "work-root", str(exc)) from exc
 
 
 _DELIVERABLE_SKIP = {"", "n/a", "none"}
@@ -213,6 +226,8 @@ def _lookup_work_root_path(
     ``None`` as "cannot verify on this machine".
     """
     project_table = project_cfg.get("project", {}) or {}
+    if not project_table.get("work_roots") and name == "resources":
+        return Path(default_work_roots(project_path)["resources"])
     if name not in (project_table.get("work_roots", []) or []):
         return None
     local_path = project_path / "cartopian.local.toml"
@@ -349,7 +364,7 @@ def handler(args: argparse.Namespace) -> int:
         local_cfg = _load_toml(
             project_path / "cartopian.local.toml", "local config"
         ) or {}
-        record = resolve_configuration(global_cfg, project_cfg, local_cfg)
+        record = resolve_configuration(global_cfg, project_cfg, local_cfg, project_root=project_path)
         shipped_schema = read_shipped_project_schema_version()
         schema_gate = classify_project_schema_version(
             record["project_schema_version"], shipped_schema

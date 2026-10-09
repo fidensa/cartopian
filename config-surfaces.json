@@ -125,7 +125,7 @@
       "record_versioning_benefit": "Adds record_schema_version and schema_identity while retaining the authored project_schema_version, so consumers can version the record shape without conflating record, project, release, install, runtime, or wire identities.",
       "max_output_bytes": 2186,
       "typed_input_payload_delta_bytes": 387,
-      "typed_input_payload_note": "Replaces the deliverable-input substring preflight with typed machine-created payload verification: each preflight record's boolean prompt_contains_current_content becomes the bounded prompt_payload state token (bound | missing | duplicate | mismatch | null), and a stable input_payload_audit key carries the whole-prompt payload audit as a bounded projection (ok, problem_count, and a first problem truncated to at most 160 UTF-8 bytes without splitting a character); full problem details go to stderr, never into the machine projection. The fixture-measured delta is 10 bytes (audit key present, null); 387 is the worst case — a non-null audit projection whose capped problem text is all JSON-escaped characters (records are serialized with ensure_ascii=false, so escaping at most doubles the 160-byte cap to 320 serialized bytes), a six-digit problem count, and the longest payload state token — and the ceiling rises by that worst case, preserving the prior headroom.",
+      "typed_input_payload_note": "Replaces the deliverable-input substring preflight with typed machine-created payload verification: each preflight record's boolean prompt_contains_current_content becomes the bounded prompt_payload state token (bound | missing | duplicate | mismatch | null), and a stable input_payload_audit key carries the whole-prompt payload audit as a bounded projection (ok, problem_count, and a first problem truncated to at most 160 UTF-8 bytes without splitting a character); full problem details go to stderr, never into the machine projection. The fixture-measured delta is 10 bytes (audit key present, null); 387 is the worst case \u2014 a non-null audit projection whose capped problem text is all JSON-escaped characters (records are serialized with ensure_ascii=false, so escaping at most doubles the 160-byte cap to 320 serialized bytes), a six-digit problem count, and the longest payload state token \u2014 and the ceiling rises by that worst case, preserving the prior headroom.",
       "request_trace_channel_delta_bytes": 7,
       "request_trace_channel_note": "Adds one bounded request-trace projection for review handoffs.",
       "split_report_delta_bytes": 104,
@@ -886,6 +886,26 @@
         "neutral client argv and environment translation"
       ],
       "test_anchor": "tests/test_config_surface_parity.py::TestWrapperNeutrality",
+      "legacy_policy": "forbidden"
+    },
+    {
+      "id": "project-work-access-probe",
+      "paths": [
+        "cli/work_access.py",
+        "scripts/probe_project_work_access.py",
+        "tests/test_project_work_access.py",
+        "wrappers/PROJECT-WORK-ACCESS.md"
+      ],
+      "owner_contract": "cli/work_access.py::effective_access",
+      "mode": "parity-validated",
+      "facts_consumed": [
+        "project.work_roots",
+        "roles.*.grants"
+      ],
+      "output_projection": [
+        "filesystem access contract and native enforcement evidence"
+      ],
+      "test_anchor": "tests/test_project_work_access.py",
       "legacy_policy": "forbidden"
     }
   ]

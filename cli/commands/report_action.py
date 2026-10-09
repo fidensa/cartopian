@@ -399,14 +399,28 @@ def _find_expected_task_path(project_root: Path, task_id: str) -> Optional[Path]
     return None
 
 
-def _task_declares_work_roots(task_content: Optional[str]) -> bool:
+def _task_declares_work_roots(task_content: Optional[str], project_root: Optional[Path] = None) -> bool:
     if task_content is None:
         return False
     match = re.search(r"^Work root:\s*(.+)$", task_content, re.MULTILINE)
     if not match:
         return False
-    raw = match.group(1).strip().lower()
-    return raw not in {"", "n/a", "none"}
+    raw = match.group(1).strip()
+    if raw.lower() in {"", "n/a", "none"}:
+        return False
+    if project_root is not None:
+        from cli.commands.resolve_config import _resolve_work_roots
+        from cli.work_access import contained_roots
+
+        try:
+            config = _load_toml(project_root / "cartopian.toml", "project config") or {}
+            roots = _resolve_work_roots(config, project_root)
+            names = [name.strip() for name in raw.split(",")]
+            if all(name in roots for name in names):
+                return any(not contained_roots(project_root, {name: roots[name]}) for name in names)
+        except _CliError:
+            pass  # Preserve the conservative PR gate for unresolved roots.
+    return True
 
 
 def _expected_paths(
@@ -958,7 +972,7 @@ def handler(args: argparse.Namespace) -> int:
     # content is consulted.
     requires_pr_step = False
     if verdict != "failed-to-parse" and expected_task_path is not None:
-        if _resolve_pm_owns_product_branches(project_root) and _task_declares_work_roots(expected_task_content):
+        if _resolve_pm_owns_product_branches(project_root) and _task_declares_work_roots(expected_task_content, project_root):
             if variant == "task":
                 requires_pr_step = verdict == "accepted" and ready_for_review is True
             else:

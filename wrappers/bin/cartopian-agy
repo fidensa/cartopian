@@ -69,6 +69,15 @@ if [[ ! -f "$PROMPT_PATH" ]]; then
   exit 1
 fi
 
+# Shared project work-root contract, before the underlying agent is probed.
+_CARTOPIAN_WORK_ACCESS="${_CARTOPIAN_WRAPPER_DIR}/_cartopian-work-access.sh"
+if [[ -f "$_CARTOPIAN_WORK_ACCESS" ]]; then
+  source "$_CARTOPIAN_WORK_ACCESS" agy "$PROMPT_PATH"
+else
+  echo "cartopian-agy: missing required work-access adapter; reinstall Cartopian" >&2
+  exit 1
+fi
+
 if ! command -v agy &>/dev/null; then
   echo "cartopian-agy: error: 'agy' not found in PATH" >&2
   echo "Install: https://antigravity.google/docs/cli/install" >&2

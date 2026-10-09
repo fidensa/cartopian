@@ -12,7 +12,7 @@ Status: <complete | blocked | failed>
 
 - Work root: <name | name, name | n/a>
 
-The `Work root:` value carries names only — the same names declared in the prompt's `Work root:` field, drawn from `[project].work_roots`. The PM resolves names to absolute paths via `cartopian resolve-config` when it needs them. Write the report to the report path you were given; Cartopian links it back to its task by that filename — you do not record any identifier here.
+The `Work root:` value carries names only — the same names declared in the prompt's `Work root:` field, drawn from the effective configured roots, or `resources` by default. The PM resolves names to absolute paths via `cartopian resolve-config` when it needs them. Write the report to the report path you were given; Cartopian links it back to its task by that filename — you do not record any identifier here.
 
 ## Completion evidence
 

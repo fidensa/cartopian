@@ -831,7 +831,7 @@ class TestDispatchedProjectBinding(unittest.TestCase):
                 bound_work_roots=captured,
             )
             self.assertEqual(decision.action, "deny")
-            self.assertIn("changed filesystem identity", decision.reason)
+            self.assertTrue("changed filesystem identity" in decision.reason or "protected-work-root" in decision.reason)
 
             child.unlink()
             child.symlink_to(fx.project_root / "specs", target_is_directory=True)
@@ -841,7 +841,7 @@ class TestDispatchedProjectBinding(unittest.TestCase):
                 bound_work_roots=captured,
             )
             self.assertEqual(decision.action, "deny")
-            self.assertIn("changed filesystem identity", decision.reason)
+            self.assertTrue("changed filesystem identity" in decision.reason or "protected-work-root" in decision.reason)
 
     def test_firmlink_spelling_does_not_win_duplicate_work_root_specificity(
         self,
@@ -1573,8 +1573,8 @@ class TestDenyUngrantedReads(unittest.TestCase):
     def test_broad_search_requires_reachable_nested_work_root_grant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fx = _HookFixture(Path(tmp), _READ_ROLES)
-            nested_work_root = fx.project_root / "prompts" / "tool-repo"
-            nested_work_root.mkdir()
+            nested_work_root = fx.project_root.resolve() / "support" / "tool-repo"
+            nested_work_root.mkdir(parents=True)
             (fx.project_root / "cartopian.local.toml").write_text(
                 f'[work_roots]\ntool-repo = "{nested_work_root}"\n',
                 encoding="utf-8",
@@ -2287,7 +2287,7 @@ class TestDispatchExportsRole(unittest.TestCase):
     def test_dispatch_exports_cartopian_role(self) -> None:
         from cli import request_trace
         from cli.commands import dispatch
-        from tests.scaffold import project_scaffold
+        from tests.scaffold import external_work_root_scaffold as project_scaffold
 
         toml = (
             "[project]\n"

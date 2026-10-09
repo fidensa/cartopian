@@ -423,6 +423,10 @@ def _claude_process_evidence(project_path: Path) -> Dict[str, Any]:
         for role_name in role_names:
             probe_environ = dict(base_probe_environ)
             probe_environ["CARTOPIAN_ROLE"] = role_name
+            from cli.work_access import effective_access
+
+            access = effective_access(project_path, _work_roots, resolution.grants_for((role_name,)), activated=resolution.activated)
+            probe_environ["CARTOPIAN_LAUNCH_CWD"] = access.launch_cwd
             settings = module.build_settings(
                 root,
                 windows=_running_on_windows(),
@@ -449,6 +453,10 @@ def _claude_process_evidence(project_path: Path) -> Dict[str, Any]:
             ),
         )
         evidence["claude_version"] = ".".join(map(str, version))
+        from cli.work_access import contained_roots
+
+        if contained_roots(project_path, _work_roots) and version < module.CLAUDE_PROJECT_WORK_MIN_VERSION:
+            raise module.SettingsError("project-contained work roots require Claude Code 2.1.295 or newer")
         evidence["claude_version_supported"] = True
     except Exception as exc:
         evidence["detail"] = f"settings helper probe failed: {exc}"
@@ -546,6 +554,12 @@ def _claude_process_evidence(project_path: Path) -> Dict[str, Any]:
                 )
             ),
         }
+        from cli.work_access import effective_access
+
+        access = effective_access(project_path, _work_roots, resolution.grants_for((_role,)), activated=resolution.activated)
+        if access.writable:
+            required_denies.discard(os.path.abspath(project_path))
+            required_denies.update(os.path.join(path, ".cartopian-work-root-boundary") for path in access.writable)
         network = sandbox.get("network") if isinstance(sandbox, dict) else None
         shell_policies.append(
             bool(
@@ -796,6 +810,27 @@ def handler(args: argparse.Namespace) -> int:
                         + "; their shell commands can reach host daemons."
                     )
         hosts.append(row)
+        from cli.work_access import adapter_problem, effective_access
+
+        adapter = {"claude-code": "claude", "codex-cli": "codex", "antigravity-tui": "agy"}.get(host, host)
+        role_access = {}
+        for name, role in resolved["roles"].items():
+            access = effective_access(project_path, resolved["work_roots"], role["effective_grants"], activated=activated)
+            if access.contained:
+                problem = adapter_problem(adapter, "win32" if _running_on_windows() else sys.platform, access, activated=activated)
+                if host == "claude-code" and (role.get("sandbox") or {}).get("allow_unix_sockets"):
+                    problem = "project-contained work roots refuse allow_unix_sockets=true"
+                if host == "claude-code" and not problem:
+                    from cli.claude_launch_settings import CLAUDE_PROJECT_WORK_MIN_VERSION, parse_claude_version
+
+                    version = parse_claude_version((evidence_detail or {}).get("claude_version") or "")
+                    if version is not None and version < CLAUDE_PROJECT_WORK_MIN_VERSION:
+                        problem = "project-contained work roots require Claude Code 2.1.295 or newer"
+                verified = bool((evidence_detail or {}).get("claude_version_supported"))
+                status = "refused" if problem else "configured-unattested" if verified else "unverified"
+                role_access[name] = {"status": status, "readable": list(access.readable), "writable": list(access.writable), "cwd": access.launch_cwd, "detail": problem or (evidence_detail or {}).get("detail")}
+        if role_access:
+            row["project_work_access"] = role_access
 
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,

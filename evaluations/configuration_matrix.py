@@ -319,12 +319,15 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
                 "reports",
             ):
                 (project / relative).mkdir(parents=True, exist_ok=True)
+            product = fixture / (name + "-product")
+            product.mkdir()
+            (project / "cartopian.local.toml").write_text(f'[work_roots]\nproduct = "{product}"\n')
             activities = 'auto_launch = ["task_run"]\n' if auto_launch else ""
             (project / "cartopian.toml").write_text(
                 "[project]\n"
                 f'id = "{name}"\n'
                 f'name = "{name}"\n'
-                f'project_schema_version = "{shipped}"\n\n'
+                f'project_schema_version = "{shipped}"\nwork_roots = ["product"]\n\n'
                 "[roles.coder]\n"
                 'description = "Implements assigned work."\n'
                 f"{activities}"
@@ -460,14 +463,14 @@ def _launch_separation(_case: dict[str, Any]) -> dict[str, Any]:
             tomllib.loads(
                 (permitted_project / "cartopian.toml").read_text(encoding="utf-8")
             ),
-            {},
+            tomllib.loads((permitted_project / "cartopian.local.toml").read_text()),
         )
         resolved_without_permission = resolve_configuration(
             {},
             tomllib.loads(
                 (denied_project / "cartopian.toml").read_text(encoding="utf-8")
             ),
-            {},
+            tomllib.loads((denied_project / "cartopian.local.toml").read_text()),
         )
         role = resolved["roles"]["coder"]
         selected_with = selection_records["with_permission"]["next_open_task"]

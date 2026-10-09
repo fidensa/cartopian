@@ -287,7 +287,7 @@ class TestHandoffPacketNoPlanState(unittest.TestCase):
             self.assertIsNone(rec["launch"]["effort"])
             self.assertEqual(rec["auto_launch"], [])
             self.assertIsNone(rec["launch"]["timeout"])
-            self.assertEqual(rec["work_roots"], [])
+            self.assertEqual(rec["work_roots"], [{"name": "resources", "absolute_path": str((scaffold.project_root / "resources").resolve())}])
             self.assertFalse(rec["git_versioning"])
             self.assertIsNone(rec["git_policy"])
             # Automation policy is always populated from protocol defaults.

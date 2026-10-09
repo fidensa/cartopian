@@ -1,5 +1,8 @@
 # Capabilities
 
+Project-contained work roots use the shared contract in `cli/work_access.py`. Omitted/empty project roots select `resources/`; configured names replace that default. Selection grants no permissions. Explicit `read:work-roots` permits input reads; both it and `write:worktree` authorize sandboxed filesystem mutations and child processes. Only Claude on native macOS (2.1.295+) currently enforces this contract. All other shipped adapters/platforms, including PowerShell on Windows, refuse before launch. No bypass or unsandboxed fallback is allowed. Governance, report publication, Git, other projects, runtime and host boundaries remain protected. See [configuration, enforcement and native evidence](wrappers/PROJECT-WORK-ACCESS.md).
+
+
 Capability-based access grants for Cartopian-governed projects. Roles are user-named bundles of grants declared in `[roles.<name>]` tables in `cartopian.toml` (`grants = [...]`); enforcement keys on grants only — never on role names or prose role descriptions. **The vocabulary is closed and append-only**: names may be added in later protocol versions but are never renamed or removed, and unknown names are never silently accepted.
 
 Review assignment is a separate concern. `[reviews].planning_role` and `[reviews].task_role` may point to any defined role name. The conventional `reviewer` label, a review-oriented description, and the `reviewer-like` preset do not by themselves assign that role to a review checkpoint. Conversely, assigning a role in `[reviews]` does not grant access. When containment is active, the operator must grant that role the capabilities its handoff needs.
@@ -25,7 +28,7 @@ Write/act grants:
 ## Activation
 
 - **Activation rule:** the first role in the resolved config that declares a `grants` key activates containment project-wide, all-or-nothing — there is no per-role mix of gated and ungated.
-- **Ungated mode:** no role in the resolved config declares grants — gating is inactive and every session behaves as if all read and write grants were held (configs that predate the vocabulary work unchanged).
+- **Ungated mode:** no role in the resolved config declares grants — gating is inactive and every session behaves as if all read and write grants were held for legacy surfaces and external roots. Contained-root launches require activation and explicit grants and refuse this compatibility mode.
 - **Activated mode:** resolution fails closed — a role with an unknown capability name, an explicitly empty grant list, or no declared grant set holds no grants (a typo never widens access); a session holding several roles gets the union of their grants.
 
 ## Presets

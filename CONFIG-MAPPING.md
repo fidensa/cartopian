@@ -101,7 +101,7 @@ writable_paths = ["~/go/pkg/mod", "~/Library/Caches/go-build"]
 
 ### What a role may access
 
-`grants` is optional. With no role declaring it, every session behaves as though it holds everything. The moment any role declares `grants`, containment turns on for the whole project and every role is limited to what it lists. A typo never widens access, since an unknown name is refused outright. `CAPABILITIES.md` covers enforcement in detail.
+`grants` is optional. For legacy surfaces and external roots, no role declaring it retains the ungated compatibility behavior. Project-contained roots (including default `resources/`) require activation and explicit grants; their wrappers refuse ungated launches. The moment any role declares `grants`, containment turns on for the whole project and every role is limited to what it lists. A typo never widens access, since an unknown name is refused outright. `CAPABILITIES.md` covers enforcement in detail.
 
 Individual capabilities:
 
@@ -213,7 +213,7 @@ The resolved `git` record is empty while Git versioning is off. These settings g
 
 ## Work roots
 
-A work root is a folder outside the project that the work actually touches, such as a product repository or a design folder. The project file declares the names. The machine-local file supplies the paths, so teammates on different machines share one committed project file.
+A work root holds content defined by the project. It may be an external repository or a supporting folder inside the project. If `project.work_roots` is omitted or empty, `resources` resolves to `<project-root>/resources` without a local mapping. Otherwise the project file declares the names and the machine-local file maps every name; no extra default root is added. Selecting a folder does not grant access.
 
 | Field | Accepted values | Which file |
 | --- | --- | --- |
@@ -235,6 +235,27 @@ product = "/absolute/path/to/product"
 ```
 
 A mapping with no matching declaration, a declaration with no mapping, and a relative path are all refused. Generated documents and tool output never copy a machine-local path unless the step genuinely needs the resolved location.
+
+For a configured subtree in this example project:
+
+```toml
+# cartopian.toml (add to the existing project and role tables)
+[project]
+work_roots = ["support"]
+
+[roles.worker]
+description = "Builds project content"
+grants = ["read:prompts", "read:work-roots", "write:worktree", "write:reports"]
+agent = "cartopian-claude"
+```
+
+```toml
+# cartopian.local.toml
+[work_roots]
+support = "/absolute/project/resources/spikes/packaging-comparison"
+```
+
+Create the directory before dispatch. Contained mappings must be canonical direct directories under `resources/` or a supporting sibling, disjoint from governance and other contained roots. `coder-like` includes both required grants; explicit `grants = []` gives no access. Existing launch permissions remain separate. Rehearsal and every shipped wrapper refuse unsupported adapters/platforms before starting the CLI. Contained roots currently require native macOS and Claude Code 2.1.295 or newer; Windows PowerShell uses the same contract and refuses until an enforceable backend is available. External-root behavior is unchanged. See [work-root enforcement and evidence](wrappers/PROJECT-WORK-ACCESS.md).
 
 ## Creating and changing configuration
 

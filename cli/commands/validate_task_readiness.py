@@ -379,7 +379,9 @@ def _check_work_root(
             "pass": False,
             "reason": err.message,
         }
-    declared = (project_cfg.get("project", {}) or {}).get("work_roots", []) or []
+    from cli.config_schema import work_root_names
+
+    declared = work_root_names(project_cfg)
 
     try:
         _resolve_work_roots(project_cfg, project_root)
@@ -459,7 +461,9 @@ def _check_deliverable(
         project_cfg = _load_toml(project_root / "cartopian.toml", "project config") or {}
     except _CliError as err:
         return {"name": "deliverable-valid", "pass": False, "reason": err.message}
-    declared = (project_cfg.get("project", {}) or {}).get("work_roots", []) or []
+    from cli.config_schema import work_root_names
+
+    declared = work_root_names(project_cfg)
     if root not in declared:
         return {
             "name": "deliverable-valid",
