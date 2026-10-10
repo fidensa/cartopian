@@ -16,7 +16,9 @@ MCP) is configured to launch ``cartopian-mcp``, the operator can say
   prefixes verbatim so the error contract is preserved.
 - Resources — ``cartopian://skills/<name>``, ``cartopian://protocol/<name>``
   (plus narrower ``cartopian://protocol/<name>/<section-slug>`` per-H2-section
-  reads and the curated ``cartopian://protocol/CONVENTIONS/startup`` slice),
+  reads and the curated ``cartopian://protocol/CONVENTIONS/startup`` slice;
+  CONVENTIONS' whole-file URI serves a section index and ``.../full`` the
+  complete text),
   ``cartopian://templates/<name>``, and ``cartopian://project/<id>/<file>``
   for registered projects.
 
@@ -1257,7 +1259,7 @@ def call_tool(
 # Resource surface
 # ---------------------------------------------------------------------------
 
-# --- Section-scoped protocol resources (additive; whole-file URIs unchanged) -
+# --- Section-scoped protocol resources --------------------------------------
 #
 # `cartopian://protocol/<doc>/<section-slug>` reads one H2 section of an
 # allowlisted protocol doc, `cartopian://protocol/<doc>/<section-slug>/<sub-slug>`
@@ -1265,8 +1267,9 @@ def call_tool(
 # reads the prose between the H2 heading and its first H3), and
 # `cartopian://protocol/CONVENTIONS/startup` reads a curated startup slice, so
 # the PM can load only the slice of CONVENTIONS.md a given moment needs instead
-# of the whole file. The full `cartopian://protocol/<doc>` resources remain
-# available and authoritative.
+# of the whole file. Whole-file `cartopian://protocol/<doc>` reads are
+# unchanged except for INDEXED_DOCS, whose whole-file URI serves a section
+# index and whose `.../full` URI serves the complete, authoritative text.
 
 # H2 heading line in a protocol markdown doc (H3+ stays inside its parent H2).
 _H2_RE = re.compile(r"^## (.+?)\s*$")
@@ -1277,6 +1280,17 @@ _H3_RE = re.compile(r"^### (.+?)\s*$")
 # Reserved slug for the curated startup slice of CONVENTIONS.md. No H2 in the
 # doc slugifies to a bare "startup", so the reservation cannot shadow a section.
 STARTUP_SLUG = "startup"
+
+# Protocol docs too large to return whole through a host's tool-result limit.
+# Reading `cartopian://protocol/<doc>` for one of these serves a section index
+# (each section's URI, size, and sub-slices) instead of the body, so an eager
+# whole-file read lands on a map rather than failing or spilling to a file.
+# The complete text stays one deliberate read away at `.../<doc>/full`.
+INDEXED_DOCS = frozenset({"CONVENTIONS"})
+
+# Reserved slug serving an indexed doc's complete text. No H2 in an indexed doc
+# may slugify to "full"; `_protocol_index` fails closed if one ever does.
+FULL_SLUG = "full"
 
 # Reserved sub-slug serving an H2 section's preamble: the prose between the
 # `## ` heading and its first `### ` subsection, which would otherwise be
@@ -1316,7 +1330,8 @@ STARTUP_PREAMBLE = (
     "rules beyond this slice (task movement guards, handoffs, reviews, plan "
     "lifecycle, git), read the relevant section via "
     "`cartopian://protocol/CONVENTIONS/<section-slug>` (H2 title lowercased, "
-    "spaces as hyphens — e.g. `lifecycle-cli-guards`) or the full document.\n"
+    "spaces as hyphens — e.g. `lifecycle-cli-guards`); "
+    "`cartopian://protocol/CONVENTIONS` lists every section with its size.\n"
 )
 
 
@@ -1434,6 +1449,54 @@ def _startup_slice_text(sections: Dict[str, Tuple[str, str]], uri: str) -> str:
     return "\n".join(parts)
 
 
+def _protocol_index(doc: str, text: str, uri: str) -> str:
+    """Section index served for a whole-file read of an indexed protocol doc.
+
+    Carries the doc's own lead (title and opening prose, before the first H2)
+    so the reader still gets its framing, then one line per H2 with its URI,
+    UTF-8 size, and addressable sub-slices.
+    """
+    sections = _split_h2_sections(text)
+    if FULL_SLUG in sections:
+        # A real section would be shadowed by the reserved slug; refuse rather
+        # than silently hide it.
+        raise McpError(ERR_INTERNAL, f"protocol section collides with reserved slug '{FULL_SLUG}': {uri}")
+    lead_lines: List[str] = []
+    for line in text.splitlines():
+        if _H2_RE.match(line):
+            break
+        lead_lines.append(line)
+    base = f"{URI_SCHEME}://protocol/{doc}"
+    total = len(text.encode("utf-8"))
+    lines = [
+        "\n".join(lead_lines).rstrip(),
+        "",
+        "## Section index",
+        "",
+        f"This is the section index of `protocol/{doc}.md` ({total} B), not its "
+        "text. Read only the sections the current action needs, at "
+        f"`{base}/<section-slug>`, or one subsection at "
+        f"`{base}/<section-slug>/<sub-slug>`. The complete document is "
+        f"`{base}/{FULL_SLUG}`; it exceeds most hosts' tool-result limits, so "
+        "read it whole only when a section read cannot answer the question.",
+        "",
+    ]
+    if doc == "CONVENTIONS":
+        lines.append(
+            f"- `{base}/{STARTUP_SLUG}` — curated startup slice "
+            f"({len(_startup_slice_text(sections, uri).encode('utf-8'))} B)"
+        )
+    for slug, (heading, body) in sections.items():
+        entry = f"- `{base}/{slug}` — {heading} ({len(body.encode('utf-8'))} B)"
+        sub_slugs = list(_split_h3_sections(body))
+        if sub_slugs:
+            if PREAMBLE_SLUG not in sub_slugs and _h3_preamble(body) is not None:
+                sub_slugs.insert(0, PREAMBLE_SLUG)
+            entry += "; sub-slices: " + ", ".join(sub_slugs)
+        lines.append(entry)
+    return "\n".join(lines) + "\n"
+
+
 def _read_protocol_section(
     doc: str, slug: str, uri: str, subslug: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -1456,6 +1519,16 @@ def _read_protocol_section(
         text = resolved.read_text(encoding="utf-8")
     except OSError:
         raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+    if doc in INDEXED_DOCS and slug == FULL_SLUG:
+        if subslug is not None:
+            raise McpError(ERR_INVALID_PARAMS, f"unknown protocol section: {uri}")
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "text/markdown",
+                "text": text,
+            }]
+        }
     sections = _split_h2_sections(text)
     if doc == "CONVENTIONS" and slug == STARTUP_SLUG:
         if subslug is not None:
@@ -1528,12 +1601,32 @@ def list_resources() -> List[Dict[str, Any]]:
     protocol_dir = ROOT / "protocol"
     if protocol_dir.is_dir():
         for path in sorted(protocol_dir.glob("*.md")):
-            resources.append({
-                "uri": f"{URI_SCHEME}://protocol/{path.stem}",
-                "name": f"protocol: {path.stem}",
-                "description": _first_line_summary(path),
-                "mimeType": "text/markdown",
-            })
+            if path.stem in INDEXED_DOCS:
+                resources.append({
+                    "uri": f"{URI_SCHEME}://protocol/{path.stem}",
+                    "name": f"protocol: {path.stem} § section index",
+                    "description": (
+                        f"Section index of {path.stem}.md: every section's URI "
+                        "and size. Read sections, not the whole file."
+                    ),
+                    "mimeType": "text/markdown",
+                })
+                resources.append({
+                    "uri": f"{URI_SCHEME}://protocol/{path.stem}/{FULL_SLUG}",
+                    "name": f"protocol: {path.stem} (complete)",
+                    "description": (
+                        f"Complete {path.stem}.md; larger than most hosts' "
+                        "tool-result limits."
+                    ),
+                    "mimeType": "text/markdown",
+                })
+            else:
+                resources.append({
+                    "uri": f"{URI_SCHEME}://protocol/{path.stem}",
+                    "name": f"protocol: {path.stem}",
+                    "description": _first_line_summary(path),
+                    "mimeType": "text/markdown",
+                })
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
@@ -1639,6 +1732,18 @@ def read_resource(uri: str) -> Dict[str, Any]:
             raise McpError(ERR_INVALID_PARAMS, f"invalid protocol name: {uri}")
         candidate = ROOT / "protocol" / f"{tail[0]}.md"
         resolved_path = _bounded_path(candidate, ROOT / "protocol")
+        if resolved_path is not None and tail[0] in INDEXED_DOCS:
+            try:
+                text = resolved_path.read_text(encoding="utf-8")
+            except OSError:
+                raise McpError(ERR_INTERNAL, f"cannot read resource: {uri}")
+            return {
+                "contents": [{
+                    "uri": uri,
+                    "mimeType": "text/markdown",
+                    "text": _protocol_index(tail[0], text, uri),
+                }]
+            }
     elif namespace == "templates":
         if not _safe_segment(tail[0]):
             raise McpError(ERR_INVALID_PARAMS, f"invalid template name: {uri}")

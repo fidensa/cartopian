@@ -704,7 +704,12 @@ applicable phase and prior-review artifacts. Later lifecycle outputs do not
 retroactively alter that snapshot; regenerating a review prompt takes a new
 snapshot. Any selected-source mutation or prompt omission makes the binding
 stale. Exact content carries no byte ceiling and is never truncated: an
-excerpt is bound by SHA-256 content identity, never by size.
+excerpt is bound by SHA-256 content identity, never by size. With `--prompt`
+the command is a binding preflight and emits a compact record: the verdict
+and every identity stay, each bulky body is replaced by its byte size, and
+`omitted_fields` names what was dropped. `--full` emits the complete
+projection; without `--prompt` it is always complete. Compaction changes only
+what the command prints, never what the prompt binds.
 
 `cartopian lookup-evidence ... --recent` adds the last five captured
 operator turns as identity rows: capture identity, session handle, receipt

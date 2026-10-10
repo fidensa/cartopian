@@ -952,7 +952,7 @@ class TestProtocolSectionResources(unittest.TestCase):
         )
 
     def test_startup_slice_reads_and_is_smaller_than_full_doc(self):
-        full = self._read("cartopian://protocol/CONVENTIONS")
+        full = self._read("cartopian://protocol/CONVENTIONS/full")
         startup = self._read("cartopian://protocol/CONVENTIONS/startup")
         self.assertNotIn("error", startup)
         text = startup["result"]["contents"][0]["text"]
@@ -1044,10 +1044,48 @@ class TestProtocolSectionResources(unittest.TestCase):
         ):
             self.assertIn(sub_slug, handoffs["description"])
 
-    def test_whole_file_read_is_unchanged_by_section_surface(self):
-        response = self._read("cartopian://protocol/CONVENTIONS")
+    def test_full_slug_serves_the_complete_document(self):
+        response = self._read("cartopian://protocol/CONVENTIONS/full")
         text = response["result"]["contents"][0]["text"]
         self.assertEqual(text, self.CONVENTIONS.read_text(encoding="utf-8"))
+        nested = self._read("cartopian://protocol/CONVENTIONS/full/naming")
+        self.assertEqual(nested["error"]["code"], server.ERR_INVALID_PARAMS)
+
+    def test_whole_file_read_serves_a_section_index(self):
+        # The whole document exceeds hosts' tool-result limits, so an eager
+        # whole-file read lands on a map of addressable sections instead.
+        source = self.CONVENTIONS.read_text(encoding="utf-8")
+        response = self._read("cartopian://protocol/CONVENTIONS")
+        self.assertNotIn("error", response)
+        text = response["result"]["contents"][0]["text"]
+        self.assertLess(len(text.encode("utf-8")), 8000)
+        self.assertTrue(text.startswith(source.splitlines()[0] + "\n"))
+        self.assertIn("cartopian://protocol/CONVENTIONS/full", text)
+        self.assertIn("cartopian://protocol/CONVENTIONS/startup", text)
+        # Every H2 section is listed, by URI, with the size of what it serves.
+        for slug, (heading, body) in server._split_h2_sections(source).items():
+            self.assertNotEqual(slug, server.FULL_SLUG)
+            line = (
+                f"- `cartopian://protocol/CONVENTIONS/{slug}` — {heading} "
+                f"({len(body.encode('utf-8'))} B)"
+            )
+            self.assertIn(line, text)
+            served = self._read(f"cartopian://protocol/CONVENTIONS/{slug}")
+            self.assertEqual(served["result"]["contents"][0]["text"], body)
+        handoffs = next(line for line in text.splitlines() if "/CONVENTIONS/handoffs`" in line)
+        self.assertIn("sub-slices: preamble", handoffs)
+
+    def test_listing_names_the_index_and_the_complete_document(self):
+        response = single("resources/list")
+        by_uri = {r["uri"]: r for r in response["result"]["resources"]}
+        self.assertIn("section index", by_uri["cartopian://protocol/CONVENTIONS"]["name"])
+        self.assertIn("cartopian://protocol/CONVENTIONS/full", by_uri)
+        # Unindexed protocol docs keep their whole-file read.
+        delivery = self._read("cartopian://protocol/DELIVERY")
+        self.assertEqual(
+            delivery["result"]["contents"][0]["text"],
+            (self.CONVENTIONS.parent / "DELIVERY.md").read_text(encoding="utf-8"),
+        )
 
     def test_unknown_section_returns_invalid_params(self):
         response = self._read("cartopian://protocol/CONVENTIONS/does-not-exist")

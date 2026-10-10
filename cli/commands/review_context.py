@@ -1,7 +1,17 @@
-"""Read-only projection of verbatim intake and PM-derived review channels."""
+"""Read-only projection of verbatim intake and PM-derived review channels.
+
+With ``--prompt`` the command is a binding preflight: its caller needs the
+verdict and the identities it was computed from, not the bound content. That
+mode therefore emits a compact record by default -- each bulky body replaced
+by its byte size, with ``omitted_fields`` naming what was dropped -- and
+``--full`` restores the complete projection. Without ``--prompt`` the full
+projection is the point of the call and is always emitted. Prompt generation,
+dispatch, and audit compute the context in process and never read this
+output, so compaction changes no binding.
+"""
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from cli import acceptance_trace, contract_review, decision_neighbors, delivery_contract, trace_binding
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
@@ -23,6 +33,59 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--phase", default=None, help="Optional PHASE-NN target metadata")
     parser.add_argument("--plan-ref", default=None, help="Optional KIND-NN-NNN target metadata")
     parser.add_argument("--prompt", default=None, help="Absolute review prompt path for binding preflight")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="With --prompt, emit the complete projection instead of the compact preflight record",
+    )
+
+
+def _utf8_bytes(value: Any) -> int:
+    return len(value.encode("utf-8")) if isinstance(value, str) else 0
+
+
+def _compact(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace each bulky body with its size; identities and verdicts stay.
+
+    Every dropped field is named in ``omitted_fields`` so a reader knows the
+    record is partial and which ``--full`` field to ask for.
+    """
+    omitted: List[str] = []
+    trace = record.get("request_trace")
+    if isinstance(trace, dict) and isinstance(trace.get("records"), list):
+        slim = []
+        for item in trace["records"]:
+            if not isinstance(item, dict):
+                slim.append(item)
+                continue
+            kept = {key: value for key, value in item.items() if key not in ("text", "context", "source")}
+            kept["text_bytes"] = _utf8_bytes(item.get("text"))
+            slim.append(kept)
+        record["request_trace"] = {**trace, "records": slim}
+        omitted.append("request_trace.records[].text/context/source")
+    upstream = record.get("upstream_trace")
+    projection = upstream.get("reviewer_projection") if isinstance(upstream, dict) else None
+    if isinstance(projection, dict) and "body" in projection:
+        record["upstream_trace"] = {
+            **upstream,
+            "reviewer_projection": {key: value for key, value in projection.items() if key != "body"},
+        }
+        omitted.append("upstream_trace.reviewer_projection.body")
+    delivery = record.get("delivery_contract")
+    if isinstance(delivery, dict) and isinstance(delivery.get("section"), str):
+        kept = {key: value for key, value in delivery.items() if key != "section"}
+        kept["section_bytes"] = _utf8_bytes(delivery["section"])
+        record["delivery_contract"] = kept
+        omitted.append("delivery_contract.section")
+    proximity = record.get("decision_proximity")
+    if isinstance(proximity, dict) and isinstance(proximity.get("pairs"), list):
+        kept = {key: value for key, value in proximity.items() if key != "pairs"}
+        kept["pair_count"] = len(proximity["pairs"])
+        record["decision_proximity"] = kept
+        omitted.append("decision_proximity.pairs")
+    record["projection"] = "compact"
+    record["omitted_fields"] = omitted
+    return record
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -138,6 +201,10 @@ def handler(args: argparse.Namespace) -> int:
             **preflight_prompt_binding(context, prompt_text or ""),
             "prompt_path": str(prompt),
         }
+    if prompt is not None and not getattr(args, "full", False):
+        record = _compact(record)
+    else:
+        record["projection"] = "full"
     emit_record(record)
     if record["preflight"] is not None and not record["preflight"]["ok"]:
         stderr_guard(f"{record['preflight']['rule']}: {record['preflight']['detail']}")
