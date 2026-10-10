@@ -145,7 +145,7 @@ def validate_boundary(access: WorkAccess, environ: Mapping[str, str]) -> None:
 
 
 def profile(access: WorkAccess, scratch: Path | None = None, proxy_port: int | None = None,
-            *, local_listener: bool = False) -> str:
+            *, local_listener: bool = False, pseudo_terminal: bool = False) -> str:
     rules = [
         "(version 1)", "(deny default)", "(allow process-exec)", "(allow process-fork)",
         "(allow process-info* (target same-sandbox))", "(allow signal (target same-sandbox))",
@@ -173,6 +173,15 @@ def profile(access: WorkAccess, scratch: Path | None = None, proxy_port: int | N
     if local_listener:
         # A runtime listener does not grant outbound access to host services.
         rules.append('(allow network-bind network-inbound (local tcp "localhost:*"))')
+    if pseudo_terminal:
+        # agy's terminal tool uses openpty(). Only PTYs created in this sandbox
+        # carry its pty extension; never grant writes/ioctls to host terminals.
+        rules.extend((
+            '(allow pseudo-tty)',
+            '(allow file-read* file-write* file-ioctl (literal "/dev/ptmx"))',
+            '(allow file-read* file-write* file-ioctl (require-all '
+            '(regex #"^/dev/ttys[0-9]+$") (extension "com.apple.sandbox.pty")))',
+        ))
     writable = (*access.backend_writable, *((str(scratch),) if scratch else ()))
     # APFS commonly ignores case. Match variant spellings of enforcement
     # directories as well as their ordinary lowercase names.
@@ -270,6 +279,57 @@ def publish(access: WorkAccess, directory: Path, slots: dict[str, tuple[str, str
             mediated_write(access.project, kind, name, content)
 
 
+def seed_agy_session(home: Path, host_home: Path) -> None:
+    """Bridge only agy's saved session; the child never receives Keychain IPC.
+
+    Antigravity's CLI token store accepts the same StoredToken envelope as its
+    gemini/antigravity Keychain item. Refreshes stay in this disposable copy.
+    A redirected operator HOME must not import the real user's Keychain.
+    """
+    relative = Path(".gemini/antigravity-cli/antigravity-oauth-token")
+    source = host_home / relative
+    data = read_candidate(source.parent, source.name) if source.parent.is_dir() else None
+    if sys.platform == "darwin":
+        import pwd
+
+        if host_home.resolve() == Path(pwd.getpwuid(os.getuid()).pw_dir).resolve():
+            try:
+                result = subprocess.run(
+                    ["/usr/bin/security", "find-generic-password", "-s", "gemini",
+                     "-a", "antigravity", "-w"], capture_output=True, timeout=10,
+                    env={"HOME": str(host_home), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                raise WorkAccessError("cannot read Antigravity's existing saved session") from None
+            if result.returncode == 0:
+                data = result.stdout.strip()
+                if data.startswith(b"go-keyring-base64:"):
+                    try:
+                        data = base64.b64decode(data.split(b":", 1)[1], validate=True)
+                    except ValueError:
+                        raise WorkAccessError("invalid Antigravity saved-session encoding") from None
+            elif result.returncode != 44 and data is None:
+                # Never include command output, which can contain credentials.
+                raise WorkAccessError("cannot read Antigravity's existing saved session")
+    if data is None:
+        return
+    try:
+        if len(data) > MAX_PUBLICATION:
+            raise ValueError
+        stored = json.loads(data)
+        token = stored.get("token") if isinstance(stored, dict) else None
+        if not isinstance(token, dict) or not any(
+            isinstance(token.get(key), str) and token[key] for key in ("access_token", "refresh_token")
+        ):
+            raise ValueError
+    except (ValueError, UnicodeError):
+        raise WorkAccessError("invalid Antigravity saved-session format") from None
+    target = home / relative
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.write_bytes(data)
+    target.chmod(0o600)
+
+
 def backend_environment(adapter: str, scratch: Path, environ: Mapping[str, str]) -> dict[str, str]:
     """Redirect runtime state; no real host state directory becomes writable."""
     from cli.commands.dispatch import _sanitized_launch_environment
@@ -302,6 +362,11 @@ def backend_environment(adapter: str, scratch: Path, environ: Mapping[str, str])
                XDG_CACHE_HOME=str(scratch / "cache"), XDG_DATA_HOME=str(scratch / "data"),
                XDG_STATE_HOME=str(scratch / "state"), CODEX_HOME=str(home / ".codex"),
                HERMES_HOME=str(home / ".hermes"), PYTHONDONTWRITEBYTECODE="1")
+    if adapter == "agy":
+        seed_agy_session(home, host_home)
+        # Keep agy's writable state, including its file-token refreshes, private.
+        env["JETSKI_APP_DATA_DIR"] = str(home / ".gemini/antigravity-cli")
+        env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true"
     # Rust's platform certificate loader otherwise needs broad Keychain IPC.
     # Use the system CA bundle; preserve an operator-selected certificate file.
     if adapter == "codex" and not env.get("CODEX_CA_CERTIFICATE") and not env.get("SSL_CERT_FILE"):
@@ -398,7 +463,8 @@ def run(adapter: str, project: Path, prompt: Path, argv: list[str], *, probe: bo
             launch_prompt.write_text("\n".join(instructions) + "\n\n" + prompt.read_text())
             argv = [str(launch_prompt) if arg == str(prompt) else arg for arg in argv]
         argv[0] = executable
-        child = subprocess.Popen([SANDBOX, "-p", profile(access, scratch, port, local_listener=adapter in ("agy", "opencode")), *argv], env=env,
+        child = subprocess.Popen([SANDBOX, "-p", profile(access, scratch, port, local_listener=adapter in ("agy", "opencode"),
+                                                       pseudo_terminal=adapter == "agy"), *argv], env=env,
                                  start_new_session=True)
         def signal_group(number, _frame=None):
             try:

@@ -101,6 +101,16 @@ pre-existing cross-boundary hard links and mounted aliases refuse preflight.
 Each launch receives a private HOME/XDG/temp layout. Only known credential
 files and Hermes's plain provider/model scalars are copied; hooks, plugins and
 MCP configuration are not copied. Persistent host state is never made writable.
+For Antigravity, the outside controller reads only its `gemini` / `antigravity`
+Keychain item and seeds the private CLI token store. An existing file-backed
+session is also accepted. The child receives no Keychain IPC permission; token
+refreshes stay in the disposable copy and no credential values are logged.
+Redirected host HOME directories do not import the real user's Keychain.
+The CLI's application data directory is bound to private state and its automatic
+self-update is disabled for contained launches.
+Antigravity's terminal tool may create private pseudo-terminals. Slave-terminal
+writes and ioctls require the sandbox's `com.apple.sandbox.pty` extension;
+existing host terminals remain protected against writes and input injection.
 Hermes named profiles are not yet supported on this path. Authenticated vendor
 startup remains a separate acceptance requirement; a configured kernel profile
 does not establish that a vendor can run with the available credentials.
@@ -137,15 +147,17 @@ a stronger sandbox boundary.
 | --- | --- | --- |
 | Claude | Supported with Claude Code 2.1.295+ | Refused |
 | Codex | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
-| Antigravity | Outer kernel conformance passed; vendor acceptance incomplete | Refused |
+| Antigravity | Outer backend; authenticated writer/reader/no-access probes passed with `agy` 1.3.3 | Refused |
 | Devin | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
 | OpenCode | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
 | Hermes | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
 
-**The agent-neutral enhancement is incomplete.** Successful deterministic
-backend tests through the five new wrappers do not substitute for authenticated
-vendor acceptance. Antigravity's installed `agy` CLI reached authentication in
-the isolated launch but timed out before executing the permission probes.
+Antigravity's existing saved login now works in the isolated launch. The real
+`cartopian-agy` wrapper passed 39 writer, 14 reader and 14 no-access checks on
+native macOS with `agy` 1.3.3. The native conformance suite passed 45 tests,
+including private pseudo-terminal operation and denied writes/input injection
+against an outside terminal. Earlier authenticated results cover the other
+adapters; deterministic tests alone do not establish vendor acceptance.
 Delivery evidence is retained as project artifacts outside the product checkout.
 
 PowerShell and `.cmd` entry points use the same refusal contract. PowerShell is

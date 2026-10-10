@@ -6,11 +6,13 @@ authenticated vendor-CLI evidence is collected separately by the native probe.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -264,3 +266,116 @@ def test_private_hermes_state_preserves_only_provider_scalars(tmp_path):
     assert 'chosen-model' in config.read_text()
     assert 'plugins' not in config.read_text()
     assert not (Path(env['HERMES_HOME'])/'hooks').exists()
+
+
+def test_private_agy_session_uses_redirected_home_without_real_keychain(tmp_path, monkeypatch):
+    from cli.native_work_sandbox import backend_environment
+
+    host = tmp_path / 'host'
+    source = host / '.gemini/antigravity-cli/antigravity-oauth-token'
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({'token': {'access_token': 'fixture-access', 'refresh_token': 'fixture-refresh'},
+                                  'auth_method': 'fixture-method', 'id_token': 'fixture-id'}))
+    (source.parent / 'settings.json').write_text('{"hooks": "must not be copied"}')
+    scratch = tmp_path / 'private'
+    scratch.mkdir()
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('redirected HOME accessed real Keychain'))
+    env = backend_environment('agy', scratch, {'HOME': str(host), 'JETSKI_APP_DATA_DIR': '/host/state'})
+    target = Path(env['JETSKI_APP_DATA_DIR']) / source.name
+    assert target.read_bytes() == source.read_bytes()
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert env['AGY_CLI_DISABLE_AUTO_UPDATE'] == 'true'
+    assert not (target.parent / 'settings.json').exists()
+    target.write_text('private refresh')
+    assert json.loads(source.read_text())['token']['refresh_token'] == 'fixture-refresh'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='macOS Keychain bridge uses Unix account lookup')
+@pytest.mark.parametrize('encoded', (False, True))
+def test_agy_keychain_bridge_preserves_session_without_logging(tmp_path, monkeypatch, capsys, encoded):
+    import pwd
+    from cli.native_work_sandbox import seed_agy_session
+
+    host = tmp_path / 'host'
+    private = tmp_path / 'private'
+    host.mkdir()
+    private.mkdir()
+    data = json.dumps({'token': {'access_token': 'fixture-secret', 'refresh_token': 'fixture-refresh'},
+                       'auth_method': 'fixture-method', 'id_token': 'fixture-id'}).encode()
+    output = b'go-keyring-base64:' + base64.b64encode(data) if encoded else data
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr(pwd, 'getpwuid', lambda _: SimpleNamespace(pw_dir=str(host)))
+    calls = []
+    def read_session(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout=output + b'\n')
+    monkeypatch.setattr(subprocess, 'run', read_session)
+    seed_agy_session(private, host)
+    target = private / '.gemini/antigravity-cli/antigravity-oauth-token'
+    assert target.read_bytes() == data
+    assert calls[0][0] == ['/usr/bin/security', 'find-generic-password', '-s', 'gemini', '-a', 'antigravity', '-w']
+    assert calls[0][1]['capture_output'] and calls[0][1]['timeout'] == 10
+    assert set(calls[0][1]['env']) == {'HOME', 'PATH'}
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert capsys.readouterr() == ('', '')
+
+
+@pytest.mark.parametrize('data', (b'fixture-secret-invalid-json', b'[]', b'{"token": {}}'))
+def test_agy_session_rejects_invalid_data_without_exposing_secrets(tmp_path, data):
+    from cli.native_work_sandbox import seed_agy_session
+
+    host = tmp_path / 'host'
+    source = host / '.gemini/antigravity-cli/antigravity-oauth-token'
+    source.parent.mkdir(parents=True)
+    source.write_bytes(data)
+    private = tmp_path / 'private'
+    private.mkdir()
+    with pytest.raises(WorkAccessError, match='invalid Antigravity saved-session format') as exc:
+        seed_agy_session(private, host)
+    assert 'fixture-secret' not in str(exc.value)
+    assert not (private / '.gemini').exists()
+
+
+def test_agy_private_pty_cannot_write_or_control_host_terminal(native, tmp_path):
+    import pty
+    from cli.native_work_sandbox import SANDBOX
+
+    project, work, _home = native
+    scratch = tmp_path / 'pty-state'
+    scratch.mkdir()
+    access = effective_access(project, {'work': str(work)}, (), activated=True)
+    host_master, host_slave = pty.openpty()
+    code = '''
+import errno, fcntl, os, pty, sys, termios
+master, slave = pty.openpty()
+os.write(slave, b'private terminal works\\n')
+assert b'private terminal works' in os.read(master, 100)
+try:
+    fd = os.open(sys.argv[1], os.O_WRONLY | os.O_NOCTTY)
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    os.close(fd)
+    raise AssertionError('sandbox can write a host terminal')
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOCTTY)
+try:
+    fcntl.ioctl(fd, termios.TIOCSTI, b'x')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+else:
+    raise AssertionError('sandbox can inject into a host terminal')
+finally:
+    os.close(fd)
+os.close(slave)
+os.close(master)
+print('private PTY works; host terminal writes and injection denied')
+'''
+    try:
+        result = subprocess.run([SANDBOX, '-p', profile(access, scratch, pseudo_terminal=True),
+                                 sys.executable, '-I', '-S', '-c', code, os.ttyname(host_slave)],
+                                capture_output=True, text=True, timeout=15)
+    finally:
+        os.close(host_master)
+        os.close(host_slave)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'host terminal writes and injection denied' in result.stdout
