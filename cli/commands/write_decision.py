@@ -229,6 +229,14 @@ def handler(args: argparse.Namespace) -> int:
             return _writers.EXIT_FAIL
         resolved[attr] = value
 
+    # A restatement points at the ruling it extends instead of copying it.
+    # Pin the pointer to the target's bytes now, so no later reader has to
+    # trust that the target is still the text this decision meant.
+    content, restatement, rerr = trace_binding.pin_restatement(root, dec_id, content)
+    if rerr is not None:
+        _writers.stderr("guard", f"{rerr.code}: {rerr.detail}")
+        return _writers.EXIT_FAIL
+
     dec_filename = f"{dec_id}.md"
     matches = _writers.identifier_files(root / "decisions", dec_id)
     if len(matches) > 1:
@@ -285,7 +293,9 @@ def handler(args: argparse.Namespace) -> int:
     # Advisory, and deliberately last: a failure to rank neighbors must never
     # cost a caller the decision it already wrote to disk.
     try:
-        neighbors = decision_neighbors.neighbors(root, content, exclude_id=dec_id)
+        neighbors = decision_neighbors.neighbors(
+            root, trace_binding.effective_decision_text(root, dec_id), exclude_id=dec_id
+        )
     except Exception:  # pragma: no cover - advisory surface, never fatal
         neighbors = []
 
@@ -295,6 +305,7 @@ def handler(args: argparse.Namespace) -> int:
             "dest_kind": "decision",
             "dec_id": dec_id,
             "neighbors": neighbors,
+            "restates": restatement,
             "decision_path": dec_result["path"],
             "decision_bytes": dec_result["bytes"],
             "index_path": index_result["path"],

@@ -21,6 +21,19 @@ Operator request evidence for: task:TASK-NN-NNN: cs-<handle>/turn-<N>[, cs-<hand
 Repeat this header for every governed unit when one captured ruling authorizes several tasks or checkpoints. The same capture identity may appear on each header in this decision.
 ```
 
+A decision that extends a locked ruling to more units without changing it
+restates the ruling by pointer, not by copy. It supersedes the target and
+names it under `Restates:`; `write-decision` pins the target's digest.
+The target's ruling and bindings count as this decision's own, so the body
+carries only the new bindings:
+
+```markdown
+Supersedes: DEC-NNN
+Restates: DEC-NNN
+
+Operator request evidence for: task:TASK-NN-NNN: cs-<handle>/turn-<N>
+```
+
 A decision may also record that the plan deliberately leaves an operator
 excerpt unclaimed by every task. That is the one authorized plan-level
 disposition `plan-audit` and `close-audit` accept, and it is structural: one

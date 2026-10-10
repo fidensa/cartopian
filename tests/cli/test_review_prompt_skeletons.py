@@ -35,6 +35,7 @@ from tests.test_review_bootstrap_parity import BootstrapFixture
 
 FILE_HEADING = report_skeleton.REVIEW_FILE_SECTION_HEADING
 REPORT_HEADING = report_skeleton.REVIEW_REPORT_SECTION_HEADING
+EVIDENCE_HEADING = report_skeleton.PLANNING_EVIDENCE_SECTION_HEADING
 
 # The reviewer's judgment for a clean approval, keyed by the placeholder the
 # skeleton leaves for it. Every other `<...>` placeholder line is prose.
@@ -264,6 +265,56 @@ class PlanningReviewPromptSkeletonTests(_PlanningFixture):
         self.assertTrue(records[0]["preflight"]["ok"])
 
 
+class PlanningReviewEvidenceTests(_PlanningFixture):
+    """The planning reviewer receives its machine-computed evidence in the prompt.
+
+    RED: the delivery-contract result and the unreferenced near-decision
+    pairs were computed only by ``review-context``, which the PM runs and
+    the reviewer never sees, so neither reached the reviewer they exist for.
+    GREEN: the planning prompt carries both in one machine-owned section,
+    outside the request-context binding.
+    """
+
+    def seed_near_decisions(self) -> None:
+        from tests.test_decision_neighbors_contract import BOUNDARY, LIMITS
+
+        (self.root / "decisions").mkdir(exist_ok=True)
+        (self.root / "decisions/DEC-001.md").write_text(BOUNDARY, encoding="utf-8")
+        (self.root / "decisions/DEC-002.md").write_text(LIMITS, encoding="utf-8")
+
+    def test_prompt_carries_delivery_and_decision_evidence(self) -> None:
+        self.seed_near_decisions()
+        _records, prompt = self.write()
+        self.assertEqual(_heading_count(prompt, EVIDENCE_HEADING), 1)
+        section = prompt[prompt.index(EVIDENCE_HEADING):prompt.index(FILE_HEADING)]
+        self.assertLess(
+            prompt.index(request_trace.MANAGEMENT_SECTION_HEADING),
+            prompt.index(EVIDENCE_HEADING),
+        )
+        self.assertIn("### Delivery contract", section)
+        self.assertIn("Gate: ", section)
+        self.assertIn("### Locked decisions that sit near each other", section)
+        self.assertIn("- DEC-001 (", section)
+        self.assertIn(" / DEC-002 (", section)
+        # Outside the binding: the preflight still admits the prompt.
+        code, records, err = self.preflight()
+        self.assertEqual(code, 0, err)
+        self.assertTrue(records[0]["preflight"]["ok"])
+
+    def test_evidence_is_a_snapshot_that_never_stales_the_binding(self) -> None:
+        _records, prompt = self.write()
+        self.assertIn("None: no live locked decisions", prompt)
+        self.seed_near_decisions()
+        code, records, err = self.preflight()
+        self.assertEqual(code, 0, err)
+        self.assertTrue(records[0]["preflight"]["ok"])
+        # Rewriting refreshes it and keeps exactly one copy.
+        _records, again = self.write(prompt)
+        self.assertEqual(_heading_count(again, EVIDENCE_HEADING), 1)
+        self.assertIn("- DEC-001 (", again)
+        self.assertNotIn("None: no live locked decisions", again)
+
+
 class LegacyCounterCheckpointTests(_PlanningFixture):
     """A counter checkpoint carries only its explicitly declared scope."""
 
@@ -322,6 +373,7 @@ class TaskClosureReviewPromptSkeletonTests(BootstrapFixture):
         )
         self.assertEqual(code, 0, err)
         self.assertTrue(records[0]["preflight"]["ok"])
+        self.assertEqual(_heading_count(prompt, EVIDENCE_HEADING), 0)
         context = request_trace.context_for_task(
             self.root, self.task, prompt_text=prompt, require_completion_evidence=True
         )

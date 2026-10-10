@@ -56,7 +56,9 @@ The writer also appends the reviewer's output formats as two generated sections,
 - `## Review file skeleton` — the absolute review file path (`reviews/REVIEW-<id>.md`) and the fenced review-file skeleton.
 - `## Review completion report skeleton` — the absolute review-completion report path (`reports/REPORT-NN-NNN-review.md` or `reports/REPORT-<checkpoint-id>.md`) and the fenced report skeleton.
 
-Task-closure skeletons come from the same builders as `cartopian report-skeleton --variant review`; planning skeletons exist only in the generated prompt, which is the authoritative copy for both kinds (`validate-report` recoveries point the reviewer back to it). Their machine-owned values are already filled: identities, paths, planning scope, request evidence, and the `Request-context identity` the prompt binds. The reviewer supplies the verdict, findings, and comparisons only. Do not paste skeletons or templates into the body. A rewrite regenerates both sections, and any authored copy of either heading is replaced.
+A planning prompt also carries a generated `## Planning review evidence` section just before the skeletons: the delivery-gate result with its findings and the contract section, and the live locked decisions that sit near each other without a cross-reference. It is evidence, not a verdict, and a snapshot outside the request-context binding.
+
+Task-closure skeletons come from the same builders as `cartopian report-skeleton --variant review`; planning skeletons exist only in the generated prompt, which is the authoritative copy for both kinds (`validate-report` recoveries point the reviewer back to it). Their machine-owned values are already filled: identities, paths, planning scope, request evidence, and the `Request-context identity` the prompt binds. The reviewer supplies the verdict, findings, and comparisons only. Do not paste skeletons or templates into the body. A rewrite regenerates every generated section, and any authored copy of a generated heading is replaced.
 
 The PM-authored body of a review prompt includes, sourced from the handoff packet:
 

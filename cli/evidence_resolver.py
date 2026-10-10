@@ -725,6 +725,38 @@ def _quote_after(lines: Sequence[str], index: int) -> Tuple[Optional[str], int]:
     return "\n".join(quoted), i
 
 
+def _effective_decision_text(project_root: Path, path: Path, text: str) -> str:
+    """The text a decision rules by: its own, plus any restated decision's.
+
+    A canonical ``DEC-NNN.md`` carrying a ``Restates:`` pointer rules by the
+    pinned text it points to as well as its own. An unresolvable pointer
+    refuses, because which units the ruling governs cannot be established.
+    """
+    from cli import trace_binding  # local: trace_binding imports request_trace
+
+    try:
+        if trace_binding.restated_decision(text) is None:
+            return text
+        if not re.fullmatch(r"DEC-\d{3}", path.stem):
+            raise trace_binding.RestatementError(
+                "decision-restatement-malformed",
+                f"{path.name} must be named {path.stem[:7]}.md to restate another decision",
+            )
+        return trace_binding.effective_decision_text(project_root, path.stem)
+    except trace_binding.RestatementError as exc:
+        raise RequestRefusal(
+            exc.code,
+            exc.detail,
+            "repair the decision's `Restates: DEC-NNN sha256:<64 hex>` header "
+            "through `cartopian write-decision`, which pins and checks it",
+        ) from None
+
+
+def _decision_scope_text(project_root: Path, path: Path) -> str:
+    text = read_contained_text(project_root, path, what="decision scope")
+    return _effective_decision_text(project_root, path, text)
+
+
 def decision_references(project_root: Path) -> Tuple[List[Reference], List[Unconfirmed]]:
     """Structural capture references from current, locked decisions, plus legacy quotes.
 
@@ -755,6 +787,7 @@ def decision_references(project_root: Path) -> Tuple[List[Reference], List[Uncon
             text = texts[path]
             if not trace_binding.is_current_locked_decision(decision_id, text, retired):
                 continue
+            text = _effective_decision_text(project_root, path, text)
             lines = text.splitlines()
             i = 0
             while i < len(lines):
@@ -1012,7 +1045,7 @@ def resolve(
                 paths.append(canonical)
             governs = any(
                 any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(identity)}(?![A-Za-z0-9-])",
-                              read_contained_text(project_root, path, what="decision scope"))
+                              _decision_scope_text(project_root, path))
                     for identity in identities)
                 for path in paths
             )
@@ -1027,6 +1060,7 @@ def resolve(
             # Report every decision at once: fixing one must not just reveal the next.
             unit = f"{target.kind}:{target.identifier}"
             ids = ", ".join(item.split(" ", 1)[0] for item in unbound)
+            one = ids if len(unbound) == 1 else "DEC-X"
             raise RequestRefusal(
                 "governing-decision-evidence-unbound",
                 f"{'; '.join(unbound)} "
@@ -1035,13 +1069,15 @@ def resolve(
                 "but the ruling is bound to other units",
                 "decisions are immutable, so do not add a header in a new, "
                 "separate decision: a turn bound to two units by different "
-                "current decisions is cross-unit for both. Write one "
-                f"superseding locked decision (`Supersedes: {ids}`) that "
-                "restates the ruling and repeats `Operator request evidence "
-                f"for:` for every unit the retired decision bound plus {unit}, "
-                "with the original capture identities, and supersede every "
-                "other current decision binding the same turn to a different "
-                "unit. If the decision mentions the checkpoint only in "
+                "current decisions is cross-unit for both. For each "
+                "decision, write one superseding locked decision that "
+                f"restates it by pointer (`Supersedes: {one}` and `Restates: "
+                f"{one}`) and adds `Operator request evidence for: "
+                f"{unit}: <the ruling's capture identities>`; the retired "
+                "decision's ruling and bindings carry over. A full restatement "
+                f"(`Supersedes: {ids}`) that repeats every binding plus {unit} "
+                "also works. Supersede every other current decision binding "
+                "the same turn to a different unit. If the decision mentions the checkpoint only in "
                 "passing (history, a Related: list), the superseding "
                 "decision restates it without naming the checkpoint or its "
                 "plan ref, and needs no new binding",
@@ -1316,7 +1352,7 @@ def _task_decision_governance(project_root: Path, target: GovernedUnit,
         if canonical.is_file():
             paths.append(canonical)
         named = any(re.search(rf"(?<![A-Za-z0-9-]){re.escape(target.identifier)}(?![A-Za-z0-9-])",
-                              read_contained_text(project_root, path, what="decision scope")) for path in paths)
+                              _decision_scope_text(project_root, path)) for path in paths)
         cited = any(re.search(rf"\b{decision_id}\b", text) for text in source_texts)
         if named:
             governance[decision_id] = "named"
@@ -1335,14 +1371,19 @@ def task_governing_references(project_root: Path, target: GovernedUnit,
 
 def _named_recovery(unit: str, decision_ids: Sequence[str]) -> str:
     listed = ", ".join(decision_ids)
+    one = decision_ids[0] if len(decision_ids) == 1 else "DEC-X"
     return (
         "decisions are immutable, so the ruling reaches this task one of two "
         "ways: retain an approved checkpoint review that covers this task's "
-        "plan ref and records the ruling's capture, or write one superseding "
-        f"locked decision (`Supersedes: {listed}`) that restates the ruling "
-        "and repeats `Operator request evidence for:` for every unit the "
-        f"retired decision bound plus {unit}, with the original capture "
-        "identities. One decision binding a turn to several units is not "
+        "plan ref and records the ruling's capture, or supersede it. To "
+        "extend the ruling unchanged, write a locked decision that restates "
+        f"it by pointer (`Supersedes: {one}` and `Restates: {one}`) and adds "
+        f"`Operator request evidence for: {unit}: <the ruling's capture "
+        "identities>`; the retired decision's ruling and bindings carry over. "
+        f"A full restatement (`Supersedes: {listed}`) repeats `Operator "
+        "request evidence for:` for every unit the retired decision bound "
+        f"plus {unit}, with the original capture identities. One decision "
+        "binding a turn to several units is not "
         "cross-unit; a different current decision binding the same turn to "
         "another unit makes it cross-unit for both, so supersede every "
         "current decision that binds it. A fresh ruling bound in a separate, "

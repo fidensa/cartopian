@@ -26,6 +26,7 @@ additional file read.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -278,17 +279,200 @@ def decision_header(text: str, name: str) -> str:
     return ""
 
 
-def decision_bodies(project_root: Path) -> Dict[str, str]:
-    """``{DEC-NNN: body}`` for every decision file, readable or not."""
+# A superseding decision that changes nothing in a ruling but its reach names
+# the decision it restates instead of copying it: `Restates: DEC-NNN
+# sha256:<64 hex>`. Decisions are immutable, so a pointer pinned to the target's
+# exact bytes is as fixed as a copy and cannot be mistranscribed. Every reader
+# sees the restating decision's *effective* text: its own file, then the
+# restated decision's effective text under a `## Restated from` heading. The
+# heading keeps header reads (Status, Supersedes) on the restating file's own
+# block, and everything below it -- the ruling, its markers, and its
+# `Operator request evidence for:` bindings -- counts as the restating
+# decision's own.
+RESTATES_HEADER = "Restates"
+RESTATED_SECTION_PREFIX = "## Restated from "
+_RESTATES_RE = re.compile(r"(DEC-\d{3})(?:\s+(sha256:[0-9a-f]{64}))?")
+
+
+class RestatementError(ValueError):
+    """A ``Restates:`` pointer that cannot be resolved to pinned text."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
+def decision_digest(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def restated_decision(text: str) -> Optional[Tuple[str, Optional[str]]]:
+    """``(DEC-NNN, digest or None)`` from a ``Restates:`` header, else None."""
+    value = decision_header(text, RESTATES_HEADER)
+    if not value or value.lower() in ("none", "n/a"):
+        return None
+    match = _RESTATES_RE.fullmatch(value)
+    if match is None:
+        raise RestatementError(
+            "decision-restatement-malformed",
+            f"`{RESTATES_HEADER}: {value}` must be `{RESTATES_HEADER}: DEC-NNN sha256:<64 hex>`",
+        )
+    return match.group(1), match.group(2)
+
+
+def raw_decision_files(project_root: Path) -> Dict[str, bytes]:
+    """``{stem: bytes}`` for every readable ``decisions/DEC-*.md`` file."""
     directory = Path(project_root) / "decisions"
     if not directory.is_dir():
         return {}
-    texts: Dict[str, str] = {}
+    raw: Dict[str, bytes] = {}
     for path in sorted(directory.glob("DEC-*.md")):
         try:
-            texts[path.stem] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            raw[path.stem] = path.read_bytes()
+        except OSError:
             continue
+    return raw
+
+
+def resolve_decision_text(stem: str, raw: Dict[str, bytes]) -> str:
+    """A decision's effective text, following pinned ``Restates:`` pointers.
+
+    Fails closed: an unpinned, mismatched, missing, circular, or
+    non-superseding pointer raises :class:`RestatementError`, because a
+    ruling whose text cannot be established authorizes nothing.
+    """
+    seen: List[str] = []
+    parts: List[str] = []
+    current = stem
+    while True:
+        try:
+            text = raw[current].decode("utf-8")
+        except KeyError:
+            if not seen:
+                raise RestatementError(
+                    "decision-not-found", f"no readable decisions/{current}.md"
+                ) from None
+            raise RestatementError(
+                "decision-restatement-target-missing",
+                f"{seen[-1]} restates {current}, which has no decisions/{current}.md",
+            ) from None
+        except UnicodeDecodeError:
+            raise RestatementError(
+                "decision-restatement-unreadable", f"decisions/{current}.md is not UTF-8 text"
+            ) from None
+        seen.append(current)
+        target = restated_decision(text)
+        if target is None:
+            parts.append(text)
+            break
+        target_id, digest = target
+        if digest is None:
+            raise RestatementError(
+                "decision-restatement-unpinned",
+                f"{current} restates {target_id} without its content digest; "
+                "re-issue it through `cartopian write-decision`, which pins it",
+            )
+        if target_id in seen:
+            raise RestatementError(
+                "decision-restatement-cycle",
+                f"{current} restates {target_id}, which already restates {current}",
+            )
+        if target_id not in re.findall(r"DEC-\d{3}", decision_header(text, "Supersedes")):
+            raise RestatementError(
+                "decision-restatement-not-superseded",
+                f"{current} restates {target_id} but does not supersede it; a "
+                f"restatement retires its target, so add {target_id} to `Supersedes:`",
+            )
+        if target_id in raw and decision_digest(raw[target_id]) != digest:
+            raise RestatementError(
+                "decision-restatement-digest-mismatch",
+                f"{current} pins {target_id} at {digest}, but decisions/{target_id}.md "
+                "has changed since; a decision is immutable, so restore it",
+            )
+        parts.append(text.rstrip("\n") + f"\n\n{RESTATED_SECTION_PREFIX}{target_id} ({digest})\n\n")
+        current = target_id
+    return "".join(parts)
+
+
+def pin_restatement(
+    project_root: Path, decision_id: str, content: str
+) -> Tuple[str, Optional[Dict[str, str]], Optional[RestatementError]]:
+    """Pin and check a body's ``Restates:`` pointer before it is written.
+
+    ``Restates: DEC-NNN`` without a digest is pinned to the target's current
+    bytes; a supplied digest must match them. The whole chain must then
+    resolve with this body in place. Returns ``(content, restatement, error)``.
+    """
+    try:
+        target = restated_decision(content)
+    except RestatementError as exc:
+        return content, None, exc
+    if target is None:
+        return content, None, None
+    target_id, digest = target
+    if target_id == decision_id:
+        return content, None, RestatementError(
+            "decision-restatement-cycle", f"{decision_id} cannot restate itself"
+        )
+    raw = raw_decision_files(project_root)
+    if target_id not in raw:
+        return content, None, RestatementError(
+            "decision-restatement-target-missing",
+            f"{decision_id} restates {target_id}, which has no decisions/{target_id}.md",
+        )
+    actual = decision_digest(raw[target_id])
+    if digest is None:
+        lines = content.splitlines(keepends=True)
+        for index, line in enumerate(lines):
+            if line.startswith("## "):
+                break
+            if line.strip().startswith(f"{RESTATES_HEADER}:"):
+                ending = "\n" if line.endswith("\n") else ""
+                lines[index] = f"{RESTATES_HEADER}: {target_id} {actual}{ending}"
+                break
+        content = "".join(lines)
+    raw[decision_id] = content.encode("utf-8")
+    try:
+        resolve_decision_text(decision_id, raw)
+    except RestatementError as exc:
+        return content, None, exc
+    return content, {"decision": target_id, "digest": actual}, None
+
+
+def effective_decision_text(project_root: Path, decision_id: str) -> str:
+    """One decision's effective text; raises :class:`RestatementError`."""
+    return resolve_decision_text(decision_id, raw_decision_files(project_root))
+
+
+def restatement_problems(project_root: Path) -> List[Dict[str, str]]:
+    """Every decision whose ``Restates:`` pointer cannot be resolved."""
+    raw = raw_decision_files(project_root)
+    problems: List[Dict[str, str]] = []
+    for stem in sorted(raw):
+        try:
+            resolve_decision_text(stem, raw)
+        except RestatementError as exc:
+            problems.append({"decision": f"decisions/{stem}.md", "code": exc.code, "detail": exc.detail})
+    return problems
+
+
+def decision_bodies(project_root: Path) -> Dict[str, str]:
+    """``{DEC-NNN: effective body}`` for every readable decision file.
+
+    A restating decision whose pointer cannot be resolved keeps only its own
+    text here; the authorization readers in ``evidence_resolver`` refuse it.
+    """
+    raw = raw_decision_files(project_root)
+    texts: Dict[str, str] = {}
+    for stem, data in raw.items():
+        try:
+            texts[stem] = resolve_decision_text(stem, raw)
+        except RestatementError:
+            try:
+                texts[stem] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
     return texts
 
 

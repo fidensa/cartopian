@@ -1235,6 +1235,22 @@ def _check_decision_status(project_path: Path) -> List[Dict[str, Any]]:
                 f"({' or '.join(trace_binding.DECISION_STATUSES)})"
             ),
         })
+    # A live decision whose `Restates:` pointer cannot be resolved rules by an
+    # unknown text; the request trace refuses any unit it governs.
+    retired = trace_binding.superseded_ids(trace_binding.decision_bodies(project_path))
+    for item in trace_binding.restatement_problems(project_path):
+        if Path(item["decision"]).stem in retired:
+            continue
+        warnings.append({
+            "kind": "decision-restatement-unresolved",
+            "decision": item["decision"],
+            "code": item["code"],
+            "detail": (
+                f"{item['decision']}: {item['detail']}. Until the pointer "
+                "resolves, every unit this decision governs refuses its request "
+                "trace"
+            ),
+        })
     return warnings
 
 

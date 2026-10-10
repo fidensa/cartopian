@@ -649,10 +649,81 @@ def planning_review_skeletons(
 
 REVIEW_FILE_SECTION_HEADING = "## Review file skeleton"
 REVIEW_REPORT_SECTION_HEADING = "## Review completion report skeleton"
+PLANNING_EVIDENCE_SECTION_HEADING = "## Planning review evidence"
 REVIEW_PROMPT_SECTION_HEADINGS = (
+    PLANNING_EVIDENCE_SECTION_HEADING,
     REVIEW_FILE_SECTION_HEADING,
     REVIEW_REPORT_SECTION_HEADING,
 )
+
+
+def planning_review_evidence(project_root: Path) -> str:
+    """The planning reviewer's machine-computed evidence, as a prompt section.
+
+    Two inputs only the planning review receives: the plan's delivery-contract
+    result with the contract section itself, and the locked decision pairs
+    that are mutually near and have never referenced each other. Both are
+    evidence for the reviewer's judgment, never a verdict. The section is a
+    snapshot taken when the prompt is written and sits outside the
+    request-context binding, so a later decision or plan edit never makes the
+    prompt stale; regenerating the prompt refreshes it.
+    """
+    from cli import decision_neighbors, delivery_contract
+    from cli.prompt_composer import _fenced
+
+    delivery = delivery_contract.review_projection_for_plan(project_root)
+    plan_path = Path(project_root).resolve() / delivery_contract.PLAN_SURFACE
+    parts = [
+        PLANNING_EVIDENCE_SECTION_HEADING,
+        "",
+        "Computed when this prompt was written. This is evidence for your "
+        "judgment, not a verdict; weigh it alongside the target artifacts.",
+        "",
+        "### Delivery contract",
+        "",
+        f"Gate: {delivery.get('gate')}; artifact: {delivery.get('artifact_state')}; "
+        f"outcome: {delivery.get('outcome_state')}; follow-up: "
+        f"{delivery.get('follow_up_state')}.",
+        "",
+    ]
+    findings = delivery.get("ordered_findings") or []
+    if findings:
+        parts.append("Open findings, in order:")
+        parts.extend(f"- `{item.get('code')}`: {item.get('detail')}" for item in findings)
+    else:
+        parts.append("Open findings: none.")
+    parts.append("")
+    if isinstance(delivery.get("section"), str):
+        parts += [f"The contract as declared in {plan_path}:", "", _fenced(delivery["section"], "markdown")]
+    else:
+        parts.append(
+            f"{plan_path} carries no single delivery-contract section "
+            f"({delivery.get('section_omitted')})."
+        )
+    parts += [
+        "",
+        "### Locked decisions that sit near each other",
+        "",
+    ]
+    pairs = decision_neighbors.unreferenced_pairs(project_root)
+    if pairs:
+        parts += [
+            "Each pair below is two live locked decisions on a close subject "
+            "that have never referenced each other. Closeness is not "
+            "contradiction. Check whether the work under review relies on one "
+            "ruling in a way the other contradicts.",
+            "",
+        ]
+        for pair in pairs:
+            left, right = pair["decisions"]
+            left_title, right_title = pair["titles"]
+            parts.append(
+                f"- {left} ({left_title}) / {right} ({right_title}); "
+                f"shared terms: {', '.join(pair['shared_terms'])}"
+            )
+    else:
+        parts.append("None: no live locked decisions are near each other without a cross-reference.")
+    return "\n".join(parts).rstrip() + "\n"
 
 
 def render_review_prompt_sections(skeletons: Dict[str, Any]) -> str:
@@ -665,7 +736,9 @@ def render_review_prompt_sections(skeletons: Dict[str, Any]) -> str:
     """
     from cli.prompt_composer import _fenced
 
-    parts = [
+    evidence = skeletons.get("planning_evidence")
+    parts = [evidence.rstrip(), ""] if evidence else []
+    parts += [
         REVIEW_FILE_SECTION_HEADING,
         "",
         f"Write the review file first, to: {skeletons['review_path']}",

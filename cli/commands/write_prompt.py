@@ -436,6 +436,7 @@ def handler(args: argparse.Namespace) -> int:
                     report_skeleton.bindings_from_context(context),
                     scope=_planning_scope(args, body),
                 )
+                skeletons["planning_evidence"] = report_skeleton.planning_review_evidence(root)
             content = upsert_request_sections(body, context.section)
             if args.review_kind == "task-closure":
                 content = _append_trace_projection(
