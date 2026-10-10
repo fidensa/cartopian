@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-agy — Cartopian wrapper for the Google Antigravity CLI (agy).
 #
 # Usage:  cartopian-agy <absolute-prompt-path>
@@ -187,6 +187,9 @@ if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
     [[ -n "$_root" ]] && CMD+=(--add-dir "$_root")
   done
 fi
+
+# Apply the shared native process boundary before the single deadline.
+cartopian_contain_command
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-devin — Cartopian wrapper for the Devin CLI.
 #
 # Usage:  cartopian-devin <absolute-prompt-path>
@@ -151,7 +151,7 @@ if command -v timeout &>/dev/null; then
 elif command -v gtimeout &>/dev/null; then
   DEVIN_PROBE=(gtimeout 10s "${DEVIN_PROBE[@]}")
 fi
-if "${DEVIN_PROBE[@]}" >/dev/null 2>&1; then
+if cartopian_contained_probe "${DEVIN_PROBE[@]}" >/dev/null 2>&1; then
   DEVIN_SURFACE="four-mode"
 else
   DEVIN_SURFACE="two-mode"
@@ -176,7 +176,7 @@ if command -v timeout &>/dev/null; then
 elif command -v gtimeout &>/dev/null; then
   DEVIN_SANDBOX_PROBE=(gtimeout 10s "${DEVIN_SANDBOX_PROBE[@]}")
 fi
-if "${DEVIN_SANDBOX_PROBE[@]}" >/dev/null 2>&1; then
+if cartopian_contained_probe "${DEVIN_SANDBOX_PROBE[@]}" >/dev/null 2>&1; then
   DEVIN_SANDBOX_SUPPORTED=true
 else
   DEVIN_SANDBOX_SUPPORTED=false
@@ -230,7 +230,11 @@ fi
 CMD=(devin -p)
 case "$DEVIN_PERMISSION_MODE" in
   autonomous)
-    if [[ "$DEVIN_SANDBOX_SUPPORTED" != "true" ]]; then
+    if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+      # Replace the nested exec-only sandbox with the mandatory whole-process
+      # Cartopian boundary; macOS refuses nested sandbox_apply.
+      CMD+=(--permission-mode bypass)
+    elif [[ "$DEVIN_SANDBOX_SUPPORTED" != "true" ]]; then
       # This devin build predates `--sandbox`, so OS-bounded autonomy is
       # unavailable. Degrade to the same auto-approve-all posture WITHOUT the
       # sandbox flag — `--permission-mode bypass` (valid on both surfaces) — so
@@ -250,7 +254,7 @@ case "$DEVIN_PERMISSION_MODE" in
     # sandbox. Warn so a work-root write failure is traceable to the tool's
     # sandbox, not the launch contract; grant the paths in devin's own
     # settings or choose CARTOPIAN_DEVIN_PERMISSION=bypass.
-    if [[ "$DEVIN_SANDBOX_SUPPORTED" == "true" && -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+    if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" != "seatbelt" && "$DEVIN_SANDBOX_SUPPORTED" == "true" && -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
       echo "cartopian-devin: warning: devin --sandbox has no writable-roots surface; declared work roots may not be writable inside the sandbox: $CARTOPIAN_WORK_ROOTS" >&2
     fi
     ;;
@@ -285,6 +289,14 @@ fi
 # original prompt file directly. The CLI loads it, so no prompt body reaches the
 # command line (and the original is never mutated).
 CMD+=(--prompt-file "$PROMPT_PATH_ABS")
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+  # Dispatch has already authorized this workspace; the whole process is OS
+  # contained. Do not depend on a persistent trust store in the private HOME.
+  CMD+=(--respect-workspace-trust false)
+fi
+
+# Apply the shared native process boundary before the single deadline.
+cartopian_contain_command
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

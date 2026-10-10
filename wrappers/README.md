@@ -1,9 +1,17 @@
 # Agent CLI Wrappers
 
-Project-contained work roots use the shared contract in `cli/work_access.py`. Omitted/empty project roots select `resources/`; configured names replace that default. Selection grants no permissions. Explicit `read:work-roots` permits input reads; both it and `write:worktree` authorize sandboxed filesystem mutations and child processes. Only Claude on native macOS (2.1.295+) currently enforces this contract. All other shipped adapters/platforms, including PowerShell on Windows, refuse before launch. No bypass or unsandboxed fallback is allowed. Governance, report publication, Git, other projects, runtime and host boundaries remain protected. See [configuration and native evidence](PROJECT-WORK-ACCESS.md).
+Project-contained work roots use the shared contract in `cli/work_access.py`. Omitted/empty project roots select `resources/`; configured names replace that default. Selection grants no permissions. Explicit `read:work-roots` permits input reads; both it and `write:worktree` authorize sandboxed filesystem mutations and child processes. Native macOS Claude (2.1.295+) uses its tool sandbox; Codex, Antigravity, Devin, OpenCode and Hermes now have a Cartopian-managed outer process backend. Authenticated writer/reader/no-access probes pass for Codex, Devin, OpenCode and Hermes; Antigravity acceptance is still blocked on isolated authentication, so this is not all-agent support. Linux, WSL and native Windows, including PowerShell, still refuse contained roots. No bypass or unsandboxed fallback is allowed. Governance, report publication, Git, other projects, runtime and host boundaries remain protected. See [configuration and native evidence](PROJECT-WORK-ACCESS.md).
 
 
 ## The problem
+
+For contained macOS launches, the outer backend enforces the role's grants for
+all mapped roots and stages fixed report/review bytes for mediated publication.
+Codex and autonomous Devin replace their incompatible nested sandbox with this
+mandatory boundary. Other sandbox flags and no-op notices below describe
+external-root-only launches. Static configuration is not vendor acceptance;
+Antigravity currently lacks working isolated authentication. See the linked
+coverage table before resuming a handoff.
 
 Cartopian's handoff contract is simple:
 

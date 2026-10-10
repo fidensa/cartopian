@@ -64,14 +64,14 @@ def test_all_adapters_use_same_contract_or_refuse(tmp_path, adapter, platform):
     project, work, _home = project_fixture(tmp_path)
     access = effective_access(project, {"resources": str(work)}, ["read:work-roots", "write:worktree"], activated=True)
     problem = adapter_problem(adapter, platform, access, activated=True)
-    assert (problem is None) == (adapter == "claude" and platform == "darwin")
+    assert (problem is None) == (platform == "darwin")
     if problem:
         assert "No unsandboxed fallback" in problem
-        assert "external work root" in problem
+        assert "verified native containment backend" in problem
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS[1:])
-def test_real_posix_wrappers_refuse_before_any_agent_probe(tmp_path, adapter):
+def test_real_posix_wrappers_refuse_unbound_cwd_before_any_agent_probe(tmp_path, adapter):
     project, work, home = project_fixture(tmp_path)
     fakebin = tmp_path / "bin"
     fakebin.mkdir()
@@ -79,9 +79,9 @@ def test_real_posix_wrappers_refuse_before_any_agent_probe(tmp_path, adapter):
     executable = fakebin / {"agy": "agy"}.get(adapter, adapter)
     executable.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 0\n')
     executable.chmod(0o755)
-    result = subprocess.run(["/bin/bash", str(REPO / "wrappers/bin" / ("cartopian-" + adapter)), str(project / "prompts/PROMPT-01-999.md")], capture_output=True, text=True, env={"PATH": str(fakebin) + ":/usr/bin:/bin", "HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_PROJECT_ROOT": str(project), "CARTOPIAN_LAUNCH_CWD": str(work), "CARTOPIAN_PYTHON": sys.executable}, timeout=20)
+    result = subprocess.run(["/bin/bash", str(REPO / "wrappers/bin" / ("cartopian-" + adapter)), str(project / "prompts/PROMPT-01-999.md")], capture_output=True, text=True, env={"PATH": str(fakebin) + ":/usr/bin:/bin", "HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_PROJECT_ROOT": str(project), "CARTOPIAN_LAUNCH_CWD": str(project), "CARTOPIAN_PYTHON": sys.executable}, timeout=20)
     assert result.returncode != 0
-    assert "unsupported" in result.stderr
+    assert "launch cwd" in result.stderr
     assert not marker.exists()
 
 
@@ -179,12 +179,13 @@ def test_external_work_root_contract_is_unchanged(tmp_path):
 
 @pytest.mark.parametrize("configured", (False, True))
 @pytest.mark.parametrize("adapter", ADAPTERS[1:])
-def test_rehearsal_and_preflight_refuse_same_unsupported_contract(tmp_path, configured, adapter):
+def test_rehearsal_and_preflight_refuse_same_unavailable_backend(tmp_path, configured, adapter, monkeypatch):
+    monkeypatch.setattr("cli.native_work_sandbox.check_substrate", lambda access: (_ for _ in ()).throw(WorkAccessError("native containment backend unavailable")))
     project, work, _home = project_fixture(tmp_path, configured=configured)
     record = {"launch": {"agent": str(REPO / "wrappers/bin" / ("cartopian-" + adapter))}, "effective_grants": ["read:work-roots", "write:worktree"], "auto_launch": ["task_run"]}
     roots = {"work" if configured else "resources": str(work)}
     findings = launch_preflight.environment_checks("worker", record, roots, project_root=project, capabilities_activated=True)
-    assert findings[0]["code"] == "work-root-contract-unsupported"
+    assert findings[0]["code"] == "work-root-policy-invalid"
     for mode in ("auto", "native-interactive"):
         launch = dispatch_rehearsal._launch_record("worker", record, roots, project_root=project, capabilities_activated=True, task_launch_mode=mode)
         assert not launch["ok"]
@@ -306,6 +307,6 @@ def test_cwd_override_cannot_hide_project_from_posix_gate(tmp_path, adapter):
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell unavailable; source parity is separate")
 def test_real_powershell_wrapper_refuses_contained_access(tmp_path, adapter):
     project, work, home = project_fixture(tmp_path)
-    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(REPO / "wrappers/ps1" / ("cartopian-" + adapter + ".ps1")), str(project / "prompts/PROMPT-01-999.md")], capture_output=True, text=True, env={**os.environ, "HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_PROJECT_ROOT": str(project), "CARTOPIAN_LAUNCH_CWD": str(work), "CARTOPIAN_PYTHON": sys.executable}, timeout=20)
+    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(REPO / "wrappers/ps1" / ("cartopian-" + adapter + ".ps1")), str(project / "prompts/PROMPT-01-999.md")], capture_output=True, text=True, env={**os.environ, "HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_PROJECT_ROOT": str(project), "CARTOPIAN_LAUNCH_CWD": str(project), "CARTOPIAN_PYTHON": sys.executable}, timeout=20)
     assert result.returncode != 0
-    assert "unsupported" in result.stderr
+    assert "launch cwd" in result.stderr

@@ -4,6 +4,8 @@ This is the plain-language reference for every Cartopian setting: where it lives
 
 The current project schema version is `v0.10.0`. `cartopian generate-config` stamps it into new projects, so you never type it by hand.
 
+Project-contained work roots keep the existing named mappings and explicit grants; no new configuration field is introduced. Native macOS non-Claude wrappers use a mandatory outer process sandbox, while Claude retains its native tool sandbox. Agent-neutral vendor acceptance remains incomplete; Linux, WSL and native Windows refuse contained roots. The outer backend currently refuses authored network/socket/local-binding/extra-write exceptions and Hermes profiles. See [work-root configuration and verified coverage](wrappers/PROJECT-WORK-ACCESS.md).
+
 ## The three files
 
 | File | Who owns it | What belongs in it |

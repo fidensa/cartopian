@@ -21,7 +21,30 @@ if [[ -n "${CARTOPIAN_ROLE:-}${CARTOPIAN_PROJECT_ROOT:-}" || -f "$_CARTOPIAN_ACC
     echo "cartopian-$1: missing required work-access helper; reinstall Cartopian" >&2
     exit 1
   fi
-  if ! "$CARTOPIAN_PYTHON" -I -S "$_CARTOPIAN_ACCESS_HELPER" --wrapper "$1" --project-dir "$_CARTOPIAN_ACCESS_PROJECT"; then
+  if ! _CARTOPIAN_ACCESS_BACKEND=$("$CARTOPIAN_PYTHON" -I -S "$_CARTOPIAN_ACCESS_HELPER" --wrapper "$1" --project-dir "$_CARTOPIAN_ACCESS_PROJECT" --emit-backend); then
     exit 1
   fi
 fi
+
+_CARTOPIAN_ACCESS_ADAPTER="$1"
+_CARTOPIAN_ACCESS_PROMPT="$2"
+# Mutates the wrapper's CMD array before its existing timeout is applied.
+# The controller remains outside Seatbelt; the CLI and all its tools are inside.
+cartopian_contain_command() {
+  if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+    CMD=("$CARTOPIAN_PYTHON" -I -S "${_CARTOPIAN_WRAPPER_DIR}/../../cli/native_work_sandbox.py"
+      --adapter "$_CARTOPIAN_ACCESS_ADAPTER" --project "$_CARTOPIAN_ACCESS_PROJECT"
+      --prompt "$_CARTOPIAN_ACCESS_PROMPT" -- "${CMD[@]}")
+  fi
+}
+
+# Devin's parser probes must have the same outer boundary as the final CLI.
+cartopian_contained_probe() {
+  if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+    "$CARTOPIAN_PYTHON" -I -S "${_CARTOPIAN_WRAPPER_DIR}/../../cli/native_work_sandbox.py" \
+      --adapter "$_CARTOPIAN_ACCESS_ADAPTER" --project "$_CARTOPIAN_ACCESS_PROJECT" \
+      --prompt "$_CARTOPIAN_ACCESS_PROMPT" --probe -- "$@"
+  else
+    "$@"
+  fi
+}

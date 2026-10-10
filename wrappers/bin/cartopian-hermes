@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-hermes — Cartopian wrapper for the Hermes CLI agent (Nous Research).
 #
 # Usage:  cartopian-hermes <absolute-prompt-path>
@@ -15,10 +15,11 @@
 #
 # Note on permissions: because one-shot mode has no approval layer at all and
 # Hermes's write guards are documented as bypassable via the `terminal` tool,
-# this wrapper deliberately injects NO permission policy — a wrapper-set
+# for external-root launches this wrapper injects NO permission policy — a wrapper-set
 # HERMES_WRITE_SAFE_ROOT would look like a write boundary while the terminal
 # tool sidesteps it. Containment for Hermes is advisory+detection; see the
-# containment matrix.
+# containment matrix. Project-contained macOS launches instead run the entire
+# Hermes process and children in Cartopian's mandatory Seatbelt boundary.
 #
 # Note on profiles: Hermes profile selection is the `-p/--profile` flag, which
 # Hermes pre-parses before any module import so it can rewrite HERMES_HOME.
@@ -183,9 +184,14 @@ fi
 # Work-root no-op notice: Hermes imposes no default path sandbox, so declared
 # work roots need no grant here. Actual access remains subject to OS
 # permissions and any operator-configured Hermes guards.
-if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+  echo "cartopian-hermes: work-root grants enforced by Cartopian Seatbelt process sandbox" >&2
+elif [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
   echo "cartopian-hermes: hermes has no default path sandbox; work roots need no grant here, and actual access remains subject to OS permissions and any operator-configured hermes guards (CARTOPIAN_WORK_ROOTS=$CARTOPIAN_WORK_ROOTS)" >&2
 fi
+
+# Apply the shared native process boundary before the single deadline.
+cartopian_contain_command
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

@@ -827,8 +827,32 @@ def handler(args: argparse.Namespace) -> int:
                     if version is not None and version < CLAUDE_PROJECT_WORK_MIN_VERSION:
                         problem = "project-contained work roots require Claude Code 2.1.295 or newer"
                 verified = bool((evidence_detail or {}).get("claude_version_supported"))
+                native_detail = None
+                if adapter in ("codex", "agy", "devin", "opencode", "hermes") and not problem:
+                    from cli import launch_preflight
+
+                    wrapper = _install_root() / "wrappers/bin" / ("cartopian-" + adapter)
+                    record = dict(role)
+                    record["launch"] = {"agent": str(wrapper)}
+                    findings = launch_preflight.environment_checks(
+                        name, record, resolved["work_roots"], project_root=project_path,
+                        capabilities_activated=activated,
+                    )
+                    verified = not findings
+                    if findings:
+                        problem = "; ".join(item["message"] for item in findings)
+                    native_detail = {
+                        "backend": "Cartopian native macOS Seatbelt process sandbox",
+                        "scope": "shipped local wrapper process and children; does not certify the interactive host",
+                        "publication": "fixed dispatch-bound slots through mediated writer",
+                        "readable_roots": list(access.backend_readable),
+                        "writable_roots": list(access.backend_writable),
+                        "authenticated_backend_acceptance": "not established by this static command",
+                    }
                 status = "refused" if problem else "configured-unattested" if verified else "unverified"
                 role_access[name] = {"status": status, "readable": list(access.readable), "writable": list(access.writable), "cwd": access.launch_cwd, "detail": problem or (evidence_detail or {}).get("detail")}
+                if native_detail:
+                    role_access[name]["process_containment"] = native_detail
         if role_access:
             row["project_work_access"] = role_access
 

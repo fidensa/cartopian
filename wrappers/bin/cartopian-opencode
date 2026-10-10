@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-opencode — Cartopian wrapper for the opencode CLI/TUI agent.
 #
 # Usage:  cartopian-opencode <absolute-prompt-path>
@@ -168,11 +168,16 @@ fi
 # Work-root no-op notice: opencode has no path-widening flag, so declared work
 # roots need no grant here. Actual access remains subject to OS permissions
 # and any operator-configured permission rules.
-if [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+  echo "cartopian-opencode: work-root grants enforced by Cartopian Seatbelt process sandbox" >&2
+elif [[ -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
   echo "cartopian-opencode: opencode has no path-widening flag; work roots need no grant here, and actual access remains subject to OS permissions and any operator permission rules (CARTOPIAN_WORK_ROOTS=$CARTOPIAN_WORK_ROOTS)" >&2
 fi
 
 CMD+=("$PROMPT_PATH_ABS")
+
+# Apply the shared native process boundary before the single deadline.
+cartopian_contain_command
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the

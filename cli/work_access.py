@@ -89,6 +89,16 @@ class WorkAccess:
     contained: tuple[str, ...]
     readable: tuple[str, ...]
     writable: tuple[str, ...]
+    mapped: tuple[str, ...] = ()
+    grants: frozenset[str] = frozenset()
+
+    @property
+    def backend_readable(self) -> tuple[str, ...]:
+        return self.mapped if "read:work-roots" in self.grants else ()
+
+    @property
+    def backend_writable(self) -> tuple[str, ...]:
+        return self.mapped if {"read:work-roots", "write:worktree"} <= self.grants else ()
 
     @property
     def launch_cwd(self) -> str:
@@ -103,7 +113,11 @@ def effective_access(
     held = frozenset(grants) if activated else frozenset()
     readable = contained if "read:work-roots" in held else ()
     writable = contained if {"read:work-roots", "write:worktree"} <= held else ()
-    return WorkAccess(os.path.realpath(project), contained, readable, writable)
+    return WorkAccess(os.path.realpath(project), contained, readable, writable,
+                      tuple(dict.fromkeys(os.path.realpath(p) for p in roots.values())), held)
+
+
+SHIPPED_ADAPTERS = ("claude", "codex", "agy", "devin", "opencode", "hermes")
 
 
 def adapter_problem(adapter: str, platform: str, access: WorkAccess, *, activated: bool) -> str | None:
@@ -111,11 +125,12 @@ def adapter_problem(adapter: str, platform: str, access: WorkAccess, *, activate
         return None
     if not activated:
         return "project-contained work roots require explicit role grants; declare grants (an empty list grants no access) before launch"
-    if adapter != "claude" or platform != "darwin":
+    adapter = Path(adapter).name.removeprefix("cartopian-").removesuffix(".ps1").removesuffix(".cmd")
+    if adapter not in SHIPPED_ADAPTERS or platform != "darwin":
         return (
             f"project-contained work-root containment is unsupported by {adapter} on {platform}: "
             "this adapter cannot attest the complete filesystem and ancestor boundary; "
-            "use the shipped Claude wrapper on native macOS, or configure an external work root. "
+            "a verified native containment backend is required. "
             "No unsandboxed fallback is permitted"
         )
     return None
@@ -144,6 +159,10 @@ def wrapper_preflight(
             received = {os.path.realpath(path) for path in exported.split(os.pathsep) if path}
             if received != expected:
                 raise WorkAccessError("CARTOPIAN_WORK_ROOTS does not match configured work roots; launch through cartopian dispatch without path overrides")
+        if adapter != "claude":
+            from cli.native_work_sandbox import validate_boundary
+
+            validate_boundary(access, environ)
     return access
 
 
@@ -152,12 +171,15 @@ def main() -> int:
     parser.add_argument("--wrapper", required=True)
     parser.add_argument("--project-dir", required=True, type=Path)
     parser.add_argument("--platform", default=sys.platform)
+    parser.add_argument("--emit-backend", action="store_true")
     args = parser.parse_args()
     try:
-        wrapper_preflight(args.wrapper, args.project_dir, platform=args.platform)
+        access = wrapper_preflight(args.wrapper, args.project_dir, platform=args.platform)
     except Exception as exc:
         print(f"[guard] {exc}", file=sys.stderr)
         return 1
+    if args.emit_backend:
+        print("seatbelt" if access.contained and args.wrapper != "claude" else "native")
     return 0
 
 

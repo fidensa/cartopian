@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # cartopian-codex — Cartopian wrapper for the OpenAI Codex CLI.
 #
 # Usage:  cartopian-codex <absolute-prompt-path>
@@ -156,7 +156,12 @@ if [[ -n "${CARTOPIAN_EFFORT:-}" ]]; then
   esac
 fi
 
-if [[ "$CODEX_BYPASS" == "true" ]]; then
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+  # The whole CLI is contained by Cartopian. macOS refuses a second
+  # sandbox_apply inside that process, so native tool sandboxing is replaced
+  # by the mandatory outer boundary, never by an unsandboxed launch.
+  CMD+=(--dangerously-bypass-approvals-and-sandbox)
+elif [[ "$CODEX_BYPASS" == "true" ]]; then
   CMD+=(--dangerously-bypass-approvals-and-sandbox)
 elif [[ -n "$CODEX_SANDBOX" ]]; then
   CMD+=(--sandbox "$CODEX_SANDBOX")
@@ -169,7 +174,7 @@ fi
 # permitted"). writable_roots is additive — the cwd workspace and temp dirs
 # stay writable. Paths are TOML-escaped (backslash, double-quote) into the
 # array literal handed to codex's -c config override.
-if [[ "$CODEX_BYPASS" != "true" && "$CODEX_SANDBOX" == "workspace-write" && -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" != "seatbelt" && "$CODEX_BYPASS" != "true" && "$CODEX_SANDBOX" == "workspace-write" && -n "${CARTOPIAN_WORK_ROOTS:-}" ]]; then
   WRITABLE_ROOTS_TOML=""
   IFS=':' read -r -a _CARTOPIAN_ROOTS <<< "$CARTOPIAN_WORK_ROOTS"
   for _root in "${_CARTOPIAN_ROOTS[@]}"; do
@@ -185,6 +190,9 @@ if [[ "$CODEX_BYPASS" != "true" && "$CODEX_SANDBOX" == "workspace-write" && -n "
 fi
 
 CMD+=("$PROMPT_PATH_ABS")
+
+# Apply the shared native process boundary before the single deadline.
+cartopian_contain_command
 
 # --- OS-enforced deadline (CARTOPIAN_TIMEOUT) -----------------------
 # Prepend `timeout` (or `gtimeout` on macOS) so the OS kills the
@@ -208,7 +216,9 @@ else
 fi
 # --------------------------------------------------------------------
 
-if [[ "$CODEX_BYPASS" == "true" ]]; then
+if [[ "${_CARTOPIAN_ACCESS_BACKEND:-}" == "seatbelt" ]]; then
+  echo "cartopian-codex: running codex exec (Cartopian Seatbelt process sandbox, timeout=$TIMEOUT_DURATION)" >&2
+elif [[ "$CODEX_BYPASS" == "true" ]]; then
   echo "cartopian-codex: running codex exec (bypass=on, sandbox=disabled, skip-git-repo-check=on, timeout=$TIMEOUT_DURATION)" >&2
 else
   echo "cartopian-codex: running codex exec (sandbox=$CODEX_SANDBOX, skip-git-repo-check=on, timeout=$TIMEOUT_DURATION)" >&2

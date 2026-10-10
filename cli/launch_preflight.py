@@ -268,6 +268,29 @@ def environment_checks(
         )
         if problem and agent:
             return [_finding("work-root-contract-unsupported", "guard", problem)]
+        if access.contained and not cartopian_claude and agent:
+            from cli.native_work_sandbox import backend_executable, check_substrate, validate_boundary
+            from cli.work_access import SHIPPED_ADAPTERS
+
+            wrapper = Path(os.path.realpath(resolved_agent or str(agent)))
+            adapter = wrapper.name.removeprefix("cartopian-")
+            root = Path(__file__).resolve().parents[1]
+            if (adapter not in SHIPPED_ADAPTERS[1:] or wrapper != root / "wrappers/bin" / ("cartopian-" + adapter)
+                    or not (root / "cli/native_work_sandbox.py").is_file()
+                    or not (root / "cli/native_network_proxy.py").is_file()
+                    or not (root / "wrappers/bin/_cartopian-work-access.sh").is_file()):
+                return [_finding("work-root-wrapper-untrusted", "guard", "contained process launches require the complete shipped wrapper in this installation")]
+            modeled = dict(active_environ)
+            modeled["CARTOPIAN_ROLE"] = role
+            modeled["CARTOPIAN_LAUNCH_CWD"] = access.launch_cwd
+            try:
+                validate_boundary(access, modeled)
+                check_substrate(access)
+                backend_executable(adapter, access, modeled)
+            except Exception as exc:
+                return [_finding("work-root-policy-invalid", "guard", str(exc))]
+            if launch_bindings is not None:
+                launch_bindings["agent"] = str(wrapper)
     if capability_claude:
         # A real dispatch replaces inherited temp controls with a protected
         # host-only directory before the wrapper or Claude starts. Model that
