@@ -297,6 +297,19 @@ def handler(args: argparse.Namespace) -> int:
         relative_target = f"open/{filename}"
 
     extra_details = {"task_id": task_id, "status": status}
+    # Advisory, never a refusal: an over-wide Source guidance Identity is a
+    # valid source (an A| record can still scope it), but no trace edge can
+    # name it. Without this, the width surfaces only at compose time, after
+    # the identity has been copied into every task that shares the source.
+    from cli import trace_binding
+
+    width_problems = trace_binding.source_width_problems(
+        root / "tasks" / relative_target, content
+    )
+    if width_problems:
+        extra_details["trace_warnings"] = width_problems
+        for problem in width_problems:
+            _writers.stderr("warning", problem)
     if source_id is not None:
         extra_details["source"] = source_id
     if stamped_deliverable is not None:

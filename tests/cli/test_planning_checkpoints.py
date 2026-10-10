@@ -97,6 +97,31 @@ class PlanningCheckpointTests(unittest.TestCase):
         self.task('01-007')
         self.assertEqual(self.derive()['checkpoint'], 'PLAN-BUILD-01-007')
 
+    def test_unrelated_unscoped_legacy_review_is_not_offered_for_backfill(self):
+        self.phase()
+        self.approve('PLAN-PHASE-01')
+        self.approve('PLAN-004', 'Plan ref: CORRECTIVE-01-028\n')
+        self.approve('PLAN-005', 'Plan ref: n/a\n')
+        self.task('01-042', 'CORRECTIVE')
+        state = self.derive()
+        self.assertEqual(state['checkpoint'], 'PLAN-CORRECTIVE-01-042')
+        self.assertIn('No approved review is retained', state['next'])
+        self.assertNotIn('REVIEW-PLAN-004', state['next'])
+        [missing] = planning_status.missing_reviews(self.root)
+        self.assertNotIn('Unscoped approved legacy', missing['detail'])
+
+    def test_unscoped_legacy_review_naming_the_plan_ref_is_offered_for_backfill(self):
+        self.phase()
+        self.approve('PLAN-PHASE-01')
+        self.approve('PLAN-004', 'Plan ref: CORRECTIVE-01-040 through CORRECTIVE-01-045\n')
+        self.approve('PLAN-005', 'Plan ref: CORRECTIVE-01-028\n')
+        self.task('01-042', 'CORRECTIVE')
+        state = self.derive()
+        self.assertEqual(state['checkpoint'], 'PLAN-CORRECTIVE-01-042')
+        self.assertIn('REVIEW-PLAN-004', state['next'])
+        self.assertNotIn('REVIEW-PLAN-005', state['next'])
+        self.assertIn('backfill-review-scope', state['next'])
+
     def test_done_legacy_plan_ref_needs_no_rewrite_or_review(self):
         self.phase()
         self.approve('PLAN-PHASE-01')

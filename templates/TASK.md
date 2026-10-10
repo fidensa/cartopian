@@ -132,7 +132,18 @@ A|<identity>|<governing-constraint|outside-scope>|<why this task is not governed
 W|<identity>|<procedural-authorization|background-scope>|<scope statement>
 ```
 
-Do not hand-compute this block. `cartopian acceptance-trace <root> --task <path> --enumerate` lists the material criteria (ordinal, digest, text), the source identities, and each operator excerpt's alias (`REQ-nnn`) and preview; `--compose-from <mapping.json>` renders a structured mapping (`edges`, `exemptions`, `dispositions`, `merges`, `applicability`, `waivers`, with criteria named by ordinal or text and excerpts by alias) into the validated block to paste here.
+Do not hand-compute this block. `cartopian acceptance-trace <root> --task <path> --enumerate` lists the material criteria (ordinal, digest, text), the source identities, each operator excerpt's alias (`REQ-nnn`) and preview, any source identity too wide to trace (`source_width_problems`), and the mapping format (`mapping_fields`); `--compose-from <mapping.json>` renders a structured mapping into the validated block to paste here. Each mapping key is a list of objects (`?` marks an optional field):
+
+| Key | Fields | Renders |
+| --- | --- | --- |
+| `edges` | `criterion`, `type`, `context`, `source` (or `clause` for a `spec` edge), `occurrence?` | typed `C` record |
+| `exemptions` | `criterion`, `reason` | `none:<reason>` record |
+| `dispositions` | `criterion`, `kind`, `rule` | `X\|` record |
+| `merges` | `criterion`, `origin` | `O\|` record |
+| `applicability` | `identity`, `class`, `scope` | `A\|` record |
+| `waivers` | `identity`, `class`, `scope` | `W\|` record |
+
+`criterion` is an ordinal (`C03`) or the criterion's exact text; `source` and `identity` take a source identity verbatim or a `REQ-nnn` alias; `origin` is the merged-away item's exact text or digest12. Field caps: a source identity is at most 97 B and an applicable context at most 69 B (UTF-8). A Source guidance `Identity:` wider than 97 B as projected can never be named by an edge — keep identities short when the task declares `Upstream trace: required`; `write-task` warns when one is too wide.
 
 - `digest12` is the first 12 hex characters of `sha256(normalized criterion text)` — NFC, ends stripped, internal whitespace runs collapsed to one space, no trailing newline. An edited criterion no longer matches its recorded digest, which is the point.
 - `source-identity` and `applicable-context` are copied **verbatim** from the resolved source guidance. A `spec` edge names `spec-clause sha256:<64 hex>`; an `operator-request` edge names `REQ-<evidence order> sha256:<content identity>`. Neither ever names a path.

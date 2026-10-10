@@ -76,10 +76,14 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="MAPPING_JSON",
         help=(
-            "Absolute path to a JSON mapping (edges, exemptions, dispositions, "
-            "merges, applicability, waivers). Renders the validated fenced "
-            "record block for the task's `## Upstream trace` section without "
-            "writing it."
+            "Absolute path to a JSON mapping. Keys, each a list of objects: "
+            "edges {criterion, type, context, source|clause, occurrence?}; "
+            "exemptions {criterion, reason}; dispositions {criterion, kind, "
+            "rule}; merges {criterion, origin}; applicability {identity, "
+            "class, scope}; waivers {identity, class, scope}. `--enumerate` "
+            "reports the full table (with allowed values) as `mapping_fields`. "
+            "Renders the validated fenced record block for the task's "
+            "`## Upstream trace` section without writing it."
         ),
     )
 

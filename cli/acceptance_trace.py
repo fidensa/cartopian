@@ -467,12 +467,24 @@ def extract_record_block(task_text: str) -> Optional[List[str]]:
     return out
 
 
+#: Where an over-cap field comes from, so the refusal names the actual fix.
+_WIDTH_HINTS: Dict[str, str] = {
+    "source-identity": (
+        "; an edge copies the task's Source guidance Identity verbatim, so "
+        "shorten that Identity (see `acceptance-trace --enumerate` "
+        "`source_width_problems`) or scope the source with an A| record"
+    ),
+    "applicable-context": "; shorten the edge's context",
+}
+
+
 def _check_width(value: str, cap: int, *, field_name: str, line: str) -> None:
     width = len(value.encode("utf-8"))
     if width > cap:
         raise TraceRefusal(
             "trace-unparseable",
-            f"field {field_name!r} is {width} B, over its {cap} B cap: {line}",
+            f"field {field_name!r} is {width} B, over its {cap} B cap"
+            f"{_WIDTH_HINTS.get(field_name, '')}: {line}",
             identity=line,
         )
 
@@ -1429,6 +1441,123 @@ def _encode_field(value: str) -> str:
     return value.replace("|", "%7C")
 
 
+#: The ``--compose-from`` mapping contract: each top-level key is a list of
+#: objects with these required and optional fields. Published through
+#: ``acceptance-trace --enumerate`` (``mapping_fields``) so the PM never has to
+#: discover the format one refusal at a time.
+MAPPING_FIELDS: Dict[str, Dict[str, object]] = {
+    "edges": {
+        "required": ("criterion", "type", "context"),
+        "optional": ("source", "clause", "occurrence"),
+        "values": {"type": SOURCE_TYPES},
+        "note": (
+            "criterion: ordinal (C01) or exact criterion text; source: a source "
+            "identity copied verbatim from --enumerate `sources`, or a REQ-nnn "
+            "alias for operator-request; a spec edge may give clause (the "
+            "clause text) instead of source; context: the applicable context "
+            f"(at most {CAP_APPLICABLE_CONTEXT} B); occurrence defaults to 1"
+        ),
+    },
+    "exemptions": {
+        "required": ("criterion", "reason"),
+        "optional": (),
+        "values": {"reason": EXEMPTION_REASONS},
+    },
+    "dispositions": {
+        "required": ("criterion", "kind", "rule"),
+        "optional": (),
+        "values": {"kind": DISPOSITION_KINDS},
+        "note": "an X| record; rule says why same-class sources do not fight",
+    },
+    "merges": {
+        "required": ("criterion", "origin"),
+        "optional": (),
+        "note": "an O| record; origin is the merged-away task item's exact text or digest12",
+    },
+    "applicability": {
+        "required": ("identity", "class", "scope"),
+        "optional": (),
+        "values": {"class": APPLICABILITY_CLASSES},
+        "note": "an A| record; identity is a source identity or REQ-nnn alias",
+    },
+    "waivers": {
+        "required": ("identity", "class", "scope"),
+        "optional": (),
+        "values": {"class": WAIVER_CLASSES},
+        "note": "a W| record; requires attributable operator authority",
+    },
+}
+
+
+def mapping_fields() -> Dict[str, Dict[str, object]]:
+    """The mapping contract as a JSON-ready record."""
+    out: Dict[str, Dict[str, object]] = {}
+    for key, spec in MAPPING_FIELDS.items():
+        entry: Dict[str, object] = {
+            "required": list(spec["required"]),  # type: ignore[arg-type]
+            "optional": list(spec["optional"]),  # type: ignore[arg-type]
+        }
+        values = spec.get("values") or {}
+        if values:
+            entry["values"] = {k: list(v) for k, v in values.items()}  # type: ignore[union-attr]
+        if spec.get("note"):
+            entry["note"] = spec["note"]
+        out[key] = entry
+    return out
+
+
+def mapping_problems(mapping: Dict[str, object]) -> List[str]:
+    """Every shape problem in a ``--compose-from`` mapping, in one pass.
+
+    Field presence, unknown keys, and closed vocabularies only; criterion and
+    identity resolution stay with :func:`compose_records` and :func:`build`.
+    """
+    problems: List[str] = []
+    for key in mapping:
+        if key not in MAPPING_FIELDS:
+            problems.append(
+                f"unknown mapping key {key!r} (expected one of: "
+                + ", ".join(MAPPING_FIELDS) + ")"
+            )
+    for key, spec in MAPPING_FIELDS.items():
+        value = mapping.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            problems.append(f"{key} must be a list of objects")
+            continue
+        required = spec["required"]
+        allowed = set(required) | set(spec["optional"])  # type: ignore[arg-type]
+        values = spec.get("values") or {}
+        for index, entry in enumerate(value):
+            where = f"{key}[{index}]"
+            if not isinstance(entry, dict):
+                problems.append(f"{where} must be an object")
+                continue
+            missing = [
+                name for name in required  # type: ignore[union-attr]
+                if not isinstance(entry.get(name), str) or not entry[name].strip()
+            ]
+            if key == "edges" and not any(
+                isinstance(entry.get(name), str) and entry[name].strip()
+                for name in ("source", "clause")
+            ):
+                missing.append("source (or clause for a spec edge)")
+            if missing:
+                problems.append(f"{where} missing: " + ", ".join(missing))
+            unknown = sorted(set(entry) - allowed)
+            if unknown:
+                problems.append(f"{where} unknown field(s): " + ", ".join(unknown))
+            for name, vocabulary in values.items():  # type: ignore[union-attr]
+                given = entry.get(name)
+                if isinstance(given, str) and given.strip() and given.strip() not in vocabulary:
+                    problems.append(
+                        f"{where} {name} {given.strip()!r} is not one of: "
+                        + ", ".join(vocabulary)
+                    )
+    return problems
+
+
 def compose_records(
     *,
     spec_acceptance: Sequence[str],
@@ -1438,7 +1567,8 @@ def compose_records(
 ) -> List[str]:
     """Render the sorted record lines for a structured mapping.
 
-    The mapping is the PM's decision, stated without mechanical syntax:
+    The mapping is the PM's decision, stated without mechanical syntax
+    (:data:`MAPPING_FIELDS` is the authoritative field table):
 
     - ``edges``: ``{criterion, type, source, context, occurrence?}`` — a typed
       edge. ``criterion`` is an ordinal (``C03``) or the criterion's exact
@@ -1457,6 +1587,12 @@ def compose_records(
     through :func:`parse_record_set` and :func:`build` exactly as an authored
     block would be.
     """
+    problems = mapping_problems(mapping)
+    if problems:
+        raise TraceRefusal(
+            "trace-unparseable",
+            f"mapping has {len(problems)} problem(s): " + "; ".join(problems),
+        )
     spec_items = [normalize(t) for t in spec_acceptance]
     task_items = [normalize(t) for t in task_acceptance]
     aliases: Dict[str, str] = {}

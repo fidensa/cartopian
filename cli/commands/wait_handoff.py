@@ -58,16 +58,21 @@ channel when one is installed — a no-op otherwise. This is liveness for hosts
 that abort a call that goes silent, not user-facing output: it never touches
 stdout, so the NDJSON contract is identical either way.
 
+Only a placed task file (``tasks/<status>/TASK-NN-NNN.md``) is waitable. Any
+other path is a usage error before any blocking begins; a planning-checkpoint
+artifact is pointed at ``wait-report`` and its derived report path.
+
 Read-only: never writes to the project tree, never moves tasks, never launches
 processes, and never reads the retained launch-log body. Standard library only
 (see STANDARDS.md § Wait Command Standards).
 """
 import argparse
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cli import handoff_observer, host_capability
+from cli import checkpoint_identity, handoff_observer, host_capability, report_identity
 from cli.commands import handoff_packet, report_action
 from cli.commands.resolve_config import _CliError, resolve_project_configuration
 from cli.emit import emit_progress, emit_record
@@ -229,6 +234,48 @@ def _status_reports_exit(status_path: Path) -> Tuple[bool, Optional[int]]:
         return True, None
 
 
+_TASK_STATUS_DIRS = ("open", "in-progress", "in-review", "done")
+_PLANNING_ARTIFACT_RE = re.compile(
+    rf"^(?:PROMPT|REVIEW|REPORT)-({checkpoint_identity.CHECKPOINT_PATTERN})\.md$"
+)
+
+
+def _non_task_refusal(task_path: Path) -> Optional[str]:
+    """Explain why ``task_path`` is not a waitable task file, or return None.
+
+    A planning-checkpoint artifact names its ``wait-report`` replacement
+    (with the derived report path when the project root is discoverable),
+    since that is the one misuse the protocol already routes elsewhere.
+    """
+    if (
+        handoff_packet._extract_task_id(task_path) is not None
+        and task_path.suffix == ".md"
+        and task_path.parent.name in _TASK_STATUS_DIRS
+        and task_path.parent.parent.name == "tasks"
+    ):
+        return None
+    planning = _PLANNING_ARTIFACT_RE.match(task_path.name)
+    if planning is not None:
+        checkpoint = planning.group(1)
+        project_root = handoff_packet._find_project_root(task_path)
+        report = (
+            str(report_identity.planning_report_path(project_root, checkpoint))
+            if project_root is not None
+            else f"<project-root>/reports/REPORT-{checkpoint}.md"
+        )
+        return (
+            f"wait-handoff observes task handoffs only; {task_path.name} belongs "
+            f"to planning checkpoint {checkpoint}, which has no task file. "
+            f"Use wait-report on {report} instead."
+        )
+    return (
+        "wait-handoff requires a task file at tasks/<open|in-progress|in-review|"
+        f"done>/TASK-NN-NNN.md; got: {task_path}. For a report with no task "
+        "file (e.g. a planning-checkpoint review), use wait-report on the "
+        "expected report path."
+    )
+
+
 def handler(args: argparse.Namespace) -> int:
     """Block until a terminal handoff observation, then emit one NDJSON record."""
     raw_path = args.task_path
@@ -256,6 +303,15 @@ def handler(args: argparse.Namespace) -> int:
         stderr_error(f"task file not found: {raw_path}")
         return EXIT_FAIL
     task_path = task_path.resolve()
+
+    # Fail fast on anything that is not a placed task file. Otherwise the stem
+    # stands in for a task id, the derived report slot can never be written,
+    # and the call blocks to the full role timeout — holding the single-
+    # threaded MCP server for that whole time.
+    refusal = _non_task_refusal(task_path)
+    if refusal is not None:
+        stderr_usage(refusal)
+        return EXIT_USAGE
 
     project_root = handoff_packet._find_project_root(task_path)
     if project_root is None:

@@ -122,6 +122,39 @@ def source_identities(task_path: Path, task_text: str) -> List[str]:
     return out
 
 
+def source_width_problems(task_path: Path, task_text: str) -> List[str]:
+    """Source identities too wide for any trace edge to copy verbatim.
+
+    An edge's source field is capped at ``CAP_SOURCE_IDENTITY`` bytes and must
+    equal the projected identity exactly, so a wider identity can never be
+    traced — only scoped by an ``A|`` record. Measured on the assignee
+    projection, because a PM-scoped identity projects to a fixed-width alias.
+    Empty for a task that does not declare ``Upstream trace: required`` or
+    whose guidance does not resolve (readiness reports that separately).
+    """
+    if declaration(task_text) != REQUIRED:
+        return []
+    try:
+        sources = source_identities(task_path, task_text)
+    except (
+        acceptance_trace.TraceRefusal,
+        source_guidance.SourceGuidanceParseError,
+        OSError,
+        UnicodeDecodeError,
+    ):
+        return []
+    cap = acceptance_trace.CAP_SOURCE_IDENTITY
+    problems: List[str] = []
+    for identity in sources:
+        width = len(identity.encode("utf-8"))
+        if width > cap:
+            problems.append(
+                f"Source guidance Identity is {width} B, over the {cap} B "
+                f"upstream-trace source cap, so no edge can name it: {identity}"
+            )
+    return problems
+
+
 def excerpt_identities(project_root: Path, task_path: Path) -> List[str]:
     """Operator excerpts as ``REQ-<evidence order> sha256:<content identity>``.
 
@@ -210,6 +243,8 @@ def enumerate_inputs(
             for c in criteria
         ],
         "sources": source_identities(task_path, text),
+        "source_width_problems": source_width_problems(task_path, text),
+        "mapping_fields": acceptance_trace.mapping_fields(),
         "excerpts": excerpts,
         "excerpts_refusal": excerpts_refusal,
     }

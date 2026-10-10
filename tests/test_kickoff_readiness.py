@@ -693,6 +693,53 @@ class ScopedApplicabilityTests(unittest.TestCase):
             )
 
 
+class ComposeMappingContractTests(unittest.TestCase):
+    """The `--compose-from` mapping format is published and checked in one pass."""
+
+    CRITERIA = list(at._ANCHOR_CRITERIA)
+
+    def test_every_shape_problem_is_reported_at_once(self):
+        mapping = {
+            "edge": [],
+            "edges": [{"criterion": "C01", "type": "regulation", "src": "x"}],
+            "exemptions": [{"criterion": "C01"}],
+            "applicability": [{"identity": "REQ-001", "class": "irrelevant", "scope": "x"}],
+        }
+        with self.assertRaises(at.TraceRefusal) as ctx:
+            at.compose_records(
+                spec_acceptance=self.CRITERIA, task_acceptance=[], mapping=mapping
+            )
+        self.assertEqual(ctx.exception.code, "trace-unparseable")
+        detail = ctx.exception.detail
+        for expected in (
+            "unknown mapping key 'edge'",
+            "edges[0] missing: context, source (or clause for a spec edge)",
+            "edges[0] unknown field(s): src",
+            "edges[0] type 'regulation' is not one of:",
+            "exemptions[0] missing: reason",
+            "applicability[0] class 'irrelevant' is not one of:",
+        ):
+            self.assertIn(expected, detail)
+
+    def test_published_table_names_every_key_compose_reads(self):
+        fields = at.mapping_fields()
+        self.assertEqual(
+            set(fields),
+            {"edges", "exemptions", "dispositions", "merges", "applicability", "waivers"},
+        )
+        self.assertEqual(fields["edges"]["required"], ["criterion", "type", "context"])
+        self.assertIn("operator-request", fields["edges"]["values"]["type"])
+        self.assertEqual(fields["waivers"]["values"]["class"], list(at.WAIVER_CLASSES))
+
+    def test_over_wide_source_identity_names_the_source_guidance_fix(self):
+        wide = "Vendor master services agreement " * 4
+        with self.assertRaises(at.TraceRefusal) as ctx:
+            at.parse_record_set(
+                [f"C01|{'0' * 12}|requirement|{wide.strip()}|version 3|1"]
+            )
+        self.assertIn("Source guidance Identity", ctx.exception.detail)
+
+
 class TraceCommandAuthoringTests(unittest.TestCase):
     """`acceptance-trace --enumerate` and `--compose-from` on a real project."""
 
@@ -771,6 +818,43 @@ class TraceCommandAuthoringTests(unittest.TestCase):
             aliases = [e["alias"] for e in record["excerpts"]]
             self.assertEqual(aliases, ["REQ-001", "REQ-002"])
             self.assertIn("Pricing", record["excerpts"][1]["preview"])
+
+    def test_enumerate_publishes_mapping_fields_and_width_problems(self):
+        with _isolated_home(), project_scaffold(cartopian_toml=_TOML_REVIEW_OFF) as scaffold:
+            root, task = self._project(scaffold)
+            code, records, err = _run(
+                trace_command.handler, project_root=str(root), task=str(task),
+                projection=None, anchor=False, enumerate_inputs=True, compose_from=None,
+            )
+            self.assertEqual(code, 0, err)
+            self.assertEqual(records[0]["mapping_fields"], at.mapping_fields())
+            self.assertEqual(records[0]["source_width_problems"], [])
+
+    def test_write_task_warns_on_a_source_identity_no_edge_can_name(self):
+        wide = "Vendor master services agreement and every amendment schedule " * 2
+        body = (
+            TASK_BODY.replace("Upstream trace: n/a", "Upstream trace: required")
+            .replace("Source guidance: n/a", "Source guidance: task")
+            .replace(
+                "## Acceptance\n",
+                "## Source guidance\n\n### Authoritative sources\n\n"
+                f"- Identity: {wide.strip()}; Applicable context: version 3, "
+                "effective 2026-08-01; Status: current; Scope: vendor terms\n\n"
+                "### Conflict resolution\n\n- Status: none; Rule: single source; "
+                "Decision: n/a\n\n### Unverified claims\n\n- none\n\n## Acceptance\n",
+            )
+        )
+        with _isolated_home(), project_scaffold(cartopian_toml=_TOML_REVIEW_OFF) as scaffold:
+            root, _task = self._project(scaffold)
+            code, records, err = _run(
+                write_task.handler, project_root=str(root), task_id="TASK-01-002",
+                content=body, content_file=None, source=None,
+            )
+            self.assertEqual(code, 0, err)
+            warnings = records[0]["details"]["trace_warnings"]
+            self.assertEqual(len(warnings), 1, warnings)
+            self.assertIn("over the 97 B upstream-trace source cap", warnings[0])
+            self.assertIn("[warning]", err)
 
     def test_compose_from_renders_a_validated_block_with_scoping(self):
         with _isolated_home(), project_scaffold(cartopian_toml=_TOML_REVIEW_OFF) as scaffold:

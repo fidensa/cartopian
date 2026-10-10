@@ -194,10 +194,39 @@ def _gate_record(
         return None
     if matching:
         return matching[0]
-    unaddressed = [r for r in records.values() if r["status"] == STATUS_APPROVED
-                   and r.get("scope_error") and not r.get("stage")]
+    candidates = _legacy_candidates(records, phase, plan_ref)
     return {"id": checkpoint, "status": STATUS_PENDING, "verdict": None,
-            "unaddressed_reviews": [r["id"] for r in unaddressed]}
+            "unaddressed_reviews": [r["id"] for r in candidates]}
+
+
+def _legacy_candidates(
+    records: Dict[str, Dict[str, Any]], phase: Optional[str], plan_ref: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Approved unscoped legacy reviews whose own headers could cover a gate.
+
+    A legacy review's ``Phase:`` and ``Plan ref:`` headers are the only scope
+    it carries, so only they can make it a backfill candidate — the same rule
+    ``backfill-review-scope`` applies when widening. A review naming a
+    different plan ref or phase is unrelated evidence, and pointing a
+    never-reviewed checkpoint at it would invite a wrong backfill.
+    """
+    out = []
+    for record in records.values():
+        if (record["status"] != STATUS_APPROVED or not record.get("scope_error")
+                or record.get("stage")):
+            continue
+        named_ref = record.get("plan_ref") or ""
+        names_plan_ref = bool(request_trace.PLAN_REF_TOKEN_RE.search(named_ref))
+        if plan_ref is not None:
+            if not request_trace._review_covers_plan_ref(named_ref, plan_ref):
+                continue
+        elif phase is not None:
+            if record.get("phase") != phase or names_plan_ref:
+                continue
+        elif record.get("phase") or names_plan_ref:
+            continue
+        out.append(record)
+    return out
 
 
 
@@ -255,10 +284,14 @@ def _in_flight_step(record: Dict[str, Any], what: str) -> str:
             f"Checkpoint {checkpoint} ({what}) returned {record['verdict']}: revise "
             "the target artifacts in place and rerun the checkpoint."
         )
-    if record.get("unaddressed_reviews"):
+    candidates = record.get("unaddressed_reviews") or []
+    if candidates:
+        names = ", ".join("REVIEW-" + c for c in candidates[:3])
+        more = f" (+{len(candidates) - 3} more)" if len(candidates) > 3 else ""
         return (
-            f"Approved legacy review evidence exists but lacks checkpoint scope for {checkpoint} ({what}); "
-            "establish its actual scope and use cartopian backfill-review-scope."
+            f"No scoped approval for {checkpoint} ({what}). Unscoped approved "
+            f"legacy review(s) name this scope: {names}{more}. If one reviewed it, "
+            "run cartopian backfill-review-scope; otherwise run the checkpoint."
         )
     return (
         f"No approved review is retained for checkpoint {checkpoint} ({what}): run "

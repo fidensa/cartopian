@@ -395,3 +395,57 @@ def test_missing_task_file_fails(tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == EXIT_FAIL
     assert "task file not found" in captured.err
+
+
+def _never_sleep(monkeypatch):
+    """Fail the test if the refused call ever reaches the polling loop."""
+    def boom(_seconds):
+        raise AssertionError("refused wait-handoff must not block")
+
+    monkeypatch.setattr(wait_handoff.time, "sleep", boom)
+
+
+def test_planning_checkpoint_artifact_is_refused_with_wait_report_route(
+    tmp_path, capsys, monkeypatch
+):
+    task_path = _make_project(tmp_path)
+    project = task_path.parents[2]
+    prompt = project / "prompts" / "PROMPT-PLAN-CORRECTIVE-03-042.md"
+    _write(prompt, "# Planning review prompt\n")
+    _never_sleep(monkeypatch)
+
+    exit_code = _run(prompt, max_block=None)
+
+    captured = capsys.readouterr()
+    assert exit_code == EXIT_USAGE
+    assert captured.out == ""
+    assert "planning checkpoint PLAN-CORRECTIVE-03-042" in captured.err
+    assert "wait-report" in captured.err
+    expected = (project / "reports" / "REPORT-PLAN-CORRECTIVE-03-042.md").resolve()
+    assert str(expected) in captured.err
+
+
+@pytest.mark.parametrize(
+    "relpath",
+    [
+        "IMPLEMENTATION_PLAN.md",
+        "reviews/REVIEW-01-003.md",
+        "tasks/TASK-01-003.md",
+        "tasks/in-progress/NOTES.md",
+    ],
+)
+def test_non_task_path_is_refused_before_blocking(
+    tmp_path, capsys, monkeypatch, relpath
+):
+    task_path = _make_project(tmp_path)
+    target = task_path.parents[2] / relpath
+    if not target.exists():
+        _write(target, "# not a placed task\n")
+    _never_sleep(monkeypatch)
+
+    exit_code = _run(target, max_block=None)
+
+    captured = capsys.readouterr()
+    assert exit_code == EXIT_USAGE
+    assert captured.out == ""
+    assert "requires a task file" in captured.err

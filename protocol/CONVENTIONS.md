@@ -1172,7 +1172,7 @@ A completion-report identity mismatch stops dispatch, report routing and task mo
 
 The PM detects handoff completion by observing the filesystem through two canonical read-only wait primitives, which replace all ad-hoc polling, hand-rolled timing loops, manual "tell me when it's done" prompts, and PM-side watchdog timers:
 
-- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the configured `roles.<role>.timeout` value as the absolute ceiling.
+- `cartopian wait-handoff <task-path> --role <role> [--max-block <duration>]` — for task-scoped handoffs (task assignment, task review). It resolves the task's expected report path and honors the configured `roles.<role>.timeout` value as the absolute ceiling. Any path other than a placed `tasks/<status>/TASK-NN-NNN.md` is refused before the wait begins; a planning-checkpoint artifact is pointed at `wait-report` and its report path.
 - `cartopian wait-report <report-path> [--role <role>] [--max-block <duration>]` — the lower-level primitive for a known report path, including planning-checkpoint reviews that have no task file. With `--role` it honors the same resolved role launch timeout; otherwise the protocol default applies.
 
 The completion contract is:
