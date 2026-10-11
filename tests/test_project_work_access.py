@@ -150,6 +150,14 @@ def test_contained_unix_socket_exception_launches_as_declared_weakening(tmp_path
     assert str(work / ".cartopian-work-root-boundary") in fs["denyWrite"]
 
 
+def test_contained_launch_resets_shell_cwd_after_each_command(tmp_path):
+    # The hook pins Bash to the launch cwd; a persisted `cd` would refuse every
+    # later Bash call, including the `cd` back.
+    project, work, home = project_fixture(tmp_path, configured=True)
+    settings = claude_launch_settings.build_settings(REPO, windows=False, project_dir=project, include_capability=True, environ={"HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_LAUNCH_CWD": str(work)})
+    assert settings["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
+
+
 def test_bash_cwd_drift_and_identity_replacement_refuse(tmp_path):
     project, work, home = project_fixture(tmp_path)
     info = work.stat()
@@ -251,6 +259,7 @@ def test_composed_prompt_names_contained_launch_directory(tmp_path):
         with mock.patch.dict(os.environ, {"HOME": str(tmp_path)}):
             result = compose(task, "coder")
         assert "Launch working directory: " + str(work) in result["assignee_prompt"]
+        assert "do not change directory in a separate command" in result["assignee_prompt"]
         assert "publication remains mediated" in result["assignee_prompt"]
 
 

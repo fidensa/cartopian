@@ -228,6 +228,8 @@ if ($env:CARTOPIAN_ROLE -or $env:CARTOPIAN_EXPECTED_REPORT_PATH) {
             $Args += @('--disallowedTools', 'Agent,Task,EnterWorktree,ExitWorktree,TeamCreate,TeamDelete,CronCreate,CronDelete,CronList,SendMessage,SendFile,RemoteTrigger')
             $Args += @('--setting-sources', '')
             $env:CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
+            # The refusal hook pins Bash to the launch cwd; never let a `cd` persist.
+            $env:CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = '1'
         }
         $Args += @('--settings', $ClaudeLaunchSettingsJson)
     }

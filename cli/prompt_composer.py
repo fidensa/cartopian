@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1601,6 +1602,15 @@ def _render_prompt(
         f"{expected_report_path}",
         "",
     ]
+    if launch_cwd and os.path.realpath(launch_cwd) != os.path.realpath(project_root):
+        # Contained launches pin the shell to this directory; a standalone
+        # `cd` into another work root does not carry to the next command.
+        parts[-1:-1] = [
+            "- Shell commands run from the launch working directory. Reach "
+            "another work root within a single command (`cd <root> && "
+            "<command>`, `git -C <root>`, `make -C <root>`) or by absolute "
+            "path; do not change directory in a separate command.",
+        ]
 
     # Outcome and done criteria ----------------------------------------------
     goal = _section_body(content, "Goal") or ""

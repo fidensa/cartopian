@@ -1625,7 +1625,13 @@ def evaluate(
         # for the next sandbox invocation.
         cwd = payload.get("cwd")
         if not isinstance(cwd, str) or resolve(cwd) != resolve(shell_cwd):
-            return Decision("deny", "[guard] Bash denied: shell cwd changed from the launch-bound work root; return to " + shell_cwd)
+            return Decision(
+                "deny",
+                "[guard] Bash denied: shell cwd changed from the launch-bound "
+                f"work root {shell_cwd}; Bash runs only from that directory. "
+                "Reach other work roots within a single command (`cd <root> && "
+                "<command>`, `git -C <root>`, `make -C <root>`) or by absolute path.",
+            )
         try:
             root = environ.get(PROJECT_ROOT_ENV)
             if not root or bound_work_roots is None:

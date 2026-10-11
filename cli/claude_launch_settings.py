@@ -2562,6 +2562,10 @@ def build_settings(
         # memory. Without this override, Write/Edit can persist instructions
         # under ~/.claude/projects outside every Cartopian project boundary.
         settings["env"] = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+        # The refusal hook pins Bash to the launch cwd. Claude otherwise keeps
+        # a `cd` across calls, after which every later Bash call (including
+        # the `cd` back) is refused. Reset the cwd after each command instead.
+        settings["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] = "1"
         bound_host_tmp = (environ.get(CLAUDE_HOST_TMPDIR_ENV) or "").strip()
         if bound_host_tmp:
             settings["env"]["TMPDIR"] = bound_host_tmp

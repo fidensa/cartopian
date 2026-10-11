@@ -254,6 +254,8 @@ if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; t
       # empty argument is Claude's documented filesystem-settings isolation.
       CMD+=(--setting-sources "")
       export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+      # The refusal hook pins Bash to the launch cwd; never let a `cd` persist.
+      export CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1
     fi
     CMD+=(--settings "$_CARTOPIAN_CLAUDE_SETTINGS")
   fi
