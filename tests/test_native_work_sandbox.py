@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cli.native_work_sandbox import check_substrate, profile, publication_slots, publish, read_candidate
+from cli.native_work_sandbox import SANDBOX, check_substrate, profile, publication_slots, publish, read_candidate
 from cli.work_access import WorkAccessError, effective_access
 from tests.test_project_work_access import ADAPTERS, REPO, project_fixture
 
@@ -250,6 +250,25 @@ def test_git_metadata_alias_inside_writable_root_refuses_launch(native, alias):
     access = effective_access(project, {'work':str(work)}, ('read:work-roots','write:worktree'), activated=True)
     with pytest.raises(Exception, match='symbolic link|hard.link'):
         validate_boundary(access, {'HOME':str(home),'CARTOPIAN_ROLE':'worker'})
+
+
+@pytest.mark.parametrize('grants', (('read:work-roots',), ('read:work-roots','write:worktree')))
+def test_installation_fixture_may_link_inside_its_cartopian_home(native, grants):
+    from cli.native_work_sandbox import metadata_paths, validate_boundary
+    project, _work, home = native
+    spikes = project/'resources/spikes'
+    (project/'cartopian.local.toml').write_text('[work_roots]\nwork=' + json.dumps(str(spikes)) + '\n')
+    fixture = spikes/'run/home/.cartopian'
+    (fixture/'versions/v1.9.24').mkdir(parents=True)
+    (fixture/'previous').symlink_to('versions/v1.9.24')
+    access = effective_access(project, {'work':str(spikes)}, grants, activated=True)
+    validate_boundary(access, {'HOME':str(home),'CARTOPIAN_ROLE':'worker'})
+    assert not any(path.startswith(str(fixture)) for path in metadata_paths(access))
+    check_substrate(access)
+    # Disposable fixture data stays ordinary work content under the kernel.
+    written = subprocess.run([SANDBOX, '-p', profile(access), '/usr/bin/touch', str(fixture/'previous/new')],
+                             capture_output=True, text=True)
+    assert (written.returncode == 0) == bool(access.backend_writable), written.stderr
 
 
 def test_private_hermes_state_preserves_only_provider_scalars(tmp_path):

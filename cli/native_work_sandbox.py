@@ -30,7 +30,11 @@ from cli.work_access import SHIPPED_ADAPTERS, WorkAccess, WorkAccessError, withi
 
 SANDBOX = "/usr/bin/sandbox-exec"
 MAX_PUBLICATION = 2 * 1024 * 1024
-METADATA_NAMES = ("git", "codex", "claude", "cartopian", "gemini", "opencode", "hermes")
+# Git and agent configuration is discovered from any directory a tool runs in.
+# Cartopian's own enforcement inputs (runtime, config home, governing project
+# metadata) can never lie inside a work root, so a mapped ".cartopian" is
+# ordinary work content such as an installation fixture.
+METADATA_NAMES = ("git", "codex", "claude", "gemini", "opencode", "hermes")
 
 
 def git_environment(environ: Mapping[str, str]) -> dict[str, str]:
