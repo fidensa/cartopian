@@ -138,6 +138,18 @@ def test_claude_policy_preserves_role_boundary_and_pins_ancestors(tmp_path, role
         assert str(work) in fs["denyRead"]
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="native macOS policy")
+def test_contained_unix_socket_exception_launches_as_declared_weakening(tmp_path):
+    project, work, home = project_fixture(tmp_path, configured=True)
+    config = project / "cartopian.toml"
+    config.write_text(config.read_text() + "[roles.worker.sandbox]\nallow_unix_sockets=true\n")
+    settings = claude_launch_settings.build_settings(REPO, windows=False, project_dir=project, include_capability=True, environ={"HOME": str(home), "CARTOPIAN_ROLE": "worker", "CARTOPIAN_LAUNCH_CWD": str(work)})
+    assert settings["sandbox"]["network"]["allowAllUnixSockets"] is True
+    fs = settings["sandbox"]["filesystem"]
+    assert str(work) in fs["allowWrite"]
+    assert str(work / ".cartopian-work-root-boundary") in fs["denyWrite"]
+
+
 def test_bash_cwd_drift_and_identity_replacement_refuse(tmp_path):
     project, work, home = project_fixture(tmp_path)
     info = work.stat()

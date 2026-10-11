@@ -2151,8 +2151,6 @@ def capability_sandbox(
     if access.writable and os.path.realpath(environ.get("CARTOPIAN_LAUNCH_CWD", "")) != access.launch_cwd:
         raise SettingsError("project-contained shell writes require launch cwd bound to " + access.launch_cwd)
     exceptions = resolution.sandbox_for(_session_roles(environ))
-    if access.contained and exceptions["allow_unix_sockets"]:
-        raise SettingsError("project-contained work roots cannot enforce their boundary with allow_unix_sockets=true; remove that exception")
     role_writable_paths = role_sandbox_writable_paths(exceptions, environ)
     deny_write: list[str] = []
     host_tool_environ, _host_tool_sources = _effective_host_tool_environment(

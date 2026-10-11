@@ -86,7 +86,9 @@ mutation tools refuse work-root writes because checking a path before a later
 open cannot securely bind that open. Sandboxed Bash enforces the decision at the
 actual filesystem operation, including child processes. Normal settings, plugins
 and external MCP tools cannot widen this launch, and unsandboxed retry is disabled.
-Contained roots refuse `allow_unix_sockets=true`, which could reach host daemons.
+A role's `allow_unix_sockets=true` exception applies here as it does for
+external roots: shell commands can reach host daemons, so `dispatch` warns and
+`containment-matrix` reports the role as weakened containment.
 
 For Codex, Antigravity (`agy`), Devin, OpenCode and Hermes on native macOS,
 `cli/native_work_sandbox.py` supplies a mandatory outer Seatbelt process sandbox.

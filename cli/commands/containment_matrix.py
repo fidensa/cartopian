@@ -818,8 +818,6 @@ def handler(args: argparse.Namespace) -> int:
             access = effective_access(project_path, resolved["work_roots"], role["effective_grants"], activated=activated)
             if access.contained:
                 problem = adapter_problem(adapter, "win32" if _running_on_windows() else sys.platform, access, activated=activated)
-                if host == "claude-code" and (role.get("sandbox") or {}).get("allow_unix_sockets"):
-                    problem = "project-contained work roots refuse allow_unix_sockets=true"
                 if host == "claude-code" and not problem:
                     from cli.claude_launch_settings import CLAUDE_PROJECT_WORK_MIN_VERSION, parse_claude_version
 

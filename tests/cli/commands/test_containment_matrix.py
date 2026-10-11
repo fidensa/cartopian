@@ -625,3 +625,14 @@ class TestProjectContainedVersionEvidence(_Fixture):
         self.assertEqual(row["project_work_access"]["coder"]["status"], "configured-unattested")
         self.assertTrue(row["boundaries"]["write"]["shell_write_policy_configured"])
         self.assertFalse(row["boundaries"]["write"]["shell_interception"])
+
+    def test_unix_socket_exception_is_weakened_not_refused(self):
+        self.set_claude_version("2.1.295 (Claude Code)")
+        self.scaffold.config.write_text(
+            _ACTIVATED_TOML + "\n[roles.coder.sandbox]\nallow_unix_sockets = true\n"
+        )
+        _record, rows = self.rows()
+        row = rows["claude-code"]
+        self.assertEqual(row["project_work_access"]["coder"]["status"], "configured-unattested")
+        self.assertEqual(row["weakened_containment"], ["coder"])
+        self.assertIn("Unix-socket access is open for role(s) coder", row["disclosure"])
