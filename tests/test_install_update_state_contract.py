@@ -35,6 +35,7 @@ from cli.install_state import (
     transition,
     validate_portable_evidence,
 )
+from cli.install_workflow import _OPTIONAL_SURFACES, _choice
 from cli.main import build_parser
 from mcp_server import server
 from tests.mcp_result import tool_records
@@ -161,6 +162,39 @@ class ContractVocabularyTests(unittest.TestCase):
                 "unknown-vocabulary",
                 [item["code"] for item in record["diagnostics"]],
             )
+
+    def test_every_workflow_offered_action_is_in_the_choice_vocabulary(self):
+        # The workflow names each optional surface's action itself; a label
+        # the contract does not accept turns every offer into an error.
+        for surface in _OPTIONAL_SURFACES:
+            with self.subTest(surface=surface):
+                choice = _choice(
+                    surface,
+                    None,
+                    fresh_authorized=False,
+                    carried_decline=False,
+                    decision_context={},
+                )
+                surfaces = [
+                    _surface(kind, "offered", True)
+                    if kind == surface
+                    else _surface(kind)
+                    for kind in SURFACE_KINDS
+                ]
+                record = _base_record(
+                    state="repair-offered",
+                    surfaces=surfaces,
+                    choices=[choice],
+                )
+                self.assertEqual(
+                    [
+                        item
+                        for item in record["diagnostics"]
+                        if item["severity"] == "error"
+                    ],
+                    [],
+                )
+                self.assertEqual(record["outcome"]["status"], "in-progress")
 
     def test_stable_projection_excludes_internal_diagnostic_detail(self):
         record = _base_record(

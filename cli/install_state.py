@@ -120,6 +120,7 @@ OFFERED_ACTIONS: Tuple[str, ...] = (
     "replace",
     "register",
     "reconfigure",
+    "refresh-hooks",
     "migrate",
     "restart",
 )

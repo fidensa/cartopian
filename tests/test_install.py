@@ -367,6 +367,27 @@ class ConnectedVerificationContinuationTests(_InstallTestBase):
         }
         self.assertFalse(install_mod._requires_connected_verification(result))
 
+    def test_pending_intake_hook_offer_keeps_bounded_continuation(
+        self,
+    ) -> None:
+        result = {
+            "outcome": {
+                "status": "blocked",
+                "pending_surfaces": ["intake-hooks"],
+                "blocked_surfaces": [],
+                "completed_surfaces": ["core-files"],
+            },
+            "surfaces": [
+                {"kind": "core-files", "state": "verified"},
+                {"kind": "intake-hooks", "state": "offered"},
+            ],
+            "restarts": [{"status": "blocked"}],
+        }
+        self.assertEqual(
+            install_mod._pending_client_repair_offers(result), ["intake-hooks"]
+        )
+        self.assertTrue(install_mod._requires_connected_verification(result))
+
 
 class VersionMarkerTests(_InstallTestBase):
     def test_ref_records_version_marker(self) -> None:

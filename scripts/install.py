@@ -68,7 +68,7 @@ EXIT_CONNECTED_VERIFICATION = 4
 # Optional client surfaces whose pending repair offer is resolved by the
 # operator's accept/decline/defer disposition on a re-run, not by this run.
 CLIENT_REPAIR_SURFACES = frozenset(
-    ("bridges", "client-registrations", "client-configuration")
+    ("bridges", "client-registrations", "client-configuration", "intake-hooks")
 )
 
 
