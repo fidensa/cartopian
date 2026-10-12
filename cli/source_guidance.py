@@ -208,6 +208,24 @@ def _scrubbed_fields(item: Dict[str, str]) -> Dict[str, str]:
     }
 
 
+def _source_field_forms(source: Dict[str, Any]) -> tuple:
+    """Accepted (identity, applicable context) spellings for a governed source.
+
+    Each field matches either its canonical text or its assignee projection,
+    independently: a report may carry the deidentified prompt transcription,
+    the restored canonical text, or a mix of the two. Projection is never
+    applied to the evidence side, so a different identifier cannot match
+    by scrubbing to the same text as the governing one.
+    """
+    identity = source.get("identity")
+    context = source.get("applicable_context")
+    identities = {identity, _deidentified_source_identity(identity or "")}
+    contexts = {context}
+    if isinstance(context, str):
+        contexts.add(deidentify.scrub_field(context))
+    return identities, contexts
+
+
 def assignee_projection(record: Dict[str, Any]) -> Dict[str, Any]:
     """The one canonical assignee-facing projection of a resolved record.
 
@@ -682,16 +700,19 @@ def resolve_report_evidence(
         owner_path=None,
     )
     blockers = list(evidence["blockers"])
-    # Compare against the same canonical assignee projection the prompt
-    # rendered, so a source transcribed faithfully from the deidentified
-    # guidance — identifiers scrubbed from any field — always matches.
-    governed = {
-        (item.get("identity"), item.get("applicable_context"))
-        for item in assignee_projection(guidance)["authoritative_sources"]
-    }
+    # Match each evidence field against the governing record's canonical
+    # text or its canonical assignee projection (the form the prompt
+    # rendered), so a faithful transcription of either always matches.
+    governed = [
+        _source_field_forms(item) for item in guidance["authoritative_sources"]
+    ]
     for source in evidence["authoritative_sources"]:
-        key = (source.get("identity"), source.get("applicable_context"))
-        if key not in governed:
+        identity = source.get("identity")
+        context = source.get("applicable_context")
+        if not any(
+            identity in identities and context in contexts
+            for identities, contexts in governed
+        ):
             blockers.append(_blocker(
                 "source-evidence-not-in-guidance",
                 f"completion evidence names source {source.get('identity')!r} in context {source.get('applicable_context')!r}, which is not present in the governing guidance",

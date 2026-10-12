@@ -293,6 +293,76 @@ class SourceGuidanceGreenFixtureTests(unittest.TestCase):
             "source-evidence-not-in-guidance", evidence["blocker_codes"]
         )
 
+    def _identifier_context_task(self, tmp: str) -> Path:
+        section = (
+            _source_section()
+            .replace(
+                "Identity: Service operating policy",
+                "Identity: decisions/DEC-050.md",
+            )
+            .replace(
+                "Applicable context: version 3, effective 2026-08-01",
+                "Applicable context: Locked DEC-050, 2026-08-01",
+            )
+        )
+        task = Path(tmp) / "TASK-04-002.md"
+        task.write_text(_task_body(section), encoding="utf-8")
+        return task
+
+    def test_restored_canonical_context_validates_against_governing_guidance(self) -> None:
+        """Regression: evidence carrying the governing record's canonical
+        identifiers (as restored from the spec) must match, not only the
+        deidentified prompt transcription — including a mixed row whose
+        identity is the projected alias and whose context is canonical."""
+        with tempfile.TemporaryDirectory() as tmp:
+            task = self._identifier_context_task(tmp)
+            guidance = source_guidance.resolve_task_guidance(task)
+            projected = guidance["deidentified_guidance"]
+            projected_report = projected.replace(
+                "## Source guidance", "## Source evidence", 1
+            )
+            canonical_report = projected_report.replace(
+                "Applicable context: Locked, 2026-08-01",
+                "Applicable context: Locked DEC-050, 2026-08-01",
+            )
+            alias = source_guidance.assignee_projection(guidance)[
+                "authoritative_sources"
+            ][0]["identity"]
+            fully_canonical_report = canonical_report.replace(
+                f"Identity: {alias}", "Identity: decisions/DEC-050.md"
+            )
+            results = [
+                source_guidance.resolve_report_evidence(task, report)
+                for report in (
+                    projected_report, canonical_report, fully_canonical_report
+                )
+            ]
+
+        self.assertIn("Applicable context: Locked, 2026-08-01", projected)
+        self.assertNotEqual(canonical_report, projected_report)
+        self.assertNotEqual(fully_canonical_report, canonical_report)
+        for evidence in results:
+            self.assertEqual(evidence["outcome"], "valid", evidence["blockers"])
+
+    def test_substituted_identifier_in_context_does_not_match_by_scrubbing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            task = self._identifier_context_task(tmp)
+            guidance = source_guidance.resolve_task_guidance(task)
+            report = (
+                guidance["deidentified_guidance"]
+                .replace("## Source guidance", "## Source evidence", 1)
+                .replace(
+                    "Applicable context: Locked, 2026-08-01",
+                    "Applicable context: Locked DEC-051, 2026-08-01",
+                )
+            )
+            evidence = source_guidance.resolve_report_evidence(task, report)
+
+        self.assertEqual(evidence["outcome"], "invalid")
+        self.assertIn(
+            "source-evidence-not-in-guidance", evidence["blocker_codes"]
+        )
+
     def test_context_whose_only_marker_is_a_pm_identifier_fails_closed(self) -> None:
         """Regression: the digits inside TASK-05-010 must not satisfy the
         applicable-context check. Deidentification strips the identifier, so
