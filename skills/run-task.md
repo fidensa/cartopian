@@ -187,7 +187,7 @@ This stage also runs on its own, at whatever point the run has reached, when the
 
 Refresh `STATE.md` through `cartopian write-state <project-root>` — the writer composes the canonical body from the filesystem in-process; do not run `compose-state` first or pass `--content`.
 
-If — and only if — this session surfaced a fact that is about this project's current state, not derivable from the filesystem/config/protocol, and changes what the next session does, deliver it as a situation note: `cartopian write-state <project-root> --note "…"`. Notes are bounded (max 5, one line of ≤ 200 chars each) with a one-delivery TTL. Protocol-compliance feedback is never a note — it routes to `BACKLOG.md` via `cartopian write-backlog` (`cartopian://protocol/CONVENTIONS/session-state`).
+If — and only if — this session surfaced a fact that is about this project's current state, not derivable from the filesystem/config/protocol, and changes what the next session does, deliver it as a situation note: `cartopian write-state <project-root> --note "…"`. Notes are bounded (max 5, one line of ≤ 200 chars each) with a one-delivery TTL. Follow-up items are never notes either. Write a backlog entry (`cartopian write-backlog`) only for intentionally deferred future work this project owns; a current-task blocker stays in its handoff evidence, and a defect in a dependency tool, Cartopian included, belongs to that product's tracking. Never create a backlog entry merely to carry context into the next session (`cartopian://protocol/CONVENTIONS/session-state`).
 
 If git versioning is enabled, perform the configured session-close git behavior for project PM data (`cartopian://protocol/CONVENTIONS/git`); git for the protocol repository itself remains human-owned.
 

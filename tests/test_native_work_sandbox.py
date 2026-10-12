@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -269,6 +270,59 @@ def test_installation_fixture_may_link_inside_its_cartopian_home(native, grants)
     written = subprocess.run([SANDBOX, '-p', profile(access), '/usr/bin/touch', str(fixture/'previous/new')],
                              capture_output=True, text=True)
     assert (written.returncode == 0) == bool(access.backend_writable), written.stderr
+
+
+def newline_git_fixture(tmp_path, work, layout):
+    """A Git checkout whose work-root path cannot be a Seatbelt literal."""
+    repo = work/'fixture\nrepo'
+    if layout == 'repository':
+        (repo/'.git').mkdir(parents=True)
+        (repo/'.git/config').write_text('[core]\n\trepositoryformatversion = 0\n')
+        (repo/'tracked').write_text('tracked')
+        return repo, repo/'.git/config'
+    git = shutil.which('git')
+    if not git:
+        pytest.skip('requires git for a linked-worktree fixture')
+    env = {'PATH':'/usr/bin:/bin', 'HOME':str(tmp_path), 'GIT_CONFIG_NOSYSTEM':'1', 'GIT_CONFIG_GLOBAL':'/dev/null',
+           'GIT_AUTHOR_NAME':'t', 'GIT_AUTHOR_EMAIL':'t@example.invalid',
+           'GIT_COMMITTER_NAME':'t', 'GIT_COMMITTER_EMAIL':'t@example.invalid'}
+    main = tmp_path/'main'
+    main.mkdir()
+    (main/'tracked').write_text('tracked')
+    for argv in (('init','-q'), ('add','tracked'), ('commit','-qm','fixture'), ('worktree','add','-q','--detach',str(repo))):
+        subprocess.run([git, '-C', str(main), *argv], env=env, check=True, capture_output=True)
+    assert (repo/'.git').is_file()
+    return repo, repo/'.git'
+
+
+def sandboxed(access, *argv):
+    return subprocess.run([SANDBOX, '-p', profile(access), *argv], capture_output=True, text=True)
+
+
+@pytest.mark.parametrize('layout', ('repository', 'linked-worktree'))
+def test_read_only_root_contains_unrepresentable_git_fixture(native, tmp_path, layout):
+    from cli.native_work_sandbox import metadata_paths, validate_boundary
+    project, work, home = native
+    repo, metadata = newline_git_fixture(tmp_path, work, layout)
+    reader = effective_access(project, {'work':str(work)}, ('read:work-roots',), activated=True)
+    environ = {'HOME':str(home),'CARTOPIAN_ROLE':'reader'}
+    # Deny-default already protects read-only roots: no serialization or Git probe.
+    assert metadata_paths(reader) == ()
+    validate_boundary(reader, environ)
+    check_substrate(reader)
+    assert sandboxed(reader, '/bin/cat', str(metadata)).stdout == metadata.read_text()
+    before = metadata.read_bytes()
+    write = ('/bin/sh', '-c', 'printf denied >> "$1"', 'sh')
+    for argv in ((*write, str(metadata)), (*write, str(repo/'tracked')),
+                 ('/usr/bin/touch', str(repo/'created')), ('/bin/mv', str(repo), str(work/'moved'))):
+        result = sandboxed(reader, *argv)
+        assert result.returncode != 0, argv
+    assert metadata.read_bytes() == before and (repo/'tracked').read_text() == 'tracked'
+    assert not (repo/'created').exists() and not (work/'moved').exists() and repo.is_dir()
+    writer = effective_access(project, {'work':str(work)}, ('read:work-roots','write:worktree'), activated=True)
+    with pytest.raises(WorkAccessError, match='cannot be represented'):
+        validate_boundary(writer, {**environ, 'CARTOPIAN_ROLE':'worker'})
+        profile(writer)
 
 
 def test_private_hermes_state_preserves_only_provider_scalars(tmp_path):

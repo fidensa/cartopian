@@ -51,7 +51,10 @@ def metadata_paths(access: WorkAccess) -> tuple[str, ...]:
     paths = []
     def walk_error(exc):
         raise WorkAccessError("cannot inspect protected work metadata: " + str(exc))
-    for root in access.mapped:
+    # Only writable roots need carved-out metadata; deny-default already
+    # protects read-only roots, so their fixtures are neither serialized nor
+    # probed with Git.
+    for root in access.backend_writable:
         for directory, subdirs, filenames in os.walk(root, followlinks=False, onerror=walk_error):
             protected_directory = any(within(directory, path) for path in paths)
             for name in (*subdirs, *filenames):
