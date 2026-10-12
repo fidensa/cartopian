@@ -655,14 +655,25 @@ INTAKE_HOOK_EVENTS["antigravity"] = ("SessionStart", "PreInvocation", "Stop")
 INTAKE_HOSTS = ("claude", "codex", "hermes", "opencode", "antigravity")
 
 
+def _opencode_global_config_dir(base: Path) -> Path:
+    """opencode's global config directory, where it auto-loads `plugins/`.
+
+    opencode resolves it through xdg-basedir on every platform, so a set
+    `$XDG_CONFIG_HOME` moves it, matching the registration target.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(xdg).expanduser() if xdg else base / ".config") / "opencode"
+
+
 def intake_host_detect_dir(host: str, home: Optional[Path] = None) -> Path:
     """The directory whose presence means the host is installed for this user."""
     base = (home or Path.home()).expanduser()
+    if host == "opencode":
+        return _opencode_global_config_dir(base)
     return {
         "claude": base / ".claude",
         "codex": base / ".codex",
         "hermes": base / ".hermes",
-        "opencode": base / ".config" / "opencode",
         "antigravity": base / ".gemini" / "config",
     }[host]
 
@@ -676,7 +687,7 @@ def intake_host_config_path(host: str, home: Optional[Path] = None) -> Path:
     if host == "hermes":
         return base / ".hermes" / "plugins" / "cartopian-intake"
     if host == "opencode":
-        return base / ".config" / "opencode" / "plugins" / "cartopian-intake.js"
+        return _opencode_global_config_dir(base) / "plugins" / "cartopian-intake.js"
     if host == "antigravity":
         return base / ".gemini" / "config" / "hooks.json"
     raise ValueError(f"unknown intake host: {host}")

@@ -62,12 +62,14 @@ def _on_session_start(session_id: Optional[str] = None, **_: Any) -> None:
     _send("SessionStart", session_id, source="startup")
 
 
-def _pre_llm_call(session_id: Optional[str] = None, user_message: str = "", **_: Any) -> Optional[Dict[str, Any]]:
-    return _send("UserPromptSubmit", session_id, prompt=user_message or "")
+def _pre_llm_call(session_id: Optional[str] = None, user_message: str = "",
+                  turn_id: Optional[str] = None, **_: Any) -> Optional[Dict[str, Any]]:
+    return _send("UserPromptSubmit", session_id, prompt=user_message or "", turn_id=turn_id or "")
 
 
-def _post_llm_call(session_id: Optional[str] = None, assistant_response: str = "", **_: Any) -> None:
-    _send("Stop", session_id, last_assistant_message=assistant_response or "")
+def _post_llm_call(session_id: Optional[str] = None, assistant_response: str = "",
+                   turn_id: Optional[str] = None, **_: Any) -> None:
+    _send("Stop", session_id, last_assistant_message=assistant_response or "", turn_id=turn_id or "")
 
 
 def _on_session_end(session_id: Optional[str] = None, interrupted: bool = False, **_: Any) -> None:

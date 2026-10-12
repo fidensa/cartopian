@@ -95,14 +95,15 @@ UNBOUND_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 ROUTING_LINE_PREFIX = "cartopian-session:"
 
 # Host payload field that carries the opaque turn correlation key.
-# Opaque per-turn correlation keys. Hermes exposes none; pairing then relies
-# on receipt order alone, which its single-threaded sessions guarantee.
-# opencode's assistant message carries the user message id as ``parentID``,
+# Opaque per-turn correlation keys. Hermes passes the same ``turn_id`` to its
+# pre_llm_call and post_llm_call hooks, which the plugin shim forwards; a
+# payload without one falls back to receipt order, which Hermes's
+# single-threaded sessions guarantee. opencode's assistant message carries the user message id as ``parentID``,
 # which the plugin shim forwards as ``message_id``.
 _TURN_KEYS = {
     "claude": "prompt_id",
     "codex": "turn_id",
-    "hermes": None,
+    "hermes": "turn_id",
     "opencode": "message_id",
     # Antigravity: the transcript step index of the operator's input, derived
     # by the adapter for both the prompt and its Stop.

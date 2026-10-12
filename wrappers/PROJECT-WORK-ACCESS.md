@@ -152,7 +152,16 @@ a stronger sandbox boundary.
 | Antigravity | Outer backend; authenticated writer/reader/no-access probes passed with `agy` 1.3.3 | Refused |
 | Devin | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
 | OpenCode | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
-| Hermes | Outer backend; authenticated writer/reader/no-access probes passed | Refused |
+| Hermes | Hermes 0.20: outer backend; authenticated writer/reader/no-access probes passed. Hermes 0.21+: refused before launch (see below) | Refused |
+
+Hermes 0.21 moved its Python dependencies into a store under its data home
+(`<HERMES_HOME>/installs/`) and records a lease there on every launch. The
+outer backend gives Hermes a fresh private `HERMES_HOME` with no store, so
+Hermes 0.21+ exits at startup ("no dependency environment is committed for
+this install"). Dispatch and the backend therefore refuse a contained Hermes
+launch whenever the host Hermes home has an `installs/` store, by reading the
+filesystem only (the agent binary is never run outside the sandbox). Supporting
+it needs a backend grant for that store and fresh authenticated probes.
 
 Antigravity's existing saved login now works in the isolated launch. The real
 `cartopian-agy` wrapper passed 39 writer, 14 reader and 14 no-access checks on

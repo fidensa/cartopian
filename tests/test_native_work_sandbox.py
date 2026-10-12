@@ -341,6 +341,47 @@ def test_private_hermes_state_preserves_only_provider_scalars(tmp_path):
     assert not (Path(env['HERMES_HOME'])/'hooks').exists()
 
 
+def test_contained_hermes_with_dependency_store_refuses_before_launch(tmp_path):
+    """Hermes 0.21+ keeps its dependencies under <HERMES_HOME>/installs, which a
+    private HERMES_HOME lacks, so the backend refuses rather than launching a
+    Hermes that exits at startup. The check never runs the agent binary."""
+    from cli.native_work_sandbox import check_backend_generation
+    from cli.work_access import WorkAccessError
+    host = tmp_path/'host'
+    (host/'.hermes').mkdir(parents=True)
+    check_backend_generation('hermes', {'HOME': str(host)})
+    (host/'.hermes/installs').mkdir()
+    with pytest.raises(WorkAccessError, match='Hermes 0.21 or newer'):
+        check_backend_generation('hermes', {'HOME': str(host)})
+    custom = tmp_path/'custom-home'
+    (custom/'installs').mkdir(parents=True)
+    with pytest.raises(WorkAccessError, match=str(custom/'installs')):
+        check_backend_generation('hermes', {'HOME': str(tmp_path/'elsewhere'), 'HERMES_HOME': str(custom)})
+    check_backend_generation('opencode', {'HOME': str(host)})
+
+
+def test_private_opencode_state_drops_host_config_overrides(tmp_path):
+    """Contained opencode never sees the host's config/plugin/MCP/permission
+    overrides, and reads its credentials from the host's XDG data home."""
+    from cli.native_work_sandbox import backend_environment
+    host = tmp_path/'host'
+    data = tmp_path/'xdg-data'
+    (data/'opencode').mkdir(parents=True)
+    (data/'opencode/auth.json').write_text('{"anthropic": {"type": "api", "key": "fixture"}}')
+    scratch = tmp_path/'scratch'
+    scratch.mkdir()
+    env = backend_environment('opencode', scratch, {
+        'HOME': str(host), 'XDG_DATA_HOME': str(data),
+        'OPENCODE_CONFIG': '/host/opencode.json', 'OPENCODE_CONFIG_DIR': '/host/dir',
+        'OPENCODE_CONFIG_CONTENT': '{"mcp": {}}', 'OPENCODE_PERMISSION': '{"*": "allow"}',
+    })
+    for name in ('OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_PERMISSION'):
+        assert name not in env
+    copied = Path(env['XDG_DATA_HOME'])/'opencode/auth.json'
+    assert json.loads(copied.read_text())['anthropic']['key'] == 'fixture'
+    assert copied.stat().st_mode & 0o777 == 0o600
+
+
 def test_private_agy_session_uses_redirected_home_without_real_keychain(tmp_path, monkeypatch):
     from cli.native_work_sandbox import backend_environment
 

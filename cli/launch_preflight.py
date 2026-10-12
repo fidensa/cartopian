@@ -269,7 +269,7 @@ def environment_checks(
         if problem and agent:
             return [_finding("work-root-contract-unsupported", "guard", problem)]
         if access.contained and not cartopian_claude and agent:
-            from cli.native_work_sandbox import backend_executable, check_substrate, validate_boundary
+            from cli.native_work_sandbox import backend_executable, check_backend_generation, check_substrate, validate_boundary
             from cli.work_access import SHIPPED_ADAPTERS
 
             wrapper = Path(os.path.realpath(resolved_agent or str(agent)))
@@ -287,6 +287,7 @@ def environment_checks(
                 validate_boundary(access, modeled)
                 check_substrate(access)
                 backend_executable(adapter, access, modeled)
+                check_backend_generation(adapter, modeled)
             except Exception as exc:
                 return [_finding("work-root-policy-invalid", "guard", str(exc))]
             if launch_bindings is not None:

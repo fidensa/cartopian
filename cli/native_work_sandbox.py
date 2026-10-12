@@ -337,6 +337,28 @@ def seed_agy_session(home: Path, host_home: Path) -> None:
     target.chmod(0o600)
 
 
+# Hermes v0.21 moved its Python dependencies into a store under its data home
+# (`<HERMES_HOME>/installs/<key>`) and writes leases there on every launch.
+# This backend gives Hermes a fresh private HERMES_HOME where no store exists,
+# so Hermes exits at startup ("no dependency environment is committed for this
+# install"). Refuse before launch until the backend grants that store. The
+# check reads the filesystem only: running the agent binary to ask its version
+# would execute it outside the sandbox. A v0.20 install has no store and is
+# unaffected.
+def check_backend_generation(adapter: str, environ: Mapping[str, str]) -> None:
+    """Refuse an installed agent generation this backend cannot start."""
+    if adapter != "hermes":
+        return
+    home = environ.get("HERMES_HOME") or str(Path(environ.get("HOME", str(Path.home()))) / ".hermes")
+    if (Path(home) / "installs").is_dir():
+        raise WorkAccessError(
+            "contained launches are unsupported on Hermes 0.21 or newer: it loads its "
+            f"dependencies from {Path(home) / 'installs'}, and this backend replaces "
+            "HERMES_HOME with private state, so Hermes cannot start. Use an external work "
+            "root or another adapter for this role. No unsandboxed fallback is permitted"
+        )
+
+
 def backend_environment(adapter: str, scratch: Path, environ: Mapping[str, str]) -> dict[str, str]:
     """Redirect runtime state; no real host state directory becomes writable."""
     from cli.commands.dispatch import _sanitized_launch_environment
@@ -357,6 +379,9 @@ def backend_environment(adapter: str, scratch: Path, environ: Mapping[str, str])
     }
     for relative in credential_paths[adapter]:
         source = host_home / relative
+        if adapter == "opencode" and relative.startswith(".local/share/") and environ.get("XDG_DATA_HOME"):
+            # opencode resolves its data directory through xdg-basedir.
+            source = Path(environ["XDG_DATA_HOME"]).expanduser() / relative.removeprefix(".local/share/")
         if source.is_file():
             # .env is credential data; use the same bounded no-follow UTF-8 read.
             data = read_candidate(source.parent, source.name)
@@ -382,6 +407,11 @@ def backend_environment(adapter: str, scratch: Path, environ: Mapping[str, str])
         env["CODEX_CA_CERTIFICATE"] = "/etc/ssl/cert.pem"
     # Profile selection cannot point Hermes back at a persistent home.
     env.pop("CARTOPIAN_HERMES_PROFILE", None)
+    # Nor can opencode's config overrides point it back at host config files,
+    # plugins, MCP servers or permission rules.
+    for name in ("OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT",
+                 "OPENCODE_PERMISSION"):
+        env.pop(name, None)
     for directory in (home / ".codex", home / ".hermes"):
         directory.mkdir(exist_ok=True)
     if adapter == "hermes":
@@ -443,10 +473,14 @@ def run(adapter: str, project: Path, prompt: Path, argv: list[str], *, probe: bo
     if not executable or any(within(os.path.realpath(executable), root) for root in access.mapped):
         raise WorkAccessError("backend executable must be installed outside governed work roots")
     check_substrate(access)
+    check_backend_generation(adapter, os.environ)
     with tempfile.TemporaryDirectory(prefix="cartopian-contained-", dir="/private/tmp") as raw, network_proxy() as port:
         scratch = Path(raw).resolve()
         env = backend_environment(adapter, scratch, os.environ)
-        if adapter == "hermes" and "--provider" not in argv and env.get("CARTOPIAN_NATIVE_HERMES_PROVIDER"):
+        # Hermes rejects --provider without --model (exit 2), so the host's
+        # provider is carried over only alongside an explicit model.
+        if (adapter == "hermes" and "--provider" not in argv and env.get("CARTOPIAN_NATIVE_HERMES_PROVIDER")
+                and ("-m" in argv or "--model" in argv)):
             argv += ["--provider", env["CARTOPIAN_NATIVE_HERMES_PROVIDER"]]
         proxy = f"http://127.0.0.1:{port}"
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):

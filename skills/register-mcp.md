@@ -345,7 +345,7 @@ The bridge skill carries `triggers: [user, model]`, so the operator can say "use
 
 ### opencode
 
-opencode's config schema is a genuine third format: the server table lives under a top-level `mcp` key (not `mcpServers`), each entry carries a required `"type"` discriminator, and `command` is an **array**. Both `opencode.json` and `opencode.jsonc` load if present and deep-merge, with `opencode.jsonc` loading later and winning same-key conflicts — and either filename may contain comments or trailing commas, which opencode's lenient parser accepts silently. A file that fails to parse is silently ignored by opencode, so verify with `opencode mcp list` after every change.
+opencode's config schema is a genuine third format: the server table lives under a top-level `mcp` key (not `mcpServers`), each entry carries a required `"type"` discriminator, and `command` is an **array**. Both `opencode.json` and `opencode.jsonc` load if present and deep-merge, with `opencode.jsonc` loading later and winning same-key conflicts — and either filename may contain comments or trailing commas, which opencode's lenient parser accepts silently. A parse error is not reported where you will see it: a broken global file is logged and opencode drops the whole global layer (`config.json`, `opencode.json` and `opencode.jsonc` together), so verify with `opencode mcp list` after every change.
 
 **Part A — register the MCP server.** Merge the entry into the global config (prefer the pair member that already exists; when both exist, edit `opencode.jsonc` because it loads later; when neither exists, create `opencode.json`), preserving every existing key:
 
@@ -385,7 +385,7 @@ Copy-Item "$installRoot\templates\clients\opencode\commands\use-cartopian.md" `
   "$env:USERPROFILE\.config\opencode\commands\use-cartopian.md" -Force
 ```
 
-After a restart the operator types `/use-cartopian` in the opencode TUI or IDE. (opencode also surfaces the MCP prompt as `/use_cartopian` — underscore, keyed by the raw prompt name — but the hyphenated command bridge is the supported entry.)
+After a restart the operator types `/use-cartopian` in the opencode TUI or IDE. (opencode also surfaces the MCP prompt as `/cartopian:use_cartopian` — keyed `<server>:<prompt>` — but the hyphenated command bridge is the supported entry.)
 
 ### Hermes
 
@@ -431,10 +431,10 @@ filtered subprocess environment never passes `HERMES_HOME` through, so
 profile's config. The `timeout` sizing rationale is in Stage 4.
 
 Verify with `hermes config get mcp_servers.cartopian` (prints the whole block)
-or `hermes mcp test cartopian`. Start a new Hermes session before the server
-is available — `config set` does not hot-load servers (`/reload-mcp` exists
-in-session for value-only changes, but command/env changes need the new
-session).
+or `hermes mcp test cartopian`. Start a new Hermes session, or run
+`/reload-mcp` in an open one; it reconnects every server from fresh config,
+command and env changes included. The Hermes CLI also reloads on its own when
+`mcp_servers` changes, unless `mcp.auto_reload_on_config_change` is `false`.
 
 **Part B — install the trigger bridge.** Hermes discovers file-dropped skill
 bundles with no install step. Copy the bundle into the profile-scoped skills
@@ -477,8 +477,7 @@ direct-message path required the `chat:write` and `im:history` bot scopes and
 the `message.im` bot event. Reinstall an existing Slack app after changing its
 scopes or event subscriptions. Other gateway adapters and Slack conversation
 types are not claimed by this scenario. Hermes support remains
-**experimental** only until native Windows acceptance closes; the evidence is
-recorded in the repository's `tests/acceptance/hermes-macos.md`.
+**experimental** only until native Windows acceptance closes.
 
 ### Other agents
 
@@ -504,7 +503,7 @@ Apply the setting for each agent the operator registered, sizing it above the la
 | Antigravity | none — the ceiling cannot be raised | **180 s** hard wall clock per call; progress does not reset it | see the Antigravity note below |
 | Claude Code | `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` (milliseconds; `0` disables) | **1800000** idle — below the protocol default | the environment Claude Code launches with |
 | opencode | `timeout` (milliseconds) | **60000 idle** — but progress notifications reset it | `mcp.cartopian` in the global `opencode.json`/`opencode.jsonc` |
-| Hermes | `timeout` (seconds) | **300** hard wall clock per call — below the protocol default; nothing resets it | `mcp_servers.cartopian` via `hermes config set` |
+| Hermes | `timeout` (seconds) | **300** hard wall clock per call (or `timeouts.mcp.tool_call` when set, Hermes 0.21+) — below the protocol default; nothing resets it | `mcp_servers.cartopian` via `hermes config set` |
 | Claude Desktop, Cursor, Windsurf, Devin | no documented per-server tool-call timeout | unknown | see the note below |
 
 Codex — add the key under the existing entry, then restart Codex:
@@ -515,9 +514,11 @@ command = "/path/to/.cartopian/bin/cartopian-mcp"
 tool_timeout_sec = 3900
 ```
 
+`3900` makes 65 minutes the longest handoff Codex can wait for: with it, `cartopian dispatch` on Codex refuses any role timeout above `65m`, even one chosen in a session on a host with more headroom. A longer role timeout needs a larger `tool_timeout_sec` (no cap was found in Codex 0.161.0) and a Codex restart. Before raising either, try splitting the work into tasks that fit the current timeout.
+
 Antigravity — there is nothing to write. agy enforces a fixed 180-second wall clock on each MCP tool call (verified against agy 1.1.11): the central `mcp_config.json` accepts no per-server timeout key (the Gemini CLI-era `timeout` milliseconds key is retired upstream), no environment variable overrides it, and progress notifications do not extend it. Cartopian resolves the host to that fixed budget, so `cartopian dispatch` refuses any role timeout above it rather than orphaning the handoff. On this host, dispatch roles manually and observe with `max_block` slices below the ceiling (e.g. `max_block=2m`, repeating until a terminal outcome), or lower `roles.<role>.timeout` to fit. Re-check after agy upgrades — a future build may lift or expose the ceiling.
 
-Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait.
+Claude Code — its wall-clock ceiling (`MCP_TOOL_TIMEOUT`, ~28h when unset) is fixed and is never extended by progress. Its stdio idle window defaults to 30 minutes, but documented progress traffic resets that idle check; Cartopian reports the raw idle value while using the fixed wall clock as the sustainable wait budget for its progress-bearing canonical wait. If the connected client does not request a progress channel, raise or disable the idle setting before relying on a longer wait. That headroom is Claude Code's alone: a role timeout that fits here is still refused by a Codex or Antigravity session on the same project when it exceeds their ceilings.
 
 opencode — the registration recipe above already carries `"timeout": 600000`. Unlike the wall-clock caps on other hosts, opencode's is an **idle** window that a progress notification resets, and Cartopian's blocking waits heartbeat every 5 seconds — so the value bounds silence from non-heartbeating tools, not handoff length, and 10 minutes needs no upward sizing for long roles. One acknowledged cost: the same timeout governs catalog/list operations, so against a hung server `opencode mcp list` and TUI startup enumeration wait it out before failing.
 
@@ -531,7 +532,7 @@ Verify the result from inside a session on that host:
 cartopian host-capability --role <role> --project <project-path>
 ```
 
-`fits: true` means a full-length wait will survive. `fits: false` carries the mismatch and its remedies in `refusal`.
+`fits: true` means a full-length wait will survive on this host. `fits: false` carries the mismatch and its remedies in `refusal`. `refused_on_other_hosts` lists the other registered hosts with a raisable ceiling (today Codex, read from its config file) that would refuse the same role timeout; the budget record's `other_registered_hosts` lists their ceilings even without `--role`.
 
 ---
 
@@ -577,7 +578,7 @@ Report, per agent the operator selected:
   | Hermes | say "use cartopian" (skill) — or preload with `hermes -s use-cartopian` |
   | Claude Desktop / Cursor | invoke the `use_cartopian` MCP prompt from the client's prompt picker (MCP-only — no bridge) |
 
-- Each agent that requires a restart before the bridge is live (Codex, Antigravity, Windsurf, Devin, Claude Desktop, Cursor, opencode, Hermes — for Hermes a new session, or `/reload-mcp` for value-only config changes; for Antigravity the `/mcp` overlay can reload servers, but skill discovery needs the restart). Claude Code needs no restart.
+- Each agent that requires a restart before the bridge is live (Codex, Antigravity, Windsurf, Devin, Claude Desktop, Cursor, opencode, Hermes — for Hermes a new session or `/reload-mcp`; for Antigravity the `/mcp` overlay can reload servers, but skill discovery needs the restart). Claude Code needs no restart.
 - Any agent requiring manual steps — summarize what the operator needs to do.
 
 Once an agent has both parts and any required restart is complete, the operator opens it in any directory and uses the entry phrase/command above. The installed bridge reads the `use_cartopian` resource, which enters PM mode through registry-first project selection and routes to `start_session` for a selected project or `init_project` when the registry is empty.

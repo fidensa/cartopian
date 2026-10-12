@@ -155,7 +155,7 @@ OPENCODE_REGISTRATION_TIMEOUT_MS = 600000
 
 
 def _opencode_config_dir_base(client_home: Path) -> Path:
-    """opencode's global config directory: XDG on every platform (v1.18.15)."""
+    """opencode's global config directory: XDG on every platform (v1.19.0)."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg).expanduser() if xdg else client_home / ".config"
     return base / "opencode"
@@ -164,9 +164,10 @@ def _opencode_config_dir_base(client_home: Path) -> Path:
 def _opencode_install_target(client_home: Path) -> Dict[str, Any]:
     """Installation-target resolver: where Cartopian writes the registration.
 
-    `$OPENCODE_CONFIG_DIR` names the highest-precedence *file* layer opencode
+    `$OPENCODE_CONFIG_DIR` names the last operator-owned *file* layer opencode
     loads, so its pair is the target when set — an entry there cannot be
-    shadowed by global, `$OPENCODE_CONFIG`, or project config. Otherwise an
+    shadowed by global, `$OPENCODE_CONFIG`, project, or `.opencode` config
+    (only inline, managed-directory and MDM configuration load later). Otherwise an
     explicit `$OPENCODE_CONFIG` file is the only target (opencode does not
     load a sibling of it, so there is no pair). Otherwise the global XDG pair.
     """

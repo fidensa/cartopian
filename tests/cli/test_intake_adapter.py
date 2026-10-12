@@ -427,6 +427,18 @@ class OtherHostTests(AdapterCase):
         self.run_hook("hermes", _payload("SessionEnd", session_id="h-1", reason="completed"))
         self.assertIsNone(self.store.load_session("hermes", "h-1"))  # unbound: discarded at end
 
+    def test_hermes_turn_ids_pair_prompts_with_replies(self) -> None:
+        """Hermes passes one turn_id to pre_llm_call and post_llm_call; an empty
+        one (an older plugin copy) falls back to receipt order."""
+        self.run_hook("hermes", _payload("SessionStart", host="hermes", session_id="h-2", source="startup"))
+        self.run_hook("hermes", _payload("UserPromptSubmit", session_id="h-2", prompt="Sync notes.", turn_id="t1"))
+        self.run_hook("hermes", _payload("Stop", session_id="h-2", last_assistant_message="Summary.", turn_id="t1"))
+        self.run_hook("hermes", _payload("UserPromptSubmit", session_id="h-2", prompt="yes", turn_id=""))
+        events = self.store.read_events("hermes", "h-2")
+        self.assertEqual([e.get("turn_id") for e in events][1:4], ["t1", "t1", None])
+        reply = self.store.pair_states("hermes", "h-2")[1]
+        self.assertEqual((reply["state"], reply["proposal_turn_id"]), ("paired", "t1"))
+
     def test_opencode_message_ids_are_turn_ids(self) -> None:
         self.run_hook("opencode", _payload("SessionStart", host="opencode", session_id="o-1", source="startup"))
         first = self.run_hook("opencode", _payload("UserPromptSubmit", session_id="o-1", prompt="Sync notes.", message_id="m1"))

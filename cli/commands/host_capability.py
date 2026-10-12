@@ -4,6 +4,12 @@ Report the MCP host's tool-call wait budget as one NDJSON record: the ceilings
 that end a single ``tools/call``, where each number came from, and — with
 ``--role`` — whether that role's handoff timeout fits inside them.
 
+The budget is the connected host's alone. A role timeout is project
+configuration, so the record also lists the other hosts this server is
+registered on whose fixed ceilings could be read (``other_registered_hosts``)
+and, with ``--role``, which of them would refuse that timeout at dispatch
+(``refused_on_other_hosts``). Check both before recommending a longer timeout.
+
 This is the readable form of the gate ``dispatch`` applies before launching
 (``cli/host_capability.py``). Run it when a handoff dies with a transport error
 instead of a protocol outcome, or before configuring a long role timeout, to
@@ -73,6 +79,7 @@ def handler(args: argparse.Namespace) -> int:
         "role_timeout_seconds": None,
         "fits": None,
         "refusal": None,
+        "refused_on_other_hosts": None,
     }
 
     if role is None:
@@ -92,6 +99,11 @@ def handler(args: argparse.Namespace) -> int:
     record["role_timeout_seconds"] = role_seconds
     record["fits"] = fits
     record["refusal"] = refusal
+    # `fits` answers for the connected host only; these are the registered
+    # hosts that would refuse the same project timeout at dispatch.
+    record["refused_on_other_hosts"] = host_capability.other_host_refusals(
+        role_seconds, budget.host if budget is not None else None
+    )
     emit_record(record)
     # Reporting a bad fit is a successful report, not a failed command — the
     # gate that refuses a launch lives in `dispatch`, not here.

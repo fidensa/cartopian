@@ -84,9 +84,10 @@ CLIENT_RESTART_INSTRUCTIONS: "OrderedDict[str, OrderedDict[str, str]]" = (
             (
                 "hermes",
                 _instruction(
-                    "Start a new Hermes session (/reload-mcp refreshes "
-                    "value-only config changes in-session; a changed command "
-                    "or env entry needs the new session)."
+                    "Start a new Hermes session, or run /reload-mcp in the "
+                    "open one (the CLI also reloads on mcp_servers changes "
+                    "unless mcp.auto_reload_on_config_change is false); either "
+                    "respawns the Cartopian server with the new config."
                 ),
             ),
         )

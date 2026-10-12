@@ -642,6 +642,7 @@ class IntakeHookTests(_InstallTestBase):
 
     def _run(self, *extra: str) -> "subprocess.CompletedProcess[str]":
         env = dict(os.environ, HOME=str(self.fake_home))
+        env.pop("XDG_CONFIG_HOME", None)
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--source", str(REPO_ROOT),
              "--prefix", str(self.install_root), *extra],
@@ -650,6 +651,25 @@ class IntakeHookTests(_InstallTestBase):
 
     def _hooks(self, path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+
+    def test_opencode_plugin_follows_xdg_config_home(self) -> None:
+        """opencode auto-loads plugins from its xdg-basedir config directory."""
+        xdg = Path(self.tmp.name) / "xdg"
+        with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg)}):
+            self.assertEqual(
+                install_mod.intake_host_config_path("opencode", self.fake_home),
+                xdg / "opencode" / "plugins" / "cartopian-intake.js",
+            )
+            self.assertEqual(
+                install_mod.intake_host_detect_dir("opencode", self.fake_home),
+                xdg / "opencode",
+            )
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("XDG_CONFIG_HOME", None)
+            self.assertEqual(
+                install_mod.intake_host_config_path("opencode", self.fake_home),
+                self.opencode_plugin,
+            )
 
     def test_install_writes_both_hosts_and_preserves_foreign_hooks(self) -> None:
         self.claude_settings.write_text(json.dumps({

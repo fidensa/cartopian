@@ -73,7 +73,8 @@ if (Test-Path -LiteralPath $CartopianStatusModule) {
 # --auto bypasses configured `ask` permission rules, which would otherwise
 # auto-reject in a non-interactive run. Set CARTOPIAN_OPENCODE_AUTO=false to
 # preserve that ask behavior. Explicit deny rules and OS permissions apply
-# either way.
+# either way. opencode's built-in defaults ask for external_directory,
+# doom_loop and .env reads, so without --auto those are auto-rejected.
 $OpencodeAuto = if ($env:CARTOPIAN_OPENCODE_AUTO -eq 'false') { $false } else { $true }
 # ------------------------------------------------------------------
 

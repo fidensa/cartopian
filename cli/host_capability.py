@@ -43,6 +43,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -87,6 +88,26 @@ _COMMAND_FINGERPRINT = "cartopian"
 # Config duration grammar: a positive integer followed by a unit suffix.
 _DURATION_RE = re.compile(r"^(\d+)([smhd])$")
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+# The remedy every refusal offers alongside raising a host ceiling. A role
+# timeout is project configuration shared by every host that runs the PM, so
+# lowering it and sizing the work to fit is the remedy that holds everywhere.
+_LOWER_ROLE_TIMEOUT = (
+    "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling, "
+    "splitting any task that needs longer into tasks that each finish within it"
+)
+
+# Carried on every budget record. The PM reads the record to decide whether a
+# longer role timeout is safe, and a large ceiling on this host says nothing
+# about the other hosts the same project is run from.
+BUDGET_SCOPE_NOTE = (
+    "These ceilings are this host's only. `roles.<role>.timeout` is project "
+    "configuration shared by every host the PM runs on, and automatic "
+    "dispatch refuses it on any raisable host in other_registered_hosts whose "
+    "ceiling is shorter. A handoff that times out is a sizing signal; "
+    "split the task into handoffs that finish within the configured timeout "
+    "before recommending a longer one."
+)
 
 
 class HostBudget:
@@ -191,6 +212,8 @@ class HostBudget:
             "progress_channel_available": self.progress_channel_available,
             "evidence": self.evidence,
             "remediation": self.remediation,
+            "scope": BUDGET_SCOPE_NOTE,
+            "other_registered_hosts": survey_other_hosts(self.host),
         }
 
 
@@ -271,11 +294,11 @@ CLAUDE_CODE_DEFAULT_IDLE_SECONDS = 1_800
 ANTIGRAVITY_DEFAULT_WALL_SECONDS = 180
 
 # opencode passes `resetTimeoutOnProgress: true` with an installed `onprogress`
-# hook and no `maxTotalTimeout` (mcp/catalog.ts), so it imposes an idle ceiling
-# only — never a wall clock — and a progress notification resets it. The idle
-# window is `mcp.<server>.timeout` ?? `experimental.mcp_timeout` ?? the MCP SDK
-# default of 60s (mcp/index.ts requestTimeout). Both config keys are stored in
-# milliseconds.
+# hook and no `maxTotalTimeout` (mcp/catalog.ts; re-verified at v1.19.0), so it
+# imposes an idle ceiling only — never a wall clock — and a progress
+# notification resets it. The idle window is `mcp.<server>.timeout` ??
+# `experimental.mcp_timeout` ?? the MCP SDK default of 60s (mcp/index.ts
+# requestTimeout). Both config keys are stored in milliseconds.
 OPENCODE_DEFAULT_IDLE_SECONDS = 60
 
 
@@ -365,7 +388,7 @@ def _resolve_codex(client_name: str, client_version: Optional[str]) -> HostBudge
         remediation=[
             f"raise the ceiling: add `tool_timeout_sec = <seconds>` under "
             f"[mcp_servers.{_server_name()}] in {path}, then restart Codex",
-            "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+            _LOWER_ROLE_TIMEOUT,
         ],
     )
 
@@ -426,7 +449,7 @@ def _resolve_claude_code(client_name: str, client_version: Optional[str]) -> Hos
             "the environment Claude Code launches with",
             "raise the wall clock: set MCP_TOOL_TIMEOUT (milliseconds), or add "
             "a per-server `timeout` to the .mcp.json entry",
-            "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+            _LOWER_ROLE_TIMEOUT,
         ],
     )
 
@@ -471,25 +494,46 @@ def _resolve_antigravity(client_name: str, client_version: Optional[str]) -> Hos
 def _opencode_config_layers() -> List[Tuple[str, Path]]:
     """Every inspectable opencode config *file* layer, in load order.
 
-    Mirrors the opencode v1.18.15 loader: global pair (`opencode.json` then
-    `opencode.jsonc`, later-loaded wins) → `$OPENCODE_CONFIG` (explicit file)
-    → project pair → `$OPENCODE_CONFIG_DIR` pair. Inline and managed layers are
-    not files and are handled by the caller.
+    Mirrors the opencode v1.19.0 loader (config/config.ts, config/paths.ts):
+
+    1. global `config.json`, `opencode.json`, `opencode.jsonc`;
+    2. `$OPENCODE_CONFIG` (explicit file);
+    3. unless `$OPENCODE_DISABLE_PROJECT_CONFIG`, every project
+       `opencode.json`/`opencode.jsonc` from the worktree root down to the
+       working directory, outermost first;
+    4. each `.opencode/` pair from the working directory up to the worktree
+       root (unless project config is disabled), then `~/.opencode/`, then the
+       `$OPENCODE_CONFIG_DIR` pair;
+    5. the system managed directory pair.
+
+    Later layers win. Inline `OPENCODE_CONFIG_CONTENT` loads between steps 4
+    and 5 and the macOS MDM profile after step 5; both are handled by the
+    caller. Remote well-known and organization-account configs are fetched
+    over the network and are not inspected.
     """
     layers: List[Tuple[str, Path]] = []
     xdg = os.environ.get("XDG_CONFIG_HOME")
     global_dir = (
         Path(xdg).expanduser() if xdg else Path.home() / ".config"
     ) / "opencode"
-    layers.append(("global", global_dir / "opencode.json"))
-    layers.append(("global", global_dir / "opencode.jsonc"))
+    for name in ("config.json", "opencode.json", "opencode.jsonc"):
+        layers.append(("global", global_dir / name))
     explicit = os.environ.get("OPENCODE_CONFIG")
     if explicit:
         layers.append(("OPENCODE_CONFIG", Path(explicit).expanduser()))
-    project_dir = _opencode_project_config_dir()
-    if project_dir is not None:
-        layers.append(("project", project_dir / "opencode.json"))
-        layers.append(("project", project_dir / "opencode.jsonc"))
+    project_enabled = not _truthy(os.environ.get("OPENCODE_DISABLE_PROJECT_CONFIG"))
+    chain = _opencode_project_chain()
+    if project_enabled:
+        for directory in reversed(chain):
+            layers.append(("project", directory / "opencode.json"))
+            layers.append(("project", directory / "opencode.jsonc"))
+    dot_dirs: List[Path] = []
+    if project_enabled:
+        dot_dirs.extend(directory / ".opencode" for directory in chain)
+    dot_dirs.append(Path.home() / ".opencode")
+    for directory in dot_dirs:
+        layers.append((".opencode", directory / "opencode.json"))
+        layers.append((".opencode", directory / "opencode.jsonc"))
     config_dir = os.environ.get("OPENCODE_CONFIG_DIR")
     if config_dir:
         base = Path(config_dir).expanduser()
@@ -498,46 +542,120 @@ def _opencode_config_layers() -> List[Tuple[str, Path]]:
     return layers
 
 
-def _opencode_project_config_dir() -> Optional[Path]:
-    """Nearest ancestor of the working directory carrying an opencode config."""
+def _opencode_managed_layers() -> List[Tuple[str, Path]]:
+    """The system managed-directory pair, loaded after inline configuration."""
+    if sys.platform == "darwin":
+        managed = Path("/Library/Application Support/opencode")
+    elif sys.platform == "win32":
+        managed = Path(os.environ.get("ProgramData") or "C:\\ProgramData") / "opencode"
+    else:
+        managed = Path("/etc/opencode")
+    return [("managed", managed / "opencode.json"), ("managed", managed / "opencode.jsonc")]
+
+
+def _opencode_mdm_profiles() -> List[Path]:
+    """macOS MDM profiles that override every other opencode layer."""
+    if sys.platform != "darwin":
+        return []
+    user = os.environ.get("USER") or "user"
+    root = Path("/Library/Managed Preferences")
+    return [
+        root / user / "ai.opencode.managed.plist",
+        root / "ai.opencode.managed.plist",
+    ]
+
+
+def _truthy(raw: Optional[str]) -> bool:
+    return (raw or "").strip().lower() in ("1", "true")
+
+
+def _opencode_project_chain() -> List[Path]:
+    """Working directory up to its worktree root, innermost first.
+
+    opencode's instance directory is this server's working directory (stdio
+    servers start there), and its walk stops at the git worktree root, or at
+    the filesystem root outside a git checkout.
+    """
     try:
         current = Path.cwd()
     except OSError:
-        return None
+        return []
+    chain: List[Path] = []
     for candidate in (current, *current.parents):
-        if (candidate / "opencode.json").is_file() or (
-            candidate / "opencode.jsonc"
-        ).is_file():
+        chain.append(candidate)
+        if (candidate / ".git").exists():
+            break
+    return chain
+
+
+def _opencode_lowered_timeout(raw: Any) -> Optional[Any]:
+    """Apply opencode's V2 timeout lowering (config/v2-compat.ts lowerTimeout).
+
+    A V2 object `{catalog, execution}` becomes one number only when both are
+    set and equal and `startup` is absent; otherwise opencode drops the key.
+    A flat value passes through for the caller to validate.
+    """
+    if not isinstance(raw, dict):
+        return raw
+    if "startup" in raw:
+        return None
+    catalog, execution = raw.get("catalog"), raw.get("execution")
+    if catalog is None or execution is None or catalog != execution:
+        return None
+    return catalog
+
+
+def _opencode_server_entry(servers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    name = _server_name()
+    entry = servers.get(name)
+    if isinstance(entry, dict):
+        return entry
+    for candidate in servers.values():
+        if not isinstance(candidate, dict):
+            continue
+        command = candidate.get("command")
+        if isinstance(command, list):
+            haystack = " ".join(str(part) for part in command)
+        else:
+            haystack = str(command or "")
+        if _COMMAND_FINGERPRINT in haystack.lower():
             return candidate
     return None
 
 
 def _opencode_timeouts(data: Dict[str, Any]) -> Tuple[Optional[Any], Optional[Any], bool]:
-    """Extract (server timeout, experimental timeout, server entry present)."""
+    """Extract (server timeout, experimental timeout, server entry present).
+
+    Reads one file after opencode's per-file V2 lowering (v1.19.0
+    config/v2-compat.ts): a server may sit under `mcp.servers` when no flat
+    entry of that name exists, and a global `mcp.timeout` object lowers to
+    `experimental.mcp_timeout` unless the same file already sets that key.
+    """
     server_timeout: Optional[Any] = None
     entry_present = False
-    servers = data.get("mcp")
-    if isinstance(servers, dict):
-        name = _server_name()
-        entry = servers.get(name)
-        if not isinstance(entry, dict):
-            entry = None
-            for candidate in servers.values():
-                if not isinstance(candidate, dict):
-                    continue
-                command = candidate.get("command")
-                if isinstance(command, list):
-                    haystack = " ".join(str(part) for part in command)
-                else:
-                    haystack = str(command or "")
-                if _COMMAND_FINGERPRINT in haystack.lower():
-                    entry = candidate
-                    break
+    experimental_timeout: Optional[Any] = None
+    mcp = data.get("mcp")
+    if isinstance(mcp, dict):
+        flat = {
+            key: value
+            for key, value in mcp.items()
+            if key not in ("servers", "timeout") or (
+                isinstance(value, dict) and ("type" in value or "enabled" in value)
+            )
+        }
+        entry = _opencode_server_entry(flat)
+        nested = mcp.get("servers")
+        if entry is None and isinstance(nested, dict):
+            entry = _opencode_server_entry(nested)
         if isinstance(entry, dict):
             entry_present = True
             if "timeout" in entry:
-                server_timeout = entry.get("timeout")
-    experimental_timeout: Optional[Any] = None
+                server_timeout = _opencode_lowered_timeout(entry.get("timeout"))
+        global_timeout = mcp.get("timeout")
+        if isinstance(global_timeout, dict) and not (
+            "type" in global_timeout or "enabled" in global_timeout
+        ):
+            experimental_timeout = _opencode_lowered_timeout(global_timeout)
     experimental = data.get("experimental")
     if isinstance(experimental, dict) and "mcp_timeout" in experimental:
         experimental_timeout = experimental.get("mcp_timeout")
@@ -561,25 +679,31 @@ def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBu
     experimental_raw: Optional[Any] = None
     experimental_path: Optional[Path] = None
     consulted = 0
-    for _label, path in _opencode_config_layers():
-        if not path.exists():
-            continue
-        consulted += 1
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            unreadable.append(str(path))
-            continue
-        if not isinstance(data, dict):
-            unreadable.append(str(path))
-            continue
-        server_value, experimental_value, _present = _opencode_timeouts(data)
-        if server_value is not None:
-            server_timeout_raw = server_value
-            server_timeout_path = path
-        if experimental_value is not None:
-            experimental_raw = experimental_value
-            experimental_path = path
+
+    def consume(layers: List[Tuple[str, Path]]) -> None:
+        nonlocal consulted, server_timeout_raw, server_timeout_path
+        nonlocal experimental_raw, experimental_path
+        for _label, path in layers:
+            if not path.exists():
+                continue
+            consulted += 1
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                unreadable.append(str(path))
+                continue
+            if not isinstance(data, dict):
+                unreadable.append(str(path))
+                continue
+            server_value, experimental_value, _present = _opencode_timeouts(data)
+            if server_value is not None:
+                server_timeout_raw = server_value
+                server_timeout_path = path
+            if experimental_value is not None:
+                experimental_raw = experimental_value
+                experimental_path = path
+
+    consume(_opencode_config_layers())
     inline = os.environ.get("OPENCODE_CONFIG_CONTENT")
     if inline and inline.strip():
         consulted += 1
@@ -600,6 +724,11 @@ def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBu
             if experimental_value is not None:
                 experimental_raw = experimental_value
                 experimental_path = None
+    consume(_opencode_managed_layers())
+    for profile in _opencode_mdm_profiles():
+        if profile.exists():
+            # A binary plist overrides every layer and is not read here.
+            unreadable.append(f"{profile} (macOS managed preferences)")
 
     name = _server_name()
     remediation_dir = (
@@ -615,7 +744,7 @@ def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBu
     remediation = [
         f'raise the ceiling: set "timeout" (milliseconds) on the {name} entry '
         f'under "mcp" in {remediation_dir / "opencode.json"}, then restart opencode',
-        "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+        _LOWER_ROLE_TIMEOUT,
     ]
 
     if unreadable:
@@ -697,12 +826,17 @@ def _resolve_opencode(client_name: str, client_version: Optional[str]) -> HostBu
 
 
 # Hermes enforces a HARD WALL-CLOCK total timeout per tool call around
-# session.call_tool (mcp_servers.<name>.timeout ?? 300 s;
-# tools/mcp_tool.py:338,3150,5302) with no progress callback — nothing
-# resets it, so it is wall_clock_seconds, idle_seconds=None.
+# session.call_tool (mcp_servers.<name>.timeout ?? timeouts.mcp.tool_call ??
+# 300 s; v0.21 tools/mcp_tool_common.py _resolve_tool_timeout,
+# tools/mcp_tool_loop.py) with no progress callback — nothing resets it, so it
+# is wall_clock_seconds, idle_seconds=None.
 # idle_timeout_seconds / max_lifetime_seconds recycle the server process
 # between calls — evidence only, never a ceiling.
 HERMES_DEFAULT_CALL_TIMEOUT_SECONDS = 300
+# Hermes v0.21 adds a global fallback, `timeouts.mcp.tool_call`, consulted
+# when the server entry sets no timeout; positive values are capped at a year
+# (agent/deadline.py MAX_SAFE_TIMEOUT_S).
+HERMES_MAX_SAFE_TIMEOUT_SECONDS = 31_536_000
 
 # Subprocess hygiene for the Hermes config read, mirroring the registration
 # adapter's posture: fixed timeout, stdin closed, bounded capture, shell-free.
@@ -717,7 +851,10 @@ _HERMES_READ_MAX_BYTES = 1_000_000
 # requests, and pins even an unknown result for the process lifetime. Reading
 # later at first dispatch could observe a freshly raised value the already-
 # running Hermes handler does not honor and approve a wait the host kills
-# early.
+# early. Residual (v0.21): Hermes respawns a stdio server whose process died
+# without re-reading its captured timeout, so a respawned server that reads an
+# unreloaded config edit can disagree with the handler; idle/lifetime
+# recycling already had this property.
 _HERMES_SESSION_CEILINGS: Dict[str, Tuple[str, Optional[int], Tuple[str, ...]]] = {}
 
 
@@ -819,56 +956,77 @@ def _hermes_entry_timeout_now(
                 "pinned with `-p default` so the sticky active_profile "
                 "cannot redirect the read"
             )
-    try:
-        returncode, stdout_bytes, stderr_bytes = run_bounded(
-            [executable, *pin, "config", "get", "--json", f"mcp_servers.{name}"],
-            timeout=_HERMES_READ_TIMEOUT_SECONDS,
-            max_bytes=_HERMES_READ_MAX_BYTES,
-            env=env,
-        )
-    except CaptureOverflow:
-        # The bound is enforced while the child runs: a flooding process is
-        # killed at the cap instead of buffered into memory first.
-        return "unknown", None, evidence + [
-            "`hermes config get` produced an implausibly large capture and "
-            "was killed; refusing to parse it"
-        ]
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return "unknown", None, evidence + [
-            f"`hermes config get --json mcp_servers.{name}` failed: {exc}"
-        ]
-    stdout = stdout_bytes.decode("utf-8", "replace")
-    stderr = stderr_bytes.decode("utf-8", "replace")
-    if returncode != 0:
-        if (
-            returncode == 1
-            and "config key not set" in (stdout + stderr).lower()
-        ):
-            evidence.append(
-                f"no mcp_servers.{name} entry; using the Hermes default"
+    def config_get(key: str) -> Tuple[Optional[str], Optional[Any], Optional[str]]:
+        """Return (outcome, parsed value, failure). Outcome is "set" or "unset"."""
+        try:
+            returncode, stdout_bytes, stderr_bytes = run_bounded(
+                [executable, *pin, "config", "get", "--json", key],
+                timeout=_HERMES_READ_TIMEOUT_SECONDS,
+                max_bytes=_HERMES_READ_MAX_BYTES,
+                env=env,
             )
-            return "host-default", HERMES_DEFAULT_CALL_TIMEOUT_SECONDS, evidence
-        return "unknown", None, evidence + [
-            f"`hermes config get --json mcp_servers.{name}` exited "
-            f"{returncode} without a recognizable outcome"
+        except CaptureOverflow:
+            # The bound is enforced while the child runs: a flooding process
+            # is killed at the cap instead of buffered into memory first.
+            return None, None, (
+                "`hermes config get` produced an implausibly large capture and "
+                "was killed; refusing to parse it"
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return None, None, f"`hermes config get --json {key}` failed: {exc}"
+        stdout = stdout_bytes.decode("utf-8", "replace")
+        stderr = stderr_bytes.decode("utf-8", "replace")
+        if returncode != 0:
+            if returncode == 1 and "config key not set" in (stdout + stderr).lower():
+                return "unset", None, None
+            return None, None, (
+                f"`hermes config get --json {key}` exited {returncode} without "
+                "a recognizable outcome"
+            )
+        try:
+            return "set", json.loads(stdout), None
+        except ValueError:
+            return None, None, (
+                f"{key} did not parse as JSON; the configured ceiling cannot be "
+                "resolved"
+            )
+
+    def hermes_default(reason: str) -> Tuple[str, Optional[int], List[str]]:
+        """Resolve the fallback Hermes applies when the entry sets no timeout:
+        `timeouts.mcp.tool_call` (v0.21+), else 300s."""
+        outcome, value, failure = config_get("timeouts.mcp.tool_call")
+        if failure is not None:
+            return "unknown", None, evidence + [reason, failure]
+        if outcome == "set" and not isinstance(value, bool):
+            try:
+                seconds = float(value)
+            except (TypeError, ValueError):
+                seconds = 0.0
+            if seconds == seconds and seconds > 0:
+                # Hermes caps positive values at a year and keeps fractions.
+                wall = max(1, int(min(seconds, HERMES_MAX_SAFE_TIMEOUT_SECONDS)))
+                return "host-config", wall, evidence + [
+                    reason, f"timeouts.mcp.tool_call = {value}s"
+                ]
+        # Unset, non-positive or invalid values all fall through to 300s in
+        # Hermes (agent/deadline.py resolve_timeout).
+        return "host-default", HERMES_DEFAULT_CALL_TIMEOUT_SECONDS, evidence + [
+            reason, "timeouts.mcp.tool_call does not set a usable value; using "
+            "the Hermes default"
         ]
-    try:
-        entry = json.loads(stdout)
-    except ValueError:
-        return "unknown", None, evidence + [
-            f"mcp_servers.{name} did not parse as JSON; the configured "
-            "ceiling cannot be resolved"
-        ]
+
+    outcome, entry, failure = config_get(f"mcp_servers.{name}")
+    if failure is not None:
+        return "unknown", None, evidence + [failure]
+    if outcome == "unset":
+        return hermes_default(f"no mcp_servers.{name} entry")
     if not isinstance(entry, dict):
         return "unknown", None, evidence + [
             f"mcp_servers.{name} is not an object; the configured ceiling "
             "cannot be resolved"
         ]
     if "timeout" not in entry:
-        evidence.append(
-            f"mcp_servers.{name} sets no timeout; using the Hermes default"
-        )
-        return "host-default", HERMES_DEFAULT_CALL_TIMEOUT_SECONDS, evidence
+        return hermes_default(f"mcp_servers.{name} sets no timeout")
     configured = _positive_int(entry.get("timeout"))
     if configured is None:
         # Fail closed, never substitute the default: Hermes hands the
@@ -912,7 +1070,7 @@ def _resolve_hermes(client_name: str, client_version: Optional[str]) -> HostBudg
             f"raise the ceiling: `hermes config set mcp_servers.{name}.timeout "
             f"<seconds>` (seconds, hard wall clock per call), then start a new "
             f"Hermes session or run /reload-mcp",
-            "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+            _LOWER_ROLE_TIMEOUT,
         ],
     )
 
@@ -940,6 +1098,139 @@ def _resolve_unknown(client_name: str, client_version: Optional[str]) -> HostBud
             "tools/call ceiling and confirm a blocking call of that length survives",
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Other registered hosts
+#
+# The budget above is the connected host's. `roles.<role>.timeout` is project
+# configuration, so the same timeout must also fit every other host the
+# operator runs the PM from — a timeout that Claude Code's ~28h wall clock
+# accepts is refused by a Codex whose `tool_timeout_sec` is 3900 (65m). The
+# survey reads only hosts whose fixed wall clock is visible in static config:
+# Codex (`tool_timeout_sec`) and Antigravity (a constant 180s). Hermes's
+# ceiling is readable only by running its CLI, opencode imposes only a
+# progress-resettable idle window, and Claude Code's ceiling lives in the
+# environment it was launched with, so none of them is surveyed.
+# ---------------------------------------------------------------------------
+
+
+def _antigravity_config_path() -> Path:
+    return Path.home() / ".gemini" / "config" / "mcp_config.json"
+
+
+def _json_server_name(path: Path) -> Optional[str]:
+    """Name of this server's entry under ``mcpServers`` in a JSON host config."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return None
+    name = _server_name()
+    if isinstance(servers.get(name), dict):
+        return name
+    for candidate_name, candidate in servers.items():
+        if not isinstance(candidate, dict):
+            continue
+        command = str(candidate.get("command") or "")
+        if _COMMAND_FINGERPRINT in command.lower():
+            return candidate_name
+    return None
+
+
+def _survey_codex() -> Optional[Dict[str, Any]]:
+    path = _codex_config_path()
+    config = _load_toml(path) if path.is_file() else None
+    if config is None:
+        return None
+    entry, entry_name = _codex_server_entry(config)
+    if entry is None:
+        return None
+    configured = _positive_int(entry.get("tool_timeout_sec"))
+    if configured is None:
+        wall = CODEX_DEFAULT_WALL_SECONDS
+        evidence = (
+            f"{path}: [mcp_servers.{entry_name}] sets no tool_timeout_sec; "
+            f"the Codex default applies"
+        )
+    else:
+        wall = configured
+        evidence = f"{path}: [mcp_servers.{entry_name}] tool_timeout_sec = {configured}"
+    return {
+        "host": "codex",
+        "host_display": "Codex (CLI / desktop)",
+        "wall_clock_seconds": wall,
+        "raisable": True,
+        "evidence": evidence,
+        "remedy": (
+            f"raise `tool_timeout_sec` under [mcp_servers.{entry_name}] in "
+            f"{path} above the role timeout, then restart Codex"
+        ),
+    }
+
+
+def _survey_antigravity() -> Optional[Dict[str, Any]]:
+    path = _antigravity_config_path()
+    if not path.is_file() or _json_server_name(path) is None:
+        return None
+    return {
+        "host": "antigravity",
+        "host_display": "Antigravity (agy)",
+        "wall_clock_seconds": ANTIGRAVITY_DEFAULT_WALL_SECONDS,
+        "raisable": False,
+        "evidence": (
+            f"{path} registers this server; agy ends every MCP tools/call at "
+            f"a fixed 180s (measured on agy 1.1.11)"
+        ),
+        "remedy": (
+            "cannot be raised, and it limits only the PM's single wait call, "
+            "not the handoff: on Antigravity, launch the role manually and "
+            "observe with `max_block` slices below 180s. It never limits task "
+            "size."
+        ),
+    }
+
+
+_SURVEYS: Tuple[Tuple[str, Any], ...] = (
+    ("codex", _survey_codex),
+    ("antigravity", _survey_antigravity),
+)
+
+
+def survey_other_hosts(current_host: Optional[str]) -> List[Dict[str, Any]]:
+    """Fixed tools/call ceilings of the other hosts this server is registered on.
+
+    Read-only and best effort: a host whose config is absent, unreadable, or
+    carries no Cartopian entry is left out rather than guessed at.
+    """
+    surveyed: List[Dict[str, Any]] = []
+    for host, survey in _SURVEYS:
+        if host == current_host:
+            continue
+        entry = survey()
+        if entry is not None:
+            surveyed.append(entry)
+    return surveyed
+
+
+def other_host_refusals(
+    role_timeout_seconds: int, current_host: Optional[str]
+) -> List[Dict[str, Any]]:
+    """Raisable surveyed hosts whose ceiling is shorter than the role timeout.
+
+    Each of these would refuse automatic dispatch for the role if the PM ran
+    there, even though the connected host accepts it. A host whose ceiling
+    cannot be raised (Antigravity's 180s) is left out: it refuses automatic
+    dispatch at any practical timeout and is used with manual launch and
+    sliced waits, so it never bears on choosing a timeout or sizing a task.
+    """
+    return [
+        entry
+        for entry in survey_other_hosts(current_host)
+        if entry["raisable"] and entry["wall_clock_seconds"] < role_timeout_seconds
+    ]
 
 
 # clientInfo.name → resolver. Matched as a case-insensitive substring, longest
@@ -1046,7 +1337,7 @@ def _remediation_for_context(budget: HostBudget, context: str) -> List[str]:
     return [
         "retry this wait with `max_block` below 180s (e.g. 2m), repeating "
         "until a terminal outcome",
-        "or lower `roles.<role>.timeout` in cartopian.toml to fit the ceiling",
+        _LOWER_ROLE_TIMEOUT,
     ]
 
 

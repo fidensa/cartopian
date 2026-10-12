@@ -426,7 +426,7 @@ The wrapper passes the prompt by file path (`devin -p --prompt-file <abs path>`)
 
 ### opencode
 
-Verified against opencode `1.18.15` on macOS. **Native Windows behavior is
+Verified against opencode `1.18.15` on macOS; source-checked against `1.19.0`. **Native Windows behavior is
 unverified**: the `.ps1`/`.cmd` wrapper pair ships on static parity tests and
 source reading alone, pending the deferred Windows acceptance pass.
 
@@ -434,8 +434,11 @@ source reading alone, pending the deferred Windows acceptance pass.
 passes `--auto` by default, which only bypasses configured `ask` permission
 rules — in a non-interactive run opencode auto-rejects `ask` prompts rather
 than blocking, so `--auto` is what lets a handoff proceed on a machine with
-`ask` rules configured. With no permission rules configured, opencode already
-allows everything, `--auto` or not.
+`ask` rules configured. opencode's built-in defaults also ask for
+`external_directory` access, `doom_loop` and `.env` reads, so with
+`CARTOPIAN_OPENCODE_AUTO=false` those are auto-rejected (for example, work in
+an external root). Since 1.19.0, `opencode run` also answers asks raised by
+subagent sessions instead of leaving them pending until the deadline.
 
 **There is no sandbox, and the wrapper deliberately injects no permission
 policy.** opencode's only containment surface is allow/ask/deny rules over
@@ -461,7 +464,7 @@ after the fact by plan-audit provenance. Two more residuals worth knowing:
 
 ### Hermes
 
-Verified against Hermes Agent `v0.20.0 (2026.8.3)` on macOS. **Native Windows
+Verified against Hermes Agent `v0.20.0 (2026.8.3)` on macOS; source-checked against `v0.21.7`, where contained work roots are refused (see `PROJECT-WORK-ACCESS.md`). **Native Windows
 behavior is unverified**: the `.ps1`/`.cmd` wrapper pair ships on static parity
 tests and source reading alone, and — unlike the opencode precedent — Windows
 acceptance is *required* before Hermes is claimed fully supported.
@@ -469,9 +472,10 @@ acceptance is *required* before Hermes is claimed fully supported.
 The wrapper launches Hermes one-shot mode (`hermes -z <prompt-path>`): a single
 prompt in, only the final response on stdout, no banner or spinner. Hermes
 loads AGENTS.md from the launch cwd and reads the prompt file with its own
-tools. Exit contract: `0` success, `1` agent failure or empty final response,
-`2` when the run reports failed/partial with no text — no mapping is needed;
-any nonzero exit records as a handoff failure.
+tools. Exit contract (Hermes 0.21): `0` completed, `1` agent exception or empty
+final response, `2` failed, partial or stopped (even when it printed text) or
+rejected flags, `130` interrupted — no mapping is needed; any nonzero exit
+records as a handoff failure.
 
 **One-shot mode has no approval layer, and the wrapper injects no permission
 policy.** One-shot runs internally set `HERMES_YOLO_MODE=1` (dangerous-command

@@ -293,12 +293,22 @@ def test_antigravity_allows_role_timeout_under_ceiling(monkeypatch):
 
 def _opencode_env(monkeypatch, tmp_path):
     """Isolated opencode config surface: empty XDG home, config-free cwd."""
-    _as_client(monkeypatch, "opencode", version="1.18.15")
+    _as_client(monkeypatch, "opencode", version="1.19.0")
     xdg = tmp_path / "xdg"
     (xdg / "opencode").mkdir(parents=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("OPENCODE_DISABLE_PROJECT_CONFIG", "USER"):
+        monkeypatch.delenv(name, raising=False)
+    # No managed layers or MDM profiles from the machine running the tests.
+    monkeypatch.setattr(host_capability, "_opencode_managed_layers", lambda: [])
+    monkeypatch.setattr(host_capability, "_opencode_mdm_profiles", lambda: [])
     cwd = tmp_path / "cwd"
     cwd.mkdir()
+    # The worktree root bounds opencode's upward project walk.
+    (cwd / ".git").mkdir()
     monkeypatch.chdir(cwd)
     return xdg / "opencode"
 
@@ -943,3 +953,359 @@ def test_host_capability_command_requires_a_project_with_role(capsys):
     captured = capsys.readouterr()
     assert code != EXIT_OK
     assert "--project" in captured.err
+
+
+# --- Other registered hosts ------------------------------------------------
+#
+# A role timeout is project configuration, but the budget is the connected
+# host's. A PM on Claude Code (~28h wall clock) once recommended a 120m coder
+# timeout that the same operator's Codex (`tool_timeout_sec = 3900`, 65m) would
+# refuse at dispatch. The record must surface the other hosts' ceilings.
+
+
+def _isolated_home(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    return home
+
+
+def _register_codex(home, timeout_line="tool_timeout_sec = 3900\n"):
+    codex = home / ".codex"
+    codex.mkdir(exist_ok=True)
+    (codex / "config.toml").write_text(
+        '[mcp_servers.cartopian]\ncommand = "/x/cartopian-mcp"\n' + timeout_line,
+        encoding="utf-8",
+    )
+
+
+def _register_antigravity(home):
+    config = home / ".gemini" / "config"
+    config.mkdir(parents=True)
+    (config / "mcp_config.json").write_text(
+        json.dumps({"mcpServers": {"cartopian": {"command": "/x/cartopian-mcp"}}}),
+        encoding="utf-8",
+    )
+
+
+def test_budget_record_lists_the_codex_ceiling_seen_from_claude_code(
+    monkeypatch, tmp_path
+):
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_codex(home)
+    _as_client(monkeypatch, "claude-code")
+
+    record = host_capability.resolve_host_budget().record()
+
+    assert "this host's only" in record["scope"]
+    [codex] = record["other_registered_hosts"]
+    assert codex["host"] == "codex"
+    assert codex["wall_clock_seconds"] == 3900
+    assert codex["raisable"] is True
+    assert "tool_timeout_sec" in codex["remedy"]
+
+
+def test_codex_without_tool_timeout_sec_reports_its_default(monkeypatch, tmp_path):
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_codex(home, timeout_line="")
+    _as_client(monkeypatch, "claude-code")
+
+    [codex] = host_capability.resolve_host_budget().record()["other_registered_hosts"]
+    assert codex["wall_clock_seconds"] == 300
+
+
+def test_antigravity_registration_is_listed_as_not_raisable(monkeypatch, tmp_path):
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_antigravity(home)
+    _as_client(monkeypatch, "claude-code")
+
+    [agy] = host_capability.resolve_host_budget().record()["other_registered_hosts"]
+    assert agy["host"] == "antigravity"
+    assert agy["wall_clock_seconds"] == 180
+    assert agy["raisable"] is False
+
+
+def test_survey_leaves_out_the_connected_host_and_unregistered_hosts(
+    monkeypatch, tmp_path
+):
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_codex(home)
+    _as_client(monkeypatch, "codex-mcp-client")
+
+    record = host_capability.resolve_host_budget().record()
+    assert record["host"] == "codex"
+    assert record["other_registered_hosts"] == []
+
+
+def test_codex_config_without_a_cartopian_entry_is_not_surveyed(
+    monkeypatch, tmp_path
+):
+    home = _isolated_home(monkeypatch, tmp_path)
+    (home / ".codex").mkdir()
+    (home / ".codex" / "config.toml").write_text(
+        '[mcp_servers.other]\ncommand = "/x/other"\ntool_timeout_sec = 60\n',
+        encoding="utf-8",
+    )
+    assert host_capability.survey_other_hosts("claude-code") == []
+
+
+def test_role_fit_names_other_hosts_that_would_refuse_it(
+    monkeypatch, tmp_path, capsys
+):
+    """A 120m coder fits Claude Code but not a Codex capped at 65m."""
+    from cli.commands import host_capability as command
+
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_codex(home)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "cartopian.toml").write_text("", encoding="utf-8")
+    monkeypatch.setattr(command, "_role_timeout_seconds", lambda _root, _role: 7200)
+    _as_client(monkeypatch, "claude-code")
+    emit.set_progress_sink(lambda _payload: None)
+
+    code, captured = _run(
+        ["host-capability", "--role", "coder", "--project", str(project)], capsys
+    )
+
+    assert code == EXIT_OK
+    record = json.loads(captured.out.strip())
+    assert record["fits"] is True
+    [codex] = record["refused_on_other_hosts"]
+    assert codex["host"] == "codex"
+    assert codex["wall_clock_seconds"] == 3900
+
+
+def test_role_fit_reports_no_other_refusals_when_every_ceiling_holds(
+    monkeypatch, tmp_path
+):
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_codex(home)
+    assert host_capability.other_host_refusals(3600, "claude-code") == []
+    assert [entry["host"] for entry in host_capability.other_host_refusals(
+        3901, "claude-code"
+    )] == ["codex"]
+
+
+def test_refusal_remedy_leads_lowering_with_task_sizing(monkeypatch, tmp_path):
+    _as_client(monkeypatch, "codex-mcp-client")
+    monkeypatch.setenv("CODEX_HOME", str(_codex_home(tmp_path, "")))
+
+    ok, _budget, refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is False
+    assert "splitting any task that needs longer" in refusal
+
+
+def test_unraisable_antigravity_ceiling_is_never_a_timeout_refusal(
+    monkeypatch, tmp_path
+):
+    """agy's 180s bounds one PM wait call, not the handoff: it is listed for
+    visibility but never reported as a reason to keep a role timeout short."""
+    home = _isolated_home(monkeypatch, tmp_path)
+    _register_antigravity(home)
+    _register_codex(home)
+
+    assert [e["host"] for e in host_capability.survey_other_hosts("claude-code")] == [
+        "codex",
+        "antigravity",
+    ]
+    assert host_capability.other_host_refusals(3600, "claude-code") == []
+    assert [e["host"] for e in host_capability.other_host_refusals(
+        7200, "claude-code"
+    )] == ["codex"]
+
+
+# --- opencode 1.19.0 layer model and V2 config shapes -----------------------
+
+
+def _write_timeout(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_opencode_project_files_merge_from_worktree_root_down(monkeypatch, tmp_path):
+    """Every project file up to the worktree root loads, outermost first."""
+    _opencode_env(monkeypatch, tmp_path)
+    root = tmp_path / "cwd"
+    inner = root / "pkg"
+    inner.mkdir()
+    monkeypatch.chdir(inner)
+    _write_timeout(root / "opencode.json", {"experimental": {"mcp_timeout": 240000}})
+    _write_timeout(inner / "opencode.json", {"mcp": {"cartopian": {"timeout": 480000}}})
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 480
+
+    (inner / "opencode.json").unlink()
+    assert host_capability.resolve_host_budget().idle_seconds == 240
+
+
+def test_opencode_project_walk_stops_at_the_worktree_root(monkeypatch, tmp_path):
+    _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(tmp_path / "opencode.json", {"mcp": {"cartopian": {"timeout": 480000}}})
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_seconds == 60
+
+
+def test_opencode_disable_project_config_skips_project_layers(monkeypatch, tmp_path):
+    _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(tmp_path / "cwd" / "opencode.json", {"mcp": {"cartopian": {"timeout": 480000}}})
+    _write_timeout(
+        tmp_path / "cwd" / ".opencode" / "opencode.json",
+        {"mcp": {"cartopian": {"timeout": 360000}}},
+    )
+    monkeypatch.setenv("OPENCODE_DISABLE_PROJECT_CONFIG", "true")
+    assert host_capability.resolve_host_budget().idle_seconds == 60
+
+
+def test_opencode_dot_directories_override_project_files(monkeypatch, tmp_path):
+    _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(tmp_path / "cwd" / "opencode.json", {"mcp": {"cartopian": {"timeout": 480000}}})
+    _write_timeout(
+        tmp_path / "cwd" / ".opencode" / "opencode.json",
+        {"mcp": {"cartopian": {"timeout": 360000}}},
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 360
+
+    _write_timeout(
+        tmp_path / "home" / ".opencode" / "opencode.json",
+        {"mcp": {"cartopian": {"timeout": 300000}}},
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 300
+
+
+def test_opencode_global_config_json_loads_before_opencode_json(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(config_dir / "config.json", {"experimental": {"mcp_timeout": 240000}})
+    assert host_capability.resolve_host_budget().idle_seconds == 240
+    _write_timeout(config_dir / "opencode.json", {"experimental": {"mcp_timeout": 120000}})
+    assert host_capability.resolve_host_budget().idle_seconds == 120
+
+
+@pytest.mark.parametrize(
+    ("timeout", "expected"),
+    [
+        ({"catalog": 300000, "execution": 300000}, 300),
+        ({"catalog": 300000, "execution": 600000}, 60),
+        ({"catalog": 300000, "execution": 300000, "startup": 1000}, 60),
+    ],
+)
+def test_opencode_v2_server_timeout_object_is_lowered(
+    monkeypatch, tmp_path, timeout, expected
+):
+    """1.19.0 lowers `{catalog, execution}` only when they are equal and no
+    startup bound is set; otherwise the key is dropped."""
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(config_dir / "opencode.json", {"mcp": {"cartopian": {"timeout": timeout}}})
+    assert host_capability.resolve_host_budget().idle_seconds == expected
+
+
+def test_opencode_v2_servers_envelope_entry_is_read(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(
+        config_dir / "opencode.json",
+        {"mcp": {"servers": {"cartopian": {"command": ["/x/cartopian-mcp"], "timeout": 420000}}}},
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 420
+
+
+def test_opencode_v2_global_timeout_lowers_to_experimental(monkeypatch, tmp_path):
+    config_dir = _opencode_env(monkeypatch, tmp_path)
+    _write_timeout(
+        config_dir / "opencode.json",
+        {"mcp": {"timeout": {"catalog": 180000, "execution": 180000}}},
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 180
+
+    # A legacy experimental key in the same file is preferred.
+    _write_timeout(
+        config_dir / "opencode.json",
+        {
+            "mcp": {"timeout": {"catalog": 180000, "execution": 180000}},
+            "experimental": {"mcp_timeout": 90000},
+        },
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 90
+
+
+def test_opencode_managed_directory_overrides_config_dir(monkeypatch, tmp_path):
+    _opencode_env(monkeypatch, tmp_path)
+    override = tmp_path / "override"
+    _write_timeout(override / "opencode.json", {"mcp": {"cartopian": {"timeout": 480000}}})
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(override))
+    managed = tmp_path / "managed"
+    _write_timeout(managed / "opencode.json", {"mcp": {"cartopian": {"timeout": 150000}}})
+    monkeypatch.setattr(
+        host_capability,
+        "_opencode_managed_layers",
+        lambda: [("managed", managed / "opencode.json")],
+    )
+    assert host_capability.resolve_host_budget().idle_seconds == 150
+
+
+def test_opencode_mdm_profile_fails_closed(monkeypatch, tmp_path):
+    """A macOS MDM profile overrides every layer and is not read, so the idle
+    ceiling is unknown and the gate refuses rather than guessing."""
+    _opencode_env(monkeypatch, tmp_path)
+    profile = tmp_path / "ai.opencode.managed.plist"
+    profile.write_bytes(b"bplist00")
+    monkeypatch.setattr(host_capability, "_opencode_mdm_profiles", lambda: [profile])
+    budget = host_capability.resolve_host_budget()
+    assert budget.idle_source == "unknown"
+    ok, _budget, _refusal = host_capability.check_wait_budget("coder", 3600)
+    assert ok is False
+
+
+# --- Hermes v0.21 global tool-call timeout ----------------------------------
+
+
+def _hermes_keyed_stub(tmp_path, monkeypatch, entry_stdout, global_stdout):
+    """Stub `hermes config get --json <key>` answering per key; None = unset."""
+    def branch(stdout):
+        if stdout is None:
+            return "echo 'Config key not set' >&2; exit 1"
+        return f"echo '{stdout}'"
+    body = (
+        'key="$4"\n'
+        'case "$key" in\n'
+        f"  timeouts.mcp.tool_call) {branch(global_stdout)} ;;\n"
+        f"  *) {branch(entry_stdout)} ;;\n"
+        "esac"
+    )
+    _hermes_stub(tmp_path, monkeypatch, body)
+
+
+@pytest.mark.parametrize(
+    ("entry", "global_value", "expected", "source"),
+    [
+        (_entry_stdout(), "1200", 1200, "host-config"),
+        (None, "1200", 1200, "host-config"),
+        (_entry_stdout(), None, 300, "host-default"),
+        (_entry_stdout(), "0", 300, "host-default"),
+        (_entry_stdout(), "true", 300, "host-default"),
+        (_entry_stdout(3900), "1200", 3900, "host-config"),
+    ],
+)
+def test_hermes_global_tool_call_timeout_fallback(
+    monkeypatch, tmp_path, entry, global_value, expected, source
+):
+    """Hermes v0.21: mcp_servers.<name>.timeout ?? timeouts.mcp.tool_call ??
+    300; non-positive or invalid globals fall through to 300."""
+    _hermes_keyed_stub(tmp_path, monkeypatch, entry, global_value)
+    _as_hermes(monkeypatch)
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_seconds == expected
+    assert budget.wall_clock_source == source
+
+
+def test_hermes_unreadable_global_timeout_fails_closed(monkeypatch, tmp_path):
+    body = (
+        'case "$4" in\n'
+        "  timeouts.mcp.tool_call) exit 3 ;;\n"
+        f"  *) echo '{_entry_stdout()}' ;;\n"
+        "esac"
+    )
+    _hermes_stub(tmp_path, monkeypatch, body)
+    _as_hermes(monkeypatch)
+    budget = host_capability.resolve_host_budget()
+    assert budget.wall_clock_source == "unknown"

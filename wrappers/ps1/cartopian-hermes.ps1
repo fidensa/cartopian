@@ -213,8 +213,9 @@ Write-Host "cartopian-hermes: running hermes -z (timeout=$TimeoutSpec)" -Foregro
 # hang that writes no report still hits it (exit 124). The watched report path
 # is the status path without its ".status" suffix (shared derivation --
 # Get-CartopianReportPath in CartopianStatus.ps1 owns the suffix contract).
-# Hermes's own exit contract (0 success / 1 agent failure / 2 failed-or-partial
-# with no text) needs no mapping: any nonzero exit records as failure.
+# Hermes's own exit contract (0 completed / 1 agent exception or empty response
+# / 2 failed, partial, stopped or bad flags / 130 interrupted) needs no mapping:
+# any nonzero exit records as failure.
 $ReportPath = Get-CartopianReportPath $StatusPath
 
 $run = Invoke-CartopianSupervisedRun -ReportPath $ReportPath -FilePath hermes -ArgumentList $Args -TimeoutSec $TimeoutSec

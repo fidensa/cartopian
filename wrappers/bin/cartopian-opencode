@@ -51,8 +51,9 @@ fi
 # --auto bypasses configured `ask` permission rules, which would otherwise
 # auto-reject in a non-interactive run (opencode never blocks waiting for an
 # answer). Set CARTOPIAN_OPENCODE_AUTO=false to preserve that ask behavior.
-# Explicit deny rules and OS permissions apply either way; opencode grants
-# everything by default when no permission rules are configured.
+# Explicit deny rules and OS permissions apply either way. opencode's built-in
+# defaults ask for external_directory, doom_loop and .env reads, so without
+# --auto those are auto-rejected.
 OPENCODE_AUTO="${CARTOPIAN_OPENCODE_AUTO:-true}"
 # ------------------------------------------------------------------
 

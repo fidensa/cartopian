@@ -30,8 +30,10 @@
 # Exit codes:
 #   0   — hermes completed successfully
 #   1   — wrapper error (missing file, missing CLI, bad arguments), or hermes
-#         agent failure / empty final response
-#   2   — hermes run reported failed/partial with no text
+#         agent exception / completed turn with an empty final response
+#   2   — hermes run failed, partial or stopped (even when it printed text),
+#         or rejected its flags (e.g. --provider without --model)
+#   130 — hermes run interrupted
 #   124 — killed at the CARTOPIAN_TIMEOUT deadline
 #   *   — upstream hermes exit code
 
@@ -228,9 +230,9 @@ echo "cartopian-hermes: running hermes -z (timeout=$TIMEOUT_DURATION)" >&2
 # no report still hits it (exit 124). The watched report path is the status path
 # without its ".status" suffix.
 #
-# Hermes's own exit contract (0 success / 1 agent failure or empty response /
-# 2 failed-or-partial with no text) needs no mapping: the supervisor records
-# any nonzero exit as failure, 2 included.
+# Hermes's own exit contract (0 completed / 1 agent exception or empty
+# response / 2 failed, partial, stopped or bad flags / 130 interrupted) needs no
+# mapping: the supervisor records any nonzero exit as failure.
 REPORT_PATH="${STATUS_PATH%.status}"
 [[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
 

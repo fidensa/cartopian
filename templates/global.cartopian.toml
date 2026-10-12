@@ -201,6 +201,11 @@
 #                 run boundary, review assignment, and task selection
 #                 remain separately owned.
 #   timeout     — wall-clock cap for the handoff (string, e.g. "60m", "2h").
+#                 Size tasks so one handoff finishes inside it. Automatic
+#                 dispatch refuses on any PM host whose tools/call ceiling
+#                 is shorter, e.g. Codex at its `tool_timeout_sec` (setup
+#                 recommends 3900, i.e. 65m). Check `cartopian
+#                 host-capability --role <role>` before raising it.
 #
 # Never configure a PM handoff agent or automatic-launch permission: the PM is
 # the interactive orchestrator and is never itself launched.
