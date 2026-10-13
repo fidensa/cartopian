@@ -185,6 +185,14 @@ Governing slice: `cartopian://protocol/CONVENTIONS/session-state`. Read it befor
 
 This stage also runs on its own, at whatever point the run has reached, when the operator ends the session ("let's continue in a new session") — a session-boundary request, which ends the run under every `run_boundary` below. Close it the same way: refresh state, stop, and name the next protocol action. The refreshed `STATE.md` *is* the handoff. Do not write or edit a task, plan, phase, spec, prompt, report, decision, or any other artifact to carry context into the next session, and do not restate the session's work as instructions for it; an in-progress task stays in `tasks/in-progress/` and the composed body already reports it as active work, so the next session resumes from registry selection and `cartopian next-action` alone.
 
+That includes the plan-close project summary. `write-continuity` belongs to `close plan` Stage 3b alone and refuses while the plan is open; `read-continuity` runs only when the operator asks for the summary. Neither is part of ending a session, and no note points the next session at a document to read.
+
+A session-boundary closeout is exactly:
+
+1. `cartopian write-state <project-root>`, adding `--note` only for a fact that qualifies below.
+2. The configured session-close git behavior, if versioning is enabled.
+3. Stop, and name the exact next protocol action to the operator. Nothing else is written.
+
 Refresh `STATE.md` through `cartopian write-state <project-root>` — the writer composes the canonical body from the filesystem in-process; do not run `compose-state` first or pass `--content`.
 
 If — and only if — this session surfaced a fact that is about this project's current state, not derivable from the filesystem/config/protocol, and changes what the next session does, deliver it as a situation note: `cartopian write-state <project-root> --note "…"`. Notes are bounded (max 5, one line of ≤ 200 chars each) with a one-delivery TTL. Follow-up items are never notes either. Write a backlog entry (`cartopian write-backlog`) only for intentionally deferred future work this project owns; a current-task blocker stays in its handoff evidence, and a defect in a dependency tool, Cartopian included, belongs to that product's tracking. Never create a backlog entry merely to carry context into the next session (`cartopian://protocol/CONVENTIONS/session-state`).

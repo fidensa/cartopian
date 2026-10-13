@@ -21,6 +21,7 @@ import argparse
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from cli import continuity
 from cli.commands import _writers
 from cli.commands.compose_state import (
     _has_plan_artifacts,
@@ -40,6 +41,13 @@ SITUATION_HEADING = "## Situation"
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
+    subparser.description = (
+        "Refresh STATE.md, composed from the filesystem. This is the whole "
+        "session closeout: when the operator ends a session, run it (a --note "
+        "only for a qualifying fact), apply configured session-close git "
+        "behavior, and stop. Write no handoff document, task, plan edit, "
+        "backlog entry, or project summary to carry context forward."
+    )
     _writers.add_content_args(subparser)
     subparser.add_argument(
         "--note",
@@ -102,6 +110,17 @@ def _validate_notes(
                 "guard",
                 f"note-too-long: {len(note)} chars; ceiling is {NOTE_MAX_CHARS} "
                 f"— if it needs more room it belongs in BACKLOG.md or a decision",
+            )
+        # Named only to refuse the pointer; this writer never opens the
+        # summary. A note that sends the next session to it would turn an
+        # explicit-request-only artifact into automatic startup context.
+        if continuity.CONTINUITY_BASENAME.casefold() in note.casefold():
+            return (
+                "guard",
+                "note-names-project-summary: a note may not point the next "
+                f"session at {continuity.CONTINUITY_BASENAME}, the plan-close "
+                "summary read only on an explicit operator request; STATE.md "
+                "is the whole session handoff",
             )
     delivered = set(existing_notes(project_root))
     for note in notes:

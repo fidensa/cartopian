@@ -42,7 +42,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cli.commands import capture_request
+from cli.commands import capture_request, write_continuity
 from cli.main import SUBCOMMANDS, build_parser
 from tests.cli.commands.test_compose_assignment_prompt import (
     _OPERATOR_ANTECEDENT,
@@ -131,9 +131,17 @@ def planned_project(scaffold, plan_fixture: str) -> str:
 
 
 def write_summary(project_root, body=_TECHNICAL_SUMMARY):
-    code, records, err = run_cli(
-        "write-continuity", str(project_root), "--content", body
-    )
+    """Put a summary on disk through the real mediated writer, in any plan state.
+
+    The tests here prove what a summary already on disk does to every other
+    surface. A live plan can legitimately carry one — the previous plan's close
+    left it and reset never removes it — so only the plan-close gate is lifted;
+    `tests/cli/test_project_summary.py` proves that gate on its own.
+    """
+    with mock.patch.object(write_continuity, "_plan_close_refusal", return_value=None):
+        code, records, err = run_cli(
+            "write-continuity", str(project_root), "--content", body
+        )
     assert code == 0, err
     return records
 
@@ -755,9 +763,22 @@ class SummaryCliMcpParityTest(unittest.TestCase):
                 tool_records(mcp_present)[0]["content"], _TECHNICAL_SUMMARY
             )
 
-    def test_the_mcp_writer_produces_the_same_artifact_as_the_cli(self) -> None:
+    def test_the_mcp_writer_refuses_a_session_handoff_like_the_cli(self) -> None:
         with project_scaffold(cartopian_toml=_TOML) as scaffold:
             root = str(scaffold.project_root)
+            scaffold.write("tasks/open/TASK-01-001.md", "# TASK-01-001: First\n")
+            cli = run_cli("write-continuity", root, "--content", "# Handoff\n")
+            result = self.server.call_tool(
+                "write_continuity", {"project_root": root, "content": "# Handoff\n"}
+            )
+            self.assertEqual(result["_meta"]["exit_code"], cli[0])
+            self.assertEqual(cli[0], 1)
+            self.assertIn("continuity-plan-not-closable", cli[2])
+            self.assertFalse((scaffold.project_root / ARTIFACT).exists())
+
+    def test_the_mcp_writer_produces_the_same_artifact_as_the_cli(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML) as scaffold:
+            root = planned_project(scaffold, "complete-adoption-followup-closed")
             result = self.server.call_tool(
                 "write_continuity",
                 {"project_root": root, "content": _NONTECHNICAL_SUMMARY},
@@ -822,11 +843,14 @@ PROJECTION_TOKENS = (
 )
 
 # The three modules that are allowed to name the artifact at all, plus the
-# mediated-write allowlist, which names the destination and reads nothing.
+# mediated-write allowlist, which names the destination and reads nothing, and
+# write-state, which names it only to refuse a note pointing at it (its
+# open-watch test above proves it never reads the artifact).
 SUMMARY_MODULES = {
     "cli/continuity.py",
     "cli/commands/write_continuity.py",
     "cli/commands/read_continuity.py",
+    "cli/commands/write_state.py",
     "cli/mediated_write.py",
     "cli/main.py",
 }

@@ -512,6 +512,43 @@ def _next_unstarted_phase(phase_stems: List[str], has_task: Dict[str, bool]) -> 
     return None
 
 
+def _completion_gap(
+    *,
+    active_task: Optional[Dict[str, str]],
+    has_open_tasks: bool,
+    next_unstarted_phase: Optional[str],
+    has_task: Dict[str, bool],
+) -> Optional[str]:
+    """Name what keeps the plan from complete, or return None when it is.
+
+    The plan is complete only when there is nothing active, nothing open, no
+    phase left to generate tasks for, AND at least one phase actually had
+    tasks (an all-empty plan is un-started, not complete).
+    """
+    if active_task is not None:
+        return f"{active_task['id']} is {active_task['status']}"
+    if has_open_tasks:
+        return "tasks remain in tasks/open/"
+    if next_unstarted_phase is not None:
+        return f"{next_unstarted_phase} has no generated tasks"
+    if not any(has_task.values()):
+        return "no phase has generated tasks"
+    return None
+
+
+def completion_gap(project_path: Path) -> Optional[str]:
+    """Filesystem-only form of the ``plan-complete`` test ``next-action`` uses."""
+    has_task = _phase_task_presence(project_path)
+    return _completion_gap(
+        active_task=_find_active_task(project_path / "tasks"),
+        has_open_tasks=_has_open_tasks(project_path / "tasks"),
+        next_unstarted_phase=_next_unstarted_phase(
+            _collect_phase_stems(project_path / "phases"), has_task
+        ),
+        has_task=has_task,
+    )
+
+
 def _startup_verdict(
     project_path: Path,
     *,
@@ -762,15 +799,15 @@ def handler(args: argparse.Namespace) -> int:
     phase_stems = _collect_phase_stems(project_path / "phases")
     has_task = _phase_task_presence(project_path)
     next_unstarted_phase = _next_unstarted_phase(phase_stems, has_task)
-    # The plan is complete only when there is nothing active, nothing open, no
-    # phase left to generate tasks for, AND at least one phase actually had
-    # tasks (an all-empty plan is un-started, not complete).
     plan_complete = (
-        active_task is None
-        and next_open_task is None
-        and not has_open_tasks
-        and next_unstarted_phase is None
-        and any(has_task.values())
+        next_open_task is None
+        and _completion_gap(
+            active_task=active_task,
+            has_open_tasks=has_open_tasks,
+            next_unstarted_phase=next_unstarted_phase,
+            has_task=has_task,
+        )
+        is None
     )
 
     blocker_records = _detect_blocker_records(project_path, phase_id, tasks_dir)

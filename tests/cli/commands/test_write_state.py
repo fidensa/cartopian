@@ -165,6 +165,19 @@ class TestSituationNotes(_PlannedFixture):
         self.assertEqual(code, 2)
         self.assertIn("empty --note", err)
 
+    def test_note_pointing_at_the_project_summary_refused(self):
+        # The observed shape: a closeout note sending the next session to a
+        # handoff written into the plan-close summary.
+        for note in (
+            "Session ended to load the update. See CONTINUITY.md.",
+            "read continuity.md before dispatching",
+        ):
+            with self.subTest(note=note):
+                code, _, err = run_cli("write-state", self.root, "--note", note)
+                self.assertEqual(code, 1)
+                self.assertIn("note-names-project-summary", err)
+                self.assertIn("STATE.md is the whole session handoff", err)
+
 
 class TestNoPlanMode(unittest.TestCase):
     def setUp(self):

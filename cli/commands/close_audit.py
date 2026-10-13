@@ -232,18 +232,36 @@ def handler(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        project_cfg = _load_project_config(project_path)
-        project_id = _require_project_keys(
-            project_cfg,
-            project_path / "cartopian.toml",
-        )[0]
+        record = audit_project(project_path)
     except _CliError as err:
         stderr_error(err.message)
         return err.exit_code
 
+    emit_record(record)
+    return EXIT_OK
+
+
+def audit_project(project_path: Path) -> Dict[str, Any]:
+    """Load the project config and return its closeout-readiness record.
+
+    Raises ``_CliError`` when the project config is missing or invalid.
+    """
+    project_cfg = _load_project_config(project_path)
+    project_id = _require_project_keys(
+        project_cfg,
+        project_path / "cartopian.toml",
+    )[0]
+    return compose_record(project_id, project_path)
+
+
+def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
+    """Return the closeout-readiness record for a resolved project.
+
+    ``closable`` is ``None`` when the project has no plan to close, ``True``
+    when nothing blocks closeout, and ``False`` otherwise.
+    """
     if not _has_plan_artifacts(project_path):
-        emit_record(_no_plan_record(project_id, project_path))
-        return EXIT_OK
+        return _no_plan_record(project_id, project_path)
 
     open_tasks = _collect_active_tasks(project_path)
     open_count = sum(1 for task in open_tasks if task["status"] == "open")
@@ -289,7 +307,7 @@ def handler(args: argparse.Namespace) -> int:
             f"{item['content_identity']}` in a decision"
         )
 
-    record = {
+    return {
         "project_id": project_id,
         "project_path": str(project_path.resolve()),
         "closable": not blocking_reasons,
@@ -304,5 +322,3 @@ def handler(args: argparse.Namespace) -> int:
         "unclaimed_requests": unclaimed_requests,
         "blocking_reasons": blocking_reasons,
     }
-    emit_record(record)
-    return EXIT_OK

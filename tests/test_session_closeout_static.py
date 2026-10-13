@@ -5,8 +5,9 @@ Guards the closeout contract in protocol and skill prose:
 - "let's continue in a new session" names a *session* boundary, not an
   execution directive. The one authorized operation is session closeout.
 - Closeout is `STATE.md` plus the configured git behavior. Persisted project
-  state is the whole continuity mechanism, so no task, plan edit, or handoff
-  document is created to carry context into the next session.
+  state is the whole resume mechanism, so no task, plan edit, or handoff
+  document is created to carry context into the next session — and the
+  plan-close project summary is never used as one.
 - A bare "continue" that names no boundary stays an execution directive, so
   the disambiguation cannot swallow ordinary resumption.
 
@@ -77,6 +78,14 @@ class ConventionsSessionBoundaryTest(unittest.TestCase):
             bullet,
         )
 
+    def test_closeout_never_writes_the_plan_close_summary(self) -> None:
+        m = re.search(r"- \*\*Session-boundary requests\*\* — (.+)", self.section)
+        self.assertIn(
+            "never the plan-close project summary (`CONTINUITY.md`, which only "
+            "`close plan` writes)",
+            m.group(1),
+        )
+
     def test_bare_continue_remains_an_execution_directive(self) -> None:
         # Without this clause the disambiguation would swallow plain "continue",
         # which Execution directives still owns.
@@ -111,12 +120,75 @@ class SkillSessionCloseoutTest(unittest.TestCase):
         # An interrupted task is not evidence that a handoff record is needed.
         self.assertIn("stays in `tasks/in-progress/`", stage)
 
+    def test_run_task_stage_8_excludes_the_plan_close_summary(self) -> None:
+        # The recurring regression: a PM treats the plan-close summary as the
+        # protocol's session-handoff document, writes a mid-plan handoff into
+        # it, and points a STATE note at it.
+        text = _read(SKILLS_DIR / "run-task.md")
+        stage = text[text.index("## Stage 8 - Close Session"):]
+        self.assertIn("That includes the plan-close project summary.", stage)
+        self.assertIn(
+            "`write-continuity` belongs to `close plan` Stage 3b alone and "
+            "refuses while the plan is open",
+            stage,
+        )
+        self.assertIn(
+            "`read-continuity` runs only when the operator asks for the summary",
+            stage,
+        )
+        self.assertIn("no note points the next session at a document to read", stage)
+
+    def test_run_task_stage_8_spells_out_the_closeout_steps(self) -> None:
+        text = _read(SKILLS_DIR / "run-task.md")
+        stage = text[text.index("## Stage 8 - Close Session"):]
+        checklist = stage[stage.index("A session-boundary closeout is exactly:"):]
+        self.assertIn("1. `cartopian write-state <project-root>`", checklist)
+        self.assertIn("2. The configured session-close git behavior", checklist)
+        self.assertIn("3. Stop, and name the exact next protocol action", checklist)
+        self.assertIn("Nothing else is written.", checklist)
+
     def test_start_session_stage_3_routes_the_boundary_request(self) -> None:
         text = _read(SKILLS_DIR / "start-session.md")
         stage = text[text.index("## Stage 3 - Take The Next Action"):]
         self.assertIn("- **Session-boundary request**:", stage)
         self.assertIn("`run task` § Stage 8", stage)
         self.assertIn("no carry-forward artifact", stage)
+
+
+class ProjectSummaryIsPlanCloseOnlyTest(unittest.TestCase):
+    def test_no_surface_invites_a_session_to_be_pointed_at_it(self) -> None:
+        # "so a later session can be pointed at it" read as a handoff license.
+        for path in (CONVENTIONS, SKILLS_DIR / "close-plan.md"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("later session can be pointed at it", _read(path))
+
+    def test_conventions_states_the_plan_close_gate(self) -> None:
+        text = _read(CONVENTIONS)
+        section = text[text.index("## Project Summary"):]
+        section = section[: section.index("\n## ", 1)]
+        self.assertIn("**Plan close only — never a session handoff.**", section)
+        self.assertIn("`continuity-plan-not-closable`", section)
+        self.assertIn(
+            "A `STATE.md` note, an instruction left by a previous session, or "
+            "the file's mere presence is not that request.",
+            section,
+        )
+
+    def test_session_state_refuses_a_note_pointing_at_it(self) -> None:
+        text = _read(CONVENTIONS)
+        section = text[text.index("## Session State"):]
+        self.assertIn("`note-names-project-summary`", section)
+        self.assertIn(
+            "The only artifact it writes is `STATE.md`: no handoff document, "
+            "and never the plan-close project summary.",
+            section,
+        )
+
+    def test_close_plan_keeps_the_summary_out_of_state(self) -> None:
+        text = _read(SKILLS_DIR / "close-plan.md")
+        self.assertIn("never a session handoff", text)
+        stage5 = text[text.index("## Stage 5 - State Reset"):text.index("## Stage 6")]
+        self.assertIn("Do not name or point at `CONTINUITY.md` in this body.", stage5)
 
 
 class StartupSliceCarriesTheRuleTest(unittest.TestCase):

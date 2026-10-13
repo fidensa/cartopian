@@ -76,7 +76,7 @@ Operator requests fall into four classes. Classifying intent is the PM's first i
 - **Execution directives** — "continue", "resume", "start working", "run the next task", "keep going", "pick up where we left off". These initiate (or resume) linear execution: the PM continues the active task — or starts the next sequential task when none is active — via `skills/run-task.md` without asking the operator to choose or approve the selection. Pace is governed by the `[automation]` policy; selection is never an operator question. The PM still stops for blockers, for decisions the protocol reserves to the operator, and at the plan-level forks named in `skills/start-session.md` (no plan exists, plan complete).
 - **Informational requests** — "what's next?", "check `STATE.md`", "give me status", "where are we?". These are read-only: answer from `STATE.md` and the `next-action` record, name the next protocol action, and stop. An informational request never initiates execution — even under `[automation] initiation = "auto"` — because a question must not acquire side effects.
 - **Scoped directives** — "generate PHASE-04's tasks", "write the spec", "revise the plan". These authorize exactly the named operation. When it completes: under `initiation = "operator"` (the protocol default), the PM reports completion, names the next protocol action, and stops; under `initiation = "auto"`, the newly ready open queue may initiate a run (see [Task Execution Order](#task-execution-order)).
-- **Session-boundary requests** — "let's continue in a new session", "pick this up in a new chat", "that's enough for today". The request names a *session* boundary, so "continue" says *where* work resumes, not *start work*; a bare "continue" naming no boundary stays an execution directive. The one authorized operation is session closeout: refresh `STATE.md` (`skills/run-task.md` § Stage 8) and end the run, as an explicit stop does. Persisted project state is the whole continuity mechanism, so closeout produces no carry-forward artifact of any kind — no new task, no plan edit, no handoff document — and the next session resumes through registry selection and the `next-action` startup verdict.
+- **Session-boundary requests** — "let's continue in a new session", "pick this up in a new chat", "that's enough for today". The request names a *session* boundary, so "continue" says *where* work resumes, not *start work*; a bare "continue" naming no boundary stays an execution directive. The one authorized operation is session closeout: refresh `STATE.md` (`skills/run-task.md` § Stage 8) and end the run, as an explicit stop does. Persisted project state is the whole resume mechanism, so closeout produces no carry-forward artifact of any kind — no new task, no plan edit, no handoff document, and never the plan-close project summary (`CONTINUITY.md`, which only `close plan` writes) — and the next session resumes through registry selection and the `next-action` startup verdict.
 
 Authorization is literal. A directive of any class does not implicitly authorize creating a task, plan item, decision, prompt, request capture, review, handoff, or other governance artifact merely to make the request fit a preferred workflow. If the named operation cannot be completed without a materially different mutation or scope expansion, the PM stops and asks before writing it. The PM also does not transfer authorized Cartopian file manipulation to the operator when a mediated writer can perform it.
 
@@ -176,7 +176,7 @@ intent never changes the request's intent class.
 - Plan closeout summary: `archive/PLAN-NNN/CLOSEOUT.md`.
 - Archive index: `archive/INDEX.md`. One-line-per-archive summary table.
 - Decisions: `DEC-NNN.md`. `NNN` is a project-local counter within `decisions/`.
-- Project summary: `CONTINUITY.md` at the project root. Optional plain Markdown summary a plan close may leave behind, read only on an explicit operator request (see Project Summary).
+- Project summary: `CONTINUITY.md` at the project root. Optional plain Markdown summary a plan close may leave behind, read only on an explicit operator request, and never a session handoff (see Project Summary).
 
 Artifact names carry identity only. Human-readable descriptions belong in the
 artifact heading and index metadata, never in a filename. Descriptive
@@ -1296,7 +1296,7 @@ After closeout, `STATE.md` says there is no active plan and names `skills/plan-p
 
 ## Project Summary
 
-A plan close may leave behind one **plain Markdown** summary of the project so that a later session can be pointed at it. The artifact is `<project-root>/CONTINUITY.md`, and there is exactly one per project: it is not per-plan, not per-phase, and not resolved from anywhere else. It survives `reset-plan` (whose allowlist never names it) and is never copied into an archive (`ARCHIVE_ROOT_FILES` never gains it). It is a mediated artifact: hand edits are out of band, exactly as they are for `BACKLOG.md` and `STATE.md`.
+A plan close may leave behind one **plain Markdown** summary of the project so that the next planning cycle can be pointed at it. The artifact is `<project-root>/CONTINUITY.md`, and there is exactly one per project: it is not per-plan, not per-phase, and not resolved from anywhere else. It survives `reset-plan` (whose allowlist never names it) and is never copied into an archive (`ARCHIVE_ROOT_FILES` never gains it). It is a mediated artifact: hand edits are out of band, exactly as they are for `BACKLOG.md` and `STATE.md`.
 
 It is plain Markdown and nothing more. There is no format header, no schema, no row or table grammar, no index, no counter, and no size ceiling beyond the mediated-write primitive's ordinary rules. Cartopian does not parse the body, derive fields from it, or project any part of it.
 
@@ -1306,6 +1306,8 @@ It is plain Markdown and nothing more. There is no format header, no schema, no 
 cartopian write-continuity <project-root> [--content <summary> | --content-file <path>]
 ```
 
+**Plan close only — never a session handoff.** `write-continuity` refuses (`continuity-plan-not-closable`) unless `close-audit` reports the plan closable and the plan is complete as `next-action` defines `plan-complete`: no active or open task, no phase whose tasks were never generated, and at least one phase that had tasks. A project with no plan is refused too, so a session boundary at any point in planning or execution cannot write it, and a summary a previous plan's close left behind is never overwritten by a handoff. Ending a session mid-plan is `STATE.md` alone (see Request Intent and Session State).
+
 The summary is independent of the ordinary plan-archive choice. Archiving does not require a summary, a summary does not require an archive, and running neither, either, or both leaves `archive-plan`, `reset-plan`, and `archive/INDEX.md` behaving exactly as they do without this artifact. Re-issuing the command replaces the summary in place.
 
 **Reading is explicit only.** One command reads it, and it runs only when the operator asks for the summary:
@@ -1314,7 +1316,7 @@ The summary is independent of the ordinary plan-archive choice. Archiving does n
 cartopian read-continuity <project-root>
 ```
 
-No other command opens, stats, or parses the artifact. `next-action` and `compose-state` emit no field, projection, index, or rendered line derived from it, in any mode and whether or not it exists; `write-state` never reads it, so `STATE.md` never restates it; and startup, status, prompt/state composition, task assignment, and task execution perform no summary load of any kind. Nothing derived from the summary is ever injected automatically, and nothing replaces that removed injection with another automatic context channel.
+A `STATE.md` note, an instruction left by a previous session, or the file's mere presence is not that request. No other command opens, stats, or parses the artifact. `next-action` and `compose-state` emit no field, projection, index, or rendered line derived from it, in any mode and whether or not it exists; `write-state` never reads it, so `STATE.md` never restates it; and startup, status, prompt/state composition, task assignment, and task execution perform no summary load of any kind. Nothing derived from the summary is ever injected automatically, and nothing replaces that removed injection with another automatic context channel.
 
 **Absence is success.** A project with no summary starts, reports status, composes state, and executes tasks exactly as one that never closed a plan: zero added context, zero cost, no failure. Explicit retrieval on such a project reports the absence and exits successfully. A present artifact that cannot be read as text — a symlink or other non-regular file, or bytes that are not UTF-8 — is refused by name on that explicit path only.
 
@@ -1432,7 +1434,7 @@ The one exception is the no-plan project (post-closeout, pre-plan): there is not
 
 ### Situation notes
 
-The single PM-authored input on a planned project is the `## Situation` section, supplied as `write-state --note` lines (bounded: max 5 notes, one line of ≤ 200 chars each, section ≤ 1KB). A note qualifies only if all three hold: it is about the current state of *this project*; it is **not derivable** from the filesystem, config, or protocol; and it **changes what the next session does**. Example: "coder deploy failed mid-handoff; operator is restarting the development machine." Protocol rules, config values, and task placement never qualify — they are already recorded. Follow-up items never become notes either: intentionally deferred work this project owns goes to `BACKLOG.md`, a current-task blocker stays in its handoff evidence, and a defect in a dependency tool goes to its owning product's tracking (see Backlog). Neither a note nor a backlog entry exists merely to preserve session context.
+The single PM-authored input on a planned project is the `## Situation` section, supplied as `write-state --note` lines (bounded: max 5 notes, one line of ≤ 200 chars each, section ≤ 1KB). A note qualifies only if all three hold: it is about the current state of *this project*; it is **not derivable** from the filesystem, config, or protocol; and it **changes what the next session does**. Example: "coder deploy failed mid-handoff; operator is restarting the development machine." Protocol rules, config values, and task placement never qualify — they are already recorded. Follow-up items never become notes either: intentionally deferred work this project owns goes to `BACKLOG.md`, a current-task blocker stays in its handoff evidence, and a defect in a dependency tool goes to its owning product's tracking (see Backlog). Neither a note nor a backlog entry exists merely to preserve session context, and a note never sends the next session to a document: `write-state` refuses a note that names the plan-close summary (`note-names-project-summary`).
 
 Notes have a **one-delivery TTL** — a note exists to survive exactly one gap between sessions, then must be consumed:
 
@@ -1440,6 +1442,6 @@ Notes have a **one-delivery TTL** — a note exists to survive exactly one gap b
 - A `--note` byte-identical to one already in `STATE.md` is refused fail-closed (`note-carry-forward`). A fact that outlives its delivery is promoted (`write-backlog`, `write-decision`), dropped, or — for a genuinely still-live transient — consciously restated, never repasted.
 - `plan-audit` and the `next-action` session brief emit a **blocker** per note present: undelivered mail must be resolved before lifecycle movement. Resolving it (acting, promoting, dropping, then refreshing `STATE.md`) is PM work and does not itself require operator input. A healthy steady-state `STATE.md` has zero notes.
 
-Session closeout leaves task directories, prompts, reports, decisions, and git state consistent with the lifecycle evidence processed during the session.
+Session closeout leaves task directories, prompts, reports, decisions, and git state consistent with the lifecycle evidence processed during the session. The only artifact it writes is `STATE.md`: no handoff document, and never the plan-close project summary.
 
 The final operator-facing message names the exact next protocol action.

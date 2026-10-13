@@ -8,20 +8,62 @@ primitive (``continuity`` dest_kind → the allowlisted root file
 The command composes nothing. There is no mode, no plan binding, no row
 grammar, no index, and no projection: the body the operator's closeout wrote
 is the artifact, byte for byte — the supplied UTF-8 bytes are written as
-given, and not even a trailing newline is added. It reads no other artifact,
-so writing the summary neither depends on nor alters ordinary plan-archive
-behavior, and a closeout that never runs it simply leaves the project without
-a summary.
+given, and not even a trailing newline is added.
+
+The summary belongs to plan close alone, so the write is refused until
+``close-audit`` reports the plan closable — the verdict ``close plan``
+requires before it reaches the summary stage — and the plan is complete as
+``next-action`` defines it. A session boundary is not a plan close: an open
+plan, an unstarted one, one with a phase whose tasks were never generated, and
+a project with no plan at all are all refused, so the summary can never stand
+in for a session handoff. Beyond that readiness check the command reads no
+other artifact, and writing the summary neither depends on nor alters ordinary
+plan-archive behavior.
 """
 import argparse
+from pathlib import Path
+from typing import Optional
 
 from cli import continuity
-from cli.commands import _writers
+from cli.commands import _writers, close_audit, next_action
+from cli.commands.resolve_config import _CliError
 from cli.mediated_write import GuardRefusal, mediated_write
+
+_NOT_A_HANDOFF = (
+    "the project summary is written only at plan close (close plan Stage 3b), "
+    "never as a session handoff; to end a session, refresh STATE.md with "
+    "write-state and stop (run task Stage 8)"
+)
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
+    subparser.description = (
+        "Write the plan-close project summary (close plan Stage 3b, after "
+        "close-audit and before reset-plan). Refused until the plan is "
+        "complete and closable. Never a session handoff: ending a session is "
+        "write_state alone, and no document carries context forward."
+    )
     _writers.add_content_args(subparser)
+
+
+def _plan_close_refusal(root: Path) -> Optional[str]:
+    """Return why the plan is not at close, or ``None`` when it is."""
+    try:
+        record = close_audit.audit_project(root)
+    except _CliError as err:
+        return err.message
+    if record["closable"] is None:
+        return "this project has no plan to close"
+    if not record["closable"]:
+        reasons = record["blocking_reasons"]
+        return (
+            f"close-audit reports {len(reasons)} blocking reason(s), first: "
+            f"{reasons[0]}"
+        )
+    gap = next_action.completion_gap(root)
+    if gap is not None:
+        return f"the plan is not complete: {gap}"
+    return None
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -43,6 +85,13 @@ def handler(args: argparse.Namespace) -> int:
     if not content.strip():
         _writers.stderr("usage", "project summary must be non-empty")
         return _writers.EXIT_USAGE
+
+    refusal = _plan_close_refusal(root)
+    if refusal is not None:
+        _writers.stderr(
+            "guard", f"continuity-plan-not-closable: {refusal} — {_NOT_A_HANDOFF}"
+        )
+        return _writers.EXIT_FAIL
 
     existed = continuity.artifact_path(root).exists()
     try:

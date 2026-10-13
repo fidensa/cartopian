@@ -201,7 +201,7 @@ The command also runs the prompt-effectiveness contract's ordered plan close aga
 
 ## Stage 3b - Project Summary
 
-Every close leaves one plain project summary at the project root so a later session can be pointed at it. This stage is **independent of Stage 3**: it runs whether or not the operator asked for an archive, and it changes nothing about `archive-plan`, `archive/INDEX.md`, or `reset-plan`.
+Every close leaves one plain project summary at the project root so the next planning cycle can be pointed at it. It is a plan-close artifact only, never a session handoff: `write-continuity` refuses (`continuity-plan-not-closable`) until `close-audit` reports the plan closable and the plan is complete, so it cannot run before Stage 1 has passed. This stage is **independent of Stage 3**: it runs whether or not the operator asked for an archive, and it changes nothing about `archive-plan`, `archive/INDEX.md`, or `reset-plan`.
 
 Run it **before** Stage 4 — reset destroys the live artifacts the summary is composed from.
 
@@ -285,6 +285,8 @@ cartopian write-state <project-root> --content-file <closeout-body-path>
 ```
 
 This no-plan case is the only one where `write-state` accepts an authored body — on a project with plan artifacts it refuses `--content` and composes the body from the filesystem itself, so an incomplete Stage 4 reset also fails closed here.
+
+Do not name or point at `CONTINUITY.md` in this body. The next planning session reads the summary only when the operator asks for it (`read-continuity`); Stage 6 tells the operator it exists.
 
 The composed body says:
 

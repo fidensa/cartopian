@@ -20,6 +20,11 @@ from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE, stderr_guard, stderr_usage
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
+    subparser.description = (
+        "Return the plan-close project summary, only when the operator "
+        "explicitly asks for it. Never call it at startup, for status, or to "
+        "resume a session: STATE.md and next_action are the whole resume path."
+    )
     subparser.add_argument(
         "project_root",
         help="Absolute path to the Cartopian project root",

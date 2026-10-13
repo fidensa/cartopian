@@ -44,7 +44,7 @@ Under an execution or scoped directive, an explained stale task-review binding r
 - **Informational**: answer the summary, name the exact next action, stop. Never initiate execution from an informational request, even under `initiation = "auto"`.
 - **Scoped directive**: perform exactly the named operation via its owning skill; stop afterward under `initiation = "operator"`. Under `initiation = "auto"`, the newly ready queue may initiate execution.
 - **Execution directive**: continue `active_task` in `in-progress` or `in-review`; otherwise start `next_open_task`, through `run task`.
-- **Session-boundary request**: close per `run task` § Stage 8; write no carry-forward artifact.
+- **Session-boundary request**: close per `run task` § Stage 8; write no carry-forward artifact or handoff document.
 - **Bare project selection**: initiate only under `initiation = "auto"`; otherwise end with the summary and exact next task.
 
 Within an initiated run, follow deterministic continuations without per-action confirmation prompts, honoring the configured run boundary. An operator-named task overrides order for that task only. Stop at plan-level forks (no plan, phase tasks not generated, plan complete), blockers, failed handoffs, exhausted automation budget, or reserved decisions. Ask whether to proceed at a planning fork unless the operator already directed that exact planning step.

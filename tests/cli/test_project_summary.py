@@ -41,13 +41,29 @@ _SUMMARY = (
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CLI_DIR = _REPO_ROOT / "cli"
+_DELIVERY_FIXTURES = _REPO_ROOT / "tests" / "fixtures" / "delivery"
 
-# The two commands that are allowed to touch the artifact at all.
+# The two commands that are allowed to touch the artifact at all, plus
+# write-state, which names it only to refuse a note pointing at it.
 _SUMMARY_MODULES = {
     "cli/continuity.py",
     "cli/commands/write_continuity.py",
     "cli/commands/read_continuity.py",
+    "cli/commands/write_state.py",
 }
+
+
+def _close_ready(scaffold, delivery="complete-adoption-followup-closed"):
+    """Give a scaffold a plan at close: every task done, the delivery gate met."""
+    scaffold.write(
+        "IMPLEMENTATION_PLAN.md",
+        (_DELIVERY_FIXTURES / f"{delivery}.md").read_text(encoding="utf-8"),
+    )
+    scaffold.write(
+        "phases/PHASE-01.md",
+        "# PHASE-01: Deliver\n\n## Exit criteria\n\n- `TASK-01-001`\n",
+    )
+    scaffold.write("tasks/done/TASK-01-001.md", "# TASK-01-001: done\n\nPhase: PHASE-01\n")
 
 
 def _write(project_root, content=_SUMMARY):
@@ -110,6 +126,7 @@ class TestPlanCloseWritesPlainSummary(unittest.TestCase):
 
     def test_write_creates_the_plain_artifact_byte_for_byte(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
             code, records, err = _write(scaffold.project_root)
             self.assertEqual(code, 0, err)
             artifact = scaffold.project_root / "CONTINUITY.md"
@@ -124,6 +141,7 @@ class TestPlanCloseWritesPlainSummary(unittest.TestCase):
         body with no trailing newline is written exactly as supplied, and the
         writer normalizes nothing."""
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
             body = "# Close\n\nNo trailing newline."
             code, records, err = _write(scaffold.project_root, body)
             self.assertEqual(code, 0, err)
@@ -133,6 +151,7 @@ class TestPlanCloseWritesPlainSummary(unittest.TestCase):
 
     def test_rewrite_replaces_the_summary_in_place(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
             _write(scaffold.project_root)
             code, records, err = _write(scaffold.project_root, "# Second close\n")
             self.assertEqual(code, 0, err)
@@ -151,6 +170,7 @@ class TestPlanCloseWritesPlainSummary(unittest.TestCase):
 
     def test_write_leaves_ordinary_archive_state_untouched(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
             archive = scaffold.project_root / "archive"
             archive.mkdir()
             (archive / "INDEX.md").write_text("# Archive index\n", encoding="utf-8")
@@ -163,6 +183,106 @@ class TestPlanCloseWritesPlainSummary(unittest.TestCase):
             self.assertEqual(
                 (archive / "INDEX.md").read_text(encoding="utf-8"), index_before
             )
+
+
+class TestWriteIsRefusedOutsidePlanClose(unittest.TestCase):
+    """The summary is a plan-close artifact and never a session handoff.
+
+    Every shape below is a point where a session can end with the plan still
+    open. Each one is refused by name, the refusal points the PM at the real
+    session closeout, and a summary already on disk (a previous plan's close)
+    is left byte-for-byte intact rather than overwritten by a handoff.
+    """
+
+    _PRIOR = "# Project summary\n\nThe previous plan's close.\n"
+
+    def _assert_refused(self, scaffold, reason):
+        artifact = scaffold.project_root / "CONTINUITY.md"
+        artifact.write_text(self._PRIOR, encoding="utf-8")
+        code, records, err = _write(scaffold.project_root, "# Session handoff\n")
+        self.assertEqual(code, 1, err)
+        self.assertEqual(records, [])
+        self.assertIn("continuity-plan-not-closable", err)
+        self.assertIn(reason, err)
+        self.assertIn("never as a session handoff", err)
+        self.assertIn("write-state", err)
+        self.assertEqual(artifact.read_text(encoding="utf-8"), self._PRIOR)
+
+    def test_a_project_with_no_plan_is_refused(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            self._assert_refused(scaffold, "this project has no plan to close")
+
+    def test_an_open_task_is_refused(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
+            scaffold.write("tasks/open/TASK-01-002.md", "# TASK-01-002: next\n\nPhase: PHASE-01\n")
+            self._assert_refused(scaffold, "TASK-01-002 remains in open")
+
+    def test_an_in_progress_task_is_refused(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
+            scaffold.write(
+                "tasks/in-progress/TASK-01-002.md",
+                "# TASK-01-002: next\n\nPhase: PHASE-01\n",
+            )
+            self._assert_refused(scaffold, "TASK-01-002 remains in in-progress")
+
+    def test_an_unverified_delivery_is_refused(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold, delivery="artifact-complete-outcome-unverified")
+            self._assert_refused(scaffold, "delivery gate blocks closeout")
+
+    def test_an_approved_plan_with_no_generated_tasks_is_refused(self) -> None:
+        """The plan-just-approved session boundary. A not-applicable delivery
+        leaves close-audit nothing to block on, so the completion test must."""
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write(
+                "IMPLEMENTATION_PLAN.md",
+                (_DELIVERY_FIXTURES / "not-applicable.md").read_text(encoding="utf-8"),
+            )
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Build\n")
+            self._assert_refused(scaffold, "the plan is not complete")
+
+    def test_a_phase_boundary_with_ungenerated_tasks_is_refused(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold, delivery="not-applicable")
+            scaffold.write("phases/PHASE-02.md", "# PHASE-02: Next\n")
+            self._assert_refused(scaffold, "PHASE-02 has no generated tasks")
+
+    def test_the_gate_is_the_close_plan_gate(self) -> None:
+        """Control for every refusal above: the same shape at close writes."""
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold, delivery="not-applicable")
+            code, _records, err = _write(scaffold.project_root)
+            self.assertEqual(code, 0, err)
+
+
+class TestToolDescriptionsCarryTheBoundary(unittest.TestCase):
+    """The tool list is the one surface a host always shows the model, so the
+    plan-close / session-closeout boundary is stated where tools are chosen."""
+
+    def setUp(self) -> None:
+        from mcp_server import server
+
+        server._TOOL_CACHE = None
+        self.tools = {tool["name"]: tool["description"] for tool in server.list_tools()}
+
+    def test_the_writer_says_plan_close_and_not_session_handoff(self) -> None:
+        text = self.tools["write_continuity"]
+        self.assertIn("plan-close project summary", text)
+        self.assertIn("Never a session handoff", text)
+        self.assertIn("write_state", text)
+
+    def test_the_reader_runs_only_on_an_explicit_request(self) -> None:
+        text = self.tools["read_continuity"]
+        self.assertIn("only when the operator explicitly asks", text)
+        self.assertIn("Never call it at startup", text)
+
+    def test_write_state_is_the_whole_session_closeout(self) -> None:
+        text = self.tools["write_state"]
+        self.assertIn("This is the whole session closeout", text)
+        self.assertIn("Write no handoff document", text)
+        self.assertIn("project summary", text)
 
 
 class TestOrdinaryCloseoutBehaviorIsUnchanged(unittest.TestCase):
@@ -178,7 +298,7 @@ class TestOrdinaryCloseoutBehaviorIsUnchanged(unittest.TestCase):
                 text="Build the requested project.",
             )
             scaffold.write("REQUIREMENTS.md", "# reqs\n")
-            scaffold.write("IMPLEMENTATION_PLAN.md", "# plan\n")
+            _close_ready(scaffold)
             scaffold.write("STANDARDS.md", "# standards\n")
             self.assertEqual(_write(scaffold.project_root)[0], 0)
 
@@ -210,6 +330,7 @@ class TestOrdinaryCloseoutBehaviorIsUnchanged(unittest.TestCase):
 class TestExplicitRetrieval(unittest.TestCase):
     def test_present_summary_is_returned_verbatim(self) -> None:
         with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            _close_ready(scaffold)
             _write(scaffold.project_root)
             code, records, err = _read(scaffold.project_root)
             self.assertEqual(code, 0, err)
