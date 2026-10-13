@@ -757,6 +757,58 @@ def _decision_scope_text(project_root: Path, path: Path) -> str:
     return _effective_decision_text(project_root, path, text)
 
 
+def decision_text_references(decision_id: str, text: str) -> List[Reference]:
+    """Structural capture references in one decision's effective text.
+
+    Raises :class:`RequestRefusal` on a malformed marker or capture identity.
+    """
+    refs: List[Reference] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().lower().startswith(DECISION_EVIDENCE_MARKER.lower()):
+            match = DECISION_EVIDENCE_MARKER_RE.fullmatch(line.strip())
+            if match is None:
+                raise RequestRefusal(
+                    "malformed-decision-evidence-marker",
+                    f"{decision_id} has an invalid operator-evidence marker; "
+                    f"expected `{DECISION_EVIDENCE_MARKER} <unit>: <capture-id>[, ...]`",
+                )
+            unit = GovernedUnit(*match.group(1).split(":", 1))
+            ids = [item.strip() for item in match.group(2).split(",")]
+            quote, i = _quote_after(lines, i)
+            for cid in ids:
+                if not CAPTURE_ID_RE.fullmatch(cid):
+                    raise RequestRefusal(
+                        "malformed-decision-evidence-marker",
+                        f"{decision_id} names `{cid}`, which is not a capture identity",
+                    )
+                refs.append(Reference(cid, unit, decision_id, quote))
+            continue
+        i += 1
+    return refs
+
+
+def unconfirmed_decision_evidence(
+    project_root: Path, decision_id: str, text: str
+) -> List[Unconfirmed]:
+    """Every capture one decision names that does not confirm as operator evidence.
+
+    The write-time check for a decision that claims operator authority: each
+    named turn must be a captured, unrevoked operator turn of this project
+    whose block quote, if any, equals it whole. Raises :class:`RequestRefusal`
+    on a malformed marker or an inconsistent pair.
+    """
+    refs = decision_text_references(decision_id, text)
+    if not refs:
+        return []
+    _confirmed, unconfirmed = _confirm_references(
+        refs, load_candidates(Path(project_root)), revoked_evidence_ids(Path(project_root))
+    )
+    return unconfirmed
+
+
 def decision_references(project_root: Path) -> Tuple[List[Reference], List[Unconfirmed]]:
     """Structural capture references from current, locked decisions, plus legacy quotes.
 
@@ -788,30 +840,7 @@ def decision_references(project_root: Path) -> Tuple[List[Reference], List[Uncon
             if not trace_binding.is_current_locked_decision(decision_id, text, retired):
                 continue
             text = _effective_decision_text(project_root, path, text)
-            lines = text.splitlines()
-            i = 0
-            while i < len(lines):
-                line = lines[i]
-                if line.strip().lower().startswith(DECISION_EVIDENCE_MARKER.lower()):
-                    match = DECISION_EVIDENCE_MARKER_RE.fullmatch(line.strip())
-                    if match is None:
-                        raise RequestRefusal(
-                            "malformed-decision-evidence-marker",
-                            f"{decision_id} has an invalid operator-evidence marker; "
-                            f"expected `{DECISION_EVIDENCE_MARKER} <unit>: <capture-id>[, ...]`",
-                        )
-                    unit = GovernedUnit(*match.group(1).split(":", 1))
-                    ids = [item.strip() for item in match.group(2).split(",")]
-                    quote, i = _quote_after(lines, i)
-                    for cid in ids:
-                        if not CAPTURE_ID_RE.fullmatch(cid):
-                            raise RequestRefusal(
-                                "malformed-decision-evidence-marker",
-                                f"{decision_id} names `{cid}`, which is not a capture identity",
-                            )
-                        refs.append(Reference(cid, unit, decision_id, quote))
-                    continue
-                i += 1
+            refs.extend(decision_text_references(decision_id, text))
             # Legacy quotations: shape-checked, never confirmed.
             for quote_index, (unit, excerpt) in enumerate(
                 request_trace._structural_decision_quotes(decision_id, text), start=1  # noqa: SLF001

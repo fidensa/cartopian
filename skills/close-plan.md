@@ -97,7 +97,7 @@ cartopian close-audit <project-path>
     Never resolve a delivery finding by editing the record to say the delivery happened. Artifact completion is not outcome verification: `Artifact: complete` alongside `Result: not-run` is an honest state, and it blocks. So do `Authority: pending-operator-authorization` and `Authority: declined` — an undelivered outcome stays undelivered, and the gate refuses to convert either into `verified`. There are exactly two honest ways past such a finding, and both are the operator's:
 
     - The external action happens. The operator authorizes it, the target is observed, and the record gains that observation, its evidence identity, and its time. Rerun the gate.
-    - The plan's delivery obligation changes. The operator decides the plan no longer carries this delivery — record that as a decision (`cartopian write-decision`), amend the delivery contract through `cartopian write-plan` to match the decision, and rerun the gate.
+    - The plan's delivery obligation changes. The operator decides the plan no longer carries this delivery — record that as an operator decision citing the operator's captured turn (`cartopian write-decision`, `Authority: operator`), amend the delivery contract through `cartopian write-plan` to match the decision, and rerun the gate.
 
     An operator who simply declines the external action and wants the plan closed anyway is asking for the second path, not the first. Put that choice to them explicitly rather than editing the record on their behalf.
 

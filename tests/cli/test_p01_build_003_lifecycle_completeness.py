@@ -207,7 +207,7 @@ class TestGreenLifecycleCompletes(unittest.TestCase):
         # Record a decision + index in one command (G9 + G10).
         self._run("write-decision", ps, "--dec-id", "DEC-001",
                   "--title", "Chosen approach", "--date", "2026-06-01",
-                  "--content", "# DEC-001\n")
+                  "--content", "# DEC-001\nRuling: Take the chosen approach.\n")
         self.assertTrue((proj / "decisions" / "DEC-001.md").is_file())
         self.assertIn("[DEC-001]", (proj / "decisions" / "INDEX.md").read_text(encoding="utf-8"))
 

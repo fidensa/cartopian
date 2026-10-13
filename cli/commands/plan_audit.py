@@ -1199,8 +1199,9 @@ def _check_scoped_request_coverage(project_path: Path) -> List[Dict[str, Any]]:
             "detail": (
                 f"operator excerpt {item['identity']} is scoped outside-scope by "
                 f"{', '.join(tasks)} and claimed by no task; plan-level coverage is "
-                "not yet established — a later phase's task must claim it, or a "
-                f"decision must record `Out-of-plan request: {item['content_identity']}`"
+                "not yet established — a later phase's task must claim it, or an "
+                "operator decision must record "
+                f"`Out-of-plan request: {item['content_identity']}`"
             ),
         })
     return warnings
@@ -1232,7 +1233,8 @@ def _check_decision_status(project_path: Path) -> List[Dict[str, Any]]:
                 + "; authorization readers act only on `locked`, so this "
                 "decision currently authorizes and disposes nothing. Re-issue "
                 "it through write-decision with the status the ruling has "
-                f"({' or '.join(trace_binding.DECISION_STATUSES)})"
+                f"({' or '.join(trace_binding.DECISION_STATUSES)}); a decision "
+                "no reader can act on is still a draft, so it may be re-issued"
             ),
         })
     # A live decision whose `Restates:` pointer cannot be resolved rules by an
@@ -1249,6 +1251,59 @@ def _check_decision_status(project_path: Path) -> List[Dict[str, Any]]:
                 f"{item['decision']}: {item['detail']}. Until the pointer "
                 "resolves, every unit this decision governs refuses its request "
                 "trace"
+            ),
+        })
+    warnings.extend(_check_decision_authority(project_path))
+    return warnings
+
+
+def _check_decision_authority(project_path: Path) -> List[Dict[str, Any]]:
+    """Warn where a decision's authority is unreadable or exceeded, and list PM rulings.
+
+    A locked PM decision is a ruling in force that the operator never made.
+    That is often fine, but the operator should see each one: the aggregate
+    ``decision-pm-unratified`` warning names them so a single operator
+    decision (``Ratifies:``) can adopt them, or a superseding one overturn
+    them. Warnings rather than blockers, because existing plans carry
+    unevidenced decisions recorded before authority was declared.
+    """
+    findings = trace_binding.authority_findings(project_path)
+    warnings: List[Dict[str, Any]] = []
+    for item in findings["unreadable"]:
+        reason = (
+            "names no captured operator turn"
+            if item["reason"] == "unevidenced"
+            else "is outside the vocabulary (operator or pm)"
+        )
+        warnings.append({
+            "kind": "decision-authority-unreadable",
+            "decision": item["decision"],
+            "declared": item["declared"],
+            "detail": (
+                f"{item['decision']} declares Authority: {item['declared']!r}, which {reason}; "
+                "it is read as a PM decision. Record a superseding decision that states "
+                "its authority correctly"
+            ),
+        })
+    for item in findings["unauthorized_dispositions"]:
+        warnings.append({
+            "kind": "decision-disposition-unauthorized",
+            "decision": item["decision"],
+            "detail": (
+                f"{item['decision']} records `Out-of-plan request:` lines as a PM decision, "
+                "so it disposes of nothing; leaving an operator request out of the plan "
+                "needs an operator decision (or an operator decision that ratifies this one)"
+            ),
+        })
+    if findings["unratified"]:
+        ids = findings["unratified"]
+        warnings.append({
+            "kind": "decision-pm-unratified",
+            "decisions": [f"decisions/{stem}.md" for stem in ids],
+            "detail": (
+                f"{len(ids)} locked PM decision(s) are in force without the operator's "
+                f"ruling: {', '.join(ids)}. Offer them to the operator; an operator "
+                "decision with `Ratifies:` adopts them, a superseding one overturns them"
             ),
         })
     return warnings

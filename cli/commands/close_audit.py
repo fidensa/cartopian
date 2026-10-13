@@ -304,7 +304,7 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
             f"unclaimed operator request blocks closeout: {item['identity']} is "
             f"scoped outside-scope by {', '.join(item['tasks'])} and claimed by no "
             "task — claim it in a task or record `Out-of-plan request: "
-            f"{item['content_identity']}` in a decision"
+            f"{item['content_identity']}` in an operator decision"
         )
 
     return {

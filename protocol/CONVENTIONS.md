@@ -801,10 +801,11 @@ record for an actual departure from operator intent and still requires
 attributable operator authority. Coverage is preserved at the plan level:
 `cartopian plan-audit` warns on an excerpt that every task scopes out and no
 task claims or waives, and `cartopian close-audit` blocks closeout on it,
-unless a current, locked decision (not `open`, not named by a later decision's
-`Supersedes:`) records the authorized plan-level disposition `Out-of-plan
-request: sha256:<content identity>`. Scoping therefore never silently drops
-operator intent. `A|` records are part of the hashed trace identity, so an
+unless a current, locked operator decision (not `open`, not named by a later
+decision's `Supersedes:`, and speaking for the operator — see § Decisions)
+records the authorized plan-level disposition `Out-of-plan request:
+sha256:<content identity>`. Scoping therefore never silently drops operator
+intent, and the PM cannot drop it alone. `A|` records are part of the hashed trace identity, so an
 applicability decision added or changed after a review was recorded makes
 that review's `Trace-identity` stale. `cartopian acceptance-trace
 --enumerate` / `--compose-from` derive the mechanical record syntax from a
@@ -1329,15 +1330,24 @@ A `STATE.md` note, an instruction left by a previous session, or the file's mere
 
 ## Decisions
 
-Every non-trivial decision gets its own immutable file in `decisions/`, named `DEC-NNN.md`; its title lives in the file and decision index.
+Every non-trivial decision gets its own immutable file in `decisions/`, named `DEC-NNN.md`; its title lives in the file and decision index. Immutability is enforced: `write-decision` refuses (`decision-immutable`) to rewrite a decision that is `locked` or that a later decision supersedes. Only a draft — `open`, or a status no reader can act on — may be re-issued, because nothing rules by it yet.
 
-`decisions/INDEX.md` is a one-line-per-decision summary table.
+A decision that changes a prior decision creates a new file. `Supersedes: DEC-NNN` retires the prior ruling; the superseded decision file remains unchanged. `Amends: DEC-NNN[, DEC-NNN]` adds to or narrows a prior ruling that stays in force; the writer refuses (`decision-amends-invalid`) an amendment of a missing or superseded decision, or of one the same decision also supersedes. A decision that changes part of another ruling names it under one of the two headers, never only in prose, so every reader can find the change from the ruling it changes.
 
-A decision that changes a prior decision creates a new file with `Supersedes: DEC-NNN`. The superseded decision file remains unchanged.
+Every decision carries a one-line `Ruling:` header (at most 240 characters) stating what was decided; `write-decision` refuses a body without one (`decision-ruling-missing`, `decision-ruling-too-long`).
+
+`decisions/INDEX.md` is generated, not edited: every `write-decision` regenerates it from the decision files. Its `Live` table lists each decision no later decision supersedes, with its title, ruling, authority, status, date, and the current locked decisions that amend it; its `Superseded` table lists the retired decisions with the decisions that replaced them. A reader looking for what is in force reads the `Live` table and stops.
 
 A superseding decision that changes only a ruling's reach restates it by pointer instead of by copy, with a header `Restates: DEC-NNN sha256:<64 hex>` naming a decision it also supersedes. `write-decision` accepts `Restates: DEC-NNN` and pins it to the target file's exact bytes, refusing a target that is missing or not superseded, or a supplied digest that does not match. Every reader then uses the restating decision's effective text: its own file, followed by the restated decision's effective text under a `## Restated from DEC-NNN (sha256:…)` heading. Header fields (`Status`, `Supersedes`) still come only from the restating file. Everything below the heading counts as the restating decision's own: the ruling, its `Out-of-plan request:` markers, its `Operator request evidence for:` bindings, and the units it names. So the new file carries only what is new, usually one binding per newly governed unit. A restatement can be restated again; the chain resolves link by link, each link pinned. Decisions are immutable, so a pinned pointer is as fixed as a copy. A pointer that no longer resolves fails closed: the target is missing, changed, unpinned, circular, or not superseded. The request trace then refuses every unit the decision governs, and `plan-audit` warns `decision-restatement-unresolved`. A pointer always carries the whole target, so a ruling that stops naming a unit or changes its text needs a full restatement.
 
 A decision declares `Status: locked` (a ruling in force) or `Status: open` (a proposal). Those two are the whole vocabulary, and the distinction is mechanical rather than descriptive: authorization readers act only on `locked`, so a decision whose status header is absent or says anything else authorizes nothing and disposes nothing, however plainly its prose rules. `plan-audit` warns on each such decision (`decision-status-unreadable`) because the repair cannot be inferred on the ruling's behalf. Retrieval is deliberately wider than authorization: a decision with an unreadable status is still offered as something to reconcile against, since showing a ruling to a reader authorizes nothing and hiding one costs recall for no safety.
+
+A decision declares `Authority: operator` or `Authority: pm`: who the ruling speaks for. The split exists because readers otherwise treat every locked decision as a ruling in force, whoever wrote it.
+
+- **`operator`** — the operator made the ruling. The decision names the captured turns that show it with `Operator request evidence for:` markers, and `write-decision` confirms every named turn (captured in a receipted binding of this project, not revoked, not an unpaired assent, any block quote whole) before writing; it refuses `decision-authority-unevidenced` or `decision-evidence-unconfirmed` otherwise. A restatement by pointer carries the restated decision's markers, so it speaks for the operator when its target did.
+- **`pm`** — the PM's own call. A PM decision may not supersede or amend a decision with operator authority, may not ratify, and, while `locked`, may not carry `Out-of-plan request:` lines; the writer refuses each (`decision-authority-insufficient`). An `open` PM decision may still propose a disposition for the operator to rule on.
+
+When the header is omitted, `write-decision` resolves it from the body — `operator` if the effective text names a captured turn, `pm` otherwise — and stamps it. Decisions recorded before the header existed are read by the same rule; a declared `operator` naming no captured turn, or a value outside the vocabulary, is read as `pm`, and `plan-audit` warns `decision-authority-unreadable`. An operator decision may adopt earlier PM decisions with `Ratifies: DEC-NNN[, DEC-NNN]`; while it is current and locked, each ratified decision is read as speaking for the operator (ratification does not chain). `plan-audit` lists every current, locked PM decision in one `decision-pm-unratified` warning so the operator sees the PM rulings in force, and warns `decision-disposition-unauthorized` on a PM decision whose `Out-of-plan request:` lines it therefore ignores. Offering PM decisions for ratification is the PM's; whether to ratify, overturn, or leave them is the operator's.
 
 The decision file is the ruling and `decisions/INDEX.md` is a projection of it, so the two are reconciled at write time rather than supplied twice. `write-decision` takes the body's own `Status:` and `Supersedes:` headers when the matching flag is omitted, stamps the resolved value into the body when the header is absent, and refuses (`decision-header-conflict`) when a flag contradicts a header the body declares. An unrecognized status is refused outright (`decision-status-unrecognized`). Title and date are descriptive and are not reconciled; only the two fields that decide liveness are.
 

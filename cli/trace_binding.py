@@ -489,6 +489,160 @@ def is_current_locked_decision(decision_id: str, text: str, retired: Set[str]) -
     return decision_id not in retired and decision_header(text, "Status").lower() == "locked"
 
 
+# Who a ruling speaks for. `operator` is a ruling the operator made, and it
+# carries the captured turns that prove it; `pm` is the PM's own call. The
+# split exists because every other reader treats a locked decision as a
+# ruling in force whoever wrote it, which let a PM-authored decision drop an
+# operator request from the plan or quietly overturn an operator ruling.
+AUTHORITY_HEADER = "Authority"
+DECISION_AUTHORITIES: Tuple[str, ...] = ("operator", "pm")
+OPERATOR_AUTHORITY = "operator"
+PM_AUTHORITY = "pm"
+#: A decision that adds to or narrows an earlier one without retiring it.
+AMENDS_HEADER = "Amends"
+#: An operator decision that adopts earlier PM decisions as operator rulings.
+RATIFIES_HEADER = "Ratifies"
+#: The one-line summary of what was ruled, projected into the index.
+RULING_HEADER = "Ruling"
+RULING_CAP = 240
+
+
+def decision_ids_in_header(text: str, name: str) -> List[str]:
+    """The ``DEC-NNN`` ids one header names, in order and without repeats."""
+    seen: List[str] = []
+    for found in re.findall(r"DEC-\d{3}", decision_header(text, name)):
+        if found not in seen:
+            seen.append(found)
+    return seen
+
+
+def has_evidence_marker(text: str) -> bool:
+    """Whether a decision's text names any captured operator turn."""
+    from cli.evidence_resolver import DECISION_EVIDENCE_MARKER  # local: import cycle
+
+    marker = DECISION_EVIDENCE_MARKER.lower()
+    return any(line.strip().lower().startswith(marker) for line in text.splitlines())
+
+
+def declared_authority(text: str) -> str:
+    """The ``Authority:`` header, lower-cased; ``""`` when absent."""
+    return decision_header(text, AUTHORITY_HEADER).lower()
+
+
+def base_authority(text: str) -> str:
+    """The authority one decision's own effective text supports.
+
+    ``operator`` only when the text names captured operator turns and does not
+    declare otherwise. A decision recorded before the header existed is read by
+    the same rule, so an evidence-bearing legacy ruling keeps its standing and
+    an unevidenced one is the PM's. A declared ``operator`` with no evidence,
+    or an unrecognized value, is read as ``pm``: a claim to speak for the
+    operator is only as good as the turns it names.
+    """
+    declared = declared_authority(text)
+    if declared not in ("", OPERATOR_AUTHORITY):
+        return PM_AUTHORITY
+    return OPERATOR_AUTHORITY if has_evidence_marker(text) else PM_AUTHORITY
+
+
+def ratifications(texts: Dict[str, str]) -> Dict[str, List[str]]:
+    """``{pm decision: [ratifying operator decisions]}`` from current rulings.
+
+    Only a current, locked decision whose own text carries operator authority
+    ratifies; ratification does not chain, so a ratified PM decision cannot in
+    turn ratify another.
+    """
+    retired = superseded_ids(texts)
+    out: Dict[str, List[str]] = {}
+    for stem in sorted(texts):
+        text = texts[stem]
+        if not is_current_locked_decision(stem, text, retired):
+            continue
+        if base_authority(text) != OPERATOR_AUTHORITY:
+            continue
+        for target in decision_ids_in_header(text, RATIFIES_HEADER):
+            if target != stem:
+                out.setdefault(target, []).append(stem)
+    return out
+
+
+def amendments(texts: Dict[str, str]) -> Dict[str, List[str]]:
+    """``{amended decision: [current locked decisions amending it]}``."""
+    retired = superseded_ids(texts)
+    out: Dict[str, List[str]] = {}
+    for stem in sorted(texts):
+        text = texts[stem]
+        if not is_current_locked_decision(stem, text, retired):
+            continue
+        for target in decision_ids_in_header(text, AMENDS_HEADER):
+            if target != stem:
+                out.setdefault(target, []).append(stem)
+    return out
+
+
+def superseders(texts: Dict[str, str]) -> Dict[str, List[str]]:
+    """``{retired decision: [decisions naming it under Supersedes:]}``."""
+    out: Dict[str, List[str]] = {}
+    for stem in sorted(texts):
+        for target in decision_ids_in_header(texts[stem], "Supersedes"):
+            if target != stem:
+                out.setdefault(target, []).append(stem)
+    return out
+
+
+def effective_authorities(texts: Dict[str, str]) -> Dict[str, str]:
+    """``{DEC-NNN: operator | pm}`` with operator ratification applied."""
+    ratified = ratifications(texts)
+    return {
+        stem: OPERATOR_AUTHORITY
+        if base_authority(text) == OPERATOR_AUTHORITY or stem in ratified
+        else PM_AUTHORITY
+        for stem, text in texts.items()
+    }
+
+
+def carries_out_of_plan(text: str) -> bool:
+    return any(line.strip().startswith(OUT_OF_PLAN_MARKER) for line in text.splitlines())
+
+
+def authority_findings(project_root: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """What ``plan-audit`` reports about decision authority.
+
+    ``unreadable``: a current decision whose ``Authority:`` is outside the
+    vocabulary, or claims ``operator`` without naming a captured turn — read as
+    ``pm`` either way. ``unauthorized_dispositions``: a current, locked PM
+    decision carrying ``Out-of-plan request:`` lines, which dispose of nothing.
+    ``unratified``: current, locked decisions that are the PM's own call, for
+    the operator to ratify or overturn.
+    """
+    texts = decision_bodies(project_root)
+    retired = superseded_ids(texts)
+    authorities = effective_authorities(texts)
+    unreadable: List[Dict[str, Any]] = []
+    unauthorized: List[Dict[str, Any]] = []
+    unratified: List[str] = []
+    for stem in sorted(texts):
+        if stem in retired:
+            continue
+        text = texts[stem]
+        declared = declared_authority(text)
+        if declared and declared not in DECISION_AUTHORITIES:
+            unreadable.append({"decision": f"decisions/{stem}.md", "declared": declared, "reason": "unrecognized"})
+        elif declared == OPERATOR_AUTHORITY and not has_evidence_marker(text):
+            unreadable.append({"decision": f"decisions/{stem}.md", "declared": declared, "reason": "unevidenced"})
+        if not is_current_locked_decision(stem, text, retired):
+            continue
+        if authorities[stem] == PM_AUTHORITY:
+            unratified.append(stem)
+            if carries_out_of_plan(text):
+                unauthorized.append({"decision": f"decisions/{stem}.md"})
+    return {
+        "unreadable": unreadable,
+        "unauthorized_dispositions": unauthorized,
+        "unratified": unratified,
+    }
+
+
 def unreadable_status_decisions(project_root: Path) -> List[Dict[str, str]]:
     """Decisions whose ``Status:`` is absent or outside the vocabulary.
 
@@ -522,17 +676,23 @@ def out_of_plan_dispositions(project_root: Path) -> Dict[str, str]:
     project's ruling record, so this is the one place a plan-level disposition
     can be authorized; task-level ``A|`` scoping never substitutes for it.
 
-    Only a **current, locked** decision authorizes. An ``open`` decision is a
-    proposal, not a ruling, and a decision named in any other decision's
-    ``Supersedes:`` line has been retired by a later ruling — whichever way
-    that ruling went, the retired text no longer authorizes anything.
+    Only a **current, locked** decision with **operator authority** authorizes.
+    An ``open`` decision is a proposal, not a ruling, and a decision named in
+    any other decision's ``Supersedes:`` line has been retired by a later
+    ruling — whichever way that ruling went, the retired text no longer
+    authorizes anything. Leaving an operator request out of the plan is the
+    operator's call, so a PM decision disposes of nothing until the operator
+    ratifies it.
     """
     out: Dict[str, str] = {}
     texts = decision_bodies(project_root)
     superseded = superseded_ids(texts)
+    authorities = effective_authorities(texts)
     for stem in sorted(texts):
         text = texts[stem]
         if not is_current_locked_decision(stem, text, superseded):
+            continue
+        if authorities[stem] != OPERATOR_AUTHORITY:
             continue
         for line in text.splitlines():
             stripped = line.strip()

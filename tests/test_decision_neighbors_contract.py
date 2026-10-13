@@ -36,6 +36,7 @@ def decision(
         f"# {title}\n\n"
         "Date: 2026-09-01\n"
         f"Status: {status}\n"
+        f"Ruling: {ruling.split('. ')[0].rstrip('.')[:200]}\n"
         f"Supersedes: {supersedes}\n\n"
         f"## Context\n\n{context}\n\n"
         f"## Decision\n\n{ruling}\n\n"
@@ -371,7 +372,8 @@ class WriteDecisionSurfaceTest(unittest.TestCase):
         body = AMENDMENT.replace("Supersedes: none", "Supersedes: DEC-001")
         code, _, err = self._write_raw("DEC-005", body)
         self.assertEqual(code, 0, err)
-        self.assertIn("DEC-001", self._index_row("DEC-005"))
+        # Supersession is read where it lands: the retired decision's history row.
+        self.assertTrue(self._index_row("DEC-001").endswith("| DEC-005 |"))
 
     def test_a_flag_contradicting_the_body_is_refused(self) -> None:
         code, _, err = self._write_raw("DEC-005", AMENDMENT, supersedes="DEC-001")
@@ -406,8 +408,8 @@ class WriteDecisionSurfaceTest(unittest.TestCase):
             written = (self.root / "decisions" / f"{dec_id}.md").read_text(encoding="utf-8")
             row = self._index_row(dec_id)
             self.assertIn(f"| {trace_binding.decision_header(written, 'Status')} |", row)
-            declared = trace_binding.decision_header(written, "Supersedes")
-            self.assertIn(declared, row)
+            for retired in trace_binding.decision_ids_in_header(written, "Supersedes"):
+                self.assertIn(dec_id, self._index_row(retired))
 
     def test_ranking_failure_never_costs_the_caller_the_decision(self) -> None:
         """The decision is on disk before ranking runs. It stays there."""

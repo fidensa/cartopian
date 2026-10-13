@@ -2,7 +2,24 @@
 
 Date: YYYY-MM-DD
 Status: <locked | open>
+Authority: <operator | pm>
+Ruling: <one line, at most 240 characters: what was decided>
 Supersedes: <DEC-NNN | none>
+
+A recorded decision is immutable: once it is `locked` or superseded,
+`write-decision` refuses to rewrite it. Change a ruling with a new decision
+that names it under `Supersedes:` (retires it) or `Amends: DEC-NNN` (adds to
+or narrows it while it stays in force). Only an `open` draft may be re-issued.
+
+`Authority:` says who the ruling speaks for. `operator` means the operator
+made it, and the decision must name the captured turns that show it (the
+marker below); `write-decision` confirms every named turn before writing.
+`pm` is the PM's own call. A PM decision may not supersede or amend an
+operator ruling, may not ratify, and may not leave an operator request out of
+the plan while locked. When the header is omitted, `write-decision` stamps
+`operator` if the body names a captured turn and `pm` otherwise. `plan-audit`
+lists locked PM decisions for the operator; an operator decision adopts them
+with `Ratifies: DEC-NNN[, DEC-NNN]`.
 
 Ordinary decision prose is PM-derived guidance. A decision names operator
 evidence only by reference to turns the host intake adapter captured, with
@@ -36,12 +53,15 @@ Restates: DEC-NNN
 Operator request evidence for: task:TASK-NN-NNN: cs-<handle>/turn-<N>
 ```
 
-A decision may also record that the plan deliberately leaves an operator
-excerpt unclaimed by every task. That is the one authorized plan-level
-disposition `plan-audit` and `close-audit` accept, and it is structural: one
-line naming the excerpt's content identity, exactly as the task trace names it.
-It authorizes only while the decision is `Status: locked` and no later decision
-names it under `Supersedes:`; an open or superseded decision authorizes nothing.
+An operator decision may also record that the plan deliberately leaves an
+operator excerpt unclaimed by every task. That is the one authorized
+plan-level disposition `plan-audit` and `close-audit` accept, and it is
+structural: one line naming the excerpt's content identity, exactly as the
+task trace names it. It authorizes only while the decision is
+`Status: locked`, speaks for the operator, and no later decision names it
+under `Supersedes:`; an open, superseded, or PM decision authorizes nothing. A
+PM may still propose a disposition in an `open` decision for the operator to
+rule on.
 
 ```markdown
 Out-of-plan request: sha256:<64 hex>

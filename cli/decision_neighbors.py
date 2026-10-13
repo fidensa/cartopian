@@ -141,6 +141,11 @@ def _sections(text: str) -> Tuple[str, str, str]:
     body = "\n".join(ruling).strip()
     if not body:
         body = text
+    # The one-line `Ruling:` header is the ruling stated most directly; a
+    # summary the ruling already says word for word adds nothing to score.
+    summary = trace_binding.decision_header(text, trace_binding.RULING_HEADER)
+    if summary and summary not in body:
+        body = f"{summary}\n{body}"
     return title, body, "\n".join(context).strip()
 
 

@@ -33,8 +33,8 @@ class RestatementFixture(TaskAuthorityFixture):
     def extension(self, dec_id: str, restates: str, supersedes: str, binding: str) -> str:
         return (
             f"# {dec_id}: Extend {restates} to TASK-01-001\n\n"
-            f"Date: 2026-10-10\nStatus: locked\nSupersedes: {supersedes}\n"
-            f"Restates: {restates}\n\n"
+            f"Date: 2026-10-10\nStatus: locked\nRuling: The ruling reaches TASK-01-001.\n"
+            f"Supersedes: {supersedes}\nRestates: {restates}\n\n"
             f"## Extension\n\n{binding}\n"
         )
 
@@ -91,10 +91,14 @@ class PointerRestatementTests(RestatementFixture):
 
     def test_restated_markers_authorize_through_the_restating_decision(self) -> None:
         identity = "sha256:" + "a" * 64
+        session = self.session()
+        self.bind(session)
+        ruling = session.exchange("Leave the pricing statement out of this plan.", "Noted.")
         (self.root / "decisions").mkdir(exist_ok=True)
         (self.root / "decisions/DEC-001.md").write_text(
             "# DEC-001: Leave it out\n\nDate: 2026-10-01\nStatus: locked\nSupersedes: none\n\n"
-            f"## Decision\n\nOut-of-plan request: {identity}\n",
+            f"## Decision\n\nOperator request evidence for: project:project: {ruling}\n\n"
+            f"Out-of-plan request: {identity}\n",
             encoding="utf-8",
         )
         self.assertEqual(trace_binding.out_of_plan_dispositions(self.root), {identity: "decisions/DEC-001.md"})

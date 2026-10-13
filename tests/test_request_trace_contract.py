@@ -418,7 +418,7 @@ class RequestTraceContract(unittest.TestCase):
         evidence a requirements lock needs."""
         body = (
             "# DEC-001: Preserve request\n\n"
-            "Date: 2026-07-27\nStatus: locked\nSupersedes: none\n\n"
+            "Date: 2026-07-27\nStatus: locked\nRuling: Preserve the request.\nSupersedes: none\n\n"
             "Operator request quote for: project:project\n\n"
             "> Build from this exact request.\n"
         )
@@ -442,7 +442,7 @@ class RequestTraceContract(unittest.TestCase):
         code, _, error = self.run_cli(
             "write-decision", str(self.root), "--dec-id", "DEC-001",
             "--title", "Context", "--date", "2026-07-27",
-            "--content", "# DEC-001\n\nOrdinary decision prose.\n",
+            "--content", "# DEC-001\nRuling: Keep context.\n\nOrdinary decision prose.\n",
         )
         self.assertEqual(code, 0, msg=error)
 
@@ -455,7 +455,7 @@ class RequestTraceContract(unittest.TestCase):
         code, _, error = self.run_cli(
             "write-decision", str(self.root), "--dec-id", "DEC-001",
             "--title", "Choice", "--date", "2026-07-27",
-            "--content", "# DEC-001\n",
+            "--content", "# DEC-001\nRuling: Make the choice.\n",
         )
         self.assertEqual(code, 0, msg=error)
         code, _, error = self.run_cli(

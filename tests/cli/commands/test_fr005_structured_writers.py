@@ -291,44 +291,117 @@ class TestWriteState(_Fixture):
         self.assertEqual(self.scaffold.state.read_text(encoding="utf-8"), before)
 
 
+def _decision_body(dec_id: str, ruling: str = "Pick the thing.", extra: str = "") -> str:
+    return f"# {dec_id}: Title\n\nDate: 2026-06-01\nRuling: {ruling}\n{extra}\n## Decision\n\nText.\n"
+
+
 class TestWriteDecision(_Fixture):
-    def test_writes_dec_and_creates_index_row(self):
-        code, recs, err = run_cli(
-            "write-decision", self.root, "--dec-id", "DEC-001",
-            "--title", "Pick a thing", "--date", "2026-06-01", "--content", "# DEC-001\n",
+    def write(self, dec_id: str, title: str = "T", *extra_args: str, body: str | None = None):
+        return run_cli(
+            "write-decision", self.root, "--dec-id", dec_id, "--title", title,
+            "--date", "2026-06-01", *extra_args, "--content", body or _decision_body(dec_id),
         )
+
+    def index(self) -> str:
+        return (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
+
+    def test_writes_dec_and_creates_index_row(self):
+        code, recs, err = self.write("DEC-001", "Pick a thing")
         self.assertEqual(code, 0, msg=err)
         self.assertTrue((self.scaffold.decisions / "DEC-001.md").is_file())
-        index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
-        self.assertIn("| [DEC-001](DEC-001.md) | Pick a thing | 2026-06-01 | locked | none |", index)
-        self.assertFalse(recs[0]["details"]["index_row_replaced"])
-
-    def test_reissue_replaces_row_in_place(self):
-        run_cli("write-decision", self.root, "--dec-id", "DEC-002",
-                "--title", "First", "--date", "2026-06-01", "--content", "a")
-        code, recs, err = run_cli(
-            "write-decision", self.root, "--dec-id", "DEC-002",
-            "--title", "Second", "--date", "2026-06-02", "--status", "open", "--content", "b",
+        self.assertIn(
+            "| [DEC-001](DEC-001.md) | Pick a thing | Pick the thing. | pm | locked | 2026-06-01 |  |",
+            self.index(),
         )
+        self.assertFalse(recs[0]["details"]["index_row_replaced"])
+        self.assertEqual(recs[0]["details"]["authority"], "pm")
+        written = (self.scaffold.decisions / "DEC-001.md").read_text(encoding="utf-8")
+        self.assertIn("Authority: pm\n", written)
+
+    def test_a_locked_decision_is_immutable(self):
+        self.assertEqual(self.write("DEC-002", "First")[0], 0)
+        before = (self.scaffold.decisions / "DEC-002.md").read_bytes()
+        code, _recs, err = self.write("DEC-002", "Second", body=_decision_body("DEC-002", "Changed."))
+        self.assertEqual(code, 1)
+        self.assertIn("decision-immutable", err)
+        self.assertEqual((self.scaffold.decisions / "DEC-002.md").read_bytes(), before)
+        self.assertIn("First", self.index())
+
+    def test_an_open_draft_may_be_reissued_in_place(self):
+        self.assertEqual(self.write("DEC-002", "First", "--status", "open")[0], 0)
+        code, recs, err = self.write("DEC-002", "Second")
         self.assertEqual(code, 0, msg=err)
         self.assertTrue(recs[0]["details"]["index_row_replaced"])
-        index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
+        index = self.index()
         self.assertIn("Second", index)
         self.assertNotIn("First", index)
         self.assertEqual(index.count("[DEC-002]"), 1)
 
+    def test_a_superseded_draft_is_immutable(self):
+        self.assertEqual(self.write("DEC-001", "Draft", "--status", "open")[0], 0)
+        self.assertEqual(self.write("DEC-002", "Replacement", "--supersedes", "DEC-001")[0], 0)
+        code, _recs, err = self.write("DEC-001", "Draft again", "--status", "open")
+        self.assertEqual(code, 1)
+        self.assertIn("decision-immutable", err)
+        self.assertIn("DEC-002", err)
+
+    def test_ruling_is_required_and_bounded(self):
+        code, _recs, err = self.write("DEC-001", body="# DEC-001: Title\n\nDate: 2026-06-01\n")
+        self.assertEqual(code, 1)
+        self.assertIn("decision-ruling-missing", err)
+        code, _recs, err = self.write("DEC-001", body=_decision_body("DEC-001", "x" * 241))
+        self.assertEqual(code, 1)
+        self.assertIn("decision-ruling-too-long", err)
+        self.assertFalse((self.scaffold.decisions / "DEC-001.md").exists())
+
     def test_multiple_decisions_accumulate_rows(self):
         for n in ("DEC-001", "DEC-002", "DEC-003"):
-            run_cli("write-decision", self.root, "--dec-id", n,
-                    "--title", f"T{n}", "--date", "2026-06-01", "--content", "x")
-        index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
-        self.assertEqual(index.count("| [DEC-0"), 3)
+            self.assertEqual(self.write(n, f"T{n}")[0], 0)
+        self.assertEqual(self.index().count("| [DEC-0"), 3)
+
+    def test_index_separates_live_from_superseded_and_names_amendments(self):
+        self.assertEqual(self.write("DEC-001", "Old rule")[0], 0)
+        self.assertEqual(self.write("DEC-002", "Base rule")[0], 0)
+        self.assertEqual(self.write("DEC-003", "New rule", "--supersedes", "DEC-001")[0], 0)
+        code, _recs, err = self.write(
+            "DEC-004", "Narrower", body=_decision_body("DEC-004", extra="Amends: DEC-002\n")
+        )
+        self.assertEqual(code, 0, msg=err)
+        live, history = self.index().split("## Superseded")
+        self.assertNotIn("[DEC-001]", live)
+        self.assertIn("| [DEC-001](DEC-001.md) | Old rule | DEC-003 |", history)
+        row = next(line for line in live.splitlines() if line.startswith("| [DEC-002]"))
+        self.assertTrue(row.endswith("| DEC-004 |"), row)
+
+    def test_amends_refuses_missing_superseded_or_retired_targets(self):
+        self.assertEqual(self.write("DEC-001", "Old")[0], 0)
+        self.assertEqual(self.write("DEC-002", "New", "--supersedes", "DEC-001")[0], 0)
+        cases = {
+            "DEC-009": "Amends: DEC-009\n",
+            "DEC-001": "Amends: DEC-001\n",
+            "both": "Amends: DEC-002\nSupersedes: DEC-002\n",
+        }
+        for name, extra in cases.items():
+            with self.subTest(name):
+                code, _recs, err = self.write("DEC-003", body=_decision_body("DEC-003", extra=extra))
+                self.assertEqual(code, 1)
+                self.assertIn("decision-amends-invalid", err)
+
+    def test_earlier_rows_keep_their_titles_from_a_legacy_index(self):
+        (self.scaffold.decisions / "DEC-001.md").write_text(
+            "# DEC-001: File title\n\nDate: 2026-05-01\nStatus: locked\nSupersedes: none\n", encoding="utf-8"
+        )
+        (self.scaffold.decisions / "INDEX.md").write_text(
+            "# Decisions Index\n\n| ID | Title | Date | Status | Supersedes |\n| --- | --- | --- | --- | --- |\n"
+            "| [DEC-001](DEC-001.md) | Indexed \\| title | 2026-05-02 | locked | none |\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.write("DEC-002")[0], 0)
+        self.assertIn("| [DEC-001](DEC-001.md) | Indexed \\| title |  | pm | locked | 2026-05-02 |  |", self.index())
 
     def test_pipe_in_title_is_escaped(self):
-        run_cli("write-decision", self.root, "--dec-id", "DEC-004",
-                "--title", "a | b", "--date", "2026-06-01", "--content", "x")
-        index = (self.scaffold.decisions / "INDEX.md").read_text(encoding="utf-8")
-        self.assertIn("a \\| b", index)
+        self.write("DEC-004", "a | b")
+        self.assertIn("a \\| b", self.index())
 
     def test_bad_date_is_usage_error(self):
         code, recs, err = run_cli(
@@ -337,7 +410,6 @@ class TestWriteDecision(_Fixture):
         )
         self.assertEqual(code, 2)
         self.assertIn("YYYY-MM-DD", err)
-
 
 if __name__ == "__main__":
     unittest.main()

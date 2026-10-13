@@ -993,13 +993,30 @@ class TraceCommandAuthoringTests(unittest.TestCase):
                 any("unclaimed operator request" in r for r in records[0]["blocking_reasons"]),
                 records[0]["blocking_reasons"],
             )
-            # An authorized plan-level disposition in a decision clears both.
             digest = records[0]["unclaimed_requests"][0]["content_identity"]
+            # A PM decision cannot drop an operator request on its own.
             scaffold.write(
                 "decisions/DEC-001.md",
                 "# DEC-001: Pricing statement is out of this plan\n\nDate: 2026-09-07\n"
                 f"Status: locked\nSupersedes: none\nOut-of-plan request: {digest}\n\n"
                 "## Context\n\nPricing is governed by the next plan.\n",
+            )
+            code, records, err = _run(close_audit.handler, project_path=str(root))
+            self.assertIn("unclaimed operator request", " ".join(records[0]["blocking_reasons"]))
+            code, records, err = _run(plan_audit.handler, project_path=str(root))
+            kinds = [w["kind"] for w in records[0]["warnings"]]
+            self.assertIn("request-outside-every-task", kinds)
+            self.assertIn("decision-disposition-unauthorized", kinds)
+            # An operator decision citing the operator's captured turn clears both.
+            # The reader checks authority structurally; the writer confirms the
+            # turn, which this legacy-request fixture does not capture.
+            ruling = "cs-0123456789abcdef/turn-4"
+            scaffold.write(
+                "decisions/DEC-001.md",
+                "# DEC-001: Pricing statement is out of this plan\n\nDate: 2026-09-07\n"
+                f"Status: locked\nSupersedes: none\nOut-of-plan request: {digest}\n\n"
+                "## Context\n\nPricing is governed by the next plan.\n\n"
+                f"Operator request evidence for: project:project: {ruling}\n",
             )
             code, records, err = _run(close_audit.handler, project_path=str(root))
             self.assertNotIn(
