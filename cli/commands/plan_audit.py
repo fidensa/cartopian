@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import governance_reads, planning_status, request_trace, trace_binding
+from cli import governance_reads, planning_status, request_trace, task_dependencies, trace_binding
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -319,12 +319,34 @@ def _check_artifact_chains(
             if status_dir == "in-progress":
                 prompt = project_path / "prompts" / f"PROMPT-{nn_nnn}.md"
                 if not prompt.is_file():
+                    # A task that replanning made wait on an unfinished
+                    # prerequisite cannot have a prompt yet: composition
+                    # refuses until the prerequisite's deliverable exists.
+                    # Only a valid wait defers the prompt; a missing,
+                    # unreadable, or cyclic prerequisite still blocks.
+                    wait = task_dependencies.dependency_wait(project_path, task_file)
+                    if wait is not None and wait.problem is None:
+                        warnings.append({
+                            "kind": "task-waiting-on-prerequisite",
+                            "task_id": task_id,
+                            "task_path": str(task_file),
+                            "waiting_on": wait.waiting_on,
+                            "prerequisite": wait.prerequisite["id"],
+                            "detail": (
+                                f"{task_dependencies.describe(task_id, wait)}; its prompt "
+                                "is composed once its prerequisites are done"
+                            ),
+                        })
+                        continue
+                    detail = f"{task_id} is in-progress but has no prompt at {prompt}"
+                    if wait is not None:
+                        detail += f" (its prerequisites cannot be waited on: {wait.problem})"
                     blockers.append({
                         "kind": "missing-prompt",
                         "task_id": task_id,
                         "task_path": str(task_file),
                         "expected": str(prompt),
-                        "detail": f"{task_id} is in-progress but has no prompt at {prompt}",
+                        "detail": detail,
                     })
 
             elif status_dir == "in-review":

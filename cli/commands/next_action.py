@@ -27,7 +27,13 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract, dispatch_rehearsal, planning_status, trace_binding
+from cli import (
+    delivery_contract,
+    dispatch_rehearsal,
+    planning_status,
+    task_dependencies,
+    trace_binding,
+)
 from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
@@ -213,6 +219,29 @@ def _find_active_task(tasks_dir: Path) -> Optional[Dict[str, str]]:
                 "status": status,
             }
     return None
+
+
+def _waiting_task(
+    project_path: Path, active_task: Optional[Dict[str, str]]
+) -> Optional[Dict[str, Any]]:
+    """The in-progress task waiting on a valid unfinished prerequisite, if any.
+
+    Shares ``cli.task_dependencies`` with plan-audit and compose-state. An
+    invalid wait (missing, unreadable, or cyclic prerequisite) returns
+    ``None``, leaving the task routed as before for the audit to block.
+    """
+    if active_task is None or active_task["status"] != "in-progress":
+        return None
+    wait = task_dependencies.dependency_wait(project_path, Path(active_task["path"]))
+    if wait is None or wait.problem is not None:
+        return None
+    return {
+        "id": active_task["id"],
+        "path": active_task["path"],
+        "waiting_on": wait.waiting_on,
+        "prerequisite": wait.prerequisite,
+        "detail": task_dependencies.describe(active_task["id"], wait),
+    }
 
 
 def _parse_blocked_by(content: str) -> List[str]:
@@ -821,6 +850,18 @@ def handler(args: argparse.Namespace) -> int:
         is None
     )
 
+    # An in-progress task that replanning made wait on an unfinished
+    # prerequisite is not continued: the prerequisite is the work, and it is
+    # routed as the active or next task. Completion still counts the parent.
+    waiting_task = _waiting_task(project_path, active_task)
+    if waiting_task is not None:
+        prerequisite = waiting_task["prerequisite"]
+        routed = {key: prerequisite[key] for key in ("id", "title", "path")}
+        if prerequisite["status"] in _ACTIVE_STATUSES:
+            active_task, next_open_task = {**routed, "status": prerequisite["status"]}, None
+        else:
+            active_task, next_open_task = None, routed
+
     blocker_records = _detect_blocker_records(project_path, phase_id, tasks_dir)
     if schema_gate["status"] == GATE_MIGRATE:
         blocker_records.insert(
@@ -866,6 +907,11 @@ def handler(args: argparse.Namespace) -> int:
         plan_complete=plan_complete,
         resolved=resolved,
     )
+    if waiting_task is not None:
+        startup["detail"] = planning_status.bounded(
+            f"{waiting_task['detail']}; {startup['detail']}"
+        )
+        startup["waiting_task"] = waiting_task["id"]
 
     record: Dict[str, Any] = {
         "record_schema_version": MACHINE_RECORD_SCHEMA_VERSION,
@@ -876,6 +922,7 @@ def handler(args: argparse.Namespace) -> int:
         "phase_id": phase_id,
         "active_task": active_task,
         "next_open_task": next_open_task,
+        "waiting_task": waiting_task,
         "next_unstarted_phase": next_unstarted_phase,
         "plan_complete": plan_complete,
         "pm_role": pm_role,

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract, planning_status, trace_binding
+from cli import delivery_contract, planning_status, task_dependencies, trace_binding
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -236,6 +236,10 @@ def _active_work(project_path: Path) -> Optional[str]:
             phase_id = task["phase_id"] if isinstance(task["phase_id"], str) else ""
             rel_path = task_path.relative_to(project_path).as_posix()
             line = f"- {task['task_id']}: {task['title']} (`{rel_path}`)"
+            if status == "in-progress":
+                wait = task_dependencies.dependency_wait(project_path, task_path)
+                if wait is not None and wait.problem is None:
+                    line += f" [waiting on: {', '.join(wait.waiting_on)}]"
             rows.append((order.get(phase_id, len(order)), status_rank, task_path.name, line))
     if not rows:
         return None
@@ -289,6 +293,16 @@ def _what_to_do_next(project_path: Path) -> Optional[str]:
             task = _read_task_record(task_path)
             if task is None:
                 continue
+            # Agrees with next-action: a task waiting on a valid unfinished
+            # prerequisite is not continued; the prerequisite moves first.
+            wait = (
+                task_dependencies.dependency_wait(project_path, task_path)
+                if status == "in-progress" else None
+            )
+            if wait is not None and wait.problem is None:
+                prerequisite = Path(wait.prerequisite["path"])
+                rel_path = prerequisite.relative_to(project_path).as_posix()
+                return f"{task_dependencies.describe(task['task_id'], wait)} (`{rel_path}`)."
             rel_path = task_path.relative_to(project_path).as_posix()
             return f"Continue {task['task_id']} (`{rel_path}`)."
 
