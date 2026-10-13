@@ -391,6 +391,8 @@ A review file carries a two-line `## Summary` and one self-contained `F<n>.` row
 
 Planning-checkpoint reviews use `reviews/REVIEW-<checkpoint-id>.md`. They follow the canonical field schema in `templates/REVIEW.md` but attach to planning stages, not tasks.
 
+Planning completes before task running: when planning review is required, a checkpoint whose latest verdict is `request-changes` or `reject` blocks startup until the plan is revised and the checkpoint is rerun and approved, even when a locked decision has put the item on hold. A decision alone does not clear the checkpoint; record the hold in the plan and the task (its `Blocked by:` and the reason) and rerun the checkpoint against that revised text. Task blocking is separate: an open task whose `Blocked by:` tasks are unfinished is skipped by `next-action`, so unrelated ready work proceeds.
+
 An approved planning-checkpoint review is a **retained** durable record for the life of the plan: task assignment and task-closure review inherit checkpoint-bound request evidence from it (see § Up-front Operator Request Evidence), and session startup reads it to know which checkpoint is complete. It is cleared only by plan closeout, with the rest of `reviews/`. The checkpoint's prompt (`prompts/PROMPT-<checkpoint-id>.md`) and report (`reports/REPORT-<checkpoint-id>.md`) are the temporary artifacts: they are deleted when the checkpoint is approved or superseded. A rerun checkpoint overwrites its review file in place. Before preparing a rerun review prompt, the writer preserves the prior retained review body and content identity in `.cartopian/provenance.log`. Routing a complete review publication preserves the new body there as `review-publication` provenance. These records retain the full text for recovery in projects without git; deleting or overwriting the review slot does not retire its provenance. A retained review's references to its consumed prompt or report are historical by construction and are not dangling-reference defects.
 
 Review verdicts are:
@@ -473,38 +475,39 @@ Applicable evidence for a unit is selected, never searched for:
    evidence-reference findings; their historical text remains unchanged.
    Requirements, tasks, and retained reviews still validate their own references.
    A decision that names a checkpoint or its plan ref, or is cited by a task,
-   must carry its operator authority into that unit's channel through a unit binding, `project:project`, or the task's approved planning-review inheritance.
+   governs that unit, and its operator authority reaches that unit's channel.
+   A unit binding, `project:project`, or the task's approved planning-review
+   inheritance carries it; when none of the decision's captures reach the
+   unit that way, the decision's own captures are carried into the channel in
+   their original units. A ruling therefore reaches every unit that names or
+   cites it without a restating decision, and a trace that already carries
+   one of the decision's captures is unchanged.
    Any `DEC-NNN` mention in a task file counts as a citation. When a task
-   mentions a decision that does not govern its outcome, the PM binds nothing:
-   an `A|DEC-NNN|outside-scope|<why>` record in the task's upstream trace
-   releases the citation, and the reviewer confirms it at closure. Each
+   mentions a decision that does not govern its outcome, an
+   `A|DEC-NNN|outside-scope|<why>` record in the task's upstream trace keeps
+   the ruling out of the channel, and the reviewer confirms it at closure. Each
    `A|` record is at most 183 B including its newline; `write-task` refuses
    a record block that does not parse, and while a task's block does not
-   parse its `A|` records release nothing and the refusal is
-   `trace-unparseable`, not the citation it would have released. A
-   `governing-constraint` record does not release it, because a decision that
-   constrains the work governs it. Nor can any task-side record release a
-   decision whose own text names the task.
-   An authority bound only to another unit is a refusal
-   (`governing-decision-evidence-unbound`), even when inherited project
-   evidence exists, and the refusal lists every unresolved governing decision
-   for the unit at once. Unconfirmed authority also refuses. `lookup-evidence`
-   distinguishes `unit-bound` authority from `project-inherited` evidence.
-   Decisions are immutable, so a ruling reaches a further unit (or stops
-   naming one) only through one superseding, locked decision that restates
-   it and repeats `Operator request evidence for:` for every unit the retired
-   decision bound plus each newly governed unit, with the original capture
-   identities. To extend a ruling without changing it, the superseding
-   decision restates it by pointer instead of by copy: `Restates: DEC-X`
-   beside `Supersedes: DEC-X`, plus a binding for each newly governed unit.
-   The retired decision's ruling and bindings then count as the restating
-   decision's own (see § Decisions). Stopping naming a unit still needs a
-   full restatement. Any other current decision that binds the same turn to a
-   different unit must be superseded by that same decision, or the turn is
-   `cross-unit`. A fresh ruling bound in a separate decision that does not
-   supersede `DEC-X` binds the new capture but does not clear a refusal that
-   `DEC-X` governs the unit: only `DEC-X`'s own captures, carried by a unit
-   binding or by approved checkpoint inheritance, satisfy it. `plan-audit`
+   parse its `A|` records release nothing; when a cited ruling cannot be
+   confirmed, the refusal is `trace-unparseable`, not the citation it would
+   have released. A `governing-constraint` record does not release it,
+   because a decision that constrains the work governs it. Nor can any
+   task-side record release a decision whose own text names the task.
+   Authority that cannot be confirmed (uncaptured, revoked, partially quoted,
+   or `cross-unit`) refuses as `governing-decision-evidence-unconfirmed`, and
+   the refusal lists every such decision for the unit at once.
+   `lookup-evidence` distinguishes `unit-bound` authority from
+   `project-inherited` evidence.
+   Decisions are immutable, so a ruling stops naming a unit, or changes, only
+   through one superseding, locked decision that restates it and repeats
+   `Operator request evidence for:` for every unit the retired decision bound,
+   with the original capture identities. A superseding decision may restate a
+   ruling by pointer instead of by copy: `Restates: DEC-X` beside
+   `Supersedes: DEC-X` (see § Decisions); the retired decision's ruling and
+   bindings then count as the restating decision's own. Stopping naming a
+   unit still needs a full restatement. Any other current decision that binds
+   the same turn to a different unit must be superseded by that same
+   decision, or the turn is `cross-unit`. `plan-audit`
    reports an unresolvable task request trace as a blocker, except for an
    open task whose `Blocked by:` tasks are not all done: that task cannot be
    dispatched, so the finding is a `deferred-request-trace` warning, and
@@ -852,6 +855,8 @@ Prompt files follow the canonical field schema in `templates/PROMPT.md`.
 
 Task assignment prompts are **composed, not authored**. `cartopian compose-assignment-prompt <task-path> --role <role>` deterministically renders the audience-scoped assignee prompt from authoritative inputs — task facts, role packet, the spec's assignment projection, tag-selected standards, the selector results re-derived from the task's declared observations and envelopes, source guidance, request evidence, and the report skeleton — together with a machine-readable **trace receipt** and a content identity binding the two. The prompt is an execution interface: raw classifier or selector JSON, routing diagnostics, rejected candidates, inactive guidance, hashes, byte measurements, context receipts, and lifecycle bookkeeping live only in the trace receipt. Composition validation fails closed (the section contract and forbidden-content rules are owned by `protocol/assignment-prompt-contract.json`; section byte sizes are measured into the trace receipt as nonblocking telemetry and never reject composition), and `cartopian write-prompt --composed-file` verifies the record's identities and validation state before writing; a hand-authored assignment body is held to the same contamination rules.
 
+`write-prompt` resolves a relative `--task` against the project root and stamps every task-assignment prompt with a writer-generated `Task contract identity: sha256:<64 hex>` header line: the digest of the task file it was written from. Like the request-binding sections, it is machine-owned binding, not authored content. Manual handoff preflight (`handoff-packet`) and `dispatch` recompute the digest and refuse a prompt whose task file has changed since (`stale-task-contract`), so a failed or skipped prompt rewrite can never launch the assignee on an older contract; recompose and rewrite the prompt instead. A prompt written before the stamp existed has no header: it is accepted with a `task-contract-unbound` warning until it is rewritten.
+
 Review prompts are produced with `cartopian write-prompt --review-kind ...`.
 The writer resolves the intake trace and owns both generated review-context
 sections; authored copies are replaced. Automatic dispatch, manual
@@ -942,6 +947,7 @@ Report parsing outcomes are:
 - Any file format is allowed, and subdirectories are allowed.
 - The PM writes into `resources/` only through the mediated `cartopian write-resource` command (see PM Scope) — typically to persist an assignee-returned document deliverable. The operator may place files there directly.
 - PM artifacts reference resources by project-relative path (`resources/<path>`); prompts surface them to assignees by absolute path, like any other referenced location.
+- Reading `resources/` takes `read:resources` (included in the `coder-like` preset) or `read:governance`, whether or not named work roots are configured. It is read access only: writing there still takes a declared work root and its grants, or the PM's `write-resource`. A declared work root inside `resources/` keeps its own work-root class and grants.
 - `resources/` is not part of the live plan surface. `reset-plan` never clears it, and it carries forward across plans by default. At plan closeout the operator explicitly decides its disposition: carry forward as-is, and/or snapshot it into the plan archive (`archive-plan` includes `resources/`). Lifecycle pruning is operator-performed; no mediated command deletes resources. An explicitly authorized assignee may remove work content within its sandboxed work-root boundary.
 
 ## Document Deliverables
@@ -1121,8 +1127,9 @@ Capability-based grant decisions remain the **harness's** responsibility. For Cl
 Work roots identify the directories holding the project's work content. They may be external repositories or supporting directories within the project. The project defines their content; they are not restricted to experiments.
 
 - When `[project].work_roots` is omitted or empty, the effective root is named `resources` and points to `<project-root>/resources`. No local mapping is needed. The folder's selection grants no read or write permission. Scaffolding creates it; launch refuses if it is missing.
-- Otherwise the committed project file declares an ordered name set such as `["product", "support"]`, and `cartopian.local.toml` supplies each name's absolute path under `[work_roots]`. There is no additional implicit `resources` root in this case.
+- Otherwise the committed project file declares an ordered name set such as `["product", "support"]`, and `cartopian.local.toml` supplies each name's absolute path under `[work_roots]`. There is no additional implicit `resources` work root in this case; roles still read `resources/` through `read:resources` (see Project Resources).
 - A contained mapping must select a direct canonical directory under `resources/` or a supporting sibling. The project root itself, governance directories/files, hidden top-level stores, overlapping contained roots, symlink mappings and traversal spellings are rejected. Use the filesystem-resolved spelling for contained mappings. External mappings preserve their existing authored spelling and enforcement checks.
+- Adding a root takes two `update-config` calls: declare the name (`--set project.work_roots=…`), then map it (`--local --set-work-root NAME=ABS_PATH`). Removing one takes a single call, `update-config --remove-work-root NAME`, which drops the declaration and the mapping together; it refuses while an unfinished task names the root.
 - `cartopian resolve-config` reports the effective names, paths and attribution. Missing mappings fail closed. Configuration writers, prompt composition, handoff packets, readiness, rehearsal, dispatch and wrapper validation use these same roots.
 - Tasks reference effective names in the optional comma-separated `Work root:` field. Absolute paths, project-relative paths and `<owner>/<repo>` slugs are rejected. With the default, `resources` is a valid name. Omitting the task field uses the project's effective roots; it grants no additional authority.
 
@@ -1234,7 +1241,7 @@ The gate validates a delivery record. It never performs, schedules, transmits, o
 
 A Cartopian project has one active implementation plan at a time. The live `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, `phases/`, `tasks/`, `specs/`, `reviews/`, `decisions/`, `prompts/`, and `reports/` describe the current plan only.
 
-**Readiness is the exit condition of planning.** Task-and-spec generation for a phase is not finished when its checkpoint is approved; it is finished when the first ready task of that phase passes `cartopian validate-task-readiness --rehearse-dispatch` after the final approval. Later tasks may retain explicitly declared dependencies, but the first task carries no unresolved planning input — dependencies, deliverable destination, sources, acceptance trace, prompt composition, role configuration, and launch prerequisites are all settled before planning reports complete, and `cartopian next-action` then reports `ready` with that task's dispatch action.
+**Readiness is the exit condition of planning.** Task-and-spec generation for a phase is not finished when its checkpoint is approved; it is finished when the first ready task of that phase passes `cartopian validate-task-readiness --rehearse-dispatch` after the final approval. Later tasks may retain explicitly declared dependencies, but the first task carries no unresolved planning input — dependencies, deliverable destination, sources, acceptance trace, prompt composition, role configuration, and launch prerequisites are all settled before planning reports complete, and `cartopian next-action` then reports `ready` with that task's dispatch action. When grants are active, the rehearsal also requires the assignee's grants to read every existing path the task cites in backticks (absolute, or project-relative with a `/`) that it must open itself: a work-root path, `resources/`, or another unclassified project file. Governance, reports and prompts are curated into the prompt and are not checked. An unreadable cited input is a `cited-input-unreadable` blocker.
 
 When a plan completes, close it before starting a new plan. The canonical closeout workflow is `skills/close-plan.md`.
 

@@ -113,6 +113,7 @@ Individual capabilities:
 | `read:reports` | Read reports and reviews. |
 | `read:prompts` | Read the `prompts/` directory, which holds the role's own handoff. |
 | `read:work-roots` | Read the product tree. |
+| `read:resources` | Read the supporting artifacts under `resources/`. `read:governance` also covers them. |
 | `write:plan` | Write plan artifacts. |
 | `write:lifecycle` | Move tasks, update state, and write protocol files. |
 | `write:decisions` | Record decisions. |
@@ -124,13 +125,13 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 
 | Preset | Expands to |
 | --- | --- |
-| `coder-like` | `read:prompts`, `read:work-roots`, `write:worktree`, `write:reports` |
+| `coder-like` | `read:prompts`, `read:work-roots`, `read:resources`, `write:worktree`, `write:reports` |
 | `reviewer-like` | `read:governance`, `read:reports`, `read:prompts`, `read:work-roots`, `write:reports` |
 | `planner-like` | `read:governance`, `read:reports`, `read:prompts`, `write:plan` |
 | `pm-with-planner` | `read:governance`, `read:reports`, `read:prompts`, `write:lifecycle`, `dispatch` |
 | `pm-solo` | `read:governance`, `read:reports`, `read:prompts`, `write:plan`, `write:lifecycle`, `dispatch` |
 
-`coder-like` leaves out the governance and report reads on purpose, since the PM writes everything a coder needs into the prompt. `reviewer-like` keeps them, since a reviewer has to look at the evidence directly. The two PM presets stay out of the product tree.
+`coder-like` leaves out the governance and report reads on purpose, since the PM writes everything a coder needs into the prompt. It can still read `resources/`, so a task can point the coder at a method or manifest there without declaring a work root for it. `reviewer-like` keeps them, since a reviewer has to look at the evidence directly. The two PM presets stay out of the product tree.
 
 ### Which agent runs the work
 
@@ -292,7 +293,8 @@ Flags you leave out are not written. Resolution supplies the defaults at read ti
 | `--remove-role NAME` | Removes a role. |
 | `--remove-role-launch ROLE` | Removes a role's agent and launch options. |
 | `--local --set-work-root NAME=ABS_PATH` | Maps a declared work-root name in the machine-local file. |
-| `--local --unset-work-root NAME` | Removes a machine-local mapping. |
+| `--local --unset-work-root NAME` | Removes a machine-local mapping for a name the project file no longer declares (a declared name must stay mapped). |
+| `--remove-work-root NAME` | Removes a work root completely: its `project.work_roots` declaration and its machine-local mapping, validated and written together. It refuses while an open, in-progress or in-review task names the root in `Work root:` or a `Deliverable:` path. Removing the last root restores the default `resources` root. |
 
 Every one of these commands is also an MCP tool, generated from the same handlers, so an agent and a terminal produce identical results and identical error messages.
 

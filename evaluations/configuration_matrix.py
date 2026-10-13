@@ -933,6 +933,7 @@ def _safety_boundaries(_case: dict[str, Any]) -> dict[str, Any]:
         == frozenset(
             {
                 "read:prompts",
+                "read:resources",
                 "read:work-roots",
                 "write:reports",
                 "write:worktree",

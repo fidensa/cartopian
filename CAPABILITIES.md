@@ -15,6 +15,7 @@ Read grants (deliberately coarse; may be split finer later, append-only):
 - `read:reports` — read reports and reviews.
 - `read:prompts` — read the `prompts/` directory (the assignee's handoff).
 - `read:work-roots` — read the product tree.
+- `read:resources` — read the supporting artifacts under `resources/` (`read:governance` also covers it). Reading only: writes there remain a PM `write-resource` or a declared work root.
 
 Write/act grants:
 
@@ -37,13 +38,13 @@ Preset names are valid anywhere a capability name is and expand to their grants 
 
 | Preset | Grants |
 | --- | --- |
-| `coder-like` | `read:prompts`, `read:work-roots`, `write:worktree`, `write:reports` |
+| `coder-like` | `read:prompts`, `read:work-roots`, `read:resources`, `write:worktree`, `write:reports` |
 | `reviewer-like` | `read:governance`, `read:reports`, `read:prompts`, `read:work-roots`, `write:reports` |
 | `planner-like` | `read:governance`, `read:reports`, `read:prompts`, `write:plan` |
 | `pm-with-planner` | `read:governance`, `read:reports`, `read:prompts`, `write:lifecycle`, `dispatch` |
 | `pm-solo` | `read:governance`, `read:reports`, `read:prompts`, `write:plan`, `write:lifecycle`, `dispatch` |
 
-`reviewer-like` includes the two direct-evidence reads used by both review workflows: `read:governance` covers governed task evidence and planning artifacts, while `read:reports` covers the preserved task-completion report and prior review output. It still grants no plan, lifecycle, decision, configuration, prompt, or worktree mutation authority. `coder-like` deliberately carries neither evidence-read grant because the PM curates an implementation assignment into its prompt. The PM presets stay out of `read:work-roots` and `write:worktree`.
+`reviewer-like` includes the two direct-evidence reads used by both review workflows: `read:governance` covers governed task evidence and planning artifacts, while `read:reports` covers the preserved task-completion report and prior review output. It still grants no plan, lifecycle, decision, configuration, prompt, or worktree mutation authority. `coder-like` deliberately carries neither evidence-read grant because the PM curates an implementation assignment into its prompt; it does read the supporting artifacts under `resources/` (methods, manifests, prior deliverables) that a task cites, whether or not any work root is declared. The PM presets stay out of `read:work-roots` and `write:worktree`.
 
 ## Enforcement
 
@@ -62,11 +63,12 @@ All activated Claude launches force `--strict-mcp-config` with no explicit MCP c
 | Path-class | Paths | Required grant |
 | --- | --- | --- |
 | governance | `specs/`, `phases/`, `tasks/`, `decisions/`, `STATE.md`, `BACKLOG.md`, `IMPLEMENTATION_PLAN.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STANDARDS.md`, `cartopian.toml`, `cartopian.local.toml`, and any unclassified project file | `read:governance` |
+| resources | `resources/` (outside any declared work root) | `read:resources` or `read:governance` |
 | reports | `reports/`, `reviews/` | `read:reports` |
 | prompts | `prompts/` | `read:prompts` |
 | work root | each declared work root | `read:work-roots` |
 
-With the default assignee grants (`coder-like`), a dispatched session can read its own handoff prompt and the product work tree, and is refused reads of governance artifacts, specs, reports, and reviews.
+With the default assignee grants (`coder-like`), a dispatched session can read its own handoff prompt, the product work tree, and `resources/`, and is refused reads of governance artifacts, specs, reports, and reviews. A declared work root inside `resources/` keeps its own class and grants.
 
 With `reviewer-like`, a dispatched review session can read its handoff, the product tree, governed review evidence, and reports, and can write reports. The resolved bundle is independent of the role's operator-chosen name and of whether the handoff is manual or automatically launched; point-of-use enforcement still depends on the host boundary described above.
 

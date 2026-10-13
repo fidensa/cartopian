@@ -205,20 +205,21 @@ def handler(args: argparse.Namespace) -> int:
             return _writers.EXIT_USAGE
     assert root is not None
     assert isinstance(body, str)
+    if args.task and not Path(args.task).is_absolute():
+        # A relative task path names a file under the project root, never one
+        # under the caller's (or the MCP server's) working directory.
+        args.task = str(root / args.task)
     content: Optional[object] = body
     details = {"prompt_id": args.prompt_id, "variant": variant}
     if composed_record is not None:
-        supplied_task = Path(args.task) if args.task else None
-        resolved_task = (
-            str(supplied_task.resolve())
-            if supplied_task is not None and supplied_task.is_absolute()
-            else None
-        )
+        resolved_task = str(Path(args.task).resolve()) if args.task else None
         if resolved_task != composed_record.get("task_path"):
             _writers.stderr(
                 "guard",
-                "composed-target-mismatch: --task does not name the task the "
-                "record was composed for",
+                "composed-target-mismatch: --task names "
+                f"{resolved_task or '(none)'}, but the record was composed for "
+                f"{composed_record.get('task_path')}; pass that task, or "
+                "recompose for this one. No prompt was written",
             )
             return _writers.EXIT_FAIL
         expected_stem = Path(
@@ -279,7 +280,7 @@ def handler(args: argparse.Namespace) -> int:
             if not task.is_absolute() or not task.is_file():
                 raise RequestRefusal(
                     "missing-assignment-target",
-                    "task assignment prompts require --task naming an existing absolute task",
+                    f"task assignment prompts require --task naming an existing task file (got {args.task or '(none)'})",
                 )
             task_identity = "-".join(task.stem.split("-")[:3])
             expected_prompt = f"PROMPT-{task_identity.removeprefix('TASK-')}"
@@ -320,6 +321,9 @@ def handler(args: argparse.Namespace) -> int:
                 details,
                 audience="coder",
             )
+            contract = handoff_packet.task_contract_identity(task.read_bytes())
+            content = handoff_packet.stamp_task_contract(content, contract)
+            details["task_contract_identity"] = contract
         except (OSError, UnicodeError, _CliError) as exc:
             _writers.stderr("guard", f"assignment-input-unavailable: {exc}")
             return _writers.EXIT_FAIL
@@ -345,7 +349,7 @@ def handler(args: argparse.Namespace) -> int:
             if args.review_kind == "task-closure":
                 task = Path(args.task or "")
                 if not task.is_absolute() or not task.is_file():
-                    raise RequestRefusal("missing-review-target", "--task must name an existing absolute task")
+                    raise RequestRefusal("missing-review-target", f"--task must name an existing task file (got {args.task or '(none)'})")
                 task_identity = "-".join(task.stem.split("-")[:3])
                 if args.prompt_id != f"PROMPT-{task_identity.removeprefix('TASK-')}":
                     raise RequestRefusal(

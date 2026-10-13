@@ -141,7 +141,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 if __package__ in (None, ""):  # invoked as a script: `python .../cli/claude_hook.py`
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -211,6 +211,7 @@ WRITE_CLASS_GRANTS: Dict[str, str] = {
     "decisions": "write:decisions",
     "reports": "write:reports",
     "project-file": "write:lifecycle",
+    "resources": "write:lifecycle",
     "work-root": "write:worktree",
     # No grant unlocks a request-record write: the write axis denies the store
     # unconditionally before grants are consulted. The entry exists so the
@@ -225,9 +226,22 @@ READ_CLASS_GRANTS: Dict[str, str] = {
     "decisions": "read:governance",
     "reports": "read:reports",
     "project-file": "read:governance",
+    "resources": "read:resources",
     "work-root": "read:work-roots",
     "request-trace": "read:governance",
 }
+
+# A held grant that also satisfies a narrower required grant. The PM and
+# reviewer surfaces have always read resources/ through read:governance.
+_GRANT_IMPLIED_BY: Dict[str, FrozenSet[str]] = {
+    "read:resources": frozenset({"read:governance"}),
+}
+
+
+def _holds(required_grant: str, held_grants) -> bool:
+    return required_grant in held_grants or bool(
+        _GRANT_IMPLIED_BY.get(required_grant, frozenset()) & set(held_grants)
+    )
 
 AXIS_GRANTS: Dict[str, Dict[str, str]] = {
     "write": WRITE_CLASS_GRANTS,
@@ -247,6 +261,11 @@ _DIR_CLASSES: Dict[str, str] = {
     # denied and the host-boundary command owns creation.
     REQUESTS_DIRNAME: "request-trace",
 }
+
+# resources/ holds supporting artifacts (CONVENTIONS § Project Resources). It is
+# not governance, and a declared work root may live inside it, so it is kept
+# out of _DIR_CLASSES, whose names are reserved against work roots.
+_RESOURCES_DIRNAME = "resources"
 
 # Named project-root files → class (matched case-insensitively on Windows).
 _ROOT_FILE_CLASSES: Dict[str, str] = {
@@ -664,6 +683,8 @@ def classify_project_path(
             )
             if known_name == name:
                 return klass, grants[klass]
+    if segments[0] == _RESOURCES_DIRNAME:
+        return "resources", grants["resources"]
     klass = _DIR_CLASSES.get(segments[0])
     if klass is None:
         return "project-file", grants["project-file"]
@@ -1190,6 +1211,7 @@ def _gate_inside_project(
             # root-file class, not merely the root's project-file fallback.
             for reachable_class in (
                 "project-file",
+                "resources",
                 *_DIR_CLASSES.values(),
                 *_ROOT_FILE_CLASSES.values(),
             ):
@@ -1214,7 +1236,7 @@ def _gate_inside_project(
         if required_grant in checked_grants:
             continue
         checked_grants.add(required_grant)
-        if required_grant not in held_grants:
+        if not _holds(required_grant, held_grants):
             return _deny_missing_grant(
                 tool_name,
                 target,

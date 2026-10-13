@@ -2316,6 +2316,9 @@ def _context(
             allow_project_origin=review_kind == "planning",
         )
     if target.kind == "task":
+        trace = evidence_resolver.carry_governing_rulings(
+            project_root, target, source_texts, trace
+        )
         try:
             evidence_resolver.require_task_authority(project_root, target, source_texts, trace)
         except RequestRefusal as refusal:

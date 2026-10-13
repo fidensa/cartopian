@@ -585,6 +585,89 @@ class RehearsalTests(unittest.TestCase):
         self.assertIsNone(dispatch_rehearsal.resolve_role(roles, "")["role"])
 
 
+class CitedInputAccessTests(unittest.TestCase):
+    """Rehearsal fails when the assignee cannot read a file the task cites.
+
+    RED: rehearsal passed a task whose method and manifest under resources/
+    the coder's grants could not read; the coder found out mid-run. GREEN:
+    each cited, existing path is classified as the refusal hook classifies
+    it, and an unreadable direct-read input is a rehearsal blocker.
+    """
+
+    CODER = ("read:prompts", "read:work-roots", "read:resources", "write:worktree", "write:reports")
+    OLD_CODER = ("read:prompts", "read:work-roots", "write:worktree", "write:reports")
+
+    def _project(self, tmp):
+        root = Path(tmp).resolve()
+        for rel in ("resources/research/method.md", "resources/evidence/log.txt",
+                    "specs/SPEC-01-001.md", "notes/scratch.txt", "README.md"):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text("x\n", encoding="utf-8")
+        return root
+
+    def _access(self, root, text, grants, roots=None, activated=True):
+        return dispatch_rehearsal.cited_input_access(
+            root, text, grants, roots or {}, capabilities_activated=activated
+        )
+
+    def test_resources_citation_needs_read_resources(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(tmp)
+            text = "Read `resources/research/method.md` first.\n"
+            denied = self._access(root, text, self.OLD_CODER)
+            self.assertEqual([i["grant"] for i in denied["unreadable"]], ["read:resources"])
+            blocker = dispatch_rehearsal._cited_input_blocker("coder", denied["unreadable"][0])
+            self.assertIn("cited-input-unreadable", blocker)
+            self.assertIn("read:resources", blocker)
+            self.assertEqual(self._access(root, text, self.CODER)["unreadable"], [])
+            self.assertEqual(self._access(root, text, ("read:governance",))["unreadable"], [])
+
+    def test_absolute_citation_and_work_root_precedence(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(tmp)
+            log = root / "resources" / "evidence" / "log.txt"
+            roots = {"evidence": str(root / "resources" / "evidence")}
+            access = self._access(root, f"See `{log}`.\n", ("read:prompts",), roots)
+            self.assertEqual(
+                [(i["class"], i["grant"]) for i in access["unreadable"]],
+                [("work-root:evidence", "read:work-roots")],
+            )
+            self.assertEqual(self._access(root, f"See `{log}`.\n", self.OLD_CODER, roots)["unreadable"], [])
+
+    def test_curated_missing_and_declared_paths_are_not_checked(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(tmp)
+            text = (
+                "Spec `specs/SPEC-01-001.md`; output `resources/research/out.md`;\n"
+                "Deliverable: `project:resources/research/method.md`; glob `resources/*.md`.\n"
+            )
+            self.assertEqual(self._access(root, text, ("read:prompts",)), {"checked": 0, "unreadable": []})
+
+    def test_unclassified_project_file_needs_read_governance(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(tmp)
+            access = self._access(root, "Use `notes/scratch.txt`; update `README.md`.\n", self.CODER)
+            self.assertEqual([i["class"] for i in access["unreadable"]], ["project-file"])
+            self.assertIn("move it under resources/",
+                          dispatch_rehearsal._cited_input_blocker("coder", access["unreadable"][0]))
+
+    def test_ungated_project_checks_nothing(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._project(tmp)
+            access = self._access(root, "Read `notes/scratch.txt`.\n", (), activated=False)
+            self.assertEqual(access, {"checked": 0, "unreadable": []})
+
+
 class ScopedApplicabilityTests(unittest.TestCase):
     CRITERIA = list(at._ANCHOR_CRITERIA)
     SOURCES = list(at._ANCHOR_SOURCES)

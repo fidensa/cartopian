@@ -627,6 +627,10 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="[--local only] Map a work-root name to an absolute path")
     subparser.add_argument("--unset-work-root", action="append", default=[], metavar="NAME",
                            help="[--local only] Remove a work-root mapping")
+    subparser.add_argument("--remove-work-root", action="append", default=[], metavar="NAME",
+                           help="Remove a work root: its project.work_roots declaration and "
+                                "its cartopian.local.toml mapping, together (repeatable; "
+                                "refused while an unfinished task names it)")
 
 
 def _parse_kv(raw: str, flag: str) -> Tuple[str, str]:
@@ -941,6 +945,125 @@ def _atomic_write_config(
         _atomic_write_via_path(canonical_parent, snapshot, final_name, tmp_name, data, safe_mode)
 
 
+_ACTIVE_TASK_DIRS = ("open", "in-progress", "in-review")
+
+
+def _tasks_using_work_root(project_root: Path, name: str) -> List[str]:
+    """Unfinished tasks whose ``Work root:`` or ``Deliverable:`` names ``name``."""
+    users: List[str] = []
+    for status in _ACTIVE_TASK_DIRS:
+        directory = project_root / "tasks" / status
+        if not directory.is_dir():
+            continue
+        for task in sorted(directory.glob("TASK-*.md")):
+            try:
+                text = task.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                users.append(task.stem)  # unreadable: never assume it is unused
+                continue
+            for line in text.splitlines():
+                if line.startswith("## "):
+                    break
+                field, _, value = line.partition(":")
+                field, value = field.strip(), value.strip()
+                if field == "Work root" and name in [v.strip() for v in value.split(",")]:
+                    users.append(task.stem)
+                    break
+                if field == "Deliverable" and value.startswith(f"{name}:"):
+                    users.append(task.stem)
+                    break
+    return users
+
+
+def _remove_work_roots(project_root: Path, raw_names: List[str]) -> int:
+    """Remove each named work root from both config files in one operation.
+
+    The declaration and the machine-local mapping are validated together, so
+    neither half is left behind as an orphan or a missing reference. The
+    local file is written first; rerunning after an interrupted write
+    finishes the removal, because a name that is only declared or only
+    mapped is still removable.
+    """
+    names: List[str] = []
+    for raw in raw_names:
+        name = raw.strip()
+        if not _NAME_RE.match(name):
+            raise _Usage(f"--remove-work-root name must match [A-Za-z0-9_-]+; got: {name!r}")
+        if name in names:
+            raise _Usage(f"--remove-work-root {name!r} given more than once")
+        names.append(name)
+    project_path = project_root / "cartopian.toml"
+    local_path = project_root / "cartopian.local.toml"
+    if not project_path.exists():
+        raise _Guard(
+            "config-not-found",
+            f"{project_path} does not exist — create it with `generate-config` / the `init project` skill",
+        )
+    project_text = project_path.read_text(encoding="utf-8")
+    local_text = local_path.read_text(encoding="utf-8") if local_path.exists() else None
+    try:
+        project_cfg = tomllib.loads(project_text)
+        local_cfg = tomllib.loads(local_text) if local_text is not None else {}
+    except tomllib.TOMLDecodeError as exc:
+        raise _Guard("invalid-config", f"cannot parse the current configuration: {exc}")
+    declared = list((project_cfg.get("project") or {}).get("work_roots") or [])
+    mapped = dict(local_cfg.get("work_roots") or {})
+    for name in names:
+        if name not in declared and name not in mapped:
+            raise _Guard(
+                "work-root-unknown",
+                f"{name!r} is neither declared in project.work_roots nor mapped in cartopian.local.toml",
+            )
+        users = _tasks_using_work_root(project_root, name)
+        if users:
+            raise _Guard(
+                "work-root-in-use",
+                f"{name!r} is named by unfinished task(s) {', '.join(users)}; rewrite their "
+                "Work root:/Deliverable: fields first (write-task), or finish them",
+            )
+
+    project_model = _Model.parse(project_text)
+    remaining = [name for name in declared if name not in names]
+    if remaining != declared:
+        project_model.set_key(("project",), "work_roots", _v_name_list(",".join(remaining)))
+    new_project_text = project_model.render()
+    new_local_text = local_text
+    if local_text is not None and any(name in mapped for name in names):
+        local_model = _Model.parse(local_text)
+        for name in names:
+            local_model.unset_key(("work_roots",), name)
+        new_local_text = local_model.render()
+    try:
+        new_project_cfg = tomllib.loads(new_project_text)
+        new_local_cfg = tomllib.loads(new_local_text) if new_local_text is not None else {}
+    except tomllib.TOMLDecodeError as exc:
+        raise _Guard("invalid-result", f"edit produced invalid TOML: {exc}")
+    global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml", "global config") or {}
+    try:
+        resolve_configuration(global_cfg, new_project_cfg, new_local_cfg, project_root=project_root)
+    except ConfigDiagnostic as exc:
+        raise _Guard("config", str(exc)) from exc
+
+    changed: List[str] = []
+    if new_local_text != local_text:
+        _atomic_write_config(project_root, local_path, new_local_text.encode("utf-8"), allow_create=False)
+        changed.extend(f"work_roots.{name}" for name in names if name in mapped)
+    if new_project_text != project_text:
+        _atomic_write_config(project_root, project_path, new_project_text.encode("utf-8"), allow_create=False)
+        changed.append("project.work_roots")
+    emit_record({
+        "action": "update-config",
+        "details": {
+            "target": "project",
+            "config_path": str(project_path),
+            "local_config_path": str(local_path),
+            "removed_work_roots": names,
+            "changed": changed,
+        },
+    })
+    return EXIT_OK
+
+
 def _validate_effective(project_root: Path, new_project_cfg: Dict[str, Any]) -> None:
     """Layer 2: validate the resolved effective (project + global) config."""
     global_cfg = _load_toml(Path.home() / ".cartopian" / "cartopian.toml", "global config") or {}
@@ -982,6 +1105,22 @@ def handler(args: argparse.Namespace) -> int:
         args.remove_role, args.remove_role_launch,
     ])
     local_ops_present = bool(args.set_work_root or args.unset_work_root)
+    remove_roots = list(getattr(args, "remove_work_root", None) or [])
+
+    if remove_roots:
+        try:
+            if local or project_ops_present or local_ops_present:
+                raise _Usage("--remove-work-root cannot be combined with --local or other operations")
+            return _remove_work_roots(project_root, remove_roots)
+        except _Usage as exc:
+            _stderr("usage", str(exc))
+            return EXIT_USAGE
+        except _Guard as g:
+            _stderr("guard", f"{g.rule}: {g.detail}")
+            return EXIT_FAIL
+        except GuardRefusal as refusal:
+            _stderr("guard", f"{refusal.rule}: {refusal.detail}")
+            return EXIT_FAIL
 
     try:
         if local and project_ops_present:

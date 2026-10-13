@@ -21,11 +21,13 @@ Operator request evidence for: task:TASK-NN-NNN: cs-<handle>/turn-<N>[, cs-<hand
 Repeat this header for every governed unit when one captured ruling authorizes several tasks or checkpoints. The same capture identity may appear on each header in this decision.
 ```
 
-A decision that extends a locked ruling to more units without changing it
-restates the ruling by pointer, not by copy. It supersedes the target and
-names it under `Restates:`; `write-decision` pins the target's digest.
-The target's ruling and bindings count as this decision's own, so the body
-carries only the new bindings:
+A locked ruling already reaches every unit that its text names or that cites
+it: its captures are carried into that unit's request trace, so extending a
+ruling needs no new decision. When a decision must be superseded anyway, a
+superseding decision that keeps the ruling unchanged restates it by pointer,
+not by copy. It supersedes the target and names it under `Restates:`;
+`write-decision` pins the target's digest. The target's ruling and bindings
+count as this decision's own, so the body carries only what is new:
 
 ```markdown
 Supersedes: DEC-NNN

@@ -314,6 +314,19 @@ def _preflight_request_trace(
             "context_identity": None,
         }
     result = request_trace.preflight_prompt_binding(context, prompt_text)
+    if activity == "task_run":
+        # The prompt must have been written from the task as it stands now: a
+        # failed or skipped rewrite must not launch the old contract.
+        try:
+            result = handoff_packet.apply_task_contract(result, prompt_text, task_path)
+        except OSError as exc:
+            return False, {
+                "ok": False,
+                "rule": "stale-task-contract",
+                "detail": f"task file is unreadable: {task_path} — {exc}",
+                "recovery": "restore the task file, then rewrite the prompt",
+                "context_identity": None,
+            }
     result["evidence"] = [
         item.record_id for item in context.evidence
     ]

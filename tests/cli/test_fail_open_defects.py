@@ -71,22 +71,41 @@ def test_review_rounds_remain_reconstructible_after_overwrite_and_deletion():
 
 
 class TestGoverningDecisionBindings(ResolverCase):
-    def test_shared_ruling_requires_a_binding_for_each_governed_checkpoint(self):
+    def test_shared_ruling_carries_to_every_governed_checkpoint(self):
         session = self.session()
         self.bind(session)
         self.planning_exchange(session)
         self.lock_requirements()
         ruling = session.exchange("Add both corrective items to the plan.", "Noted.")
         target = GovernedUnit("planning", "PLAN-CORRECTIVE-03-035")
+        bound_unit = GovernedUnit("planning", "PLAN-CORRECTIVE-03-034")
         marker = f"Operator request evidence for: planning:PLAN-CORRECTIVE-03-034: {ruling}"
+        # A decision that names a second checkpoint carries its ruling there in
+        # its original unit; no restating decision is needed.
         self.write_decision("DEC-001", marker + "\nApplies to PLAN-CORRECTIVE-03-034 and PLAN-CORRECTIVE-03-035.")
-        with self.assertRaises(RequestRefusal) as caught:
-            request_trace.lookup_unit(self.root, target)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        trace, _, _ = request_trace.lookup_unit(self.root, target)
+        carried = [r for r in trace if r.record_id == ruling]
+        self.assertEqual([r.unit for r in carried], [bound_unit])
+        # An explicit binding to the checkpoint is still honored as its own.
         self.write_decision("DEC-001", marker + f"\nOperator request evidence for: planning:PLAN-CORRECTIVE-03-035: {ruling}")
         trace, _, _ = request_trace.lookup_unit(self.root, target)
         self.assertIn(ruling, [r.record_id for r in trace])
         self.assertTrue(any(r.unit == target for r in trace))
+
+    def test_unconfirmed_carried_ruling_still_refuses(self):
+        session = self.session()
+        self.bind(session)
+        self.planning_exchange(session)
+        self.lock_requirements()
+        absent = f"{session.handle}/turn-999"
+        self.write_decision(
+            "DEC-001",
+            f"Operator request evidence for: planning:PLAN-CORRECTIVE-03-034: {absent}\n"
+            "Applies to PLAN-CORRECTIVE-03-035.",
+        )
+        with self.assertRaises(RequestRefusal) as caught:
+            request_trace.lookup_unit(self.root, GovernedUnit("planning", "PLAN-CORRECTIVE-03-035"))
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unconfirmed")
 
 
 def test_rework_composer_binds_verbatim_findings_and_preflight_refuses_changes():

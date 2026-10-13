@@ -24,6 +24,14 @@ class TaskAuthorityFixture(ResolverCase):
         self.write_decision("DEC-002", f"Operator request evidence for: task:TASK-01-001: {correction}")
         return correction
 
+    def uncaptured_named_ruling(self, session, dec_id, checkpoint):
+        """A decision naming the task whose ruling was never captured: it refuses."""
+        absent = f"{session.handle}/turn-999"
+        self.write_decision(
+            dec_id, f"Operator request evidence for: planning:{checkpoint}: {absent}\nApplies to TASK-01-001."
+        )
+        return absent
+
     def named_checkpoint_ruling(self, session, dec_id, checkpoint):
         ruling = session.exchange(f"For {checkpoint}, retain export provenance.", "Noted.")
         self.write_decision(
@@ -87,14 +95,18 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         task.write_text(task.read_text() + f"\n## Request evidence\n\n- {correction}\n")
         self.assertEqual(request_trace.context_for_task_assignment(self.root, task).evidence_ids, [original, correction])
 
-    def test_ad_hoc_or_mismatched_task_cannot_inherit_project_authority(self):
-        session, _original, task = self.baseline()
-        self.task_correction(session)
+    def test_ad_hoc_or_mismatched_task_gains_only_the_cited_ruling(self):
+        session, original, task = self.baseline()
+        unrelated = session.exchange("The future website will have a blue theme.", "Website context noted.")
+        self.write_decision("DEC-003", f"Operator request evidence for: project:project: {unrelated}")
+        correction = self.task_correction(session)
         for declaration in ("Plan ref: n/a", "Plan ref: BUILD-02-001"):
             task.write_text(task.read_text().replace("Plan ref: BUILD-01-001", declaration).replace("Plan ref: n/a", declaration))
-            with self.assertRaises(RequestRefusal) as caught:
-                request_trace.context_for_task_assignment(self.root, task)
-            self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+            # No project inheritance: only the cited DEC-001 ruling is carried,
+            # never the uncited project ruling.
+            context = request_trace.context_for_task_assignment(self.root, task)
+            self.assertEqual(context.evidence_ids, [correction, original])
+            self.assertEqual([r.kind for r in context.trace], ["instruction", "correction"])
 
     def test_revoked_governing_ruling_remains_a_blocker(self):
         session, original, task = self.baseline()
@@ -102,7 +114,7 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         self.revoke([original])
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unconfirmed")
 
     def test_cross_unit_governing_ruling_remains_a_blocker(self):
         session, original, task = self.baseline()
@@ -110,7 +122,7 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         self.write_decision("DEC-003", f"Operator request evidence for: task:TASK-01-002: {original}")
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unconfirmed")
 
     def test_uncaptured_governing_ruling_remains_a_blocker(self):
         session, _original, task = self.baseline()
@@ -119,7 +131,7 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         self.write_decision("DEC-001", f"Operator request evidence for: project:project: {absent}")
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unconfirmed")
 
     def test_partial_governing_quote_remains_a_blocker(self):
         session, original, task = self.baseline()
@@ -127,7 +139,7 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         self.write_decision("DEC-001", f"Operator request evidence for: project:project: {original}", quote="yes but allow cloud storage")
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unconfirmed")
 
     def test_approved_checkpoint_ruling_survives_a_task_correction(self):
         session, original, task = self.baseline()
@@ -138,29 +150,40 @@ class TaskAuthorityInheritanceTests(TaskAuthorityFixture):
         correction = self.task_correction(session)
         self.assertEqual(request_trace.context_for_task_assignment(self.root, task).evidence_ids, [original, ruling, correction])
 
-    def test_a_different_checkpoint_cannot_supply_governing_authority(self):
-        session, _original, task = self.baseline()
+    def test_a_cited_ruling_bound_to_a_different_checkpoint_is_carried(self):
+        session, original, task = self.baseline()
         ruling = session.exchange("For a different checkpoint, add a billing integration.", "Noted.")
         self.write_decision("DEC-003", f"Operator request evidence for: planning:PLAN-BUILD-01-002: {ruling}")
         self.approve_checkpoint("PLAN-BUILD-01-002", "BUILD-01-002", [ruling])
         task.write_text(task.read_text() + "\n- DEC-003\n")
-        self.task_correction(session)
-        with self.assertRaises(RequestRefusal) as caught:
-            request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        correction = self.task_correction(session)
+        context = request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(context.evidence_ids, [original, correction, ruling])
+        # The ruling keeps its original unit; it is not rebound to the task.
+        self.assertEqual(context.trace[-1].unit, GovernedUnit("planning", "PLAN-BUILD-01-002"))
+        self.assertEqual(context.trace[-1].kind, "correction")
+        self.assertEqual([r.sequence for r in context.trace], [1, 2, 3])
+
+    def test_a_trace_already_carrying_the_ruling_is_unchanged(self):
+        session, original, task = self.baseline()
+        correction = self.task_correction(session)
+        before = request_trace.context_for_task_assignment(self.root, task)
+        self.assertEqual(before.evidence_ids, [original, correction])
+        # DEC-001 governs (cited) and is already carried: nothing is appended.
+        self.assertEqual(
+            request_trace.context_for_task_assignment(self.root, task).context_identity,
+            before.context_identity,
+        )
 
 
 class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
     """A decision the task only mentions can be classified, not bound.
 
-    RED: every governing-decision-evidence-unbound refusal offered only "bind
-    the ruling" or "retain checkpoint evidence", even when the cited decision
-    governs nothing in the task — pushing the PM toward fabricating a binding.
-    GREEN: a cited-only decision names a third remedy, and a reviewable
-    ``A|DEC-NNN|outside-scope|<why>`` record in the task's upstream trace
-    releases it. A decision that names the task in its own text, a
-    ``governing-constraint`` classification, and an unparseable trace still
-    refuse.
+    A cited decision's ruling is carried into the task channel. A reviewable
+    ``A|DEC-NNN|outside-scope|<why>`` record in the task's upstream trace keeps
+    a merely mentioned decision out of it. A decision that names the task in
+    its own text, a ``governing-constraint`` classification, and an
+    unparseable trace still carry the ruling.
     """
 
     def cite_other_checkpoint_ruling(self, session):
@@ -176,22 +199,15 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
             + f"\n## Upstream trace\n\n{fence}\nA|DEC-003|{applicability_class}|billing belongs to BUILD-01-002\n```\n"
         )
 
-    def refusal(self, task):
-        with self.assertRaises(RequestRefusal) as caught:
-            request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
-        return caught.exception
+    def carried(self, task):
+        return request_trace.context_for_task_assignment(self.root, task).evidence_ids
 
-    def test_cited_only_refusal_offers_the_non_governing_branch(self):
+    def test_cited_only_decision_ruling_is_carried(self):
         session, _original, task = self.baseline()
-        self.cite_other_checkpoint_ruling(session)
+        ruling = self.cite_other_checkpoint_ruling(session)
         task.write_text(task.read_text() + "\n- DEC-003\n")
         self.task_correction(session)
-        refusal = self.refusal(task)
-        self.assertIn("mentions DEC-003", refusal.detail)
-        self.assertIn("A|DEC-003|outside-scope|<why>", refusal.recovery)
-        self.assertIn("remove the mention", refusal.recovery)
-        self.assertIn("governing-constraint", refusal.recovery)
+        self.assertIn(ruling, self.carried(task))
 
     def test_outside_scope_classification_releases_a_cited_only_decision(self):
         session, original, task = self.baseline()
@@ -206,16 +222,24 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
             self.assertEqual(context.evidence_ids, [original, correction])
             self.assertNotIn(ruling, context.evidence_ids)
 
-    def test_governing_constraint_classification_still_requires_the_ruling(self):
+    def test_governing_constraint_classification_carries_the_ruling(self):
         session, _original, task = self.baseline()
-        self.cite_other_checkpoint_ruling(session)
+        ruling = self.cite_other_checkpoint_ruling(session)
         self.task_correction(session)
         self.classify(task, "governing-constraint")
-        self.assertIn("mentions DEC-003", self.refusal(task).detail)
+        self.assertIn(ruling, self.carried(task))
 
-    def test_unparseable_trace_scopes_nothing_out_and_is_reported_first(self):
+    def test_unparseable_trace_scopes_nothing_out(self):
         session, _original, task = self.baseline()
-        self.cite_other_checkpoint_ruling(session)
+        ruling = self.cite_other_checkpoint_ruling(session)
+        self.task_correction(session)
+        self.classify(task, "not-a-class")
+        self.assertIn(ruling, self.carried(task))
+
+    def test_unparseable_trace_is_reported_first_when_a_cited_ruling_refuses(self):
+        session, _original, task = self.baseline()
+        absent = f"{session.handle}/turn-999"
+        self.write_decision("DEC-003", f"Operator request evidence for: planning:PLAN-BUILD-01-002: {absent}")
         self.task_correction(session)
         self.classify(task, "not-a-class")
         with self.assertRaises(RequestRefusal) as caught:
@@ -224,13 +248,21 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
         self.assertIn("applicability class outside the closed set", caught.exception.detail)
         self.assertIn("DEC-003", caught.exception.detail)
 
+    def test_outside_scope_releases_a_cited_ruling_that_cannot_be_confirmed(self):
+        session, original, task = self.baseline()
+        absent = f"{session.handle}/turn-999"
+        self.write_decision("DEC-003", f"Operator request evidence for: planning:PLAN-BUILD-01-002: {absent}")
+        correction = self.task_correction(session)
+        self.classify(task, "outside-scope")
+        self.assertEqual(self.carried(task), [original, correction])
+
     def test_classification_without_the_trace_declaration_is_ignored(self):
         session, _original, task = self.baseline()
-        self.cite_other_checkpoint_ruling(session)
+        ruling = self.cite_other_checkpoint_ruling(session)
         self.task_correction(session)
         self.classify(task, "outside-scope")
         task.write_text(task.read_text().replace("Upstream trace: required\n", ""))
-        self.refusal(task)
+        self.assertIn(ruling, self.carried(task))
 
     def test_a_decision_that_names_the_task_cannot_be_scoped_out(self):
         session, _original, task = self.baseline()
@@ -242,36 +274,38 @@ class NonGoverningDecisionCitationTests(TaskAuthorityFixture):
         self.approve_checkpoint("PLAN-BUILD-01-002", "BUILD-01-002", [ruling])
         self.task_correction(session)
         self.classify(task, "outside-scope")
-        refusal = self.refusal(task)
-        self.assertIn("names task:TASK-01-001 in its own text", refusal.detail)
-        self.assertIn("superseding decision", refusal.recovery)
+        self.assertIn(ruling, self.carried(task))
 
 
 class GoverningDecisionReportingTests(TaskAuthorityFixture):
     """Every unresolved governing decision is reported in one pass.
 
     RED: the refusal named only the first failing decision, so fixing it just
-    revealed the next, and a checkpoint review that did not pass its ruling on
-    was never explained. GREEN: one refusal lists every decision, and says
-    why each checkpoint's retained review did not qualify.
+    revealed the next. GREEN: one refusal lists every decision whose ruling
+    cannot be confirmed; rulings that can be confirmed are carried.
     """
 
-    def test_all_unresolved_named_decisions_are_listed(self):
+    def test_all_named_rulings_are_carried(self):
         session, _original, task = self.baseline()
-        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
-        self.named_checkpoint_ruling(session, "DEC-004", "PLAN-BUILD-01-003")
+        first = self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        second = self.named_checkpoint_ruling(session, "DEC-004", "PLAN-BUILD-01-003")
+        self.task_correction(session)
+        ids = request_trace.context_for_task_assignment(self.root, task).evidence_ids
+        self.assertIn(first, ids)
+        self.assertIn(second, ids)
+
+    def test_all_unconfirmed_named_decisions_are_listed(self):
+        session, _original, task = self.baseline()
+        self.uncaptured_named_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.uncaptured_named_ruling(session, "DEC-004", "PLAN-BUILD-01-003")
         self.task_correction(session)
         with self.assertRaises(RequestRefusal) as caught:
             request_trace.context_for_task_assignment(self.root, task)
         refusal = caught.exception
-        self.assertEqual(refusal.rule, "governing-decision-evidence-unbound")
-        self.assertIn("2 governing decisions", refusal.detail)
+        self.assertEqual(refusal.rule, "governing-decision-evidence-unconfirmed")
         self.assertIn("DEC-003, DEC-004", refusal.detail)
-        self.assertIn("no retained REVIEW-PLAN-BUILD-01-002.md", refusal.detail)
-        self.assertIn("Supersedes: DEC-003, DEC-004", refusal.recovery)
-        self.assertIn("separate, non-superseding decision does not clear", refusal.recovery)
 
-    def test_narrow_backfill_is_named_and_widening_restores_inheritance(self):
+    def test_narrow_backfill_is_refused_and_widening_is_recorded(self):
         from cli import report_identity
         from cli.commands import backfill_review_scope
         from tests.cli.test_fail_open_defects import invoke
@@ -295,11 +329,8 @@ class GoverningDecisionReportingTests(TaskAuthorityFixture):
 
         self.assertEqual(backfill("PLAN-BUILD-01-002")[0], 0)
         correction = self.task_correction(session)
-        with self.assertRaises(RequestRefusal) as caught:
-            request_trace.context_for_task_assignment(self.root, task)
-        detail = caught.exception.detail
-        self.assertIn("names BUILD-01-001 in its Plan ref header", detail)
-        self.assertIn("binds only PLAN-BUILD-01-002", detail)
+        # DEC-003 names the task, so its ruling is carried before any widening.
+        self.assertIn(ruling, request_trace.context_for_task_assignment(self.root, task).evidence_ids)
 
         # Narrowing/replacing and adding a plan ref the review never named refuse.
         self.assertEqual(backfill("PLAN-BUILD-01-001")[0], 1)
@@ -328,7 +359,7 @@ class BlockedTaskTraceDeferralTests(TaskAuthorityFixture):
 
     def refusing_task(self):
         session, _original, task = self.baseline()
-        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.uncaptured_named_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
         self.task_correction(session)
         return task
 
@@ -348,7 +379,7 @@ class BlockedTaskTraceDeferralTests(TaskAuthorityFixture):
         deferred = [w for w in warnings if w["kind"] == "deferred-request-trace"]
         self.assertEqual([w["task_id"] for w in deferred], ["TASK-01-001"])
         self.assertEqual(deferred[0]["blocked_by"], ["TASK-01-009"])
-        self.assertEqual(deferred[0]["failure_class"], "governing-decision-evidence-unbound")
+        self.assertEqual(deferred[0]["failure_class"], "governing-decision-evidence-unconfirmed")
         record, _ = validate_task_readiness.evaluate(self.root, task, task.read_text())
         check = next(c for c in record["checks"] if c["name"] == "request-trace-valid")
         self.assertFalse(check["pass"])
@@ -380,7 +411,7 @@ class EnumerateWhileRefusingTests(TaskAuthorityFixture):
         from tests.cli.test_fail_open_defects import invoke
 
         session, _original, task = self.baseline()
-        self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
+        self.uncaptured_named_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
         self.task_correction(session)
         task.write_text(task.read_text() + "\n## Acceptance\n\n- [ ] Notes sync to Markdown\n")
         code, records, err = invoke(
@@ -390,5 +421,5 @@ class EnumerateWhileRefusingTests(TaskAuthorityFixture):
         self.assertEqual(code, 0, err)
         self.assertEqual([c["text"] for c in records[0]["criteria"]], ["Notes sync to Markdown"])
         self.assertEqual(records[0]["excerpts"], [])
-        self.assertEqual(records[0]["excerpts_refusal"]["rule"], "governing-decision-evidence-unbound")
+        self.assertEqual(records[0]["excerpts_refusal"]["rule"], "governing-decision-evidence-unconfirmed")
         self.assertIn("excerpts unavailable", err)

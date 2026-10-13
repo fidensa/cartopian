@@ -1552,5 +1552,158 @@ class TestProjectionUnits(unittest.TestCase):
         )
 
 
+class TestTaskContractBinding(unittest.TestCase):
+    """A task-assignment prompt is bound to the exact task it was written from.
+
+    RED: a relative ``--task`` made ``write-prompt --composed-file`` refuse
+    with a message that never said why, and ``dispatch`` then launched the
+    coder on whatever older prompt was still on disk. GREEN: a relative task
+    path resolves against the project root, a mismatch names both paths, and
+    the written prompt carries the task's content identity, which the handoff
+    preflight and ``dispatch`` hold against the current task file.
+    """
+
+    def _compose(self, scaffold, task_path):
+        record = prompt_composer.compose(task_path, "coder")
+        self.assertEqual(record["outcome"], "composed", record["findings"])
+        composed_path = scaffold.root / "composed.json"
+        composed_path.write_text(
+            json.dumps({"action": "compose-assignment-prompt", **record}),
+            encoding="utf-8",
+        )
+        return composed_path
+
+    def _write(self, args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = write_prompt.handler(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def _packet(self, task_path):
+        import tempfile
+
+        from cli.commands import handoff_packet
+
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as home:
+            with mock.patch("cli.commands.handoff_packet.Path.home", return_value=Path(home)):
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    rc = handoff_packet.handler(
+                        argparse.Namespace(task_path=str(task_path), role="coder")
+                    )
+        return rc, json.loads(out.getvalue().splitlines()[0]), err.getvalue()
+
+    def test_relative_task_path_resolves_against_the_project_root(self) -> None:
+        from cli.commands import handoff_packet
+
+        with project_scaffold(cartopian_toml=_TOML_REVIEW_REQUIRED) as scaffold:
+            task_path = _build_full(scaffold)
+            composed = self._compose(scaffold, task_path)
+            relative = task_path.relative_to(scaffold.project_root)
+            code, out, err = self._write(_write_prompt_args(
+                scaffold, task_path, task=str(relative), composed_file=str(composed)
+            ))
+            self.assertEqual(code, EXIT_OK, err)
+            written = (scaffold.prompts / "PROMPT-01-002.md").read_text(encoding="utf-8")
+            identity = handoff_packet.task_contract_identity(task_path.read_bytes())
+            self.assertIn(f"\nTask contract identity: {identity}\n", written)
+            self.assertEqual(written.count("Task contract identity:"), 1)
+            details = json.loads(out.splitlines()[-1])["details"]
+            self.assertEqual(details["task_contract_identity"], identity)
+
+    def test_composed_target_mismatch_names_both_paths(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_REVIEW_REQUIRED) as scaffold:
+            task_path = _build_full(scaffold)
+            composed = self._compose(scaffold, task_path)
+            other = scaffold.write("tasks/in-progress/TASK-01-003.md", "# TASK-01-003\n")
+            code, _out, err = self._write(_write_prompt_args(
+                scaffold, task_path, task=str(other), composed_file=str(composed)
+            ))
+            self.assertEqual(code, EXIT_FAIL)
+            self.assertIn(str(other.resolve()), err)
+            self.assertIn(str(task_path.resolve()), err)
+            self.assertIn("No prompt was written", err)
+            self.assertFalse((scaffold.prompts / "PROMPT-01-002.md").exists())
+
+    def test_rewrite_replaces_the_stamp(self) -> None:
+        from cli.commands import handoff_packet
+
+        stamped = handoff_packet.stamp_task_contract(
+            "# Title\n\n## Role and workspace\n\nWork.\n", "sha256:" + "a" * 64
+        )
+        restamped = handoff_packet.stamp_task_contract(stamped, "sha256:" + "b" * 64)
+        self.assertEqual(
+            restamped,
+            "# Title\n\nTask contract identity: sha256:" + "b" * 64
+            + "\n\n## Role and workspace\n\nWork.\n",
+        )
+        # A stamp-shaped line inside the body is content, not the stamp.
+        body = restamped + "\nTask contract identity: quoted\n"
+        self.assertTrue(handoff_packet.stamp_task_contract(body, "sha256:" + "c" * 64)
+                        .endswith("\nTask contract identity: quoted\n"))
+
+    def test_task_changed_after_the_prompt_fails_handoff_preflight(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            composed = self._compose(scaffold, task_path)
+            code, _out, err = self._write(_write_prompt_args(
+                scaffold, task_path, composed_file=str(composed)
+            ))
+            self.assertEqual(code, EXIT_OK, err)
+            rc, packet, err = self._packet(task_path)
+            self.assertEqual(rc, EXIT_OK, err)
+            self.assertEqual(packet["request_trace"]["preflight"]["task_contract"], "current")
+
+            task_path.write_text(task_path.read_text(encoding="utf-8") + "\nA widened contract.\n",
+                                 encoding="utf-8")
+            rc, packet, err = self._packet(task_path)
+            self.assertEqual(rc, EXIT_FAIL)
+            preflight = packet["request_trace"]["preflight"]
+            self.assertFalse(preflight["ok"])
+            self.assertEqual(preflight["task_contract"], "stale")
+            self.assertIn("stale-task-contract", err)
+
+    def test_prompt_without_a_stamp_passes_with_a_warning(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_CONTAINED_CODER) as scaffold:
+            task_path = _build_full_with_deliverable(scaffold)
+            composed = self._compose(scaffold, task_path)
+            self.assertEqual(self._write(_write_prompt_args(
+                scaffold, task_path, composed_file=str(composed)
+            ))[0], EXIT_OK)
+            prompt = scaffold.prompts / "PROMPT-01-002.md"
+            prompt.write_text(
+                re.sub(r"\nTask contract identity: [^\n]*\n", "", prompt.read_text(encoding="utf-8")),
+                encoding="utf-8",
+            )
+            rc, packet, err = self._packet(task_path)
+            self.assertEqual(rc, EXIT_OK, err)
+            self.assertEqual(packet["request_trace"]["preflight"]["task_contract"], "absent")
+            self.assertIn("[warning] task-contract-unbound", err)
+
+    def test_dispatch_preflight_refuses_a_stale_task_contract(self) -> None:
+        from cli.commands import dispatch
+
+        with project_scaffold(cartopian_toml=_TOML_REVIEW_REQUIRED) as scaffold:
+            task_path = _build_full(scaffold)
+            composed = self._compose(scaffold, task_path)
+            self.assertEqual(self._write(_write_prompt_args(
+                scaffold, task_path, composed_file=str(composed)
+            ))[0], EXIT_OK)
+            prompt = scaffold.prompts / "PROMPT-01-002.md"
+            ok, record = dispatch._preflight_request_trace(
+                scaffold.project_root, "task_run", task_path, prompt
+            )
+            self.assertTrue(ok, record)
+            self.assertEqual(record["task_contract"], "current")
+            task_path.write_text(task_path.read_text(encoding="utf-8") + "\nChanged.\n",
+                                 encoding="utf-8")
+            ok, record = dispatch._preflight_request_trace(
+                scaffold.project_root, "task_run", task_path, prompt
+            )
+            self.assertFalse(ok)
+            self.assertEqual(record["rule"], "stale-task-contract")
+            self.assertIn("write-prompt", record["recovery"])
+
+
 if __name__ == "__main__":
     unittest.main()

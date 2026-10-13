@@ -61,7 +61,7 @@ import json
 import os
 import re
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -1027,14 +1027,16 @@ def resolve(
     text_unit = target if target.kind == "task" else PROJECT_UNIT
     for text in source_texts:
         refs.extend(text_references(text, text_unit, "artifact"))
-    # A decision that governs this unit must carry its ruling into this
-    # channel. Project inheritance cannot conceal a ruling bound elsewhere.
+    # A decision that governs this unit carries its ruling into this channel.
+    # When it binds the ruling to this unit (or the project), that binding is
+    # the ruling; otherwise its own captures carry over in their original
+    # units, so a decision mentioned by another unit needs no restatement.
     governing_bindings = []
+    carried_rulings: Set[Tuple[str, GovernedUnit, str]] = set()
     if target.kind == "planning":
         identities = [target.identifier]
         identities.append(target.identifier.removeprefix("PLAN-"))
         by_decision: Dict[str, List[Reference]] = {}
-        unbound: List[str] = []
         for ref in refs:
             if ref.source.startswith("DEC-"):
                 by_decision.setdefault(ref.source, []).append(ref)
@@ -1051,37 +1053,11 @@ def resolve(
             )
             if not governs:
                 continue
-            required = {ref.capture_id for ref in declared}
-            carried = {ref.capture_id for ref in declared if ref.unit in (target, PROJECT_UNIT)}
-            governing_bindings.extend(ref for ref in declared if ref.unit in (target, PROJECT_UNIT))
-            if not carried:
-                unbound.append(f"{decision_id} ({', '.join(sorted(required))})")
-        if unbound:
-            # Report every decision at once: fixing one must not just reveal the next.
-            unit = f"{target.kind}:{target.identifier}"
-            ids = ", ".join(item.split(" ", 1)[0] for item in unbound)
-            one = ids if len(unbound) == 1 else "DEC-X"
-            raise RequestRefusal(
-                "governing-decision-evidence-unbound",
-                f"{'; '.join(unbound)} "
-                f"{'governs' if len(unbound) == 1 else 'govern'} {unit} "
-                f"(the decision text names {target.identifier} or its plan ref) "
-                "but the ruling is bound to other units",
-                "decisions are immutable, so do not add a header in a new, "
-                "separate decision: a turn bound to two units by different "
-                "current decisions is cross-unit for both. For each "
-                "decision, write one superseding locked decision that "
-                f"restates it by pointer (`Supersedes: {one}` and `Restates: "
-                f"{one}`) and adds `Operator request evidence for: "
-                f"{unit}: <the ruling's capture identities>`; the retired "
-                "decision's ruling and bindings carry over. A full restatement "
-                f"(`Supersedes: {ids}`) that repeats every binding plus {unit} "
-                "also works. Supersede every other current decision binding "
-                "the same turn to a different unit. If the decision mentions the checkpoint only in "
-                "passing (history, a Related: list), the superseding "
-                "decision restates it without naming the checkpoint or its "
-                "plan ref, and needs no new binding",
-            )
+            bound = [ref for ref in declared if ref.unit in (target, PROJECT_UNIT)]
+            if not bound:
+                bound = declared
+                carried_rulings.update((ref.capture_id, ref.unit, ref.source) for ref in declared)
+            governing_bindings.extend(bound)
     referenced = {ref.capture_id for ref in refs}
     for cid in exact_ids:
         if cid in referenced or not CAPTURE_ID_RE.fullmatch(cid):
@@ -1117,7 +1093,8 @@ def resolve(
     if confirmation is not None and (target == PROJECT_UNIT or allow_project_origin):
         selected[confirmation.reply.capture_id] = (confirmation.reply, PROJECT_UNIT)
     for ref, turn in confirmed:
-        if applies(ref.unit, turn.capture_id) and (turn.capture_id not in selected or ref.unit == target):
+        carried = (ref.capture_id, ref.unit, ref.source) in carried_rulings
+        if (applies(ref.unit, turn.capture_id) or carried) and (turn.capture_id not in selected or ref.unit == target):
             selected[turn.capture_id] = (turn, ref.unit)
 
     ordered = sorted(selected.values(), key=lambda item: item[0].position)
@@ -1367,6 +1344,76 @@ def task_governing_references(project_root: Path, target: GovernedUnit,
     refs, _ = decision_references(project_root)
     governance = _task_decision_governance(project_root, target, source_texts, refs)
     return [ref for ref in refs if ref.source in governance]
+
+
+def carry_governing_rulings(project_root: Path, target: GovernedUnit,
+                            source_texts: Sequence[str],
+                            trace: Sequence[RequestEvidence]) -> List[RequestEvidence]:
+    """Carry each governing decision's ruling the task channel lacks.
+
+    A current locked decision is operator authority wherever it governs. When
+    a decision names the task, or the task cites it, and none of its captures
+    already reach the task channel, its own captures are appended in their
+    original units — the ruling a restate-by-pointer decision would rebind.
+    A trace that already carries a capture of every governing decision is
+    returned unchanged. A ruling that cannot be confirmed still fails closed.
+    """
+    refs, _ = decision_references(project_root)
+    governance = _task_decision_governance(project_root, target, source_texts, refs)
+    carried_ids = {item.record_id for item in trace}
+    wanted: List[Reference] = []
+    for decision_id in governance:
+        declared = [ref for ref in refs if ref.source == decision_id]
+        if not {ref.capture_id for ref in declared} & carried_ids:
+            wanted.extend(declared)
+    if not wanted:
+        return list(trace)
+    all_refs = list(refs)
+    for text in source_texts:
+        all_refs.extend(text_references(text, target, "artifact"))
+    confirmed, _ = _confirm_references(
+        all_refs, load_candidates(project_root), revoked_evidence_ids(project_root)
+    )
+    turns = {(ref.capture_id, ref.unit, ref.source): turn for ref, turn in confirmed}
+    unresolved = [ref for ref in wanted if (ref.capture_id, ref.unit, ref.source) not in turns]
+    if unresolved:
+        if any(governance[ref.source] == "cited" for ref in unresolved):
+            # An outside-scope record could release a cited decision, but not
+            # from a record block that does not parse: report that first.
+            parse = next(
+                (r for r in (trace_parse_refusal(text) for text in source_texts) if r is not None),
+                None,
+            )
+            if parse is not None:
+                pending = ", ".join(sorted({ref.source for ref in unresolved}))
+                raise RequestRefusal(
+                    "trace-unparseable",
+                    f"{target.identifier}'s Upstream trace does not parse "
+                    f"({parse.code}: {parse.detail}), so none of its A| records "
+                    f"apply; until it parses, these decisions stay unresolved: {pending}",
+                    "fix the named record (`acceptance-trace --projection "
+                    "diagnostic` shows the full refusal), rewrite the task with "
+                    "write-task, then rerun",
+                )
+        # Report every decision at once: fixing one must not just reveal the next.
+        sources = sorted({ref.source for ref in unresolved})
+        raise RequestRefusal(
+            "governing-decision-evidence-unconfirmed",
+            f"{', '.join(sources)} {'cites' if len(sources) == 1 else 'cite'} operator "
+            f"authority that is not confirmed for {target.kind}:{target.identifier}",
+            "restore the exact captured source or bind a fresh attributable operator ruling before dispatch",
+        )
+    added: Dict[str, Tuple[CapturedTurn, GovernedUnit]] = {}
+    for ref in wanted:
+        if ref.capture_id not in carried_ids and ref.capture_id not in added:
+            added[ref.capture_id] = (turns[(ref.capture_id, ref.unit, ref.source)], ref.unit)
+    merged = list(trace)
+    for turn, unit in sorted(added.values(), key=lambda item: item[0].position):
+        merged.append(_evidence(turn, unit, "correction" if merged else "instruction", len(merged) + 1))
+    return [
+        replace(evidence, sequence=index)
+        for index, evidence in enumerate(dedupe_by_presentation(merged), start=1)
+    ]
 
 
 def _named_recovery(unit: str, decision_ids: Sequence[str]) -> str:

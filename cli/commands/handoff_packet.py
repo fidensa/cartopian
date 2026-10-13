@@ -7,6 +7,7 @@ single NDJSON call. Read-only; no file writes, moves, renames, or deletes.
 import argparse
 import hashlib
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +38,100 @@ from cli.main import (
 )
 
 _TASK_ID_RE = re.compile(r"^(TASK-\d{2}-\d{3})$")
+
+# The machine-owned header binding a task-assignment prompt to the exact task
+# file it was written from. ``write-prompt`` stamps it; the handoff preflight
+# and ``dispatch`` refuse a prompt whose task has since changed, so a failed
+# or skipped prompt rewrite can never launch the coder on the old contract.
+TASK_CONTRACT_FIELD = "Task contract identity"
+
+
+def task_contract_identity(task_bytes: bytes) -> str:
+    return "sha256:" + hashlib.sha256(task_bytes).hexdigest()
+
+
+def _header_end(lines: List[str]) -> int:
+    return next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+
+
+def stamp_task_contract(prompt_text: str, identity: str) -> str:
+    """Replace any task-contract header with ``identity`` under the title."""
+    lines = prompt_text.split("\n")
+    end = _header_end(lines)
+    lines = [
+        line for index, line in enumerate(lines)
+        if index >= end or not line.startswith(f"{TASK_CONTRACT_FIELD}:")
+    ]
+    stamp = f"{TASK_CONTRACT_FIELD}: {identity}"
+    if lines and lines[0].startswith("# "):
+        rest = lines[1:]
+        while rest and not rest[0].strip():
+            rest = rest[1:]
+        return "\n".join([lines[0], "", stamp, "", *rest])
+    return "\n".join([stamp, "", *lines])
+
+
+def task_contract_check(prompt_text: str, task_bytes: bytes) -> Dict[str, Any]:
+    """Compare a task-assignment prompt's stamp with the current task file.
+
+    ``state`` is ``current``, ``stale`` (refused), or ``absent`` — a prompt
+    written before the stamp existed, accepted with a warning so in-flight
+    work is not broken.
+    """
+    lines = prompt_text.split("\n")
+    recorded = next(
+        (
+            line.split(":", 1)[1].strip()
+            for line in lines[: _header_end(lines)]
+            if line.startswith(f"{TASK_CONTRACT_FIELD}:")
+        ),
+        None,
+    )
+    current = task_contract_identity(task_bytes)
+    if recorded is None:
+        return {
+            "ok": True, "state": "absent", "rule": None,
+            "detail": (
+                "the prompt carries no task contract identity, so it cannot be "
+                "checked against the current task; rewrite it with write-prompt "
+                "to bind it"
+            ),
+            "recovery": "",
+        }
+    if recorded == current:
+        return {"ok": True, "state": "current", "rule": None, "detail": "", "recovery": ""}
+    return {
+        "ok": False, "state": "stale", "rule": "stale-task-contract",
+        "detail": (
+            "the prompt was written for a different version of the task file "
+            f"(prompt {recorded}, task {current})"
+        ),
+        "recovery": (
+            "recompose the assignment prompt from the current task "
+            "(compose-assignment-prompt), rewrite it with write-prompt, and "
+            "rerun handoff-packet before dispatch"
+        ),
+    }
+
+
+def apply_task_contract(
+    preflight: Dict[str, Any], prompt_text: str, task_path: Path
+) -> Dict[str, Any]:
+    """Fold the task-contract check into an assignment prompt preflight.
+
+    A stale stamp fails the preflight; an absent stamp passes with a stderr
+    warning. The request-binding refusal, when present, is reported first.
+    """
+    contract = task_contract_check(prompt_text, task_path.read_bytes())
+    preflight = {**preflight, "task_contract": contract["state"]}
+    if contract["state"] == "absent":
+        sys.stderr.write(f"[warning] task-contract-unbound: {contract['detail']}\n")
+    if preflight["ok"] and not contract["ok"]:
+        preflight.update(
+            ok=False, rule=contract["rule"], detail=contract["detail"],
+            recovery=contract["recovery"],
+        )
+    return preflight
 
 
 def configure_parser(subparser: argparse.ArgumentParser) -> None:
@@ -730,6 +825,8 @@ def handler(args: argparse.Namespace) -> int:
             preflight = request_trace.preflight_prompt_binding(
                 prompt_context, prompt_text
             )
+            if task_path.parent.name == "in-progress":
+                preflight = apply_task_contract(preflight, prompt_text, task_path)
             preflight["prompt_path"] = str(review_prompt)
             context = prompt_context
         elif task_path.parent.name == "in-review" and not prepare_review:

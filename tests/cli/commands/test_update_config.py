@@ -83,7 +83,7 @@ class TestHelp(unittest.TestCase):
         for flag in ("--set", "--unset", "--set-role", "--set-role-grants",
                      "--set-role-launch", "--set-role-auto-launch",
                      "--remove-role", "--remove-role-launch",
-                     "--local", "--set-work-root"):
+                     "--local", "--set-work-root", "--remove-work-root"):
             self.assertIn(flag, proc.stdout)
 
 
@@ -362,6 +362,98 @@ class TestLocalTarget(_Base):
 
     def test_project_target_rejects_local_ops(self):
         proc = self.run_uc(str(self.proj), "--set-work-root", "product=/abs")
+        self.assertEqual(proc.returncode, 2)
+
+
+class TestRemoveWorkRoot(_Base):
+    """A declared and mapped work root is removable in one operation.
+
+    RED: shortening project.work_roots left the local mapping as an orphan,
+    and unsetting the mapping first left the declaration unmapped; each step
+    failed the other file's validation, so no tool path could remove a root.
+    GREEN: --remove-work-root edits both files, validated together.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.product = self.tmp / "product"
+        self.support = self.tmp / "support"
+        self.product.mkdir()
+        self.support.mkdir()
+        # The supported add order: declare a name, then map it.
+        for declared, (name, path) in (("product", ("product", self.product)),
+                                       ("product,support", ("support", self.support))):
+            proc = self.run_uc(str(self.proj), "--set", f"project.work_roots={declared}")
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            proc = self.run_uc(str(self.proj), "--local", "--set-work-root", f"{name}={path}")
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.local = self.proj / "cartopian.local.toml"
+
+    def roots(self):
+        return (
+            tomllib.loads(self.cfg.read_text())["project"]["work_roots"],
+            tomllib.loads(self.local.read_text()).get("work_roots", {}),
+        )
+
+    def write_task(self, status, header):
+        task = self.proj / "tasks" / status / "TASK-01-001.md"
+        task.parent.mkdir(parents=True, exist_ok=True)
+        task.write_text(f"# TASK-01-001: Demo\n\n{header}\n\n## Goal\n\nWork.\n", encoding="utf-8")
+        return task
+
+    def test_each_half_alone_still_refuses(self):
+        self.assertEqual(self.run_uc(str(self.proj), "--set", "project.work_roots=product").returncode, 1)
+        self.assertEqual(self.run_uc(str(self.proj), "--local", "--unset-work-root", "support").returncode, 1)
+
+    def test_removes_declaration_and_mapping_together(self):
+        proc = self.run_uc(str(self.proj), "--remove-work-root", "support")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        declared, mapped = self.roots()
+        self.assertEqual(declared, ["product"])
+        self.assertEqual(mapped, {"product": str(self.product)})
+        details = json.loads(proc.stdout.splitlines()[-1])["details"]
+        self.assertEqual(details["removed_work_roots"], ["support"])
+        self.assertEqual(details["changed"], ["work_roots.support", "project.work_roots"])
+        self.assertIn("# operator note: keep this comment", self.cfg.read_text())
+        self.assertNoTempFiles()
+
+    def test_removing_every_root_restores_the_default(self):
+        proc = self.run_uc(str(self.proj), "--remove-work-root", "product", "--remove-work-root", "support")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(self.roots(), ([], {}))
+
+    def test_an_interrupted_removal_can_be_finished(self):
+        # Only the mapping was removed (the state after a failed second write).
+        text = self.local.read_text().replace(f'support = "{self.support}"\n', "")
+        self.local.write_text(text, encoding="utf-8")
+        proc = self.run_uc(str(self.proj), "--remove-work-root", "support")
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(self.roots()[0], ["product"])
+
+    def test_refused_while_an_unfinished_task_names_it(self):
+        for status, header in (
+            ("open", "Work root: product, support"),
+            ("in-progress", "Deliverable: support:docs/out.md"),
+        ):
+            with self.subTest(status=status):
+                task = self.write_task(status, header)
+                before = (self.cfg.read_bytes(), self.local.read_bytes())
+                proc = self.run_uc(str(self.proj), "--remove-work-root", "support")
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn("work-root-in-use", proc.stderr)
+                self.assertIn("TASK-01-001", proc.stderr)
+                self.assertEqual((self.cfg.read_bytes(), self.local.read_bytes()), before)
+                task.unlink()
+        self.write_task("done", "Work root: support")
+        self.assertEqual(self.run_uc(str(self.proj), "--remove-work-root", "support").returncode, 0)
+
+    def test_unknown_name_and_mixed_operations_refuse(self):
+        proc = self.run_uc(str(self.proj), "--remove-work-root", "ghost")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("work-root-unknown", proc.stderr)
+        proc = self.run_uc(str(self.proj), "--remove-work-root", "support", "--set", "automation.initiation=auto")
+        self.assertEqual(proc.returncode, 2)
+        proc = self.run_uc(str(self.proj), "--local", "--remove-work-root", "support")
         self.assertEqual(proc.returncode, 2)
 
 

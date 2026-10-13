@@ -1821,6 +1821,73 @@ class TestAllowGrantedReads(unittest.TestCase):
                 )
 
 
+class TestResourcesReadClass(unittest.TestCase):
+    """``resources/`` is readable by coder-like even with named work roots.
+
+    RED: once a project declared any work root, ``resources/`` fell to the
+    unclassified project-file class and needed ``read:governance``, so a coder
+    could not read the method or manifest its task cited. GREEN: the
+    ``resources`` class needs ``read:resources`` (in coder-like) or
+    ``read:governance``; writes there are unchanged, and a work root declared
+    inside ``resources/`` keeps its own class.
+    """
+
+    def _resource(self, fx) -> str:
+        path = fx.project_root / "resources" / "research" / "method.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("method\n", encoding="utf-8")
+        return str(path)
+
+    def test_coder_like_reads_resources_with_named_work_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            environ = {"CARTOPIAN_ROLE": "assignee"}
+            target = self._resource(fx)
+            self.assertEqual(fx.evaluate(_read_payload("Read", target), environ=environ).action, "allow")
+            for tool in ("Glob", "Grep"):
+                decision = fx.evaluate(
+                    _read_payload(tool, str(fx.project_root / "resources")), environ=environ
+                )
+                self.assertEqual(decision.action, "allow", msg=tool)
+
+    def test_coder_like_still_cannot_write_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            decision = fx.evaluate(
+                _payload("Write", self._resource(fx)), environ={"CARTOPIAN_ROLE": "assignee"}
+            )
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("write:lifecycle", decision.reason)
+
+    def test_read_governance_still_covers_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            decision = fx.evaluate(
+                _read_payload("Read", self._resource(fx)),
+                environ={"CARTOPIAN_ROLE": "governance-only"},
+            )
+            self.assertEqual(decision.action, "allow")
+
+    def test_role_without_either_grant_is_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = _HookFixture(Path(tmp), _READ_ROLES)
+            decision = fx.evaluate(
+                _read_payload("Read", self._resource(fx)), environ={"CARTOPIAN_ROLE": "boaster"}
+            )
+            self.assertEqual(decision.action, "deny")
+            self.assertIn("read:resources", decision.reason)
+
+    def test_resources_is_not_reserved_against_work_roots(self) -> None:
+        from cli import work_access
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp).resolve() / "proj"
+            (project / "resources" / "evidence").mkdir(parents=True)
+            work_access.validate_supporting_roots(
+                project, {"evidence": str(project / "resources" / "evidence")}
+            )
+
+
 class TestWindowsPathLogic(unittest.TestCase):
     """Windows-shaped paths (backslash, drive letter, case variance) classify
     correctly — exercised on POSIX via the flavor-parameterized helpers."""

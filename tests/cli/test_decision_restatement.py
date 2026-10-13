@@ -39,13 +39,15 @@ class RestatementFixture(TaskAuthorityFixture):
         )
 
     def governed_by_unbound_ruling(self):
-        """DEC-003 names the task but binds its ruling only to a checkpoint."""
+        """DEC-003 names the task but binds its ruling only to a checkpoint.
+
+        The ruling is carried into the task channel without a restatement;
+        restating it by pointer remains valid and changes nothing it carries.
+        """
         session, original, task = self.baseline()
         ruling = self.named_checkpoint_ruling(session, "DEC-003", "PLAN-BUILD-01-002")
         self.task_correction(session)
-        with self.assertRaises(RequestRefusal) as caught:
-            request_trace.context_for_task_assignment(self.root, task)
-        self.assertEqual(caught.exception.rule, "governing-decision-evidence-unbound")
+        self.assertIn(ruling, request_trace.context_for_task_assignment(self.root, task).evidence_ids)
         return session, task, ruling
 
 

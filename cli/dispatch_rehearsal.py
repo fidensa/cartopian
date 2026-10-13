@@ -16,6 +16,8 @@ probe so rehearsal and dispatch enforce the same wrapper compatibility floor.
 """
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -75,6 +77,104 @@ def resolve_role(
             "declared role or pass --role"
         ),
     }
+
+
+# A backticked span in the task text: the protocol's way of citing a path.
+_CITED_SPAN_RE = re.compile(r"`([^`\n]+)`")
+# Read classes an assignee must open itself. Governance, reports and prompts
+# are curated into the prompt by the PM, so citing them is not a read demand.
+_DIRECT_READ_CLASSES = ("resources", "project-file")
+
+
+def _cited_paths(project_root: Path, content: str) -> List[Path]:
+    """Existing project or work-root paths the task text cites in backticks."""
+    root = os.path.realpath(project_root)
+    out: List[Path] = []
+    seen = set()
+    for match in _CITED_SPAN_RE.finditer(content):
+        token = match.group(1).strip()
+        if (
+            not token
+            or any(ch.isspace() for ch in token)
+            or any(ch in token for ch in "*?[]{}<>$")
+            or token.startswith(("project:", "root:"))
+            # A bare file name (`README.md`) usually means a file in a work
+            # root, not the project root; only a path is an unambiguous cite.
+            or (not os.path.isabs(token) and "/" not in token)
+        ):
+            continue
+        candidate = Path(token) if os.path.isabs(token) else Path(root) / token
+        if ".." in Path(token).parts or not candidate.exists():
+            continue
+        resolved = os.path.realpath(candidate)
+        if resolved == root or resolved in seen:
+            continue
+        seen.add(resolved)
+        out.append(Path(resolved))
+    return out
+
+
+def cited_input_access(
+    project_root: Path,
+    content: str,
+    grants,
+    work_roots: Dict[str, str],
+    *,
+    capabilities_activated: bool,
+) -> Dict[str, Any]:
+    """Whether the assignee can itself read every file the task cites.
+
+    Each cited path is classified as the Claude refusal hook classifies it:
+    a work root first, then the project path classes. Only the classes the
+    assignee must read directly are held to the role's grants; ungated
+    projects read everything. Returns ``{checked, unreadable}``.
+    """
+    from cli import claude_hook
+
+    if not capabilities_activated:
+        return {"checked": 0, "unreadable": []}
+    held = set(grants or ())
+    root = os.path.realpath(project_root)
+    roots = {name: os.path.realpath(path) for name, path in (work_roots or {}).items() if path}
+    unreadable: List[Dict[str, str]] = []
+    checked = 0
+    for path in _cited_paths(project_root, content):
+        target = str(path)
+        owner = next(
+            (
+                name for name, wr in roots.items()
+                if wr != root and (target == wr or target.startswith(wr.rstrip(os.sep) + os.sep))
+            ),
+            None,
+        )
+        if owner is not None:
+            klass, grant = f"work-root:{owner}", claude_hook.READ_CLASS_GRANTS["work-root"]
+        elif target.startswith(root.rstrip(os.sep) + os.sep):
+            klass, grant = claude_hook.classify_project_path(target, root, os.path, axis="read")
+            if klass not in _DIRECT_READ_CLASSES:
+                continue
+        else:
+            continue
+        checked += 1
+        if not claude_hook._holds(grant, held):
+            unreadable.append({"path": target, "class": klass, "grant": grant})
+    return {"checked": checked, "unreadable": unreadable}
+
+
+def _cited_input_blocker(role: str, item: Dict[str, str]) -> str:
+    if item["class"] == "project-file":
+        remedy = (
+            "move it under resources/ (readable with read:resources), declare a "
+            "work root covering it, or grant read:governance"
+        )
+    elif item["class"] == "resources":
+        remedy = "grant read:resources (coder-like includes it) or declare a work root covering it"
+    else:
+        remedy = "grant read:work-roots"
+    return (
+        f"cited-input-unreadable: the task cites {item['path']}, which role "
+        f"{role} cannot read ({item['class']} needs {item['grant']}); {remedy}"
+    )
 
 
 def _launch_record(
@@ -239,6 +339,16 @@ def rehearse(
     record["launch"] = launch
     if not launch["ok"]:
         blockers.append(launch["detail"])
+    if project_root is not None:
+        access = cited_input_access(
+            project_root,
+            content,
+            roles[chosen].get("effective_grants") or (),
+            resolved.get("work_roots") or {},
+            capabilities_activated=bool(resolved["capabilities"]["activated"]),
+        )
+        record["cited_inputs"] = access
+        blockers.extend(_cited_input_blocker(chosen, item) for item in access["unreadable"])
     record["ok"] = not blockers
     return record
 

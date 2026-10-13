@@ -31,6 +31,7 @@ EXPECTED_CAPABILITIES = frozenset(
         "read:reports",
         "read:prompts",
         "read:work-roots",
+        "read:resources",
         "write:plan",
         "write:lifecycle",
         "write:decisions",
@@ -41,7 +42,9 @@ EXPECTED_CAPABILITIES = frozenset(
 )
 
 EXPECTED_PRESETS = {
-    "coder-like": frozenset({"read:prompts", "read:work-roots", "write:worktree", "write:reports"}),
+    "coder-like": frozenset(
+        {"read:prompts", "read:work-roots", "read:resources", "write:worktree", "write:reports"}
+    ),
     "reviewer-like": frozenset(
         {
             "read:governance",
