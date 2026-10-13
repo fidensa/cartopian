@@ -4,9 +4,11 @@ Structured writer that records a decision **and** regenerates its index in one
 invocation:
 
 - checks the body before a byte lands: a recorded ``locked`` or superseded
-  decision is immutable, a ``Ruling:`` line is required, ``Authority:`` is
-  reconciled and its limits enforced, ``Amends:`` / ``Ratifies:`` targets are
-  checked, and an operator decision's captured turns must confirm; then
+  decision is immutable, a new id may not be one an existing decision already
+  names, a ``Ruling:`` line is required, ``Authority:`` is reconciled and its
+  limits enforced, ``Amends:`` / ``Ratifies:`` / ``Carries forward:`` targets
+  and ``Closes plan:`` are checked, and an operator decision's captured turns
+  must confirm; then
 - writes ``decisions/DEC-NNN.md`` (the body, via ``--content`` /
   ``--content-file``), then
 - regenerates ``decisions/INDEX.md`` from every decision file: live rulings
@@ -198,7 +200,7 @@ def _sanitize_cell(value: str) -> str:
     return value.replace("\r", " ").replace("\n", " ").replace("|", "\\|").strip()
 
 
-def _prior_rows(index_path: Path) -> Dict[str, Dict[str, str]]:
+def prior_rows(index_path: Path) -> Dict[str, Dict[str, str]]:
     """``{DEC id: {title, date}}`` carried forward from the existing index.
 
     Title and date are descriptive and supplied by the caller at write time,
@@ -241,8 +243,9 @@ def _h1_title(text: str) -> str:
     return ""
 
 
-def _render_index(
-    root: Path, prior: Dict[str, Dict[str, str]], dec_id: str, title: str, date: str
+def render_index(
+    root: Path, prior: Dict[str, Dict[str, str]], dec_id: Optional[str] = None,
+    title: str = "", date: str = "",
 ) -> Tuple[str, int]:
     """The whole index, regenerated from every decision file on disk.
 
@@ -250,7 +253,10 @@ def _render_index(
     only what is in force, and each row carries its one-line ruling, who it
     speaks for, and any later decision that amends it. Superseded decisions
     follow as a compact history that names what replaced each one, which is
-    where every supersession is read. Returns ``(text, row count)``.
+    where every supersession is read. A decision without a ``Ruling:`` line
+    shows the first sentence of its ruling instead. ``dec_id`` is the decision
+    just written, whose title and date the caller supplies. Returns
+    ``(text, row count)``.
     """
     texts = trace_binding.decision_bodies(root)
     retired_by = trace_binding.superseders(texts)
@@ -276,7 +282,7 @@ def _render_index(
         authority = trace_binding.base_authority(text)
         if stem in ratified_by and authority == trace_binding.PM_AUTHORITY:
             authority = f"pm, ratified by {', '.join(ratified_by[stem])}"
-        ruling = _sanitize_cell(trace_binding.decision_header(text, trace_binding.RULING_HEADER))
+        ruling = _sanitize_cell(trace_binding.ruling_line(text))
         amended = ", ".join(amended_by.get(stem, []))
         live.append(
             f"| {link} | {row_title} | {ruling} | {authority} | {status} | {row_date} | {amended} |"
@@ -317,6 +323,25 @@ def _immutability_error(dec_id: str, existing: Dict[str, str]) -> Optional[str]:
     return None
 
 
+#: Headers that name other decisions by id.
+_RELATION_HEADERS = (
+    "Supersedes",
+    trace_binding.AMENDS_HEADER,
+    trace_binding.RATIFIES_HEADER,
+    trace_binding.CARRIES_HEADER,
+    trace_binding.RESTATES_HEADER,
+)
+
+
+def _naming_decisions(dec_id: str, existing: Dict[str, str]) -> List[str]:
+    """Recorded decisions whose headers name ``dec_id``."""
+    return [
+        stem for stem in sorted(existing)
+        if any(dec_id in trace_binding.decision_ids_in_header(existing[stem], header)
+               for header in _RELATION_HEADERS)
+    ]
+
+
 def _relation_error(
     dec_id: str, content: str, effective: str, authority: str, status: str,
     prior: Dict[str, str],
@@ -327,6 +352,8 @@ def _relation_error(
     decision may not retire, amend, or restate an operator ruling, may not
     ratify anything, and may not dispose of an operator request while locked;
     an open PM decision may still *propose* a disposition for the operator.
+    The same holds for closing the plan early and for carrying rulings into
+    the next plan.
     """
     retired = trace_binding.superseded_ids(prior)
     authorities = trace_binding.effective_authorities(prior)
@@ -352,8 +379,31 @@ def _relation_error(
             return "decision-ratifies-invalid", f"{target} is superseded; there is nothing left to ratify"
         if authorities[target] == trace_binding.OPERATOR_AUTHORITY:
             return "decision-ratifies-invalid", f"{target} already carries operator authority"
+    closes = trace_binding.decision_header(content, trace_binding.CLOSES_PLAN_HEADER)
+    carries = trace_binding.decision_header(content, trace_binding.CARRIES_HEADER)
+    if closes and closes.lower() != trace_binding.CLOSES_PLAN_EARLY:
+        return "decision-closes-plan-invalid", (
+            f"`{trace_binding.CLOSES_PLAN_HEADER}: {closes}`; the one value is "
+            f"`{trace_binding.CLOSES_PLAN_EARLY}`"
+        )
+    if closes and carries:
+        return "decision-closes-plan-invalid", (
+            f"{dec_id} both closes the plan and carries rulings forward; record them as two "
+            "decisions, since the carrying decision is kept into the next plan and a kept "
+            "early close would close that plan too"
+        )
+    if carries:
+        problems = trace_binding.carry_problems({**prior, dec_id: effective}, dec_id)
+        if problems:
+            return "decision-carries-invalid", "; ".join(problems)
     if authority == trace_binding.OPERATOR_AUTHORITY:
         return None
+    if status == "locked" and (closes or carries):
+        return "decision-authority-insufficient", (
+            f"{dec_id} is a PM decision; ending the plan early and choosing what outlives it "
+            "are the operator's calls. Record it `Status: open` as a proposal, or cite the "
+            "operator's captured turn with `Authority: operator`"
+        )
     if ratifies:
         return "decision-authority-insufficient", (
             f"{dec_id} is a PM decision; only an operator decision, citing the operator's "
@@ -422,6 +472,16 @@ def handler(args: argparse.Namespace) -> int:
     if immutable is not None:
         return _refuse("decision-immutable", immutable)
     prior = {stem: text for stem, text in existing.items() if stem != dec_id}
+    if dec_id not in existing:
+        naming = _naming_decisions(dec_id, existing)
+        if naming:
+            return _refuse(
+                "decision-id-reserved",
+                f"{dec_id} has no file, but {', '.join(naming)} already name it in a header "
+                "(often a decision carried from an earlier plan); a new decision under that "
+                "id would be read as the one they mean, so take the next id after the "
+                "highest in use",
+            )
 
     resolved: dict = {}
     for field, attr, fallback in _PROJECTED_FIELDS:
@@ -512,10 +572,10 @@ def handler(args: argparse.Namespace) -> int:
     # 2. Regenerate INDEX.md from the decision files through the same
     #    primitive, carrying earlier rows' titles and dates forward.
     index_path = Path(root) / "decisions" / "INDEX.md"
-    prior_rows = _prior_rows(index_path)
-    replaced = dec_id in prior_rows
-    index_text, row_count = _render_index(
-        root, prior_rows, dec_id, _sanitize_cell(args.title), args.date
+    carried_rows = prior_rows(index_path)
+    replaced = dec_id in carried_rows
+    index_text, row_count = render_index(
+        root, carried_rows, dec_id, _sanitize_cell(args.title), args.date
     )
 
     try:

@@ -63,6 +63,10 @@ If `STATE.md` says there is no active plan but current plan artifacts still exis
 
 If a previous closeout carried forward `STANDARDS.md`, treat it as seed context for the new planning cycle, not as locked requirements or a locked implementation plan.
 
+Decisions already in `decisions/` before this plan exists are standing rulings the operator carried out of a closed plan. They constrain the new requirements and plan, but they are not an implementation plan. The planning reviewer may question one; changing it is the operator's call, recorded as a new operator decision that supersedes it. Number new decisions after the highest id in use.
+
+Goals an early close left unmet reach this cycle only as outcomes the operator restates or asks to bring in. Never rebuild the closed plan's tasks, specs, or phases from them.
+
 ---
 
 ## Stage 0 — Role And Handoff Resolution

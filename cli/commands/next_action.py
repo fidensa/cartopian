@@ -27,7 +27,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract, dispatch_rehearsal, planning_status
+from cli import delivery_contract, dispatch_rehearsal, planning_status, trace_binding
 from cli.commands.resolve_config import (
     _CliError,
     _require_startup_project_keys,
@@ -561,7 +561,8 @@ def _startup_verdict(
 ) -> Dict[str, Any]:
     """Collapse the session's state into one verdict with one named action.
 
-    Precedence: a blocker wins (nothing moves while one exists); a missing
+    Precedence: a blocker wins (nothing moves while one exists); then an
+    operator's early close, which stops all work and routes to closeout; a missing
     required review names its checkpoint; an active task is continued;
     other incomplete planning names its exact remaining step;
     a ready queue is proven by rehearsal before it is called ready; a plan
@@ -584,6 +585,16 @@ def _startup_verdict(
         return verdict(
             "blocked", first["detail"], first["owner"],
             first["recovery"] + "; then rerun next-action",
+        )
+    # The operator ended the plan: no task starts or continues under it.
+    early_close = trace_binding.early_close_decision(project_path)
+    if early_close is not None:
+        return verdict(
+            "plan-complete",
+            f"{early_close} closes the plan early; its unfinished work is not dispatched",
+            "operator",
+            "Close the plan with close plan (operator confirmation required).",
+            early_close=early_close,
         )
     if not planning["complete"] and planning["checkpoint"] is not None:
         return verdict(

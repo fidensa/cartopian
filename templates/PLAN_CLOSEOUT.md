@@ -9,7 +9,11 @@
 
 ## Closeout status
 
-State whether this was a full completion or another operator-approved closeout after all active work was resolved. Name the evidence used to close the plan.
+State whether this was a full completion, an operator early close (name the `Closes plan: early` decision), or another operator-approved closeout after all active work was resolved. Name the evidence used to close the plan.
+
+## Unfinished goals
+
+Early close only. The outcomes the plan did not deliver, restated as goals for the next plan, without task ids, specs, or the old implementation path.
 
 ## Archive contents
 
@@ -19,6 +23,7 @@ List the artifacts copied into this archive.
 
 - `STANDARDS.md`: `<carried forward | reset>`
 - `resources/`: `<carried forward (default) | carried forward, operator pruned: <files>>`
+- `decisions/`: `<none carried (default) | carried by DEC-NNN: DEC-NNN, ...>`
 
 ## Not carried forward
 
@@ -26,7 +31,7 @@ List plan refs, tasks, specs, requirements, or engineering assumptions that shou
 
 ## Live decisions
 
-Name any decisions that still govern the project. If any prior decision should no longer apply, create a new decision that supersedes it rather than editing this archive.
+Name the decisions carried forward, which are the only ones that still govern the project after reset. Every other decision in this archive is history. If a carried decision should no longer apply, create a new operator decision that supersedes it rather than editing this archive.
 
 ## Next planning seed
 

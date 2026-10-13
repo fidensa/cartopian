@@ -22,7 +22,7 @@ The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; 
 
 - The project directory exists with the correct Cartopian structure.
 - The project has an active `IMPLEMENTATION_PLAN.md`.
-- The current plan is complete: no tasks remain in `tasks/open/`, `tasks/in-progress/`, or `tasks/in-review/`.
+- The current plan is complete: no tasks remain in `tasks/open/`, `tasks/in-progress/`, or `tasks/in-review/` — or the operator has ruled to close it early (Stage 0, step 4).
 
 ---
 
@@ -31,7 +31,8 @@ The full `cartopian://protocol/CONVENTIONS` remains the authoritative contract; 
 1. Read the project's `cartopian.toml` and the workspace `cartopian.toml`.
 2. Read `STATE.md`.
 3. Confirm the operator wants to close the current plan, not revise it.
-4. Explain that `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phases, tasks, specs, reviews, prompts, reports, and decisions will be removed from the live project surface during reset.
+4. **Early close.** If work remains and the operator wants to end the plan anyway (for example, it has drifted and a fresh plan should take over the remaining goals), that is one operator ruling, not a ruling per task. Confirm no handoff is running, then record it: `cartopian write-decision` with `Closes plan: early`, `Authority: operator`, a `Ruling:` line, and an `Operator request evidence for: project:project: <capture-id>` marker citing the operator's captured turn (`cartopian lookup-evidence`). Never record it as a PM decision; a PM may only propose it `Status: open`. From then on `close-audit` lists the remaining work under `left_unfinished` instead of blocking, and `dispatch` refuses task handoffs. Do not finish, move, or individually remove the unfinished tasks.
+5. Explain that `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, phases, tasks, specs, reviews, prompts, reports, and decisions will be removed from the live project surface during reset.
 5. Explain that `cartopian.toml` remains live across the reset. The optional `archive/PLAN-NNN/` directory (if the operator chose to archive at Stage 3) also remains and holds the closed plan's snapshot, including its `decisions/`. The project-root `CONTINUITY.md` summary written at Stage 3b also survives the reset untouched.
 
 Do not proceed unless the operator explicitly confirms plan closeout.
@@ -103,6 +104,8 @@ cartopian close-audit <project-path>
 
     A plan authored before the delivery gate carries no `## Delivery contract` section and reports `delivery-contract-undeclared`. That is a protocol migration, not an ad-hoc repair: the requirement landed with the `v0.12.0` entry in `cartopian://protocol/CHANGELOG`, and a project still marked below `v0.12.0` should not have reached closeout at all — `cartopian validate-task-readiness` fails its `project-schema-current` check and `cartopian next-action` raises a migration blocker first. If you are seeing this finding on an unmigrated project, stop closeout and run the `migrate project` skill for the `v0.12.0` entry: declare the section through `cartopian write-plan`, then advance the marker with `cartopian migrate-config <project-path> --apply`, which refuses while the section is still undeclared. Rerun close-audit afterwards.
 
+- **`early_close` / `left_unfinished`:** when an operator early close stands, `blocking_reasons` is empty and `left_unfinished` lists what the plan leaves undone. Relay it to the operator; it becomes the goals section of the closeout and project summary (Stages 3.2 and 3b), never a task list for the next plan. Stale prompts and unresolved reports still appear in their own fields and are cleared at Stage 4.1.
+
 - **`closable`:** the aggregator's verdict. When `blocking_reasons` is empty, `closable` is `true` and closeout may proceed to Stage 2.
 
 - **Informational counts (`open_count`, `in_progress_count`, `in_review_count`):** surface to the operator alongside any non-blocking observations. These do not by themselves block closeout when their corresponding `blocking_reasons` entries are absent.
@@ -119,16 +122,22 @@ Also compare the task identifiers reported under `tasks/done/` to the current ph
 
 ## Stage 2 - Operator Choices
 
-Ask the operator three closeout questions:
+Ask the operator four closeout questions:
 
 1. **Archive:** "Do you want to archive the completed plan before reset?"
 2. **Standards:** "Should `STANDARDS.md` carry forward as the seed for the next plan, or reset to a blank project standards file?"
 3. **Resources:** "The project's supporting artifacts in `resources/` carry forward to the next plan by default (an archive also snapshots them). Keep them all, or name any the operator wants pruned?"
+4. **Decisions:** "Every decision is cleared at reset, so the next plan works out its own implementation choices. Should any standing rulings carry forward?" Offer three answers: start clean (the default); keep the rulings the PM proposes; or go through the proposed list, choosing keep or drop for each.
+
+   Propose only standing constraints: product, policy, or scope rulings that would still bind a fresh plan built from the same goals. Do not propose implementation choices, task routing, review-finding assignments, or rulings about this plan's own process; the next plan's PM and reviewer decide those afresh. `write-decision` refuses to carry a plan-scoped ruling anyway (one that binds `task:` or `planning:` evidence, disposes of operator requests, or closes the plan), and a ruling travels with its amendments. List each proposal by id with its index ruling line, a dozen or so at most; never walk the operator through the whole index.
+
+   When the operator keeps any, record one operator decision with `Carries forward: DEC-NNN[, ...]`, a `Ruling:` line, and the operator's captured turn as evidence. It must not also carry `Closes plan:`. Carrying a PM decision ratifies it. Recommend an archive when decisions are dropped, since the archive is then the only copy.
 
 Defaults:
 
 - Archive: no.
 - Standards: carry forward only if the operator says so.
+- Decisions: carry none.
 - Resources: carry forward. `reset-plan` never clears `resources/`; when the operator asks for an archive, `archive-plan` snapshots `resources/` along with the plan artifacts. Pruning is **operator-performed** (no mediated command deletes resources) and happens only for files the operator explicitly names.
 
 Requirements and implementation plans never carry forward as live artifacts. The next planning cycle must produce fresh `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md`.
@@ -160,8 +169,10 @@ Compose the `CLOSEOUT.md` body from `cartopian://templates/PLAN_CLOSEOUT.md`. Pa
 The closeout summary records:
 
 - Plan identity and completion date.
-- Whether this was a full completion or another operator-approved closeout after all active work was resolved.
+- Whether this was a full completion, an operator early close (name the decision), or another operator-approved closeout after all active work was resolved.
 - Archive contents.
+- For an early close, what was left unfinished, restated as goals: the outcomes still wanted, drawn from `left_unfinished`. Do not copy task ids, task breakdowns, specs, or the old implementation path — the next plan derives its own.
+- The decisions carried forward, if any, by id and ruling.
 - The carry-forward choice for `STANDARDS.md`.
 - The `resources/` disposition: carried forward (the default), snapshotted in this archive, and any files the operator chose to prune.
 - Any plan refs or work intentionally not carried forward.
@@ -205,7 +216,7 @@ Every close leaves one plain project summary at the project root so the next pla
 
 Run it **before** Stage 4 — reset destroys the live artifacts the summary is composed from.
 
-Compose plain Markdown. There is no format header, no schema, no table, no index, and no id grammar: write for a person who will read it months from now. Keep it to what a future session actually needs — what this plan set out to do, what it delivered, what it deliberately did not, and anything still standing that the next plan should know. Do not paste task lists, review transcripts, prompt bodies, agent names, or timing telemetry.
+Compose plain Markdown. There is no format header, no schema, no table, no index, and no id grammar: write for a person who will read it months from now. Keep it to what a future session actually needs — what this plan set out to do, what it delivered, what it deliberately did not, any goals an early close left unmet (as outcomes, not tasks), and anything still standing that the next plan should know. Do not paste task lists, review transcripts, prompt bodies, agent names, or timing telemetry.
 
 ```text
 cartopian write-continuity <project-root> --content <summary>
@@ -245,7 +256,7 @@ cartopian delete-report <project-path>/reports/<file>.md
 Run `cartopian reset-plan` to fold the rest of Stage 4 into one fail-closed pass:
 
 ```
-cartopian reset-plan <project-root> [--carry-standards]
+cartopian reset-plan <project-root> [--carry-standards] [--carry DEC-NNN]
 ```
 
 `reset-plan` (FR-005, the OQ-003 close-surface verb):
@@ -253,6 +264,7 @@ cartopian reset-plan <project-root> [--carry-standards]
 - **Removes** the live plan artifacts — `REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md`, and every file in `phases/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`. (It does **not** touch `prompts/` or `reports/` — those were cleared in 4.1 — and never clears `resources/`, whose contents carry forward.)
 - **Recreates** the empty lifecycle directories (`phases/`, `prompts/`, `reports/`, `tasks/{open,in-progress,in-review,done}/`, `specs/`, `reviews/`, `decisions/`), and ensures `resources/` exists.
 - **Conditionally reseeds** `STANDARDS.md` from the carry-forward choice in Stage 2: pass `--carry-standards` to **keep** it as seed context; omit the flag to reseed it to a fresh project seed. The reseed write goes through the same mediated-write guards as the `write-*` commands.
+- **Keeps carried decisions** only when `--carry` names the operator's `Carries forward:` decision from Stage 2: that decision, its targets, and any decision a kept one restates stay byte for byte, and `decisions/INDEX.md` is regenerated over them. The reset rechecks the carry first and refuses (`carry-invalid`) with nothing removed if it no longer holds. Omit `--carry` when the operator chose to start clean.
 
 The command supplies only the project root — the PM never names a path to remove, create, or reseed; every target is a fixed, code-owned member of the close-surface allowlist. A symlink, foreign subdirectory, or out-of-root target aborts the whole pass with nothing removed, created, or written.
 
@@ -317,6 +329,7 @@ None.
 
 - Archive: <none | archive/PLAN-NNN/>
 - Engineering carry-forward: <yes | no>
+- Decisions carried: <none | DEC-NNN, ...>
 - Resources: <carried forward | carried forward, operator pruned <files>>
 
 ## What to do next
@@ -336,5 +349,6 @@ Print a concise closeout summary:
 - That a project summary was written to `CONTINUITY.md`, and that it survives the reset.
 - What was reset (including reports/).
 - Whether project standards carried forward.
+- Which decisions carried forward, if any.
 - Any unresolved decision follow-up.
 - The exact next action: run `skills/plan-project.md`.

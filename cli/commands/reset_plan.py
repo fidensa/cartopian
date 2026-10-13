@@ -16,6 +16,11 @@ In one fail-closed pass it:
 - **G15 — conditionally reseeds** ``STANDARDS.md`` per the carry-forward flag.
   The reseed write goes through the mediated-write primitive; carry-forward
   leaves the file untouched.
+- **Carries rulings forward** only on the operator's word: ``--carry DEC-NNN``
+  names an operator decision whose ``Carries forward:`` header lists the
+  rulings that outlive the plan. Those decisions (and any decision a kept one
+  restates) stay in ``decisions/`` byte for byte, and ``INDEX.md`` is
+  regenerated over them. Without ``--carry`` every decision is cleared.
 
 Fail-closed allowlist guards: the target must be a real Cartopian project root
 (``cartopian.toml`` present); every reset target is a member of a fixed,
@@ -39,8 +44,10 @@ import stat
 import sys
 from datetime import date
 from pathlib import Path
-from typing import List
+from typing import List, Set, Tuple
 
+from cli import trace_binding
+from cli.commands import write_decision
 from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 from cli.mediated_write import _CONFIG_BASENAMES, GuardRefusal, mediated_write
@@ -120,6 +127,17 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Keep STANDARDS.md in place instead of reseeding it.",
     )
+    subparser.add_argument(
+        "--carry",
+        action="append",
+        default=[],
+        metavar="DEC-NNN",
+        help=(
+            "Keep this operator decision and the rulings its `Carries forward:` "
+            "header names in decisions/ (repeatable). Without it, every decision "
+            "is cleared."
+        ),
+    )
 
 
 def _assert_in_root(real_root: str, candidate: Path, rule: str) -> None:
@@ -131,7 +149,46 @@ def _assert_in_root(real_root: str, candidate: Path, rule: str) -> None:
         raise _ResetRefusal("outside-allowlist", f"target escapes project root: {candidate}")
 
 
-def _plan_removals(root: Path, real_root: str) -> List[Path]:
+def _plan_carry(root: Path, carriers: List[str]) -> Set[str]:
+    """The decision files the operator's carry decisions keep, or refuse.
+
+    Each named carrier must be a current, locked decision that speaks for the
+    operator in its own text and has a ``Carries forward:`` header whose
+    targets still hold (``trace_binding.carry_problems``): the carry is
+    checked again here because rulings may have changed since it was written.
+    The kept set is the carriers, their targets, and every decision a kept one
+    restates, whose pinned text the restating decision reads as its own.
+    """
+    if not carriers:
+        return set()
+    texts = trace_binding.decision_bodies(root)
+    retired = trace_binding.superseded_ids(texts)
+    keep: Set[str] = set()
+    for carrier in carriers:
+        text = texts.get(carrier)
+        if text is None:
+            raise _ResetRefusal("carry-invalid", f"{carrier} is not a recorded decision")
+        if not trace_binding.decision_header(text, trace_binding.CARRIES_HEADER):
+            raise _ResetRefusal(
+                "carry-invalid", f"{carrier} has no `{trace_binding.CARRIES_HEADER}:` header"
+            )
+        if not trace_binding.is_current_locked_decision(carrier, text, retired):
+            raise _ResetRefusal("carry-invalid", f"{carrier} is not a ruling in force")
+        if trace_binding.base_authority(text) != trace_binding.OPERATOR_AUTHORITY:
+            raise _ResetRefusal(
+                "carry-invalid",
+                f"{carrier} does not speak for the operator; what outlives the plan is the "
+                "operator's call",
+            )
+        problems = trace_binding.carry_problems(texts, carrier)
+        if problems:
+            raise _ResetRefusal("carry-invalid", f"{carrier}: " + "; ".join(problems))
+        keep.add(carrier)
+        keep.update(trace_binding.decision_ids_in_header(text, trace_binding.CARRIES_HEADER))
+    return trace_binding.restatement_closure(trace_binding.raw_decision_files(root), keep)
+
+
+def _plan_removals(root: Path, real_root: str, keep: Set[str] = frozenset()) -> List[Path]:
     """Scan all reset targets and return the regular files to remove.
 
     Runs the full fail-closed scan *before* any unlink: a symlink, a foreign
@@ -164,6 +221,8 @@ def _plan_removals(root: Path, real_root: str) -> List[Path]:
             if not entry.is_file():
                 raise _ResetRefusal("non-regular", f"unexpected non-file in reset dir: {entry}")
             _assert_in_root(real_root, entry, "symlink-entry")
+            if rel == "decisions" and entry.suffix == ".md" and entry.stem in keep:
+                continue
             to_remove.append(entry)
 
     return to_remove
@@ -226,19 +285,23 @@ def _plan_reseeds(root: Path, args: argparse.Namespace):
     return seeds
 
 
-def _preflight(root: Path, real_root: str, args: argparse.Namespace) -> List[Path]:
+def _preflight(
+    root: Path, real_root: str, args: argparse.Namespace
+) -> Tuple[List[Path], Set[str]]:
     """Validate the entire reset plan before any destructive operation.
 
     Covers removable live artifacts, the lifecycle directory (re)creations, and
-    every reseed destination that a reseed will write to. Raises ``_ResetRefusal``
-    on the first violation; on success returns the regular files to remove.
+    every reseed destination that a reseed will write to, and the operator's
+    carry decisions. Raises ``_ResetRefusal`` on the first violation; on
+    success returns the regular files to remove and the decisions kept.
     """
-    to_remove = _plan_removals(root, real_root)
+    keep = _plan_carry(root, list(getattr(args, "carry", None) or []))
+    to_remove = _plan_removals(root, real_root, keep)
     for rel in RESET_ENSURE_DIRS:
         _preflight_ensure_dir(real_root, root, rel)
     for _dest_kind, target, _seed in _plan_reseeds(root, args):
         _preflight_reseed_dest(real_root, target)
-    return to_remove
+    return to_remove, keep
 
 
 def handler(args: argparse.Namespace) -> int:
@@ -260,10 +323,15 @@ def handler(args: argparse.Namespace) -> int:
     # artifacts, directory (re)creations, and every reseed destination. If this
     # refuses, nothing is removed, created, or written.
     try:
-        to_remove = _preflight(root, real_root, args)
+        to_remove, keep = _preflight(root, real_root, args)
     except _ResetRefusal as refusal:
         _stderr("guard", f"{refusal.rule}: {refusal.detail}")
         return EXIT_FAIL
+
+    # The kept decisions' index rows keep their titles and dates; read them
+    # before Phase 2 removes the index.
+    carried = sorted(keep)
+    carried_rows = write_decision.prior_rows(root / "decisions" / "INDEX.md") if carried else {}
 
     # Phase 1b — close the effectiveness window before the surface is cleared.
     # The superseding summaries are derived from the retained task, review, and
@@ -312,6 +380,15 @@ def handler(args: argparse.Namespace) -> int:
             return EXIT_FAIL
         reseeded.append(target)
 
+    # Phase 5 — regenerate the decision index over the carried rulings.
+    if carried:
+        index_text, _rows = write_decision.render_index(root, carried_rows)
+        try:
+            mediated_write(root, "decision", "INDEX.md", index_text)
+        except GuardRefusal as refusal:
+            _stderr("guard", f"{refusal.rule}: {refusal.detail}")
+            return EXIT_FAIL
+
     emit_record({
         "action": "reset-plan",
         "details": {
@@ -321,6 +398,7 @@ def handler(args: argparse.Namespace) -> int:
             "recreated_dirs": recreated,
             "reseeded": reseeded,
             "carry_standards": bool(args.carry_standards),
+            "carried_decisions": carried,
             "effectiveness_closeout": closeout_evidence,
         },
     })

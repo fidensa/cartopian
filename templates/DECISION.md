@@ -21,6 +21,14 @@ the plan while locked. When the header is omitted, `write-decision` stamps
 lists locked PM decisions for the operator; an operator decision adopts them
 with `Ratifies: DEC-NNN[, DEC-NNN]`.
 
+Two headers belong to plan close and only to operator decisions.
+`Closes plan: early` ends the plan with its work unfinished.
+`Carries forward: DEC-NNN[, DEC-NNN]` names the standing rulings that
+`reset-plan --carry` keeps for the next plan. A carried ruling must be in
+force and not plan-scoped: it may not bind `task:` or `planning:` evidence,
+dispose of operator requests, or close the plan. A ruling and its amendments
+carry together. One decision does not do both.
+
 Ordinary decision prose is PM-derived guidance. A decision names operator
 evidence only by reference to turns the host intake adapter captured, with
 the exact structural marker below. The marker binds one or more capture

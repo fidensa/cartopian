@@ -60,6 +60,7 @@ from cli import (
     request_trace,
     rework_review,
     source_guidance,
+    trace_binding,
 )
 from cli.commands import handoff_packet
 from cli.commands._writers import PROMPT_ID_RE
@@ -607,6 +608,17 @@ def handler(args: argparse.Namespace) -> int:
     if not project_toml.is_file():
         stderr_error(f"project config not found: {project_toml}")
         return EXIT_ENV
+
+    # The operator ended the plan: nothing more runs under it.
+    if task_path is not None:
+        early_close = trace_binding.early_close_decision(project_root)
+        if early_close is not None:
+            stderr_guard(
+                f"plan-closed-early: {early_close} ends the plan with its work unfinished; "
+                "no task is dispatched under it. Close the plan with close plan, or have the "
+                "operator supersede that decision to resume"
+            )
+            return EXIT_FAIL
 
     try:
         resolved = resolve_project_configuration(project_root)

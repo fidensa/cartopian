@@ -505,6 +505,15 @@ RATIFIES_HEADER = "Ratifies"
 #: The one-line summary of what was ruled, projected into the index.
 RULING_HEADER = "Ruling"
 RULING_CAP = 240
+#: An operator decision that ends the plan before its work is done.
+CLOSES_PLAN_HEADER = "Closes plan"
+CLOSES_PLAN_EARLY = "early"
+#: An operator decision naming the rulings that outlive the plan at reset.
+CARRIES_HEADER = "Carries forward"
+#: Evidence units that name one plan's tasks or checkpoints. A later plan
+#: reuses those identifiers for unrelated work, so a ruling bound to them is
+#: plan-scoped and cannot carry forward.
+PLAN_SCOPED_UNITS: Tuple[str, ...] = ("task", "planning")
 
 
 def decision_ids_in_header(text: str, name: str) -> List[str]:
@@ -551,6 +560,9 @@ def ratifications(texts: Dict[str, str]) -> Dict[str, List[str]]:
     Only a current, locked decision whose own text carries operator authority
     ratifies; ratification does not chain, so a ratified PM decision cannot in
     turn ratify another.
+
+    Carrying a decision forward is adopting it, so ``Carries forward:`` targets
+    count as ratified by the decision that carries them.
     """
     retired = superseded_ids(texts)
     out: Dict[str, List[str]] = {}
@@ -560,7 +572,9 @@ def ratifications(texts: Dict[str, str]) -> Dict[str, List[str]]:
             continue
         if base_authority(text) != OPERATOR_AUTHORITY:
             continue
-        for target in decision_ids_in_header(text, RATIFIES_HEADER):
+        targets = decision_ids_in_header(text, RATIFIES_HEADER)
+        targets += [t for t in decision_ids_in_header(text, CARRIES_HEADER) if t not in targets]
+        for target in targets:
             if target != stem:
                 out.setdefault(target, []).append(stem)
     return out
@@ -603,6 +617,191 @@ def effective_authorities(texts: Dict[str, str]) -> Dict[str, str]:
 
 def carries_out_of_plan(text: str) -> bool:
     return any(line.strip().startswith(OUT_OF_PLAN_MARKER) for line in text.splitlines())
+
+
+_LIST_MARKER_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\[`\"'])")
+_BOLD_LEAD_RE = re.compile(r"^\*\*(.+?)\*\*\s*(.*)$")
+#: Tighter than ``RULING_CAP``: a derived line stands in for one, and every
+#: index row it lengthens is read by every session that opens the index.
+DERIVED_RULING_CAP = 160
+
+
+def ruling_line(text: str) -> str:
+    """The ``Ruling:`` header, or for a decision without one, its first sentence.
+
+    A decision recorded before the header existed still deserves a readable
+    index row, and it cannot gain the header in place. The stand-in is the
+    first sentence of ``## Decision``, skipping lead-ins that end in a colon,
+    quotations, and evidence or disposition markers. It is a projection for
+    readers, never a ruling: nothing authorizes from it.
+    """
+    declared = decision_header(text, RULING_HEADER)
+    if declared:
+        return declared
+    section: Optional[List[str]] = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if section is not None:
+                break
+            if line[3:].strip().lower() == "decision":
+                section = []
+            continue
+        if section is not None:
+            section.append(line)
+    collected: List[str] = []
+    for line in section or []:
+        stripped = line.strip()
+        if not stripped:
+            if collected:
+                break
+            continue
+        if collected and _LIST_MARKER_RE.match(stripped):
+            break
+        if not collected and (
+            stripped.endswith(":")
+            or stripped.startswith((">", "#", "```", "|", OUT_OF_PLAN_MARKER))
+            or stripped.lower().startswith("operator request evidence for:")
+        ):
+            continue
+        collected.append(_LIST_MARKER_RE.sub("", stripped) if not collected else stripped)
+    paragraph = " ".join(" ".join(collected).split())
+    # A bold lead ("**Language.** Python 3.11 ...") names the topic; the ruling
+    # is the sentence after it, so keep both.
+    lead = _BOLD_LEAD_RE.match(paragraph)
+    if lead and lead.group(2):
+        rest = lead.group(2)
+        joiner = " " if rest[0] in "\u2014-:;,(" else ": "
+        paragraph = f"{lead.group(1).rstrip('.:')}{joiner}{rest}"
+    paragraph = paragraph.replace("**", "").replace("__", "")
+    sentence = _SENTENCE_END_RE.split(paragraph, maxsplit=1)[0]
+    if len(sentence) > DERIVED_RULING_CAP:
+        sentence = sentence[: DERIVED_RULING_CAP - 3].rsplit(" ", 1)[0] + "..."
+    return sentence
+
+
+def plan_scoped_reasons(decision_id: str, text: str) -> List[str]:
+    """Why a decision's effective text binds only the plan it was made in.
+
+    A ruling that closes the plan, disposes of the plan's operator requests,
+    or binds evidence to the plan's tasks or planning checkpoints means nothing
+    in the next plan, and could mean the wrong thing there, since the next plan
+    reuses those identifiers for unrelated work.
+    """
+    from cli.evidence_resolver import decision_text_references  # local: import cycle
+
+    reasons: List[str] = []
+    if decision_header(text, CLOSES_PLAN_HEADER):
+        reasons.append("it closes the plan")
+    if carries_out_of_plan(text):
+        reasons.append("it disposes of this plan's operator requests")
+    try:
+        refs = decision_text_references(decision_id, text)
+    except request_trace.RequestRefusal:
+        reasons.append("its evidence markers are malformed")
+        refs = []
+    units = sorted({
+        f"{ref.unit.kind}:{ref.unit.identifier}" for ref in refs if ref.unit.kind in PLAN_SCOPED_UNITS
+    })
+    if units:
+        reasons.append(f"it binds evidence to this plan's {', '.join(units)}")
+    return reasons
+
+
+def early_close_decision(project_root: Path) -> Optional[str]:
+    """The current operator decision that closes the plan early, if one does.
+
+    ``Closes plan: early`` is the operator ruling that the plan ends with its
+    remaining work unfinished. Only a current, locked decision speaking for
+    the operator counts; a PM decision may propose it as ``open``.
+    """
+    texts = decision_bodies(project_root)
+    retired = superseded_ids(texts)
+    authorities = effective_authorities(texts)
+    for stem in sorted(texts):
+        text = texts[stem]
+        if not is_current_locked_decision(stem, text, retired):
+            continue
+        if authorities[stem] != OPERATOR_AUTHORITY:
+            continue
+        if decision_header(text, CLOSES_PLAN_HEADER).lower() == CLOSES_PLAN_EARLY:
+            return f"decisions/{stem}.md"
+    return None
+
+
+def restatement_closure(raw: Dict[str, bytes], ids: Set[str]) -> Set[str]:
+    """``ids`` plus every decision they restate, link by link."""
+    closure = set(ids)
+    pending = sorted(closure)
+    while pending:
+        current = pending.pop()
+        try:
+            restated = restated_decision(raw[current].decode("utf-8"))
+        except (KeyError, UnicodeDecodeError, RestatementError):
+            restated = None
+        if restated is not None and restated[0] not in closure:
+            closure.add(restated[0])
+            pending.append(restated[0])
+    return closure
+
+
+def carried_decision_ids(project_root: Path) -> Set[str]:
+    """Decisions an operator carry keeps: carriers, targets, restated text.
+
+    After a reset that carried rulings forward these are the whole of
+    ``decisions/``, and they are the project's standing rulings rather than
+    evidence that a plan exists.
+    """
+    raw = raw_decision_files(project_root)
+    texts = decision_bodies(project_root)
+    retired = superseded_ids(texts)
+    kept: Set[str] = set()
+    for stem, text in texts.items():
+        targets = decision_ids_in_header(text, CARRIES_HEADER)
+        if not targets or not is_current_locked_decision(stem, text, retired):
+            continue
+        if base_authority(text) != OPERATOR_AUTHORITY:
+            continue
+        kept.add(stem)
+        kept.update(targets)
+    return restatement_closure(raw, kept)
+
+
+def carry_problems(texts: Dict[str, str], carrier: str) -> List[str]:
+    """Why ``carrier``'s ``Carries forward:`` list cannot outlive the plan.
+
+    ``texts`` holds every decision with ``carrier`` in it. Each target must be
+    a ruling in force and not plan-scoped, and a ruling travels with its
+    amendments: carrying one without the other would change what it says.
+    The carrier is kept too, as the record of the operator's choice, so it
+    must not be plan-scoped either. An empty list means the carry holds.
+    """
+    targets = decision_ids_in_header(texts[carrier], CARRIES_HEADER)
+    if not targets:
+        return [f"`{CARRIES_HEADER}:` names no decision"]
+    retired = superseded_ids(texts)
+    amended_by = amendments(texts)
+    kept = set(targets) | {carrier}
+    problems: List[str] = []
+    for target in [carrier] + targets:
+        if target != carrier:
+            if target not in texts:
+                problems.append(f"{target} is not a recorded decision")
+                continue
+            if not is_current_locked_decision(target, texts[target], retired):
+                problems.append(f"{target} is not a ruling in force (superseded, or not locked)")
+                continue
+            problems.extend(
+                f"{target} has an amendment, {amender}, that is not carried; carry both or neither"
+                for amender in amended_by.get(target, []) if amender not in kept
+            )
+        text = texts[target]
+        problems.extend(f"{target} is plan-scoped: {reason}" for reason in plan_scoped_reasons(target, text))
+        problems.extend(
+            f"{target} amends {base}, which is not carried; carry both or neither"
+            for base in decision_ids_in_header(text, AMENDS_HEADER) if base not in kept
+        )
+    return problems
 
 
 def authority_findings(project_root: Path) -> Dict[str, List[Dict[str, Any]]]:

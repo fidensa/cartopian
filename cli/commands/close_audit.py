@@ -24,14 +24,6 @@ _CRITERION_ID_RE = re.compile(
     r"|REPORT(?:-PLAN)?-[A-Za-z0-9-]+"
     r")\b"
 )
-_PLAN_DIRS = (
-    "phases",
-    "prompts",
-    "reports",
-    "reviews",
-    "decisions",
-    "specs",
-)
 _ACTIVE_STATUSES = ("open", "in-progress", "in-review")
 
 
@@ -62,19 +54,11 @@ def _iter_matching_files(directory: Path, pattern: re.Pattern[str]) -> Iterable[
 
 
 def _has_plan_artifacts(project_root: Path) -> bool:
-    if (project_root / "IMPLEMENTATION_PLAN.md").is_file():
-        return True
-    for dirname in _PLAN_DIRS:
-        directory = project_root / dirname
-        if not directory.is_dir():
-            continue
-        for path in directory.iterdir():
-            if path.is_file() and path.suffix == ".md":
-                return True
-    for status in ("open", "in-progress", "in-review", "done"):
-        if any(_iter_matching_files(project_root / "tasks" / status, _TASK_ID_RE)):
-            return True
-    return False
+    # One definition of "a plan exists", shared with compose-state: the seeded
+    # index and rulings carried out of a closed plan are not a plan.
+    from cli.commands.compose_state import _has_plan_artifacts as has_plan
+
+    return has_plan(project_root)
 
 
 def _collect_active_tasks(project_root: Path) -> List[Dict[str, str]]:
@@ -201,6 +185,45 @@ def _collect_unmet_exit_criteria(project_root: Path) -> List[str]:
     return unmet
 
 
+def _task_title(task_path: str) -> str:
+    try:
+        lines = Path(task_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    for line in lines:
+        if line.startswith("# "):
+            title = line[2:].strip()
+            return title.split(":", 1)[1].strip() if ":" in title else title
+    return ""
+
+
+def _unfinished_work(
+    open_tasks: List[Dict[str, str]],
+    unmet_exit_criteria: List[str],
+    delivery: Dict[str, Any],
+    unclaimed_requests: List[Dict[str, Any]],
+) -> List[str]:
+    """What an early close leaves undone, one line per item, in audit order.
+
+    Stale prompts and unresolved reports are handoff state, not work: close
+    plan clears them, so they are not listed.
+    """
+    items: List[str] = []
+    for task in open_tasks:
+        title = _task_title(task["path"])
+        items.append(f"{task['task_id']} ({task['status']})" + (f": {title}" if title else ""))
+    items.extend(unmet_exit_criteria)
+    items.extend(
+        f"delivery {finding['code']}: {finding['detail']}"
+        for finding in delivery.get("ordered_findings", [])
+    )
+    items.extend(
+        f"operator request {item['identity']} {item['content_identity']}, claimed by no task"
+        for item in unclaimed_requests if not item["disposition"]
+    )
+    return items
+
+
 def _no_plan_record(project_id: str, project_path: Path) -> Dict[str, Any]:
     return {
         "project_id": project_id,
@@ -214,6 +237,8 @@ def _no_plan_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         "unresolved_reports": None,
         "unmet_exit_criteria": None,
         "delivery": None,
+        "early_close": None,
+        "left_unfinished": None,
         "blocking_reasons": None,
     }
 
@@ -306,6 +331,16 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
             "task — claim it in a task or record `Out-of-plan request: "
             f"{item['content_identity']}` in an operator decision"
         )
+    # The operator may end the plan before its work is done. Their ruling
+    # turns every unfinished item from a blocker into a record of what was
+    # left, which closeout carries into the next plan as goals, never as tasks.
+    early_close = trace_binding.early_close_decision(project_path)
+    left_unfinished: List[str] = []
+    if early_close is not None and blocking_reasons:
+        left_unfinished = _unfinished_work(
+            open_tasks, unmet_exit_criteria, delivery, unclaimed_requests
+        )
+        blocking_reasons = []
 
     return {
         "project_id": project_id,
@@ -320,5 +355,7 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         "unmet_exit_criteria": unmet_exit_criteria,
         "delivery": delivery,
         "unclaimed_requests": unclaimed_requests,
+        "early_close": early_close,
+        "left_unfinished": left_unfinished,
         "blocking_reasons": blocking_reasons,
     }

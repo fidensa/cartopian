@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract, planning_status
+from cli import delivery_contract, planning_status, trace_binding
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -53,6 +53,7 @@ def _iter_task_paths(project_path: Path, status: str) -> List[Path]:
 def _has_plan_artifacts(project_path: Path) -> bool:
     if (project_path / "IMPLEMENTATION_PLAN.md").is_file():
         return True
+    carried: Optional[set] = None
     for dirname in _PLAN_DIRS:
         directory = project_path / dirname
         if not directory.is_dir():
@@ -60,10 +61,17 @@ def _has_plan_artifacts(project_path: Path) -> bool:
         for path in directory.iterdir():
             if not (path.is_file() and path.suffix == ".md"):
                 continue
-            if dirname == "decisions" and path.name == "INDEX.md":
-                # The scaffold seeds decisions/INDEX.md; the empty index is
-                # scaffolding, not evidence of a plan.
-                continue
+            if dirname == "decisions":
+                if path.name == "INDEX.md":
+                    # The scaffold seeds decisions/INDEX.md; the empty index is
+                    # scaffolding, not evidence of a plan.
+                    continue
+                # Rulings the operator carried out of a closed plan are the
+                # project's standing rulings, not a plan of their own.
+                if carried is None:
+                    carried = trace_binding.carried_decision_ids(project_path)
+                if path.stem in carried:
+                    continue
             return True
     for status in _TASK_STATUSES:
         if _iter_task_paths(project_path, status):

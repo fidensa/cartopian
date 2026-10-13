@@ -13,7 +13,8 @@ given, and not even a trailing newline is added.
 The summary belongs to plan close alone, so the write is refused until
 ``close-audit`` reports the plan closable — the verdict ``close plan``
 requires before it reaches the summary stage — and the plan is complete as
-``next-action`` defines it. A session boundary is not a plan close: an open
+``next-action`` defines it, or the operator has closed it early
+(``Closes plan: early``). A session boundary is not a plan close: an open
 plan, an unstarted one, one with a phase whose tasks were never generated, and
 a project with no plan at all are all refused, so the summary can never stand
 in for a session handoff. Beyond that readiness check the command reads no
@@ -61,7 +62,7 @@ def _plan_close_refusal(root: Path) -> Optional[str]:
             f"{reasons[0]}"
         )
     gap = next_action.completion_gap(root)
-    if gap is not None:
+    if gap is not None and record.get("early_close") is None:
         return f"the plan is not complete: {gap}"
     return None
 
