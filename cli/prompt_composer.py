@@ -1732,6 +1732,13 @@ def _render_prompt(
         "finish inside this session is a blocker to report, not work to "
         "leave running."
     )
+    verification_lines.append(
+        "- A search or file count quoted as evidence names the command that "
+        "produced it and the scope it covered. Agent shells may shadow bare "
+        "`grep` and `find` with tools that skip git-ignored, hidden, or "
+        "binary files; use `command grep` / `command find`, or state the "
+        "exclusions, when a count must cover the whole tree."
+    )
     if guidance_record["outcome"] == "valid":
         verification_lines.append(
             "- The report's Source evidence section must name the non-empty "

@@ -29,6 +29,7 @@ Normalize the fixture data files to one record per line.
 
 - Evidence gate: n/a — mechanical normalization verified by inspection.
 - Run every completion-critical check in the foreground and wait for it to finish before writing the report. A run too slow to finish inside this session is a blocker to report, not work to leave running.
+- A search or file count quoted as evidence names the command that produced it and the scope it covered. Agent shells may shadow bare `grep` and `find` with tools that skip git-ignored, hidden, or binary files; use `command grep` / `command find`, or state the exclusions, when a count must cover the whole tree.
 
 ## Active guidance
 

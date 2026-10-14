@@ -80,6 +80,7 @@ An 'Applicable context' value is a historical fact about the source (the edition
 
 - Evidence gate: required — Run the loader unit tests before and after the change; capture the failing and passing runs.
 - Run every completion-critical check in the foreground and wait for it to finish before writing the report. A run too slow to finish inside this session is a blocker to report, not work to leave running.
+- A search or file count quoted as evidence names the command that produced it and the scope it covered. Agent shells may shadow bare `grep` and `find` with tools that skip git-ignored, hidden, or binary files; use `command grep` / `command find`, or state the exclusions, when a count must cover the whole tree.
 - The report's Source evidence section must name the non-empty subset of supplied sources you actually applied — copied from Source guidance above, never extended with outside sources.
 
 ## Active guidance

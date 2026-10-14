@@ -385,6 +385,10 @@ That explicit operation removes old Cartopian PreToolUse and Stop handlers while
 
 The Stop guard adds no timer — `CARTOPIAN_TIMEOUT` remains the only clock — and fails open on every error path (missing env, unreadable payload, unwritable counter, internal error). It is completion discipline, not capability enforcement. Capability refusal is point-of-use PreToolUse behavior. Governed-write provenance is after-the-fact detection. `exited-without-report` is only a completion classification. None of those mechanisms can reliably reveal unauthorized shell reads.
 
+#### Claude Code shell search tools
+
+Native Claude Code builds shadow `grep` and `find` in the Bash tool's shell snapshot with embedded ugrep and bfs. The `grep` shadow passes `--ignore-files --hidden -I` and excludes VCS directories, so a bare `grep -r` skips git-ignored and binary files and its counts differ from system grep. This is Claude Code host behavior, not a Cartopian launch setting, and Claude exposes no switch to disable it. `command grep` and `command find` reach the system tools. Composed assignment prompts therefore require a quoted search or file count to name its command and scope.
+
 ### Antigravity (agy)
 
 Verified against Antigravity CLI (`agy`) `1.1.11` on macOS. **Native Windows
