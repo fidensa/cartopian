@@ -27,6 +27,34 @@ class TestIdentifierRegex(unittest.TestCase):
             self.assertEqual(IDENTIFIER_RE.findall(text), [], text)
 
 
+class TestScrubPossessive(unittest.TestCase):
+    def test_possessive_becomes_noun_phrase_not_dangling_suffix(self):
+        self.assertEqual(
+            deidentify.scrub_field("Origin: TASK-01-002's deliverable"),
+            "Origin: a related task's deliverable",
+        )
+
+    def test_possessive_noun_follows_identifier_family(self):
+        for text, expected in (
+            ("SPEC-01-001’s interface", "a related spec's interface"),
+            ("DEC-004's ruling", "a related decision's ruling"),
+            ("FR-003's wording", "a related requirement's wording"),
+            ("BUILD-01-003's scope", "a related plan item's scope"),
+            ("P01-BUILD-003's scope", "a related plan item's scope"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(deidentify.scrub_field(text), expected)
+
+    def test_possessive_inside_phrase_ref_keeps_its_noun(self):
+        self.assertEqual(
+            deidentify.scrub_field("Match per SPEC-01-001's interface."),
+            "Match per a related spec's interface.",
+        )
+
+    def test_prose_without_identifiers_unchanged(self):
+        self.assertEqual(deidentify.scrub_field("no ids here's fine"), "no ids here's fine")
+
+
 class TestDeidentifySpec(unittest.TestCase):
     def test_open_question_placeholders_accept_list_markers(self):
         for empty in ("none", "none.", "n/a", "- none", "  - None.  ", "* none", "+ n/a"):

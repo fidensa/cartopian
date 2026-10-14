@@ -67,6 +67,22 @@ _PHRASE_REF_RE = re.compile(
     r"\b(?:see|per|cf\.?|ref\.?)\s+" + _ID + r"(?:\s*,\s*" + _ID + r")*",
     re.IGNORECASE,
 )
+# A possessive "ID's" (straight or curly apostrophe). Removing only the token
+# would leave a dangling "'s", so the whole form becomes a neutral noun phrase.
+_POSSESSIVE_RE = re.compile(r"\b(" + _ID + r")['’]s\b")
+_POSSESSIVE_NOUNS = {
+    "TASK": "task",
+    "SPEC": "spec",
+    "PHASE": "phase",
+    "PROMPT": "prompt",
+    "REVIEW": "review",
+    "REPORT": "report",
+    "DEC": "decision",
+    "BL": "backlog item",
+    "RM": "requirement",
+    "FR": "requirement",
+    "NF": "requirement",
+}
 # A leading "ID:" label after a bullet / numbered marker, e.g. "- FR-NNN: ...".
 _LABEL_RE = re.compile(r"^(\s*(?:[-*]|\d+\.)\s+)" + _ID + r"\s*:\s*")
 
@@ -92,13 +108,21 @@ def _tidy(line: str) -> str:
     return line.rstrip()
 
 
+def _possessive_phrase(match: "re.Match[str]") -> str:
+    # Plan refs (BUILD-, P01-BUILD-, ...) are not in the table: "plan item".
+    noun = _POSSESSIVE_NOUNS.get(match.group(1).split("-", 1)[0], "plan item")
+    return f"a related {noun}'s"
+
+
 def scrub_identifiers(text: str) -> str:
     """Remove inline identifier references from a single run of prose.
 
-    Strips parenthetical and ``see ...`` reference forms whole, then any
-    remaining bare identifier token. Returns the cleaned text (callers tidy
-    whitespace per line when they know the line is not inside a code fence).
+    Rewrites a possessive ``ID's`` to a neutral noun phrase, strips
+    parenthetical and ``see ...`` reference forms whole, then any remaining
+    bare identifier token. Returns the cleaned text (callers tidy whitespace
+    per line when they know the line is not inside a code fence).
     """
+    text = _POSSESSIVE_RE.sub(_possessive_phrase, text)
     text = _PAREN_REF_RE.sub("", text)
     text = _PHRASE_REF_RE.sub("", text)
     text = IDENTIFIER_RE.sub("", text)
