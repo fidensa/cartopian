@@ -22,7 +22,7 @@ Write/act grants:
 - `write:plan` — author plan artifacts.
 - `write:lifecycle` — perform lifecycle mutations (task status, state, protocol files).
 - `write:decisions` — record decisions.
-- `write:reports` — write reports and reviews.
+- `write:reports` — write reports and reviews. On contained native launches, including activated Claude, this grant also selects the fixed report/review slots the wrapper publishes from the private `CARTOPIAN_PUBLICATION_DIR` staging directory after the assignee exits.
 - `write:worktree` — mutate the product tree.
 - `dispatch` — dispatch handoffs.
 

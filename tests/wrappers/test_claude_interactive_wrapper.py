@@ -88,7 +88,11 @@ def test_interactive_mode_keeps_containment_and_drops_headless_flags(tmp_path):
     assert set(settings["hooks"]) == {"PreToolUse", "Stop"}
     assert settings["sandbox"]["allowUnsandboxedCommands"] is False
     assert settings["sandbox"]["failIfUnavailable"] is True
-    assert str(prompt) in argv
+    # The staged publication preface is part of the launch contract too; the
+    # project prompt is still the handoff the operator-attended session reads.
+    prompt_arguments = [arg for arg in argv if arg.endswith(str(prompt))]
+    assert len(prompt_arguments) == 1
+    assert prompt_arguments[0].startswith("Cartopian staged publication instructions:")
     assert "running claude interactively" in result.stderr
     assert "timeout=operator-attended" in result.stderr
     # The wrapper still publishes the exit status the PM's waits observe.

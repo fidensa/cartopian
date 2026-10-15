@@ -12,7 +12,10 @@ resolving activation; grant decisions still live only here. This hook does not
 parse ``Bash``/shell command text. On native macOS/Linux hosts the same
 process-scoped settings enable Claude's OS sandbox: project-directory shell
 writes are denied, and declared work roots are writable only for a role holding
-``write:worktree``. Even with that grant, activated structured mutations of an
+``write:worktree``. For a role holding ``write:reports`` the wrapper also stages
+report publication in a private shell-writable ``CARTOPIAN_PUBLICATION_DIR``
+(``cli/claude_publication.py``) and publishes it through the mediated writer
+after exit; this hook still admits the structured tools at the exact slot. Even with that grant, activated structured mutations of an
 external work root are routed to sandboxed Bash because this separate hook
 cannot atomically bind Claude's later macOS pathname open. Activated
 native-Windows launches are refused until both

@@ -325,3 +325,59 @@ def test_ps1_wrapper_dot_sources_helper_and_writes_status(wrapper):
     text = (PS1_DIR / wrapper).read_text(encoding="utf-8")
     assert "CartopianStatus.ps1" in text
     assert "Write-CartopianStatus" in text
+
+
+# --- staged report candidate (activated Claude publication route) -----------
+
+
+def test_supervisor_treats_a_complete_staged_report_as_the_completion_signal(tmp_path):
+    """``cartopian-claude`` stages the report outside the project and publishes
+    it after the assignee exits; the supervisor must reap a lingering assignee
+    on the staged candidate exactly as it does on the project slot."""
+    prompt = _make_project(tmp_path)
+    report = prompt.parent.parent / "reports" / "REPORT-01-007.md"
+    staged = tmp_path / "staging" / "report.md"
+    staged.parent.mkdir()
+    body = (
+        "# Completion report\n\nStatus: complete\n\n## Identity\n\n"
+        "- Report path: reports/REPORT-01-007.md\n\n## Completion evidence\n\nok\n\n"
+        "## Remaining risks\n\nNone.\n\n## Ready to close\n\nyes\n"
+    )
+    staged_writer = tmp_path / "assignee.sh"
+    staged_writer.write_text(
+        "#!/bin/sh\n"
+        f"cat > '{staged}' <<'STAGED'\n{body}STAGED\n"
+        # Become the lingering process itself: without GNU timeout there is
+        # no assignee process group, so only the pid the supervisor knows
+        # can be reaped (the documented no-coreutils residual).
+        "exec sleep 30\n",
+        encoding="utf-8",
+    )
+    staged_writer.chmod(0o755)
+    script = (
+        f'source "{STATUS_HELPER}"; '
+        f'CARTOPIAN_STAGED_REPORT_PATH="{staged}"; '
+        f'cartopian_run_supervised "{report}" "{staged_writer}"; '
+        'printf "exit=%s done=%s pid=%s\\n" "$CARTOPIAN_ASSIGNEE_EXIT" '
+        '"$CARTOPIAN_REPORT_DONE" "${CARTOPIAN_ASSIGNEE_PID:+set}"'
+    )
+    result = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True, text=True, timeout=25,
+        env={**os.environ, "CARTOPIAN_REPORT_POLL": "0.2", "CARTOPIAN_REPORT_GRACE_POLLS": "1"},
+    )
+    assert result.stdout.strip() == "exit=0 done=true pid=set", result.stderr
+    assert not report.exists()
+
+
+def test_supervisor_ignores_an_absent_staged_candidate(tmp_path):
+    prompt = _make_project(tmp_path)
+    report = prompt.parent.parent / "reports" / "REPORT-01-007.md"
+    script = (
+        f'source "{STATUS_HELPER}"; '
+        f'CARTOPIAN_STAGED_REPORT_PATH="{tmp_path / "staging" / "report.md"}"; '
+        f'cartopian_run_supervised "{report}" sh -c "exit 3"; '
+        'printf "exit=%s done=%s\\n" "$CARTOPIAN_ASSIGNEE_EXIT" "$CARTOPIAN_REPORT_DONE"'
+    )
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=25)
+    assert result.stdout.strip() == "exit=3 done=false", result.stderr

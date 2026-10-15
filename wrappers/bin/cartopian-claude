@@ -68,6 +68,29 @@ CLAUDE_BARE="${CARTOPIAN_CLAUDE_BARE:-false}"
 CLAUDE_SKIP_PERMISSIONS="${CARTOPIAN_CLAUDE_SKIP_PERMS:-true}"
 # ------------------------------------------------------------------
 
+# --- Staged report publication ---------------------------------------
+# An activated launch runs Claude's OS sandbox, which denies every shell
+# write to the project directory; only the structured Write/Edit tools
+# reach the report slot, one bounded tool call per chunk. For a role that
+# holds write:reports, cli/claude_publication.py creates a private staging
+# directory outside every governed root (exported as
+# CARTOPIAN_PUBLICATION_DIR, shell-writable inside the sandbox, bound to
+# the Stop hook as completion evidence). The final report bytes land there
+# in one shell command and this wrapper publishes them through Cartopian's
+# mediated writer after Claude exits — the same route the other native
+# wrappers use. The directory is removed on every exit path.
+_CARTOPIAN_PUBLICATION_DIR=""
+_CARTOPIAN_PUBLICATION_INSTRUCTIONS=""
+_CARTOPIAN_PUBLICATION_HELPER=""
+cartopian_discard_publication() {
+  if [[ -n "$_CARTOPIAN_PUBLICATION_DIR" ]]; then
+    "$_CARTOPIAN_PYTHON" -I -S "$_CARTOPIAN_PUBLICATION_HELPER" discard \
+      --directory "$_CARTOPIAN_PUBLICATION_DIR" || true
+    _CARTOPIAN_PUBLICATION_DIR=""
+  fi
+}
+# --------------------------------------------------------------------
+
 readonly PROMPT_PATH="${1:-}"
 
 if [[ -z "$PROMPT_PATH" ]]; then
@@ -228,6 +251,30 @@ if [[ -n "${CARTOPIAN_ROLE:-}" || -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; t
     echo "cartopian-claude: error: pre-containment Claude launch validation failed" >&2
     exit 1
   fi
+  # Stage the report publication directory after pre-containment validation
+  # and before the settings build, which validates the directory and admits
+  # it to the sandbox allowWrite.
+  # The helper prints nothing when this launch cannot publish through it
+  # (no activated grants, no bound report slot, or no write:reports).
+  if [[ -n "${CARTOPIAN_ROLE:-}" && -n "${CARTOPIAN_EXPECTED_REPORT_PATH:-}" ]]; then
+    _CARTOPIAN_PUBLICATION_HELPER="${_CARTOPIAN_INSTALL_ROOT}/cli/claude_publication.py"
+    if [[ ! -f "$_CARTOPIAN_PUBLICATION_HELPER" ]]; then
+      echo "cartopian-claude: error: Claude publication helper not found: $_CARTOPIAN_PUBLICATION_HELPER" >&2
+      exit 1
+    fi
+    if ! _CARTOPIAN_PUBLICATION="$("$_CARTOPIAN_PYTHON" -I -S "$_CARTOPIAN_PUBLICATION_HELPER" prepare \
+        --project-dir "${CARTOPIAN_PROJECT_ROOT:-$PWD}")"; then
+      echo "cartopian-claude: error: could not stage report publication" >&2
+      exit 1
+    fi
+    if [[ "$_CARTOPIAN_PUBLICATION" == *$'\n'* ]]; then
+      _CARTOPIAN_PUBLICATION_DIR="${_CARTOPIAN_PUBLICATION%%$'\n'*}"
+      _CARTOPIAN_PUBLICATION_INSTRUCTIONS="${_CARTOPIAN_PUBLICATION#*$'\n'}"
+      trap cartopian_discard_publication EXIT
+      export CARTOPIAN_PUBLICATION_DIR="$_CARTOPIAN_PUBLICATION_DIR"
+      echo "cartopian-claude: staged report publication at $_CARTOPIAN_PUBLICATION_DIR" >&2
+    fi
+  fi
   if ! _CARTOPIAN_CLAUDE_VERSION="$("$_CARTOPIAN_CLAUDE_EXECUTABLE" --version 2>&1)"; then
     echo "cartopian-claude: error: could not determine Claude Code version" >&2
     exit 1
@@ -310,7 +357,11 @@ fi
 # Claude 2.1.212+ parses --add-dir as variadic. Keep the positional prompt
 # before every --add-dir occurrence so the final variadic option cannot
 # consume it as another directory.
-if [[ -n "${CARTOPIAN_PROJECT_ROOT:-}" && "${CARTOPIAN_LAUNCH_CWD:-}" != "$CARTOPIAN_PROJECT_ROOT" ]]; then
+# A staged launch prefixes the one-line publication instructions; the project
+# prompt artifact itself is never rewritten.
+if [[ -n "$_CARTOPIAN_PUBLICATION_DIR" ]]; then
+  CMD+=("$_CARTOPIAN_PUBLICATION_INSTRUCTIONS Read this authorized handoff file and carry out its task within your configured permissions: $PROMPT_PATH_ABS")
+elif [[ -n "${CARTOPIAN_PROJECT_ROOT:-}" && "${CARTOPIAN_LAUNCH_CWD:-}" != "$CARTOPIAN_PROJECT_ROOT" ]]; then
   CMD+=("Read this authorized handoff file and carry out its task within your configured permissions: $PROMPT_PATH_ABS")
 else
   CMD+=("$PROMPT_PATH_ABS")
@@ -373,6 +424,14 @@ fi
 # without its ".status" suffix.
 REPORT_PATH="${STATUS_PATH%.status}"
 [[ "$REPORT_PATH" == "$STATUS_PATH" ]] && REPORT_PATH=""
+# A complete staged report is the same completion signal for the supervisor;
+# this wrapper publishes it to REPORT_PATH after the assignee is gone.
+CARTOPIAN_STAGED_REPORT_PATH=""
+if [[ -n "$_CARTOPIAN_PUBLICATION_DIR" ]]; then
+  CARTOPIAN_STAGED_REPORT_PATH="$_CARTOPIAN_PUBLICATION_DIR/report.md"
+fi
+# Set only by the supervisor below for this launch; never an inherited value.
+CARTOPIAN_ASSIGNEE_PID=""
 
 set +e
 if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
@@ -383,6 +442,24 @@ if [[ "$_CARTOPIAN_INTERACTIVE" == "true" ]]; then
 else
   cartopian_run_supervised "$REPORT_PATH" "${CMD[@]}"
   ASSIGNEE_EXIT=$CARTOPIAN_ASSIGNEE_EXIT
+fi
+if [[ -n "$_CARTOPIAN_PUBLICATION_DIR" ]]; then
+  # Stop any descendant that outlived the assignee before its candidate bytes
+  # are consumed, then publish the staged report/review through the mediated
+  # writer under the role's write:reports grant. Publication happens before
+  # the exited status, so a terminal wait still names final bytes. A refused
+  # publication leaves the slot untouched and surfaces as a failed handoff.
+  if [[ "$_CARTOPIAN_INTERACTIVE" != "true" && "$CARTOPIAN_ASSIGNEE_PID" =~ ^[0-9]+$ && "$CARTOPIAN_ASSIGNEE_PID" -gt 1 ]]; then
+    cartopian_signal_assignee KILL "$CARTOPIAN_ASSIGNEE_PID"
+  fi
+  if ! "$_CARTOPIAN_PYTHON" -I -S "$_CARTOPIAN_PUBLICATION_HELPER" publish \
+      --project-dir "${CARTOPIAN_PROJECT_ROOT:-$PWD}" --directory "$_CARTOPIAN_PUBLICATION_DIR"; then
+    echo "cartopian-claude: error: staged report publication failed" >&2
+    if [[ "$ASSIGNEE_EXIT" -eq 0 ]]; then
+      ASSIGNEE_EXIT=1
+    fi
+  fi
+  _CARTOPIAN_PUBLICATION_DIR=""
 fi
 set -e
 cartopian_write_status "$STATUS_PATH" "$ASSIGNEE_EXIT" "$TIMEOUT_APPLIED"

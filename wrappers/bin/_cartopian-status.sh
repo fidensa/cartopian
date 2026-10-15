@@ -150,6 +150,20 @@ cartopian_report_complete() {
   esac
 }
 
+# Report completion for supervision: the project report slot, or, when the
+# wrapper set CARTOPIAN_STAGED_REPORT_PATH (a shell variable, never exported),
+# the staged candidate it publishes through the mediated writer after the
+# assignee exits. An activated Claude handoff writes its report to that private
+# staging file in one shell command instead of retyping it through structured
+# tools, so a complete staged report is the same "finished" signal here.
+cartopian_handoff_report_complete() {
+  if cartopian_report_complete "$1"; then
+    return 0
+  fi
+  [ -n "${CARTOPIAN_STAGED_REPORT_PATH:-}" ] || return 1
+  cartopian_report_complete "$CARTOPIAN_STAGED_REPORT_PATH"
+}
+
 # Send signal $1 to the assignee started as pid $2 and to its process group.
 # GNU `timeout` (without --foreground) moves itself and the agent CLI into a
 # new process group led by its own pid, so signalling the pid alone reaches
@@ -188,6 +202,11 @@ cartopian_signal_assignee() {
 #        $2.. = the full command vector to run (e.g. timeout 60m claude -p ...)
 # Sets:  CARTOPIAN_ASSIGNEE_EXIT — the exit code the wrapper should surface
 #        CARTOPIAN_REPORT_DONE   — "true" when a complete report was observed
+#        CARTOPIAN_ASSIGNEE_PID  — the pid the command was started as (empty
+#                                  when run inline); its process group may
+#                                  still hold descendants after it exits
+# Reads: CARTOPIAN_STAGED_REPORT_PATH — optional staged candidate that counts
+#        as the completion signal (see cartopian_handoff_report_complete)
 # Tunables (env): CARTOPIAN_REPORT_POLL (seconds between polls; default 2)
 #                 CARTOPIAN_REPORT_GRACE_POLLS (post-report grace polls; default 3)
 cartopian_run_supervised() {
@@ -197,6 +216,7 @@ cartopian_run_supervised() {
 
   CARTOPIAN_REPORT_DONE=false
   CARTOPIAN_ASSIGNEE_EXIT=0
+  CARTOPIAN_ASSIGNEE_PID=""
 
   # No derivable report path (prompt outside a project layout): run inline with
   # a closed stdin — behaviorally identical to the historical wrapper, minus the
@@ -209,6 +229,7 @@ cartopian_run_supervised() {
 
   "$@" </dev/null &
   local child=$!
+  CARTOPIAN_ASSIGNEE_PID=$child
 
   # Report watcher (subshell): once the report is complete, give the child a
   # brief grace to exit on its own, then reap it. It reacts to the report event
@@ -232,7 +253,7 @@ cartopian_run_supervised() {
       nap=""
     }
     while kill -0 "$child" 2>/dev/null; do
-      if cartopian_report_complete "$report_path"; then
+      if cartopian_handoff_report_complete "$report_path"; then
         i=0
         while [ "$i" -lt "$grace_polls" ] && kill -0 "$child" 2>/dev/null; do
           cartopian_watch_nap
@@ -274,7 +295,7 @@ cartopian_run_supervised() {
   # The report file is authoritative: if it is complete, the handoff succeeded,
   # regardless of how the lingering child was ultimately reaped (a SIGTERM/SIGKILL
   # from the watcher would otherwise surface as a non-zero/142/137 exit).
-  if cartopian_report_complete "$report_path"; then
+  if cartopian_handoff_report_complete "$report_path"; then
     CARTOPIAN_REPORT_DONE=true
     CARTOPIAN_ASSIGNEE_EXIT=0
   else

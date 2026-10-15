@@ -30,7 +30,10 @@ Scope (deliberately narrow):
    wait primitives use, so "complete" here means exactly what it means to
    ``cartopian wait-handoff``. A ``blocked`` or ``failed`` report is a
    *finished* handoff and is allowed to stop; only absent, partial, or
-   permanently invalid publication blocks.
+   permanently invalid publication blocks. An activated sandboxed launch may
+   bind a staged candidate (``--staged-report``, see
+   ``cli/claude_publication.py``): the wrapper publishes that file at the
+   slot after exit, so a complete staged report is equally finished.
 3. **Bounded intervention.** Blocking Stop indefinitely would turn an agent
    that genuinely cannot write a report (API error loop, an exhausted context)
    into an unkillable session. Each block is counted per session; after
@@ -118,6 +121,9 @@ from cli.handoff_observer import ReportObservation, observe_report  # noqa: E402
 REPORT_ENV = "CARTOPIAN_EXPECTED_REPORT_PATH"
 VARIANT_ENV = "CARTOPIAN_EXPECTED_REPORT_VARIANT"
 MAX_BLOCKS_ENV = "CARTOPIAN_STOP_GUARD_MAX_BLOCKS"
+# Bound by the wrapper through ``--staged-report`` only; never an inherited
+# operator value.
+STAGED_REPORT_ENV = "CARTOPIAN_STAGED_REPORT_PATH"
 
 # Enough nudges to recover a genuinely-recoverable handoff (re-run in the
 # foreground, then write the report) without pinning a broken session open.
@@ -339,6 +345,8 @@ def _block_reason(
     variant: Optional[str],
     attempt: int,
     max_blocks: int,
+    staged_path: Optional[Path] = None,
+    inspected_path: Optional[Path] = None,
 ) -> str:
     variant_label = variant or "inferred from the report content"
 
@@ -359,17 +367,33 @@ def _block_reason(
         f"[cartopian] Stop blocked: {problem}",
         "",
         f"Report path: {report_path}",
-        f"Expected variant: {variant_label}",
     ]
+    if staged_path is not None:
+        lines.append(
+            f"Staging path: {staged_path} (write the finished report here with "
+            "one shell command, such as cp, mv, or a heredoc; Cartopian "
+            "publishes it to the report path when you exit)"
+        )
+    lines.append(f"Expected variant: {variant_label}")
 
     missing = (
-        _missing_elements(report_path, variant)
+        _missing_elements(inspected_path or report_path, variant)
         if observation.present and not observation.permanently_invalid
         else []
     )
     if missing:
         lines.append("Missing from the current file: " + "; ".join(missing) + ".")
 
+    write_step = (
+        "2. Write the complete report to the staging path above with a single"
+        if staged_path is not None
+        else "2. Write the complete report to the exact path above, using the report"
+    )
+    write_step_rest = (
+        "   shell command, using the report template named in your prompt."
+        if staged_path is not None
+        else "   template named in your prompt."
+    )
     lines += [
         "",
         "This session is a `claude -p` handoff. Your final result IS process",
@@ -382,8 +406,8 @@ def _block_reason(
         "1. Re-run every completion-critical command in the FOREGROUND and wait",
         "   for it to finish. Do not background the test suite, build, or any",
         "   command whose result the report depends on.",
-        "2. Write the complete report to the exact path above, using the report",
-        "   template named in your prompt.",
+        write_step,
+        write_step_rest,
         "3. If the work genuinely cannot be finished, still write the report",
         "   with `Status: blocked` and record why. A blocked report is a",
         "   finished handoff; an absent report is a lost one.",
@@ -427,6 +451,21 @@ def evaluate(
         clear_counter(state_path)
         return _ALLOW
 
+    staged_raw = (environ.get(STAGED_REPORT_ENV) or "").strip()
+    staged_path = Path(staged_raw) if staged_raw else None
+    inspected_path = report_path
+    if staged_path is not None:
+        # The staged candidate is outside the project; the wrapper publishes
+        # it through the mediated writer once this process is gone, and the
+        # observer then classifies the published bytes exactly as usual.
+        staged = observe_report(staged_path, variant)
+        if staged.publication_state == "complete":
+            clear_counter(state_path)
+            return _ALLOW
+        if observation.publication_state == "absent" and staged.present:
+            # Describe the file the assignee is actually working on.
+            inspected_path, observation = staged_path, staged
+
     max_blocks = _max_blocks(environ)
     if max_blocks == 0:
         return Decision(
@@ -465,7 +504,10 @@ def evaluate(
 
     return Decision(
         "block",
-        reason=_block_reason(report_path, observation, variant, attempt, max_blocks),
+        reason=_block_reason(
+            report_path, observation, variant, attempt, max_blocks,
+            staged_path=staged_path, inspected_path=inspected_path,
+        ),
     )
 
 
@@ -475,6 +517,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-variant", choices=VALID_VARIANTS)
     parser.add_argument("--max-blocks", type=int)
     parser.add_argument("--state-dir")
+    parser.add_argument("--staged-report")
     return parser
 
 
@@ -505,6 +548,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             effective_environ[VARIANT_ENV] = args.expected_variant
         if args.max_blocks is not None:
             effective_environ[MAX_BLOCKS_ENV] = str(args.max_blocks)
+        # The staged candidate is an argv-only binding from the wrapper.
+        effective_environ.pop(STAGED_REPORT_ENV, None)
+        if args.staged_report is not None:
+            effective_environ[STAGED_REPORT_ENV] = args.staged_report
         state_dir = (
             str(_prepare_state_dir(args.state_dir))
             if args.state_dir is not None

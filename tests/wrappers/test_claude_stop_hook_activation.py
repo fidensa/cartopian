@@ -43,7 +43,11 @@ from tests._install_fixture import install_copy_fixture
 
 
 def _fake_claude(
-    fake_bin: Path, capture: Path, *, version: str = "2.1.278 (Claude Code)"
+    fake_bin: Path,
+    capture: Path,
+    *,
+    version: str = "2.1.278 (Claude Code)",
+    body: str = "",
 ) -> None:
     fake_bin.mkdir(parents=True, exist_ok=True)
     executable = fake_bin / "claude"
@@ -52,7 +56,8 @@ def _fake_claude(
         f"if [ \"${{1:-}}\" = \"--version\" ]; then printf '%s\\n' '{version}'; exit 0; fi\n"
         f": > '{capture}'\n"
         f"for argument do printf '%s\\n' \"$argument\" >> '{capture}'; done\n"
-        "exit 0\n",
+        + body
+        + "exit 0\n",
         encoding="utf-8",
     )
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
@@ -91,8 +96,9 @@ def _run_result(
     dispatched: bool = True,
     claude_version: str = "2.1.278 (Claude Code)",
     extra_env: dict[str, str] | None = None,
+    fake_body: str = "",
 ) -> subprocess.CompletedProcess[str]:
-    _fake_claude(fake_bin, capture, version=claude_version)
+    _fake_claude(fake_bin, capture, version=claude_version, body=fake_body)
     path_parts = [str(fake_bin), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
     timeout = shutil.which("timeout") or shutil.which("gtimeout")
     if timeout:
@@ -311,6 +317,148 @@ def test_installed_posix_dispatch_receives_capability_and_completion_hooks(tmp_p
     assert settings_path.read_text(encoding="utf-8") == original
     assert local_path.read_text(encoding="utf-8") == local_original
     assert user_path.read_text(encoding="utf-8") == user_original
+
+
+STAGED_REPORT = """# Completion report
+
+Status: complete
+
+## Identity
+
+- Report path: reports/REPORT-01-401.md
+
+## Completion evidence
+
+Built the report in a scratch script and copied it in one command.
+
+## Remaining risks
+
+None.
+
+## Ready to close
+
+yes
+"""
+
+
+def _staging_fake_body(observed: Path) -> str:
+    """Fake Claude: record the staging binding, stage the report in one write."""
+    return (
+        f"printf '%s\\n' \"${{CARTOPIAN_PUBLICATION_DIR:-unset}}\" > '{observed}'\n"
+        "if [ -n \"${CARTOPIAN_PUBLICATION_DIR:-}\" ]; then\n"
+        "  cat > \"$CARTOPIAN_PUBLICATION_DIR/report.md\" <<'STAGED'\n"
+        + STAGED_REPORT
+        + "STAGED\n"
+        "fi\n"
+    )
+
+
+def test_activated_posix_dispatch_publishes_a_staged_report(tmp_path):
+    """The Claude port of the outer backend's publication route.
+
+    The sandbox denies shell writes to the project, so the final report bytes
+    land in the private staging directory with one shell command and the
+    wrapper publishes them at the slot through the mediated writer after the
+    assignee is gone, instead of the model retyping the report as Write tool
+    input. The directory is admitted to the sandbox allowWrite, bound to the
+    Stop hook, announced in the prompt preface, and removed afterwards.
+    """
+    project, prompt, report = _project(tmp_path, gated=True)
+    observed = tmp_path / "observed publication dir"
+    capture = tmp_path / "argv.txt"
+    result = _run_result(
+        POSIX_WRAPPER,
+        prompt,
+        report,
+        tmp_path / "fake bin",
+        capture,
+        extra_env={"CARTOPIAN_EXPECTED_REPORT_VARIANT": "task"},
+        fake_body=_staging_fake_body(observed),
+    )
+    assert result.returncode == 0, result.stderr
+    staged_dir = observed.read_text(encoding="utf-8").strip()
+    assert staged_dir != "unset"
+    assert Path(staged_dir).parent == Path(os.path.realpath("/tmp"))
+    assert f"staged report publication at {staged_dir}" in result.stderr
+
+    argv = capture.read_text(encoding="utf-8").splitlines()
+    settings = _settings_argument(argv)
+    assert staged_dir in settings["sandbox"]["filesystem"]["allowWrite"]
+    assert str(project.resolve()) in settings["sandbox"]["filesystem"]["denyWrite"]
+    stop_args = settings["hooks"]["Stop"][0]["hooks"][0]["args"]
+    assert stop_args[stop_args.index("--staged-report") + 1] == f"{staged_dir}/report.md"
+    prompt_argument = [arg for arg in argv if str(prompt) in arg]
+    assert len(prompt_argument) == 1
+    assert prompt_argument[0].startswith("Cartopian staged publication instructions:")
+    assert f"{staged_dir}/report.md" in prompt_argument[0]
+    assert prompt_argument[0].endswith(f"handoff file and carry out its task within your configured permissions: {prompt}")
+    assert prompt.read_text(encoding="utf-8") == "perform the dispatched handoff\n"
+
+    assert report.read_text(encoding="utf-8") == STAGED_REPORT
+    assert not Path(staged_dir).exists()
+    status = dict(
+        line.split("=", 1)
+        for line in Path(str(report) + ".status").read_text(encoding="utf-8").splitlines()
+    )
+    assert status["state"] == "exited"
+    assert status["exit_code"] == "0"
+    assert status["expected_variant"] == "task"
+
+
+def test_activated_dispatch_without_write_reports_stages_nothing(tmp_path):
+    project, prompt, report = _project(tmp_path, gated=True)
+    project.joinpath("cartopian.toml").write_text(
+        project.joinpath("cartopian.toml").read_text(encoding="utf-8").replace(
+            'grants = ["coder-like"]', 'grants = ["read:prompts", "read:work-roots"]'
+        ),
+        encoding="utf-8",
+    )
+    observed = tmp_path / "observed"
+    capture = tmp_path / "argv.txt"
+    result = _run_result(
+        POSIX_WRAPPER,
+        prompt,
+        report,
+        tmp_path / "fake bin",
+        capture,
+        extra_env={"CARTOPIAN_EXPECTED_REPORT_VARIANT": "task"},
+        fake_body=_staging_fake_body(observed),
+    )
+    assert result.returncode == 0, result.stderr
+    assert observed.read_text(encoding="utf-8").strip() == "unset"
+    argv = capture.read_text(encoding="utf-8").splitlines()
+    assert not any("staged publication" in arg for arg in argv)
+    settings = _settings_argument(argv)
+    assert "--staged-report" not in settings["hooks"]["Stop"][0]["hooks"][0]["args"]
+    assert not report.exists()
+
+
+def test_staged_publication_refusal_fails_the_handoff_and_cleans_up(tmp_path):
+    project, prompt, report = _project(tmp_path, gated=True)
+    observed = tmp_path / "observed"
+    capture = tmp_path / "argv.txt"
+    result = _run_result(
+        POSIX_WRAPPER,
+        prompt,
+        report,
+        tmp_path / "fake bin",
+        capture,
+        extra_env={"CARTOPIAN_EXPECTED_REPORT_VARIANT": "task"},
+        fake_body=(
+            f"printf '%s\\n' \"$CARTOPIAN_PUBLICATION_DIR\" > '{observed}'\n"
+            f"ln -s '{project / 'cartopian.toml'}' \"$CARTOPIAN_PUBLICATION_DIR/report.md\"\n"
+        ),
+    )
+    assert result.returncode == 1, result.stderr
+    assert "staged report publication failed" in result.stderr
+    staged_dir = observed.read_text(encoding="utf-8").strip()
+    assert not Path(staged_dir).exists()
+    assert not report.exists()
+    status = dict(
+        line.split("=", 1)
+        for line in Path(str(report) + ".status").read_text(encoding="utf-8").splitlines()
+    )
+    assert status["exit_code"] == "1"
 
 
 def test_ungated_dispatched_project_loads_only_completion_hook(tmp_path):

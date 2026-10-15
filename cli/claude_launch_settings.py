@@ -21,6 +21,12 @@ project directory at all; authorized project-artifact mutations continue
 through the capability hook's structured tools, while project-writing mediated
 commands must run outside that handoff. Declared work roots remain
 shell-writable only when the dispatched role holds ``write:worktree``.
+When the wrapper staged a private publication directory
+(``CARTOPIAN_PUBLICATION_DIR``, see ``cli/claude_publication.py``), that one
+directory is also shell-writable, so the final report bytes can land there in
+a single command and be published through the mediated writer after exit
+instead of being retyped through the structured tools; the Stop hook accepts
+the staged candidate as completion evidence.
 The sandbox refuses launch when OS enforcement is unavailable and disables the
 unsandboxed retry escape hatch. Activated native-Windows handoffs refuse before
 launch until Cartopian can attest both a shell sandbox and an exact native
@@ -86,6 +92,7 @@ REPORT_ENV = "CARTOPIAN_EXPECTED_REPORT_PATH"
 VARIANT_ENV = "CARTOPIAN_EXPECTED_REPORT_VARIANT"
 CLAUDE_EXECUTABLE_ENV = "CARTOPIAN_CLAUDE_EXECUTABLE"
 CLAUDE_HOST_TMPDIR_ENV = "CARTOPIAN_CLAUDE_HOST_TMPDIR"
+PUBLICATION_DIR_ENV = "CARTOPIAN_PUBLICATION_DIR"
 
 # A settings ``env`` block reaches command-hook subprocesses.  Isolated Python
 # ignores Python's own environment controls, but the platform loader acts
@@ -2059,12 +2066,41 @@ def role_sandbox_writable_paths(
     return tuple(resolved)
 
 
+def staged_publication_directory(
+    environ: Mapping[str, str],
+) -> Optional[str]:
+    """Bind the wrapper's staged publication directory, if one was prepared.
+
+    The wrapper creates it through ``cli/claude_publication.py`` immediately
+    before this helper runs; the same shape check is repeated here so an
+    inherited or hand-set value can never open an arbitrary writable path.
+    """
+    raw = (environ.get(PUBLICATION_DIR_ENV) or "").strip()
+    if not raw:
+        return None
+    from cli.claude_publication import validate_directory
+    from cli.work_access import WorkAccessError
+
+    try:
+        path = validate_directory(raw)
+    except WorkAccessError as exc:
+        raise SettingsError(str(exc)) from exc
+    canonical = os.path.realpath(path)
+    if canonical != os.path.abspath(path):
+        raise SettingsError(
+            f"staged publication directory traverses a symlink ({path} "
+            f"resolves to {canonical})"
+        )
+    return canonical
+
+
 def _validate_role_writable_paths(
     writable_paths: Sequence[str],
     *,
     protected_roots: Sequence[str],
     other_roots: Sequence[str],
     environ: Mapping[str, str],
+    description: str = "a role sandbox.writable_paths entry",
 ) -> None:
     """Keep role writable exceptions disjoint from every governed boundary.
 
@@ -2098,8 +2134,8 @@ def _validate_role_writable_paths(
                         break
     if conflicts:
         raise SettingsError(
-            "activated POSIX Claude sandbox refuses a role sandbox.writable_paths "
-            "entry that overlaps a protected, work-root, host-executable, "
+            f"activated POSIX Claude sandbox refuses {description} "
+            "that overlaps a protected, work-root, host-executable, "
             "implicit-writable, or other writable directory ("
             + ", ".join(conflicts)
             + "); declare disjoint directories"
@@ -2152,6 +2188,8 @@ def capability_sandbox(
         raise SettingsError("project-contained shell writes require launch cwd bound to " + access.launch_cwd)
     exceptions = resolution.sandbox_for(_session_roles(environ))
     role_writable_paths = role_sandbox_writable_paths(exceptions, environ)
+    staged_publication = staged_publication_directory(environ)
+    staged_paths = (staged_publication,) if staged_publication else ()
     deny_write: list[str] = []
     host_tool_environ, _host_tool_sources = _effective_host_tool_environment(
         project_dir, environ
@@ -2232,17 +2270,31 @@ def capability_sandbox(
         ),
         environ=environ,
     )
+    # The staged publication directory is a shell-writable exception with the
+    # same disjointness obligations as an operator-declared writable path.
+    _validate_role_writable_paths(
+        staged_paths,
+        protected_roots=project_boundaries,
+        other_roots=(
+            *resolved_work_roots,
+            *foreign_work_roots,
+            *host_executable_roots,
+            *role_writable_paths,
+        ),
+        environ=environ,
+        description="a staged publication directory",
+    )
     validate_linux_mount_boundaries(
-        (project_root, *resolved_work_roots, *implicit_roots, *role_writable_paths),
+        (project_root, *resolved_work_roots, *implicit_roots, *role_writable_paths, *staged_paths),
         (*protected_policy_paths, *foreign_work_roots),
     )
     validate_shell_writable_hardlinks(
-        (*work_roots.values(), *role_writable_paths),
+        (*work_roots.values(), *role_writable_paths, *staged_paths),
         environ,
         protected_roots=protected_policy_paths,
     )
     refuse_sandbox_glob_paths(
-        (*protected_policy_paths, *resolved_work_roots, *role_writable_paths)
+        (*protected_policy_paths, *resolved_work_roots, *role_writable_paths, *staged_paths)
     )
     for path in protected_policy_paths:
         if path not in deny_write:
@@ -2321,6 +2373,12 @@ def capability_sandbox(
     # shell-writable for this role only; validation above keeps them disjoint
     # from every protected and work root.
     for path in role_writable_paths:
+        if path not in allow_write:
+            allow_write.append(path)
+    # The wrapper's private staging directory: the final report/review bytes
+    # land there in one shell command and the wrapper publishes them through
+    # the mediated writer after exit. Governance stays deny-default.
+    for path in staged_paths:
         if path not in allow_write:
             allow_write.append(path)
     filesystem: dict[str, Any] = {
@@ -2525,6 +2583,19 @@ def build_settings(
         expected_variant = (environ.get(VARIANT_ENV) or "").strip()
         if expected_variant:
             stop_arguments.extend(("--expected-variant", expected_variant))
+        if capability_active and expected_report and not windows:
+            staged_publication = staged_publication_directory(environ)
+            if staged_publication:
+                from cli.claude_publication import REPORT_CANDIDATE
+
+                # A complete staged report is completion evidence: the wrapper
+                # publishes it at the slot once this process has exited.
+                stop_arguments.extend(
+                    (
+                        "--staged-report",
+                        os.path.join(staged_publication, REPORT_CANDIDATE),
+                    )
+                )
         handler = hook_handler(
             install_root,
             "claude_stop_hook.py",

@@ -137,6 +137,24 @@ Only `write:reports` authorizes these exact report/review slots. The assignee
 cannot write project reports or choose an arbitrary publication destination.
 Existing report schema/provenance/identity checks still govern completion.
 
+Activated Claude launches use the same route. `cli/claude_publication.py`
+creates a private `cartopian-claude-publication-*` directory below the system
+temp root for a role holding `write:reports`, exported as
+`CARTOPIAN_PUBLICATION_DIR`; the settings helper admits only that directory to
+the sandbox `allowWrite` list after the same disjointness checks as an
+operator-declared writable path, binds the Stop hook to its `report.md`
+candidate, and the wrapper prefixes the launch prompt with the staging
+instructions without rewriting the project prompt. The final report (and, for
+a review handoff, `review.md`) lands there in one shell command — a script's
+output copied in place rather than retyped as `Write`/`Edit` tool input — and
+the wrapper publishes it through `mediated_write` with the same bounded reads
+after the assignee and its process group are gone, before it writes the exited
+status. The capability hook still admits the structured tools at the exact
+report slot, so a small report may be written there directly; a staged
+candidate, when present, is the publication. A refused candidate (alias,
+multiple links, over 2 MiB, invalid UTF-8) publishes nothing, removes the
+staging directory, and surfaces as a failed handoff.
+
 Requirements, standards, plans, phases, tasks, specs, decisions, prompts, reports,
 `STATE.md`, configuration, request/provenance stores and Git metadata remain
 protected. Content access grants no governance or lifecycle authority. A task's
