@@ -161,7 +161,12 @@ complete report, the supervisor keeps draining through the shared post-report
 grace and publishes **nothing** while the child can still rewrite the report;
 only after the child has exited (on its own or via the reap) does it atomically
 publish the bounded snapshot followed by the `state=exited` status, so every
-publication signal names final report bytes.
+publication signal names final report bytes. "Exited" means the wrapper is
+reaped **and** its output pipe has reached EOF: an agent CLI launched through
+`timeout` runs in a process group of its own, outside the supervisor's group
+reap, and still holds that pipe. If a writer outlives the reap, the supervisor
+notes it in the retained log and keeps draining; the wrapper's deadline
+enforcer, not the supervisor, is the clock that ends it.
 
 The supervisor's guarantee is `retained-launch-log`: it bounds storage only,
 not execution output, artifacts, reports, model context, or provider-private
@@ -172,7 +177,7 @@ automated-dispatch retention supervisor.
 
 Some assignee CLIs keep running after they have written the report — MCP stdio servers that are not torn down, an inherited open stdin, or a trailing turn leave the process alive with no work left to do. If the wrapper only waited for that process, a *finished* handoff would sit idle until `timeout` killed it (exit `124`, `reason=timeout`) — a success that always read as a deadline failure.
 
-The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one the wait commands parse); the supervisor requires the expected task/review/planning-review terminal structure, not merely path appearance or an early `Status:` line. Once that publication shape is complete, it grants the child a brief grace to exit on its own and then reaps it. A partially written report remains nonterminal and cannot cause the wrapper to kill its writer.
+The shared helper `cartopian_run_supervised` (in `bin/_cartopian-status.sh`) fixes this with a **report-completion supervisor**. It runs the assignee with stdin redirected from `/dev/null` (closing one lingering mode) and watches for the expected report file. The report file is the **authoritative completion signal** (the same one the wait commands parse); the supervisor requires the expected task/review/planning-review terminal structure, not merely path appearance or an early `Status:` line. Once that publication shape is complete, it grants the child a brief grace to exit on its own and then reaps it. A partially written report remains nonterminal and cannot cause the wrapper to kill its writer. The reap signals the assignee's process group, not just its pid: GNU `timeout` moves itself and the agent CLI into a new group, and a SIGKILL sent to `timeout` alone cannot be forwarded, which would leave the agent running as an orphan that can still rewrite the report. For the same reason the wrapper traps the outer supervisor's TERM, forwards it to the assignee's group, and waits for the assignee before exiting.
 
 This is **event-driven, not a second timer**. The single `CARTOPIAN_TIMEOUT` deadline (applied via `timeout`, the [SSOT](../protocol/CONVENTIONS.md) enforcer) remains the only clock and is never extended: a genuine hang writes no report, is never reaped early, and still hits the deadline with exit `124` / `reason=timeout`. The grace and poll cadence are tunable via `CARTOPIAN_REPORT_GRACE_POLLS` (default 3) and `CARTOPIAN_REPORT_POLL` (default 2s); the outer launch-log supervisor reuses those values when it observes report completion from any still-running wrapper, including one whose stdout remains open and silent. No per-tool CLI timeout flag is introduced.
 

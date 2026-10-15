@@ -150,6 +150,19 @@ cartopian_report_complete() {
   esac
 }
 
+# Send signal $1 to the assignee started as pid $2 and to its process group.
+# GNU `timeout` (without --foreground) moves itself and the agent CLI into a
+# new process group led by its own pid, so signalling the pid alone reaches
+# only `timeout`: a SIGKILL cannot be forwarded, and the agent would survive
+# as an orphan still able to rewrite the report. Without `timeout` the child
+# shares the wrapper's group, no group carries its pid, and the pid signal is
+# the whole delivery. Failures are expected (already gone) and ignored.
+cartopian_signal_assignee() {
+  kill "-$1" -- "-$2" 2>/dev/null
+  kill "-$1" "$2" 2>/dev/null
+  return 0
+}
+
 # Run the assignee command under the SSOT timeout, supervising for the
 # authoritative report-completion signal so a *finished* assignee exits promptly
 # instead of lingering until the deadline.
@@ -225,9 +238,9 @@ cartopian_run_supervised() {
           cartopian_watch_nap
           i=$((i + 1))
         done
-        kill -TERM "$child" 2>/dev/null
+        cartopian_signal_assignee TERM "$child"
         cartopian_watch_nap
-        kill -KILL "$child" 2>/dev/null
+        cartopian_signal_assignee KILL "$child"
         break
       fi
       cartopian_watch_nap
@@ -235,10 +248,23 @@ cartopian_run_supervised() {
   ) >/dev/null 2>&1 &
   local watcher=$!
 
+  # The outer launch supervisor ends a lingering wrapper by signalling the
+  # wrapper's process group, which does not contain a `timeout`-launched
+  # assignee. Forward that TERM to the assignee's group and keep waiting, so
+  # the wrapper never reports exit while its writer is still running.
+  CARTOPIAN_TERM_FORWARDED=false
+  trap 'CARTOPIAN_TERM_FORWARDED=true; cartopian_signal_assignee TERM "$child"' TERM
+
   # Blocks until the child exits — on its own, by the watcher's reap, or by the
-  # `timeout` deadline. `wait` returns the child's status either way.
+  # `timeout` deadline. `wait` returns the child's status either way; a
+  # forwarded TERM interrupts it, so wait again until the child is gone.
   wait "$child" 2>/dev/null
   local raw=$?
+  while [ "$CARTOPIAN_TERM_FORWARDED" = true ] && kill -0 "$child" 2>/dev/null; do
+    wait "$child" 2>/dev/null
+    raw=$?
+  done
+  trap - TERM
 
   # The watcher may still be polling (child exited on its own with no report);
   # stop it so it never outlives the handoff.

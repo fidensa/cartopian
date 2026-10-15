@@ -26,10 +26,13 @@ import os
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from cli import output_safety
 from cli.commands import wait_handoff
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -96,11 +99,7 @@ def _fake_bin(dir_path: Path, name: str, body: str) -> None:
     p.chmod(p.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _run_wrapper(wrapper: str, tool: str, prompt: Path, fake_body: str, *,
-                 timeout_spec="30s", subprocess_timeout=60, extra_env=None):
-    fakebin = prompt.parent.parent.parent / "fakebin"
-    _fake_bin(fakebin, tool, fake_body)
-
+def _wrapper_env(fakebin: Path, timeout_spec: str, extra_env=None) -> dict:
     path_parts = [str(fakebin), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
     path_parts.insert(1, str(Path(_TIMEOUT_BIN).parent))
 
@@ -114,6 +113,14 @@ def _run_wrapper(wrapper: str, tool: str, prompt: Path, fake_body: str, *,
     }
     if extra_env:
         env.update(extra_env)
+    return env
+
+
+def _run_wrapper(wrapper: str, tool: str, prompt: Path, fake_body: str, *,
+                 timeout_spec="30s", subprocess_timeout=60, extra_env=None):
+    fakebin = prompt.parent.parent.parent / "fakebin"
+    _fake_bin(fakebin, tool, fake_body)
+    env = _wrapper_env(fakebin, timeout_spec, extra_env)
     return subprocess.run(
         ["bash", str(BIN_DIR / wrapper), str(prompt)],
         env=env, capture_output=True, text=True, timeout=subprocess_timeout,
@@ -254,6 +261,146 @@ def test_self_exit_releases_output_without_waiting_out_the_poll(
             ["pgrep", "-f", "^sleep 7$"], capture_output=True, text=True
         )
         assert stray.stdout.strip() == "", f"{wrapper}: orphaned watcher sleep"
+
+
+# --- the reap reaches the assignee, not only `timeout` ----------------------
+
+
+def _pid_gone(pid: int, within: float = 3.0) -> bool:
+    deadline = time.monotonic() + within
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _supervise_wrapper(wrapper: str, tool: str, prompt: Path, fake_body: str,
+                       *, wrapper_env=None):
+    """Run the wrapper under the real dispatch supervisor, as dispatch does."""
+    fakebin = prompt.parent.parent.parent / "fakebin"
+    _fake_bin(fakebin, tool, fake_body)
+    env = _wrapper_env(fakebin, "30s", wrapper_env)
+    report = _report_path(prompt)
+    with mock.patch.dict(
+        os.environ,
+        {
+            output_safety.REPORT_POLL_ENV: "0.2",
+            output_safety.REPORT_GRACE_POLLS_ENV: "1",
+        },
+    ):
+        return output_safety.supervise(
+            ["env", "-i", *(f"{k}={v}" for k, v in env.items()),
+             "bash", str(BIN_DIR / wrapper), str(prompt)],
+            status_path=_status_path(prompt),
+            report_path=report,
+            log_path=Path(str(report) + ".launch.log"),
+            launch_id="reap-test",
+            expected_variant="task",
+            limits=output_safety.OutputLimits(),
+        )
+
+
+@pytest.mark.parametrize("wrapper,tool", BASH_WRAPPERS)
+def test_wrapper_reap_does_not_orphan_a_slow_to_stop_assignee(
+    tmp_path, wrapper, tool
+):
+    """`timeout` puts the agent CLI in its own process group, and a SIGKILL
+    sent to `timeout` alone cannot be forwarded. An assignee that does not
+    stop on TERM must still be gone when the wrapper reports its exit,
+    instead of surviving as an orphan that can rewrite the report."""
+    prompt = _make_project(tmp_path)
+    report = _report_path(prompt)
+    pidfile = tmp_path / "assignee.pid"
+    body = (
+        "trap '' TERM\n"
+        f"echo $$ > '{pidfile}'\n"
+        f"cat > '{report}' <<'REPORT_EOF'\n{COMPLETE_REPORT}REPORT_EOF\n"
+        "exec sleep 25\n"
+    )
+    proc = _run_wrapper(wrapper, tool, prompt, body,
+                        timeout_spec="30s", subprocess_timeout=20)
+
+    assert proc.returncode == 0, proc.stderr
+    pid = int(pidfile.read_text().strip())
+    assert _pid_gone(pid), f"{wrapper}: assignee {pid} outlived the wrapper"
+
+
+@pytest.mark.parametrize("wrapper,tool", BASH_WRAPPERS)
+def test_supervisor_reap_reaches_assignee_outside_wrapper_group(
+    tmp_path, wrapper, tool
+):
+    """The dispatch supervisor reaps the wrapper's process group, which does
+    not contain the `timeout`-launched assignee. The wrapper forwards that
+    TERM to the assignee, so the launch ends promptly with the writer gone.
+    The wrapper's own watcher is given a long grace so the supervisor's reap
+    is the one under test."""
+    prompt = _make_project(tmp_path)
+    report = _report_path(prompt)
+    pidfile = tmp_path / "assignee.pid"
+    body = (
+        f"echo $$ > '{pidfile}'\n"
+        f"cat > '{report}' <<'REPORT_EOF'\n{COMPLETE_REPORT}REPORT_EOF\n"
+        "exec sleep 25\n"
+    )
+    started = time.monotonic()
+    result = _supervise_wrapper(
+        wrapper, tool, prompt, body,
+        wrapper_env={"CARTOPIAN_REPORT_GRACE_POLLS": "100"},
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.exit_code == 0
+    pid = int(pidfile.read_text().strip())
+    assert _pid_gone(pid, within=0.0), (
+        f"{wrapper}: state=exited published while assignee {pid} was alive"
+    )
+    assert elapsed < 10, f"{wrapper}: reap took {elapsed:.1f}s"
+    assert output_safety._WRITER_SURVIVED_MARKER not in Path(
+        result.retained_log_path
+    ).read_bytes()
+
+
+@pytest.mark.parametrize("wrapper,tool", BASH_WRAPPERS)
+def test_supervisor_waits_for_assignee_that_survives_the_reap(
+    tmp_path, wrapper, tool
+):
+    """The reported anomaly: the completion report was replaced on disk after
+    the clean exited status was published. An assignee that survives every
+    signal the reap can deliver must still hold publication until it exits,
+    so the exited status names the bytes it left behind."""
+    prompt = _make_project(tmp_path)
+    report = _report_path(prompt)
+    rewritten = COMPLETE_REPORT.replace(
+        "The handoff completed.", "The handoff completed, then revised."
+    )
+    body = (
+        "trap '' TERM\n"
+        f"cat > '{report}' <<'REPORT_EOF'\n{COMPLETE_REPORT}REPORT_EOF\n"
+        "sleep 4\n"
+        f"cat > '{report}.tmp' <<'REPORT_EOF'\n{rewritten}REPORT_EOF\n"
+        f"mv -f '{report}.tmp' '{report}'\n"
+    )
+    result = _supervise_wrapper(
+        wrapper, tool, prompt, body,
+        wrapper_env={"CARTOPIAN_REPORT_GRACE_POLLS": "100"},
+    )
+
+    assert result.exit_code == 0
+    assert report.read_text(encoding="utf-8") == rewritten, (
+        f"{wrapper}: state=exited published before the surviving writer "
+        "finished rewriting the report"
+    )
+    fields = _parse_status(_status_path(prompt).read_text(encoding="utf-8"))
+    assert fields["state"] == "exited"
+    assert output_safety._WRITER_SURVIVED_MARKER in Path(
+        result.retained_log_path
+    ).read_bytes()
 
 
 # --- readiness token may carry a rationale ----------------------------------

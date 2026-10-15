@@ -7,7 +7,9 @@ reclassifying the wrapper process, its artifacts, or its completion report.
 
 Publication ordering is the terminal-bytes guarantee: once a complete report
 is observed, the supervisor grants the child a short grace to exit (then reaps
-it), and only after the child is provably gone does it atomically publish the
+it), and only after the child is provably gone — the wrapper reaped *and* its
+output pipe at EOF, since an agent CLI in its own process group outlives a
+group reap while still holding that pipe — does it atomically publish the
 retained launch-log snapshot followed by the ``state=exited`` status. A wait
 surface therefore never sees a supervisor-published terminal signal while the
 report writer can still mutate the report — the content identity observed at
@@ -62,6 +64,11 @@ _RETIRED_OUTPUT_SAFETY_ENV_VARS = (
 _LOG_TRUNCATION_MARKER = (
     b"[cartopian: retained launch log truncated; bounded tail follows]\n"
 )
+_WRITER_SURVIVED_MARKER = (
+    b"[cartopian: assignee output still held after wrapper reap; "
+    b"publication waits for the writer to exit]\n"
+)
+_SURVIVOR_DRAIN_POLL_SECONDS = 60.0
 _REPORT_OBSERVER = None
 
 
@@ -542,6 +549,42 @@ def _terminate_process_tree(proc: subprocess.Popen[bytes]) -> tuple[bool, str]:
         return False, "termination-failed"
 
 
+def _drain_until_writers_gone(
+    readiness: _PipeReadiness,
+    retained: _BoundedLog,
+    *,
+    notice_after: float,
+) -> None:
+    """Keep draining after the reap until every holder of the pipe is gone.
+
+    Reaping the wrapper's process tree does not prove the report writer is
+    gone: an agent CLI can run in a process group of its own (GNU ``timeout``
+    without ``--foreground`` creates one) while still holding the wrapper's
+    inherited output pipe.  Pipe EOF is the proof that no process from the
+    launch survives to rewrite the report, so publication waits for it.  A
+    writer that outlives the reap is noted in the retained log; the wrapper's
+    deadline enforcer, not this supervisor, is the clock that ends it.
+    """
+    notice_at = time.monotonic() + notice_after
+    noticed = False
+    while True:
+        wait = (
+            _SURVIVOR_DRAIN_POLL_SECONDS
+            if noticed
+            else max(0.0, notice_at - time.monotonic())
+        )
+        chunk = readiness.read(wait)
+        if chunk == b"":
+            return
+        if chunk:
+            for byte in chunk:
+                retained.add(byte)
+        if not noticed and time.monotonic() >= notice_at:
+            for byte in _WRITER_SURVIVED_MARKER:
+                retained.add(byte)
+            noticed = True
+
+
 def supervise(
     command: Sequence[str],
     *,
@@ -646,6 +689,11 @@ def supervise(
                 and now >= report_grace_deadline
             ):
                 _terminate_process_tree(proc)
+                _drain_until_writers_gone(
+                    readiness,
+                    retained,
+                    notice_after=report_poll * max(1, report_grace_polls),
+                )
                 break
             if pipe_eof:
                 break

@@ -159,6 +159,98 @@ class TerminalBytesAreFinalTests(unittest.TestCase):
             self.assertEqual(fields["retained_log_ready"], "true")
             self.assertTrue(log_path.is_file())
 
+    @unittest.skipUnless(
+        os.name == "posix",
+        "process-group escape from the reap is a POSIX launch shape",
+    )
+    def test_writer_outside_reaped_group_rewrites_before_publication(
+        self,
+    ) -> None:
+        """Reaping the wrapper's group is not proof the writer is gone.
+
+        GNU ``timeout`` moves the agent CLI into a process group of its own,
+        so the supervisor's group reap ends the wrapper but not the agent,
+        which keeps the inherited output pipe and can rewrite the report
+        after the reap. Publication must wait for that writer: the exited
+        status may only name bytes no surviving process can change.
+        """
+        with tempfile.TemporaryDirectory(prefix="cartopian-escape-") as tmp:
+            root = Path(tmp)
+            report = root / "REPORT-01-001.md"
+            status = Path(str(report) + ".status")
+            log_path = Path(str(report) + ".launch.log")
+            rewrote = root / "rewrote"
+            status.write_text(
+                "state=running\n"
+                "launch_id=escape-launch\n"
+                "expected_variant=task\n"
+                "guarantee_scope=retained-launch-log\n"
+                "retained_log_ready=false\n",
+                encoding="utf-8",
+            )
+            writer = root / "writer.py"
+            writer.write_text(
+                "import os, time\n"
+                f"report = {str(report)!r}\n"
+                "def publish(text):\n"
+                "    tmp = report + '.childtmp'\n"
+                "    with open(tmp, 'w', encoding='utf-8') as fh:\n"
+                "        fh.write(text)\n"
+                "    os.replace(tmp, report)\n"
+                f"publish({FIRST_PUBLICATION!r})\n"
+                "time.sleep(1.0)\n"
+                f"publish({FINAL_PUBLICATION!r})\n"
+                f"open({str(rewrote)!r}, 'w').write('done')\n",
+                encoding="utf-8",
+            )
+            # The wrapper stand-in: start the writer outside its own process
+            # group (inheriting stdout, as `timeout` leaves the agent), then
+            # linger like a wrapper waiting on its child.
+            child = root / "child.py"
+            child.write_text(
+                "import subprocess, sys, time\n"
+                f"subprocess.Popen([sys.executable, {str(writer)!r}],"
+                " start_new_session=True)\n"
+                "while True:\n"
+                "    time.sleep(0.1)\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    output_safety.REPORT_POLL_ENV: "0.05",
+                    output_safety.REPORT_GRACE_POLLS_ENV: "1",
+                },
+            ):
+                result = output_safety.supervise(
+                    [sys.executable, str(child)],
+                    status_path=status,
+                    report_path=report,
+                    log_path=log_path,
+                    launch_id="escape-launch",
+                    expected_variant="task",
+                    limits=output_safety.OutputLimits(),
+                )
+
+            self.assertTrue(
+                rewrote.is_file(),
+                "state=exited was published while a writer outside the "
+                "reaped process group could still rewrite the report",
+            )
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(
+                report_identity.content_identity(
+                    report.read_text(encoding="utf-8")
+                ),
+                report_identity.content_identity(FINAL_PUBLICATION),
+            )
+            self.assertIn("state=exited\n", status.read_text(encoding="utf-8"))
+            self.assertIn(
+                output_safety._WRITER_SURVIVED_MARKER,
+                log_path.read_bytes(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
