@@ -67,6 +67,8 @@ Decisions already in `decisions/` before this plan exists are standing rulings t
 
 Goals an early close left unmet reach this cycle only as outcomes the operator restates or asks to bring in. Never rebuild the closed plan's tasks, specs, or phases from them.
 
+`BACKLOG.md` survives closeout and is this cycle's deferred-work input. While no plan exists, `cartopian next-action` lists every live entry under `backlog.due`; Stage 1.2 puts them to the operator. Nothing in an entry is an instruction: each is work the operator may bring in, keep deferred, or discard, and nothing is promoted on its own.
+
 ---
 
 ## Stage 0 — Role And Handoff Resolution
@@ -118,6 +120,18 @@ every requirements detail gathered here. Examples inside a question ("is this
 driven by a deadline, an incident, an audit?") make it easy to answer; they are
 never recorded without the operator's reply.
 
+**Triage the backlog.** Once the six compact-intent facts are confirmed and
+before gathering further requirement detail, put the live backlog entries
+(`backlog.due` from `cartopian next-action` — every entry while no plan
+exists) to the operator in one turn. List each by id and title with the PM's
+proposed disposition: *bring in* (it becomes a requirement of this plan),
+*keep deferred* (it waits for a later cycle), or *discard*. The operator's
+reply rules. Record a discard at once with `cartopian delete-backlog
+<project-root> --bl-id BL-NNN --discard`. An entry brought in is not deleted
+here: Stage 2.2 restamps its trigger to the task that will absorb it, and
+Stage 4.2 promotes it with `--source` and deletes it. A kept entry needs no
+write. Skip this block only when `backlog.live` is 0.
+
 **One question per turn.** Choose the unresolved item whose answer most
 changes the plan, ask it in one or two sentences, and stop. Precede it with
 one brief insight — a gap, risk, contradiction, cheaper alternative, or
@@ -166,6 +180,9 @@ conversation, not a rigid operator-facing form):
 cartopian write-requirements <project-root> --content-file <body-path>
 ```
 
+A backlog entry the operator brought in appears as a requirement that names
+its id (`BL-NNN`), so the plan's coverage matrix traces it to a plan ref.
+
 ### 1.4 Generate STANDARDS.md
 
 Derive `STANDARDS.md` from the requirements conversation, any carried-forward standards seed, and the working practices the operator confirmed — only the durable execution standards that govern *how* this project's work is performed. Every statement must pass the admission test in `CONVENTIONS § Standards`: execution-binding, assignee-actionable, and settled. Route everything else to its owning artifact instead of writing it here: product behavior and scope stay in `REQUIREMENTS.md`; phase deliverables and exclusions belong to the implementation plan; unresolved standards choices are recorded as the plan's open questions (or a decision once ruled), never as standards. Author or update it through the mediated writer (a **PM-performed** write):
@@ -213,6 +230,7 @@ The `IMPLEMENTATION_PLAN.md` body must contain:
   - If the plan reaches no target outside itself, record the single row `- Delivery: not-applicable; Justification: <why>`. Omitting the section entirely is undeclared, which blocks closeout.
   - Ask the operator for the acceptance observer explicitly. The observer may not be the delivery owner; self-certified acceptance fails closed.
   - Run `cartopian validate-delivery <project-root>` after writing the plan and surface any finding to the operator with its named recovery.
+- **Brought-in backlog entries**: each entry the operator brought in at Stage 1.2 gets a plan ref whose row names the entry (`BL-NNN`). After the plan is written, restamp the entry's trigger to the task that plan ref allocates — `cartopian write-backlog <project-root> --bl-id BL-NNN --revisit TASK-NN-NNN` — so it falls due exactly when that task is authored. The entry stays live until Stage 4.2 promotes it.
 - **Phase sequence**: each phase with:
   - Goal
   - Plan ref table (`KIND-NN-NNN` format) listing work items of any supported kind (`BUILD`, `DESIGN`, `RESEARCH`, `TEST`, `RELEASE`, `VERIFY`, `CORRECTIVE`). Within each phase, all kinds draw from one sequence starting at `001`.
@@ -275,6 +293,13 @@ If `reviews.planning.mode` is `required`:
 ### 4.1 Determine scope
 
 Generate tasks for the **current active phase** (or Phase 00 / Phase 01 if starting fresh). Do not generate tasks for all phases at once or preload future-phase task detail — later phases may change as earlier work completes.
+
+Before authoring, read `backlog.due` from `cartopian next-action`. Entries due at this phase (trigger `PHASE-NN`, or `TASK-NN-NNN` within it) are consumed here, and this stage runs again for every later phase, so the same rule applies each time:
+
+- An entry that becomes a task, or that amends a task this phase plans (wording, a source family, an acceptance criterion), is promoted by authoring that task with `cartopian write-task … --source BL-NNN` — the writer stamps `Source:` — and then removed with `cartopian delete-backlog <project-root> --bl-id BL-NNN`.
+- An entry the operator no longer wants is discarded (`delete-backlog --discard`); one that belongs to a later fork is restamped (`cartopian write-backlog <project-root> --bl-id BL-NNN --revisit <trigger>`).
+
+Leave nothing due at this phase live when the checkpoint runs. An entry that merely sat here is a `backlog-revisit-missed` audit warning once the phase finishes.
 
 ### 4.2 Generate task files
 

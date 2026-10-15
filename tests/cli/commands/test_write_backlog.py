@@ -270,3 +270,116 @@ class TestWriteBacklog(_Fixture):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestWriteBacklogRevisit(_Fixture):
+    """The writer-owned ``Revisit:`` trigger: when the entry falls due."""
+
+    def _add(self, title, *extra):
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--title", title, "--content", "Body.", *extra
+        )
+        self.assertEqual(code, 0, err)
+        return records[0]["details"]
+
+    def test_new_entry_defaults_to_planning(self):
+        details = self._add("Later")
+        self.assertEqual(details["revisit"], "planning")
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("## BL-001 — Later\n\nRevisit: planning\n\nBody.\n", text)
+
+    def test_flag_stamps_the_trigger_first_in_the_body(self):
+        details = self._add("Amend wording", "--revisit", "TASK-01-002")
+        self.assertEqual(details["revisit"], "TASK-01-002")
+        self.assertIn("## BL-001 — Amend wording\n\nRevisit: TASK-01-002\n\nBody.\n",
+                      self.backlog.read_text(encoding="utf-8"))
+
+    def test_flag_outside_the_grammar_is_usage_error(self):
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--title", "t", "--content", "b",
+            "--revisit", "someday",
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("--revisit", err)
+
+    def test_body_header_is_honoured_when_flag_is_omitted(self):
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--title", "t",
+            "--content", "Revisit: PHASE-02\n\nBody.",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["details"]["revisit"], "PHASE-02")
+        # Rendered exactly once: the writer owns the line.
+        self.assertEqual(self.backlog.read_text(encoding="utf-8").count("Revisit:"), 1)
+
+    def test_flag_contradicting_body_header_is_refused(self):
+        code, _records, err = run_cli(
+            "write-backlog", self.root, "--title", "t",
+            "--content", "Revisit: PHASE-02\n\nBody.", "--revisit", "planning",
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("backlog-revisit-conflict", err)
+        self.assertFalse(self.backlog.exists())
+
+    def test_revision_without_flag_keeps_the_live_trigger(self):
+        self._add("First", "--revisit", "PHASE-03")
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "First (revised)", "--content", "New body.",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["details"]["revisit"], "PHASE-03")
+        self.assertIn("Revisit: PHASE-03\n\nNew body.", self.backlog.read_text(encoding="utf-8"))
+
+    def test_revision_with_flag_restamps_the_trigger(self):
+        self._add("First", "--revisit", "PHASE-03")
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "First", "--content", "Body.", "--revisit", "TASK-03-001",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["details"]["revisit"], "TASK-03-001")
+        text = self.backlog.read_text(encoding="utf-8")
+        self.assertIn("Revisit: TASK-03-001", text)
+        self.assertNotIn("PHASE-03", text)
+
+    def test_legacy_entry_revised_without_flag_reads_as_planning(self):
+        self.backlog.write_text(
+            "# Backlog\n\nHighest id issued: BL-001\n\n## BL-001 — Old\n\nNo line.\n",
+            encoding="utf-8",
+        )
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001",
+            "--title", "Old", "--content", "Still no line.",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(records[0]["details"]["revisit"], "planning")
+
+    def test_restamp_only_keeps_title_and_body(self):
+        code, _r, err = run_cli(
+            "write-backlog", self.root, "--title", "Keep me",
+            "--content", "Line one.\n\n```\n## BL-999 — quoted\n```\n", "--revisit", "planning",
+        )
+        self.assertEqual(code, 0, err)
+        before = self.backlog.read_text(encoding="utf-8")
+        code, records, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-001", "--revisit", "TASK-02-001",
+        )
+        self.assertEqual(code, 0, err)
+        details = records[0]["details"]
+        self.assertEqual(details["revisit"], "TASK-02-001")
+        self.assertTrue(details["entry_replaced"])
+        after = self.backlog.read_text(encoding="utf-8")
+        self.assertEqual(after, before.replace("Revisit: planning", "Revisit: TASK-02-001"))
+
+    def test_restamp_only_needs_bl_id(self):
+        code, _r, err = run_cli("write-backlog", self.root, "--revisit", "PHASE-02")
+        self.assertEqual(code, 2)
+        self.assertIn("--title", err)
+
+    def test_restamp_only_for_nonlive_entry_is_refused(self):
+        code, _r, err = run_cli(
+            "write-backlog", self.root, "--bl-id", "BL-004", "--revisit", "PHASE-02",
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("backlog-id-not-live", err)

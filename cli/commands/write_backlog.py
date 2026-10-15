@@ -16,12 +16,21 @@ mediated-write primitive (``backlog`` dest_kind → the allowlisted root file
 ``BACKLOG.md``) — no raw edit, no second bypass surface. An existing
 ``BACKLOG.md`` keeps its preamble (everything before the first entry heading); a
 missing one is seeded with a minimal header.
+
+Every entry opens with a writer-owned ``Revisit:`` line naming the lifecycle
+fork at which it falls due (``planning`` | ``PHASE-NN`` | ``TASK-NN-NNN``; see
+:mod:`cli.backlog_revisit`). ``--revisit`` sets it; a body whose first line
+declares it is honoured when the flag is omitted and refused when the two
+disagree; a revision without either keeps the live entry's trigger; a new
+entry without either defaults to ``planning``. ``--bl-id BL-NNN --revisit
+<trigger>`` alone restamps a live entry's trigger and keeps its title and body.
 """
 import argparse
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from cli import backlog_revisit
 from cli.commands import _writers
 from cli.mediated_write import GuardRefusal, mediated_write
 
@@ -109,8 +118,22 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     )
     subparser.add_argument(
         "--title",
-        required=True,
-        help="Short entry title for the `## BL-NNN — <title>` heading",
+        default=None,
+        help=(
+            "Short entry title for the `## BL-NNN — <title>` heading. Required "
+            "except when `--bl-id` and `--revisit` restamp a live entry's trigger."
+        ),
+    )
+    subparser.add_argument(
+        "--revisit",
+        default=None,
+        help=(
+            "When the entry falls due: `planning` (the next planning cycle, "
+            "the default), `PHASE-NN` (when that phase's tasks are generated), "
+            "or `TASK-NN-NNN` (before that task is authored or dispatched). "
+            "next-action lists due entries; plan-audit warns when a trigger "
+            "passed unanswered."
+        ),
     )
 
 
@@ -189,9 +212,28 @@ def handler(args: argparse.Namespace) -> int:
             "usage", f"--bl-id must match BL-NNN grammar; got: {supplied_id!r}"
         )
         return _writers.EXIT_USAGE
-    title = _sanitize_title(args.title)
-    if not title:
-        _writers.stderr("usage", "--title must be non-empty")
+    flag_revisit = getattr(args, "revisit", None)
+    if flag_revisit is not None:
+        problem = backlog_revisit.validate_revisit(flag_revisit)
+        if problem is not None:
+            _writers.stderr("usage", f"--revisit: {problem}")
+            return _writers.EXIT_USAGE
+    # `--bl-id X --revisit T` with no title and no body restamps the trigger
+    # of a live entry, keeping its heading and body byte-for-byte.
+    restamp_only = (
+        supplied_id is not None
+        and flag_revisit is not None
+        and args.title is None
+        and getattr(args, "content", None) is None
+        and getattr(args, "content_file", None) is None
+    )
+    title = _sanitize_title(args.title or "")
+    if not title and not restamp_only:
+        _writers.stderr(
+            "usage",
+            "--title must be non-empty (omit it only to restamp a live entry "
+            "with --bl-id and --revisit alone)",
+        )
         return _writers.EXIT_USAGE
 
     root, err = _writers.validated_root(args.project_root)
@@ -199,16 +241,33 @@ def handler(args: argparse.Namespace) -> int:
         _writers.stderr("usage", err)
         return _writers.EXIT_USAGE
 
-    content, cerr = _writers.resolve_content(args)
-    if cerr is not None:
-        _writers.stderr("usage", cerr)
-        return _writers.EXIT_USAGE
-    if isinstance(content, bytes):
-        try:
-            content = content.decode("utf-8")
-        except UnicodeDecodeError:
-            _writers.stderr("usage", "entry body must be valid UTF-8")
+    content: str = ""
+    if not restamp_only:
+        raw_content, cerr = _writers.resolve_content(args)
+        if cerr is not None:
+            _writers.stderr("usage", cerr)
             return _writers.EXIT_USAGE
+        if isinstance(raw_content, bytes):
+            try:
+                raw_content = raw_content.decode("utf-8")
+            except UnicodeDecodeError:
+                _writers.stderr("usage", "entry body must be valid UTF-8")
+                return _writers.EXIT_USAGE
+        content = raw_content
+    body_revisit, _rest = backlog_revisit.split_revisit_line(content)
+    if body_revisit is not None:
+        problem = backlog_revisit.validate_revisit(body_revisit)
+        if problem is not None:
+            _writers.stderr("usage", f"body Revisit line: {problem}")
+            return _writers.EXIT_USAGE
+        if flag_revisit is not None and flag_revisit != body_revisit:
+            _writers.stderr(
+                "guard",
+                f"backlog-revisit-conflict: --revisit {flag_revisit} contradicts "
+                f"the body's `Revisit: {body_revisit}` line; supply one or make "
+                "them agree",
+            )
+            return _writers.EXIT_FAIL
 
     backlog_path = Path(root) / "BACKLOG.md"
     try:
@@ -246,6 +305,8 @@ def handler(args: argparse.Namespace) -> int:
         bl_id = _format_id(mark + 1)
         mark += 1
         allocated = True
+        revisit = flag_revisit or body_revisit or backlog_revisit.REVISIT_PLANNING
+        content = backlog_revisit.render_body(revisit, content)
         sections.append((bl_id, _render_entry(bl_id, title, content)))
         replaced = False
     else:
@@ -261,6 +322,18 @@ def handler(args: argparse.Namespace) -> int:
             )
             return _writers.EXIT_FAIL
         allocated = False
+        current = next(
+            backlog_revisit.parse_section(sid, text)
+            for sid, text in sections if sid == bl_id
+        )
+        if restamp_only:
+            title, content = current["title"], current["body"]
+        revisit = flag_revisit or body_revisit
+        if revisit is None:
+            # A revision that names no trigger keeps the live entry's own (a
+            # legacy entry without the line reads as `planning`).
+            revisit = current["revisit"] if current["error"] is None else backlog_revisit.REVISIT_PLANNING
+        content = backlog_revisit.render_body(revisit, content)
         new_section = _render_entry(bl_id, title, content)
         for i, (sid, _text) in enumerate(sections):
             if sid == bl_id:
@@ -283,6 +356,7 @@ def handler(args: argparse.Namespace) -> int:
             "dest_kind": "backlog",
             "bl_id": bl_id,
             "allocated": allocated,
+            "revisit": revisit,
             "highest_id_issued": _format_id(mark),
             "path": result["path"],
             "bytes": result["bytes"],

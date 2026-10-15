@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cli import delivery_contract, planning_status, task_dependencies, trace_binding
+from cli import backlog_revisit, delivery_contract, planning_status, task_dependencies, trace_binding
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -338,6 +338,25 @@ def _what_to_do_next(project_path: Path) -> Optional[str]:
     return "No active or open work remains; review closeout readiness."
 
 
+def _backlog_line(project_path: Path) -> Optional[str]:
+    """One composed bullet for deferred work, or ``None`` with no live entry.
+
+    The backlog is filesystem fact, so the composed body may name it; the line
+    is a count and the due ids only, never entry text, so state stays short.
+    """
+    record = backlog_revisit.startup_record(project_path)
+    if not record["live"]:
+        return None
+    noun = "entry" if record["live"] == 1 else "entries"
+    due = record["due"]
+    if due:
+        ids = ", ".join(entry["id"] for entry in due)
+        when = f"{len(due)} due now ({ids})"
+    else:
+        when = "none due now"
+    return f"- Backlog: {record['live']} deferred {noun} in `BACKLOG.md`; {when}"
+
+
 def _render_body(
     project_name: str,
     current_phase: Optional[str],
@@ -385,7 +404,11 @@ def compose_record(project_path: Path, project_name: str) -> Dict[str, Any]:
 
     current_phase = _current_phase(project_path)
     active_work = _active_work(project_path) or "None"
-    open_work = _open_work(project_path) or "None"
+    open_work = _open_work(project_path)
+    backlog_line = _backlog_line(project_path)
+    if backlog_line is not None:
+        open_work = f"{open_work}\n{backlog_line}" if open_work else backlog_line
+    open_work = open_work or "None"
     what_to_do_next = _what_to_do_next(project_path) or "None"
 
     return {

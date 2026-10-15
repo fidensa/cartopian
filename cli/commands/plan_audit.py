@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cli import governance_reads, planning_status, request_trace, task_dependencies, trace_binding
+from cli import backlog_revisit, governance_reads, planning_status, request_trace, task_dependencies, trace_binding
 from cli.commands import delete_backlog, write_backlog
 from cli.commands.resolve_config import (
     _CliError,
@@ -723,6 +723,11 @@ def _check_backlog_invariants(
     - Warning: a live entry already carries a ``Source: BL-NNN`` stamp in the
       durable surface — the benign duplicate a stamp-then-delete crash leaves;
       finish the promotion by deleting the entry.
+    - Warning: a live entry's ``Revisit:`` trigger has passed (the task is
+      done, the phase finished) without the entry being promoted, re-deferred
+      or discarded — the detection floor for deferred work nothing read.
+    - Warning: a ``Revisit:`` value outside the grammar; only a hand-edit
+      produces one, and the writer cannot infer the intended fork.
     """
     blockers: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
@@ -758,6 +763,31 @@ def _check_backlog_invariants(
                     f"{stamp}; finish the promotion by deleting {sid}"
                 ),
             })
+
+    revisit = backlog_revisit.evaluate(project_path)
+    for entry in revisit["missed"]:
+        warnings.append({
+            "kind": "backlog-revisit-missed",
+            "bl_id": entry["id"],
+            "revisit": entry["revisit"],
+            "detail": (
+                f"backlog entry {entry['id']} was due at {entry['revisit']} but "
+                f"{entry['reason']}; promote it (write-task/write-spec/write-phase "
+                "--source, then delete-backlog), re-defer it (write-backlog "
+                "--bl-id --revisit), or discard it (delete-backlog --discard)"
+            ),
+        })
+    for entry in revisit["unreadable"]:
+        warnings.append({
+            "kind": "backlog-revisit-unreadable",
+            "bl_id": entry["id"],
+            "revisit": entry["revisit"],
+            "detail": (
+                f"backlog entry {entry['id']} has a Revisit line outside the "
+                f"grammar ({entry['reason']}); restamp it with write-backlog "
+                f"--bl-id {entry['id']} --revisit"
+            ),
+        })
     return blockers, warnings
 
 

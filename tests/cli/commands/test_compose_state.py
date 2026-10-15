@@ -220,3 +220,59 @@ class TestComposeStateReadOnlyInvariant(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestComposeStateBacklogLine(unittest.TestCase):
+    """Live deferred work is filesystem fact, so the composed body names it:
+    a count and the due ids under Open work, never entry text."""
+
+    def _layout(self, scaffold) -> None:
+        scaffold.write("IMPLEMENTATION_PLAN.md", "# Plan\n")
+        scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+        scaffold.write("tasks/open/TASK-01-001.md",
+                       "# TASK-01-001: Build core\n\nPhase: PHASE-01\n")
+
+    def test_no_line_without_live_entries(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            self._layout(scaffold)
+            records, _rc = _invoke(str(scaffold.project_root))
+            self.assertNotIn("Backlog", records[0]["open_work"])
+
+    def test_line_names_count_and_due_ids(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            self._layout(scaffold)
+            scaffold.write(
+                "BACKLOG.md",
+                "# Backlog\n\nHighest id issued: BL-002\n\n"
+                "## BL-001 — Now\n\nRevisit: TASK-01-001\n\nA.\n\n"
+                "## BL-002 — Later\n\nRevisit: planning\n\nB.\n",
+            )
+            records, _rc = _invoke(str(scaffold.project_root))
+            rec = records[0]
+            self.assertEqual(
+                rec["open_work"],
+                "- TASK-01-001: Build core (`tasks/open/TASK-01-001.md`) [ready]\n"
+                "- Backlog: 2 deferred entries in `BACKLOG.md`; 1 due now (BL-001)",
+            )
+            self.assertIn("1 due now (BL-001)", rec["rendered_body"])
+            # The backlog line is not open work: the next step is still the task.
+            self.assertEqual(rec["what_to_do_next"], "Start TASK-01-001 (`tasks/open/TASK-01-001.md`).")
+
+    def test_line_stands_alone_when_no_task_is_open(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", "# Plan\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            scaffold.write("tasks/done/TASK-01-001.md",
+                           "# TASK-01-001: Build core\n\nPhase: PHASE-01\n")
+            scaffold.write(
+                "BACKLOG.md",
+                "# Backlog\n\nHighest id issued: BL-001\n\n"
+                "## BL-001 — Later\n\nRevisit: planning\n\nB.\n",
+            )
+            records, _rc = _invoke(str(scaffold.project_root))
+            rec = records[0]
+            self.assertEqual(
+                rec["open_work"],
+                "- Backlog: 1 deferred entry in `BACKLOG.md`; none due now",
+            )
+            self.assertEqual(rec["what_to_do_next"], "No active or open work remains; review closeout readiness.")

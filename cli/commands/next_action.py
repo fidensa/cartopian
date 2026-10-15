@@ -16,6 +16,12 @@ exact remaining planning step when the current phase is not fully planned;
 - ``blocked`` — the concrete failure, the responsible party, and the recovery;
 - ``plan-complete`` — nothing remains but closeout.
 
+``backlog`` carries the deferred work whose ``Revisit:`` trigger is now —
+entries due at the next planning cycle, at the phase whose tasks are about to
+be generated, or at the task about to be authored or dispatched — so the fork
+that should consume them is never reached without seeing them. It is
+orientation, never a blocker (see :mod:`cli.backlog_revisit`).
+
 ``--reconcile`` refreshes a stale ``STATE.md`` body from the filesystem
 through the mediated writer (Situation notes are preserved), so startup never
 has to relay a state file that disagrees with the directories.
@@ -28,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cli import (
+    backlog_revisit,
     delivery_contract,
     dispatch_rehearsal,
     planning_status,
@@ -934,6 +941,11 @@ def handler(args: argparse.Namespace) -> int:
         "planning": planning,
         "startup": startup,
         "state_reconciled": state_reconciled,
+        # Deferred work whose trigger is now: entries due at this fork (the
+        # next planning cycle, the phase whose tasks are about to be
+        # generated, or the task about to be authored or dispatched). Never a
+        # blocker — the owning skill triages them at that fork.
+        "backlog": backlog_revisit.startup_record(project_path),
         # Startup carries delivery and follow-up *status*, not a blocker: the
         # delivery gate is a closeout gate, so an unmet obligation mid-plan is
         # something the session must see, not something that halts it. The

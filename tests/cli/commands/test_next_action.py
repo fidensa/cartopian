@@ -645,3 +645,49 @@ class TestPlanCompletionTruth(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestNextActionBacklog(unittest.TestCase):
+    """``backlog`` names the deferred work due at the current fork; never a blocker."""
+
+    _BACKLOG = (
+        "# Backlog\n\nHighest id issued: BL-003\n\n"
+        "## BL-001 — Amend the wording\n\nRevisit: TASK-01-002\n\nA.\n\n"
+        "## BL-002 — Phase two prep\n\nRevisit: PHASE-02\n\nB.\n\n"
+        "## BL-003 — Someday\n\nRevisit: planning\n\nC.\n"
+    )
+
+    def test_empty_record_without_a_backlog(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold, _isolated_home():
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            self.assertEqual(records[0]["backlog"], {"live": 0, "due": []})
+
+    def test_everything_is_due_when_no_plan_exists(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold, _isolated_home():
+            scaffold.write("BACKLOG.md", self._BACKLOG)
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            backlog = records[0]["backlog"]
+            self.assertEqual(backlog["live"], 3)
+            self.assertEqual([e["id"] for e in backlog["due"]], ["BL-001", "BL-002", "BL-003"])
+            self.assertEqual(records[0]["blockers"], [])
+
+    def test_only_the_entries_at_this_fork_are_due(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold, _isolated_home():
+            scaffold.write("BACKLOG.md", self._BACKLOG)
+            scaffold.write("IMPLEMENTATION_PLAN.md", "# Plan\n")
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: One\n")
+            scaffold.write("phases/PHASE-02.md", "# PHASE-02: Two\n")
+            scaffold.write("tasks/in-progress/TASK-01-001.md",
+                           "# TASK-01-001: a\n\nPhase: PHASE-01\n")
+            scaffold.write("tasks/open/TASK-01-002.md",
+                           "# TASK-01-002: b\n\nPhase: PHASE-01\n")
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            backlog = records[0]["backlog"]
+            self.assertEqual(backlog["live"], 3)
+            self.assertEqual([e["id"] for e in backlog["due"]], ["BL-001"])
+            self.assertEqual(backlog["due"][0]["revisit"], "TASK-01-002")
+            self.assertEqual(backlog["due"][0]["title"], "Amend the wording")
+            self.assertEqual(records[0]["blockers"], [])

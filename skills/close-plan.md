@@ -133,12 +133,15 @@ Ask the operator four closeout questions:
 
    When the operator keeps any, record one operator decision with `Carries forward: DEC-NNN[, ...]`, a `Ruling:` line, and the operator's captured turn as evidence. It must not also carry `Closes plan:`. Carrying a PM decision ratifies it. Recommend an archive when decisions are dropped, since the archive is then the only copy.
 
+There is no backlog question. `BACKLOG.md` survives the reset untouched, and every live entry falls due at the next plan's Stage 1 triage whatever its trigger (`next-action` lists all of them while no plan exists). Tell the operator the live count from `next-action`'s `backlog.live`; propose no disposition here, and do not promote, restamp, or discard entries as part of closing.
+
 Defaults:
 
 - Archive: no.
 - Standards: carry forward only if the operator says so.
 - Decisions: carry none.
 - Resources: carry forward. `reset-plan` never clears `resources/`; when the operator asks for an archive, `archive-plan` snapshots `resources/` along with the plan artifacts. Pruning is **operator-performed** (no mediated command deletes resources) and happens only for files the operator explicitly names.
+- Backlog: carries forward; triaged at the next planning cycle.
 
 Requirements and implementation plans never carry forward as live artifacts. The next planning cycle must produce fresh `REQUIREMENTS.md` and `IMPLEMENTATION_PLAN.md`.
 
@@ -277,6 +280,7 @@ Before the first removal — and only after the preflight has passed — `reset-
 - `cartopian.toml`
 - `archive/`
 - `resources/` (contents; the empty directory is ensured)
+- `BACKLOG.md` (every live entry is put to the operator at the next plan's Stage 1)
 
 ---
 
@@ -331,6 +335,7 @@ None.
 - Engineering carry-forward: <yes | no>
 - Decisions carried: <none | DEC-NNN, ...>
 - Resources: <carried forward | carried forward, operator pruned <files>>
+- Backlog: <N live entries, due at the next planning cycle | none>
 
 ## What to do next
 
@@ -350,5 +355,6 @@ Print a concise closeout summary:
 - What was reset (including reports/).
 - Whether project standards carried forward.
 - Which decisions carried forward, if any.
+- How many backlog entries carry into the next planning cycle.
 - Any unresolved decision follow-up.
 - The exact next action: run `skills/plan-project.md`.

@@ -936,3 +936,66 @@ class TestPlanAuditStandardsGovernanceReads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPlanAuditBacklogRevisit(unittest.TestCase):
+    """A backlog trigger that passed unanswered is the audit's detection floor."""
+
+    def _project_with_plan(self, tmp_path: Path) -> Path:
+        project = _make_project(tmp_path)
+        (project / "cartopian.toml").write_text(
+            _MINIMAL_TOML + _REVIEW_OFF_TOML, encoding="utf-8"
+        )
+        _write(project / "IMPLEMENTATION_PLAN.md", "# Plan\n")
+        _write(project / "phases" / "PHASE-01.md", "# PHASE-01: One\n")
+        _write(project / "phases" / "PHASE-02.md", "# PHASE-02: Two\n")
+        _write(project / "tasks" / "done" / "TASK-01-001.md",
+               "# TASK-01-001: a\n\nPhase: PHASE-01\nPlan ref: BUILD-01-001\n")
+        _write(project / "tasks" / "open" / "TASK-02-001.md",
+               "# TASK-02-001: b\n\nPhase: PHASE-02\nPlan ref: BUILD-02-001\n")
+        return project
+
+    def test_due_entries_are_not_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = self._project_with_plan(tmp_path)
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-002\n\n"
+                   "## BL-001 — Due\n\nRevisit: TASK-02-001\n\nA.\n\n"
+                   "## BL-002 — Later\n\nRevisit: planning\n\nB.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            kinds = [w["kind"] for w in record["warnings"]]
+            self.assertNotIn("backlog-revisit-missed", kinds)
+            self.assertNotIn("backlog-revisit-unreadable", kinds)
+
+    def test_missed_trigger_warns_with_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = self._project_with_plan(tmp_path)
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-002\n\n"
+                   "## BL-001 — Task passed\n\nRevisit: TASK-01-001\n\nA.\n\n"
+                   "## BL-002 — Phase passed\n\nRevisit: PHASE-01\n\nB.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            missed = [w for w in record["warnings"] if w["kind"] == "backlog-revisit-missed"]
+            self.assertEqual([w["bl_id"] for w in missed], ["BL-001", "BL-002"])
+            self.assertIn("TASK-01-001 is done", missed[0]["detail"])
+            self.assertIn("delete-backlog --discard", missed[0]["detail"])
+            self.assertIn("PHASE-01 is finished", missed[1]["detail"])
+
+    def test_unreadable_trigger_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            project = self._project_with_plan(tmp_path)
+            _write(project / "BACKLOG.md",
+                   "# Backlog\n\nHighest id issued: BL-001\n\n"
+                   "## BL-001 — Odd\n\nRevisit: whenever\n\nA.\n")
+            proc = _run(str(project), home=tmp_path)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            record = json.loads(proc.stdout.strip())
+            kinds = [w["kind"] for w in record["warnings"]]
+            self.assertIn("backlog-revisit-unreadable", kinds)
