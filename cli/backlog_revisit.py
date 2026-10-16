@@ -138,11 +138,8 @@ def evaluate(project_path: Path) -> Dict[str, Any]:
     Returns ``{"live", "due", "pending", "missed", "unreadable"}``; each list
     holds ``{"id", "title", "revisit", "reason"}`` records in file order.
     """
-    from cli.commands.next_action import (
-        _collect_phase_stems,
-        _next_unstarted_phase,
-        _phase_task_presence,
-    )
+    from cli import planning_status
+    from cli.commands.next_action import _next_unstarted_phase, _phase_task_presence
 
     project_path = Path(project_path)
     live_entries = entries(project_path)
@@ -165,7 +162,7 @@ def evaluate(project_path: Path) -> Dict[str, Any]:
         })
 
     plan_exists = (project_path / "IMPLEMENTATION_PLAN.md").is_file()
-    stems = _collect_phase_stems(project_path / "phases")
+    stems = planning_status.phase_sequence(project_path)
     has_task = _phase_task_presence(project_path)
     next_unstarted = _next_unstarted_phase(stems, has_task)
     phase_live = _phase_live(project_path, stems)

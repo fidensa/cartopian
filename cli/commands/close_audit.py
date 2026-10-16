@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from cli import delivery_contract, report_identity, trace_binding
+from cli import delivery_contract, planning_status, report_identity, trace_binding
 from cli.commands.resolve_config import _CliError, _load_toml, _require_project_keys
 from cli.emit import emit_record
 from cli.main import EXIT_ENV, EXIT_OK, EXIT_USAGE, stderr_error, stderr_usage
@@ -185,6 +185,41 @@ def _collect_unmet_exit_criteria(project_root: Path) -> List[str]:
     return unmet
 
 
+def _collect_unverified_exit_criteria(project_root: Path) -> List[str]:
+    """Exit criteria that name no artifact id, so no check here can meet them.
+
+    A criterion such as "operator decision recorded for OQ-002" is prose: its
+    absence from ``unmet_exit_criteria`` is not evidence it was met. They are
+    listed so closeout confirms each against the record instead of reading
+    ``closable`` as confirmation.
+    """
+    unverified: List[str] = []
+    phases_dir = project_root / "phases"
+    if not phases_dir.is_dir():
+        return unverified
+    for phase_path in sorted(phases_dir.glob("PHASE-*.md")):
+        try:
+            content = phase_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for criterion in _extract_exit_criteria(content):
+            if not _CRITERION_ID_RE.search(criterion):
+                unverified.append(f"{phase_path.stem}: `{criterion}`")
+    return unverified
+
+
+def _collect_unplanned_phases(project_root: Path) -> List[str]:
+    """Plan phases whose phase file was never authored.
+
+    The plan's extent is ``IMPLEMENTATION_PLAN.md``'s phase sequence, not
+    ``phases/``: a phase with no file is unfinished work, not absent work.
+    """
+    return [
+        f"{phase} is in IMPLEMENTATION_PLAN.md but phases/{phase}.md was never authored"
+        for phase in planning_status.missing_phase_files(project_root)
+    ]
+
+
 def _task_title(task_path: str) -> str:
     try:
         lines = Path(task_path).read_text(encoding="utf-8").splitlines()
@@ -199,6 +234,7 @@ def _task_title(task_path: str) -> str:
 
 def _unfinished_work(
     open_tasks: List[Dict[str, str]],
+    unplanned_phases: List[str],
     unmet_exit_criteria: List[str],
     delivery: Dict[str, Any],
     unclaimed_requests: List[Dict[str, Any]],
@@ -212,6 +248,7 @@ def _unfinished_work(
     for task in open_tasks:
         title = _task_title(task["path"])
         items.append(f"{task['task_id']} ({task['status']})" + (f": {title}" if title else ""))
+    items.extend(unplanned_phases)
     items.extend(unmet_exit_criteria)
     items.extend(
         f"delivery {finding['code']}: {finding['detail']}"
@@ -235,7 +272,9 @@ def _no_plan_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         "open_tasks": None,
         "stale_prompts": None,
         "unresolved_reports": None,
+        "unplanned_phases": None,
         "unmet_exit_criteria": None,
+        "unverified_exit_criteria": None,
         "delivery": None,
         "early_close": None,
         "left_unfinished": None,
@@ -294,7 +333,9 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
     in_review_count = sum(1 for task in open_tasks if task["status"] == "in-review")
     stale_prompts = _collect_stale_prompts(project_path)
     unresolved_reports = _collect_unresolved_reports(project_path)
+    unplanned_phases = _collect_unplanned_phases(project_path)
     unmet_exit_criteria = _collect_unmet_exit_criteria(project_path)
+    unverified_exit_criteria = _collect_unverified_exit_criteria(project_path)
     # The delivery gate is the closeout-side consumer of the one authoritative
     # validator: closeout may not report success while a declared delivery
     # obligation is unmet, and an unauthorized external action stays pending
@@ -315,6 +356,8 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         blocking_reasons.append(
             f"unresolved report blocks closeout: {report_name}"
         )
+    for phase in unplanned_phases:
+        blocking_reasons.append(f"plan phase not planned: {phase}")
     for criterion in unmet_exit_criteria:
         blocking_reasons.append(f"phase exit criteria incomplete: {criterion}")
     blocking_reasons.extend(delivery_contract.blocking_reasons(delivery))
@@ -338,7 +381,7 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
     left_unfinished: List[str] = []
     if early_close is not None and blocking_reasons:
         left_unfinished = _unfinished_work(
-            open_tasks, unmet_exit_criteria, delivery, unclaimed_requests
+            open_tasks, unplanned_phases, unmet_exit_criteria, delivery, unclaimed_requests
         )
         blocking_reasons = []
 
@@ -352,7 +395,9 @@ def compose_record(project_id: str, project_path: Path) -> Dict[str, Any]:
         "open_tasks": open_tasks,
         "stale_prompts": stale_prompts,
         "unresolved_reports": unresolved_reports,
+        "unplanned_phases": unplanned_phases,
         "unmet_exit_criteria": unmet_exit_criteria,
+        "unverified_exit_criteria": unverified_exit_criteria,
         "delivery": delivery,
         "unclaimed_requests": unclaimed_requests,
         "early_close": early_close,

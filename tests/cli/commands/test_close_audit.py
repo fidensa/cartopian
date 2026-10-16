@@ -124,6 +124,8 @@ class TestCloseAuditNoPlanState(unittest.TestCase):
             self.assertIsNone(rec["stale_prompts"])
             self.assertIsNone(rec["unresolved_reports"])
             self.assertIsNone(rec["unmet_exit_criteria"])
+            self.assertIsNone(rec["unplanned_phases"])
+            self.assertIsNone(rec["unverified_exit_criteria"])
             self.assertIsNone(rec["delivery"])
             self.assertIsNone(rec["blocking_reasons"])
 
@@ -274,6 +276,113 @@ class TestCloseAuditBlockingStates(unittest.TestCase):
                 any("exit criteria" in reason.lower() and "DEC-002" in reason for reason in rec["blocking_reasons"])
             )
 
+
+
+_TWO_PHASE_PLAN = (
+    "# Implementation Plan: Test Project\n\n"
+    "## Delivery contract\n\n"
+    "- Delivery: not-applicable; Justification: the plan changes "
+    "only this fixture project and reaches no target outside it\n\n"
+    "## Phase sequence\n\n"
+    "### Phase 01: Foundation\n\n"
+    "| Plan ref | Kind | Description |\n"
+    "| --- | --- | --- |\n"
+    "| BUILD-01-001 | build | first |\n\n"
+    "### Phase 02: Build\n\n"
+    "| Plan ref | Kind | Description |\n"
+    "| --- | --- | --- |\n"
+    "| BUILD-02-001 | build | second |\n\n"
+    "## Open questions by phase\n\n"
+    "### Phase 03\n\n"
+    "- OQ-001: not a phase of the plan\n"
+)
+
+
+class TestCloseAuditPlanPhaseSequence(unittest.TestCase):
+    """The plan's phase sequence, not phases/, is what closeout must cover."""
+
+    def test_plan_phase_without_phase_file_blocks_closeout(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", _TWO_PHASE_PLAN)
+            scaffold.write(
+                "phases/PHASE-01.md",
+                "# PHASE-01: Foundation\n\n## Exit criteria\n\n- `TASK-01-001`\n",
+            )
+            scaffold.write(
+                "tasks/done/TASK-01-001.md",
+                "# TASK-01-001: finished\n\nPhase: PHASE-01\n",
+            )
+
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertFalse(rec["closable"])
+            # Only Phase sequence headings count; "### Phase 03" under the
+            # open questions section is not a plan phase.
+            self.assertEqual(len(rec["unplanned_phases"]), 1)
+            self.assertIn("PHASE-02", rec["unplanned_phases"][0])
+            self.assertIn(
+                "plan phase not planned: " + rec["unplanned_phases"][0],
+                rec["blocking_reasons"],
+            )
+
+    def test_every_plan_phase_with_a_file_does_not_block(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", _TWO_PHASE_PLAN)
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            scaffold.write("phases/PHASE-02.md", "# PHASE-02: Build\n")
+
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(records[0]["unplanned_phases"], [])
+            self.assertTrue(records[0]["closable"])
+
+    def test_early_close_lists_unplanned_phases_as_unfinished(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", _TWO_PHASE_PLAN)
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            with mock.patch.object(
+                close_audit.trace_binding, "early_close_decision", return_value="DEC-009"
+            ):
+                records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertTrue(rec["closable"])
+            self.assertEqual(rec["blocking_reasons"], [])
+            self.assertTrue(any("PHASE-02" in item for item in rec["left_unfinished"]))
+
+
+class TestCloseAuditUnverifiedExitCriteria(unittest.TestCase):
+    """A prose exit criterion is listed, never silently counted as met."""
+
+    def test_prose_criteria_are_listed_and_id_criteria_are_not(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write(
+                "phases/PHASE-01.md",
+                (
+                    "# PHASE-01: Foundation\n\n"
+                    "## Exit criteria\n\n"
+                    "- `TASK-01-001`\n"
+                    "- Operator decision recorded for OQ-002.\n"
+                ),
+            )
+            scaffold.write("tasks/done/TASK-01-001.md", "# TASK-01-001: finished\n")
+
+            records, rc = _invoke(str(scaffold.project_root))
+
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertEqual(
+                rec["unverified_exit_criteria"],
+                ["PHASE-01: `Operator decision recorded for OQ-002.`"],
+            )
+            self.assertEqual(rec["unmet_exit_criteria"], [])
+            self.assertFalse(
+                any("OQ-002" in reason for reason in rec["blocking_reasons"])
+            )
 
 class TestCloseAuditExitCodes(unittest.TestCase):
     def test_exit3_on_missing_config(self) -> None:

@@ -643,6 +643,84 @@ class TestPlanCompletionTruth(unittest.TestCase):
             self.assertTrue(rec["plan_complete"])
 
 
+class TestPlanPhaseSequenceCompletion(unittest.TestCase):
+    """A phase IMPLEMENTATION_PLAN.md declares is part of the plan even when
+    its phase file was never authored: finishing every task under phases/
+    is not plan completion while the plan names more phases."""
+
+    _PLAN = (
+        "# Implementation Plan: Test\n\n"
+        "## Phase sequence\n\n"
+        "### Phase 01: Foundation\n\n"
+        "### Phase 02: Build\n\n"
+        "### Phase 03: Ship\n\n"
+        "## Open questions by phase\n\n"
+        "### Phase 04\n\n"
+        "- OQ-001: not a phase of the plan\n"
+    )
+
+    def _scaffold_phase_one_done(self, scaffold) -> None:
+        scaffold.write("IMPLEMENTATION_PLAN.md", self._PLAN)
+        scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+        scaffold.write(
+            "tasks/done/TASK-01-001.md",
+            "# TASK-01-001: build\n\nPhase: PHASE-01\n",
+        )
+
+    def test_plan_phases_reads_only_the_phase_sequence(self) -> None:
+        from cli import planning_status
+
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            self._scaffold_phase_one_done(scaffold)
+            root = scaffold.project_root
+            self.assertEqual(
+                planning_status.plan_phases(root), ["PHASE-01", "PHASE-02", "PHASE-03"]
+            )
+            self.assertEqual(
+                planning_status.missing_phase_files(root), ["PHASE-02", "PHASE-03"]
+            )
+
+    def test_unauthored_plan_phase_is_not_plan_complete(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            self._scaffold_phase_one_done(scaffold)
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertFalse(rec["plan_complete"])
+            self.assertEqual(rec["next_unstarted_phase"], "PHASE-02")
+            self.assertEqual(rec["planning"]["stage"], "phases")
+            self.assertIn("phases/PHASE-02.md", rec["planning"]["next"])
+            self.assertEqual(
+                next_action.completion_gap(scaffold.project_root),
+                "PHASE-02 is in IMPLEMENTATION_PLAN.md but has no phase file",
+            )
+
+    def test_in_flight_work_continues_before_phase_authoring(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", self._PLAN)
+            scaffold.write("phases/PHASE-01.md", "# PHASE-01: Foundation\n")
+            scaffold.write(
+                "tasks/in-progress/TASK-01-001.md",
+                "# TASK-01-001: build\n\nPhase: PHASE-01\n",
+            )
+            records, rc = _invoke(str(scaffold.project_root))
+            self.assertEqual(rc, 0)
+            rec = records[0]
+            self.assertTrue(rec["planning"]["complete"])
+            self.assertFalse(rec["plan_complete"])
+
+    def test_every_plan_phase_authored_and_done_is_complete(self) -> None:
+        with project_scaffold(cartopian_toml=_TOML_BASE) as scaffold:
+            scaffold.write("IMPLEMENTATION_PLAN.md", self._PLAN)
+            for number in ("01", "02", "03"):
+                scaffold.write(f"phases/PHASE-{number}.md", f"# PHASE-{number}: x\n")
+                scaffold.write(
+                    f"tasks/done/TASK-{number}-001.md",
+                    f"# TASK-{number}-001: x\n\nPhase: PHASE-{number}\n",
+                )
+            self.assertIsNone(next_action.completion_gap(scaffold.project_root))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

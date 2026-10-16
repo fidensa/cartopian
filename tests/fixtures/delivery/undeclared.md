@@ -6,4 +6,4 @@ A plan authored before the delivery gate existed.
 
 ## Phase sequence
 
-### Phase 00: Work
+### Phase 01: Work

@@ -31,7 +31,7 @@ import copy
 import re
 import tomllib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from cli import (
     backlog_revisit,
@@ -504,8 +504,10 @@ def _phase_task_presence(project_path: Path) -> Dict[str, bool]:
     A phase with no task files is *unstarted* — it exists in the plan but its
     tasks have not been generated yet. This is the distinction `phase_id` /
     `next_open_task` miss: both only see phases that already carry tasks.
+    The phases are the plan's whole sequence, so a phase the plan declares but
+    whose phase file was never authored is unstarted too.
     """
-    phase_stems = _collect_phase_stems(project_path / "phases")
+    phase_stems = planning_status.phase_sequence(project_path)
     stem_set = set(phase_stems)
     has_task = {stem: False for stem in phase_stems}
     tasks_dir = project_path / "tasks"
@@ -554,17 +556,23 @@ def _completion_gap(
     has_open_tasks: bool,
     next_unstarted_phase: Optional[str],
     has_task: Dict[str, bool],
+    missing_phase_files: Sequence[str] = (),
 ) -> Optional[str]:
     """Name what keeps the plan from complete, or return None when it is.
 
     The plan is complete only when there is nothing active, nothing open, no
-    phase left to generate tasks for, AND at least one phase actually had
-    tasks (an all-empty plan is un-started, not complete).
+    phase of IMPLEMENTATION_PLAN.md without its phase file, no phase left to
+    generate tasks for, AND at least one phase actually had tasks (an
+    all-empty plan is un-started, not complete).
     """
     if active_task is not None:
         return f"{active_task['id']} is {active_task['status']}"
     if has_open_tasks:
         return "tasks remain in tasks/open/"
+    if missing_phase_files:
+        return (
+            f"{missing_phase_files[0]} is in IMPLEMENTATION_PLAN.md but has no phase file"
+        )
     if next_unstarted_phase is not None:
         return f"{next_unstarted_phase} has no generated tasks"
     if not any(has_task.values()):
@@ -579,9 +587,10 @@ def completion_gap(project_path: Path) -> Optional[str]:
         active_task=_find_active_task(project_path / "tasks"),
         has_open_tasks=_has_open_tasks(project_path / "tasks"),
         next_unstarted_phase=_next_unstarted_phase(
-            _collect_phase_stems(project_path / "phases"), has_task
+            planning_status.phase_sequence(project_path), has_task
         ),
         has_task=has_task,
+        missing_phase_files=planning_status.missing_phase_files(project_path),
     )
 
 
@@ -843,7 +852,8 @@ def handler(args: argparse.Namespace) -> int:
 
     # Phase-aware completion truth: an empty open queue does NOT imply
     # the plan is done if later phases exist whose tasks were never generated.
-    phase_stems = _collect_phase_stems(project_path / "phases")
+    # The phases are the plan's, not just those with a file under phases/.
+    phase_stems = planning_status.phase_sequence(project_path)
     has_task = _phase_task_presence(project_path)
     next_unstarted_phase = _next_unstarted_phase(phase_stems, has_task)
     plan_complete = (
@@ -853,6 +863,7 @@ def handler(args: argparse.Namespace) -> int:
             has_open_tasks=has_open_tasks,
             next_unstarted_phase=next_unstarted_phase,
             has_task=has_task,
+            missing_phase_files=planning_status.missing_phase_files(project_path),
         )
         is None
     )

@@ -91,6 +91,8 @@ cartopian close-audit <project-path>
 
     A closed task may leave both task-scoped reports — the preserved completion report and, under required review, its independent review-completion report. Clear each existing artifact with its own call; a task closed without review simply has no review report to clear.
 
+  - `unplanned_phases` — phases of the plan's `## Phase sequence` whose `phases/PHASE-NN.md` was never authored. The plan, not `phases/`, sets the plan's extent, so these are unfinished work. Return to `plan project` Stage 3.2 to author each one, or obtain an operator early close; never close over them.
+
   - `unmet_exit_criteria` — phase exit criteria from `phases/PHASE-NN.md` files whose referenced tasks, decisions, specs, reviews, or reports are not yet present. Surface the named criteria to the operator and supply the missing evidence (or obtain an operator decision documenting why a criterion was intentionally not taskified) before rerunning closeout.
 
   - `delivery gate blocks closeout: <code> — <detail>` entries come from the plan's delivery contract (`cartopian://protocol/DELIVERY`). The full result is under `delivery`: the artifact, outcome, and follow-up states, and one ordered finding per unmet obligation, each carrying its own recovery. Run `cartopian validate-delivery <project-path>` for the detail view and surface each finding's recovery to the operator.
@@ -107,6 +109,8 @@ cartopian close-audit <project-path>
 - **`early_close` / `left_unfinished`:** when an operator early close stands, `blocking_reasons` is empty and `left_unfinished` lists what the plan leaves undone. Relay it to the operator; it becomes the goals section of the closeout and project summary (Stages 3.2 and 3b), never a task list for the next plan. Stale prompts and unresolved reports still appear in their own fields and are cleared at Stage 4.1.
 
 - **`closable`:** the aggregator's verdict. When `blocking_reasons` is empty, `closable` is `true` and closeout may proceed to Stage 2.
+
+- **`unverified_exit_criteria` (not blocking, not satisfied):** exit criteria that name no artifact id, such as "operator decision recorded for OQ-002". No check can meet these, so `closable: true` says nothing about them. Before Stage 2, confirm each one against the record (a locked decision, an accepted deliverable, a config value) and give the operator the evidence for each. Any criterion you cannot show is met stops closeout, exactly as an `unmet_exit_criteria` entry does.
 
 - **Informational counts (`open_count`, `in_progress_count`, `in_review_count`):** surface to the operator alongside any non-blocking observations. These do not by themselves block closeout when their corresponding `blocking_reasons` entries are absent.
 

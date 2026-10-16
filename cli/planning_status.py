@@ -24,6 +24,12 @@ from cli import checkpoint_identity, numbering_contract, request_trace
 
 _TASK_FILENAME_RE = re.compile(r"^(TASK-\d{2}-\d{3})\.md$")
 _PHASE_STEM_RE = re.compile(r"^PHASE-\d{2}$")
+_PLAN_PHASE_SECTION_RE = re.compile(
+    r"^##\s+Phase sequence\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL
+)
+_PLAN_PHASE_HEADING_RE = re.compile(
+    r"^###\s+Phase[\s-]+(\d{2})\b", re.MULTILINE | re.IGNORECASE
+)
 _ALL_STATUSES = ("open", "in-progress", "in-review", "done")
 
 STATUS_APPROVED = "approved"
@@ -60,6 +66,30 @@ def phase_stems(project_path: Path) -> List[str]:
         for entry in phases_dir.iterdir()
         if entry.is_file() and entry.suffix == ".md" and _PHASE_STEM_RE.match(entry.stem)
     )
+
+
+def plan_phases(project_path: Path) -> List[str]:
+    """The ``PHASE-NN`` stems ``IMPLEMENTATION_PLAN.md`` declares.
+
+    Each ``### Phase NN`` heading under ``## Phase sequence`` is one phase of
+    the plan. This, not ``phases/``, is the plan's extent: a phase file that
+    was never authored leaves its phase in the plan, not out of it.
+    """
+    section = _PLAN_PHASE_SECTION_RE.search(_read(Path(project_path) / "IMPLEMENTATION_PLAN.md"))
+    if section is None:
+        return []
+    return sorted({f"PHASE-{number}" for number in _PLAN_PHASE_HEADING_RE.findall(section.group(1))})
+
+
+def phase_sequence(project_path: Path) -> List[str]:
+    """Every phase of the plan: declared in the plan or present in ``phases/``."""
+    return sorted(set(phase_stems(project_path)) | set(plan_phases(project_path)))
+
+
+def missing_phase_files(project_path: Path) -> List[str]:
+    """Plan-declared phases whose ``phases/PHASE-NN.md`` was never authored."""
+    present = set(phase_stems(project_path))
+    return [phase for phase in plan_phases(project_path) if phase not in present]
 
 
 def task_headers(project_path: Path) -> List[Dict[str, Any]]:
@@ -321,7 +351,7 @@ def _unstarted_phase(
 def next_unstarted_phase(project_path: Path) -> Optional[str]:
     """Public form of the unstarted-phase rule for state composition."""
     project_path = Path(project_path)
-    return _unstarted_phase(phase_stems(project_path), task_headers(project_path))
+    return _unstarted_phase(phase_sequence(project_path), task_headers(project_path))
 
 
 def planning_review_required(project_path: Path) -> bool:
@@ -423,6 +453,19 @@ def derive(project_path: Path, *, planning_review_required: bool) -> Dict[str, A
                                task["phase"], task["plan_ref"])
             if gate:
                 return gate
+    # A plan phase with no phase file is unplanned, wherever it falls in the
+    # sequence. Work already in flight finishes first; then authoring it is
+    # the next step, before any further task generation.
+    missing = missing_phase_files(project_path)
+    if missing and not active:
+        review = (
+            f", run its PLAN-{missing[0]} checkpoint," if planning_review_required else ","
+        )
+        return result(
+            "phases",
+            f"Author phases/{missing[0]}.md from IMPLEMENTATION_PLAN.md with write-phase "
+            f"(plan project Stage 3.2){review} then generate its tasks.",
+        )
     if not tasks or (not active and unstarted is not None):
         target = unstarted or stems[0]
         return result(

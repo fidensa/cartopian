@@ -1253,7 +1253,7 @@ Plan closeout requires:
 - No task files in `tasks/open/`, `tasks/in-progress/`, or `tasks/in-review/`.
 - No active or ambiguous prompts.
 - No unresolved or ambiguous reports.
-- Phase exit criteria satisfied by completed tasks, decisions, specs, or documented operator acceptance.
+- Phase exit criteria satisfied by completed tasks, decisions, specs, or documented operator acceptance. `close-audit` checks only criteria that name an artifact id; it lists the rest under `unverified_exit_criteria`, and the PM confirms each against the record before closeout.
 - A delivery contract that passes the delivery gate (see § Delivery Gate). A declined archive does not erase the delivery obligation, and closeout never reports success while a delivery obligation is unmet.
 - Explicit operator confirmation.
 
@@ -1318,7 +1318,7 @@ It is plain Markdown and nothing more. There is no format header, no schema, no 
 cartopian write-continuity <project-root> [--content <summary> | --content-file <path>]
 ```
 
-**Plan close only — never a session handoff.** `write-continuity` refuses (`continuity-plan-not-closable`) unless `close-audit` reports the plan closable and the plan is complete as `next-action` defines `plan-complete`: no active or open task, no phase whose tasks were never generated, and at least one phase that had tasks. An operator's early close (see Plan Lifecycle) stands in for completeness. A project with no plan is refused too, so a session boundary at any point in planning or execution cannot write it, and a summary a previous plan's close left behind is never overwritten by a handoff. Ending a session mid-plan is `STATE.md` alone (see Request Intent and Session State).
+**Plan close only — never a session handoff.** `write-continuity` refuses (`continuity-plan-not-closable`) unless `close-audit` reports the plan closable and the plan is complete as `next-action` defines `plan-complete`: no active or open task, no phase of the plan's `## Phase sequence` without its phase file, no phase whose tasks were never generated, and at least one phase that had tasks. The plan, not `phases/`, sets the phase sequence. An operator's early close (see Plan Lifecycle) stands in for completeness. A project with no plan is refused too, so a session boundary at any point in planning or execution cannot write it, and a summary a previous plan's close left behind is never overwritten by a handoff. Ending a session mid-plan is `STATE.md` alone (see Request Intent and Session State).
 
 The summary is independent of the ordinary plan-archive choice. Archiving does not require a summary, a summary does not require an archive, and running neither, either, or both leaves `archive-plan`, `reset-plan`, and `archive/INDEX.md` behaving exactly as they do without this artifact. Re-issuing the command replaces the summary in place.
 
