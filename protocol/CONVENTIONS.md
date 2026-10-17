@@ -38,9 +38,7 @@ It is not a source repository for product code, a workspace shell for product re
 
 A PM session starts only after the project is unambiguous.
 
-Project selection is **registry-only**. The project registry lives at `~/.cartopian/projects.<format>` (per FR-003) and maps project IDs to absolute filesystem paths. Projects may live anywhere on disk; the registry is the discovery mechanism. The PM reads it via `cartopian discover-projects` (FR-004 #5) and resolves a project by its registered `id` or `path`. There is no directory-scan, no working-directory inference, and no protocol-defined "workspace" directory whose children are projects.
-
-A project is selected explicitly when the operator names a registered project ID or registered project path.
+Project selection is **registry-only**. The project registry lives at `~/.cartopian/projects.<format>` (per FR-003) and maps project IDs to absolute filesystem paths, wherever projects live on disk. The PM reads it via `cartopian discover-projects` (FR-004 #5); a project is selected explicitly when the operator names its registered `id` or `path`. There is no directory-scan, no working-directory inference, and no protocol-defined "workspace" directory whose children are projects.
 
 For project-agnostic startup requests of any intent class (see [Request Intent](#request-intent)) — "start working", "continue", "check `STATE.md`", "what's next", "pick up where we left off" — the PM resolves eligible projects through the registry:
 
@@ -67,9 +65,9 @@ After project selection, the PM reads the selected project's `cartopian.toml` an
 
 Startup uses `next-action --compact --audit`: the same orientation and complete `plan-audit` evaluation in one call. An audit failure makes the combined command fail and prevents a ready verdict. Compact output retains request policy, PM effective grants, state disagreement, every blocker, and provenance guards. Nonblocking audit findings are grouped by kind; other roles' configuration is deferred. Returned `details` command/arguments retrieve the full records without these flags. Read full role records before assigning new work, and full audit findings when diagnosing or remediating them. Compact projections never skip checks, relax gates, or authorize mutations. The original detailed commands and resource URIs remain supported.
 
-The `backlog` record beside the verdict names the deferred work whose revisit trigger is now (see Backlog § Consumption). It is orientation for the skill that owns that fork, never a blocker, and it carries ids and titles only.
+The `backlog` record names deferred work whose revisit trigger is now (see Backlog § Consumption): ids and titles only, orientation for the skill owning that fork, never a blocker.
 
-`--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it is used only when the request's intent class authorizes a write (an execution or scoped directive); an informational request runs `next-action` without it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. Required reviews are selected by stage and scope, never by counter position or the presence of downstream artifacts. Every generated phase and task needs its own covering approval; dispatch does not waive missing approvals. `plan-audit` reports missing required reviews as blockers, including skipped earlier stages.
+`--reconcile` refreshes a stale composed `STATE.md` body through the mediated writer before the verdict is computed, preserving undelivered Situation notes; the filesystem is authoritative either way. Because it writes, it requires an intent class that authorizes a write (an execution or scoped directive); an informational request omits it and reports the disagreement instead (see [Request Intent](#request-intent)). The `planning` record beside the verdict names the planning stage, the checkpoint in flight, and the status of every checkpoint that has left a trace on disk. Required reviews are selected by stage and scope, never by counter position or the presence of downstream artifacts. Every generated phase and task needs its own covering approval; dispatch does not waive missing approvals. `plan-audit` reports missing required reviews as blockers, including skipped earlier stages.
 
 ## Request Intent
 
@@ -239,7 +237,7 @@ The PM owns Cartopian lifecycle movement: task directory changes, prompt cleanup
 
 Assignees do not move Cartopian task files, delete prompts, rewrite `STATE.md`, or perform PM lifecycle cleanup.
 
-Reviewers create or update review files and record verdicts. They do not move tasks between status directories.
+Reviewers create or update review files and record verdicts; they never move tasks between status directories.
 
 Automated agents do not gain lifecycle authority by completing a handoff. Their reports are evidence for the PM to process.
 

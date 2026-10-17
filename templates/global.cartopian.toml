@@ -43,6 +43,7 @@
 # | `roles.<role>.agent` | non-empty string |
 # | `roles.<role>.model` | non-empty string |
 # | `roles.<role>.effort` | non-empty string |
+# | `roles.<role>.daybreak` | boolean (default false; cartopian-codex only) |
 # | `roles.<role>.timeout` | positive duration |
 # | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` |
 # | `roles.<role>.sandbox.allow_local_binding` | boolean (default false) |
@@ -195,6 +196,15 @@
 #                 tool-specific effort flag. Unset means the tool's own
 #                 default. Values the wrapper's CLI does not recognize are
 #                 dropped with a stderr notice and the default applies.
+#   daybreak    — optional boolean (default false). When true, dispatch
+#                 exports CARTOPIAN_CODEX_DAYBREAK=true and cartopian-codex
+#                 adds `--enable cli_daybreak --cyber-access-program
+#                 daybreak_blue`. Other wrappers ignore it.
+#                 Requires an OpenAI account enrolled in Trusted Access for
+#                 Cyber (Daybreak, chatgpt.com/cyber). Without it, Codex
+#                 launches but rejects the prompt (`400 Bad Request`, or
+#                 `Codex error for cybersecurity risk` for a security-sensitive
+#                 prompt). Only the PM sees that error, in the failed handoff.
 #   auto_launch — closed unique list containing any applicable assigned work
 #                 types: `task_run`, `task_review`, `planning_review`.
 #                 Automatic launch never initiates a run; run initiation,

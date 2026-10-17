@@ -72,6 +72,14 @@ $Sandbox = if ($env:CARTOPIAN_CODEX_SANDBOX) { $env:CARTOPIAN_CODEX_SANDBOX } el
 # Bypass all approval gates AND the sandbox. EXTREMELY DANGEROUS.
 # Only enable inside externally-sandboxed environments.
 $Bypass = if ($env:CARTOPIAN_CODEX_BYPASS -eq 'true') { $true } else { $false }
+
+# Codex Daybreak (Daybreak Blue). Dispatch exports 'true' from the resolved
+# dispatch record. Daybreak needs both the local feature flag and the access
+# program: --enable cli_daybreak --cyber-access-program daybreak_blue.
+# Requires an OpenAI account enrolled in Trusted Access for Cyber
+# (chatgpt.com/cyber); without it codex launches but rejects the prompt.
+# Verified against codex-cli 0.161.0.
+$Daybreak = if ($env:CARTOPIAN_CODEX_DAYBREAK -eq 'true') { $true } else { $false }
 # ------------------------------------------------------------------
 
 if (-not (Test-Path $PromptPath)) {
@@ -146,6 +154,10 @@ if ($env:CARTOPIAN_EFFORT) {
     } else {
         [Console]::Error.WriteLine("cartopian-codex: CARTOPIAN_EFFORT=$($env:CARTOPIAN_EFFORT) is not a supported codex effort level (low|medium|high|xhigh|max|ultra); launching with the default effort")
     }
+}
+if ($Daybreak) {
+    $Args += @('--enable', 'cli_daybreak', '--cyber-access-program', 'daybreak_blue')
+    [Console]::Error.WriteLine("cartopian-codex: daybreak=on (cli_daybreak, daybreak_blue); requires OpenAI Trusted Access for Cyber, otherwise codex rejects the prompt (400 Bad Request or 'Codex error for cybersecurity risk')")
 }
 if ($Bypass) {
     $Args += '--dangerously-bypass-approvals-and-sandbox'

@@ -64,6 +64,7 @@ A role's name and description carry no authority. They help the PM match work to
 | `roles.<role>.agent` | Any command on your PATH, such as a shipped wrapper name | Names the tool that runs this role's work. Leave it out for manual handoff. |
 | `roles.<role>.model` | Any model name the chosen agent accepts | Pins the agent to one model. |
 | `roles.<role>.effort` | Any effort word the chosen agent accepts | Sets the thinking or effort level. |
+| `roles.<role>.daybreak` | `true` or `false` (default `false`) | Turns on Codex Daybreak for this role. Only `cartopian-codex` reads it; other agents ignore it. Requires OpenAI Trusted Access for Cyber; see below. |
 | `roles.<role>.timeout` | A whole number with an `s`, `m`, or `h` suffix, such as 90s, 30m, or 2h | Caps how long one handoff may run. Dispatch falls back to 60m. |
 | `roles.<role>.auto_launch` | `task_run`, `task_review`, `planning_review` | Lets the PM start this role's assigned work without asking you first. |
 | `roles.<role>.sandbox.allow_local_binding` | `true` or `false` (default `false`) | Lets this role's shell commands open loopback ports, for local test servers. |
@@ -149,6 +150,10 @@ Presets are named bundles. Use a preset name anywhere a capability name is valid
 The same six names work on Windows, where the installer ships `.cmd` and `.ps1` versions (the opencode and Hermes Windows wrappers are unverified on native Windows). Any other program is valid too, as long as it accepts one absolute prompt path as its argument. See `wrappers/README.md`.
 
 `model` and `effort` are passed through as the environment variables `CARTOPIAN_MODEL` and `CARTOPIAN_EFFORT`. Each wrapper turns them into its own flags. An effort word a wrapper does not recognize is dropped with a one-line notice, and the agent runs at its default.
+
+`daybreak = true` is passed through as `CARTOPIAN_CODEX_DAYBREAK=true`. `cartopian-codex` turns it into `--enable cli_daybreak --cyber-access-program daybreak_blue`. Leaving it out, or setting it to `false`, launches Codex exactly as before.
+
+> **Daybreak needs Trusted Access for Cyber.** Turn it on only if the OpenAI account Codex signs in with is enrolled in OpenAI's Trusted Access for Cyber program (Daybreak, chatgpt.com/cyber). Without that access, Codex still launches, but it rejects the prompt: an ordinary prompt fails with `400 Bad Request`, and a security-sensitive prompt fails with `Codex error for cybersecurity risk`. You will not see that error yourself. The handoff fails and the PM sees the error in its result, so a role that fails on every handoff right after you enable Daybreak most likely lacks access.
 
 ### Permission to launch automatically
 

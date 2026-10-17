@@ -283,6 +283,15 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 },
             ),
             (
+                "roles.*.daybreak",
+                {
+                    "scopes": ("global", "project"),
+                    "type": "boolean",
+                    "default": False,
+                    "merge": "field-override",
+                },
+            ),
+            (
                 "roles.*.timeout",
                 {
                     "scopes": ("global", "project"),
@@ -469,7 +478,14 @@ _ROOT_KEYS = {
 }
 _ROLE_LAUNCH_KEYS = ("agent", "model", "effort", "timeout")
 _ROLE_KEYS = frozenset(
-    ("description", "grants", *_ROLE_LAUNCH_KEYS, "auto_launch", "sandbox")
+    (
+        "description",
+        "grants",
+        *_ROLE_LAUNCH_KEYS,
+        "daybreak",
+        "auto_launch",
+        "sandbox",
+    )
 )
 _DOMAIN_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _SANDBOX_DOMAIN_RE = re.compile(
@@ -657,6 +673,8 @@ def _validate_roles(raw: Any, scope: str) -> None:
         for key in _ROLE_LAUNCH_KEYS:
             if key in role:
                 _nonempty_string(role[key], f"{field}.{key}", scope)
+        if "daybreak" in role and not isinstance(role["daybreak"], bool):
+            _fail("invalid-type", f"{field}.daybreak", scope, "must be a boolean")
         if "sandbox" in role:
             _validate_role_sandbox(role["sandbox"], f"{field}.sandbox", scope)
         if "timeout" in role and not _DURATION_RE.fullmatch(role["timeout"]):
@@ -1021,6 +1039,10 @@ def _merge_role(
         value, launch_source = _field_value(g, p, key, None)
         launch[key] = value
         launch_sources[key] = launch_source
+    # Codex-only launch option; wrappers for other agents ignore it.
+    daybreak, daybreak_source = _field_value(g, p, "daybreak", False)
+    launch["daybreak"] = daybreak
+    launch_sources["daybreak"] = daybreak_source
     merged["launch"] = launch
     attribution["launch"] = launch_sources
 

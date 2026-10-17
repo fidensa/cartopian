@@ -239,6 +239,24 @@ class TestRoleAndLaunch(_Base):
         self.assertEqual(cfg["roles"]["coder"]["effort"], "high")
         self.assertEqual(self.cfg.read_text().count("[roles.coder]"), 1)
 
+    def test_set_launch_daybreak_writes_a_boolean(self):
+        proc = self.run_uc(
+            str(self.proj),
+            "--set-role-launch", "coder.agent=cartopian-codex",
+            "--set-role-launch", "coder.daybreak=true",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        cfg = tomllib.loads(self.cfg.read_text())
+        self.assertIs(cfg["roles"]["coder"]["daybreak"], True)
+
+        before = self.cfg.read_bytes()
+        proc = self.run_uc(
+            str(self.proj), "--set-role-launch", "coder.daybreak=on"
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("expects true|false", proc.stderr)
+        self.assertEqual(self.cfg.read_bytes(), before)
+
     def test_set_review_policy_and_arbitrary_assigned_role(self):
         proc = self.run_uc(
             str(self.proj),
@@ -296,7 +314,7 @@ class TestRoleAndLaunch(_Base):
             "--set-role-launch", "coder.target=cartopian-claude",
         )
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("agent, model, effort, timeout", proc.stderr)
+        self.assertIn("agent, model, effort, daybreak, timeout", proc.stderr)
         self.assertEqual(self.cfg.read_bytes(), before)
 
 

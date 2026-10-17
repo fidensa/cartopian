@@ -171,6 +171,7 @@ if capture:
                 "timeout": os.environ.get("CARTOPIAN_TIMEOUT"),
                 "model": os.environ.get("CARTOPIAN_MODEL"),
                 "effort": os.environ.get("CARTOPIAN_EFFORT"),
+                "daybreak": os.environ.get("CARTOPIAN_CODEX_DAYBREAK"),
                 "work_roots": os.environ.get("CARTOPIAN_WORK_ROOTS"),
                 "mcp_connected": os.environ.get("CARTOPIAN_MCP_CONNECTED"),
                 "mcp_client": os.environ.get("CARTOPIAN_MCP_CLIENT"),
@@ -238,6 +239,7 @@ def _toml(
     timeout: str = "30m",
     model: str = "",
     effort: str = "",
+    daybreak: bool = False,
     auto_launch_tasks: bool = True,
     auto_launch_reviews: "bool | None" = None,
     grants: str = "",
@@ -245,6 +247,7 @@ def _toml(
     wr = f'work_roots = [{work_roots}]\n' if work_roots else ""
     model_line = f'model = "{model}"\n' if model else ""
     effort_line = f'effort = "{effort}"\n' if effort else ""
+    daybreak_line = "daybreak = true\n" if daybreak else ""
     grants_line = f'grants = ["{grants}"]\n' if grants else ""
     activities = []
     if auto_launch_tasks:
@@ -277,6 +280,7 @@ def _toml(
         f'agent = "{agent}"\n'
         f"{model_line}"
         f"{effort_line}"
+        f"{daybreak_line}"
         f'timeout = "{timeout}"\n'
         f"{review_policy}"
     )
@@ -614,6 +618,7 @@ class TestDispatchPositive(unittest.TestCase):
                 "STUB_NO_REPORT": "1",
                 "CARTOPIAN_MODEL": "stale-model",
                 "CARTOPIAN_EFFORT": "stale-effort",
+                "CARTOPIAN_CODEX_DAYBREAK": "true",
                 "CARTOPIAN_WORK_ROOTS": "/stale/work-root",
             }
             with mock.patch.dict(os.environ, env, clear=False):
@@ -623,6 +628,7 @@ class TestDispatchPositive(unittest.TestCase):
             rec = json.loads(stdout.strip())
             self.assertIsNone(rec["launch"]["model"])
             self.assertIsNone(rec["launch"]["effort"])
+            self.assertFalse(rec["launch"]["daybreak"])
 
             # dispatch is non-blocking; poll briefly for the detached stub's capture.
             cap = None
@@ -635,9 +641,50 @@ class TestDispatchPositive(unittest.TestCase):
             self.assertIsNotNone(cap, "stub wrapper did not run")
             self.assertIsNone(cap["model"])
             self.assertIsNone(cap["effort"])
+            self.assertIsNone(cap["daybreak"])
             # The stale inherited work-roots value is replaced by the resolved
             # grant, never passed through.
             self.assertEqual(cap["work_roots"], str(work_root))
+
+    def test_exports_codex_daybreak_when_role_enables_it(self) -> None:
+        with project_scaffold(cartopian_toml="") as scaffold, \
+                tempfile.TemporaryDirectory(prefix="cartopian-stub-") as tmp:
+            tmp_path = Path(tmp)
+            stub = _make_stub(tmp_path)
+            capture = tmp_path / "capture.json"
+
+            work_root = scaffold.root / "tool-repo"
+            work_root.mkdir()
+            scaffold.write(
+                "cartopian.toml",
+                _toml(str(stub), work_roots='"tool-repo"', daybreak=True),
+            )
+            scaffold.write(
+                "cartopian.local.toml",
+                f'[work_roots]\ntool-repo = "{work_root}"\n',
+            )
+            task_path = _write_task_and_prompt(scaffold)
+
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+
+            env = {"STUB_CAPTURE": str(capture), "STUB_NO_REPORT": "1"}
+            with mock.patch.dict(os.environ, env, clear=False):
+                stdout, stderr, rc = _dispatch(str(task_path), "coder", fake_home)
+
+            self.assertEqual(rc, EXIT_OK, msg=f"stderr={stderr!r}")
+            rec = json.loads(stdout.strip())
+            self.assertTrue(rec["launch"]["daybreak"])
+
+            cap = None
+            deadline = time.monotonic() + 5.0
+            while cap is None and time.monotonic() < deadline:
+                try:
+                    cap = json.loads(capture.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.05)
+            self.assertIsNotNone(cap, "stub wrapper did not run")
+            self.assertEqual(cap["daybreak"], "true")
 
     def test_replaces_stale_work_roots_with_configured_external_root(self) -> None:
         with project_scaffold(cartopian_toml="") as scaffold, \

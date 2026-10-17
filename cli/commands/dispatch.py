@@ -21,7 +21,8 @@ command performs the launch on the PM's behalf as *per-invocation* Cartopian cod
 missing role handoff agent or prompt, exports ``CARTOPIAN_TIMEOUT`` from
 ``roles.<role>.timeout``, ``CARTOPIAN_MODEL`` from
 ``roles.<role>.model`` (when set), ``CARTOPIAN_EFFORT`` from
-``roles.<role>.effort`` (when set), and
+``roles.<role>.effort`` (when set), ``CARTOPIAN_CODEX_DAYBREAK`` from
+``roles.<role>.daybreak`` (when true), and
 ``CARTOPIAN_ROLE`` from the dispatched role (the session-role marker capability
 enforcement points such as ``cli/claude_hook.py`` read), and
 launches the configured wrapper with the single absolute-prompt-path argv from the
@@ -99,6 +100,12 @@ MODEL_ENV = "CARTOPIAN_MODEL"
 # (the tool's own default effort applies). Value validation is the wrapper's
 # job — effort vocabularies differ per agent CLI.
 EFFORT_ENV = "CARTOPIAN_EFFORT"
+
+# Codex Daybreak opt-in. Exported as ``true`` from the resolved
+# ``roles.<role>.daybreak`` so cartopian-codex can add ``--enable cli_daybreak
+# --cyber-access-program daybreak_blue``; never exported when the role leaves
+# it false. Other wrappers ignore it.
+DAYBREAK_ENV = "CARTOPIAN_CODEX_DAYBREAK"
 
 # Resolved work-root grant. Exported as an ``os.pathsep``-joined list of the
 # project's resolved work-root absolute paths. The launch contract grants the
@@ -645,6 +652,7 @@ def handler(args: argparse.Namespace) -> int:
     timeout = launch.get("timeout") or DEFAULT_TIMEOUT
     model = launch.get("model")
     effort = launch.get("effort")
+    daybreak = launch.get("daybreak") is True
     output_limits = output_safety.limits_from_environment(dict(os.environ))
     _host_ok, host_budget, _host_refusal = host_capability.check_wait_budget(
         role,
@@ -956,6 +964,12 @@ def handler(args: argparse.Namespace) -> int:
         env[EFFORT_ENV] = str(effort)
     else:
         env.pop(EFFORT_ENV, None)
+    # Codex Daybreak opt-in from the resolved role launch record, cleared the
+    # same way when false.
+    if daybreak:
+        env[DAYBREAK_ENV] = "true"
+    else:
+        env.pop(DAYBREAK_ENV, None)
     # Resolved work-root grant (os.pathsep-joined absolute paths); a stale
     # inherited value is cleared when the project declares no work roots.
     if work_root_paths:
@@ -1034,7 +1048,12 @@ def handler(args: argparse.Namespace) -> int:
                 "role": role,
                 "activity": activity,
                 "mode": "interactive",
-                "launch": {"agent": agent, "model": model, "effort": effort},
+                "launch": {
+                    "agent": agent,
+                    "model": model,
+                    "effort": effort,
+                    "daybreak": daybreak,
+                },
                 "sandbox_exceptions": role_record.get("sandbox"),
                 "work_roots": work_root_paths,
                 "prompt_path": str(prompt_path),
@@ -1114,6 +1133,7 @@ def handler(args: argparse.Namespace) -> int:
             "agent": agent,
             "model": model,
             "effort": effort,
+            "daybreak": daybreak,
             "timeout": timeout,
         },
         "sandbox_exceptions": role_record.get("sandbox"),

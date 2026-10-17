@@ -80,7 +80,9 @@
       "observed_ref_note": "Adds observed_ref and observed_ref_state to release_version so an operator reading an unknown release version can see the marker token actually on disk and why it was not honored, without the token ever being promoted to a release claim.",
       "role_sandbox_delta_bytes": 45,
       "role_sandbox_note": "Adds a stable roles.<role>.sandbox key. A role without operator-declared shell-sandbox exceptions projects null (15 compact bytes per resolved role; 45 for the fixture's three roles), and a declared table carries only the keys that differ from the strict defaults, with attribution only for those keys, so undeclared exceptions never become ambient context. The ceiling rises by that measured delta, preserving the prior headroom.",
-      "max_output_bytes": 3665
+      "role_daybreak_delta_bytes": 123,
+      "role_daybreak_note": "Adds roles.<role>.launch.daybreak (a boolean, false unless declared) and its launch attribution, 41 compact bytes per resolved role; 123 for the fixture's three roles. The ceiling rises by that measured delta, preserving the prior headroom.",
+      "max_output_bytes": 3788
     },
     {
       "surface": "next-action",

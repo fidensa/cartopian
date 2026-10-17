@@ -345,6 +345,7 @@ One nuance: some agent CLIs impose their **own** filesystem sandbox rooted at th
 | --- | --- | --- |
 | `CARTOPIAN_CODEX_SANDBOX` | `workspace-write` | Sandbox scope: `read-only`, `workspace-write`, `danger-full-access` |
 | `CARTOPIAN_CODEX_BYPASS` | `false` | Set `true` to pass `--dangerously-bypass-approvals-and-sandbox` (overrides sandbox; only safe in externally-sandboxed environments) |
+| `CARTOPIAN_CODEX_DAYBREAK` | `false` | Set `true` to pass `--enable cli_daybreak --cyber-access-program daybreak_blue`. Dispatch sets it from the resolved dispatch record and clears it when Daybreak is off. Requires an OpenAI account enrolled in Trusted Access for Cyber (chatgpt.com/cyber); without it Codex launches but rejects the prompt with `400 Bad Request`, or `Codex error for cybersecurity risk` for a security-sensitive prompt. |
 
 ### Claude Code
 

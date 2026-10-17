@@ -168,6 +168,43 @@ class TestClosedSchema(unittest.TestCase):
         ):
             validate_authored_config(project, "project")
 
+    def test_role_daybreak_is_an_optional_boolean_defaulting_off(self):
+        project = {
+            "project": {
+                "id": "demo",
+                "name": "Demo",
+                "project_schema_version": "v0.9.0",
+            },
+            "roles": {
+                "coder": {
+                    "description": "Writes code.",
+                    "agent": "cartopian-codex",
+                }
+            },
+        }
+        record = resolve_configuration({}, project, {})
+        coder = record["roles"]["coder"]
+        self.assertIs(coder["launch"]["daybreak"], False)
+        self.assertEqual(
+            coder["attribution"]["launch"]["daybreak"], "protocol-default"
+        )
+
+        global_cfg = {"roles": {"coder": {"daybreak": True}}}
+        record = resolve_configuration(global_cfg, project, {})
+        coder = record["roles"]["coder"]
+        self.assertIs(coder["launch"]["daybreak"], True)
+        self.assertEqual(coder["attribution"]["launch"]["daybreak"], "global")
+
+        project["roles"]["coder"]["daybreak"] = False
+        record = resolve_configuration(global_cfg, project, {})
+        self.assertIs(record["roles"]["coder"]["launch"]["daybreak"], False)
+
+        project["roles"]["coder"]["daybreak"] = "true"
+        with self.assertRaisesRegex(
+            ConfigDiagnostic, "invalid-type.*roles.coder.daybreak"
+        ):
+            validate_authored_config(project, "project")
+
     def test_role_target_is_rejected_and_names_agent_as_the_valid_field(self):
         base = {
             "project": {

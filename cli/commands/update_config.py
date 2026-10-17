@@ -67,7 +67,7 @@ from cli.emit import emit_record
 from cli.main import EXIT_FAIL, EXIT_OK, EXIT_USAGE
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_ROLE_LAUNCH_FIELDS = ("agent", "model", "effort", "timeout")
+_ROLE_LAUNCH_FIELDS = ("agent", "model", "effort", "daybreak", "timeout")
 
 
 class _Usage(Exception):
@@ -606,7 +606,8 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
                            help="Set a role's capability grants (empty = explicit empty list)")
     subparser.add_argument("--set-role-launch", action="append", default=[],
                            metavar="ROLE.FIELD=VALUE",
-                           help="Set a role handoff agent/launch option (repeatable)")
+                           help="Set a role handoff agent/launch option (repeatable; "
+                                "daybreak = true|false)")
     subparser.add_argument("--set-role-auto-launch", action="append", default=[],
                            metavar="ROLE=ACTIVITY[,ACTIVITY...]",
                            help="Set a role's closed automatic-launch permission list")
@@ -732,10 +733,17 @@ def _plan_project_ops(args: argparse.Namespace) -> List[Tuple]:
         if (role, field) in launch_fields:
             raise _Usage(f"--set-role-launch {role}.{field} given more than once")
         launch_fields.add((role, field))
-        try:
-            token = _toml_str(value)
-        except _Usage as exc:
-            raise _Usage(f"--set-role-launch {role}.{field}: {exc}")
+        if field == "daybreak":
+            if value not in ("true", "false"):
+                raise _Usage(
+                    f"--set-role-launch {role}.daybreak expects true|false; got: {value!r}"
+                )
+            token = value
+        else:
+            try:
+                token = _toml_str(value)
+            except _Usage as exc:
+                raise _Usage(f"--set-role-launch {role}.{field}: {exc}")
         ops.append(("set-role-launch", role, field, token))
 
     for raw in args.set_role_auto_launch:

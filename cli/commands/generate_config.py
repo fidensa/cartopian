@@ -87,6 +87,9 @@ def configure_parser(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--role-launch-effort", action="append", default=[],
                            metavar="ROLE=EFFORT",
                            help="Repeatable role launch effort/thinking level")
+    subparser.add_argument("--role-daybreak", action="append", default=[],
+                           metavar="ROLE=true|false",
+                           help="Repeatable Codex Daybreak opt-in (cartopian-codex only)")
     subparser.add_argument("--role-auto-launch", action="append", default=[],
                            metavar="ROLE=ACTIVITY[,ACTIVITY...]",
                            help="Repeatable closed automatic-launch permission list")
@@ -252,6 +255,7 @@ def _build_role_execution(
     agent_args: List[str],
     model_args: List[str],
     effort_args: List[str],
+    daybreak_args: List[str],
     auto_launch_args: List[str],
     timeout_args: List[str],
     declared_roles: Dict[str, str],
@@ -261,6 +265,7 @@ def _build_role_execution(
         "agent": set(),
         "model": set(),
         "effort": set(),
+        "daybreak": set(),
         "timeout": set(),
     }
     agents = _collect_role_launch_field(
@@ -292,6 +297,14 @@ def _build_role_execution(
         lambda value, ctx: value
         if value
         else (_ for _ in ()).throw(_Usage(f"{ctx}: effort must be non-empty")),
+    )
+    daybreaks = _collect_role_launch_field(
+        daybreak_args,
+        "--role-daybreak",
+        declared_roles,
+        seen,
+        "daybreak",
+        _parse_bool,
     )
     timeouts = _collect_role_launch_field(
         timeout_args,
@@ -336,6 +349,7 @@ def _build_role_execution(
             ("agent", agents),
             ("model", models),
             ("effort", efforts),
+            ("daybreak", daybreaks),
             ("timeout", timeouts),
         ):
             if role in values:
@@ -361,6 +375,7 @@ def _build_config(args: argparse.Namespace, project_schema_version: str) -> Dict
         args.role_agent,
         args.role_launch_model,
         args.role_launch_effort,
+        args.role_daybreak,
         args.role_auto_launch,
         args.role_launch_timeout,
         roles,

@@ -385,6 +385,36 @@ class TestGenerateConfigGuards(unittest.TestCase):
             self.assertIn("more than once", proc.stderr)
             self.assertFalse((proj / "cartopian.toml").exists())
 
+    def test_role_daybreak_is_written_as_a_boolean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            proj = tmp_path / "proj"
+            proj.mkdir()
+            proc = _run(
+                str(proj),
+                "--name", "X", "--id", "x",
+                "--role", "coder=Writes code",
+                "--role-agent", "coder=cartopian-codex",
+                "--role-daybreak", "coder=true",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            cfg = tomllib.loads((proj / "cartopian.toml").read_text())
+            self.assertIs(cfg["roles"]["coder"]["daybreak"], True)
+
+            other = tmp_path / "other"
+            other.mkdir()
+            proc = _run(
+                str(other),
+                "--name", "X", "--id", "x",
+                "--role", "coder=Writes code",
+                "--role-daybreak", "coder=yes",
+                home=tmp_path,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("expects true|false", proc.stderr)
+            self.assertFalse((other / "cartopian.toml").exists())
+
     def test_orphan_handoff_effort_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

@@ -16,11 +16,11 @@ Skip this stage if `use cartopian` already completed selection and binding. Othe
 
 You are the interactive PM, never a launched handoff. Classify the request first: selection does not authorize execution. Request Intent and the resolved `automation` policy determine whether work begins and how far an initiated run continues.
 
-Run `cartopian next-action <project-path> --compact --audit`. Add `--reconcile` only for an execution or scoped directive: it refreshes a stale composed `STATE.md` through the mediated writer, preserving Situation notes. Informational requests run without `--reconcile`; a question acquires no side effects. The filesystem is authoritative in either case.
+Run `cartopian next-action <project-path> --compact --audit`. Add `--reconcile` only for an execution or scoped directive: it refreshes a stale composed `STATE.md` through the mediated writer, preserving Situation notes. Informational requests omit it, so a question has no side effects; the filesystem stays authoritative.
 
 Before using `--reconcile`, read `cartopian://protocol/CONVENTIONS/session-state`.
 
-This one call uses the `cartopian resolve-config` resolution chain, reads state, computes readiness, and runs every `cartopian plan-audit` check. Do not separately load config, `STATE.md`, task files, or repeat the audit for orientation. The `pm_role_declared` gate is binary: true continues, false stops for a missing PM role. Do not inspect or comment on whether its description was customized. Never solicit config changes. On explicit go-ahead, use `cartopian update-config --set-role pm="..." --set-role-grants pm=...`; if the activated Claude project sandbox blocks it, report the exact outside-handoff operation.
+This one call resolves config (`cartopian resolve-config` chain), reads state, computes readiness, and runs every `cartopian plan-audit` check. Do not separately load config, `STATE.md`, or task files, or rerun the audit. The `pm_role_declared` gate is binary: true continues, false stops for a missing PM role. Do not inspect or comment on whether its description was customized. Never solicit config changes. On explicit go-ahead, use `cartopian update-config --set-role pm="..." --set-role-grants pm=...`; if the activated Claude project sandbox blocks it, report the exact outside-handoff operation.
 
 ## Stage 2 - Relay Session State
 
@@ -31,13 +31,13 @@ Summarize project, phase, active/next work, `automation`, role names, and review
 - **`blocked`**: relay `detail`, `owner`, and recovery `action`.
 - **`plan-complete`**: ask whether to close with `close plan`.
 
-Stop for any `blockers`, audit provenance guards, nonzero audit exit, or incomplete/failed evaluation. Compact output retains every blocker and groups nonblocking warnings/advisories by kind. Mention their counts without claiming the audit is clean. For diagnosis or remediation, run the returned `details` command: `cartopian plan-audit <project-path>` for complete findings, `cartopian next-action <project-path>` for full role records. Before choosing a role for new work, read its full resolved record. Compact output is a presentation choice, never weaker evaluation or authorization.
+Stop for any `blockers`, audit provenance guards, nonzero audit exit, or incomplete/failed evaluation. Mention grouped warning/advisory counts without claiming a clean audit. To diagnose or remediate, run the returned `details` command: `cartopian plan-audit <project-path>` for complete findings, `cartopian next-action <project-path>` for full role records. Before choosing a role for new work, read its full resolved record. Compact output never weakens evaluation or authorization.
 
-Relay `backlog` in one line: `live` and the ids under `due`. A due entry is never a blocker; the skill that owns the fork its trigger names dispositions it (`plan project` Stage 1 while no plan exists, Stage 4 at phase task generation, `run task` Stage 1 before dispatch). Do not open `BACKLOG.md` to summarize it.
+Relay `backlog` in one line (`live`, `due` ids). A due entry never blocks; its fork's skill (`plan project` Stage 1 or 4, `run task` Stage 1) dispositions it. Never open `BACKLOG.md` for this.
 
-Surface non-null `state_filesystem_disagreement`; offer the mediated mechanical refresh (`cartopian write-state <project-root>` or authorized `next-action --reconcile`), never a raw edit. Before writing state or resolving Situation notes, read `cartopian://protocol/CONVENTIONS/session-state`; startup loads only its orientation rule. A project-schema migration blocker routes to `migrate project` on operator approval; never ask the operator to hand-edit config.
+Surface non-null `state_filesystem_disagreement`; offer the mediated refresh (`cartopian write-state <project-root>` or authorized `next-action --reconcile`), never a raw edit. Before writing state or resolving Situation notes, read `cartopian://protocol/CONVENTIONS/session-state`; startup loads only its orientation rule. A project-schema migration blocker routes to `migrate project` on operator approval; never ask the operator to hand-edit config.
 
-An `unresolved situation note in STATE.md` blocker is PM work: act on it, promote a durable item via `cartopian write-backlog` or `cartopian write-decision`, or drop a stale note, then refresh through `cartopian write-state <project-root>`. Escalate only if the note requires an operator decision. Resolve blockers before lifecycle movement.
+An `unresolved situation note in STATE.md` blocker is PM work: act on it, promote a durable item via `cartopian write-backlog` or `cartopian write-decision`, or drop a stale note, then refresh via `cartopian write-state <project-root>`. Escalate only if the note requires an operator decision. Resolve blockers before lifecycle movement.
 
 ## Stage 3 - Take The Next Action
 
@@ -49,6 +49,6 @@ Under an execution or scoped directive, an explained stale task-review binding r
 - **Session-boundary request**: close per `run task` § Stage 8; write no carry-forward artifact or handoff document.
 - **Bare project selection**: initiate only under `initiation = "auto"`; otherwise end with the summary and exact next task.
 
-Within an initiated run, follow deterministic continuations without per-action confirmation prompts, honoring the configured run boundary. An operator-named task overrides order for that task only. Stop at plan-level forks (no plan, phase tasks not generated, plan complete), blockers, failed handoffs, exhausted automation budget, or reserved decisions. Ask whether to proceed at a planning fork unless the operator already directed that exact planning step.
+Within an initiated run, follow deterministic continuations without per-action confirmation, honoring the configured run boundary. An operator-named task overrides order for that task only. Stop at plan-level forks (no plan, phase tasks not generated, plan complete), blockers, failed handoffs, exhausted automation budget, or reserved decisions. Ask whether to proceed at a planning fork unless the operator already directed that exact planning step.
 
 An explicit "stop", "pause", or "don't execute" overrides configuration, automatic initiation included, until the operator directs execution again.
